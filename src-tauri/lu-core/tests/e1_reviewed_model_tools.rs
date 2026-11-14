@@ -5,7 +5,7 @@
 use std::{
     collections::BTreeSet,
     fs,io::Write,process::{Command,Stdio},path::{Path,PathBuf},
-    sync::Arc,time::{SystemTime,UNIX_EPOCH},
+    sync::{Arc,atomic::{AtomicU64,Ordering}},time::{SystemTime,UNIX_EPOCH},
 };
 use lu_core::{
     agent_tool_loop::{NativeToolTurn,ToolTurnOutcome,ToolTurnError},
@@ -45,11 +45,30 @@ impl ToolAuthorizer for Allow{
     fn authorize(&self,_:&ToolInvocation,_:&ToolDescriptor)
         ->Result<(),AuthorizationError>{Ok(())}
 }
+// Windows SystemTime may have a coarse tick shared across parallel tests.
+// A process-local monotonic suffix protects ANSF/SQLite fixture identity.
+static NEXT_TEMP_PATH:AtomicU64=AtomicU64::new(0);
 fn temp()->PathBuf{
     std::env::temp_dir().join(format!(
-        "lu-e1-p07-{}-{}",std::process::id(),
-        SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos()
+        "lu-e1-p07-{}-{}-{}",std::process::id(),
+        SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos(),
+        NEXT_TEMP_PATH.fetch_add(1,Ordering::Relaxed)
     ))
+}
+#[test]
+fn concurrent_reviewed_model_fixture_paths_are_unique(){
+    use std::sync::{Arc as Shared,Mutex};
+    let seen=Shared::new(Mutex::new(std::collections::HashSet::new()));
+    std::thread::scope(|scope|{
+        for _ in 0..64{
+            let seen=Shared::clone(&seen);
+            scope.spawn(move||{
+                let path=temp();
+                assert!(seen.lock().unwrap().insert(path));
+            });
+        }
+    });
+    assert_eq!(seen.lock().unwrap().len(),64);
 }
 fn hash(path:&Path)->String{
     format!("{:x}",Sha256::digest(fs::read(path).unwrap()))

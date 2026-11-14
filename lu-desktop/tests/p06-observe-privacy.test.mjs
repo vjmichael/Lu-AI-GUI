@@ -6,7 +6,8 @@ const tasks=read('../../src-tauri/lu-core/src/tasks.rs');
 const lane=read('../../src-tauri/lu-core/src/native_awareness_lane.rs');
 const host=read('../src-tauri/src/observe_desktop.rs');
 const desktop=read('../src-tauri/src/lib.rs');
-const ui=read('../web/main.jsx');
+const ui=read('../web/native_windows.jsx');
+const chatUi=read('../web/main.jsx');
 const native=read('../../src-tauri/lu-core/src/native_observe_learn.rs');
 
 test('P06 observation is off-by-default and never grants ambient desktop capture',()=>{
@@ -40,8 +41,9 @@ test('P06 seven-day retention and chat-only deletion cannot mint tool or learnin
   assert.match(desktop,/state\.chats\.history\(&chat_id\)/);
   assert.match(desktop,/Forget diagnostic notes/);
   assert.match(ui,/invoke\('lu_observe_forget_notes'/);
-  assert.match(ui,/Forget observation notes for this chat/);
-  assert.match(ui,/diagnostic codes expire after seven days/i);
+  assert.match(ui,/Review forgetting notes/);
+  assert.match(ui,/Observe & Learn is OFF by default/);
+  assert.match(tasks,/datetime\('now','-7 days'\)/);
   assert.doesNotMatch(host,/grant_learning_review\(true\)/);
 });
 test('P06 capture receipts never imply verified visual interpretation or retained pixels',()=>{
@@ -63,7 +65,7 @@ test('P06 capture receipts never imply verified visual interpretation or retaine
   assert.match(host,/has_local_observe_frame\(&task_id,chat_id\)/);
   assert.match(host,/visual_interpretation_verified:false/);
   assert.match(desktop,/lu_observe_capture_one_shot/);
-  assert.match(ui,/No observation data/);
+  assert.match(ui,/No result here proves visual understanding/);
 });
 
 test('P06 native WGC process instance is verified, generic picker stays unverified',()=>{
@@ -205,7 +207,8 @@ test('P06 observed WGC frame is never presented as an image delivered to the mod
   assert.match(host,/image_received:false/);
   assert.match(host,/frame_observed:receipt_ready/);
   assert.match(host,/visual_interpretation_verified:false/);
-  assert.match(ui,/captureReceipt\.frameObserved/);
+  assert.match(ui,/captureReceipt&&<p>State:/);
+  assert.match(ui,/No result here proves visual understanding/);
   assert.doesNotMatch(host,/image_received:receipt_ready/);
 });
 
@@ -285,7 +288,8 @@ test('P06 actual two native dialogs and Linux administrator OS agent keep activa
   assert.match(auth,/Duration::from_secs\(90\)/);
   assert.match(polkit,/<allow_active>auth_admin<\/allow_active>/);
   assert.match(polkit,/<allow_any>no<\/allow_any>/);
-  assert.match(ui,/Enable experimental Observe & Learn/);
+  assert.match(ui,/Observe & Learn is OFF by default/);
+  assert.match(ui,/Request native consent/);
 });
 test('P06 tagged local-only observations cannot be declassified into network sinks or research/browser tools',()=>{
   const policy=read('../../src-tauri/lu-core/src/native_observe_egress.rs');
@@ -303,7 +307,7 @@ test('P06 tagged local-only observations cannot be declassified into network sin
   assert.match(desktop,/deny_unscoped_network_while_observing\(\)/);
   assert.match(browser,/deny_observation_network_egress\(chat_id\)/);
   assert.match(memory,/network_egress=deny/);
-  assert.match(ui,/LOCAL ONLY/);
+  assert.match(ui,/Local multimodal images are never uploaded or shared with research/);
 });
 
 test('P06 Tauri Linux DEB/RPM embeds real admin polkit action and compiles native subject check',()=>{
@@ -340,7 +344,7 @@ test('P06 native primary-monitor route is OS-identified and never inferred from 
   assert.match(supervisor,/--lu-observe-primary-monitor-one-shot/);
   assert.match(host,/--lu-observe-primary-monitor-one-shot/);
   assert.match(desktop,/primary_display:Option<bool>/);
-  assert.match(ui,/observeCaptureOneShot\(false,true\)/);
+  assert.match(ui,/captureOneShot\(false,true,false\)/);
 });
 
 test('P06 native local WGC image adapter enforces consent, PNG bounds and tainted non-network origin',()=>{
@@ -395,7 +399,8 @@ test('P06 WGC worker only streams one bounded hashed BGRA image for attested OS 
 test('P06 real local WGC image is bound to OS worker, one chat and local GGUF only',()=>{
   const host=read('../src-tauri/src/lib.rs');
   const observer=read('../src-tauri/src/observe_desktop.rs');
-  const ui=read('../web/main.jsx');
+  const ui=read('../web/native_windows.jsx');
+const chatUi=read('../web/main.jsx');
   assert.match(observer,/pub\(crate\) fn capture_local_image\(/);
   assert.match(observer,/!s\.capture_local_image_mode/);
   assert.match(observer,/take_local_observe_frame\(&id,chat_id\)/);
@@ -409,10 +414,12 @@ test('P06 real local WGC image is bound to OS worker, one chat and local GGUF on
   assert.match(host,/lu_observe_capture_local_image,/);
   assert.match(ui,/Capture foreground app for local GGUF image/);
   assert.match(ui,/Capture primary display for local GGUF image/);
-  assert.match(ui,/Attach approved frame to this local multimodal chat/);
+  assert.match(ui,/Attach approved local frame to chat/);
+  assert.match(ui,/emit\('lu-observed-image-admitted'/);
   assert.match(ui,/invoke\('lu_observe_capture_local_image'/);
-  assert.match(ui,/activeChatRef\.current!==activeChat/);
-  assert.match(ui,/setImages\(prev=>prev\.some/);
+  assert.match(chatUi,/activeChatRef\.current!==activeChat/);
+  assert.match(chatUi,/listen\('lu-observed-image-admitted'/);
+  assert.match(chatUi,/setImages\(prev=>prev\.some/);
   assert.doesNotMatch(host,/open_external_observed_frame/);
 });
 

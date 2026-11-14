@@ -38,10 +38,16 @@ struct OwnedWorker {
     job:Option<lu_win_worker_job::Job>,
     #[cfg(windows)]
     job_empty:Option<lu_win_worker_job::WindowsJobEmptyProof>,
+    // The Linux system service manager, not the reviewed user/worker, owns
+    // this per-operation cgroup. Only the fixed finite Git-read broker uses it.
     #[cfg(target_os="linux")]
-    guardian:Option<lu_win_worker_job::unix_owned::LinuxOwnedGroupGuardian>,
+    os_owned_git:Option<lu_win_worker_job::os_owned_git::LinuxOsOwnedReviewedGit>,
     #[cfg(target_os="linux")]
-    cgroup:Option<lu_win_worker_job::unix_owned::LinuxCgroupCustodian>,
+    os_owned_probe:Option<lu_win_worker_job::os_owned_probe::LinuxOsOwnedReviewedProbe>,
+    // Finite scanner, archive and version/artifact operations share the
+    // root-owned kernel boundary but NEVER a general-purpose executor.
+    #[cfg(target_os="linux")]
+    os_owned_native:Option<lu_win_worker_job::os_owned_native::LinuxOsOwnedReviewedNative>,
 }
 pub struct BackgroundProcessSupervisor {
     store:Arc<TaskStore>,
@@ -470,7 +476,9 @@ impl BackgroundProcessSupervisor {
         if !correct_extension{return Err(BackgroundProcessError::InvalidPlan)}
         let observed=verified_media_input(input,reviewed_media_sha256)?;
         if observed==0{return Err(BackgroundProcessError::InvalidPlan)}
-        self.start_host_approved_internal(plan,Some((output_limit,false)),true)
+        self.start_host_approved_internal_with_probe_sha(
+            plan,Some((output_limit,false)),true,Some(reviewed_media_sha256)
+        )
     }
     /// P0-TOOLS-04: finite, host-only PDFInfo and ExifTool read operations.
     /// These exact argument shapes are compiled in Lu; no Tauri/model input
@@ -520,11 +528,20 @@ impl BackgroundProcessSupervisor {
         }
         let length=verified_media_input(file,original_file_sha256)?;
         if length>32*1024*1024{return Err(BackgroundProcessError::InvalidPlan)}
-        self.start_host_approved_internal(plan,Some((limit,false)),true)
+        self.start_host_approved_internal_with_probe_sha(
+            plan,Some((limit,false)),true,Some(original_file_sha256)
+        )
     }
     fn start_host_approved_internal(
         &self,plan:TrustedWorkerPlan,typed_capture:Option<(usize,bool)>,
-        _linux_media_probe:bool
+        linux_media_probe:bool,
+    )->Result<(),BackgroundProcessError>{
+        self.start_host_approved_internal_with_probe_sha(
+            plan,typed_capture,linux_media_probe,None)
+    }
+    fn start_host_approved_internal_with_probe_sha(
+        &self,plan:TrustedWorkerPlan,typed_capture:Option<(usize,bool)>,
+        _linux_media_probe:bool,reviewed_probe_sha:Option<&str>,
     )->Result<(),BackgroundProcessError>{
         if !valid_id(&plan.task_id)||!valid_id(&plan.workspace_id)
           ||plan.max_runtime_seconds.is_some_and(|n|n==0||n>86_400)
@@ -563,7 +580,16 @@ impl BackgroundProcessSupervisor {
         }
         // Reject an invalid reviewed origin before creating durable task state.
         #[cfg(target_os="linux")]
-        let reviewed_origin=if let Some(profile)=self.profile.as_deref().filter(|_|typed_capture.is_some()){
+        let native_candidate=matches!(plan.args.first().and_then(|arg|arg.to_str()),
+            Some("--lu-file-scan-worker"|"--lu-archive-preview-worker"
+                |"--lu-archive-extract-worker"|"--lu-e1-version-one-shot"
+                |"--lu-e1-artifact-one-shot"))
+            ||(typed_capture.is_some()&&matches!(
+                plan.args.first().and_then(|arg|arg.to_str()),
+                Some("--version"|"-version")));
+        #[cfg(target_os="linux")]
+        let reviewed_origin=if let Some(profile)=self.profile.as_deref()
+            .filter(|_|typed_capture.is_some()||native_candidate){
             let (chat,turn)=self.store.reviewed_human_origin()
                 .map_err(|_|BackgroundProcessError::StoreUnavailable)?
                 .ok_or(BackgroundProcessError::InvalidPlan)?;
@@ -572,28 +598,127 @@ impl BackgroundProcessSupervisor {
         }else{None};
         self.store.create(&plan.task_id,Some(&plan.workspace_id),None)
             .map_err(|_|BackgroundProcessError::StoreUnavailable)?;
-        // Prefer a delegated kernel cgroup subtree for reviewed typed tools.
-        // The independent helper lives outside it and kills the entire
-        // subtree on EOF even if Lu is SIGKILLed. When OS delegation is
-        // unavailable the reviewed tool may retain its existing PGID
-        // guardian, but AGENT-01K/01L REFUSE full descendant custody.
+        // Genuine root-owned systemd operation services can launch exactly
+        // the four already-authenticated read-only Git operations. The
+        // privileged launcher is FIXED and root-owned, never an arbitrary
+        // systemd-run command chosen by the model or by a tool argument.
+        // Its one-use Linux kernel cleanup receipt is mandatory to publish
+        // a completed reviewed effect; service exit alone is insufficient.
         #[cfg(target_os="linux")]
-        let cgroup=if let Some((profile,chat,turn))=reviewed_origin{
-            lu_win_worker_job::unix_owned::LinuxCgroupCustodian::spawn_if_delegated(
-                profile,&chat,&turn,&plan.task_id
-            ).map_err(|_|{
-                let _=self.store.fail_pending(&plan.task_id);
-                BackgroundProcessError::SpawnFailed
-            })?
-        }else{None};
-        #[cfg(target_os="linux")]
-        let guardian=if typed_capture.is_some()&&cgroup.is_none(){
-            lu_win_worker_job::unix_owned::LinuxOwnedGroupGuardian::spawn_if_available()
-                .map_err(|_|{
+        let mut os_owned_git_spawn=if typed_capture.is_some()
+            &&executable.file_name()==Some(std::ffi::OsStr::new("git"))
+            &&plan.args.len()==8{
+            if let Some((_,chat,turn))=reviewed_origin.as_ref(){
+                lu_win_worker_job::os_owned_git::LinuxOsOwnedReviewedGit::spawn_if_installed(
+                    &executable,&plan.expected_sha256,&plan.args,
+                    chat,turn,&plan.task_id
+                ).map_err(|_|{
                     let _=self.store.fail_pending(&plan.task_id);
                     BackgroundProcessError::SpawnFailed
                 })?
+            }else{None}
         }else{None};
+        #[cfg(target_os="linux")]
+        if let Some((ref mut client,ref mut scope))=os_owned_git_spawn{
+            let (_,chat,turn)=reviewed_origin.as_ref()
+                .ok_or(BackgroundProcessError::StoreUnavailable)?;
+            if self.store.bind_linux_os_owned_git_admission(
+                &plan.task_id,chat,turn,scope.nonce(),scope.reviewed_git_digest()
+            ).is_err(){
+                // The managed first worker may have begun execution. The
+                // original task is now UNCERTAIN and its one-use broker must
+                // be stopped; never leave an unrecorded service running.
+                let _=scope.stop_and_verify(client);
+                let _=self.store.record_process_uncertain(
+                    &plan.task_id,"OS_CUSTODY_UNVERIFIED");
+                let _=self.store.fail_pending(&plan.task_id);
+                return Err(BackgroundProcessError::StoreUnavailable)
+            }
+        }
+        // Separate fixed root-owned OS probe launcher: ONLY host-authenticated
+        // finite FFprobe WAV/MP4, PDFInfo PDF or ExifTool PNG/JPEG operations.
+        // This route cannot execute a model-supplied program or arbitrary CLI.
+        #[cfg(target_os="linux")]
+        let mut os_owned_probe_spawn=if let Some(resource_sha)=reviewed_probe_sha{
+            if let Some((_,chat,turn))=reviewed_origin.as_ref(){
+                lu_win_worker_job::os_owned_probe::LinuxOsOwnedReviewedProbe::spawn_if_installed(
+                    &executable,&plan.expected_sha256,&plan.args,resource_sha,
+                    chat,turn,&plan.task_id
+                ).map_err(|_|{
+                    let _=self.store.fail_pending(&plan.task_id);
+                    BackgroundProcessError::SpawnFailed
+                })?
+            }else{None}
+        }else{None};
+        #[cfg(target_os="linux")]
+        if let Some((ref mut client,ref mut proof))=os_owned_probe_spawn{
+            let (_,chat,turn)=reviewed_origin.as_ref()
+                .ok_or(BackgroundProcessError::StoreUnavailable)?;
+            if self.store.bind_linux_os_owned_probe_admission(
+                &plan.task_id,chat,turn,proof.nonce(),proof.kind(),
+                proof.executable_sha(),proof.resource_sha(),
+            ).is_err(){
+                let _=proof.stop_and_verify(client);
+                let _=self.store.record_process_uncertain(
+                    &plan.task_id,"OS_CUSTODY_UNVERIFIED");
+                let _=self.store.fail_pending(&plan.task_id);
+                return Err(BackgroundProcessError::StoreUnavailable)
+            }
+        }
+        // The old same-UID delegated guardian is NOT a substitute for an
+        // actual root-owned kernel leaf. Only the reviewed finite native
+        // scanner/archive/utility mode may request this separate OS manager;
+        // original ANSF human turn and exact binary/argv SHA are immutable.
+        #[cfg(target_os="linux")]
+        let mut os_owned_native_spawn=if native_candidate{
+            if let Some((_,chat,turn))=reviewed_origin.as_ref(){
+                use std::os::unix::ffi::OsStrExt;
+                let mut sha=Sha256::new();
+                sha.update(executable.as_os_str().as_bytes());
+                sha.update([0u8]);
+                for arg in &plan.args{
+                    sha.update(arg.as_bytes());
+                    sha.update([0u8]);
+                }
+                let args_sha=format!("{:x}",sha.finalize());
+                lu_win_worker_job::os_owned_native::LinuxOsOwnedReviewedNative::spawn_if_installed(
+                    &executable,&plan.expected_sha256,&plan.args,&args_sha,
+                    chat,turn,&plan.task_id
+                ).map_err(|_|{
+                    let _=self.store.fail_pending(&plan.task_id);
+                    BackgroundProcessError::SpawnFailed
+                })?
+            }else{None}
+        }else{None};
+        #[cfg(target_os="linux")]
+        if let Some((ref mut child,ref mut scope))=os_owned_native_spawn{
+            let (_,chat,turn)=reviewed_origin.as_ref()
+                .ok_or(BackgroundProcessError::StoreUnavailable)?;
+            if self.store.bind_linux_os_owned_native_admission(
+                &plan.task_id,chat,turn,scope.nonce(),scope.kind(),
+                scope.binary_sha(),scope.args_sha(),
+            ).is_err(){
+                let _=scope.stop_and_verify(child);
+                let _=self.store.record_process_uncertain(
+                    &plan.task_id,"OS_CUSTODY_UNVERIFIED");
+                let _=self.store.fail_pending(&plan.task_id);
+                return Err(BackgroundProcessError::StoreUnavailable)
+            }
+        }
+        // SEC-06C is the sole kernel authority for EVERY production Linux
+        // reviewed-host operation, not just the old typed Git/probe path.
+        // A missing fixed, root-owned broker
+        // is an admission DENIAL, not permission to restart the old same-UID
+        // cgroup custodian or an unverified process-group-only worker.
+        #[cfg(target_os="linux")]
+        if self.profile.is_some()||typed_capture.is_some(){
+            if os_owned_git_spawn.is_none()&&os_owned_probe_spawn.is_none()
+                &&os_owned_native_spawn.is_none(){
+                self.store.fail_pending(&plan.task_id)
+                    .map_err(|_|BackgroundProcessError::StoreUnavailable)?;
+                return Err(BackgroundProcessError::SpawnFailed)
+            }
+        }
         let mut command=Command::new(&executable);
         command.args(&plan.args).env_clear().stdin(Stdio::null())
             .stdout(if plan.progress_protocol||typed_capture.is_some(){
@@ -610,21 +735,12 @@ impl BackgroundProcessSupervisor {
         {
             use std::os::unix::process::CommandExt;
             #[cfg(target_os="linux")]
-            command.process_group(guardian.as_ref()
-                .map_or(0,|w|w.group_id()));
+            command.process_group(0);
             #[cfg(not(target_os="linux"))]
             command.process_group(0);
         }
         #[cfg(target_os="linux")]
         {
-            if let Some(ref guard)=cgroup{
-                lu_win_worker_job::unix_owned::bind_worker_to_cgroup_before_exec(
-                    &mut command,guard
-                ).map_err(|_|{
-                    let _=self.store.fail_pending(&plan.task_id);
-                    BackgroundProcessError::SpawnFailed
-                })?;
-            }
             let quota=match plan.args.first().and_then(|s|s.to_str()){
                 Some("--lu-file-scan-worker")=>Some(1024*1024*1024u64),
                 Some("--lu-e1-version-one-shot")|
@@ -688,6 +804,29 @@ impl BackgroundProcessSupervisor {
             let _=self.store.fail_pending(&plan.task_id);
             return Err(BackgroundProcessError::SpawnFailed)
         }
+        #[cfg(target_os="linux")]
+        let mut os_owned_git=None;
+        #[cfg(target_os="linux")]
+        let mut os_owned_probe=None;
+        #[cfg(target_os="linux")]
+        let mut os_owned_native=None;
+        #[cfg(target_os="linux")]
+        let mut child=if let Some((managed_child,proof))=os_owned_git_spawn{
+            os_owned_git=Some(proof);
+            managed_child
+        }else if let Some((managed_child,proof))=os_owned_probe_spawn{
+            os_owned_probe=Some(proof);
+            managed_child
+        }else if let Some((managed_child,proof))=os_owned_native_spawn{
+            os_owned_native=Some(proof);
+            managed_child
+        }else{
+            command.spawn().map_err(|_|{
+                let _=self.store.fail_pending(&plan.task_id);
+                BackgroundProcessError::SpawnFailed
+            })?
+        };
+        #[cfg(not(target_os="linux"))]
         let mut child=command.spawn().map_err(|_|{
             let _=self.store.fail_pending(&plan.task_id);
             BackgroundProcessError::SpawnFailed
@@ -699,6 +838,9 @@ impl BackgroundProcessSupervisor {
             let _=self.store.fail_pending(&plan.task_id);
             return Err(BackgroundProcessError::SpawnFailed);
         }
+        // SEC-06C has already pinned every reviewed worker in a root-owned
+        // systemd leaf before execution. The live client and durable receipt
+        // remain mandatory for cancellation, poll, and restart reconciliation.
         // Delay progress consumption until the SQLite RUNNING transition.
         // A fast worker must not lose its first checkpoint to a startup race.
         let progress_pipe=if plan.progress_protocol{child.stdout.take()}else{None};
@@ -714,9 +856,11 @@ impl BackgroundProcessSupervisor {
             #[cfg(windows)]
             job_empty:None,
             #[cfg(target_os="linux")]
-            guardian,
+            os_owned_git,
             #[cfg(target_os="linux")]
-            cgroup,
+            os_owned_probe,
+            #[cfg(target_os="linux")]
+            os_owned_native,
         };
         workers.insert(plan.task_id.clone(),owner);
         if self.store.start(&plan.task_id).is_err(){
@@ -766,13 +910,50 @@ impl BackgroundProcessSupervisor {
                                 .map_err(|_|BackgroundProcessError::ProcessUncertain)?
                         );
                     }
+                    #[cfg(target_os="linux")]
+                    {
+                        // A completed systemd-run client does not attest a
+                        // killed descendant tree. Verify the independent
+                        // original root-owned OS receipt first.
+                        if let Some(os_unit)=worker.os_owned_git.as_mut(){
+                            if os_unit.verify_original_kernel_receipt().is_err(){
+                                self.store.record_process_uncertain(
+                                    id,"OS_CUSTODY_UNVERIFIED")
+                                    .map_err(|_|BackgroundProcessError::StoreUnavailable)?;
+                                return Err(BackgroundProcessError::ProcessUncertain)
+                            }
+                        }
+                        if let Some(os_unit)=worker.os_owned_probe.as_mut(){
+                            if os_unit.verify_original_kernel_receipt().is_err(){
+                                self.store.record_process_uncertain(
+                                    id,"OS_CUSTODY_UNVERIFIED")
+                                    .map_err(|_|BackgroundProcessError::StoreUnavailable)?;
+                                return Err(BackgroundProcessError::ProcessUncertain)
+                            }
+                        }
+                        if let Some(os_unit)=worker.os_owned_native.as_mut(){
+                            if os_unit.verify_original_kernel_receipt().is_err(){
+                                self.store.record_process_uncertain(
+                                    id,"OS_CUSTODY_UNVERIFIED")
+                                    .map_err(|_|BackgroundProcessError::StoreUnavailable)?;
+                                return Err(BackgroundProcessError::ProcessUncertain)
+                            }
+                        }
+                        // Only an original SEC-06C root-owned kernel-empty
+                        // receipt permits completion of reviewed Linux work.
+                    }
                     finished.push((id.clone(),Some(status.success())));
                 },
                 Ok(None)=>{
                     if worker.deadline.is_some_and(|deadline|Instant::now()>=deadline){
                         // Host deadline, never a model decision or an inferred
                         // lost heartbeat. Kill and reap before publishing.
-                        terminate_owned(worker)?;
+                        if terminate_owned(worker).is_err(){
+                            self.store.record_process_uncertain(
+                                id,"OS_CUSTODY_UNVERIFIED")
+                                .map_err(|_|BackgroundProcessError::StoreUnavailable)?;
+                            return Err(BackgroundProcessError::ProcessUncertain)
+                        }
                         finished.push((id.clone(),None));
                     }
                 },
@@ -786,19 +967,9 @@ impl BackgroundProcessSupervisor {
             let empty_job_witness=owner.job_empty.take();
             #[cfg(windows)]
             drop(owner.job.take()); // The kernel empty-job check preceded CloseHandle.
-            // Shut down the Linux PGID anchor before joining pipes: a
-            // descendant may have inherited worker stdout. A verified
-            // guardian SIGKILL is required, not merely a leader exit.
-            #[cfg(target_os="linux")]
-            if let Some(guard)=owner.cgroup.as_mut(){
-                guard.stop_and_verify()
-                    .map_err(|_|BackgroundProcessError::ProcessUncertain)?;
-            }
-            #[cfg(target_os="linux")]
-            if let Some(guardian)=owner.guardian.as_mut(){
-                guardian.stop_and_verify_signal()
-                    .map_err(|_|BackgroundProcessError::ProcessUncertain)?;
-            }
+            // Linux kernel/PGID cleanup was established BEFORE removal from
+            // the owner map. For deadline outcomes terminate_owned did so.
+            // Any failure must leave task ownership for explicit recovery.
             let had_reader=owner.progress_reader.is_some();
             let had_version_reader=owner.version_reader.is_some();
             let version=owner.version_reader.take()
@@ -937,13 +1108,63 @@ impl BackgroundProcessSupervisor {
         if worker.workspace_id!=workspace_id{
             return Err(BackgroundProcessError::WrongWorkspace);
         }
-        terminate_owned(worker)?;
+        if terminate_owned(worker).is_err(){
+            self.store.record_process_uncertain(
+                task_id,"OS_CUSTODY_UNVERIFIED")
+                .map_err(|_|BackgroundProcessError::StoreUnavailable)?;
+            return Err(BackgroundProcessError::ProcessUncertain)
+        }
         let mut owner=workers.remove(task_id).expect("live worker owned");
         if let Some(reader)=owner.progress_reader.take(){let _=reader.join();}
         if let Some(reader)=owner.version_reader.take(){let _=reader.join();}
         drop(owner); // Release the Windows Job handle (kills descendants).
         self.store.cancelled(task_id)
             .map_err(|_|BackgroundProcessError::StoreUnavailable)
+    }
+    /// SEC-03: stop every currently owned OS worker for ONE exact
+    /// authenticated host workspace under the SAME mutex that serializes
+    /// task admission and poll. No stale dashboard snapshot, UI PID, or
+    /// 100-row truncation can omit a live native task from this sweep.
+    /// A failure remains owned and uncertain; attempt remaining workers.
+    /// A NEW task admitted after this sweep still requires its own fresh
+    /// human/host authority at the caller; this method grants none.
+    pub fn cancel_workspace_owned(&self,workspace_id:&str)
+        ->Result<usize,BackgroundProcessError>{
+        if !valid_id(workspace_id){
+            return Err(BackgroundProcessError::WrongWorkspace)
+        }
+        let mut workers=self.owned.lock()
+            .map_err(|_|BackgroundProcessError::Poisoned)?;
+        let tasks=workers.iter().filter(|(_,w)|w.workspace_id==workspace_id)
+            .map(|(id,_)|id.clone()).collect::<Vec<_>>();
+        let mut count=0usize;
+        let mut uncertain=false;
+        for id in tasks{
+            let stop=workers.get_mut(&id)
+                .ok_or(BackgroundProcessError::NotOwned)
+                .and_then(terminate_owned);
+            if stop.is_err(){
+                if self.store.record_process_uncertain(
+                    &id,"OS_CUSTODY_UNVERIFIED").is_err(){
+                    uncertain=true;
+                }
+                uncertain=true;
+                continue
+            }
+            let mut owner=workers.remove(&id)
+                .ok_or(BackgroundProcessError::NotOwned)?;
+            if let Some(reader)=owner.progress_reader.take(){
+                if reader.join().is_err(){uncertain=true}
+            }
+            if let Some(reader)=owner.version_reader.take(){
+                if reader.join().is_err(){uncertain=true}
+            }
+            drop(owner);
+            if self.store.cancelled(&id).is_err(){uncertain=true}
+            else{count+=1}
+        }
+        if uncertain{return Err(BackgroundProcessError::ProcessUncertain)}
+        Ok(count)
     }
     /// Local operator action: derive ownership from the host's active map,
     /// never from a model/WebView-supplied workspace or process identifier.
@@ -963,16 +1184,22 @@ impl BackgroundProcessSupervisor {
 fn terminate_owned(worker:&mut OwnedWorker)->Result<(),BackgroundProcessError>{
     #[cfg(target_os="linux")]
     {
-        if let Some(guard)=worker.cgroup.as_mut(){
-            guard.stop_and_verify()
+        if let Some(os_unit)=worker.os_owned_git.as_mut(){
+            // Closing Lu's original lifetime pipe forces the fixed
+            // unprivileged broker to stop and the root-owned unit to reap
+            // its subtree; only a real kernel-empty receipt ends custody.
+            os_unit.stop_and_verify(&mut worker.child)
                 .map_err(|_|BackgroundProcessError::ProcessUncertain)?;
-        }else if let Some(guardian)=worker.guardian.as_mut(){
-            // The guardian is an independently-running PGID anchor. Closing
-            // its Lu-owned pipe makes it SIGKILL its own group. We require
-            // the exact kernel SIGKILL termination as an acknowledgement.
-            guardian.stop_and_verify_signal()
+        }else if let Some(probe)=worker.os_owned_probe.as_mut(){
+            probe.stop_and_verify(&mut worker.child)
+                .map_err(|_|BackgroundProcessError::ProcessUncertain)?;
+        }else if let Some(native)=worker.os_owned_native.as_mut(){
+            native.stop_and_verify(&mut worker.child)
                 .map_err(|_|BackgroundProcessError::ProcessUncertain)?;
         }else{
+            // Unreviewed local workers have no full descendant-custody proof;
+            // all previously guardian-protected reviewed workers were denied
+            // at admission unless assigned to a finite SEC-06C OS unit.
             lu_win_worker_job::unix_owned::kill_owned_group(&worker.child)
                 .map_err(|_|BackgroundProcessError::ProcessUncertain)?;
         }
@@ -1232,6 +1459,82 @@ mod tests{
         assert_eq!(manager.cancel_owned("video-1","media"),
             Err(BackgroundProcessError::NotOwned));
     }
+    #[cfg(target_os="linux")]
+    #[test]
+    fn sec03_cancel_workspace_sweeps_all_owned_workers_and_spares_other_chat(){
+        let binary=fs::canonicalize("/bin/sleep").unwrap();
+        let digest=format!("{:x}",Sha256::digest(fs::read(&binary).unwrap()));
+        let store=Arc::new(TaskStore::open(Path::new(":memory:")).unwrap());
+        let manager=BackgroundProcessSupervisor::new(Arc::clone(&store));
+        for (id,workspace) in [
+            ("p0-sweep-1","c-target"),("p0-sweep-2","c-target"),
+            ("p0-unrelated","c-other")
+        ]{
+            manager.start_host_approved(TrustedWorkerPlan{
+                task_id:id.into(),workspace_id:workspace.into(),
+                executable:binary.clone(),expected_sha256:digest.clone(),
+                args:vec!["3".into()],progress_protocol:false,
+                max_runtime_seconds:Some(10),
+            }).unwrap();
+        }
+        assert_eq!(manager.cancel_workspace_owned("c-target").unwrap(),2);
+        for id in ["p0-sweep-1","p0-sweep-2"]{
+            assert_eq!(store.get(id).unwrap().unwrap().state,
+                TaskState::Cancelled);
+            assert!(!manager.can_cancel(id));
+        }
+        assert!(manager.can_cancel("p0-unrelated"));
+        assert_eq!(store.get("p0-unrelated").unwrap().unwrap().state,
+            TaskState::Running);
+        assert_eq!(manager.cancel_workspace_owned("c-target").unwrap(),0);
+        assert_eq!(manager.cancel_workspace_owned("c-other").unwrap(),1);
+    }
+    #[cfg(target_os="linux")]
+    #[test]
+    fn sec03_real_os_cancel_poll_collision_has_one_terminal_receipt(){
+        use std::sync::{Arc,Barrier};
+        let binary=fs::canonicalize("/bin/sleep").unwrap();
+        let digest=format!("{:x}",Sha256::digest(fs::read(&binary).unwrap()));
+        let store=Arc::new(TaskStore::open(Path::new(":memory:")).unwrap());
+        let supervisor=Arc::new(BackgroundProcessSupervisor::new(
+            Arc::clone(&store)));
+        supervisor.start_host_approved(TrustedWorkerPlan{
+            task_id:"sec03-sleep".into(),workspace_id:"c-human".into(),
+            executable:binary,expected_sha256:digest,
+            args:vec!["3".into()],progress_protocol:false,
+            max_runtime_seconds:Some(10),
+        }).unwrap();
+        assert_eq!(supervisor.cancel_owned("sec03-sleep","c-other"),
+            Err(BackgroundProcessError::WrongWorkspace));
+        let barrier=Arc::new(Barrier::new(3));
+        let a=Arc::clone(&supervisor);
+        let b=Arc::clone(&barrier);
+        let poller=std::thread::spawn(move||{
+            b.wait();
+            a.poll()
+        });
+        let a=Arc::clone(&supervisor);
+        let b=Arc::clone(&barrier);
+        let stopper=std::thread::spawn(move||{
+            b.wait();
+            a.cancel_owned("sec03-sleep","c-human")
+        });
+        barrier.wait();
+        let stopped=stopper.join().unwrap();
+        let observed=poller.join().unwrap();
+        assert!(stopped.is_ok()||matches!(stopped,
+            Err(BackgroundProcessError::NotOwned)));
+        assert!(observed.is_ok());
+        let current=store.get("sec03-sleep").unwrap().unwrap().state;
+        assert!(matches!(current,TaskState::Cancelled|TaskState::Completed));
+        let terminal=store.events_after("sec03-sleep","c-human",0,32)
+            .unwrap().into_iter().filter(|r|matches!(
+                r.event.as_str(),"CANCELLED"|"COMPLETED"|"TIMED_OUT"))
+            .collect::<Vec<_>>();
+        assert_eq!(terminal.len(),1,
+            "colliding host poll and stop must not publish two receipts");
+        assert!(!supervisor.can_cancel("sec03-sleep"));
+    }
     /// Actual Linux cgroup-v2 positive acceptance. Not a synthetic PGID
     /// assertion: the test intentionally fails as NOT_AVAILABLE if the
     /// runner has not delegated writable cgroup-v2 ancestry to this process.
@@ -1304,6 +1607,492 @@ mod tests{
         assert!(!witness.worker_and_descendants_ended(&chat,&turn,"other-gh"));
         fs::remove_dir_all(root).unwrap();
     }
+    /// SEC-06C: genuine first worker starts through the fixed, root-owned
+    /// systemd service broker, not under a writable same-UID cgroup ancestor.
+    /// The durable original task binding is reopened independently after
+    /// Lu's supervisor is dropped; no new permission or automatic replay.
+    #[cfg(target_os="linux")]
+    #[test]
+    #[ignore="needs installed root-owned fixed Git broker, native systemd and kernel cgroup v2"]
+    fn sec06c_root_owned_reviewed_git_worker_original_journal(){
+        use crate::{
+            agent_os_custody::HostOriginalJobCustody,
+            agent_recovery_decision::IndependentProcessCustody,
+        };
+        use std::process::Command;
+        assert!(Path::new("/usr/libexec/lu/lu-sec06c-launch-git").exists(),
+            "SEC06C_NOT_AVAILABLE: root-owned service broker absent");
+        let binary=fs::canonicalize("/usr/bin/git").unwrap();
+        let root=std::env::temp_dir().join(format!(
+            "lu-sec06c-os-git-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now().duration_since(
+                std::time::UNIX_EPOCH).unwrap().as_nanos()
+        ));
+        fs::create_dir_all(&root).unwrap();
+        let repo=root.join("repo");fs::create_dir_all(&repo).unwrap();
+        assert!(Command::new(&binary).args(["init","-q"])
+            .current_dir(&repo).status().unwrap().success());
+        assert!(Command::new(&binary).args([
+            "-c","user.name=Lu","-c","user.email=lu@example.test",
+            "commit","--allow-empty","-q","-m","SEC06C original Git"
+        ]).current_dir(&repo).status().unwrap().success());
+        let sha=format!("{:x}",Sha256::digest(fs::read(&binary).unwrap()));
+        let chat=format!("c-{}","1".repeat(32));
+        let turn=format!("g-{}","2".repeat(32));
+        let call="sec06c-owned-git-gh";
+        let journal=root.join(format!("lu-reviewed-task-{turn}.sqlite"));
+        let store=Arc::new(TaskStore::open(&journal).unwrap());
+        store.bind_reviewed_human_turn(&chat,&turn).unwrap();
+        let supervisor=BackgroundProcessSupervisor::new_for_reviewed_host(
+            Arc::clone(&store),root.clone());
+        supervisor.start_host_approved_git_read(TrustedWorkerPlan{
+            task_id:call.to_owned(),workspace_id:turn.clone(),
+            executable:binary,expected_sha256:sha,
+            args:vec!["-c".into(),"core.fsmonitor=false".into(),
+                "--no-optional-locks".into(),"-C".into(),repo.as_os_str().into(),
+                "rev-parse".into(),"--verify".into(),"HEAD".into()],
+            progress_protocol:false,max_runtime_seconds:Some(30),
+        },16_384).expect("trusted host originally admitted fixed OS-owned Git");
+        let mut completed=false;
+        for _ in 0..2500{
+            supervisor.poll().expect(
+                "SEC06C original host kernel custody must not be uncertain");
+            if store.get(call).unwrap().unwrap().state==TaskState::Completed{
+                completed=true;break
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        assert!(completed,"SEC06C managed native Git not completed in bounded time");
+        let stdout=supervisor.take_local_version_stdout(call,&turn)
+            .unwrap().expect("original OS-owned Git stdout missing");
+        let sha=String::from_utf8_lossy(&stdout.bytes);
+        assert_eq!(sha.trim().len(),40);
+        assert!(sha.trim().bytes().all(|b|b.is_ascii_hexdigit()));
+        drop(supervisor);drop(store);
+        let reopened=TaskStore::open(&journal).unwrap();
+        assert_eq!(reopened.get(call).unwrap().unwrap().state,TaskState::Completed);
+        assert!(reopened.process_uncertainty(call).unwrap().is_none());
+        drop(reopened);
+        let independent=HostOriginalJobCustody::from_host_profile(&root);
+        assert!(independent.worker_and_descendants_ended(&chat,&turn,call),
+            "SEC06C original root-owned kernel receipt did not match durable admission");
+        assert!(!independent.worker_and_descendants_ended(
+            &format!("c-{}","3".repeat(32)),&turn,call));
+        assert!(!independent.worker_and_descendants_ended(
+            &chat,&format!("g-{}","4".repeat(32)),call));
+        assert!(!independent.worker_and_descendants_ended(
+            &chat,&turn,"sec06c-other-gh"));
+        fs::remove_dir_all(root).unwrap();
+    }
+    /// SEC-06C real OS-owned Git cancellation: no old task can become
+    /// completed, and a historical kernel-empty unit does not imply a
+    /// fresh model/user authorization or restart replay.
+    #[cfg(target_os="linux")]
+    #[test]
+    #[ignore="needs root-owned fixed systemd broker and genuine kernel cgroup"]
+    fn sec06c_root_owned_git_cancel_original_journal(){
+        use crate::{
+            agent_os_custody::HostOriginalJobCustody,
+            agent_recovery_decision::IndependentProcessCustody,
+        };
+        use std::process::Command;
+        assert!(Path::new("/usr/libexec/lu/lu-sec06c-launch-git").exists(),
+            "SEC06C_NOT_AVAILABLE: fixed installed kernel broker missing");
+        let binary=fs::canonicalize("/usr/bin/git").unwrap();
+        let root=std::env::temp_dir().join(format!(
+            "lu-sec06c-cancel-{}-{}",std::process::id(),
+            std::time::SystemTime::now().duration_since(
+                std::time::UNIX_EPOCH).unwrap().as_nanos()
+        ));
+        fs::create_dir_all(&root).unwrap();
+        let repo=root.join("repo");fs::create_dir_all(&repo).unwrap();
+        assert!(Command::new(&binary).args(["init","-q"])
+            .current_dir(&repo).status().unwrap().success());
+        assert!(Command::new(&binary).args([
+            "-c","user.name=Lu","-c","user.email=lu@example.invalid",
+            "commit","--allow-empty","-q","-m","SEC06C cancellation"
+        ]).current_dir(&repo).status().unwrap().success());
+        let digest=format!("{:x}",Sha256::digest(fs::read(&binary).unwrap()));
+        let chat=format!("c-{}","8".repeat(32));
+        let turn=format!("g-{}","9".repeat(32));
+        let call="sec06c-cancel-gh";
+        let journal=root.join(format!("lu-reviewed-task-{turn}.sqlite"));
+        let store=Arc::new(TaskStore::open(&journal).unwrap());
+        store.bind_reviewed_human_turn(&chat,&turn).unwrap();
+        let supervisor=BackgroundProcessSupervisor::new_for_reviewed_host(
+            Arc::clone(&store),root.clone());
+        supervisor.start_host_approved_git_read(TrustedWorkerPlan{
+            task_id:call.to_owned(),workspace_id:turn.clone(),
+            executable:binary,expected_sha256:digest,
+            args:vec!["-c".into(),"core.fsmonitor=false".into(),
+                "--no-optional-locks".into(),"-C".into(),repo.as_os_str().into(),
+                "rev-parse".into(),"--verify".into(),"HEAD".into()],
+            progress_protocol:false,max_runtime_seconds:Some(30),
+        },16_384).expect("fixed native OS worker must start");
+        assert!(supervisor.cancel_owned(call,&turn).is_ok(),
+            "cancel must obtain a genuine root-managed cgroup-empty receipt");
+        assert_eq!(store.get(call).unwrap().unwrap().state,TaskState::Cancelled);
+        assert!(!supervisor.can_cancel(call));
+        drop(supervisor);drop(store);
+        let reopen=TaskStore::open(&journal).unwrap();
+        assert_eq!(reopen.get(call).unwrap().unwrap().state,TaskState::Cancelled);
+        assert!(reopen.resume(call).is_err(),
+            "cancelled original operation may not auto-replay");
+        drop(reopen);
+        let independent=HostOriginalJobCustody::from_host_profile(&root);
+        assert!(!independent.worker_and_descendants_ended(&chat,&turn,call),
+            "interrupted or cancelled effect is NOT a completed custody grant");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    /// Test-only child process, launched by the independent parent below.
+    /// Killing THIS process must not create a replay grant for a completed
+    /// native effect or a surviving root-managed service.
+    #[cfg(target_os="linux")]
+    #[test]
+    #[ignore="original SEC06C subprocess; must be run only from first-party SIGKILL parent"]
+    fn sec06c_owned_git_host_sigkill_child(){
+        if std::env::var("LU_SEC06C_CRASH_CHILD").ok().as_deref()!=Some("1"){
+            return
+        }
+        use std::process::Command;
+        let root=PathBuf::from(std::env::var_os("LU_SEC06C_CRASH_ROOT")
+            .expect("original first-party test profile must be set"));
+        let binary=fs::canonicalize("/usr/bin/git").unwrap();
+        fs::create_dir_all(&root).unwrap();
+        let repo=root.join("repo");fs::create_dir_all(&repo).unwrap();
+        assert!(Command::new(&binary).args(["init","-q"])
+            .current_dir(&repo).status().unwrap().success());
+        assert!(Command::new(&binary).args([
+            "-c","user.name=Lu","-c","user.email=lu@example.invalid",
+            "commit","--allow-empty","-q","-m","SEC06C host crash"
+        ]).current_dir(&repo).status().unwrap().success());
+        let sha=format!("{:x}",Sha256::digest(fs::read(&binary).unwrap()));
+        let chat=format!("c-{}","a".repeat(32));
+        let turn=format!("g-{}","b".repeat(32));
+        let call="sec06c-crash-gh";
+        let journal=root.join(format!("lu-reviewed-task-{turn}.sqlite"));
+        let store=Arc::new(TaskStore::open(&journal).unwrap());
+        store.bind_reviewed_human_turn(&chat,&turn).unwrap();
+        let supervisor=BackgroundProcessSupervisor::new_for_reviewed_host(
+            Arc::clone(&store),root.clone());
+        supervisor.start_host_approved_git_read(TrustedWorkerPlan{
+            task_id:call.into(),workspace_id:turn.clone(),
+            executable:binary,expected_sha256:sha,
+            args:vec!["-c".into(),"core.fsmonitor=false".into(),
+                "--no-optional-locks".into(),"-C".into(),repo.as_os_str().into(),
+                "rev-parse".into(),"--verify".into(),"HEAD".into()],
+            progress_protocol:false,max_runtime_seconds:Some(30),
+        },16_384).unwrap();
+        fs::write(root.join("original-host-ready"),b"RUNNING").unwrap();
+        loop{std::thread::sleep(Duration::from_secs(1))}
+    }
+    /// A real SIGKILL of the Lu original host leaves the durable task as
+    /// INTERRUPTED, never completed; the OS systemd broker must still
+    /// provide the exact root-owned cgroup-empty receipt independently.
+    #[cfg(target_os="linux")]
+    #[test]
+    #[ignore="requires installed root-owned service broker and native Linux kernel"]
+    fn sec06c_owned_git_host_sigkill_recovery_original_journal(){
+        use crate::{
+            agent_os_custody::HostOriginalJobCustody,
+            agent_recovery_decision::IndependentProcessCustody,
+        };
+        let root=std::env::temp_dir().join(format!(
+            "lu-sec06c-hostkill-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now().duration_since(
+                std::time::UNIX_EPOCH).unwrap().as_nanos()));
+        fs::create_dir_all(&root).unwrap();
+        let mut original=Command::new(std::env::current_exe().unwrap())
+            .args(["--ignored","--nocapture","sec06c_owned_git_host_sigkill_child"])
+            .env("LU_SEC06C_CRASH_CHILD","1")
+            .env("LU_SEC06C_CRASH_ROOT",&root)
+            .stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null())
+            .spawn().unwrap();
+        let deadline=Instant::now()+Duration::from_secs(90);
+        let path=root.join("original-host-ready");
+        while !path.is_file(){
+            if original.try_wait().unwrap().is_some(){
+                panic!("original managed Git process died before host-kill test")
+            }
+            assert!(Instant::now()<deadline,
+                "original Lu host never admitted reviewed OS-owned worker");
+            std::thread::sleep(Duration::from_millis(30));
+        }
+        // Original first-party Child ID only, never a model-provided PID.
+        let status=Command::new("/bin/kill")
+            .arg("-KILL").arg(original.id().to_string())
+            .status().unwrap();
+        assert!(status.success(),"kernel SIGKILL of original Lu host denied");
+        assert!(!original.wait().unwrap().success(),
+            "host unexpectedly returned normally instead of SIGKILL");
+        let turn=format!("g-{}","b".repeat(32));
+        let chat=format!("c-{}","a".repeat(32));
+        let call="sec06c-crash-gh";
+        let journal=root.join(format!("lu-reviewed-task-{turn}.sqlite"));
+        let reopened=TaskStore::open(&journal).unwrap();
+        assert_eq!(reopened.get(call).unwrap().unwrap().state,TaskState::Running);
+        assert_eq!(reopened.reconcile_interrupted().unwrap(),1,
+            "original running task must reconcile to interrupted, not replay");
+        assert_eq!(reopened.get(call).unwrap().unwrap().state,TaskState::Interrupted);
+        assert!(reopened.resume(call).is_err());
+        // Trusted nonce is only the original durable task row. Demand a
+        // genuinely root-owned OS receipt before concluding OS cleanup,
+        // but never use it to turn the INTERRUPTED effect into a PASS.
+        let db=rusqlite::Connection::open(&journal).unwrap();
+        let nonce:String=db.query_row(
+            "SELECT nonce FROM lu_task_linux_os_owned_git_admission
+             WHERE task_id=?1",["sec06c-crash-gh"],|row|row.get(0)
+        ).unwrap();
+        assert_eq!(nonce.len(),32);
+        let receipt=Path::new("/var/lib/lu-sec06c/receipts")
+            .join(format!("{nonce}.receipt"));
+        let end=Instant::now()+Duration::from_secs(60);
+        while !receipt.exists()&&Instant::now()<end{
+            std::thread::sleep(Duration::from_millis(100));
+        }
+        assert!(receipt.exists(),
+            "SEC06C_BLOCKED: OS broker failed to reconcile after Lu host SIGKILL");
+        let data=fs::read_to_string(receipt).unwrap();
+        assert!(data.contains("KERNEL_EMPTY=1\n"),
+            "SEC06C_BLOCKED: root-owned kernel cleanup not proven");
+        assert!(data.contains(&format!("NONCE={nonce}\n")));
+        assert!(data.contains(&format!("CHAT={chat}\n")));
+        assert!(data.contains(&format!("TURN={turn}\n")));
+        assert!(!HostOriginalJobCustody::from_host_profile(&root)
+            .worker_and_descendants_ended(&chat,&turn,call),
+            "interrupted old effect cannot borrow a historical kernel cleanup as completion");
+        drop(db);drop(reopened);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    /// SEC-06C: four real, separately finite host-reviewed probes must run
+    /// under the root-owned service broker with immutable resource SHA and
+    /// original chat/call/turn, kernel cgroup-empty and restart verification.
+    /// A negative/fake receipt never upgrades a cancelled or changed input.
+    #[cfg(target_os="linux")]
+    #[test]
+    #[ignore="native Ubuntu with installed fixed root-owned probe broker and ffmpeg/poppler/exiftool"]
+    fn sec06c_root_owned_media_metadata_probes_original_journal(){
+        use crate::{
+            agent_os_custody::HostOriginalJobCustody,
+            agent_recovery_decision::IndependentProcessCustody,
+        };
+        use std::process::Command;
+        assert!(Path::new("/usr/libexec/lu/lu-sec06c-launch-probe").is_file(),
+            "SEC06C_NOT_AVAILABLE: genuine fixed root-owned probe broker missing");
+        let root=std::env::temp_dir().join(format!(
+            "lu-sec06c-probes-{}-{}",std::process::id(),
+            std::time::SystemTime::now().duration_since(
+                std::time::UNIX_EPOCH).unwrap().as_nanos()
+        ));
+        fs::create_dir_all(&root).unwrap();
+        let wav=root.join("sound.wav");
+        let mut sound=Vec::new();
+        sound.extend_from_slice(b"RIFF");
+        sound.extend_from_slice(&(36u32+64).to_le_bytes());
+        sound.extend_from_slice(b"WAVEfmt ");
+        sound.extend_from_slice(&16u32.to_le_bytes());
+        sound.extend_from_slice(&1u16.to_le_bytes());
+        sound.extend_from_slice(&1u16.to_le_bytes());
+        sound.extend_from_slice(&8000u32.to_le_bytes());
+        sound.extend_from_slice(&16000u32.to_le_bytes());
+        sound.extend_from_slice(&2u16.to_le_bytes());
+        sound.extend_from_slice(&16u16.to_le_bytes());
+        sound.extend_from_slice(b"data");
+        sound.extend_from_slice(&64u32.to_le_bytes());
+        sound.extend_from_slice(&[0u8;64]);
+        fs::write(&wav,sound).unwrap();
+        let mp4=root.join("frame.mp4");
+        let ffmpeg=fs::canonicalize("/usr/bin/ffmpeg")
+            .expect("genuine ffmpeg fixture generator is required");
+        assert!(Command::new(&ffmpeg).args([
+            "-nostdin","-hide_banner","-loglevel","error",
+            "-f","lavfi","-i","color=c=black:s=16x16:d=0.4",
+            "-c:v","mpeg4","-y",
+        ]).arg(&mp4).status().unwrap().success());
+        let pdf=root.join("paper.pdf");
+        let mut content=b"%PDF-1.4\n".to_vec();
+        let mut offsets=Vec::new();
+        let objects=[
+          "<< /Type /Catalog /Pages 2 0 R >>",
+          "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+          "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] >>",
+        ];
+        for (index,text) in objects.iter().enumerate(){
+            offsets.push(content.len());
+            content.extend_from_slice(format!(
+                "{} 0 obj\n{}\nendobj\n",index+1,text).as_bytes());
+        }
+        let startxref=content.len();
+        content.extend_from_slice(b"xref\n0 4\n0000000000 65535 f \n");
+        for offset in offsets{
+            content.extend_from_slice(format!("{offset:010} 00000 n \n").as_bytes());
+        }
+        content.extend_from_slice(format!(
+            "trailer\n<< /Root 1 0 R /Size 4 >>\nstartxref\n{startxref}\n%%EOF\n"
+        ).as_bytes());
+        fs::write(&pdf,content).unwrap();
+        let png=root.join("pixel.png");
+        fs::write(&png,&[
+            137u8,80,78,71,13,10,26,10,0,0,0,13,73,72,68,82,
+            0,0,0,1,0,0,0,1,8,4,0,0,0,181,28,12,2,0,0,0,11,
+            73,68,65,84,120,218,99,252,255,31,0,3,3,2,0,238,
+            254,105,221,0,0,0,0,73,69,78,68,174,66,96,130,
+        ]).unwrap();
+        let chat=format!("c-{}","7".repeat(32));
+        let turn=format!("g-{}","6".repeat(32));
+        let journal=root.join(format!("lu-reviewed-task-{turn}.sqlite"));
+        let store=Arc::new(TaskStore::open(&journal).unwrap());
+        store.bind_reviewed_human_turn(&chat,&turn).unwrap();
+        let supervisor=BackgroundProcessSupervisor::new_for_reviewed_host(
+            Arc::clone(&store),root.clone());
+        let probes=[
+          ("ffprobe-wav","/usr/bin/ffprobe",wav),
+          ("ffprobe-mp4","/usr/bin/ffprobe",mp4),
+          ("pdfinfo-pdf","/usr/bin/pdfinfo",pdf),
+          ("exiftool-image","/usr/bin/exiftool",png),
+        ];
+        for (kind,binary,input) in probes{
+            let canonical=fs::canonicalize(binary).unwrap();
+            let exe_sha=format!("{:x}",Sha256::digest(fs::read(&canonical).unwrap()));
+            let resource_sha=format!("{:x}",Sha256::digest(fs::read(&input).unwrap()));
+            let call=format!("sec06c-{kind}-fm");
+            let input_arg=input.as_os_str().to_owned();
+            let args:Vec<OsString>=match kind{
+                "ffprobe-wav"|"ffprobe-mp4"=>vec![
+                    "-v".into(),"error".into(),
+                    "-protocol_whitelist".into(),"file".into(),
+                    "-f".into(),(if kind=="ffprobe-wav"{"wav"}else{"mov"}).into(),
+                    "-show_entries".into(),
+                    "format=duration:stream=index,codec_type,codec_name,width,height,sample_rate,channels".into(),
+                    "-of".into(),"json".into(),"-i".into(),input_arg],
+                "pdfinfo-pdf"=>vec!["-isodates".into(),input_arg],
+                "exiftool-image"=>vec![
+                    "-j".into(),"-n".into(),"-ImageWidth".into(),
+                    "-ImageHeight".into(),"-FileType".into(),
+                    "-FileSize#".into(),"--".into(),input_arg],
+                _=>unreachable!(),
+            };
+            let plan=TrustedWorkerPlan{
+                task_id:call.clone(),workspace_id:turn.clone(),
+                executable:canonical,expected_sha256:exe_sha,
+                args,progress_protocol:false,max_runtime_seconds:Some(30),
+            };
+            if kind.starts_with("ffprobe-"){
+                supervisor.start_host_approved_media_probe(plan,16384,&resource_sha)
+                    .expect("actual finite original FFprobe admission");
+            }else{
+                supervisor.start_host_approved_specialist_probe(
+                    plan,8192,&resource_sha,
+                    if kind=="pdfinfo-pdf"{"pdfinfo"}else{"exiftool"}
+                ).expect("actual finite metadata probe admission");
+            }
+            let deadline=Instant::now()+Duration::from_secs(45);
+            loop{
+                supervisor.poll().expect(
+                    "SEC06C kernel probe receipt missing or original worker uncertain");
+                let record=store.get(&call).unwrap().unwrap();
+                if record.state==TaskState::Completed{break}
+                assert_eq!(record.state,TaskState::Running);
+                assert!(Instant::now()<deadline,"bounded OS probe never finished");
+                std::thread::sleep(Duration::from_millis(20));
+            }
+            let data=supervisor.take_local_version_stdout(&call,&turn)
+                .unwrap().expect("no bounded original read-only probe output");
+            assert!(!data.bytes.is_empty());
+            let independent=HostOriginalJobCustody::from_host_profile(&root);
+            assert!(independent.worker_and_descendants_ended(&chat,&turn,&call),
+                "SEC06C independent root-owned kernel receipt missing");
+            assert!(!independent.worker_and_descendants_ended(
+                &format!("c-{}","3".repeat(32)),&turn,&call));
+        }
+        drop(supervisor);drop(store);
+        let reopened=TaskStore::open(&journal).unwrap();
+        for kind in ["ffprobe-wav","ffprobe-mp4","pdfinfo-pdf","exiftool-image"]{
+            let call=format!("sec06c-{kind}-fm");
+            assert_eq!(reopened.get(&call).unwrap().unwrap().state,
+                TaskState::Completed);
+            assert!(reopened.process_uncertainty(&call).unwrap().is_none());
+        }
+        drop(reopened);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    /// SEC-06C genuine root-owned first-party scanner and version: the
+    /// original OS worker creates a one-use journal/nonce and kernel-empty
+    /// witness, with real durable progress and independent restart lookup.
+    #[cfg(target_os="linux")]
+    #[test]
+    #[ignore="native nonroot Ubuntu with root-owned scanner + fixed native broker"]
+    fn sec06c_root_owned_scanner_utility_original_journal(){
+        use crate::{
+            agent_os_custody::HostOriginalJobCustody,
+            agent_recovery_decision::IndependentProcessCustody,
+        };
+        use std::{path::Path,fs};
+        let scanner=PathBuf::from("/usr/libexec/lu/lu-file-scan-worker-acceptance");
+        let version=PathBuf::from("/usr/libexec/lu/lu-e1-reviewed-version-worker");
+        assert!(Path::new("/usr/libexec/lu/lu-sec06c-launch-native").is_file(),
+            "SEC06C_BLOCKED: native first-party OS launcher unavailable");
+        assert!(scanner.is_file()&&version.is_file(),
+            "SEC06C_BLOCKED: actual pinned first-party scanner/version unavailable");
+        let root=std::env::temp_dir().join(format!(
+            "lu-sec06c-scanner-native-{}-{}",std::process::id(),
+            std::time::SystemTime::now().duration_since(
+                std::time::UNIX_EPOCH).unwrap().as_nanos()));
+        fs::create_dir_all(&root).unwrap();
+        let input=root.join("original-input.bin");
+        let bytes=vec![b's';1024*1024+17];
+        fs::write(&input,&bytes).unwrap();
+        let expected=format!("{:x}",Sha256::digest(&bytes));
+        let chat=format!("c-{}","4".repeat(32));
+        let turn=format!("g-{}","5".repeat(32));
+        let journal=root.join(format!("lu-reviewed-task-{turn}.sqlite"));
+        let store=Arc::new(TaskStore::open(&journal).unwrap());
+        store.bind_reviewed_human_turn(&chat,&turn).unwrap();
+        let worker=BackgroundProcessSupervisor::new_for_reviewed_host(
+            Arc::clone(&store),root.clone());
+        let scenarios=[
+            ("sec06c-native-scanner",scanner,
+              vec!["--lu-file-scan-worker".into(),input.as_os_str().into()],true),
+            ("sec06c-native-version",version,
+              vec!["--lu-e1-version-one-shot".into()],true),
+        ];
+        for (call,exe,args,progress) in scenarios{
+            let sha=format!("{:x}",Sha256::digest(fs::read(&exe).unwrap()));
+            worker.start_host_approved(TrustedWorkerPlan{
+                task_id:call.into(),workspace_id:turn.clone(),executable:exe,
+                expected_sha256:sha,args,progress_protocol:progress,
+                max_runtime_seconds:Some(30),
+            }).expect("original root-owned finite scanner/version execution");
+            let deadline=Instant::now()+Duration::from_secs(45);
+            while store.get(call).unwrap().unwrap().state!=TaskState::Completed{
+                worker.poll().expect("SEC06C original kernel scanner/version custody not verified");
+                assert!(Instant::now()<deadline,"original worker bounded deadline exceeded");
+                std::thread::sleep(Duration::from_millis(25));
+            }
+            assert!(store.process_uncertainty(call).unwrap().is_none());
+            assert!(HostOriginalJobCustody::from_host_profile(&root)
+                .worker_and_descendants_ended(&chat,&turn,call),
+                "original independent kernel scanner/version completion missing");
+        }
+        let scan=store.get("sec06c-native-scanner").unwrap().unwrap();
+        assert_eq!(scan.state,TaskState::Completed);
+        assert_eq!(
+            store.verified_result("sec06c-native-scanner",&turn)
+                .unwrap().unwrap().sha256,expected
+        );
+        drop(worker);drop(store);
+        let reopened=TaskStore::open(&journal).unwrap();
+        for call in ["sec06c-native-scanner","sec06c-native-version"]{
+            assert_eq!(reopened.get(call).unwrap().unwrap().state,TaskState::Completed);
+        }
+        drop(reopened);fs::remove_dir_all(root).unwrap();
+    }
+
     #[cfg(windows)]
     #[test]
     fn agent01l_real_git_job_attests_original_turn_and_reopens_without_replay(){
@@ -1385,6 +2174,42 @@ mod tests{
         ).is_err(),"OS evidence turn cannot be rebound");
         drop(reopen);
         fs::remove_dir_all(root).unwrap();
+    }
+    #[cfg(windows)]
+    #[test]
+    fn sec05_windows_two_jobs_cross_chat_cancel_cannot_terminate_foreign_worker(){
+        // Actual Windows Job membership and kernel ACTIVE_ZERO checks, not
+        // synthetic task state: two long-lived cmd/ping worker trees.
+        let exe=PathBuf::from(std::env::var_os("ComSpec")
+            .unwrap_or_else(||OsString::from(
+                r"C:\Windows\System32\cmd.exe")));
+        assert!(exe.is_file(),"SEC05 requires genuine system cmd.exe");
+        let sha=format!("{:x}",Sha256::digest(fs::read(&exe).unwrap()));
+        let store=Arc::new(TaskStore::open(Path::new(":memory:")).unwrap());
+        let manager=BackgroundProcessSupervisor::new(Arc::clone(&store));
+        let a=format!("c-{}","a".repeat(32));
+        let b=format!("c-{}","b".repeat(32));
+        for (id,chat) in [("sec05-job-a",&a),("sec05-job-b",&b)]{
+            manager.start_host_approved(TrustedWorkerPlan{
+                task_id:id.into(),workspace_id:chat.clone(),
+                executable:exe.clone(),expected_sha256:sha.clone(),
+                args:vec!["/D".into(),"/C".into(),
+                    "ping -n 20 127.0.0.1 >NUL".into()],
+                progress_protocol:false,max_runtime_seconds:Some(30),
+            }).unwrap();
+        }
+        assert_eq!(manager.cancel_owned("sec05-job-b",&a),
+            Err(BackgroundProcessError::WrongWorkspace));
+        assert_eq!(manager.cancel_workspace_owned(&a).unwrap(),1);
+        assert_eq!(store.get("sec05-job-a").unwrap().unwrap().state,
+            TaskState::Cancelled);
+        assert!(manager.can_cancel("sec05-job-b"));
+        assert_eq!(store.get("sec05-job-b").unwrap().unwrap().state,
+            TaskState::Running);
+        assert_eq!(manager.cancel_workspace_owned(&a).unwrap(),0);
+        assert_eq!(manager.cancel_workspace_owned(&b).unwrap(),1);
+        assert_eq!(store.get("sec05-job-b").unwrap().unwrap().state,
+            TaskState::Cancelled);
     }
     #[cfg(windows)]
     #[test]

@@ -7,14 +7,17 @@ const desktop=readFileSync(new URL('../src-tauri/src/reviewed_app_desktop.rs',im
 const host=readFileSync(new URL('../src-tauri/src/lib.rs',import.meta.url),'utf8');
 const tool=readFileSync(new URL('../../src-tauri/lu-core/src/native_reviewed_app_tool.rs',import.meta.url),'utf8');
 
-test('next-Send reviewed Git and media require explicit human selection and native OS picker',()=>{
+test('single Send enters native host routing; reviewed application still needs OS picker',()=>{
   assert.match(ui,/reviewedAppNextSend/);
-  assert.match(ui,/Use reviewed Git on Send/);
-  assert.match(ui,/Use reviewed media on Send/);
+  // P0-WIN-CHAT intentionally unmounted the legacy specialist buttons.
+  // The ordinary Send routes through lu_generate and the native host
+  // classifies the original human request. No JS text can be a tool grant.
+  assert.match(ui,/Native tools enter through the original human chat and per-turn OS approvals/);
+  assert.match(ui,/invoke\('lu_generate',\s*\{/);
   assert.match(ui,/invoke\('lu_reviewed_app_ask',\s*\{/);
   assert.match(desktop,/blocking_pick_file\(\)/);
   assert.match(desktop,/blocking_pick_folder\(\)/);
-  assert.match(desktop,/matches!\(mode.as_str\(\),"git"\|"media"\)/);
+  assert.match(desktop,/matches!\(mode.as_str\(\),"git"\|"media"\|"pdf"\|"image"\)/);
   assert.match(desktop,/PersistedReviewedHumanTurn/);
   assert.match(desktop,/trusted_user_turn_text\(chat,turn\)/);
   assert.match(host,/lu_reviewed_app_ask,/);
@@ -45,7 +48,7 @@ test('reviewed child process uses separate durable receipt and cancellation fenc
   assert.match(desktop,/reader_generations\.lock\(\)/);
   assert.match(desktop,/run_journaled_observed\(/);
   assert.match(desktop,/answer.tool_calls==0/);
-  assert.match(desktop,/host.chats.complete\(&chat_id,&gid_run\)/);
+  assert.match(desktop,/host.chats.complete_reviewed_if_not_revoked\(/);
 });
 
 test('desktop only permits reviewed Git reads or FFprobe WAV/MP4 facts, never arbitrary shell',()=>{
@@ -100,12 +103,12 @@ test('E1-P10 shows independent at-observation proof, not worker or model authori
   assert.match(audit,/OUTCOME_CONFLICT/);
   assert.match(ui,/item.reviewedEffects.independentlyVerified/);
   assert.match(ui,/item.reviewedEffects.outcomeConflict/);
-  assert.match(ui,/It does not prove that/);
+  assert.match(ui,/Current source independently reverified: no/);
   assert.doesNotMatch(ui,/invoke\('lu_reviewed_app_ask',\s*\{[^}]*\b(?:path|executable|argv|permission)\s*:/s);
 });
 
 test('E1-P14 explains host evidence to humans without inventing permission or replay',()=>{
-  assert.match(ui,/import \{explainToolOutcome\} from '\.\/reviewed_tool_feedback\.mjs'/);
+  assert.match(ui,/import \{explainToolOutcome,explainReviewedContinuation\} from '\.\/reviewed_tool_feedback\.mjs'/);
   assert.match(ui,/explainToolOutcome\(item\.source,item\.state\)\.title/);
   assert.match(ui,/explainToolOutcome\(item\.source,item\.state\)\.meaning/);
   assert.match(ui,/Next safe step:/);

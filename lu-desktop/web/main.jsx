@@ -13,14 +13,14 @@ import {buildSubmittedPrompt, attachmentSummary, MAX_TEXT_FILES} from './attachm
 import {isPotentialImage, normalizedImageFile} from './image_attachment_input.mjs';
 import {stagedImageDimensions,REGION_IMAGE_OPERATIONS,
   imagePointerPixel,imageDragRectangle} from './image_assembly_geometry.mjs';
-import {queuedJob, startedJob, tokenForJob, removeJob} from './generation_jobs.mjs';
+import {queuedJob, startedJob, tokenForJob, resumedJob, removeJob} from './generation_jobs.mjs';
 import {nearTranscriptBottom, restoredScrollTop, isSendKey, isSearchKey, isNewChatKey, matchesChatTitle} from './chat_ui_behavior.mjs';
 import {MAX_HISTORY_ROWS,mergeHistoryWindow,captureHistoryAnchor,restoreHistoryAnchor} from './history_window_geometry.mjs';
 import {MESSAGE_REACTIONS,DEFAULT_APPEARANCE,CHAT_APPEARANCE_PRESETS,safeAppearance,textForBackground,visibleReactionBySeq} from './message_interactions.mjs';
 import {revisionsBySequence,canEdit,provenanceLabel,draftReplyTarget,correctedMessageFollowUp} from './message_revisions.mjs';
 import {parseHumanReplanOutline,humanReplanDefaultOutline,REPLAN_REASONS} from './agent_replan.mjs';
 import {SettingsWindow,ModelLibraryWindow} from './native_windows.jsx';
-import {isHostCurrentTimeQuestion} from './native_intent.mjs';
+import {isHostCurrentTimeQuestion,isHostCpuChatLookup,isHostModelStatusQuestion,isHostCpuWorkspaceLookup,isHostCpuChatCountsQuestion} from './native_intent.mjs';
 import {TaskBoardWindow} from './task_board.jsx';
 
 function MessageText({text, role='assistant'}) {
@@ -826,6 +826,10 @@ function App() {
   const [researchQuoteBusy,setResearchQuoteBusy]=useState(false);
   const [textFiles, setTextFiles] = useState([]);
   const [jobs, setJobs] = useState({}); // bounded, per-chat host generation state
+  const jobsRef=useRef({});
+  const reconnectPending=useRef(new Set());
+  useEffect(()=>{jobsRef.current=jobs;},[jobs]);
+  const [perfLatestByChat,setPerfLatestByChat]=useState({}); // host diagnostics, not model proof
   const [readProposals, setReadProposals] = useState({}); // completed model proposals, never grants
   const [writeProposals, setWriteProposals] = useState({}); // inert completed model write previews
   const [writeRecovery, setWriteRecovery] = useState([]); // read-only durable evidence
@@ -966,11 +970,14 @@ function App() {
   const loadedModel = models.find(m => m.modelRef === runtime.modelRef);
   const viewedDraftImage=imageViewer && images.find(im=>im.imageRef===imageViewer.imageRef);
   const loaded = runtime.phase === 'Ready' || runtime.phase === 'Generating';
-  // The host, not this UI predicate, authorizes the OS-clock-only shortcut.
-  // A no-model Send may ask only an explicit current-time question, with no
-  // attachments or specialist mode; all other prompts require an active GGUF.
+  // Only two host-validated, read-only and model-free shortcuts are shown:
+  // native clock and exact literal search of this original ANSF chat.
+  // The Rust host independently rejects mismatched mode/session/scope.
   const modelFreeClockAllowed=!loaded && !runtime.sessionId &&
-    isHostCurrentTimeQuestion(prompt) && images.length===0 && textFiles.length===0 &&
+    (isHostCurrentTimeQuestion(prompt)||isHostCpuChatLookup(prompt)||
+      isHostModelStatusQuestion(prompt)||isHostCpuWorkspaceLookup(prompt)||
+      isHostCpuChatCountsQuestion(prompt)) &&
+    images.length===0 && textFiles.length===0 &&
     !planDraftNextSend && !browserResearchNextSend && !reviewedAppNextSend &&
     !workspaceToolsNextSend;
   const busy = working || runtime.phase === 'Generating' || Object.keys(jobs).length > 0;
@@ -988,7 +995,11 @@ function App() {
   // An in-flight checkpoint is already visible in the live stream buffer.
   // Do not render that same unfinished assistant text twice after chat switch.
   const displayedHistory = visibleJob ? history.filter((entry,i) =>
-    !(i === history.length - 1 && entry.role === 'assistant' && entry.interrupted && !entry.cancelled)) : history;
+    // An older interrupted response belongs to its original generation.
+    // Never hide that durable partial merely because a NEW turn is active.
+    !(i === history.length - 1 && entry.role === 'assistant' &&
+      entry.interrupted && !entry.cancelled &&
+      entry.text.length>0 && visibleStream.startsWith(entry.text))) : history;
   useEffect(() => { draftText.current = prompt; draftImages.current = images; draftFiles.current = textFiles; }, [prompt, images, textFiles]);
   useEffect(() => {
     if (!(working && activity.startsWith('Loading'))) {
@@ -1042,6 +1053,14 @@ function App() {
       setResearchResult({...result,chatId:sourceChat});
     }catch(e){setResearchError(String(e));}
     finally{setResearchBusy(false);}
+  }
+  async function copyResearchReference(value) {
+    if(typeof value!=='string'||!value){setResearchError('No reviewed reference available to copy.');return;}
+    try {
+      if(!navigator.clipboard?.writeText)throw Error('Clipboard unavailable in current WebView.');
+      await navigator.clipboard.writeText(value);
+      setActivity('Reviewed reference copied. Copying does not verify its contents.');
+    }catch(error){setResearchError(String(error));}
   }
   async function previewSblCriticalEdition(){
     if(!chatId)return;
@@ -2228,6 +2247,35 @@ function App() {
     }catch(e){setError('Next history page unavailable: '+String(e))}
     finally{loadingWindow.current=false}
   }
+  /// A WebView reload does not restore a generation ticket. Reattach only to
+  // the host's exact current model session + conversation, never by
+  // resubmitting the prompt. If the host restarted, show durable ANSF
+  // interrupted partial output instead of claiming completion.
+  async function reconcileActiveStream(targetChat){
+    if(!targetChat || reconnectPending.current.has(targetChat))return;
+    reconnectPending.current.add(targetChat);
+    const expectedGeneration=jobsRef.current[targetChat]?.generationId??null;
+    try{
+      const snapshot=await invoke('lu_stream_reconnect',{chatId:targetChat});
+      if(currentChat.current!==targetChat)return;
+      // An older RPC cannot remove or overwrite a newer generation that
+      // started while the snapshot was in flight.
+      setJobs(prev=>{
+        if((prev[targetChat]?.generationId??null)!==expectedGeneration)return prev;
+        return resumedJob(prev,targetChat,snapshot);
+      });
+      if(!snapshot && (jobsRef.current[targetChat]?.generationId??null)
+            ===expectedGeneration){
+        const durable=await loadLatestUiHistory(targetChat);
+        if(currentChat.current===targetChat)setHistory(durable);
+      }
+    }catch(error){
+      if(currentChat.current===targetChat)
+        setError('Native stream reconciliation unavailable: '+String(error));
+    }finally{
+      reconnectPending.current.delete(targetChat);
+    }
+  }
   async function switchChat(id) {
     if (currentChat.current !== id) {
       // Capture the outgoing reading position before the asynchronous read.
@@ -2254,6 +2302,7 @@ function App() {
     setChatId(id);
     setHistory(entries);
     setError('');
+    void reconcileActiveStream(id);
   }
   useEffect(() => {
     let alive = true;
@@ -2284,7 +2333,13 @@ function App() {
     listen('lu-token', e => {
       if (!alive || !e.payload?.chatId) return;
       setJobs(prev => tokenForJob(prev,e.payload));
-    }).then(fn => { if (alive) stopToken = fn; else fn(); });
+    }).then(fn => {
+      if (alive){
+        stopToken = fn;
+        // Close the window between history loading and event registration.
+        if(currentChat.current)void reconcileActiveStream(currentChat.current);
+      }else fn();
+    });
     listen('lu-read-proposal', e => {
       const proposal = e.payload;
       if (!alive || !proposal?.chatId || !proposal?.proposalId) return;
@@ -2381,6 +2436,21 @@ function App() {
     }).then(fn => { if (alive) stopBackground=fn; else fn(); });
     return () => { alive = false; stopQueued(); stopStart(); stopToken(); stopReadProposal(); stopWriteProposal(); stopEditProposal(); stopNativeAction(); stopToolProgress(); stopTurnCapabilities(); stopBackground(); stopFinished(); stopBrowserChallenge(); stopPlanAdmission(); stopAgentWitness(); stopTaskHandoff(); };
   }, []);
+  // A missing queued/start event or stream-index gap is recovered from the
+  // native same-chat cursor. Do not fill missing bytes with guessed text.
+  useEffect(()=>{
+    for(const [id,job] of Object.entries(jobs)){
+      if(job?.needsSync && currentChat.current===id)
+        void reconcileActiveStream(id);
+    }
+  },[jobs]);
+  // A hidden/reopened WebView may have missed finished or token events.
+  // This is one user-focus read, not periodic inference polling.
+  useEffect(()=>{
+    const resumed=()=>{if(currentChat.current)void reconcileActiveStream(currentChat.current);};
+    window.addEventListener('focus',resumed);
+    return ()=>window.removeEventListener('focus',resumed);
+  },[]);
   // Follow new tokens only if the operator was already reading the end.
   // Remember independent scroll positions when switching conversations.
   function onTranscriptScroll() {
@@ -4040,6 +4110,16 @@ function App() {
       }
       setJobs(prev => removeJob(prev,activeId));
       await refreshCatalog().catch(error => { if (currentChat.current === activeId) setError(String(error)); });
+      // Read only the original host-observed per-chat latency receipt.
+      // The WebView never sends performance records or model permissions.
+      if (completed && currentChat.current===activeId) {
+        const samples=await invoke('lu_perf01_recent',{
+          chatId:activeId,limit:1
+        }).catch(()=>[]);
+        if(samples.length && currentChat.current===activeId){
+          setPerfLatestByChat(prev=>({...prev,[activeId]:samples[0]}));
+        }
+      }
       if (usePlanDraft) await refreshToolActivity(activeId).catch(error=>{
         if (currentChat.current===activeId)setError(String(error));
       });
@@ -4386,7 +4466,7 @@ function App() {
           className={'message ' + (entry.role === 'user' ? 'user' : 'assistant')}
           style={{backgroundColor:entry.role==='user'?chatAppearance.userBubble:chatAppearance.assistantBubble,
             color:textForBackground(entry.role==='user'?chatAppearance.userBubble:chatAppearance.assistantBubble)}}>
-          <span className="messageRole">{entry.role === 'user' ? 'You' : 'Lu'}{entry.cancelled ? ' · stopped' : entry.interrupted ? ' · interrupted' : ''}</span>
+          <span className="messageRole">{entry.role === 'user' ? 'You' : 'Lu'}{entry.cancelled ? ' · stopped' : entry.interrupted ? ' · interrupted (partial saved)' : ''}</span>
           {revision?.replyTo&&<button type="button" className="messageReplyReference"
             onClick={()=>setMessageProvenance({entry,revision})}
             aria-label={'Inspect reply provenance for message '+entry.seq}>
@@ -4721,6 +4801,45 @@ function App() {
               {' '}· Prior permissions reusable: NO
               {' '}· Automatic retry: NO
               {' '}· Independent past OS custody proven here: NO.</small>
+            {authorityPostureByChat[chatId].securityRecovery&&
+              <section className="recoveryProvenanceOperation" role="region"
+                aria-label="SEC-04 original security recovery and unresolved custody">
+                <strong>SEC-04 · Original security recovery</strong>
+                <small role="status" aria-live="polite">
+                  {authorityPostureByChat[chatId].securityRecovery.status.replaceAll('_',' ')}
+                </small>
+                <small>Original reviewed journals examined:
+                  {' '+authorityPostureByChat[chatId].securityRecovery.originalJournalsExamined}
+                  {' '}· Cancellation requests without outcomes:
+                  {' '+authorityPostureByChat[chatId].securityRecovery.pendingCancelIntents}
+                  {' '}· Cancellation outcomes requiring OS/effect review:
+                  {' '+authorityPostureByChat[chatId].securityRecovery.cancellationOutcomesStillRequireReview}
+                </small>
+                {(authorityPostureByChat[chatId].securityRecovery.problems||[]).length>0&&
+                  <ul aria-label="Original security exceptions">
+                    {authorityPostureByChat[chatId].securityRecovery.problems.map((record,index)=>
+                      <li key={index}>
+                        <strong>{record.reason.replaceAll('_',' ')}</strong>
+                        <small>{record.source.replaceAll('_',' ')}
+                          {record.originalHumanTurnId&&
+                            ' · Original turn '+record.originalHumanTurnId}
+                          {record.taskId&&' · Task '+record.taskId}
+                          {' · '+record.state.replaceAll('_',' ')}
+                        </small>
+                      </li>)}
+                  </ul>}
+                {(authorityPostureByChat[chatId].securityRecovery.additionalProblemsNotDisplayed||
+                  authorityPostureByChat[chatId].securityRecovery.olderOriginalTurnsNotInspected||
+                  authorityPostureByChat[chatId].securityRecovery.olderCancelIntentsNotInspected)&&
+                  <small>Bounded recovery view incomplete. Additional original
+                    tasks, older turns or older cancellation intents
+                    require host reconciliation.</small>}
+                <small>Previous authority: REVOKED / NOT REUSABLE.
+                  {' '}Automatic replay: DISALLOWED.
+                  {' '}Historical OS cleanup: NOT independently proven by this view.
+                  {' '}Inspect original task, effect and kernel custody
+                  evidence before authorizing any new effect.</small>
+              </section>}
             {(authorityPostureByChat[chatId].originalHostCancelEvents||[]).map(entry=>
               <article className="recoveryProvenanceOperation" key={entry.attemptId}>
                 <strong>{entry.status.replaceAll('_',' ')}</strong>
@@ -4757,6 +4876,286 @@ function App() {
             <button type="button" className="subtleButton"
               onClick={()=>setToolActivityOpen(false)}>Close</button>
           </div>
+
+          <section className="readProposalCard" role="region"
+            aria-label="Native Reader document selection">
+            <strong>Reader · one native-picked document per review</strong>
+            <small>Reader source selection and text extraction are bounded by the
+              original OS picker and host-owned source hash. Neither a WebView
+              path nor a prior attachment can silently grant a new read.</small>
+            <label className="nativeField">Reader section
+              <input maxLength={80} value={readerSelector}
+                placeholder="Optional document section selector"
+                onChange={e=>setReaderSelector(e.target.value)}/>
+            </label>
+            <div className="settingsActions">
+              <button type="button" disabled={working||chatBusy}
+                onClick={()=>void attachReaderDocument(false)}>Read file</button>
+              <button type="button" disabled={working||chatBusy||!runtime.sessionId||!prompt.trim()}
+                onClick={()=>void askReaderDocument()}>Ask Reader</button>
+              <button type="button" disabled={working||chatBusy||
+                !readerContinuation||readerContinuation.chatId!==(currentChat.current||'new')||
+                readerContinuation.selector!==readerSelector||readerContinuation.nextOffset===null}
+                onClick={()=>void attachReaderDocument(true)}>
+                Continue Reader at {readerContinuation?.nextOffset??'unavailable'} characters
+              </button>
+            </div>
+            <small>Ask Reader is an independent human-requested read-only tool turn;
+              sending the ordinary chat draft never silently selects a document.
+              Each continuation rechecks the original SHA-256 and selector.</small>
+          </section>
+
+          <section className="readProposalCard" role="region"
+            aria-label="Native multipart archive operations">
+            <strong>Native archive splitting and recovery · P08</strong>
+            <small>Lu raw-byte parts are not natively spanned ZIP/RAR/7z archives.
+              The original is unchanged. Each write requires a fresh native
+              file/folder picker, host authorization and a durable task receipt.
+              Interrupted publications must be reviewed; never auto-retried.</small>
+            <label className="nativeField">Maximum part size (MiB)
+              <select value={p08PartMib} disabled={p08Busy}
+                onChange={e=>setP08PartMib(Number(e.target.value))}>
+                <option value={4}>4 MiB</option>
+                <option value={32}>32 MiB</option>
+                <option value={128}>128 MiB</option>
+                <option value={512}>512 MiB</option>
+              </select>
+            </label>
+            <div className="settingsActions">
+              <button type="button" disabled={!chatId||working||chatBusy||p08Busy}
+                onClick={()=>void runP08Multipart('split')}>Split archive into Lu parts</button>
+              <button type="button" disabled={!chatId||working||chatBusy||p08Busy}
+                onClick={()=>void runP08Multipart('resume')}>Resume Lu split stage</button>
+              <button type="button" disabled={!chatId||working||chatBusy||p08Busy}
+                onClick={()=>void runP08Multipart('join')}>Reassemble Lu archive parts</button>
+              <button type="button" disabled={!chatId||working||chatBusy||p08Busy}
+                onClick={()=>void runP08Multipart('review')}>Review interrupted Lu split (read-only)</button>
+            </div>
+            {p08ResultByChat[chatId]&&
+              <small>Original host reply: {p08ResultByChat[chatId].status||'Receipt recorded'}.
+                This UI label does not independently prove kernel process custody.</small>}
+          </section>
+
+          <details className="readProposalCard" aria-label="Native Research evidence tools">
+            <summary><strong>Research evidence and citations · native-source review</strong></summary>
+            <small>Public research requires the host's separately reviewed, pinned HTTPS client.
+              Search results are unverified leads. Every network request requires native approval;
+              no Browser excerpt is a verified citation, passage, quotation or model fact.</small>
+            {researchError&&<p role="alert">{researchError}</p>}
+            {!researchAvailable&&<small>Pinned Research network client unavailable. No remote lookup is authorized.</small>}
+            <div className="settingsActions">
+              <input aria-label="Research question or terms" value={researchQuery} maxLength={512}
+                onChange={e=>setResearchQuery(e.target.value)} placeholder="OpenAlex search terms"/>
+              <button type="button" disabled={!chatId||!researchAvailable||researchBusy||!researchQuery.trim()}
+                onClick={()=>void runResearchDiscovery(1)}>Search reviewed public catalog</button>
+              <button type="button" disabled={!chatId||researchCampaignBusy}
+                onClick={()=>void refreshResearchCampaigns(chatId)}>Restore saved research jobs</button>
+              <button type="button" disabled={!chatId||researchBusy||browserEvidenceBusy}
+                onClick={()=>void reviewBrowserEvidence()}>Review observed Browser evidence</button>
+            </div>
+            {researchResult?.chatId===chatId&&<>
+              <small>OpenAlex source identity: {researchResult.observedSha256} ·
+                {researchResult.sourceCount} unverified discovery leads.</small>
+              <div className="settingsActions">
+                <button disabled={researchBusy||researchResult.page<=1}
+                  onClick={()=>void runResearchDiscovery(researchResult.page-1)}>Previous discovery page</button>
+                <button disabled={researchBusy||!researchResult.nextPage}
+                  onClick={()=>void runResearchDiscovery(researchResult.nextPage)}>Next discovery page</button>
+              </div>
+              {(researchResult.leads||[]).map(l=><article className="nativeOption" key={l.sourceId}>
+                <strong>{l.title}</strong>
+                <small>{l.sourceId} · {l.authors} · Unverified discovery metadata</small>
+                <div className="settingsActions">
+                  <button disabled={researchBusy} onClick={()=>void checkResearchMetadata(l.sourceId)}>
+                    Check independent Crossref metadata</button>
+                  <button disabled={researchBusy||researchCitationBusy}
+                    onClick={()=>void previewResearchCitation(l.sourceId)}>
+                    Preview evidence-bound citation</button>
+                  <button disabled={researchBusy||researchCitationBusy}
+                    onClick={()=>void reviewResearchCitationRevision(l.sourceId)}>
+                    Review changed Crossref metadata</button>
+                  <button disabled={researchBusy}
+                    onClick={()=>void retrieveResearchDocument(l.sourceId)}>
+                    Retrieve bounded PDF/HTML document</button>
+                </div>
+                {researchMetadataByChat[chatId+'|'+l.sourceId]&&
+                  <small>Crossref source metadata independently checked.
+                    Citation verified: no; exact source passage still required.</small>}
+                {researchCitationsByChat[chatId+'|'+l.sourceId]&&<div className="nativeOption">
+                  <strong>Crossref-backed citation preview · REVIEW REQUIRED</strong>
+                  <p>{researchCitationsByChat[chatId+'|'+l.sourceId].bibliography}</p>
+                  <small>Source response SHA-256:
+                    {researchCitationsByChat[chatId+'|'+l.sourceId].catalogResponseSha256}.
+                    Bibliographic identity alone does not verify publication particulars, quotations,
+                    passages, page numbering or factual interpretations.</small>
+                  <textarea readOnly rows={3} aria-label="Reviewed CSL JSON"
+                    value={JSON.stringify(researchCitationsByChat[chatId+'|'+l.sourceId].cslJson,null,2)}/>
+                  <button onClick={()=>void copyResearchReference(
+                    JSON.stringify(researchCitationsByChat[chatId+'|'+l.sourceId].cslJson,null,2))}>
+                    Copy reviewed CSL JSON</button>
+                </div>}
+                {researchCitationRevisionByChat[chatId+'|'+l.sourceId]&&
+                  <small>Catalog revision independently reviewed:
+                    {researchCitationRevisionByChat[chatId+'|'+l.sourceId].currentSha256}</small>}
+                {researchDocumentsByChat[chatId+'|'+l.sourceId]&&<div className="nativeOption">
+                  <p>Retrieved document: {researchDocumentsByChat[chatId+'|'+l.sourceId].format}.
+                    Original content SHA-256:
+                    {researchDocumentsByChat[chatId+'|'+l.sourceId].responseSha256}</p>
+                  <textarea readOnly rows={4} aria-label="Bounded original document excerpt"
+                    value={researchDocumentsByChat[chatId+'|'+l.sourceId].excerpt||''}/>
+                  <textarea rows={2} maxLength={4096} aria-label="Exact text to verify in original document"
+                    value={researchDocumentQuotes[chatId+'|'+l.sourceId]||''}
+                    onChange={e=>setResearchDocumentQuotes(old=>({
+                      ...old,[chatId+'|'+l.sourceId]:e.target.value
+                    }))}/>
+                  <button disabled={researchBusy} onClick={()=>void verifyResearchDocumentPassage(l.sourceId)}>
+                    Check exact document passage</button>
+                  {researchDocumentPassages[chatId+'|'+l.sourceId]&&
+                    <small>Native passage review:
+                      {researchDocumentPassages[chatId+'|'+l.sourceId].verificationStatus||'not verified'}</small>}
+                </div>}
+              </article>)}
+            </>}
+            <section className="nativeOption">
+              <strong>Reviewed bibliography and report</strong>
+              <label>Citation style
+                <select value={researchCitationStyle}
+                  onChange={e=>setResearchCitationStyle(e.target.value)}>
+                  <option value="apa7">APA 7</option>
+                  <option value="mla9">MLA 9</option>
+                  <option value="chicago18">Chicago 18</option>
+                  <option value="ieee">IEEE</option>
+                  <option value="sbl2">SBL 2</option>
+                </select>
+              </label>
+              <div className="settingsActions">
+                <button disabled={!chatId||researchBibliographyBusy}
+                  onClick={()=>void previewResearchBibliography()}>
+                  Compile reviewed bibliography offline</button>
+                <button disabled={!chatId||researchBibliographyBusy}
+                  onClick={()=>void exportResearchBibliography('markdown')}>
+                  Save new bibliography Markdown</button>
+                <button disabled={!chatId||researchBibliographyBusy}
+                  onClick={()=>void exportResearchBibliography('csl-json')}>
+                  Save new bibliography CSL-JSON</button>
+              </div>
+              {researchBibliographiesByChat[chatId]&&<>
+                <small>Only host-reviewed sealed Crossref catalog records:
+                  {researchBibliographiesByChat[chatId].sourceCount} sources.
+                  Citation identity is reviewed; publication details remain unverified.</small>
+                <textarea readOnly rows={4} aria-label="Offline reviewed bibliography"
+                  value={researchBibliographiesByChat[chatId].markdown}/>
+              </>}
+              <label>Report title
+                <input value={researchReportTitle} maxLength={180}
+                  onChange={e=>setResearchReportTitle(e.target.value)}/></label>
+              <label><input type="checkbox" checked={researchReportIncludeBibliography}
+                onChange={e=>setResearchReportIncludeBibliography(e.target.checked)}/>
+                Include reviewed P07 bibliography</label>
+              <div className="settingsActions">
+                <button disabled={!chatId||researchReportBusy||!researchReportTitle.trim()}
+                  onClick={()=>void exportResearchReport('markdown')}>Save Markdown report</button>
+                <button disabled={!chatId||researchReportBusy||!researchReportTitle.trim()}
+                  onClick={()=>void exportResearchReport('json')}>Save evidence JSON</button>
+              </div>
+              {researchReportSavedByChat[chatId]&&
+                <small>Native new-file export receipt recorded; prior files are not overwritten.</small>}
+            </section>
+            <section className="nativeOption">
+              <strong>SBL2 canonical Scripture locator and reviewed critical editions</strong>
+              <small>This is not a bibliography item or scholarly source attestation.
+                Text readings, verse-numbering equivalences, translations and manuscript
+                witnesses are not independently verified by a locator.</small>
+              <div className="settingsActions">
+                <label>Book <input maxLength={40} value={sblScriptureBook}
+                  onChange={e=>setSblScriptureBook(e.target.value)}/></label>
+                <label>Chapter <input type="number" min={1} max={150} value={sblScriptureChapter}
+                  onChange={e=>setSblScriptureChapter(e.target.value)}/></label>
+                <label>First verse <input type="number" min={1} max={176} value={sblScriptureFirstVerse}
+                  onChange={e=>setSblScriptureFirstVerse(e.target.value)}/></label>
+                <label>Last verse (optional) <input type="number" min={1} max={176}
+                  value={sblScriptureLastVerse} onChange={e=>setSblScriptureLastVerse(e.target.value)}/></label>
+                <label>Translation <input maxLength={16} value={sblScriptureTranslation}
+                  onChange={e=>setSblScriptureTranslation(e.target.value)}/></label>
+                <label>Edition <select value={sblEditionId} onChange={e=>setSblEditionId(e.target.value)}>
+                  <option value="NA28">NA28</option><option value="UBS5">UBS5</option>
+                  <option value="BHS">BHS</option>
+                </select></label>
+              </div>
+              <div className="settingsActions">
+                <button disabled={!chatId} onClick={()=>void previewSblScriptureLocator()}>
+                  SBL2 canonical Scripture locator</button>
+                <button disabled={!sblScripturePreview?.reference}
+                  onClick={()=>void copyResearchReference(sblScripturePreview.reference)}>
+                  Copy Scripture reference</button>
+                <button disabled={!chatId} onClick={()=>void previewSblCriticalEdition()}>
+                  Review curated critical edition</button>
+                <button disabled={!sblEditionPreview?.reference}
+                  onClick={()=>void copyResearchReference(sblEditionPreview.reference)}>
+                  Copy critical-edition reference</button>
+              </div>
+              {sblScripturePreview&&
+                <small>{sblScripturePreview.reference} · Citation/translation not independently verified</small>}
+              {sblEditionPreview&&
+                <small>{sblEditionPreview.reference} ·
+                  edition metadata, not independently verified text readings</small>}
+            </section>
+            <section className="nativeOption">
+              <strong>Research campaigns, claims and original passage verification</strong>
+              <div className="settingsActions">
+                <button disabled={!chatId||!researchAvailable||researchCampaignBusy||!researchQuery.trim()}
+                  onClick={()=>void runResearchCampaign()}>Start bounded research campaign</button>
+                <button disabled={!chatId||researchCampaignBusy}
+                  onClick={()=>void refreshResearchCampaigns(chatId)}>Restore saved research jobs</button>
+              </div>
+              {(researchCampaignsByChat[chatId]||[]).map(c=><div className="settingsActions" key={c.campaignId}>
+                <small>Campaign {c.campaignId} · {c.state||'Needs review'}</small>
+                <button disabled={researchCampaignBusy} onClick={()=>void resumeResearchCampaign(c.campaignId)}>
+                  Review campaign resume</button>
+                <button disabled={researchCampaignBusy} onClick={()=>void cancelResearchCampaign(c.campaignId)}>
+                  Cancel campaign</button>
+              </div>)}
+              <label>Reviewed source ID
+                <input value={researchClaimDraft.sourceId} maxLength={128}
+                  onChange={e=>setResearchClaimDraft(old=>({...old,sourceId:e.target.value}))}/></label>
+              <label>Interpretation
+                <textarea rows={2} value={researchClaimDraft.claim} maxLength={4096}
+                  onChange={e=>setResearchClaimDraft(old=>({...old,claim:e.target.value}))}/></label>
+              <label>Exact observed quote
+                <textarea rows={2} value={researchClaimDraft.quote} maxLength={4096}
+                  onChange={e=>setResearchClaimDraft(old=>({...old,quote:e.target.value}))}/></label>
+              <label>Reasoning
+                <textarea rows={2} value={researchClaimDraft.reasoning} maxLength={4096}
+                  onChange={e=>setResearchClaimDraft(old=>({...old,reasoning:e.target.value}))}/></label>
+              <button disabled={!chatId||researchReportBusy||!researchClaimDraft.quote.trim()}
+                onClick={()=>void submitResearchClaim()}>Save my evidence interpretation</button>
+              <small>Unresolved: contrary or qualifying evidence remains.
+                Interpretations are human review records, not verified model facts.</small>
+            </section>
+            <section className="nativeOption">
+              <strong>Observed Browser evidence · read-only and chat-scoped</strong>
+              {(browserEvidenceByChat[chatId]||[]).map(item=>{
+                const key=chatId+'|'+item.generationId+'|'+item.callId;
+                return <article key={key}>
+                  <small>Observed Browser evidence: {item.sourceUrl}.
+                    Untrusted excerpt · citation verified: no</small>
+                  <textarea readOnly rows={3} value={item.excerpt||''}
+                    aria-label="Original bounded Browser excerpt"/>
+                  <textarea rows={2} value={researchQuoteDraftByKey[key]||''} maxLength={2048}
+                    aria-label="Exact Browser passage to verify"
+                    onChange={e=>setResearchQuoteDraftByKey(old=>({...old,[key]:e.target.value}))}/>
+                  <input value={researchQuoteSourceByKey[key]||''} maxLength={128}
+                    placeholder="Optional independently corroborated OpenAlex source ID"
+                    onChange={e=>setResearchQuoteSourceByKey(old=>({...old,[key]:e.target.value}))}/>
+                  <button disabled={researchQuoteBusy} onClick={()=>void verifyObservedQuote(item)}>
+                    Check exact source passage</button>
+                  {researchQuoteProofByKey[key]&&
+                    <small>Native exact-passage outcome:
+                      {researchQuoteProofByKey[key].citationVerified?'publisher URL and quote matched':'not citation verified'}</small>}
+                </article>;
+              })}
+            </section>
+          </details>
 
           <section className="readProposalCard" role="region"
             aria-label="ANSF native source provenance">
@@ -5907,13 +6306,31 @@ function App() {
             </span>)}
           </div>}
           <textarea ref={composerRef} aria-label="Message Lu" value={prompt} onChange={e => {draftText.current=e.target.value;setPrompt(e.target.value);}} style={{height:composerHeight}} maxLength={16384}
-            placeholder={loaded ? 'Message Lu… Paste or drop images and text files' : 'Ask for the current time, or load a GGUF model…'}
+            placeholder={loaded ? 'Message Lu… Paste or drop images and text files' : 'Ask the time, check model status, search this chat or selected workspace'}
             onPaste={handlePaste}
             onKeyDown={e => { if (isSendKey(e)) { e.preventDefault(); e.currentTarget.form?.requestSubmit(); } }}/>
           <div className="composerFooter"><input ref={fileInput} type="file" className="visuallyHidden" multiple
               accept=".png,.jpg,.jpeg,.txt,.md,.csv,.json,.log,.py,.rs,.js,.jsx,.ts,.tsx" onChange={e => {void importAttachments(e.target.files);e.target.value='';}}/>
             <button type="button" className="subtleButton" disabled={!loaded} onClick={() => fileInput.current?.click()}>+ Attach</button>
+            <label className="planDraftOptIn">
+              <input type="checkbox" aria-label="Draft plan with Lu"
+                checked={planDraftNextSend}
+                disabled={!loaded || working || chatBusy || images.length>0 || textFiles.length>0}
+                onChange={e=>setPlanDraftNextSend(e.target.checked)}/>
+              Draft plan with Lu — no tools will run
+            </label>
             {/* Legacy specialist controls retained temporarily for compatibility, but no longer mounted. Native tools enter through the original human chat and per-turn OS approvals. */}
+            {perfLatestByChat[chatId] && <small className="hostPerfLatest"
+              aria-label="Latest host-observed performance receipt"
+              title="Measured by Lu host; missing token/GPU metrics are unverified, not zero.">
+              {perfLatestByChat[chatId].route==='CPU_DETERMINISTIC'?'CPU exact':'GGUF model'}
+              {' · '}{perfLatestByChat[chatId].overallLatencyMs} ms
+              {perfLatestByChat[chatId].queueWaitMs!=null
+                ?' · queue '+perfLatestByChat[chatId].queueWaitMs+' ms':''}
+              {perfLatestByChat[chatId].modelDispatchToFirstChunkMs!=null
+                ?' · first text '+perfLatestByChat[chatId].modelDispatchToFirstChunkMs+' ms':''}
+              {' · '}{perfLatestByChat[chatId].terminalState}
+            </small>}
             
             {chatBusy ? <button className="dangerButton" type="button" onClick={cancel}
                 disabled={!visibleJob.generationId || visibleJob.cancelling}>{visibleJob.cancelling ? 'Stopping…' : visibleJob.phase === 'queued' ? 'Cancel queued' : 'Cancel'}</button>
@@ -6293,6 +6710,19 @@ function App() {
           <span>Workers: {backgroundGuardian.workerUsed}/{backgroundGuardian.workerCapacity} · CPU slots: {backgroundGuardian.cpuUsed}/{backgroundGuardian.cpuCapacity} · RAM reservation: {backgroundGuardian.ramUsedMib}/{backgroundGuardian.ramCapacityMib} MiB</span>
           <small>{backgroundGuardian.observedAvailableRamMib==null?'Physical RAM probe unavailable':('Physical RAM available: '+backgroundGuardian.observedAvailableRamMib+' MiB')}{backgroundGuardian.observedCpuBusyPercent==null?'':' · CPU busy '+backgroundGuardian.observedCpuBusyPercent+'%'}</small>
           <small>GPU tasks stay disabled without verified backend VRAM availability. CPU/RAM admission reacts to host pressure; reservations are not actual per-worker consumption.</small>
+          <small>Interactive model: {backgroundGuardian.activeModelGenerationClass||'no active turn'}
+            {' '}· Waiting human: {backgroundGuardian.waitingForegroundGenerations??0}
+            {' '}· Waiting automatic: {backgroundGuardian.waitingBackgroundGenerations??0}</small>
+          <small>New background worker launches: {
+            backgroundGuardian.newBackgroundAdmissionDeferred===null ||
+            backgroundGuardian.newBackgroundAdmissionDeferred===undefined
+              ?'not yet sampled'
+              :backgroundGuardian.newBackgroundAdmissionDeferred?'deferred':'eligible'}
+            {' '}· Host reason: {String(backgroundGuardian.interactiveAdmissionReason||
+              'UNMEASURED').replaceAll('_',' ').toLowerCase()}.</small>
+          <small>This is Lu's conservative launch policy, not actual
+            GPU/VRAM allocation or proof that an already-running worker paused.
+            Existing workers retain cancellation and restart custody.</small>
         </div>}
         <div className="backgroundScanLaunch">
           <button type="button" className="primaryButton"

@@ -98,6 +98,14 @@ pub struct TaskTerminalNotice {
     pub progress:u8,
     pub detail:String,
 }
+/// Original-journal recovery projection; no PID, argv, path, checkpoint,
+/// private bytes, tool grant or action capability is exported.
+#[derive(Debug,Clone,PartialEq,Eq)]
+pub struct SecurityRecoveryRow{
+    pub task_id:String,
+    pub state:TaskState,
+    pub custody_reason:Option<String>,
+}
 /// Sanitized native operator view. Never includes checkpoints, raw worker
 /// output, files, or executable paths. Only Lu's trusted desktop host should
 /// expose this to the local user; model-facing tools remain workspace scoped.
@@ -296,7 +304,90 @@ impl TaskStore {
                BEGIN SELECT RAISE(ABORT,'Immutable Windows Job observation'); END;
              CREATE TRIGGER IF NOT EXISTS lu_task_os_custody_no_delete
                BEFORE DELETE ON lu_task_windows_job_custody
-               BEGIN SELECT RAISE(ABORT,'Immutable Windows Job observation'); END;"
+               BEGIN SELECT RAISE(ABORT,'Immutable Windows Job observation'); END;
+             CREATE TABLE IF NOT EXISTS lu_task_linux_os_owned_native_admission(
+               task_id TEXT PRIMARY KEY NOT NULL REFERENCES lu_tasks(task_id),
+               chat TEXT NOT NULL, turn TEXT NOT NULL,
+               nonce TEXT NOT NULL UNIQUE CHECK(length(nonce)=32),
+               kind TEXT NOT NULL CHECK(kind IN(
+                 'scan-file','archive-preview','archive-extract',
+                 'fixed-version','fixed-artifact','app-version')),
+               binary_sha256 TEXT NOT NULL CHECK(length(binary_sha256)=64),
+               argv_sha256 TEXT NOT NULL CHECK(length(argv_sha256)=64),
+               recorded_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+             );
+             CREATE TRIGGER IF NOT EXISTS lu_task_native_admission_no_update
+               BEFORE UPDATE ON lu_task_linux_os_owned_native_admission
+               BEGIN SELECT RAISE(ABORT,'Immutable Linux OS-owned native admission'); END;
+             CREATE TRIGGER IF NOT EXISTS lu_task_native_admission_no_delete
+               BEFORE DELETE ON lu_task_linux_os_owned_native_admission
+               BEGIN SELECT RAISE(ABORT,'Immutable Linux OS-owned native admission'); END;
+             CREATE TABLE IF NOT EXISTS lu_task_linux_os_owned_probe_admission(
+               task_id TEXT PRIMARY KEY NOT NULL REFERENCES lu_tasks(task_id),
+               chat TEXT NOT NULL, turn TEXT NOT NULL,
+               nonce TEXT NOT NULL UNIQUE CHECK(length(nonce)=32),
+               kind TEXT NOT NULL CHECK(kind IN (
+                 'ffprobe-wav','ffprobe-mp4','pdfinfo-pdf','exiftool-image')),
+               binary_sha256 TEXT NOT NULL CHECK(length(binary_sha256)=64),
+               resource_sha256 TEXT NOT NULL CHECK(length(resource_sha256)=64),
+               recorded_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+             );
+             CREATE TRIGGER IF NOT EXISTS lu_task_os_owned_probe_no_update
+               BEFORE UPDATE ON lu_task_linux_os_owned_probe_admission
+               BEGIN SELECT RAISE(ABORT,'Immutable Linux OS-owned probe admission'); END;
+             CREATE TRIGGER IF NOT EXISTS lu_task_os_owned_probe_no_delete
+               BEFORE DELETE ON lu_task_linux_os_owned_probe_admission
+               BEGIN SELECT RAISE(ABORT,'Immutable Linux OS-owned probe admission'); END;
+             CREATE TABLE IF NOT EXISTS lu_task_linux_os_owned_git_admission(
+               task_id TEXT PRIMARY KEY NOT NULL REFERENCES lu_tasks(task_id),
+               chat TEXT NOT NULL,
+               turn TEXT NOT NULL,
+               nonce TEXT NOT NULL UNIQUE CHECK(length(nonce)=32),
+               git_sha256 TEXT NOT NULL CHECK(length(git_sha256)=64),
+               recorded_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+             );
+             CREATE TRIGGER IF NOT EXISTS lu_task_os_owned_git_admission_no_update
+               BEFORE UPDATE ON lu_task_linux_os_owned_git_admission
+               BEGIN SELECT RAISE(ABORT,'Immutable Linux OS-owned admission'); END;
+             CREATE TRIGGER IF NOT EXISTS lu_task_os_owned_git_admission_no_delete
+               BEFORE DELETE ON lu_task_linux_os_owned_git_admission
+               BEGIN SELECT RAISE(ABORT,'Immutable Linux OS-owned admission'); END;
+             CREATE TABLE IF NOT EXISTS lu_task_custody_uncertainty(
+               task_id TEXT PRIMARY KEY NOT NULL REFERENCES lu_tasks(task_id),
+               reason TEXT NOT NULL CHECK(reason IN
+                 ('LINUX_GUARDIAN_LOST','OS_CUSTODY_UNVERIFIED')),
+               recorded_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+             );
+             CREATE TRIGGER IF NOT EXISTS lu_task_uncertainty_no_update
+               BEFORE UPDATE ON lu_task_custody_uncertainty
+               BEGIN SELECT RAISE(ABORT,'Immutable OS custody uncertainty'); END;
+             CREATE TRIGGER IF NOT EXISTS lu_task_uncertainty_no_delete
+               BEFORE DELETE ON lu_task_custody_uncertainty
+               BEGIN SELECT RAISE(ABORT,'Immutable OS custody uncertainty'); END;
+             CREATE TRIGGER IF NOT EXISTS lu_task_uncertainty_state_fence
+               BEFORE UPDATE OF state ON lu_tasks
+               WHEN EXISTS(SELECT 1 FROM lu_task_custody_uncertainty u
+                           WHERE u.task_id=OLD.task_id)
+                AND NEW.state IN ('RUNNING','COMPLETED','CANCELLED','TIMED_OUT')
+               BEGIN SELECT RAISE(ABORT,'Custody-uncertain task cannot be promoted'); END;
+             CREATE TRIGGER IF NOT EXISTS lu_task_uncertainty_parent_fence
+               BEFORE DELETE ON lu_tasks
+               WHEN EXISTS(SELECT 1 FROM lu_task_custody_uncertainty u
+                           WHERE u.task_id=OLD.task_id)
+               BEGIN SELECT RAISE(ABORT,'Cannot erase custody-uncertain task'); END;
+             CREATE TRIGGER IF NOT EXISTS lu_task_uncertainty_identity_fence
+               BEFORE UPDATE OF task_id,workspace_id ON lu_tasks
+               WHEN EXISTS(SELECT 1 FROM lu_task_custody_uncertainty u
+                           WHERE u.task_id=OLD.task_id)
+               BEGIN SELECT RAISE(ABORT,'Cannot change uncertain task owner'); END;
+             CREATE TRIGGER IF NOT EXISTS lu_task_uncertain_event_no_update
+               BEFORE UPDATE ON lu_task_events
+               WHEN OLD.event='PROCESS_UNCERTAIN'
+               BEGIN SELECT RAISE(ABORT,'Immutable process uncertainty event'); END;
+             CREATE TRIGGER IF NOT EXISTS lu_task_uncertain_event_no_delete
+               BEFORE DELETE ON lu_task_events
+               WHEN OLD.event='PROCESS_UNCERTAIN'
+               BEGIN SELECT RAISE(ABORT,'Immutable process uncertainty event'); END;"
         )?;
         Ok(Self {
             connection: Mutex::new(connection),
@@ -399,6 +490,119 @@ impl TaskStore {
         tx.commit()?;
         Ok(())
     }
+    /// SEC-06C original nonroot scanner/archive/utility execution is bound
+    /// to an immutable host-approved task/one-use nonce/kind/binary/argv hash.
+    /// A receipt never grants WriteWorkspace or ExecuteCode by itself.
+    #[cfg(target_os="linux")]
+    pub fn bind_linux_os_owned_native_admission(
+        &self,task_id:&str,chat:&str,turn:&str,nonce:&str,
+        kind:&str,binary_sha:&str,argv_sha:&str,
+    )->Result<(),TaskStoreError>{
+        let hex=|v:&str,n:usize|v.len()==n&&v.bytes().all(|b|
+            b.is_ascii_digit()||(b'a'..=b'f').contains(&b));
+        let identity=|v:&str,p:&str|v.len()==p.len()+32&&v.starts_with(p)
+            &&hex(&v[p.len()..],32);
+        if !identity(chat,"c-")||!identity(turn,"g-")||!hex(nonce,32)
+            ||!hex(binary_sha,64)||!hex(argv_sha,64)
+            ||!matches!(kind,"scan-file"|"archive-preview"|"archive-extract"
+                |"fixed-version"|"fixed-artifact"|"app-version")
+            ||task_id.is_empty()||task_id.len()>128{
+            return Err(TaskStoreError::InvalidTaskId)
+        }
+        let mut db=self.connection.lock().map_err(|_|TaskStoreError::Poisoned)?;
+        let tx=db.transaction()?;
+        let count:i64=tx.query_row(
+            "SELECT COUNT(*) FROM lu_tasks t
+             JOIN lu_reviewed_turn_origin o ON o.singleton=1
+             WHERE t.task_id=?1 AND t.workspace_id=?2 AND t.state='PENDING'
+               AND o.conversation_id=?3 AND o.user_turn_id=?2",
+            params![task_id,turn,chat],|r|r.get(0)
+        )?;
+        if count!=1{return Err(TaskStoreError::InvalidTransition)}
+        tx.execute(
+            "INSERT INTO lu_task_linux_os_owned_native_admission(
+               task_id,chat,turn,nonce,kind,binary_sha256,argv_sha256)
+             VALUES(?1,?2,?3,?4,?5,?6,?7)",
+            params![task_id,chat,turn,nonce,kind,binary_sha,argv_sha]
+        )?;
+        tx.commit()?;Ok(())
+    }
+    /// SEC-06C distinct finite metadata/media root-owned operation:
+    /// immutable one-use nonce, exact original chat/turn/task and two original
+    /// reviewed SHA256 values (binary and host-selected resource). This is
+    /// journal provenance only, never execution authorization by itself.
+    #[cfg(target_os="linux")]
+    pub fn bind_linux_os_owned_probe_admission(
+        &self,task_id:&str,chat:&str,turn:&str,nonce:&str,
+        kind:&str,binary_sha:&str,resource_sha:&str,
+    )->Result<(),TaskStoreError>{
+        let hex=|v:&str,n:usize|v.len()==n&&v.bytes().all(|b|
+            b.is_ascii_digit()||(b'a'..=b'f').contains(&b));
+        let identity=|v:&str,p:&str|v.len()==p.len()+32&&v.starts_with(p)
+            &&hex(&v[p.len()..],32);
+        if !identity(chat,"c-")||!identity(turn,"g-")||!hex(nonce,32)
+            ||!hex(binary_sha,64)||!hex(resource_sha,64)
+            ||!matches!(kind,"ffprobe-wav"|"ffprobe-mp4"
+                            |"pdfinfo-pdf"|"exiftool-image")
+            ||task_id.is_empty()||task_id.len()>128{
+            return Err(TaskStoreError::InvalidTaskId)
+        }
+        let mut db=self.connection.lock().map_err(|_|TaskStoreError::Poisoned)?;
+        let tx=db.transaction()?;
+        let matches:i64=tx.query_row(
+            "SELECT COUNT(*) FROM lu_tasks t
+             JOIN lu_reviewed_turn_origin o ON o.singleton=1
+             WHERE t.task_id=?1 AND t.workspace_id=?2 AND t.state='PENDING'
+               AND o.conversation_id=?3 AND o.user_turn_id=?2",
+            params![task_id,turn,chat],|r|r.get(0)
+        )?;
+        if matches!=1{return Err(TaskStoreError::InvalidTransition)}
+        tx.execute(
+            "INSERT INTO lu_task_linux_os_owned_probe_admission(
+               task_id,chat,turn,nonce,kind,binary_sha256,resource_sha256)
+             VALUES(?1,?2,?3,?4,?5,?6,?7)",
+            params![task_id,chat,turn,nonce,kind,binary_sha,resource_sha]
+        )?;
+        tx.commit()?;
+        Ok(())
+    }
+    /// SEC-06C: bind the unforgeable-in-process one-use systemd unit nonce
+    /// to the original PENDING, human-reviewed Git task before authorizing
+    /// completion. The row is immutable, unique, and NEVER a new permission.
+    #[cfg(target_os="linux")]
+    pub fn bind_linux_os_owned_git_admission(
+        &self,task_id:&str,chat:&str,turn:&str,nonce:&str,git_sha256:&str,
+    )->Result<(),TaskStoreError>{
+        let original=|v:&str,prefix:&str|
+            v.len()==prefix.len()+32&&v.starts_with(prefix)
+                &&v[prefix.len()..].bytes().all(|c|
+                    c.is_ascii_hexdigit()&&!c.is_ascii_uppercase());
+        if !original(chat,"c-")||!original(turn,"g-")
+            ||nonce.len()!=32||!nonce.bytes().all(|c|
+                c.is_ascii_digit()||(b'a'..=b'f').contains(&c))
+            ||git_sha256.len()!=64||!git_sha256.bytes().all(|c|
+                c.is_ascii_digit()||(b'a'..=b'f').contains(&c))
+            ||task_id.is_empty()||task_id.len()>128{
+            return Err(TaskStoreError::InvalidTaskId)
+        }
+        let mut db=self.connection.lock().map_err(|_|TaskStoreError::Poisoned)?;
+        let tx=db.transaction()?;
+        let matches:i64=tx.query_row(
+            "SELECT COUNT(*) FROM lu_tasks t
+             JOIN lu_reviewed_turn_origin o ON o.singleton=1
+             WHERE t.task_id=?1 AND t.workspace_id=?2 AND t.state='PENDING'
+               AND o.conversation_id=?3 AND o.user_turn_id=?2",
+            params![task_id,turn,chat],|r|r.get(0)
+        )?;
+        if matches!=1{return Err(TaskStoreError::InvalidTransition)}
+        tx.execute(
+            "INSERT INTO lu_task_linux_os_owned_git_admission(
+              task_id,chat,turn,nonce,git_sha256) VALUES(?1,?2,?3,?4,?5)",
+            params![task_id,chat,turn,nonce,git_sha256]
+        )?;
+        tx.commit()?;
+        Ok(())
+    }
     /// Read the exact sealed human origin for a reviewed native worker.
     /// The cgroup custodian never receives a model or caller-supplied chat.
     pub fn reviewed_human_origin(
@@ -418,12 +622,18 @@ impl TaskStore {
         self.transition(task_id, "RUNNING", TaskState::Paused)
     }
 
+    /// Only an explicitly PAUSED, still-owned task may resume. An
+    /// INTERRUPTED task lost its original process/authority on restart;
+    /// it needs a new original human authorization and NEW task identity.
+    /// An old interruption record is never a credential to restart work.
     pub fn resume(&self, task_id: &str) -> Result<(), TaskStoreError> {
         let mut connection=self.connection.lock().map_err(|_|TaskStoreError::Poisoned)?;
         let tx=connection.transaction()?;
         let changed=tx.execute(
             "UPDATE lu_tasks SET state='RUNNING', updated_at=CURRENT_TIMESTAMP
-             WHERE task_id=?1 AND state IN ('PAUSED','INTERRUPTED')",params![task_id]
+             WHERE task_id=?1 AND state='PAUSED'
+               AND NOT EXISTS(SELECT 1 FROM lu_task_custody_uncertainty
+                              WHERE task_id=?1)",params![task_id]
         )?;
         if changed!=1{return Err(TaskStoreError::InvalidTransition);}
         tx.execute(
@@ -439,6 +649,89 @@ impl TaskStore {
         self.transition(task_id, "RUNNING", TaskState::Completed)
     }
 
+    /// P0-SEC: persist the FIRST host-observed OS custody failure without
+    /// changing RUNNING into a misleading completed/cancelled state. Restart
+    /// later reconciles RUNNING to INTERRUPTED; this immutable row survives.
+    /// Only host-owned fixed enum reason codes are admitted.
+    pub fn record_process_uncertain(
+        &self,task_id:&str,reason:&str,
+    )->Result<(),TaskStoreError>{
+        if !matches!(reason,"LINUX_GUARDIAN_LOST"|"OS_CUSTODY_UNVERIFIED"){
+            return Err(TaskStoreError::InvalidTransition)
+        }
+        let mut conn=self.connection.lock().map_err(|_|TaskStoreError::Poisoned)?;
+        let tx=conn.transaction()?;
+        let changed=tx.execute(
+            "INSERT OR IGNORE INTO lu_task_custody_uncertainty(task_id,reason)
+             SELECT task_id,?2 FROM lu_tasks
+             WHERE task_id=?1 AND state IN ('PENDING','RUNNING')",
+            params![task_id,reason],
+        )?;
+        if changed==1{
+            tx.execute(
+                "INSERT INTO lu_task_events(task_id,event,progress,detail)
+                 SELECT task_id,'PROCESS_UNCERTAIN',progress,detail
+                 FROM lu_tasks WHERE task_id=?1",
+                params![task_id],
+            )?;
+        }else{
+            let exists:i64=tx.query_row(
+                "SELECT EXISTS(SELECT 1 FROM lu_task_custody_uncertainty
+                 WHERE task_id=?1)",params![task_id],|row|row.get(0)
+            )?;
+            if exists!=1{return Err(TaskStoreError::InvalidTransition)}
+        }
+        tx.commit()?;
+        Ok(())
+    }
+    /// Host-only historical uncertainty view, never an execution grant.
+    pub fn process_uncertainty(&self,task_id:&str)
+        ->Result<Option<String>,TaskStoreError>{
+        let conn=self.connection.lock().map_err(|_|TaskStoreError::Poisoned)?;
+        conn.query_row(
+            "SELECT reason FROM lu_task_custody_uncertainty
+             WHERE task_id=?1",params![task_id],|row|row.get(0)
+        ).optional().map_err(Into::into)
+    }
+
+    /// SEC-04: exact journal-scoped operator rows. Historical projection,
+    /// never authorization or automatic resume. Reviewed callers verify
+    /// original (chat,turn) binding; global callers pass an exact chat.
+    pub fn security_recovery_rows(
+        &self,workspace:Option<&str>,limit:usize,
+    )->Result<(Vec<SecurityRecoveryRow>,bool),TaskStoreError>{
+        if limit==0||limit>64||workspace.is_some_and(|w|
+            w.len()<3||w.len()>128||!w.starts_with("c-")
+            ||!w.bytes().all(|x|x.is_ascii_alphanumeric()||x==b'-'||x==b'_')){
+            return Err(TaskStoreError::InvalidTaskId)
+        }
+        let connection=self.connection.lock()
+            .map_err(|_|TaskStoreError::Poisoned)?;
+        let mut stmt=connection.prepare(
+            "SELECT t.task_id,t.state,u.reason FROM lu_tasks t
+             LEFT JOIN lu_task_custody_uncertainty u ON u.task_id=t.task_id
+             WHERE (?1 IS NULL OR t.workspace_id=?1)
+               AND (t.state='INTERRUPTED' OR u.task_id IS NOT NULL)
+             ORDER BY t.updated_at DESC,t.task_id ASC LIMIT ?2"
+        )?;
+        let rows=stmt.query_map(params![workspace,(limit+1) as i64],|r|{
+            let state:String=r.get(1)?;
+            Ok((r.get::<_,String>(0)?,state,r.get::<_,Option<String>>(2)?))
+        })?;
+        let mut result=Vec::new();
+        for row in rows{
+            let (task_id,state,reason)=row?;
+            result.push(SecurityRecoveryRow{
+                task_id,state:TaskState::parse(&state)
+                    .ok_or(TaskStoreError::InvalidStoredState)?,
+                custody_reason:reason,
+            });
+        }
+        let more=result.len()>limit;
+        result.truncate(limit);
+        Ok((result,more))
+    }
+
     pub fn fail(&self, task_id: &str) -> Result<(), TaskStoreError> {
         self.transition(task_id, "RUNNING", TaskState::Failed)
     }
@@ -449,7 +742,9 @@ impl TaskStore {
         let tx=connection.transaction()?;
         let changed=tx.execute(
             "UPDATE lu_tasks SET state='CANCELLED',updated_at=CURRENT_TIMESTAMP
-             WHERE task_id=?1 AND state IN ('PENDING','RUNNING','PAUSED')",
+             WHERE task_id=?1 AND state IN ('PENDING','RUNNING','PAUSED')
+               AND NOT EXISTS(SELECT 1 FROM lu_task_custody_uncertainty
+                              WHERE task_id=?1)",
             params![task_id],
         )?;
         if changed!=1{return Err(TaskStoreError::InvalidTransition);}
@@ -478,6 +773,13 @@ impl TaskStore {
             .lock()
             .map_err(|_| TaskStoreError::Poisoned)?;
         let tx=connection.transaction()?;
+        if matches!(to,TaskState::Running|TaskState::Completed|TaskState::Cancelled|TaskState::TimedOut){
+            let uncertain:i64=tx.query_row(
+                "SELECT EXISTS(SELECT 1 FROM lu_task_custody_uncertainty
+                 WHERE task_id=?1)",params![task_id],|row|row.get(0)
+            )?;
+            if uncertain!=0{return Err(TaskStoreError::InvalidTransition)}
+        }
         let changed=tx.execute(
             "UPDATE lu_tasks SET state=?1, updated_at=CURRENT_TIMESTAMP
              WHERE task_id=?2 AND state=?3",
@@ -559,11 +861,15 @@ impl TaskStore {
         tx.execute(
             "INSERT INTO lu_task_events(task_id,event,progress,detail)
              SELECT task_id,'INTERRUPTED',progress,detail FROM lu_tasks
-             WHERE state='RUNNING'",[],
+             WHERE state='RUNNING' OR (state='PENDING' AND EXISTS(
+                 SELECT 1 FROM lu_task_custody_uncertainty u
+                 WHERE u.task_id=lu_tasks.task_id))",[],
         )?;
         let changed=tx.execute(
             "UPDATE lu_tasks SET state='INTERRUPTED',updated_at=CURRENT_TIMESTAMP
-             WHERE state='RUNNING'",[],
+             WHERE state='RUNNING' OR (state='PENDING' AND EXISTS(
+                 SELECT 1 FROM lu_task_custody_uncertainty u
+                 WHERE u.task_id=lu_tasks.task_id))",[],
         )?;
         tx.commit()?;
         Ok(changed)
@@ -930,7 +1236,9 @@ impl TaskStore {
         let tx=conn.transaction()?;
         let changed=tx.execute(
             "UPDATE lu_tasks SET state='COMPLETED',updated_at=CURRENT_TIMESTAMP
-             WHERE task_id=?1 AND state='RUNNING' AND progress=100 AND detail=?2",
+             WHERE task_id=?1 AND state='RUNNING' AND progress=100 AND detail=?2
+               AND NOT EXISTS(SELECT 1 FROM lu_task_custody_uncertainty
+                              WHERE task_id=?1)",
             params![task_id,expected]
         )?;
         if changed!=1{return Err(TaskStoreError::InvalidTransition)}
@@ -1414,5 +1722,134 @@ mod e1_p15_origin_binding_tests{
         let _=std::fs::remove_file(&file);
         let _=std::fs::remove_file(format!("{}-wal",file.display()));
         let _=std::fs::remove_file(format!("{}-shm",file.display()));
+    }
+}
+
+#[cfg(test)]
+mod p0_sec_custody_uncertainty_tests{
+    use super::*;
+    #[test]
+    fn uncertainty_is_immutable_durable_and_blocks_false_terminal_success(){
+        let path=std::env::temp_dir().join(format!(
+            "lu-p0-sec-{}-{}.sqlite",std::process::id(),
+            std::time::SystemTime::now().duration_since(
+                std::time::UNIX_EPOCH).unwrap().as_nanos()
+        ));
+        {
+            let store=TaskStore::open(&path).unwrap();
+            store.create("sec-1",Some("c-owner"),None).unwrap();
+            store.start("sec-1").unwrap();
+            assert!(store.record_process_uncertain("sec-1","MODEL_CLAIM").is_err());
+            store.record_process_uncertain("sec-1","LINUX_GUARDIAN_LOST").unwrap();
+            store.record_process_uncertain("sec-1","OS_CUSTODY_UNVERIFIED").unwrap();
+            assert_eq!(store.process_uncertainty("sec-1").unwrap().as_deref(),
+                Some("LINUX_GUARDIAN_LOST"));
+            assert!(store.complete("sec-1").is_err());
+            assert!(store.cancelled("sec-1").is_err());
+            assert!(store.timed_out("sec-1").is_err());
+        }
+        {
+            let store=TaskStore::open(&path).unwrap();
+            assert_eq!(store.process_uncertainty("sec-1").unwrap().as_deref(),
+                Some("LINUX_GUARDIAN_LOST"));
+            assert_eq!(store.reconcile_interrupted().unwrap(),1);
+            assert_eq!(store.get("sec-1").unwrap().unwrap().state,
+                TaskState::Interrupted);
+            assert!(store.complete("sec-1").is_err());
+        }
+        let _=std::fs::remove_file(&path);
+        let _=std::fs::remove_file(format!("{}-wal",path.display()));
+        let _=std::fs::remove_file(format!("{}-shm",path.display()));
+    }
+}
+
+// SEC-05: adversarial original SQLite task state and custody mutations.
+#[cfg(test)]
+#[path = "p0_sec05_task_adversarial_tests.rs"]
+mod p0_sec05_task_adversarial_tests;
+
+
+#[cfg(all(test,target_os="linux"))]
+mod sec06c_os_owned_git_admission_tests{
+    use super::*;
+    #[test]
+    fn fixed_os_owned_git_nonce_is_immutable_one_use_and_original_turn_bound(){
+        let root=std::env::temp_dir().join(format!(
+            "lu-sec06c-journal-{}-{}",std::process::id(),
+            std::time::SystemTime::now().duration_since(
+                std::time::UNIX_EPOCH).unwrap().as_nanos()));
+        std::fs::create_dir_all(&root).unwrap();
+        let path=root.join("original.sqlite");
+        let store=TaskStore::open(&path).unwrap();
+        let chat=format!("c-{}","a".repeat(32));
+        let turn=format!("g-{}","b".repeat(32));
+        store.bind_reviewed_human_turn(&chat,&turn).unwrap();
+        store.create("sec06c-native-gh",Some(&turn),None).unwrap();
+        let nonce="c".repeat(32);
+        let digest="d".repeat(64);
+        assert!(store.bind_linux_os_owned_git_admission(
+            "sec06c-native-gh",&chat,&turn,&nonce,&digest).is_ok());
+        assert!(store.bind_linux_os_owned_git_admission(
+            "sec06c-native-gh",&chat,&turn,&nonce,&digest).is_err());
+        store.create("sec06c-other-gh",Some(&turn),None).unwrap();
+        assert!(store.bind_linux_os_owned_git_admission(
+            "sec06c-other-gh",&chat,&turn,&nonce,&digest).is_err(),
+            "the same root-owned operation nonce must never be reused");
+        assert!(store.bind_linux_os_owned_git_admission(
+            "sec06c-other-gh","c-00000000000000000000000000000000",
+            &turn,&"e".repeat(32),&digest).is_err());
+        let conn=rusqlite::Connection::open(&path).unwrap();
+        assert!(conn.execute(
+            "UPDATE lu_task_linux_os_owned_git_admission SET nonce=?1 WHERE task_id=?2",
+            rusqlite::params!["e".repeat(32),"sec06c-native-gh"]
+        ).is_err());
+        assert!(conn.execute(
+            "DELETE FROM lu_task_linux_os_owned_git_admission WHERE task_id=?1",
+            rusqlite::params!["sec06c-native-gh"]
+        ).is_err());
+        drop(conn);drop(store);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn finite_root_owned_probe_nonce_kind_and_input_digest_are_immutable(){
+        let root=std::env::temp_dir().join(format!(
+            "lu-sec06c-probe-ledger-{}-{}",std::process::id(),
+            std::time::SystemTime::now().duration_since(
+                std::time::UNIX_EPOCH).unwrap().as_nanos()));
+        std::fs::create_dir_all(&root).unwrap();
+        let path=root.join("journal.sqlite");
+        let store=TaskStore::open(&path).unwrap();
+        let chat=format!("c-{}","a".repeat(32));
+        let turn=format!("g-{}","b".repeat(32));
+        store.bind_reviewed_human_turn(&chat,&turn).unwrap();
+        store.create("sec06c-ffprobe-fm",Some(&turn),None).unwrap();
+        store.create("sec06c-pdfinfo-fm",Some(&turn),None).unwrap();
+        let nonce="e".repeat(32);
+        let binary="a".repeat(64);
+        let resource="b".repeat(64);
+        assert!(store.bind_linux_os_owned_probe_admission(
+            "sec06c-ffprobe-fm",&chat,&turn,&nonce,
+            "ffprobe-wav",&binary,&resource).is_ok());
+        assert!(store.bind_linux_os_owned_probe_admission(
+            "sec06c-ffprobe-fm",&chat,&turn,&nonce,
+            "ffprobe-mp4",&binary,&resource).is_err());
+        assert!(store.bind_linux_os_owned_probe_admission(
+            "sec06c-pdfinfo-fm",&chat,&turn,&nonce,
+            "pdfinfo-pdf",&binary,&resource).is_err());
+        assert!(store.bind_linux_os_owned_probe_admission(
+            "sec06c-pdfinfo-fm",&chat,&turn,&"f".repeat(32),
+            "shell",&binary,&resource).is_err());
+        let conn=rusqlite::Connection::open(&path).unwrap();
+        assert!(conn.execute(
+            "UPDATE lu_task_linux_os_owned_probe_admission
+             SET resource_sha256=?1 WHERE task_id=?2",
+            rusqlite::params!["f".repeat(64),"sec06c-ffprobe-fm"]
+        ).is_err());
+        assert!(conn.execute(
+            "DELETE FROM lu_task_linux_os_owned_probe_admission
+             WHERE task_id=?1",rusqlite::params!["sec06c-ffprobe-fm"]
+        ).is_err());
+        drop(conn);drop(store);
+        std::fs::remove_dir_all(root).unwrap();
     }
 }

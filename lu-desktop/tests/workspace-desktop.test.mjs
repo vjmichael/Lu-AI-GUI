@@ -9,7 +9,8 @@ test('Ask Workspace is native-folder-picked and never accepts WebView file paths
   assert.match(host,/lu_workspace_ask_directory,/);
   assert.match(route,/blocking_pick_folder\(\)/);
   assert.match(route,/is_real_directory\(&root\)/);
-  assert.match(route,/WorkspaceReadTurnSession::new\(/);
+  assert.match(route,/WorkspaceReadTurnSession::new_with_reader_observer\(/);
+  assert.match(route,/WorkspaceReadTurnSession::new_git\(/);
   assert.match(ui,/invoke\('lu_workspace_ask_directory',\{/);
   // Chat-first UX removed the old specialist button. Host intent and picker remain.
   assert.match(host,/workspace_desktop::explicit_read_workspace_request\(&prompt\)/);
@@ -42,9 +43,10 @@ test('workspace selection is opt-in and normal Send remains a separate path',()=
 });
 
 test('P01 native filename/metadata discovery is advertised only in a scoped workspace turn',()=>{
-  assert.match(route,/indexed filename\/metadata/);
-  assert.match(route,/indexed discovery tool before repeatedly traversing folders/);
-  assert.match(route,/WorkspaceReadTurnSession::new\(/);
+  assert.match(route,/indexed filename discovery/);
+  assert.match(route,/Read-only file\/directory/);
+  assert.match(route,/WorkspaceReadTurnSession::new_with_reader_observer\(/);
+  assert.match(route,/WorkspaceReadTurnSession::new_git\(/);
   assert.doesNotMatch(route,/register_discovery_tool\(/);
   assert.match(route,/blocking_pick_folder\(\)/);
   assert.match(host,/workspace_desktop::explicit_read_workspace_request\(&prompt\)/);

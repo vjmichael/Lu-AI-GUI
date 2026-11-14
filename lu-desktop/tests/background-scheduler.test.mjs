@@ -20,7 +20,8 @@ test('P02 uses existing supervised worker and durable task receipts',()=>{
   assert.match(host,/background_scheduler: Arc<lu_core::native_background_scheduler::BackgroundScheduler>/);
   assert.match(host,/lu-background-schedule\.sqlite/);
   assert.match(host,/background_tasks\.reconcile_interrupted\(\)/);
-  assert.match(host,/background_scheduler\.tick\(\)/);
+  assert.match(host,/background_scheduler\.tick_interactive_guarded\(/);
+  assert.match(host,/background_scheduler\.apply_interactive_admission\(admission\)/);
 });
 test('P02 persisted scheduling never serializes executable paths or auto replays after crashes',()=>{
   assert.match(core,/CREATE TABLE IF NOT EXISTS lu_schedule\(/);
@@ -43,8 +44,9 @@ test('P02 guardian admission preserves interactive room and denies unverified GP
   assert.match(core,/fn supports\(/);
   assert.match(core,/fn set_budget\(/);
   assert.match(host,/state\.supervisor\.status\(\)\.is_ok_and/);
-  assert.match(host,/budget\.ram_mib=512/);
-  assert.match(host,/background_scheduler\.set_budget\(budget\)/);
+  assert.match(host,/ResourceBudget::interactive_admission\(/);
+  assert.match(host,/background_pressure\.sample\(\)/);
+  assert.match(host,/background_scheduler\.apply_interactive_admission\(admission\)/);
 });
 test('P02 tasks can be queued, prioritized, delayed, repeated and safely cancelled',()=>{
   assert.match(core,/pub fn enqueue_host_plan\(/);

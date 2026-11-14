@@ -127,6 +127,24 @@ fn enumerate_package_files(dir:&Path,base:&Path,out:&mut Vec<String>)->bool {
     true
 }
 impl DesktopBrowserHost {
+    /// SEC-06C sole Linux authority: the old direct Node/Chromium spawns
+    /// must never turn a reviewed browser grant into uncontained execution.
+    /// This intentionally remains a denial until the dedicated finite,
+    /// jointly OS-owned browser session is installed and natively verified.
+    fn require_browser_kernel_custody()->Result<(),String>{
+        #[cfg(target_os="linux")]
+        {
+            if !OwnedBrowserWorker::sec06c_installed(){
+                return Err("SEC06C_BROWSER_JOINT_KERNEL_CUSTODY_UNAVAILABLE".into())
+            }
+            if std::env::var("DISPLAY").is_err(){
+                return Err("SEC06C_BROWSER_X11_DISPLAY_UNAVAILABLE".into())
+            }
+            Ok(())
+        }
+        #[cfg(not(target_os="linux"))]
+        {Ok(())}
+    }
     pub fn new(resources:PathBuf,app_data:PathBuf)->Self {
         Self {resources,app_data,session:Mutex::new(None)}
     }
@@ -175,9 +193,16 @@ impl DesktopBrowserHost {
         let mut session=self.session.lock()
             .map_err(|_|"browser supervisor lock poisoned")?;
         if session.as_mut().is_some_and(|worker|!worker.is_alive()){
-            session.take(); // crash recovery closes stale worker ownership
+            // On a dead original Chromium/Node peer, a matching root-owned
+            // cleanup receipt is still required. Do not lose the only live
+            // manager/pipe on failed cleanup or silently clear uncertainty.
+            if session.as_mut().is_some_and(|w|w.stop_verified().is_ok()){
+                session.take();
+            }
         }
-        let running=session.is_some();
+        // A failed kernel cleanup retains a supervisor handle for retry but
+        // must NOT be reported as a live original Chrome/Node session.
+        let running=session.as_mut().is_some_and(|worker|worker.is_alive());
         let mut human_verification_required=false;
         let mut window_visibility=None;
         if let Some(worker)=session.as_mut(){
@@ -189,10 +214,23 @@ impl DesktopBrowserHost {
                 }
             }
         }
+        // Snapshot the original ownership state BEFORE releasing the guard;
+        // recovery is permitted only when no unresolved kernel handle remains.
+        #[cfg(target_os="linux")]
+        let session_absent=session.is_none();
         drop(session);
         let package_available=self.packaged_components_present();
-        let launch_ready=self.package_verified();
-        let reason=if launch_ready{
+        #[cfg(target_os="linux")]
+        let recovery_ready=running||(session_absent
+            &&OwnedBrowserWorker::sec06c_reconcile_previous(
+                &self.app_data.join("lu-browser-profile")).is_ok());
+        #[cfg(not(target_os="linux"))]
+        let recovery_ready=true;
+        let launch_ready=self.package_verified()&&recovery_ready
+            &&Self::require_browser_kernel_custody().is_ok();
+        let reason=if !recovery_ready{
+            "SEC06C_BROWSER_PRIOR_KERNEL_CUSTODY_UNRECONCILED: operator review required".into()
+        }else if launch_ready{
             "Verified browser package ready".into()
         }else if package_available{
             "Browser files exist, but signed/pinned runtime admission is not complete".into()
@@ -210,8 +248,10 @@ impl DesktopBrowserHost {
     /// A verified signed browser package is mandatory before spawning.
     #[allow(dead_code)]
     pub(crate) fn launch_for_native_grant(
-        &self, approved_origins:Vec<String>,preferences:&BrowserPreferences
+        &self, approved_origins:Vec<String>,preferences:&BrowserPreferences,
+        original_chat:&str,original_turn:&str,original_task:&str,
     )->Result<(),String>{
+        Self::require_browser_kernel_custody()?;
         self.require_launch_ready()?;
         let mut owned=self.session.lock()
             .map_err(|_|"browser supervisor lock poisoned")?;
@@ -229,6 +269,7 @@ impl DesktopBrowserHost {
         let preference=preferences.visibility()
             .map_err(|e|format!("browser visibility unavailable: {e:?}"))?;
         let directory=self.package_dir();
+        #[cfg(windows)]
         let launched=launch_owned_headed_chromium(
             &directory.join(CHROMIUM_NAME),&profile,Duration::from_secs(20)
         ).map_err(|e|format!("browser process launch refused: {e:?}"))?;
@@ -244,8 +285,15 @@ impl DesktopBrowserHost {
         #[cfg(windows)]
         let worker=OwnedBrowserWorker::launch_attached(config,launched);
         #[cfg(target_os="linux")]
-        let worker=OwnedBrowserWorker::launch_attached(config,launched,
-            directory.join("xdotool"));
+        let worker={
+            let display=std::env::var("DISPLAY")
+                .map_err(|_|"SEC06C_BROWSER_X11_DISPLAY_UNAVAILABLE")?;
+            let xauth=std::env::var_os("XAUTHORITY").map(PathBuf::from);
+            OwnedBrowserWorker::launch_sec06c(
+                config,&directory.join(CHROMIUM_NAME),directory.join("xdotool"),
+                original_chat,original_turn,original_task,
+                &display,xauth.as_deref())
+        };
         #[cfg(not(any(windows,target_os="linux")))]
         return Err("Native browser host unsupported on this OS".into());
         #[cfg(any(windows,target_os="linux"))]
@@ -315,7 +363,16 @@ impl DesktopBrowserHost {
     pub fn stop(&self)->Result<bool,String>{
         let mut session=self.session.lock()
             .map_err(|_|"browser supervisor lock poisoned")?;
-        Ok(session.take().is_some()) // Drops worker; kills/reaps child processes
+        if let Some(worker)=session.as_mut(){
+            // RETAIN the original owned broker when actual kernel cleanup
+            // cannot be proven. A failed stop must not discard the only
+            // service handle or silently publish success to the user.
+            worker.stop_verified().map_err(|e|
+                format!("SEC06C_BROWSER_KERNEL_CLEANUP_UNVERIFIED: {e:?}"))?;
+            session.take(); // Only the exact root receipt releases ownership.
+            return Ok(true)
+        }
+        Ok(false)
     }
     /// Host call only. The native Tauri API must not accept a model-supplied
     /// executable, browser profile, PID or uncontrolled origin grant.
@@ -323,6 +380,11 @@ impl DesktopBrowserHost {
         if !self.package_verified(){
             return Err("Lu browser runtime unavailable: missing reviewed, pinned package".into());
         }
+        Self::require_browser_kernel_custody()?;
+        #[cfg(target_os="linux")]
+        OwnedBrowserWorker::sec06c_reconcile_previous(
+            &self.app_data.join("lu-browser-profile"))
+            .map_err(|e|format!("SEC06C_BROWSER_PRIOR_KERNEL_CUSTODY_UNRECONCILED: {e:?}"))?;
         Ok(())
     }
 }

@@ -382,6 +382,13 @@ async function main() {
       }
     });
   });
+  // SEC-06C root-owned mediator must prove this exact Node worker actually
+  // initialized its parser and lifetime pipe BEFORE admitting the pair.
+  // Normal desktop/standalone protocol remains unchanged (no unsolicited
+  // message without the first-party mediator's fixed env contract).
+  if(process.env.LU_SEC06C_STARTUP_ACK==='1') {
+    process.stdout.write('LU_SEC06C_NODE_READY_V1\n');
+  }
   await new Promise(resolve=>input.once('close',resolve));
   bridge.close();
   await queue;

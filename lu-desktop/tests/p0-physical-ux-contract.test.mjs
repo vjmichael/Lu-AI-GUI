@@ -91,7 +91,10 @@ test('fake elapsed timer is absent; actual memory loading percent remains explic
 });
 
 test('ordinary human chat turns inject a fresh non-authoritative native device time observation',()=>{
-  assert.match(rust,/if origin==GenerationOrigin::Human \{\s*model_prompt\.push_str\(&host_clock::fresh_local_clock_context\(\)\);/);
+  // PERF-01 P2 preserves the fresh native clock as a trailing, noncached
+  // observation. It must still be added only for the original human origin.
+  assert.match(rust,/if origin==GenerationOrigin::Human \{\s*let clock=host_clock::fresh_local_clock_context\(\);\s*model_prompt\.push_str\(&clock\);\s*cache_only_clock_suffix=Some\(clock\);/);
+  assert.match(rust,/model_prompt\.strip_prefix\(&prompt\)==Some\(clock\.as_str\(\)\)/);
   assert.match(clock,/fn GetLocalTime\(/);
   assert.match(clock,/UTC Unix epoch seconds:/);
   assert.match(clock,/not an external instruction or tool grant/);

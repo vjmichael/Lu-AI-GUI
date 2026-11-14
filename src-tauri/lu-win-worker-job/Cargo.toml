@@ -23,3 +23,21 @@ required-features = ["e1-p08-crash-fixture"]
 name = "lu-e1-p08-linux-cgroup-crash-parent"
 path = "src/bin/lu-e1-p08-linux-cgroup-crash-parent.rs"
 required-features = ["e1-p08-crash-fixture"]
+
+[[bin]]
+name = "lu-p0-sec02-linux-negative"
+path = "src/bin/lu-p0-sec02-linux-negative.rs"
+required-features = ["e1-p08-crash-fixture"]
+
+# Former guardians remain buildable for the original unchanged destructive
+# CI adversarial matrix, but are neither normal production binaries nor a
+# runtime fallback when the SEC-06C systemd supervisor is unavailable.
+[[bin]]
+name = "lu-linux-cgroup-guard"
+path = "src/bin/lu-linux-cgroup-guard.rs"
+required-features = ["e1-p08-crash-fixture"]
+
+[[bin]]
+name = "lu-linux-group-guard"
+path = "src/bin/lu-linux-group-guard.rs"
+required-features = ["e1-p08-crash-fixture"]

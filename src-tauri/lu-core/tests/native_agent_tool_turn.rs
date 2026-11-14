@@ -537,10 +537,10 @@ async fn model_step_budget_is_bounded_and_authorized_names_are_selected_by_host(
 #[tokio::test]
 async fn text_search_caps_directory_entries_even_when_all_are_directories() {
     let (folder, registry, catalog, authority, origin, _) = setup();
-    // The native search budget was increased to 512 directory entries;
-    // create more than that budget so this tests actual truncation, not
-    // whether a smaller historical threshold was retained.
-    for i in 0..600 {
+    // The current native search bounds are MAX_ENTRIES = 1_024. Exercise
+    // the actual directory-entry boundary, not the older 512-entry limit.
+    // Every entry is a directory; file counters cannot hide an unbounded walk.
+    for i in 0..1_025 {
         fs::create_dir(folder.join(format!("folder-{i:03}"))).unwrap();
     }
     let allowed = BTreeSet::from(["lu_files_search_text".into()]);

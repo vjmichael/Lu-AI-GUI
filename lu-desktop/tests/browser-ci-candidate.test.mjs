@@ -1,4 +1,5 @@
 import test from 'node:test';
+import {spawn} from 'node:child_process';
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {createReadStream} from 'node:fs';
@@ -67,4 +68,51 @@ candidateTest('every candidate byte is covered by SHA256 and manifest has indepe
   }
   enumerate(out);
   assert.deepEqual(actual,expected,'Candidate contains untracked content');
+});
+
+// Native CI candidate must prove its OWN bundled Node binary stays alive
+// after first-party protocol initialization, rather than treating Popen as
+// proof of a working browser worker or reading arbitrary script output.
+candidateTest('bundled Node establishes SEC06C original bootstrap and holds its lifetime pipe',async()=>{
+  const bin=join(out,process.platform==='win32'?'node.exe':'node');
+  const worker=join(out,'lu_browser_worker.mjs');
+  const child=spawn(bin,[worker],{
+    cwd:out,
+    env:{PATH:process.env.PATH||'',HOME:process.env.HOME||out,
+      LU_SEC06C_STARTUP_ACK:'1',
+      LU_BROWSER_HOST_CONFIG:JSON.stringify({
+        origins:['https://example.com'],profileDirectory:out,
+        visibilityMode:'automatic',cdpEndpoint:'http://127.0.0.1:19001'
+      })},
+    stdio:['pipe','pipe','pipe']
+  });
+  try{
+    const frame=await new Promise((resolve,reject)=>{
+      let received='';
+      const timer=setTimeout(()=>reject(Error('genuine bundled Node bootstrap deadline')),8000);
+      child.once('error',error=>{clearTimeout(timer);reject(error);});
+      child.once('exit',(code,signal)=>{
+        clearTimeout(timer);reject(Error('bundled Node exited before bootstrap: '+code+'/'+signal));
+      });
+      child.stdout.on('data',part=>{
+        received+=part.toString('utf8');
+        if(received.length>64){clearTimeout(timer);reject(Error('unbounded bootstrap reply'));return;}
+        if(received.includes('\n')){clearTimeout(timer);resolve(received);}
+      });
+    });
+    assert.equal(frame,'LU_SEC06C_NODE_READY_V1\n');
+    assert.equal(child.exitCode,null,'original Node exited after false readiness');
+    const exit=new Promise((resolve,reject)=>{
+      child.once('exit',(code,signal)=>resolve({code,signal}));
+      child.once('error',reject);
+    });
+    child.stdin.end();
+    const result=await Promise.race([
+      exit,
+      new Promise((_,reject)=>setTimeout(()=>reject(Error('Node ignored real lifetime EOF')),8000))
+    ]);
+    assert.deepEqual(result,{code:0,signal:null});
+  }finally{
+    if(child.exitCode===null&&!child.killed)child.kill();
+  }
 });

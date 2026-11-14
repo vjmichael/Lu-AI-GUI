@@ -2,7 +2,7 @@
 //! EXISTING ANSF Library SQLite. No new worker, planner, model grant or DB.
 //! Requests are written BEFORE stop attempts; missing outcomes after crash
 //! remain uncertain and can NEVER be replayed as a cancellation action.
-use rusqlite::{params,Connection};
+use rusqlite::{params,Connection,OptionalExtension};
 use serde::{Serialize,Deserialize};
 use sha2::{Digest,Sha256};
 use std::collections::BTreeMap;
@@ -82,9 +82,72 @@ pub(crate) fn initialize(conn:&Connection)->Result<(),String>{
             UNIQUE(attempt_id,phase)
          );
          CREATE INDEX IF NOT EXISTS ansf_p0_cancel_chat
-            ON ansf_p0_host_cancel_events(chat_id,id DESC);"
+            ON ansf_p0_host_cancel_events(chat_id,id DESC);
+         CREATE TRIGGER IF NOT EXISTS ansf_p0_cancel_no_update
+            BEFORE UPDATE ON ansf_p0_host_cancel_events
+            BEGIN SELECT RAISE(ABORT,'Immutable original cancellation event'); END;
+         CREATE TRIGGER IF NOT EXISTS ansf_p0_cancel_no_direct_delete
+            BEFORE DELETE ON ansf_p0_host_cancel_events
+            WHEN EXISTS(SELECT 1 FROM ansf_desktop_chats
+                        WHERE chat_id=OLD.chat_id)
+            BEGIN SELECT RAISE(ABORT,'Immutable original cancellation event'); END;"
     ).map_err(|_|"P0_AUTH_ANFS_CANCEL_SCHEMA_UNAVAILABLE".into())
 }
+/// The native original-catalog cancellation REQUESTED row is the
+/// linearization point for revoked work. A RESULT alone cannot revoke
+/// an operation, and an older REQUESTED must not revoke a fresh turn.
+pub(crate) fn requested_watermark(
+    conn:&Connection,chat:&str,
+)->Result<i64,String>{
+    if !ident(chat,"c-"){return Err("P0_SEC_INVALID_CHAT_SCOPE".into())}
+    initialize(conn)?;
+    // SEC-06 original-ledger reconciliation is NOT capped to the 32-row
+    // operator view. A forged orphan RESULT deep in old history must still
+    // deny authorization. SQL filters the exact chat before probing all
+    // original attempt bindings and cannot mistake a positive RESULT as an
+    // original human request.
+    let orphan:i64=conn.query_row(
+        "SELECT EXISTS(
+           SELECT 1 FROM ansf_p0_host_cancel_events r
+           WHERE r.chat_id=?1 AND r.phase='RESULT'
+             AND NOT EXISTS(
+               SELECT 1 FROM ansf_p0_host_cancel_events q
+               WHERE q.chat_id=r.chat_id
+                 AND q.attempt_id=r.attempt_id
+                 AND q.phase='REQUESTED'))",
+        params![chat],|row|row.get(0)
+    ).map_err(|_|"P0_SEC_CANCEL_ORPHAN_QUERY_UNAVAILABLE")?;
+    if orphan!=0{return Err("P0_SEC_CANCEL_ORPHANED_RESULT".into())}
+    // A malicious/old SQLite writer may have injected a standalone RESULT.
+    // This is NOT a substitute for a genuine host-saved REQUESTED intent;
+    // even a perfectly hashed orphan never restores tool execution.
+    if recent(conn,chat,MAX_HISTORY)?.iter().any(|event|
+        event.status=="ORIGINAL_CANCEL_INTENT_UNAVAILABLE"){
+        return Err("P0_SEC_CANCEL_ORPHANED_RESULT".into())
+    }
+    // Never let a corrupt original REQUESTED row become a valid revocation
+    // baseline. Tool dispatch calls this after each host permission check;
+    // an altered row must deny execution, NOT silently restore old authority.
+    let latest:Option<(i64,Vec<u8>,String)>=conn.query_row(
+        "SELECT id,original_json,original_sha256
+         FROM ansf_p0_host_cancel_events
+         WHERE chat_id=?1 AND phase='REQUESTED'
+         ORDER BY id DESC LIMIT 1",
+        params![chat],|row|Ok((row.get(0)?,row.get(1)?,row.get(2)?))
+    ).optional().map_err(|_|"P0_SEC_CANCEL_WATERMARK_UNAVAILABLE")?;
+    let Some((sequence,source,expected_sha))=latest else{return Ok(0)};
+    if source.is_empty()||source.len()>MAX_EVENT_BYTES||
+        digest(&source)!=expected_sha{
+        return Err("P0_SEC_CANCEL_INTENT_TAMPERED".into())
+    }
+    let event:HostCancelEvent=serde_json::from_slice(&source)
+        .map_err(|_|"P0_SEC_CANCEL_INTENT_INVALID")?;
+    if !valid(&event)||event.phase!="REQUESTED"||event.chat_id!=chat{
+        return Err("P0_SEC_CANCEL_INTENT_SCOPE_INVALID".into())
+    }
+    Ok(sequence)
+}
+
 pub(crate) fn append(conn:&Connection,event:&HostCancelEvent)
  ->Result<(),String>{
     if !valid(event){return Err("P0_AUTH_INVALID_CANCEL_EVENT".into())}
@@ -215,8 +278,167 @@ mod tests{
             os_custody_independently_verified:false
         };
         append(&conn,&row).unwrap();
+        // Simulate historical damaged data from before immutability was
+        // deployed. The current production path never removes this trigger.
+        conn.execute_batch("DROP TRIGGER ansf_p0_cancel_no_update;").unwrap();
         conn.execute("UPDATE ansf_p0_host_cancel_events SET original_sha256=?1",
             ["f".repeat(64)]).unwrap();
+        initialize(&conn).unwrap();
         assert!(recent(&conn,&chat,4).is_err());
+        assert!(requested_watermark(&conn,&chat).is_err());
     }
+    #[test]
+    fn sec05_cancel_intent_mutations_and_direct_deletes_are_rejected(){
+        let conn=Connection::open_in_memory().unwrap();
+        conn.execute_batch("PRAGMA foreign_keys=ON;
+            CREATE TABLE ansf_desktop_chats(chat_id TEXT PRIMARY KEY);").unwrap();
+        initialize(&conn).unwrap();
+        let first=format!("c-{}","a".repeat(32));
+        let other=format!("c-{}","b".repeat(32));
+        for chat in [&first,&other]{
+            conn.execute("INSERT INTO ansf_desktop_chats(chat_id) VALUES (?1)",
+                [chat]).unwrap();
+        }
+        let row=HostCancelEvent{
+            schema:SCHEMA.into(),attempt_id:format!("au-{}","c".repeat(32)),
+            chat_id:first.clone(),phase:"REQUESTED".into(),domains:vec![],
+            authority_restored:false,automatic_retry_allowed:false,
+            os_custody_independently_verified:false,
+        };
+        append(&conn,&row).unwrap();
+        assert!(requested_watermark(&conn,&first).unwrap()>0);
+        assert_eq!(requested_watermark(&conn,&other).unwrap(),0);
+        // A direct SQLite attacker cannot silently alter the phase, chat
+        // owner, origin digest, or delete an old revocation from its catalog.
+        for sql in [
+            "UPDATE ansf_p0_host_cancel_events SET phase='RESULT'",
+            "UPDATE ansf_p0_host_cancel_events SET chat_id='forged-chat'",
+            "UPDATE ansf_p0_host_cancel_events SET original_sha256='0'",
+            "DELETE FROM ansf_p0_host_cancel_events",
+        ]{
+            assert!(conn.execute_batch(sql).is_err(),"{sql}");
+        }
+        assert!(requested_watermark(&conn,&first).unwrap()>0);
+        assert_eq!(requested_watermark(&conn,&other).unwrap(),0);
+        // Respect explicit human deletion of the WHOLE parent chat.
+        // Parent deletion cascades its own rows, not another chat's.
+        conn.execute("DELETE FROM ansf_desktop_chats WHERE chat_id=?1",
+            [&first]).unwrap();
+        assert_eq!(requested_watermark(&conn,&other).unwrap(),0);
+    }
+    #[test]
+    fn sec05_cross_chat_forged_result_cannot_close_another_cancel_request(){
+        let conn=Connection::open_in_memory().unwrap();
+        conn.execute_batch("PRAGMA foreign_keys=ON;
+            CREATE TABLE ansf_desktop_chats(chat_id TEXT PRIMARY KEY);").unwrap();
+        initialize(&conn).unwrap();
+        let chat=format!("c-{}","a".repeat(32));
+        let other=format!("c-{}","b".repeat(32));
+        for id in [&chat,&other]{
+            conn.execute("INSERT INTO ansf_desktop_chats(chat_id) VALUES (?1)",
+                [id]).unwrap();
+        }
+        let request=HostCancelEvent{
+            schema:SCHEMA.into(),attempt_id:format!("au-{}","d".repeat(32)),
+            chat_id:chat.clone(),phase:"REQUESTED".into(),domains:vec![],
+            authority_restored:false,automatic_retry_allowed:false,
+            os_custody_independently_verified:false,
+        };
+        append(&conn,&request).unwrap();
+        let mut forged=request.clone();
+        forged.chat_id=other.clone();
+        forged.phase="RESULT".into();
+        forged.domains=vec![DomainResult{
+            name:"background".into(),
+            state:"NATIVE_TERMINATION_REAP_RETURNED".into(),
+        }];
+        assert!(append(&conn,&forged).is_err());
+        assert_eq!(requested_watermark(&conn,&other).unwrap(),0);
+        assert_eq!(recent(&conn,&chat,8).unwrap()[0].status,
+            "CANCELLATION_REQUESTED_OUTCOME_UNKNOWN");
+        assert!(recent(&conn,&other,8).unwrap().is_empty());
+    }
+
+    #[test]
+    fn sec05_direct_sql_forged_result_without_original_request_denies_tool_dispatch(){
+        let conn=Connection::open_in_memory().unwrap();
+        conn.execute_batch("PRAGMA foreign_keys=ON;
+            CREATE TABLE ansf_desktop_chats(chat_id TEXT PRIMARY KEY);").unwrap();
+        initialize(&conn).unwrap();
+        let chat=format!("c-{}","e".repeat(32));
+        conn.execute("INSERT INTO ansf_desktop_chats(chat_id) VALUES (?1)",
+            [&chat]).unwrap();
+        let forged=HostCancelEvent{
+            schema:SCHEMA.into(),attempt_id:format!("au-{}","f".repeat(32)),
+            chat_id:chat.clone(),phase:"RESULT".into(),
+            domains:vec![DomainResult{
+                name:"model".into(),state:"NATIVE_TERMINATION_REAP_RETURNED".into()
+            }],
+            authority_restored:false,automatic_retry_allowed:false,
+            os_custody_independently_verified:false,
+        };
+        assert!(append(&conn,&forged).is_err());
+        // Adversarial direct SQL injection bypasses only the high-level
+        // append function, not original-journal validation at tool dispatch.
+        let raw=serde_json::to_vec(&forged).unwrap();
+        let hash=digest(&raw);
+        conn.execute("INSERT INTO ansf_p0_host_cancel_events(
+                attempt_id,chat_id,phase,original_json,original_sha256)
+                VALUES (?1,?2,'RESULT',?3,?4)",
+            params![&forged.attempt_id,&chat,&raw,&hash]).unwrap();
+        assert_eq!(recent(&conn,&chat,8).unwrap()[0].status,
+            "ORIGINAL_CANCEL_INTENT_UNAVAILABLE");
+        assert!(requested_watermark(&conn,&chat).is_err(),
+            "forged RESULT cannot be a revocation watermark baseline");
+    }
+
+    #[test]
+    fn sec06_orphan_result_hidden_beyond_recent_32_entries_still_blocks_new_tools(){
+        let conn=Connection::open_in_memory().unwrap();
+        conn.execute_batch("PRAGMA foreign_keys=ON;
+            CREATE TABLE ansf_desktop_chats(chat_id TEXT PRIMARY KEY);").unwrap();
+        initialize(&conn).unwrap();
+        let chat=format!("c-{}","a".repeat(32));
+        let other=format!("c-{}","b".repeat(32));
+        for id in [&chat,&other]{
+            conn.execute("INSERT INTO ansf_desktop_chats(chat_id) VALUES (?1)",
+                [id]).unwrap();
+        }
+        let forged=HostCancelEvent{
+            schema:SCHEMA.into(),attempt_id:format!("au-{:032x}",1),
+            chat_id:chat.clone(),phase:"RESULT".into(),
+            domains:vec![DomainResult{
+                name:"background".into(),
+                state:"NATIVE_TERMINATION_REAP_RETURNED".into()
+            }],
+            authority_restored:false,automatic_retry_allowed:false,
+            os_custody_independently_verified:false,
+        };
+        let raw=serde_json::to_vec(&forged).unwrap();
+        let hash=digest(&raw);
+        conn.execute("INSERT INTO ansf_p0_host_cancel_events(
+             attempt_id,chat_id,phase,original_json,original_sha256)
+             VALUES (?1,?2,'RESULT',?3,?4)",
+            params![&forged.attempt_id,&chat,&raw,&hash]).unwrap();
+        for i in 100..180u32{
+            let requested=HostCancelEvent{
+                schema:SCHEMA.into(),
+                attempt_id:format!("au-{i:032x}"),
+                chat_id:chat.clone(),phase:"REQUESTED".into(),
+                domains:vec![],authority_restored:false,
+                automatic_retry_allowed:false,
+                os_custody_independently_verified:false,
+            };
+            append(&conn,&requested).unwrap();
+        }
+        // The operator window sees only recent valid REQUESTED records.
+        assert!(!recent(&conn,&chat,16).unwrap().iter().any(|x|
+            x.status=="ORIGINAL_CANCEL_INTENT_UNAVAILABLE"));
+        // The original native authorization fence, however, queries the
+        // full scoped ledger and can never treat the hidden orphan as cleared.
+        assert_eq!(requested_watermark(&conn,&chat).unwrap_err(),
+            "P0_SEC_CANCEL_ORPHANED_RESULT");
+        assert_eq!(requested_watermark(&conn,&other).unwrap(),0);
+    }
+
 }

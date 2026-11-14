@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 const core=readFileSync(new URL('../../src-tauri/lu-core/src/ai_operations.rs',import.meta.url),'utf8');
 const host=readFileSync(new URL('../src-tauri/src/lib.rs',import.meta.url),'utf8');
-const ui=readFileSync(new URL('../web/main.jsx',import.meta.url),'utf8');
+const ui=readFileSync(new URL('../web/native_windows.jsx',import.meta.url),'utf8');
 const workspace=readFileSync(new URL('../src-tauri/src/workspace_desktop.rs',import.meta.url),'utf8');
 test('P03 routes from current user and already authorized read catalog only',()=>{
   assert.match(core,/pub fn recommended_read_tools/);
@@ -28,14 +28,14 @@ test('P03 model inspection does not certify compatibility or invent GPU proof',(
   assert.match(host,/projector\.recheck\(\)/);
   assert.match(host,/runtime_compatible:false/);
   assert.match(host,/gguf_metadata_summary::inspect_metadata/);
-  assert.match(ui,/modelInspection\.reportedContextLength/);
+  assert.match(ui,/inspection\?\.reportedContextLength/);
   assert.match(host,/provider_download_enabled:false/);
   assert.match(host,/if !inspection\.load_allowed/);
   assert.match(host,/lu_model_preflight,/);
   assert.match(ui,/invoke\('lu_model_preflight'/);
-  assert.match(ui,/modelSearch/);
-  assert.match(ui,/modelInspection\?\.loadAllowed/);
-  assert.match(ui,/A remote search result never installs, imports or loads a model/);
+  assert.match(ui,/aria-label="Search local models"/);
+  assert.match(ui,/inspection\?\.loadAllowed/);
+  assert.match(ui,/No successful download by itself admits a GGUF/);
 });
 test('P03 provider review requires immutable revision and verified digest and approval',()=>{
   assert.match(core,/c\.provider!="hugging_face"/);
@@ -71,8 +71,9 @@ test('P03 public provider metadata search is an explicit read-only Settings acti
   assert.match(researcher,/if !self\.available\(\)/);
   assert.match(ui,/lu_model_provider_search/);
   assert.match(ui,/lu_model_provider_review/);
-  assert.match(ui,/In-app downloads are blocked/);
-  assert.match(ui,/lu_model_prepare_transfer/);
-  assert.match(ui,/awaiting_p05_transfer/);
-  assert.match(ui,/Model backend availability/);
+  assert.match(ui,/download and interrupted resume still needs a fresh OS confirmation/);
+  assert.match(ui,/lu_model_transfer_start/);
+  assert.match(ui,/disabled=\{busy\|\|!transferReady\}/);
+  assert.match(ui,/INTERRUPTED_REVIEW_REQUIRED/);
+  assert.match(ui,/lu_model_backend_options/);
 });

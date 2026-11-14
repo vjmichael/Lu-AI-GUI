@@ -109,6 +109,8 @@ pub mod inference_bridge;
 pub mod inference_host;
 pub mod inference_image_refs;
 pub mod inference_supervisor;
+pub mod prefix_kv_cache;
+pub mod warm_model_residency;
 pub mod inference_wire;
 pub mod journal;
 pub mod linux_device_hints;

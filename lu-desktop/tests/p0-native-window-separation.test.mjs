@@ -21,7 +21,7 @@ test('native windows mount instead of Chat App and keep distinct focus, no backg
   assert.match(chat,/getCurrentWindow\(\)\.label/);
   assert.match(chat,/window\.__TAURI_INTERNALS__/);
   assert.match(chat,/luWindow==='settings'\?<SettingsWindow\/>/);
-  assert.match(chat,/luWindow==='model-library'\?<ModelLibraryWindow\/>:<App\/>/);
+  assert.match(chat,/luWindow==='model-library'\?<ModelLibraryWindow\/>:\s*luWindow==='task-list'\?<TaskBoardWindow\/>:<App\/>/);
   assert.match(windows,/These roots mount INSTEAD of App/);
   assert.match(windows,/invoke\('lu_close_aux_window'\)/);
   assert.match(windows,/aria-label="Settings sections"/);
@@ -58,5 +58,5 @@ test('real pixel trials require a durable local receipt, never only a model/proj
   assert.match(vision,/model_reply/);
   assert.match(vision,/create_new\(true\)/);
   assert.match(host,/vision_context::persist_native_vision_receipt/);
-  assert.match(host,/let verified=passed==4/);
+  assert.match(host,/checked_passed!=passed as usize\|\|verified!=\(passed==4\)/);
 });

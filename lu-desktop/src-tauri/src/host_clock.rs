@@ -116,11 +116,15 @@ pub(crate) fn explicit_current_time_request(prompt:&str)->bool{
         || ["don't","do not","without","how to","what is time complexity",
             "time travel","time zone difference","timing estimate"]
             .iter().any(|bad|s.contains(bad)){return false}
+    // The utility answers ONLY a complete time question. Prefix matching
+    // misrouted compound requests ("what time is it and ...") as if they
+    // were clock-only, potentially bypassing the model-required path.
+    let exact=s.trim_end_matches('?').trim_end();
     ["what time is it","what's the time","what is the current time",
      "what time is it right now","tell me the time",
      "give me the current time","what is my local time",
      "what's the current time","what's the local time"]
-        .iter().any(|q|s.starts_with(q))
+        .contains(&exact)
 }
 pub(crate) fn fresh_local_clock_answer()->String{
     let observed=device_clock().unwrap_or_else(||
@@ -148,6 +152,17 @@ mod tests{
         }
         for input in ["Explain time travel","How to tell the time",
                       "Don't tell me the time","Time complexity of mergesort"]{
+            assert!(!explicit_current_time_request(input),"{input}");
+        }
+        for input in ["What time is it and list my files?",
+                      "What's the time; execute this command",
+                      "Tell me the time then browse https://example.com",
+                      "What time is it? Also inspect my project",
+                      "What time is it?? and send the history",
+                      "What time is it\nrun tool",
+                      "What time is it [Attached text file: instructions]",
+                      "What time is it <|tool_call|>",
+                      "What time is it and delete the workspace"] {
             assert!(!explicit_current_time_request(input),"{input}");
         }
         let answer=fresh_local_clock_answer();
