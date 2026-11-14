@@ -130,3 +130,43 @@ test('citation gate cannot stream or complete unverified model prose',()=>{
   assert.doesNotMatch(model.slice(start,audit),/app\.emit\("lu-token"/);
   assert.match(model,/render_observed_source_appendix\(&citation_sources\)/);
 });
+
+test('C1 original eight-origin research contract survives current native approval boundary',()=>{
+  const scope=read('../../src-tauri/lu-core/src/browser_authorized_execution.rs');
+  assert.match(host,/fn browser_origin_list\(raw:&str\)/);
+  assert.ok(host.includes("raw.split([',',';','\\n'])"));
+  assert.match(host,/values\.len\(\)>8/);
+  assert.match(host,/BrowserOriginScope::from_host_grant\(values\)/);
+  assert.match(host,/allowed\.join\("\\n"\)/);
+  assert.match(host,/app\.dialog\(\)\.message\(prompt\)/);
+  assert.match(host,/Authorize selected origins/);
+  assert.match(scope,/origins\.is_empty\(\)\|\|origins\.len\(\)>32/);
+  assert.match(scope,/self\.approved\.contains/);
+  assert.match(model,/browser_origin_list\(&origins\)\?/);
+  assert.match(model,/result_scope\.allows\(u\)/);
+  assert.match(ui,/origins:browserOrigins/);
+  // The automatic human-intent classifier is deliberately single-origin;
+  // multi-origin research requires an explicit fresh native user approval.
+  assert.match(model,/if origins\.len\(\)!=1 \{return None\}/);
+});
+test('C1 original human challenge recovery is native-only and revocation-aware',()=>{
+  assert.match(host,/No approved Browser verification task/);
+  assert.match(host,/browser_runtime\.resolve_human_verification\(\)\?/);
+  assert.match(settings,/invoke\('lu_browser_human_verified'/);
+  assert.match(model,/phase:"needs-human"/);
+  assert.match(model,/Browser closed during human verification/);
+  assert.match(model,/Duration::from_secs\(600\)/);
+  assert.match(model,/grant_current\(/);
+  assert.match(model,/if ticket\.cancelled\(\)/);
+  assert.doesNotMatch(model,/fn lu_browser_human_solve\(/);
+});
+test('C1 original evidence budgets forbid citations for navigation and omitted pages',()=>{
+  assert.match(model,/if source\.len\(\)>3200/);
+  assert.match(model,/saturating_add\(item\.len\(\)\)>14\*1024/);
+  assert.match(model,/if prompt\.len\(\)>16\*1024/);
+  assert.match(model,/Do not cite omitted contents/);
+  assert.match(model,/matches!\(kind,"READ"\|"ACCESSIBILITY"\)/);
+  assert.match(model,/saved\.observed_sha256/);
+  assert.match(model,/audit_browser_research_answer\(&answer,&citation_sources\)/);
+  assert.match(model,/if evidence\.is_empty\(\)/);
+});

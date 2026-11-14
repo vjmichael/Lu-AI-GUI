@@ -18,7 +18,43 @@ All original production/test paths examined are already represented in current #
 No original Reader runtime path is absent from #235. `native_reader.rs` retains 12/12 function names; `native_reader_tool.rs` retains 24/24 and adds registered host observation and nested-symlink denial; `native_reader_pdf.rs` retains 30/30 and adds an independent page-count check; `native_reader_openxml.rs` retains 12/12 and extends EPUB support. All four original named desktop Reader tests persist, and the current desktop test also adds reviewed OCR, source-selection and format cases. Preserve file picker, UTF-8 prompt budget, source pinning, nonexecuting observation receipts and no implicit model path authority. Original format-parser source semantics and hostile fixtures still require the grouped native regressions.
 
 ## Browser #26 (exact tip `19af8fe3e411e4a4175e285ce1c6c2130c36fe4d`)
-Original browser worker tests retain all 15 named cases and add nine challenge/WebSocket/credential-handling negatives. `browser_worker_supervisor.rs` preserves 20/20 old function names and adds SEC-06C owned-worker, source-hash and durable recovery handling. `browser_model_codec.rs` preserves 8/8 and adds model-catalog exclusion of screenshot bytes and interactive controls. Older browser-desktop test names were reorganized (16 older top-level tests vs 11 current regrouped authenticated/reviewed-contract titles); **title mismatch is an audit gap, NOT evidence that all 29 behaviors were proved equivalent**. Direct implementation review confirms the current `BrowserOriginScope::from_host_grant` rejects empty or >32-origin grants, refuses noncanonical/publicly unsafe origins, and `allows` requires exact `https://` hostname membership after redirect; current `browser_model_desktop.rs` uses this scope for research and the native read result. The browser model remains read-only and final answers must pass verified citation audit. This is a source-level safeguard, **not** execution proof. Inspect actual authorization, human takeover, first-party process custody, origin firewall, verified citations and package provenance under original Windows/Linux tests. The original #26-only workflow and packaging note are historical; current browser manifest explicitly says `not-packaged` and cannot be promoted to installed/browser acceptance.
+Original browser worker tests retain all 15 named cases and add nine challenge/WebSocket/credential-handling negatives. `browser_worker_supervisor.rs` preserves 20/20 old function names and adds SEC-06C owned-worker, source-hash and durable recovery handling. `browser_model_codec.rs` preserves 8/8 and adds model-catalog exclusion of screenshot bytes and interactive controls. Older browser-desktop test names were reorganized (16 older top-level tests vs 11 current regrouped authenticated/reviewed-contract titles); **title mismatch is an audit gap, NOT evidence that all 16 original behavioral contracts were proved equivalent**. Direct implementation review confirms the current `BrowserOriginScope::from_host_grant` rejects empty or >32-origin grants, refuses noncanonical/publicly unsafe origins, and `allows` requires exact `https://` hostname membership after redirect; current `browser_model_desktop.rs` uses this scope for research and the native read result. The browser model remains read-only and final answers must pass verified citation audit. This is a source-level safeguard, **not** execution proof. Inspect actual authorization, human takeover, first-party process custody, origin firewall, verified citations and package provenance under original Windows/Linux tests. The original #26-only workflow and packaging note are historical; current browser manifest explicitly says `not-packaged` and cannot be promoted to installed/browser acceptance.
+
+## C1 → C2 selected integration: original Browser behavioral guarantees
+
+Reviewed the **16** original TOOLS-10 browser desktop tests against the current
+**11** split source tests, **not just their names**. The current host's
+`browser_origin_list` preserves the original one-to-eight manually supplied
+comma/semicolon/newline-separated public HTTPS origins, validates every value
+through `BrowserOriginScope::from_host_grant`, displays the exact approved set
+in a blocking native dialog, and passes the unchanged scope to the owned
+Chromium worker and post-redirect model result. The ordinary natural-language
+browse classifier is deliberately **single-origin**, and cannot authorize
+cross-site research through model/user-text inference alone.
+
+The current read-only Browser authority, verified user-turn binding,
+revocation/cancellation, human-only challenge recovery, `cgroup`/Job supervised
+worker, verified read/accessibility source IDs, exact citation audit, and bounded
+model prompt are stronger or meaningfully equivalent *in the reviewed source*.
+The original single-file test expressions cannot be pasted into the current
+split `lib.rs` / `browser_model_desktop.rs` / Settings implementation without
+false failures or weakening the newer protection.
+
+**Selective integration rather than wholesale restoration:**
+- `lu-desktop/src-tauri/src/browser_model_desktop.rs`: genuine Rust unit tests
+  for the original 1–8-site source parser (positive and hostile list cases,
+  rejecting implicit multi-site ordinary chat), plus real bounded prompt
+  behavior (omitted sources and model no-navigation-citations instruction).
+- `lu-desktop/tests/browser-native-authorization.test.mjs`: three current-API
+  regression tests for original explicit multi-origin native approval,
+  human-only challenge with cancellation, and source/citation bounds.
+
+These tests are additive to existing Rust/browser worker/native tests. This
+source review **does not claim executed test or physical browser package
+acceptance**. Original Observe/Reader source operations are preserved; their
+existing current native/desktop negative tests cover the old boundaries plus
+newer privacy, OCR/format and symlink constraints. A final original same-SHA
+test batch is still required before acceptance.
 
 ## Disposition
 - **INCORPORATE:** unique #228 exact historical bridge verifier, manifest and hostile source tests; add one current-source family-regression contract test to guard newer stronger boundaries.

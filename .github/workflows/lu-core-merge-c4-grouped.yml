@@ -101,6 +101,11 @@ jobs:
             lu-desktop/tests/agent01h-next-step-preview.test.mjs \
             lu-desktop/tests/agent01k-independent-recovery.test.mjs \
             lu-desktop/tests/reviewed-tool-feedback.test.mjs \
+            scripts/core01f-bridge-review.test.mjs \
+            scripts/core-merge-c1-family-contracts.test.mjs \
+            lu-desktop/tests/browser-native-authorization.test.mjs \
+            lu-desktop/tests/reader-desktop.test.mjs \
+            lu-desktop/tests/p06-observe-privacy.test.mjs \
             2>&1 | tee c4-native-evidence/frontend-contracts.log
       - name: Current React desktop bundle
         shell: bash
@@ -137,6 +142,9 @@ jobs:
           cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml \
             --lib project_task_verified_evidence::tests -- --nocapture \
             2>&1 | tee c4-native-evidence/task-criterion-reconciliation.log
+          cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml \
+            --lib browser_model_desktop::tests -- --nocapture \
+            2>&1 | tee c4-native-evidence/browser-original-contracts.log
       - name: Current UI source and typed-Protobuf history check after native compilation
         # Keep collecting the original frontend receipt even if Rust fails;
         # never suppress the failed status in final grouped reconciliation.
