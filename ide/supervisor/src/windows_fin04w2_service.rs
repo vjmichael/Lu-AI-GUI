@@ -375,11 +375,24 @@ fn review_only(pipe:HANDLE,config:&InstalledAuditConfig)
         &config.original_supervisor_journal,&config.original_job_id,
         &config.review_only_plan,C2JournalGate::Authorized,
     )?;
+    #[cfg(feature="fin04w2-split-native")]
+    let original=crate::fin04w2_authority::verify_original_authorized_file(
+        &config.original_supervisor_journal,&config.original_job_id,
+        &config.review_only_plan,&config.review_only_plan_hash,
+    )?;
     let root=std::env::var_os("ProgramData").ok_or_else(denied)
         .map(PathBuf::from)?.join(ROOT);
     let sid=security::sid_of_named_service(NAME)?;
     security::verify_private_evidence_root_for(&root,&sid)?;
-    // Atomic reservation is fsynced before any suspended process exists.
+    // Independent per-SCM fsynced reservations precede any suspended
+    // process creation. In split mode bind BOTH service reservations to the
+    // same immutable original human approval-entry and session, not merely
+    // to a plan/job string. Original unsplit C2 receipt is unchanged.
+    #[cfg(feature="fin04w2-split-native")]
+    crate::fin04w2_authority::reserve_fresh_original_authorization(
+        &root,&original,
+    )?;
+    #[cfg(not(feature="fin04w2-split-native"))]
     fin04w2_c2::reserve_once(
         &root,&config.original_job_id,&config.review_only_plan,
     )?;
@@ -396,6 +409,7 @@ fn review_only(pipe:HANDLE,config:&InstalledAuditConfig)
             &scm_pair,&config.original_job_id,&config.review_only_plan,
             &config.expected_target_image_sha256,
             &config.expected_target_pdb_sha256,
+            &original.approved_entry_sha256,&original.session_id,
         )?;
         let debugger=crate::windows_fin04w2_split_launcher::prepare_external_debugger(
             &job,&config.approved_lldb_dap_executable,
