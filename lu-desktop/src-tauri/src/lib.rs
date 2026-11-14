@@ -5168,8 +5168,8 @@ async fn generate_internal(
             if ticket.cancelled() {
                 return Err("Cancelled while queued".into());
             }
-            let events = state.chats.recent_model_history(&chat_id,32)?;
-            // ANSF performs one indexed bounded source read; it does not load
+            let events = state.chats.recent_model_history(&chat_id,64)?;
+            // ANSF performs one indexed bounded CURRENT-REVISION source read; it does not load
             // the complete human-visible conversation into inference context.
             // With at most one turn per chat pending, the last user event is
             // this submission. Read history *after* waiting so later turns
@@ -5180,11 +5180,30 @@ async fn generate_internal(
             {
                 return Err("conversation changed during queued generation".into());
             }
+            // The host's loaded-model identity is rechecked AFTER the
+            // queue slot is acquired. No stale session or a newly imported
+            // GGUF may borrow a previous profile/context budget.
+            let loaded=state.supervisor.status()
+                .map_err(|_|"Model session unavailable for history admission")?;
+            if loaded.session_id.as_deref()!=Some(sid.as_str()){
+                return Err("Model changed while waiting for context admission".into())
+            }
+            let loaded_ref=loaded.model_ref.as_deref()
+                .ok_or("Loaded model identity unavailable")?;
+            let loaded_profile=state.inference_profiles.lock()
+                .map_err(|_|"Model profile unavailable for history admission")?
+                .get(loaded_ref).copied().unwrap_or_default().validate()?;
             let history = if origin==GenerationOrigin::Human{
-                prompt_context::typed_history(&events[..events.len()-1],&prompt)
+                prompt_context::typed_history_for_model(
+                    &events[..events.len()-1],&prompt,
+                    loaded_profile.context_tokens,max_new_tokens
+                )
             }else{
                 // No synthetic human message is added to the chat journal.
-                prompt_context::typed_history(&events,&prompt)
+                prompt_context::typed_history_for_model(
+                    &events,&prompt,
+                    loaded_profile.context_tokens,max_new_tokens
+                )
             };
             // Host-generated terminal events are incorporated into the next
             // eligible turn for this conversation. They are *data*, not

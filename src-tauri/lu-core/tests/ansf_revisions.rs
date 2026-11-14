@@ -320,3 +320,38 @@ fn current_only_recall_applies_revision_filter_before_fts_result_limit() {
     drop(store);
     let _=std::fs::remove_file(path);
 }
+
+#[test]
+fn model_context_uses_current_message_revisions_without_rewriting_originals() {
+    let path=db_path();
+    let store=new_store(&path);
+    let original=store.append_entry(
+        "chat","policy1",EntryRole::User,"Selected executor",
+        "Use disallowed-executor in the next project turn"
+    ).unwrap();
+    let middle=store.append_edited_entry(
+        "chat","policy1","First correction",
+        "Use provisional-executor for this project",
+        RevisionOrigin::VerifiedUser
+    ).unwrap().unwrap();
+    let final_edit=store.append_edited_entry(
+        "chat","policy1","Final correction",
+        "Use approved-executor for this project",
+        RevisionOrigin::VerifiedUser
+    ).unwrap().unwrap();
+    let unchanged=store.append_entry(
+        "chat","next",EntryRole::Assistant,
+        "Review progress","The current task is still ongoing"
+    ).unwrap();
+    let current=store.recent_context_entries("chat",2).unwrap();
+    assert_eq!(current.len(),2);
+    assert_eq!(current[0].id,final_edit.revised_entry_id);
+    assert_eq!(current[1].id,unchanged);
+    assert!(current.iter().all(|entry|entry.id!=original && entry.id!=middle.revised_entry_id));
+    assert_eq!(store.read_entry("chat",original).unwrap().unwrap().content,
+        "Use disallowed-executor in the next project turn");
+    drop(store);
+    let reopened=AnsfStore::open(&path).unwrap();
+    assert_eq!(reopened.recent_context_entries("chat",2).unwrap()[0].id,final_edit.revised_entry_id);
+    drop(reopened);let _=std::fs::remove_file(path);
+}

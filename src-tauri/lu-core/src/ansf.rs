@@ -405,8 +405,10 @@ impl AnsfStore {
 
     /// Efficient model-context source window. Uses the existing ANSF
     /// (session_id,id) index and never scans or materializes the full book.
-    /// Assistant progress/cancelled partial text is not an entry; only
-    /// completed assistant output and original user messages are eligible.
+    /// Assistant progress/cancelled partial text is not an entry. Use only
+    /// CURRENT user/assistant revisions, never superseded source wording
+    /// in the model's implicit context. Explicit history/search remains
+    /// immutable and can still inspect the originals on human request.
     pub fn recent_context_entries(
         &self,session_id:&str,limit:usize
     )->Result<Vec<Entry>,AnsfError>{
@@ -415,10 +417,24 @@ impl AnsfStore {
         }
         let conn=self.conn.lock().map_err(|_|AnsfError::Locked)?;
         let mut stmt=conn.prepare(
-            "SELECT id,session_id,chapter_id,message_id,role,summary,content
-             FROM ansf_entries WHERE session_id=?1
-               AND role IN ('user','assistant')
-             ORDER BY id DESC LIMIT ?2"
+            "SELECT e.id,e.session_id,e.chapter_id,e.message_id,e.role,e.summary,e.content
+             FROM ansf_entries e WHERE e.session_id=?1
+               AND e.role IN ('user','assistant')
+               AND NOT EXISTS (
+                 SELECT 1 FROM ansf_entry_edits changed
+                 WHERE changed.session_id=e.session_id
+                   AND changed.original_entry_id=e.id
+               )
+               AND NOT EXISTS (
+                 SELECT 1 FROM ansf_entry_edits old
+                 JOIN ansf_entry_edits newer
+                   ON newer.session_id=old.session_id
+                  AND newer.original_entry_id=old.original_entry_id
+                  AND newer.revision_number>old.revision_number
+                 WHERE old.session_id=e.session_id
+                   AND old.revised_entry_id=e.id
+               )
+             ORDER BY e.id DESC LIMIT ?2"
         )?;
         let rows=stmt.query_map(params![session_id,limit as i64],Self::map_entry)?;
         let mut result=rows.collect::<Result<Vec<_>,_>>()?;

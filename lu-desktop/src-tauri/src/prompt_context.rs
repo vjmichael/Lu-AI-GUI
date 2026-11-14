@@ -3,8 +3,20 @@
 //! display-only, never silently promoted to completed context.
 use crate::chat_store::ChatMessage;
 
-const MAX_CONTEXT_BYTES: usize = 15 * 1024;
-const MAX_PRIOR_TURNS: usize = 16;
+const DEFAULT_CONTEXT_BYTES: usize = 15 * 1024;
+const MAX_CONTEXT_BYTES: usize = 64 * 1024;
+const MAX_HISTORY_ENTRY_BYTES: usize = 15 * 1024;
+const MAX_PRIOR_TURNS: usize = 32;
+
+/// Context is a HOST-SELECTED GGUF load profile, not a model instruction.
+/// This is a conservative byte budget, NOT a tokenizer measurement or a
+/// promise that an arbitrary model prompt fits its actual token window.
+fn history_byte_budget(context_tokens:u32,output_tokens:u32)->usize{
+    let spare=context_tokens.saturating_sub(output_tokens)
+        .saturating_sub(1024);
+    (spare as usize).saturating_mul(2)
+        .clamp(DEFAULT_CONTEXT_BYTES,MAX_CONTEXT_BYTES)
+}
 
 /// Build canonical, journal-derived roles for Lu's native Protobuf request.
 /// This never serializes a `User:` / `Assistant:` transcript into one string.
@@ -13,8 +25,22 @@ pub fn typed_history(
     previous: &[ChatMessage],
     current: &str,
 ) -> Vec<lu_core::wire::proto::InferenceChatTurn> {
+    typed_history_for_model(previous,current,4096,512)
+}
+
+/// Use the actual loaded model's host-pinned context/output admission.
+/// Extended contexts can carry more native typed history without ever
+/// flattening untrusted content into privileged system instructions.
+pub fn typed_history_for_model(
+    previous: &[ChatMessage],
+    current: &str,
+    context_tokens:u32,
+    output_tokens:u32,
+) -> Vec<lu_core::wire::proto::InferenceChatTurn> {
+    let limit=history_byte_budget(context_tokens,output_tokens);
     let mut out = Vec::new();
     let mut bytes = current.len();
+    if bytes>=limit { return out; }
     for entry in previous.iter().rev() {
         if !matches!(entry.role.as_str(), "user" | "assistant")
             || (entry.role == "assistant" && entry.interrupted)
@@ -22,10 +48,13 @@ pub fn typed_history(
         {
             continue;
         }
-        // Keep history bounded by the same limits enforced by Lu Core IPC.
-        if out.len() >= MAX_PRIOR_TURNS || bytes + entry.text.len() > MAX_CONTEXT_BYTES {
-            break;
+        // Never send an oversized single source row through Protobuf.
+        // Skip it rather than discard older short and relevant turns.
+        if entry.text.len()>MAX_HISTORY_ENTRY_BYTES
+            || bytes.saturating_add(entry.text.len())>limit {
+            continue;
         }
+        if out.len()>=MAX_PRIOR_TURNS {break}
         bytes += entry.text.len();
         out.push(lu_core::wire::proto::InferenceChatTurn {
             role: entry.role.clone(),

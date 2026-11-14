@@ -9,6 +9,9 @@ pub const INFERENCE_PROTOCOL_VERSION: u32 = 1;
 pub const MAX_INFERENCE_FRAME_BYTES: usize = 4 * 1024 * 1024;
 pub const MAX_INFERENCE_PROMPT_BYTES: usize = 2 * 1024 * 1024;
 pub const MAX_INFERENCE_CHUNK_BYTES: usize = 64 * 1024;
+pub const MAX_INFERENCE_HISTORY_TURNS: usize = 32;
+pub const MAX_INFERENCE_HISTORY_BYTES: usize = 64 * 1024;
+pub const MAX_INFERENCE_HISTORY_ENTRY_BYTES: usize = 15 * 1024;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum InferenceWireError {
@@ -73,18 +76,18 @@ pub fn validate_frame(frame: &proto::InferenceFrame) -> Result<(), InferenceWire
             {
                 return Err(InferenceWireError::InvalidField("generation limits"));
             }
-            if request.history.len() > 16
+            if request.history.len() > MAX_INFERENCE_HISTORY_TURNS
                 || request.history.iter().any(|turn| {
                     !matches!(turn.role.as_str(), "user" | "assistant")
                         || turn.text.trim().is_empty()
-                        || turn.text.len() > 15 * 1024
+                        || turn.text.len() > MAX_INFERENCE_HISTORY_ENTRY_BYTES
                 })
                 || request
                     .history
                     .iter()
                     .map(|turn| turn.text.len())
                     .sum::<usize>()
-                    > 15 * 1024
+                    > MAX_INFERENCE_HISTORY_BYTES
             {
                 return Err(InferenceWireError::InvalidField("chat_history"));
             }
