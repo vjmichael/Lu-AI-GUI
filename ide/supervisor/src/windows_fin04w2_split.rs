@@ -11,7 +11,7 @@ use crate::{fin04w2_authority, windows_fin04w2_kernel,
 use std::{mem::size_of, path::Path, ptr};
 use windows_sys::Win32::{
     Foundation::{CloseHandle,HANDLE},
-    Security::{EqualSid,GetTokenInformation,TokenAppContainerSid,
+    Security::{EqualSid,GetTokenInformation,IsTokenRestricted,TokenRestrictedSids,TokenAppContainerSid,
         TokenCapabilities,TokenIsAppContainer,PSID,TOKEN_QUERY},
     System::{JobObjects::IsProcessInJob,
         Threading::{GetProcessId,OpenProcessToken,QueryFullProcessImageNameW}},
@@ -26,6 +26,80 @@ impl Drop for OwnedToken {
 }
 #[repr(C)]
 struct SidEntry {sid:PSID}
+
+/// LLDB-DAP is a distinct process OUTSIDE AppContainer. Both actual Job
+/// handles are held by the independent SCM service, never by the UI.
+/// A target Job cannot be used as the debugger Job (or vice versa).
+pub(crate) fn attest_separate_debugger_worker(
+    debugger:HANDLE, debugger_job:HANDLE,
+    target:HANDLE, target_job:HANDLE,
+)->Result<(),SupervisorError>{
+    windows_fin04w2_kernel::inspect_current_service_principal()?;
+    if debugger.is_null()||debugger_job.is_null()
+        ||target.is_null()||target_job.is_null()
+        ||debugger==target||debugger_job==target_job {
+        return Err(denied());
+    }
+    let mut in_debug=0i32;
+    let mut in_target=0i32;
+    let mut crosses_target=1i32;
+    let mut crosses_debug=1i32;
+    if unsafe{IsProcessInJob(debugger,debugger_job,&mut in_debug)}==0
+        ||unsafe{IsProcessInJob(target,target_job,&mut in_target)}==0
+        ||unsafe{IsProcessInJob(debugger,target_job,&mut crosses_target)}==0
+        ||unsafe{IsProcessInJob(target,debugger_job,&mut crosses_debug)}==0
+        ||in_debug!=1||in_target!=1||crosses_target!=0||crosses_debug!=0 {
+        return Err(denied());
+    }
+    let debugger_pid=unsafe{GetProcessId(debugger)};
+    let target_pid=unsafe{GetProcessId(target)};
+    if debugger_pid==0||target_pid==0||debugger_pid==target_pid {
+        return Err(denied());
+    }
+    let mut raw=ptr::null_mut();
+    if unsafe{OpenProcessToken(debugger,TOKEN_QUERY,&mut raw)}==0{
+        return Err(denied());
+    }
+    let token=OwnedToken(raw);
+    let mut is_appcontainer=1u32;
+    let mut len=0u32;
+    if unsafe{
+        GetTokenInformation(token.0,TokenIsAppContainer,
+            (&mut is_appcontainer as *mut u32).cast(),
+            size_of::<u32>() as u32,&mut len)
+    }==0||len!=size_of::<u32>() as u32||is_appcontainer!=0
+        ||unsafe{IsTokenRestricted(token.0)}==0 {
+        return Err(denied());
+    }
+    // Actual worker must retain the debugger service-specific restricting
+    // SID; LocalService alone is not sufficient authority.
+    let sid=windows_service_security::sid_of_named_service("LuIdeDebuggerBroker")?;
+    if !windows_fin04w2_kernel::contains_sid(
+        token.0,TokenRestrictedSids,sid.as_ptr().cast_mut().cast(),
+    )? {
+        return Err(denied());
+    }
+    Ok(())
+}
+
+/// Service-owned pair only. No client-controlled PID; the target's live
+/// kernel image, package SID, zero capabilities and original journal are
+/// verified after the independent debugger identity and Job isolation.
+pub(crate) fn attest_split_pair(
+    debugger:HANDLE, debugger_job:HANDLE,
+    target:HANDLE, target_job:HANDLE, expected_sid:PSID,
+    approved_image:&Path, image_sha256:&str,
+    original_journal:&Path, original_job_id:&str,
+    plan:&JobPlan, plan_sha256:&str,
+)->Result<u32,SupervisorError>{
+    attest_separate_debugger_worker(
+        debugger,debugger_job,target,target_job,
+    )?;
+    attest_service_held_appcontainer_target(
+        target,target_job,expected_sid,approved_image,image_sha256,
+        original_journal,original_job_id,plan,plan_sha256,
+    )
+}
 
 /// The native SCM service must already own BOTH handles and the profile SID.
 /// It is responsible for preserving custody through attach/cancel/recovery.
