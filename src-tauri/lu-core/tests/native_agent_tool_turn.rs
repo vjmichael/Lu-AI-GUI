@@ -647,3 +647,70 @@ async fn repaired_syntax_still_requires_schema_validation_and_authority() {
     drop(registry);
     remove_workspace(folder);
 }
+
+#[tokio::test]
+async fn distinct_search_requests_cannot_cycle_on_the_same_empty_observation() {
+    let (folder, registry, catalog, authority, origin, allowed) = setup();
+    let mut turn = NativeToolTurn::new_read_only(
+        &catalog, &registry, &authority, origin,
+        "thread:conversation-1".into(), &allowed,
+    ).unwrap();
+    // The first empty search is an observation. Each *different* query
+    // thereafter returns the same empty hit set, despite a fresh call ID.
+    for index in 0..=lu_core::agent_tool_loop::MAX_STALLED_SEMANTIC_READS {
+        let reply = format!(
+            r#"{{"kind":"tool","name":"lu_files_search_text","arguments":{{"query":"absent-source-{index}"}}}}"#
+        );
+        let result = turn.handle_model_reply(
+            &reply, &catalog, &registry, &authority, &Permitted
+        ).await.unwrap();
+        let ToolTurnOutcome::ToolResult {data,..}=result else {
+            panic!("missing authorized search observation");
+        };
+        assert_eq!(data["ok"],true);
+        assert_eq!(data["result"]["hits"].as_array().unwrap().len(),0);
+    }
+    assert_eq!(turn.step_count(),9);
+    let blocked=turn.handle_model_reply(
+        r#"{"kind":"tool","name":"lu_files_search_text","arguments":{"query":"absent-source-last"}}"#,
+        &catalog,&registry,&authority,&Permitted
+    ).await;
+    assert_eq!(blocked,Err(ToolTurnError::NoProgress));
+    assert_eq!(turn.step_count(),9,"no tenth read may be dispatched");
+    drop(turn);drop(catalog);drop(registry);remove_workspace(folder);
+}
+
+#[tokio::test]
+async fn genuinely_new_read_content_resets_cross_call_stall_count() {
+    let (folder, registry, catalog, authority, origin, allowed) = setup();
+    let mut turn = NativeToolTurn::new_read_only(
+        &catalog,&registry,&authority,origin,
+        "thread:conversation-1".into(),&allowed,
+    ).unwrap();
+    for index in 0..5 {
+        let reply=format!(
+            r#"{{"kind":"tool","name":"lu_files_search_text","arguments":{{"query":"unmatched-{index}"}}}}"#
+        );
+        turn.handle_model_reply(
+            &reply,&catalog,&registry,&authority,&Permitted
+        ).await.unwrap();
+    }
+    let response=turn.handle_model_reply(
+        r#"{"kind":"tool","name":"lu_files_read_text","arguments":{"path":"notes.txt"}}"#,
+        &catalog,&registry,&authority,&Permitted
+    ).await.unwrap();
+    let ToolTurnOutcome::ToolResult{data,..}=response else { panic!("no read"); };
+    assert_eq!(data["ok"],true);
+    assert!(data["result"]["content"].as_str().unwrap().contains("Lu discovery marker"));
+    // The remaining reads have fewer than eight unproductive outcomes.
+    for index in 0..7 {
+        let reply=format!(
+            r#"{{"kind":"tool","name":"lu_files_search_text","arguments":{{"query":"still-unmatched-{index}"}}}}"#
+        );
+        assert!(turn.handle_model_reply(
+            &reply,&catalog,&registry,&authority,&Permitted
+        ).await.is_ok());
+    }
+    assert_eq!(turn.step_count(),13);
+    drop(turn);drop(catalog);drop(registry);remove_workspace(folder);
+}

@@ -28,6 +28,55 @@ pub const MAX_TOOL_STEPS:u32=32;
 pub const MAX_IDENTICAL_RESULTS:u8=3;
 pub const MAX_MODEL_FRAME_BYTES: usize = 64 * 1024;
 
+/// Original TOOLS-08 semantic-progress witness recovered inside the existing
+/// native turn. A different model-selected search string is not new evidence
+/// if the typed decoder returns the same substantive read result. This guard
+/// neither authorizes tools nor changes the 32-step emergency ceiling.
+pub const MAX_STALLED_SEMANTIC_READS: u8 = 8;
+
+fn stable_read_evidence(value: &Value) -> Value {
+    match value {
+        Value::Object(items) => {
+            let mut stable = serde_json::Map::new();
+            for (key, child) in items {
+                // Call identity and elapsed-time decorations cannot establish
+                // fresh information. A real source path or result body can.
+                if matches!(key.as_str(),
+                    "call_id" | "request_id" | "duration_ms" | "elapsed_ms" |
+                    "timestamp" | "created_at" | "updated_at" | "execution_time"
+                ) {
+                    continue;
+                }
+                stable.insert(key.clone(), stable_read_evidence(child));
+            }
+            Value::Object(stable)
+        }
+        Value::Array(items) => Value::Array(items.iter().map(stable_read_evidence).collect()),
+        _ => value.clone(),
+    }
+}
+
+fn substantive_read_digest(data: &Value) -> Option<String> {
+    if data.get("ok")?.as_bool()? != true { return None; }
+    let observed = data.get("result")?.as_object()?;
+    // Do not treat a successful status, echoed query, timing, file count,
+    // or unrecognized codec shape as positive evidence of progress.
+    const ACTUAL_DATA: &[&str] = &[
+        "content", "text", "entries", "matches", "hits", "files",
+        "diff", "commits", "items", "rows", "data", "results",
+        "evidence", "issues"
+    ];
+    let mut semantic = serde_json::Map::new();
+    for field in ACTUAL_DATA {
+        if let Some(value) = observed.get(*field) {
+            semantic.insert((*field).into(), stable_read_evidence(value));
+        }
+    }
+    if semantic.is_empty() { return None; }
+    let encoded = serde_json::to_vec(&semantic).ok()?;
+    Some(format!("{:x}", Sha256::digest(&encoded)))
+}
+
 // Compiled-in host observation with no model-supplied identifiers or text.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ToolDispatchCheckpoint {
@@ -82,6 +131,9 @@ pub struct NativeToolTurn {
     previous_request_digest:Option<String>,
     previous_result_digest:Option<String>,
     identical_result_count:u8,
+    // Host-decoded observations only, never model-asserted progress.
+    seen_read_evidence:BTreeSet<String>,
+    stalled_semantic_reads:u8,
 }
 
 impl NativeToolTurn {
@@ -128,6 +180,8 @@ impl NativeToolTurn {
             previous_request_digest:None,
             previous_result_digest:None,
             identical_result_count:0,
+            seen_read_evidence:BTreeSet::new(),
+            stalled_semantic_reads:0,
         })
     }
 
@@ -480,6 +534,16 @@ impl NativeToolTurn {
         if self.read_only && descriptor.effect!=ToolEffect::ReadWorkspace{
             return Err(ToolTurnError::ReadOnlyTurnViolation)
         }
+        // Do not dispatch another observed read after eight successive
+        // semantically identical/no-information read outcomes. This is not a
+        // new model tool or a separate execution controller. Non-read effects
+        // still require their own current, independent human/host approval.
+        if matches!(descriptor.effect, ToolEffect::ReadWorkspace | ToolEffect::NetworkRead)
+            && self.stalled_semantic_reads >= MAX_STALLED_SEMANTIC_READS
+        {
+            self.halt();
+            return Err(ToolTurnError::NoProgress);
+        }
         // Do not re-execute the same write effect, even if the first
         // result differs. A fresh model call is not fresh human approval.
         if descriptor.effect!=ToolEffect::ReadWorkspace &&
@@ -521,6 +585,19 @@ impl NativeToolTurn {
         if data.get("ok").and_then(Value::as_bool) == Some(true) {
             self.observed_tool_result = true;
         }
+        if matches!(descriptor.effect, ToolEffect::ReadWorkspace | ToolEffect::NetworkRead) {
+            if let Some(digest) = substantive_read_digest(&data) {
+                if self.seen_read_evidence.insert(digest) {
+                    self.stalled_semantic_reads = 0;
+                } else {
+                    self.stalled_semantic_reads = self.stalled_semantic_reads.saturating_add(1);
+                }
+            } else if data.get("ok").and_then(Value::as_bool) == Some(false) {
+                // A failed read is not useful progress. Unknown successful
+                // codecs remain unclassified, not misrepresented as verified.
+                self.stalled_semantic_reads = self.stalled_semantic_reads.saturating_add(1);
+            }
+        }
         let encoded_result=serde_json::to_vec(&data)
             .map_err(|_|ToolTurnError::MalformedModelReply)?;
         let result_digest=format!("{:x}",Sha256::digest(&encoded_result));
@@ -550,5 +627,21 @@ impl NativeToolTurn {
             ).ok(),
             ToolTurnOutcome::FinalText(_) => None,
         }
+    }
+}
+
+#[cfg(test)]
+mod semantic_progress_tests {
+    use super::*;
+    use serde_json::json;
+    #[test]
+    fn only_substantive_decoder_content_counts_as_progress_evidence() {
+        assert!(substantive_read_digest(&json!({"ok":true,"result":{"query":"x","elapsed_ms":2}})).is_none());
+        assert!(substantive_read_digest(&json!({"ok":false,"result":{"text":"fake"}})).is_none());
+        let a=json!({"ok":true,"result":{"hits":[{"path":"notes.txt","text":"source","call_id":"one","elapsed_ms":1}]}});
+        let b=json!({"ok":true,"result":{"hits":[{"path":"notes.txt","text":"source","call_id":"two","elapsed_ms":2}]}});
+        assert_eq!(substantive_read_digest(&a),substantive_read_digest(&b));
+        let c=json!({"ok":true,"result":{"hits":[{"path":"other.txt","text":"different"}]}});
+        assert_ne!(substantive_read_digest(&a),substantive_read_digest(&c));
     }
 }
