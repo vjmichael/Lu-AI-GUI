@@ -5,6 +5,22 @@ unchanged `2fb253ab35bc3b451b9c07b89f5549aec26c32e3` on existing PR #235.
 This page and the companion registration helper are infrastructure preparation
 on `main`, not execution receipts, another Core branch or a release approval.
 
+## Provisioning before registration — admin-owned native VM
+
+The reproducible VM preparation is now in
+[`docs/LU_CORE_C4_ISOLATED_KVM_VM.md`](LU_CORE_C4_ISOLATED_KVM_VM.md),
+backed by `scripts/lu-c4-create-kvm-vm.sh`,
+`scripts/lu-c4-vm-cloud-init.py` and `scripts/lu-c4-vm-audit.py`.
+
+**Do not attempt registration on the current ChatGPT container**: it lacks
+`/dev/kvm`, libvirt VM control and a delegated cgroup-v2 mount. The VM
+provisioner is intentionally Linux KVM-specific, and requires a separate
+administrator-controlled hypervisor with an approved isolated network and
+a checksum-verified Ubuntu cloud base. A generated cloud-init file, or a
+VM bootstrap audit PASS, **does not prove** Lu's cgroup-v2 worker-kill
+contract. The protected-ancestor/migration conflict below must still be
+resolved with the original independent SEC-06C custody model.
+
 ## Important security boundary: Lu-AI-GUI is PUBLIC
 
 GitHub expressly advises against leaving self-hosted runners on public repos.
