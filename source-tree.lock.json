@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "ce22500f1f779561d75ba9b61592ecaf04a8e804",
+  "sourceCommitBeforeLock": "84f8c83138d327e2ccae409eb2a25eb436cfa10c",
   "trackedFileCount": 1018,
   "files": [
     {
@@ -69,7 +69,7 @@
     },
     {
       "path": ".github/workflows/lu-core-merge-c4-grouped.yml",
-      "blob": "3ef1c124778c2ae44360ea0d014adaccc1cde214"
+      "blob": "6fe7c22937dc6e209a2e3789bc2d6202994d037b"
     },
     {
       "path": ".github/workflows/lu-development-ledger.yml",
@@ -3673,7 +3673,7 @@
     },
     {
       "path": "src-tauri/lu-core/tests/e1_reviewed_model_tools.rs",
-      "blob": "cd5083f89a3058e5d527714a9c3b3c0714a1c7c8"
+      "blob": "8f17193c2eb7baff9d61afe01292dbe751243b1b"
     },
     {
       "path": "src-tauri/lu-core/tests/edit_safety.rs",
@@ -3745,7 +3745,7 @@
     },
     {
       "path": "src-tauri/lu-core/tests/native_agent_tool_turn.rs",
-      "blob": "9a7f8e3689f1e070fc825fed81a499295af4b6f0"
+      "blob": "bdb39784d2551024c62fda4cbd27f56af0553de0"
     },
     {
       "path": "src-tauri/lu-core/tests/native_archive_create.rs",
