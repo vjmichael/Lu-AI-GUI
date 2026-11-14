@@ -1,0 +1,118 @@
+# Consolidated source acceptance for the IDE Git stack in preparation for main.
+# This adds missing 6E/6D integration evidence without replacing original jobs
+# or interpreting hosted CI approvals as physical OS-human consent.
+name: IDE 6D-6E-6F integrated native and desktop source
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'ide/**'
+      - '.github/workflows/ide-group6f-integrated-native.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ide-git-integration-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+env:
+  INTEGRATION_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+jobs:
+  original-native-git-matrix:
+    name: original 6D/6E/6F native Git security and restart / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2022]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.INTEGRATION_SOURCE_SHA }}
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Verify immutable integration source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$INTEGRATION_SOURCE_SHA"
+          echo "G06F_INTEGRATED_EXACT_HEAD=VERIFIED"
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+          components: rustfmt
+      - name: Native original Git and remote recovery fixture groups
+        shell: bash
+        run: |
+          set -euo pipefail
+          for domain in \
+            git_reviewed_commit git_protected_merge git_protected_divergent_merge \
+            git_protected_replay git_partial_stage git_conflict_resolution \
+            git_reviewed_unstage git_reviewed_restore git_reviewed_stash_save \
+            git_conflict_inventory git_rebase_cherry_plan git_replay_quarantine \
+            git_divergent_verify github_pull_review github_remote_publication \
+            github_remote_live_policy github_remote_publication_intent \
+            github_remote_native_consent git_security_recovery_matrix; do
+            cargo test --locked --manifest-path ide/host/Cargo.toml --lib "$domain" -- --nocapture
+          done
+          echo "G06D_G06E_G06F_ORIGINAL_NATIVE_CROSS_DOMAIN=PASS"
+          echo "G06F_OS_HUMAN_APPROVAL=NOT_TESTED"
+          echo "G06F_REMOTE_CAS_AND_PUBLICATION=NOT_TESTED"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Original read-only and one-use UI source tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd ide/app
+          node --test \
+            tests/g06e01_github_pull_review.test.mjs \
+            tests/g06d01_conflict_inventory.test.mjs \
+            tests/g06d02_three_way_editor.test.mjs \
+            tests/g06d0304_protected_conflict_resolution.test.mjs \
+            tests/fin03e05_remote_preflight.test.mjs
+          echo "G06D_G06E_G06F_UI_BOUNDARY=PASS"
+  desktop-link-and-native-vault:
+    name: integrated real Tauri compile and OS vault link / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 70
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2022]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.INTEGRATION_SOURCE_SHA }}
+          persist-credentials: false
+      - name: Exact head
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$INTEGRATION_SOURCE_SHA"
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+      - name: Native Linux desktop and Secret Service dependencies
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            pkg-config libdbus-1-dev libssl-dev libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev librsvg2-dev libgtk-3-dev patchelf
+      - name: Native host OS-vault type and desktop compile
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo check --locked --manifest-path ide/host/Cargo.toml \
+            --features fin03-native-vault --example fin03_live_vault_probe
+          if [ "$RUNNER_OS" = Windows ] && [ ! -f ide/app/src-tauri/icons/icon.ico ]; then
+            python ide/app/fixtures/make_g04d_ci_icon.py
+          fi
+          cargo check --locked --manifest-path ide/app/src-tauri/Cargo.toml --all-targets
+          echo "G06D_G06E_G06F_REAL_DESKTOP_SOURCE_LINK=PASS"
+          echo "G06F_NATIVE_VAULT_CREDENTIAL_USED=NO"
+          echo "G06F_INSTALLED_AND_HUMAN_ACCEPTANCE=NOT_TESTED"
