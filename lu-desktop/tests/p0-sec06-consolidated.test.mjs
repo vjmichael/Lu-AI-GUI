@@ -638,6 +638,18 @@ test('SEC06C real browser native job is a mandatory independent SEC06F gate',()=
   assert.match(workflow,/xvfb-run -a/);
   assert.match(workflow,/sec06c_browser_real_native\.py/);
   assert.match(workflow,/sec06c_browser_host_crash\.py/);
+  assert.match(workflow,/sec06c_browser_guardian_loss\.py/);
+  assert.match(workflow,/original-browser-guardian-loss\.log/);
+  assert.match(workflow,/SEC06C_BROWSER_ORIGINAL_GUARDIAN_LOSS_FAIL_CLOSED_PASS=1/);
+  const rootLoss=readFileSync(join(root,'benchmarks/e1/sec06c_browser_guardian_loss.py'),'utf8');
+  assert.match(rootLoss,/find_exact_root_manager\(unit,nonce\)/);
+  assert.match(rootLoss,/systemctl","kill"/);
+  assert.match(rootLoss,/--kill-whom=main/);
+  assert.match(rootLoss,/fds=\[os\.pidfd_open\(p\) for p in \(manager,chrome,node\)\]/);
+  assert.match(rootLoss,/if receipt\.exists\(\):/);
+  assert.match(rootLoss,/DEAD ROOT SUPERVISOR MINTED FALSE KERNEL_EMPTY=1 RECEIPT/);
+  assert.match(rootLoss,/stale_authority_replay_denied=1/);
+  assert.doesNotMatch(rootLoss,/shell=True|os\.system\(/);
   assert.match(workflow,/sec06c_real_linux_browser_original_grant_handoff_and_durable_recovery/);
   assert.match(workflow,/original-browser-host-sigkill\.log/);
   assert.match(workflow,/browser-original-log-sha256\.txt/);

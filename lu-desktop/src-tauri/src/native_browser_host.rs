@@ -200,7 +200,9 @@ impl DesktopBrowserHost {
                 session.take();
             }
         }
-        let running=session.is_some();
+        // A failed kernel cleanup retains a supervisor handle for retry but
+        // must NOT be reported as a live original Chrome/Node session.
+        let running=session.as_mut().is_some_and(|worker|worker.is_alive());
         let mut human_verification_required=false;
         let mut window_visibility=None;
         if let Some(worker)=session.as_mut(){
@@ -215,8 +217,9 @@ impl DesktopBrowserHost {
         drop(session);
         let package_available=self.packaged_components_present();
         #[cfg(target_os="linux")]
-        let recovery_ready=OwnedBrowserWorker::sec06c_reconcile_previous(
-            &self.app_data.join("lu-browser-profile")).is_ok();
+        let recovery_ready=running||(!session.is_some()
+            &&OwnedBrowserWorker::sec06c_reconcile_previous(
+                &self.app_data.join("lu-browser-profile")).is_ok());
         #[cfg(not(target_os="linux"))]
         let recovery_ready=true;
         let launch_ready=self.package_verified()&&recovery_ready

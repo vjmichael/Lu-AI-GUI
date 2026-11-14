@@ -3118,7 +3118,7 @@ jobs:
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
           node scripts/verify-source-tree.mjs
-          python3 -m py_compile scripts/lu-sec06c-owned-browser-launcher.py scripts/lu-sec06c-owned-browser-manager.py scripts/lu-sec06c-owned-browser-worker.py benchmarks/e1/sec06c_browser_real_native.py benchmarks/e1/sec06c_browser_host_crash.py
+          python3 -m py_compile scripts/lu-sec06c-owned-browser-launcher.py scripts/lu-sec06c-owned-browser-manager.py scripts/lu-sec06c-owned-browser-worker.py benchmarks/e1/sec06c_browser_real_native.py benchmarks/e1/sec06c_browser_host_crash.py benchmarks/e1/sec06c_browser_guardian_loss.py
           cargo test --locked --manifest-path src-tauri/lu-win-worker-job/Cargo.toml --lib os_owned_browser -- --nocapture
           cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib browser_worker_supervisor -- --nocapture
       - name: Provision exact headed Playwright Chromium, Node and X11
@@ -3179,6 +3179,16 @@ jobs:
           set -euo pipefail
           xvfb-run -a -s "-screen 0 1280x800x24"             python3 benchmarks/e1/sec06c_browser_host_crash.py               --bundle /usr/lib/lu/browser               --launcher /usr/libexec/lu/lu-sec06c-launch-browser               2>&1 | tee sec06c-browser-evidence/original-browser-host-sigkill.log
           grep -Fq 'SEC06C_BROWSER_ORIGINAL_HOST_SIGKILL_PASS=1' sec06c-browser-evidence/original-browser-host-sigkill.log
+      - name: Destroy the actual root service manager, prove systemd subtree cleanup and NO false receipt
+        shell: bash
+        run: |
+          set -euo pipefail
+          xvfb-run -a -s "-screen 0 1280x800x24" \
+            python3 benchmarks/e1/sec06c_browser_guardian_loss.py \
+              --bundle /usr/lib/lu/browser \
+              --launcher /usr/libexec/lu/lu-sec06c-launch-browser \
+              2>&1 | tee sec06c-browser-evidence/original-browser-guardian-loss.log
+          grep -Fq 'SEC06C_BROWSER_ORIGINAL_GUARDIAN_LOSS_FAIL_CLOSED_PASS=1' sec06c-browser-evidence/original-browser-guardian-loss.log
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -3237,13 +3247,14 @@ jobs:
           # Independently reopen the exact original Chrome/Node, Rust and
           # host-SIGKILL stdout logs from THIS source-locked workflow.
           browser="sec06f-browser/lu-sec06c-genuine-browser-$EXPECTED_SHA"
-          for label in original-browser-kernel original-rust-browser-host original-browser-host-sigkill; do
+          for label in original-browser-kernel original-rust-browser-host original-browser-host-sigkill original-browser-guardian-loss; do
             test -s "$browser/$label.log" || { echo "SEC06F_ORIGINAL_BROWSER_LOG_MISSING=$label" >&2; exit 1; }
             sha256sum "$browser/$label.log" >> sec06f-evidence/browser-original-log-sha256.txt
           done
           grep -Fq 'SEC06C_GENUINE_BROWSER_KERNEL_PASS=1' "$browser/original-browser-kernel.log"
           grep -Fq 'SEC06C_ORIGINAL_RUST_BROWSER_KERNEL_PASS=1' "$browser/original-rust-browser-host.log"
           grep -Fq 'SEC06C_BROWSER_ORIGINAL_HOST_SIGKILL_PASS=1' "$browser/original-browser-host-sigkill.log"
+          grep -Fq 'SEC06C_BROWSER_ORIGINAL_GUARDIAN_LOSS_FAIL_CLOSED_PASS=1' "$browser/original-browser-guardian-loss.log"
           # The native artifact verifier *always* returns 1 because no
           # automatic owner-installed/release acceptance can be granted.
           set +e
