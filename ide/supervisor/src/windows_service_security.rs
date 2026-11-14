@@ -857,6 +857,18 @@ pub(crate) fn verify_debugger_job_kernel_acl(job: HANDLE) -> Result<(), Supervis
 // prerequisite and may be denied by the service token's own ACL.
 // Check the enabled normal group AND the restricting SID list. This
 // preserves the two-list restricted-token access-check semantics.
+/// Reuse the existing independently bounded real TOKEN_RESTRICTED_SIDS
+/// walker. The service name is never converted into raw SID bytes by casting
+/// a String buffer (that would cause false results or invalid memory reads).
+#[cfg(feature="fin04w2-split-native")]
+pub(crate) fn verify_restricted_debugger_service_sid(token:HANDLE)
+    ->Result<(),SupervisorError>{
+    let sid=parse_sid(&sid_of_named_service("LuIdeDebuggerBroker")?)?;
+    if !query_token_sid_list(
+        token,TokenRestrictedSids,sid.0,true,
+    )? {return Err(denied());}
+    Ok(())
+}
 fn query_token_sid_list(
     token: HANDLE,
     class: i32,
