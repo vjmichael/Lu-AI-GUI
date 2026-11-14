@@ -47,6 +47,9 @@ mod windows_fin04w2_split_launcher;
 // explicit package read-execute ACLs, independently reobserved from Windows.
 #[cfg(all(windows, debug_assertions, feature = "fin04w2-split-native"))]
 mod windows_fin04w2_target_seal;
+// Live Windows BFE/WFP effective filter readback: no stale rule flags.
+#[cfg(all(windows, debug_assertions, feature="fin04w2-split-native"))]
+mod windows_fin04w2_wfp;
 // Separate SCM-only debugger broker, with no worker launch or IPC until the
 // Windows ACL/WFP/exact-Job and authenticated protocol gates are complete.
 #[cfg(all(windows, debug_assertions, feature = "fin04w2-scm"))]

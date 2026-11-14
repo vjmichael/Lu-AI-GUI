@@ -11,6 +11,7 @@ on:
       - 'ide/supervisor/src/windows_fin04w2_split_launcher.rs'
       - 'ide/supervisor/src/windows_fin04w2_target_seal.rs'
       - 'ide/supervisor/src/windows_fin04w2_service.rs'
+      - 'ide/supervisor/src/windows_fin04w2_wfp.rs'
       - 'ide/supervisor/src/windows_service_security.rs'
       - 'ide/supervisor/src/windows_fin04w2_kernel.rs'
       - 'ide/supervisor/src/windows_worker.rs'

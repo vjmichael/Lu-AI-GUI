@@ -47,17 +47,19 @@ static AUDIT_USED: AtomicBool = AtomicBool::new(false);
 fn denied() -> SupervisorError { SupervisorError::NoContainment }
 #[cfg(feature="fin04w2-split-native")]
 fn require_native_split_wfp_admission(
-    _pair:&windows_fin04w2_split_launcher::PendingSplitPair,
+    pair:&windows_fin04w2_split_launcher::PendingSplitPair,
 )->Result<(),SupervisorError>{
-    // A future native implementation must query the live BFE/WFP filter
-    // engine for the EXACT two approved image identities, independently
-    // verify active outbound denial under each token, and retain/reobserve
-    // its filter leases through the entire debug session.
-    //
-    // A PowerShell rule name, bool in service.json, old CI log, firewall
-    // configuration receipt or AppContainer zero capabilities alone is NOT
-    // effective WFP proof for the outside-lowbox LLDB worker. There is no
-    // developer fallback and NO process can be resumed at this gate.
+    // Only direct native live BFE/WFP filter readback is accepted here.
+    // These are EXACT, externally reviewed program identities from the
+    // original protected service configuration, never a client request.
+    // A full independent hostile-socket probe and live filter lease check
+    // are still REQUIRED before either process may be resumed.
+    crate::windows_fin04w2_wfp::require_exact_outbound_blocks(
+        pair.debugger_image(),pair.target.image(),
+    )?;
+    // Do NOT send a positive W2-C S yet. A filter enumeration snapshot
+    // does not establish effective kernel denial under the two real tokens,
+    // and no native LLDB attach/RIP/PDB/recovery receipt is wired here.
     Err(denied())
 }
 

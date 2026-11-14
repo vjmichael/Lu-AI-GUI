@@ -137,6 +137,16 @@ existence is not an approval. The native service intentionally fails
 closed while the live WFP verifier and real DAP attach/OS RIP receipt are
 not integrated. The historical approved-fixed W2-C test is unchanged.
 
+**Native WFP source check:** `windows_fin04w2_wfp.rs` now opens the live
+Windows Base Filtering Engine, enumerates bounded ALE_AUTH_CONNECT IPv4/
+IPv6 filters, and searches for each exact approved application identity
+with an enabled BLOCK action and no narrower conditions. A saved rule name,
+PowerShell output or user-declared Boolean is not sufficient. This is a
+**snapshot preflight only**: the split SCM path STILL denies before S or
+resume until a genuine hostile-socket test, policy lifetime, native LLDB
+DAP attach and stop witness are completed. No process receives an effective
+WFP pass merely because one blocked rule was observed.
+
 **Unimplemented release gates**: actually wire the service to its two
 native suspended-process preparations; independently verified immutable
 read-only executable/PDB staging (the current candidate target file is
