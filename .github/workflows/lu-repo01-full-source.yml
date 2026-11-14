@@ -3643,6 +3643,33 @@ jobs:
           cmake -S "$RUNNER_TEMP/p0-llama" -B "$RUNNER_TEMP/p0-build" -DCMAKE_BUILD_TYPE=Release -DGGML_NATIVE=OFF -DGGML_VULKAN=OFF -DLLAMA_CURL=OFF -DLLAMA_BUILD_SERVER=ON -DLLAMA_BUILD_TESTS=OFF
           cmake --build "$RUNNER_TEMP/p0-build" --target llama-server --parallel 3
           sha256sum "$RUNNER_TEMP/p0-build/bin/llama-server" > p0-real-model-evidence/engine-hash.txt
+      - name: Provision only fixed root-owned Git and FFprobe tools for genuine model dispatch
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Genuine GGUF selection is not proof of OS custody. Use the SAME
+          # finite root-owned SEC06C services that the independent worker jobs
+          # verify, rather than an unsafe direct Git/FFprobe process fallback.
+          sudo install -d -o root -g root -m 0755 /usr/libexec/lu
+          sudo install -o root -g root -m 0755 scripts/lu-sec06c-owned-kernel-manager.py /usr/libexec/lu/lu-sec06c-owned-kernel-manager
+          sudo install -o root -g root -m 0755 scripts/lu-sec06c-owned-git-launcher.py /usr/libexec/lu/lu-sec06c-launch-git
+          sudo install -o root -g root -m 0755 scripts/lu-sec06c-owned-git-worker.py /usr/libexec/lu/lu-sec06c-owned-git-worker
+          sudo install -o root -g root -m 0755 scripts/lu-sec06c-owned-probe-launcher.py /usr/libexec/lu/lu-sec06c-launch-probe
+          sudo install -o root -g root -m 0755 scripts/lu-sec06c-owned-probe-worker.py /usr/libexec/lu/lu-sec06c-owned-probe-worker
+          printf '%s ALL=(root) NOPASSWD: /usr/libexec/lu/lu-sec06c-launch-git *\\n' "$USER" | sudo tee /etc/sudoers.d/lu-sec06c-gguf-git-ci >/dev/null
+          printf '%s ALL=(root) NOPASSWD: /usr/libexec/lu/lu-sec06c-launch-probe *\\n' "$USER" | sudo tee /etc/sudoers.d/lu-sec06c-gguf-probe-ci >/dev/null
+          sudo chmod 0440 /etc/sudoers.d/lu-sec06c-gguf-git-ci /etc/sudoers.d/lu-sec06c-gguf-probe-ci
+          sudo visudo -cf /etc/sudoers.d/lu-sec06c-gguf-git-ci
+          sudo visudo -cf /etc/sudoers.d/lu-sec06c-gguf-probe-ci
+          test "$(id -u)" -ne 0
+          for file in /usr/libexec/lu/lu-sec06c-{owned-kernel-manager,launch-git,owned-git-worker,launch-probe,owned-probe-worker}; do
+            test -f "$file" && test "$(stat -c %u "$file")" = 0
+          done
+          for bin in git ffprobe; do
+            reviewed="$(readlink -e "$(command -v "$bin")")"
+            test -f "$reviewed" && test "$(stat -c %u "$reviewed")" = 0
+          done
+          echo 'Real GGUF uses original finite root-owned service custody; no installed or release grant.' >> "$GITHUB_STEP_SUMMARY"
       - name: Real Qwen 0.6B independently selects authorized Git and FFprobe tools
         shell: bash
         timeout-minutes: 55

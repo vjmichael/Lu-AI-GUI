@@ -746,3 +746,16 @@ test('SEC06C OS-owned original PIDFD stall scenarios require genuine systemd sub
   assert.match(native,/"setsidDescendantReaped": True/);
   assert.match(native,/SEC06C_ANCESTOR_ESCAPE_SUCCEEDED/);
 });
+
+test('SEC06C genuine GGUF test provisions only finite root-owned Git and probe brokers',()=>{
+  const workflow=readFileSync(join(root,'.github/workflows/lu-repo01-full-source.yml'),'utf8');
+  assert.match(workflow,/Provision only fixed root-owned Git and FFprobe tools for genuine model dispatch/);
+  for(const fixed of ['lu-sec06c-launch-git','lu-sec06c-owned-git-worker',
+                      'lu-sec06c-launch-probe','lu-sec06c-owned-probe-worker',
+                      'lu-sec06c-owned-kernel-manager']){
+    assert.ok(workflow.includes('/usr/libexec/lu/'+fixed),'genuine model lacks finite broker '+fixed);
+  }
+  assert.match(workflow,/sudo visudo -cf \/etc\/sudoers.d\/lu-sec06c-gguf-git-ci/);
+  assert.match(workflow,/sudo visudo -cf \/etc\/sudoers.d\/lu-sec06c-gguf-probe-ci/);
+  assert.doesNotMatch(workflow,/NOPASSWD: ALL/);
+});
