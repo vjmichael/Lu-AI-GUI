@@ -709,3 +709,19 @@ test('SEC06C genuine headed Chrome checks a live renderer user namespace AND sec
   assert.match(native,/genuine_renderer_userns_sandbox\(chrome_pid,group,leaf\)/);
   assert.match(native,/if b"--no-sandbox" in cmd or b"--disable-setuid-sandbox" in cmd/);
 });
+
+test('SEC06C OS-owned original PIDFD stall scenarios require genuine systemd subtree cleanup',()=>{
+  const gate=readFileSync(join(root,'scripts/p0-sec06-consolidated.mjs'),'utf8');
+  const native=readFileSync(join(root,'benchmarks/e1/sec06c_root_owned_systemd_boundary.py'),'utf8');
+  for(const mode of ['guardian-stall','worker-stall']){
+    assert.match(gate,new RegExp('linux-root-owned-unit-'+mode));
+    assert.match(native,new RegExp('"'+mode+'"'));
+  }
+  assert.match(native,/signal\.pidfd_send_signal\(victim_fd,signal\.SIGSTOP\)/);
+  assert.match(native,/if state in \("T","t"\):break/);
+  assert.match(native,/"nativeMainSigkill": scenario=="worker-main-sigkill"/);
+  assert.match(native,/"nativeSupervisorActuallyStalled": scenario=="guardian-stall"/);
+  assert.match(native,/"nativeWorkerActuallyStalled": scenario=="worker-stall"/);
+  assert.match(native,/"setsidDescendantReaped": True/);
+  assert.match(native,/SEC06C_ANCESTOR_ESCAPE_SUCCEEDED/);
+});

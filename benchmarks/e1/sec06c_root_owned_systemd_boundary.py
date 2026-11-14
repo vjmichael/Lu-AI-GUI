@@ -195,6 +195,33 @@ def outer(unit, evidence, expected, scenario):
             )
             if cancelled.returncode != 0:
                 fail("native OS-managed cancellation rejected")
+        elif scenario in ("guardian-stall", "worker-stall"):
+            # SEC-06C positive replacement of the old same-UID orphan-risk
+            # fixture: SIGSTOP exactly the original, PIDFD-identified service
+            # main or its setsid descendant, then the INDEPENDENT OS manager
+            # must kill the complete root-owned unit. Merely withholding a
+            # false receipt is not successful full-process recovery.
+            victim=worker_pid if scenario=="guardian-stall" else child_pid
+            victim_fd=mainfd if scenario=="guardian-stall" else childfd
+            if not live(victim) or pidfd_terminated(victim_fd,0):
+                fail("original "+scenario+" victim terminated before SIGSTOP")
+            signal.pidfd_send_signal(victim_fd,signal.SIGSTOP)
+            deadline=time.monotonic()+2
+            while time.monotonic()<deadline:
+                try:
+                    state=pathlib.Path(f"/proc/{victim}/stat").read_text().rsplit(")",1)[1].split()[0]
+                except FileNotFoundError:
+                    fail("original "+scenario+" victim vanished")
+                if state in ("T","t"):break
+                time.sleep(.02)
+            else:fail("original "+scenario+" PIDFD not actually stopped")
+            cancelled=subprocess.run(
+                [str(sudo),"-n","/usr/bin/systemctl","stop",unit],
+                stdout=subprocess.DEVNULL,stderr=subprocess.PIPE,
+                timeout=20,
+            )
+            if cancelled.returncode!=0:
+                fail("SEC06C OS-owned "+scenario+" independent systemd stop failed")
         elif scenario == "host-crash":
             # The original nonroot launcher client dies outside the unit.
             # A surviving worker is a blocker; don't substitute a successful
@@ -226,7 +253,10 @@ def outer(unit, evidence, expected, scenario):
             "originalGroup": original,
             "nonrootEuid": os.geteuid(),
             "rootOwnedUnit": True, "ancestorMigrationDenied": True,
-            "exactOriginalPidfds": True, "nativeMainSigkill": True,
+            "exactOriginalPidfds": True,
+            "nativeMainSigkill": scenario=="worker-main-sigkill",
+            "nativeSupervisorActuallyStalled": scenario=="guardian-stall",
+            "nativeWorkerActuallyStalled": scenario=="worker-stall",
             "setsidDescendantReaped": True,
             "recoveryScenario": scenario,
             "systemdKillMode": "control-group",
@@ -269,7 +299,8 @@ def main():
     parser.add_argument("--evidence", required=True)
     parser.add_argument("--unit")
     parser.add_argument("--scenario", choices=["worker-main-sigkill",
-                                                "cancel", "host-crash"],
+                                                "cancel", "host-crash",
+                                                "guardian-stall", "worker-stall"],
                         default="worker-main-sigkill")
     args = parser.parse_args()
     if len(args.expected_sha) != 40 or any(c not in "0123456789abcdef" for c in args.expected_sha):
