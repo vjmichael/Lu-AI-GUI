@@ -19,19 +19,26 @@ SOURCE_SHA = "2fb253ab35bc3b451b9c07b89f5549aec26c32e3"
 
 
 def render(public_key: str) -> str:
-    key = " ".join(public_key.strip().split())
+    source = public_key.strip()
+    if any(c in source for c in "\r\n\x00"):
+        raise ValueError("Expected exactly one SSH public key line")
+    key = " ".join(source.split())
     parts = key.split()
     if len(parts) < 2 or parts[0] != "ssh-ed25519":
         raise ValueError("An operator SSH ed25519 PUBLIC key is required")
     import base64
+    import struct
     try:
         raw = base64.b64decode(parts[1], validate=True)
     except ValueError as exc:
         raise ValueError("Invalid SSH public key base64") from exc
-    if len(raw) < 48 or len(raw) > 256:
-        raise ValueError("Implausible SSH public key length")
-    if any(c in key for c in "\r\n\x00"):
-        raise ValueError("Invalid public key characters")
+    # SSH wire encoding: 4-byte "ssh-ed25519" length, 11-byte name,
+    # 4-byte public-key length, then EXACTLY 32 key bytes.
+    if (len(raw) != 51
+            or struct.unpack(">I", raw[:4])[0] != 11
+            or raw[4:15] != b"ssh-ed25519"
+            or struct.unpack(">I", raw[15:19])[0] != 32):
+        raise ValueError("Invalid SSH ed25519 public key payload")
 
     # YAML double-quoted string produced using JSON string encoding; source
     # SHA, packages, users and paths are deliberately fixed.
