@@ -90,6 +90,7 @@ pub mod compute_probe;
 pub mod compute_runtime;
 pub mod continuity;
 pub mod operational_asset_ledger;
+pub mod operational_memory;
 pub mod contracts;
 pub mod conversation_authority;
 pub mod core_extension;
