@@ -122,6 +122,9 @@ pub struct NativeToolTurn {
     origin: BoundCallOrigin,
     workspace_id: String,
     advertised: BTreeSet<String>,
+    // Snapshot ONLY the native IDs behind tools advertised for this turn.
+    // A grant to an unrelated tool cannot keep a revoked model context alive.
+    continuation_native_ids: BTreeSet<String>,
     steps: u32,
     done: bool,
     last_repair: JsonRepairStatus,
@@ -167,10 +170,20 @@ impl NativeToolTurn {
         catalog
             .schemas(&advertised)
             .map_err(ToolTurnError::Catalog)?;
+        let continuation_native_ids: BTreeSet<String> = permitted.into_iter()
+            .filter(|id| {
+                let names = catalog.names_for_native_ids(&BTreeSet::from([id.clone()]));
+                !names.is_disjoint(&advertised)
+            })
+            .collect();
+        if continuation_native_ids.is_empty() {
+            return Err(ToolTurnError::NoAuthorizedTools);
+        }
         Ok(Self {
             origin,
             workspace_id: host_workspace_id,
             advertised,
+            continuation_native_ids,
             steps: 0,
             done: false,
             last_repair: JsonRepairStatus::Unchanged,
@@ -283,7 +296,7 @@ impl NativeToolTurn {
         let permitted = authority
             .permitted_tool_ids(&self.origin)
             .map_err(ToolTurnError::Unauthorized)?;
-        if permitted.is_empty() {
+        if !self.continuation_native_ids.is_subset(&permitted) {
             return Err(ToolTurnError::Revoked);
         }
         Ok(())
