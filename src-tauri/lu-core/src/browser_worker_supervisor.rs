@@ -558,6 +558,59 @@ mod tests {
         assert_eq!(read_bounded_worker_line(&mut reader).unwrap_err().kind(),
             io::ErrorKind::InvalidData);
     }
+
+    /// The actual root-owned fixed browser package and real Xvfb display
+    /// are provisioned in the independent Linux SEC-06C native CI job.
+    /// This is NEVER a release acceptance or a model-selected executable.
+    #[cfg(target_os="linux")]
+    #[test]
+    #[ignore="requires real systemd-owned Chromium+Node/Xvfb admission"]
+    fn sec06c_real_linux_browser_original_grant_handoff_and_durable_recovery(){
+        use std::fs;
+        let bundle=PathBuf::from(std::env::var_os("LU_SEC06C_BROWSER_REVIEWED_BUNDLE")
+            .expect("must pin original reviewed Linux CI browser bundle"));
+        let chromium=bundle.join("chrome");
+        let xdotool=bundle.join("xdotool");
+        let profile=std::env::temp_dir().join(format!(
+            "lu-sec06c-native-browser-{}-{}",std::process::id(),
+            std::time::SystemTime::now().duration_since(
+                std::time::UNIX_EPOCH).unwrap().as_nanos()));
+        fs::create_dir(&profile).expect("create original one-use dedicated profile");
+        let display=std::env::var("DISPLAY").expect("real Xvfb DISPLAY required");
+        let xauthority=std::env::var_os("XAUTHORITY").map(PathBuf::from);
+        let cfg=BrowserLaunchConfig{
+            trusted_node:bundle.join("node"),
+            trusted_script:bundle.join("lu_browser_worker.mjs"),
+            trusted_profile:profile.clone(),
+            approved_origins:vec!["https://example.com".into()],
+            cdp_endpoint:None,
+            visibility:BrowserVisibilityPreference::AutomaticHidden,
+            command_timeout:Duration::from_secs(30),
+        };
+        let mut worker=OwnedBrowserWorker::launch_sec06c(
+            cfg,&chromium,xdotool,
+            &format!("c-{}","a".repeat(32)),
+            &format!("g-{}","b".repeat(32)),
+            "browser-task-real-native", &display,xauthority.as_deref(),
+        ).expect("genuine original root-owned Chromium+Node admission");
+        assert!(worker.is_alive(),
+            "original Chromium, Node and root-owned leaf must still exist");
+        let initial=worker.execute(BrowserOperation::Status,json!({}))
+            .expect("genuine nonroot browser initial human-hide handshake");
+        assert_eq!(initial["ok"],true);
+        assert_eq!(initial["result"]["windowVisibility"],"HIDDEN");
+        let shown=worker.execute(BrowserOperation::Show,json!({}))
+            .expect("original Chromium human-visible request");
+        assert_eq!(shown["result"]["windowVisibility"],"VISIBLE");
+        let hidden=worker.execute(BrowserOperation::Hide,json!({}))
+            .expect("original Chromium human-hiding recheck");
+        assert_eq!(hidden["result"]["windowVisibility"],"HIDDEN");
+        worker.stop_verified().expect("root cgroup.kill, empty and fsynced receipt");
+        assert!(LinuxOsOwnedBrowserSession::reconcile_previous(&profile).is_ok(),
+            "restart may only verify original immutable root receipt, never replay");
+        fs::remove_dir_all(&profile).expect("remove finished ephemeral CI profile");
+        println!("SEC06C_ORIGINAL_RUST_BROWSER_KERNEL_PASS=1 original_turn=1 real_browser=1 independent_root_receipt=1 restart_no_replay=1");
+    }
     #[test]
     fn model_does_not_choose_executable_or_native_window(){
         let _method:fn(&mut OwnedBrowserWorker,BrowserOperation,Value)

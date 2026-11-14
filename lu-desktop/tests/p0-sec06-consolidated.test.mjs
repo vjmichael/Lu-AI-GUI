@@ -601,6 +601,12 @@ test('SEC06C browser puts Chrome, Node and setsid descendants under one root-own
   assert.match(host,/scope\.stop_and_verify\(&mut self\.child\)/);
   assert.match(desktop,/OwnedBrowserWorker::launch_sec06c/);
   assert.match(desktop,/worker\.stop_verified\(\)/);
+  const stop=desktop.indexOf('pub fn stop(&self)');
+  const stopSection=desktop.slice(stop,stop+800);
+  assert.match(stopSection,/session\.as_mut\(\)/);
+  assert.match(stopSection,/worker\.stop_verified\(\)/);
+  assert.ok(stopSection.indexOf('session.take()')>stopSection.indexOf('worker.stop_verified()'),
+    'never lose original root service custody on failed kernel cleanup');
   assert.match(desktop,/SEC06C_BROWSER_PRIOR_KERNEL_CUSTODY_UNRECONCILED/);
   assert.match(desktop,/OwnedBrowserWorker::sec06c_reconcile_previous/);
   assert.match(x11,/original_leaf_member\(pid,&leaf\)/);
@@ -629,6 +635,13 @@ test('SEC06C real browser native job is a mandatory independent SEC06F gate',()=
   assert.match(workflow,/assemble-browser-ci-candidate\.mjs/);
   assert.match(workflow,/xvfb-run -a/);
   assert.match(workflow,/sec06c_browser_real_native\.py/);
+  assert.match(workflow,/sec06c_browser_host_crash\.py/);
+  assert.match(workflow,/sec06c_real_linux_browser_original_grant_handoff_and_durable_recovery/);
+  assert.match(workflow,/original-browser-host-sigkill\.log/);
+  assert.match(workflow,/browser-original-log-sha256\.txt/);
+  assert.match(workflow,/SEC06F_ORIGINAL_BROWSER_LOG_MISSING/);
+  assert.match(workflow,/SEC06C_ORIGINAL_RUST_BROWSER_KERNEL_PASS=1/);
+  assert.match(workflow,/SEC06C_BROWSER_ORIGINAL_HOST_SIGKILL_PASS=1/);
   assert.match(workflow,/SEC06C_GENUINE_BROWSER_KERNEL_PASS=1/);
   assert.match(workflow,/SEC06_BROWSER_JOB:/);
   assert.match(workflow,/for name in \('SEC06_GIT_JOB'[\s\S]{0,180}'SEC06_BROWSER_JOB'/);

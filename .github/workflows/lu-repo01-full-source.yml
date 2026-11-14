@@ -3118,7 +3118,7 @@ jobs:
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
           node scripts/verify-source-tree.mjs
-          python3 -m py_compile scripts/lu-sec06c-owned-browser-launcher.py scripts/lu-sec06c-owned-browser-manager.py scripts/lu-sec06c-owned-browser-worker.py benchmarks/e1/sec06c_browser_real_native.py
+          python3 -m py_compile scripts/lu-sec06c-owned-browser-launcher.py scripts/lu-sec06c-owned-browser-manager.py scripts/lu-sec06c-owned-browser-worker.py benchmarks/e1/sec06c_browser_real_native.py benchmarks/e1/sec06c_browser_host_crash.py
           cargo test --locked --manifest-path src-tauri/lu-win-worker-job/Cargo.toml --lib os_owned_browser -- --nocapture
           cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib browser_worker_supervisor -- --nocapture
       - name: Provision exact headed Playwright Chromium, Node and X11
@@ -3164,6 +3164,21 @@ jobs:
               2>&1 | tee sec06c-browser-evidence/original-browser-kernel.log
           grep -Fq 'SEC06C_GENUINE_BROWSER_KERNEL_PASS=1' sec06c-browser-evidence/original-browser-kernel.log
           echo 'Actual OS-owned browser candidate; NO production package approval or release grant.' >> "$GITHUB_STEP_SUMMARY"
+      - name: Execute compiled Rust browser adapter, host grants, human X11 handoff and journal restart
+        shell: bash
+        env:
+          LU_SEC06C_BROWSER_REVIEWED_BUNDLE: /usr/lib/lu/browser
+          LU_SEC06C_BROKER_DEBUG: '1'
+        run: |
+          set -euo pipefail
+          xvfb-run -a -s "-screen 0 1280x800x24"             cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib               sec06c_real_linux_browser_original_grant_handoff_and_durable_recovery               -- --ignored --nocapture               2>&1 | tee sec06c-browser-evidence/original-rust-browser-host.log
+          grep -Fq 'SEC06C_ORIGINAL_RUST_BROWSER_KERNEL_PASS=1' sec06c-browser-evidence/original-rust-browser-host.log
+      - name: SIGKILL the real Lu browser host and verify root cleanup plus restart replay denial
+        shell: bash
+        run: |
+          set -euo pipefail
+          xvfb-run -a -s "-screen 0 1280x800x24"             python3 benchmarks/e1/sec06c_browser_host_crash.py               --bundle /usr/lib/lu/browser               --launcher /usr/libexec/lu/lu-sec06c-launch-browser               2>&1 | tee sec06c-browser-evidence/original-browser-host-sigkill.log
+          grep -Fq 'SEC06C_BROWSER_ORIGINAL_HOST_SIGKILL_PASS=1' sec06c-browser-evidence/original-browser-host-sigkill.log
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -3198,6 +3213,12 @@ jobs:
           pattern: lu-core01e-sec06-*-${{ github.event.pull_request.head.sha }}
           path: sec06f-inbound/
           merge-multiple: false
+      - uses: actions/download-artifact@v4
+        continue-on-error: true # Missing actual Chrome/Node logs block SEC-06F.
+        with:
+          pattern: lu-sec06c-genuine-browser-${{ github.event.pull_request.head.sha }}
+          path: sec06f-browser/
+          merge-multiple: false
       - name: Independently inspect original SEC-06F source Windows Linux and all native broker results
         shell: bash
         env:
@@ -3212,6 +3233,17 @@ jobs:
           mkdir -p sec06f-evidence
           test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
           node scripts/verify-source-tree.mjs
+          # A successful browser job alone is not its original evidence.
+          # Independently reopen the exact original Chrome/Node, Rust and
+          # host-SIGKILL stdout logs from THIS source-locked workflow.
+          browser="sec06f-browser/lu-sec06c-genuine-browser-$EXPECTED_SHA"
+          for label in original-browser-kernel original-rust-browser-host original-browser-host-sigkill; do
+            test -s "$browser/$label.log" || { echo "SEC06F_ORIGINAL_BROWSER_LOG_MISSING=$label" >&2; exit 1; }
+            sha256sum "$browser/$label.log" >> sec06f-evidence/browser-original-log-sha256.txt
+          done
+          grep -Fq 'SEC06C_GENUINE_BROWSER_KERNEL_PASS=1' "$browser/original-browser-kernel.log"
+          grep -Fq 'SEC06C_ORIGINAL_RUST_BROWSER_KERNEL_PASS=1' "$browser/original-rust-browser-host.log"
+          grep -Fq 'SEC06C_BROWSER_ORIGINAL_HOST_SIGKILL_PASS=1' "$browser/original-browser-host-sigkill.log"
           # The native artifact verifier *always* returns 1 because no
           # automatic owner-installed/release acceptance can be granted.
           set +e

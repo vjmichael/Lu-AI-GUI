@@ -193,7 +193,12 @@ impl DesktopBrowserHost {
         let mut session=self.session.lock()
             .map_err(|_|"browser supervisor lock poisoned")?;
         if session.as_mut().is_some_and(|worker|!worker.is_alive()){
-            session.take(); // crash recovery closes stale worker ownership
+            // On a dead original Chromium/Node peer, a matching root-owned
+            // cleanup receipt is still required. Do not lose the only live
+            // manager/pipe on failed cleanup or silently clear uncertainty.
+            if session.as_mut().is_some_and(|w|w.stop_verified().is_ok()){
+                session.take();
+            }
         }
         let running=session.is_some();
         let mut human_verification_required=false;
@@ -351,9 +356,13 @@ impl DesktopBrowserHost {
     pub fn stop(&self)->Result<bool,String>{
         let mut session=self.session.lock()
             .map_err(|_|"browser supervisor lock poisoned")?;
-        if let Some(mut worker)=session.take(){
+        if let Some(worker)=session.as_mut(){
+            // RETAIN the original owned broker when actual kernel cleanup
+            // cannot be proven. A failed stop must not discard the only
+            // service handle or silently publish success to the user.
             worker.stop_verified().map_err(|e|
                 format!("SEC06C_BROWSER_KERNEL_CLEANUP_UNVERIFIED: {e:?}"))?;
+            session.take(); // Only the exact root receipt releases ownership.
             return Ok(true)
         }
         Ok(false)
