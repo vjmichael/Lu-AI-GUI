@@ -486,6 +486,66 @@ mod tests{
         assert!(blocked.local_git_reconciliation_required);
         assert!(!blocked.automatic_retry_authorized);
     }
+    #[test]
+    fn group6f_restart_matrix_reconciles_all_remote_outcomes_without_replay(){
+        let f=fixture();
+        let original=observed(&f);
+        let intent=f.registry.prepare_github_remote_publication_intent(
+            &f.id,&original).unwrap();
+        let private=f.dir.join("group6f-recovery-matrix");
+        fs::create_dir(&private).unwrap();
+        fsync_prepared_intent_once(&private,&intent).unwrap();
+        let journal=private.join(format!("{}.prepared.json",intent.intent_sha256));
+        let original_bytes=fs::read(&journal).unwrap();
+        for (tip,classification) in [
+            (f.old.as_str(),"old_tip_still_visible_no_retry"),
+            (f.new.as_str(),"proposed_tip_visible_not_our_publication"),
+            ("ffffffffffffffffffffffffffffffffffffffff","competing_writer_quarantine"),
+        ]{
+            let mut fresh=observed(&f);
+            fresh.remote_head_sha256=Some(tip.to_owned());
+            let verdict=f.registry.inspect_group6f_remote_restart(
+                &f.id,&private,&intent,&fresh).unwrap();
+            assert_eq!(verdict.remote_classification,classification);
+            assert!(verdict.remote_operator_reconciliation_required);
+            assert!(verdict.source_rechecked_after_remote_classification);
+            assert!(!verdict.remote_publication_authorized);
+            assert!(!verdict.remote_publication_claimed_completed);
+            assert!(!verdict.native_approval_carried_over);
+            assert!(!verdict.automatic_retry_authorized);
+            assert!(!verdict.remote_mutation_performed);
+            assert_eq!(fs::read(&journal).unwrap(),original_bytes);
+        }
+        // Original host-only prepared journal must reject truncation, not
+        // reinterpret partial JSON as an unapproved fresh transaction.
+        fs::write(&journal,b"{invalid interrupted write").unwrap();
+        assert!(f.registry.inspect_group6f_remote_restart(
+            &f.id,&private,&intent,&observed(&f)).is_err());
+        fs::write(&journal,&original_bytes).unwrap();
+        // A newer remote policy digest, or a stale original read, cannot
+        // silently carry the old intent or operator grant through restart.
+        let mut changed=observed(&f);
+        changed.policy_response_sha256=Some("b".repeat(64));
+        assert!(f.registry.inspect_group6f_remote_restart(
+            &f.id,&private,&intent,&changed).is_err());
+        let mut stale=observed(&f);
+        stale.checked_unix_seconds=0;
+        assert!(f.registry.inspect_group6f_remote_restart(
+            &f.id,&private,&intent,&stale).is_err());
+        // A local active branch writer blocks all local new operations
+        // even when a fresh remote view still shows the expected old tip.
+        let repo=Repository::open(&f.root).unwrap();
+        let branch=repo.head().unwrap().name().unwrap().to_owned();
+        drop(repo);
+        let branch_lock=f.root.join(".git").join(format!("{branch}.lock"));
+        fs::write(&branch_lock,b"competing writer").unwrap();
+        let verdict=f.registry.inspect_group6f_remote_restart(
+            &f.id,&private,&intent,&observed(&f)).unwrap();
+        assert!(verdict.local_git_reconciliation_required);
+        assert!(!verdict.automatic_retry_authorized);
+        assert_eq!(fs::read(&branch_lock).unwrap(),b"competing writer");
+    }
+
     #[test]fn foreign_remote_or_dirty_project_never_prepares_intent(){
         let f=fixture();
         let p=observed(&f);
