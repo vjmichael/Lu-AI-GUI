@@ -454,6 +454,10 @@ fn review_only(pipe:HANDLE,config:&InstalledAuditConfig)
             &config.approved_lldb_dap_executable,&staged_target,
         )?;
         target.grant_original_running(&scm_pair)?;
+        crate::windows_fin04w2_wfp::require_exact_outbound_blocks(
+            &config.approved_lldb_dap_executable,&staged_target,
+        )?;
+        scm_pair.reobserve()?;
         debugger.resume_after_original_running()?;
         // Genuine bounded native LLDB-DAP initialize/attach/stopped and
         // stackTrace; unlike C2's benign fixture, this is a real debugger.
@@ -465,6 +469,21 @@ fn review_only(pipe:HANDLE,config:&InstalledAuditConfig)
         let os_thread=target.corroborate_stopped_rip(&scm_pair,stop.observed_pc)?;
         if os_thread!=stop.thread_id||stop.source_line==0
             ||stop.source_path.is_empty(){return Err(denied());}
+        // A late WFP rule or PE/PDB/journal mutation must invalidate even
+        // an already observed DAP stop. These are OS readbacks, NOT a
+        // substitute for effective hostile-socket or source-line proof.
+        crate::windows_fin04w2_wfp::require_exact_outbound_blocks(
+            &config.approved_lldb_dap_executable,&staged_target,
+        )?;
+        security::hash_executable(&staged_target,&config.expected_target_image_sha256)?;
+        crate::fin04w2_authority::verify_running_same_original_authorization(
+            &config.original_supervisor_journal,&config.original_job_id,
+            &config.review_only_plan,&config.review_only_plan_hash,&original,
+        )?;
+        crate::fin04w2_authority::verify_reserved_original_authorization(
+            &root,&original,
+        )?;
+        target.reobserve(&scm_pair)?;
         // The original independent LLVM/PDB source-line oracle, patched
         // kernel event-owner evidence and effective socket-denial receipts
         // are still separate mandatory gates. Do not self-award X/F or

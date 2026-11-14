@@ -340,6 +340,17 @@ fn prepare_one_target(
     )?;
     if !sample.two_matching_samples||!sample.job_membership_rechecked
         ||sample.process_id!=pid||sample.observed_rip!=rip{return Err(denied());}
+    // Reopen the original immutable bytes, PDB identity and current BFE
+    // filters AFTER native thread sampling, before emitting any evidence.
+    crate::debug_symbol_verification::verify_exact_sealed_windows_pe_pdb(
+        suspended.image(),suspended.pdb(),
+        &cfg.expected_target_image_sha256,&cfg.expected_target_pdb_sha256,
+    )?;
+    crate::windows_fin04w2_wfp::require_target_outbound_blocks(
+        suspended.image(),
+    )?;
+    fin04w2_authority::verify_reserved_original_authorization(root,&original)?;
+    pair.reobserve()?;
     let mut observed=[0u8;13];observed[0]=b'P';
     observed[1..5].copy_from_slice(&sample.thread_id.to_le_bytes());
     observed[5..13].copy_from_slice(&sample.observed_rip.to_le_bytes());
