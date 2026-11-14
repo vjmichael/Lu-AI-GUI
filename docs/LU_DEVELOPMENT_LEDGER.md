@@ -68,6 +68,151 @@ Original [integrated run #43635186752](https://github.com/vjmichael/Lu-AI-GUI/ac
 
 **IDE-MERGE-01/02 immutable final native acceptance for #43637111944 (2026-11-14).** Original [GitHub Actions #43637111944](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/43637111944), event push, original attempt **1**, **completed SUCCESS** on November 14, 2026 at the unchanged IDE integration source `0de04298a9c8b2b32b47839b5e3658170af71134`. All **four original jobs independently completed SUCCESS** with zero failed steps: Ubuntu-24.04 Git 6D/6E/6F security/recovery, Windows-2022 Git 6D/6E/6F security/recovery, Ubuntu-24.04 native Tauri desktop/OS-vault compile, and Windows-2022 native Tauri desktop/OS-vault compile. The original Windows desktop log shows `FIN04W2_HOSTILE_TARGET_PE_PDB_COMPILER=PASS_NOT_WFP_SOCKET`, `FIN04W2_NATIVE_HARNESS_PARSE=PASS_NOT_ACTUAL_SCMS_OR_WFP`, and `G06D_G06E_G06F_REAL_DESKTOP_SOURCE_LINK=PASS`; the original SCM-pair, service-security and checked feature-gated negative Rust tests also PASS. The original Windows and Linux Git job logs independently show P05 `saved_text_search_never_reads_private_trash_or_case_variant_generated_folders` PASS, `saved_text_search_with_only_private_trash_reads_zero_files` PASS, original Unicode/casefold offset tests PASS, all original Git fixture groups PASS and 24 original JS source tests PASS. Reconciled all actual job outcomes; **no demonstrated source defects**, so no follow-up bug commits, new branch or CI replay. Supersedes the earlier partial 3/4 report for this same run. This is an exact-HEAD **native CI/desktop compilation gate only**, NOT full independently protected WFP hostile socket, true SCM service death, replay denial, physical installed Windows/R9700, independent consent, signed installer or release authorization; original native Git harness explicitly labels `G06F_OS_HUMAN_APPROVAL=NOT_TESTED` and `G06F_REMOTE_CAS_AND_PUBLICATION=NOT_TESTED`. Preserve draft [PR #236](https://github.com/vjmichael/Lu-AI-GUI/pull/236) against `main`, do not change source or merge without other review/release gates. **Next task**: return to main source-consolidation/integration of reviewed genuinely missing functionality, carrying exact CI receipts and preserving the authoritative main-side Core inventory and this ONE master ledger.
 
+**IDE-MERGE-01/02 reviewed main convergence preflight (2026-11-14).** Against accepted draft #236 exact IDE source `0de04298a9c8b2b32b47839b5e3658170af71134`, the only **11** `main`-side path differences at read snapshot `17397716220862e6c5bf54afadb4eb83bc1ab572` were **10 additive Core-only runner/workflow/documentation assets** (one `.github/workflows/lu-core-c4-delegated-kernel-original-sha.yml`, three `docs/LU_CORE_*`, and six `scripts/lu-c4-*`) and this modified canonical `docs/LU_DEVELOPMENT_LEDGER.md`. **No main-side `ide/` implementation paths changed**, and no main-only Core files may be dropped. The older integration-side ledger held a Nov. 9 IDE-05 package workstream historical section not reproduced on `main` (historical source only, not updated priority); it is preserved below, without restoring an obsolete IDE-05 competing task queue or stale open-PR inventory rows. DEV-01 original old UI contract tests have newer editor/Quick Open/native-file implementations and current regression suites; original installed UIA/AT-SPI full physical negatives remain independently unverified, so no fabricated equivalence. DEV-02 test-only LSP stager already superseded by modern disposable source-only packaging checks, not to be imported. Original P06 live Actions reader `ide/packaging/p06_live_native_jobs.py` implements distinct read-only GitHub API snapshots, but its P02/P03/P04/P06 workflow names and job labels are hard-coded to **older standalone workflows**, not current `ide-group6f-integrated-native.yml`; **do not copy stale reader or its acceptance labels into modern release verification** until original source/job-name contract is adapted and independently tested. This preflight authorizes only a **real two-parent integration commit on the EXISTING IDE draft PR branch**, taking the whole accepted IDE tree plus the actual main-only Core assets and authoritative main ledger. Such a two-parent commit must be followed by its OWN exact-SHA validation; run #43637111944 remains accepted only for its historical unchanged IDE source. **No authorization to merge into `main` or issue a release.**
+
+**Historical source preserved from the old IDE integration ledger; NOT current priority or acceptance:**
+
+### 2026-11-09 — Standalone Lu IDE IDE-05 next task group (source-only)
+
+After DEV-04.6D debugger native-human-dialog code was committed at
+`2daaeea504f26394a02ef491b575569a8db1ffc4`, the next canonical
+standalone IDE implementation area is **IDE-05 — Master Package and Toolchain
+Manager**, staged on `ide/dev05-1-package-discovery-20261109`. Its initial
+IDE-05.1 slice adds a **nonexecuting** fixed-file native registry inspection
+for uv / vcpkg / Conan, exact manifest/lock hashes, conflicting-manager
+blockers, and an explicit read-only Packages UI. No new package installer,
+network lookup, script execution, manager toolchain, signed distribution or
+authorization is claimed. IDE-05.1 Rust/Node tests are authored but native
+acceptance remains OPEN; use one grouped test gate at the task-group boundary,
+not per-file CI runs. Next suborders: static revision-bound plan review,
+protected fixed adapters, independent verification/recovery, and installed
+Windows/Linux OS tests. DEV-04.6D authentic Windows LLDB and human dialog
+verification is a **separate outstanding gate**, not promoted by this work.
+
+
+### 2026-11-09 — IDE-05.2 exact manifest/lock operation previews
+
+On the same standalone IDE-05 workstream, IDE-05.2 implemented *static
+review-only* typed manager/operation selection, exact source/lock
+SHA-256-bound proposal fingerprints, intended Add/Remove/Sync changes,
+explicit unverified resolver/hook/network risks, limited vcpkg JSON direct
+dependency checking, and a separate native full-evidence revalidation
+gate. Any changed manager, package, version or manifest/lock evidence
+rejects the old preview; matching evidence **still does not approve or
+execute** anything. IDE-05.2 adds no Apply endpoint, tool installation,
+package manager process or CI microjobs. Native Rust and Tauri compile,
+Windows/Linux acceptance and installed UI verification are OPEN. Next
+IDE-05.3 must connect a separately authorized, OS-contained worker,
+independent output verification, cancellation and restart quarantine.
+DEV-04.6D native LLDB debugger/physical approval acceptance remains
+separate and open. Details in
+`ide/docs/IDE_DEV052_PACKAGE_OPERATION_PREVIEW_20261109.md`.
+
+
+### 2026-11-09 — IDE-05.3 narrow protected package-worker integration
+
+The Lu standalone IDE's manager-of-managers advanced from IDE-05.2
+static review to an **explicitly opt-in, offline and locked uv Sync**
+protected native job using the *existing* WO6/D3 supervisor (not a
+new process launcher). The native Tauri command takes a registered
+project ID and exact preview/evidence SHA only; the host reconstructs
+uv Sync, revalidates all manifest/lock observations before/after a fresh
+45-second, cancellation-aware OS-native human dialog, seals an
+immutable source tree, checks exact approved uv + Python runtime pins,
+and binds the preview SHA into the one-use D3 JobPlan effect class.
+Linux's existing delegated cgroup/Bubblewrap worker has no network,
+read-only source and privately writable environment/cache. The Windows
+worker currently **DENIES uv Sync** before native launch, since
+immutable workspace ACLs are not yet proven; earlier Windows
+AppContainer evidence alone does not suffice. Existing cancellation,
+kernel descendant cleanup, journal quarantine and OS-only recovery are
+reused. Add/Remove, Conan, vcpkg and online dependency resolution are
+**NOT implemented for execution**. All native Windows/Linux compile,
+human approval, crash/recovery and installed tests remain OPEN.
+No mini-CI jobs dispatched; consolidate after IDE-05.4/05.5.
+See `ide/docs/IDE_DEV053_PROTECTED_PACKAGE_ADMISSION_20261109.md`.
+DEV-04.6D debugger native acceptance is a separate open gate.
+
+
+### 2026-11-09 — IDE-05.4 private package artifacts, origin boundaries and durable cleanup
+
+IDE-05 workstream adds a separate feature-gated native read-only
+PEP 376 RECORD / METADATA / WHEEL / License-File verifier for the
+full private uv output tree, with exact per-file SHA-256/base64,
+size, `uv.lock` package version and license evidence, source
+manifest/lock revalidation before/after protected execution and
+a mandatory **pre-execution locked registry-wheel source-policy
+check**. No actual wheel archive or registry provenance is certified;
+local RECORD evidence is independent local integrity only, not
+upstream authenticity. `approvedForProjectPromotion=false` always.
+General Add/Remove/Conan/vcpkg/networked workers remain disabled.
+
+A separate fsynced, hash-chained package lifecycle journal is prepared
+BEFORE D3 worker admission, records a native-joined local-audit or
+blocked result, and preserves pending cleanup across restarts. The
+native human-approved scoped discard checks original D3 terminal
+OS reconciliation and complete private output hash before cleanup.
+No package can be re-executed from historical review or a cleanup
+receipt; the registered project is never a package write target.
+Normal virtualenv symlinks and unsupported license metadata are
+currently conservatively denied, not silently accepted.
+
+Rust fixture/negative tests and Node source-boundary tests are
+authored, **not executed**. Native Linux uv, Windows ACL, real
+wheel-origin SHA, fail-injection, compiler/runtime and installed
+acceptance are OPEN. No per-file CI dispatch; consolidate tests
+at end of IDE-05 task group. Refer to
+`ide/docs/IDE_DEV054_PACKAGE_OUTPUT_PROVENANCE_RECOVERY_20261109.md`.
+DEV-04.6D native LLDB installed acceptance remains separately open.
+
+
+### 2026-11-09 — IDE-05.5 grouped native platform and installed acceptance preparation
+
+At IDE-05 task-group boundary, created one exact-head
+`ide-dev05-consolidated-native.yml` Windows 2022/Ubuntu 24.04
+matrix for real Cargo host/supervisor/Tauri compilation, Node app tests,
+adversarial uv package fixtures, format and pinned locks. It also
+runs, **only after compiler matrix succeeds**, a genuine Linux
+systemd delegated-cgroup/Bubblewrap native fixed uv OS binary with an
+intentional offline missing-wheel denial and a separate native
+pre-requested cancellation and replay test. Its runtime pin is
+CI-only/self-measured and its D3 fixture consent is **synthetic**, never
+physical human approval. Staged original project cannot be mutated.
+
+Removed automatic push micro-CI triggering from two legacy
+production supervisor/D7 workflows (PR/manual retained) to honor the
+owner's one-acceptance-gate-per-task-group rule. Added a physical
+Windows *fail-closed* installed-app witness that refuses headless CI,
+but it cannot test a working Windows package Sync while read-only
+AppContainer ACLs remain unproven.
+
+No results have been claimed: initial head `6379bc1` jobs
+42677505364/42677505507 were QUEUED, and GitHub showed 104
+queued workflow runs with no live native logs. The new group run
+remains OPEN until actual Windows/Linux runner results, demonstrated
+failures and repaired exact head evidence are available. Genuine
+positive offline wheel install, wheel-origin attestations, physical
+human approval/refusal, Windows ACL worker, installed app and signed
+release are separately OPEN. See
+`ide/docs/IDE_DEV055_CONSOLIDATED_NATIVE_ACCEPTANCE_20261109.md`.
+
+
+### 2026-11-09 — IDE-05.5 genuine native CI failures inspected
+
+Read real GitHub Actions logs for exact IDE-05 group run **42704670757**
+on `0819e880b` Windows and Linux: both compiled runner tools and
+executed Node regression suite (Windows: 26 tests, 24 passed, two stale
+assertion patterns failed), blocking dependent Linux protected uv OS
+job. Also found upload-artifact ignored hidden receipt directory;
+fixed via `include-hidden-files: true`. Previous `6379bc1`
+supervisor Windows/Linux unit tests genuinely passed, but
+`cargo fmt --check` failed on 512 rustfmt hunks across 22 files;
+applied context-matched formatter changes, including inherited debugger
+formatting debt with no intended logic changes. New grouped exact-head
+native compile/runner results still required; no physical human,
+Windows package ACL, positive offline wheel install, wheel-source
+provenance or installed-app acceptance is claimed.
+
 **Immediate IDE-MERGE-01/02 source handoff:** adapt truly distinct DEV-01 editor/draft/index/installed negatives to current APIs; compare DEV-02 test-only LSP constraints to `stage_native_lsp_disposable_test_install.py` and existing installed tests; verify G06A/FIN-03 same-path original test coverage and keep the newer protected policy implementation; review P06 live-evidence reader for stale job-name assumptions. Record each normalized-equivalent family and each real uncovered behavior in this same ledger. **Do not switch back to FIN-04 feature development**. Batch native Windows/Linux acceptance at a coherent one-SHA integrated source, then preserve the main-only ledger and Core inventory through an independently reviewed actual merge to `main`.
 
 **IDE-MERGE-00 source inventory — first verified comparison pass, 2026-11-13 (source graph only).** The branch search `query=ide` was exhausted through cursor `MTMy` (132 matching branch names, **not** 132 strictly IDE-owned branches: GitHub also matches words like “evidence”). This pass verified **44 selected branch comparisons against the existing #236 integration branch**; it is not yet a complete all-IDE-branch topology audit. The repository-wide open-PR query returns only the first 100, so **94 IDE open PRs remains the older ledger snapshot**, not a freshly exhaustively checked current count. No branch or PR was created, merged, closed, or deleted in this inventory pass.
