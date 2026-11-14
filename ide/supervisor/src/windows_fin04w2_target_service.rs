@@ -30,9 +30,11 @@ use std::{
 };
 use windows_sys::Win32::{
     Foundation::{CloseHandle,GetLastError,HANDLE,ERROR_PIPE_CONNECTED,INVALID_HANDLE_VALUE},
+    Security::RevertToSelf,
     Storage::FileSystem::{CreateFileW,ReadFile,WriteFile,OPEN_EXISTING,PIPE_ACCESS_DUPLEX},
     System::{
-        Pipes::{ConnectNamedPipe,CreateNamedPipeW,DisconnectNamedPipe,PeekNamedPipe,
+        Pipes::{ConnectNamedPipe,CreateNamedPipeW,DisconnectNamedPipe,
+            ImpersonateNamedPipeClient,PeekNamedPipe,
             PIPE_READMODE_MESSAGE,PIPE_REJECT_REMOTE_CLIENTS,PIPE_TYPE_MESSAGE,PIPE_WAIT},
         Services::{
             RegisterServiceCtrlHandlerExW,SetServiceStatus,StartServiceCtrlDispatcherW,
@@ -122,9 +124,10 @@ impl InstalledConfig{
         // serialized approval. The journal is owned by the original host.
         let sid=security::sid_of_named_service(SERVICE)?;
         security::verify_private_evidence_root_for(&root,&sid)?;
-        security::verify_original_approval_journal_acl(
-            &cfg.original_supervisor_journal,&cfg.approved_host_user_sid,
-        )?;
+        // Original journal ACL is read later, only while impersonating the
+        // independently authenticated debugger SCM peer for bounded READ.
+        // The target SCM service itself has no original-journal write/read
+        // grant and does not widen the existing three-principal ACL.
         security::hash_executable(
             &std::env::current_exe().map_err(|_|denied())?,
             &cfg.expected_service_sha256,
@@ -220,16 +223,32 @@ fn prepare_one_target(
     fin04w2_c2::verify_fixed_request(
         &packet,&cfg.original_job_id,&cfg.sealed_plan,&nonce,
     )?;
-    security::verify_original_approval_journal_acl(
-        &cfg.original_supervisor_journal,&cfg.approved_host_user_sid,
-    )?;
-    // Reopen the ORIGINAL human-approved journal from its protected location.
-    // Bind the reservation to the exact approved entry hash and session ID,
-    // not merely the plan string or a duplicate debugger service approval.
-    let original=fin04w2_authority::verify_original_authorized_file(
-        &cfg.original_supervisor_journal,&cfg.original_job_id,
-        &cfg.sealed_plan,&cfg.sealed_plan_sha256,
-    )?;
+    // The original host journal is intentionally readable by its exact
+    // debugger-service SID, NOT the new target service. Borrow only the
+    // already kernel-attested debugger peer's restricted read identity,
+    // replay the original hash chain independently here, and ALWAYS revert
+    // before touching the target service's private reservation/Job.
+    let original={
+        if unsafe{ImpersonateNamedPipeClient(pipe)}==0{return Err(denied());}
+        struct Revert;
+        impl Drop for Revert{
+            fn drop(&mut self){
+                if unsafe{RevertToSelf()}==0{
+                    // Continuing with another service's token after a
+                    // failed revert is unacceptable even on unwind.
+                    std::process::abort();
+                }
+            }
+        }
+        let _revert=Revert;
+        security::verify_original_approval_journal_acl(
+            &cfg.original_supervisor_journal,&cfg.approved_host_user_sid,
+        )?;
+        fin04w2_authority::verify_original_authorized_file(
+            &cfg.original_supervisor_journal,&cfg.original_job_id,
+            &cfg.sealed_plan,&cfg.sealed_plan_sha256,
+        )?
+    };
     // Irreversible atomic fsynced CREATE_NEW; a torn reservation is a
     // permanent replay blocker pending independently authorized recovery.
     fin04w2_authority::reserve_fresh_original_authorization(root,&original)?;
