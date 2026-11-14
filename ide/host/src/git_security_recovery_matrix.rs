@@ -449,6 +449,15 @@ mod tests{
         assert!(!result.automatic_retry_authorized);
     }
     #[test]
+    fn truncated_original_fast_forward_journal_blocks_all_other_git_domains(){
+        let f=fixture();
+        let original=f.dir.join("ide-g06c03-protected-merges");
+        fs::create_dir_all(&original).unwrap();
+        fs::write(original.join(format!("{}.jsonl",f.id)),b"{invalid_no_fsync_newline").unwrap();
+        assert!(f.registry.inspect_group6f_git_recovery(&f.id).is_err());
+        assert_eq!(fs::read_dir(&original).unwrap().count(),1);
+    }
+    #[test]
     fn corrupt_existing_single_file_stash_marker_vetoes_every_git_operation(){
         let f=fixture();
         fs::write(f.root.join(".git/lu-ide-fin03-stash-active"),b"not-a-valid-64-hex-marker").unwrap();
