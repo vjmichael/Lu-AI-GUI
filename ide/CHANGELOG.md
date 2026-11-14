@@ -1,5 +1,17 @@
 # Lu IDE — Development changelog
 
+## 2026-11-13 — FIN-04W2-C3B Win32 consent boundary hardening
+
+Tightened the default-off, source-only C3 native consent owner predicate
+to a visible/enabled foreground same-process **top-level** HWND,
+revalidated foreground ownership after dialog return and corrected the
+fixed review text's line breaks. Added native negative tests for the
+foreign Windows desktop and immutable manifest/project/target-binding
+plan fields, including a missing required target binding. No desktop
+menu/command, LLDB, debugger controls or service executable authority
+was added. Original Windows six-phase and independent W2-A/B kernel
+regressions require exact-head rerun; CI approval is not a physical click.
+
 ## 2026-11-10 — Group 6B-04 reviewed commits and explicit amend
 
 Added durable, separately OS-authorized staged-hunk commit and

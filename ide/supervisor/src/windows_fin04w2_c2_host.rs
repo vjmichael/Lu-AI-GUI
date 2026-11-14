@@ -219,6 +219,9 @@ mod tests{
 extern "system" {
     fn IsWindow(window: *mut std::ffi::c_void) -> i32;
     fn IsWindowVisible(window: *mut std::ffi::c_void) -> i32;
+    fn IsWindowEnabled(window: *mut std::ffi::c_void) -> i32;
+    fn GetAncestor(window: *mut std::ffi::c_void, flags: u32) -> *mut std::ffi::c_void;
+    fn GetDesktopWindow() -> *mut std::ffi::c_void;
     fn GetForegroundWindow() -> *mut std::ffi::c_void;
     fn GetWindowThreadProcessId(
         window: *mut std::ffi::c_void, pid: *mut u32,
@@ -238,6 +241,10 @@ fn c3_owner_window(
     let mut pid = 0u32;
     if unsafe { IsWindow(window) } == 0
         || unsafe { IsWindowVisible(window) } == 0
+        || unsafe { IsWindowEnabled(window) } == 0
+        // GA_ROOT=2: reject child controls, even when they belong to
+        // this process. Only a real top-level IDE owner may consent.
+        || unsafe { GetAncestor(window, 2) } != window
         || unsafe { GetWindowThreadProcessId(window, &mut pid) } == 0
         || pid != unsafe { windows_sys::Win32::System::Threading::GetCurrentProcessId() }
         || (require_foreground && unsafe { GetForegroundWindow() } != window)
@@ -314,7 +321,7 @@ where
     // not accept a caller-composed prompt, hidden approval or silent
     // elevation. The full plan's immutable source coordinates are shown.
     let message = format!(
-        "Allow ONE isolated Lu IDE first-party benign-worker test?\\n\\nProject ID: {}\\nSource commit: {}\\n\\nNo LLDB, debugging, custom commands, network permission or publication is authorized.\\n\\nChoose No to cancel.",
+        "Allow ONE isolated Lu IDE first-party benign-worker test?\n\nProject ID: {}\nSource commit: {}\n\nNo LLDB, debugging, custom commands, network permission or publication is authorized.\n\nChoose No to cancel.",
         plan.project_id, plan.source_head,
     );
     let message: Vec<u16> = message.encode_utf16().chain([0]).collect();
@@ -331,7 +338,9 @@ where
     if clicked != 6 { // IDYES; 0, IDNO and every error fail closed.
         return Err(SupervisorError::InvalidApproval);
     }
-    c3_owner_window(native_owner_window, false)?;
+    // An unrelated window taking focus while the dialog was visible
+    // invalidates this attempt. The user must approve again.
+    c3_owner_window(native_owner_window, true)?;
     c3_original_prepared(supervisor, job_id, plan)?;
     c3_exact_plan(plan, &trusted_reobserve_plan()?)?;
     let digest = crate::fingerprint(plan)?;
@@ -380,5 +389,26 @@ mod fin04w2_c3_source_tests {
         changed = original.clone();
         changed.recipe_id = "foreign".into();
         assert!(c3_exact_plan(&original, &changed).is_err());
+        changed = original.clone();
+        changed.manifest_sha256 = "0".repeat(64);
+        assert!(c3_exact_plan(&original, &changed).is_err());
+        changed = original.clone();
+        changed.debug_target_binding_sha256 = Some("0".repeat(64));
+        assert!(c3_exact_plan(&original, &changed).is_err());
+        changed = original.clone();
+        changed.project_id = format!("ide-{}", "0".repeat(32));
+        assert!(c3_exact_plan(&original, &changed).is_err());
+        changed = original.clone();
+        changed.debug_target_binding_sha256 = None;
+        assert!(c3_exact_plan(&original, &changed).is_err());
+    }
+    #[test]
+    fn foreign_system_desktop_is_not_a_valid_native_owner() {
+        // An actual Windows-owned HWND may exist in a CI session,
+        // but it can never impersonate the current IDE process.
+        let desktop = unsafe { GetDesktopWindow() };
+        assert!(!desktop.is_null());
+        assert!(c3_owner_window(desktop, true).is_err());
+        assert!(c3_owner_window(desktop, false).is_err());
     }
 }
