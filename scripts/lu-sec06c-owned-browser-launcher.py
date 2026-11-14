@@ -61,9 +61,15 @@ def policy(profile,mode,origins):
     return hashlib.sha256(("\0".join([profile,mode]+origins)+"\0").encode()).hexdigest()
 def directory(path):
     p=pathlib.Path(path)
-    m=p.lstat()
-    if not stat.S_ISDIR(m.st_mode) or m.st_uid!=0 or m.st_mode&0o022:
-        deny("root-owned nonce or receipt directory mutable")
+    # A fresh CI/installed machine need not already have the original
+    # SEC-06C runtime directory. Provision only this fixed root-owned path;
+    # never create writable ancestors or delegate cgroup ownership.
+    p.mkdir(mode=0o755,parents=True,exist_ok=True)
+    for checked in (p,p.parent,p.parent.parent):
+        m=checked.lstat() # No symlink in any root-owned admission ancestor.
+        if (not stat.S_ISDIR(m.st_mode) or m.st_uid!=0
+            or m.st_mode&0o022):
+            deny("root-owned nonce or receipt directory/ancestor mutable")
 def run(a):
     if os.geteuid()!=0 or "SUDO_UID" not in os.environ:
         deny("requires exact fixed sudo policy")

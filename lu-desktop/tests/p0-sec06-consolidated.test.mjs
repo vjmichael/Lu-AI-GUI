@@ -567,6 +567,8 @@ test('SEC06C browser puts Chrome, Node and setsid descendants under one root-own
       '--property=MemoryMax=4294967296']){
     assert.ok(launcher.includes(value),'missing fixed browser systemd property '+value);
   }
+  assert.match(launcher,/p\.mkdir\(mode=0o755,parents=True,exist_ok=True\)/);
+  assert.match(launcher,/for checked in \(p,p\.parent,p\.parent\.parent\)/);
   assert.match(manager,/runpy\.run_path\(str\(KERNEL\)/);
   assert.match(manager,/k\["first_party_unit"\]\(a\.nonce,"browser"\)/);
   assert.match(manager,/k\["preexec_leaf"\]\(leaf,a\.uid,user\.pw_gid/);
