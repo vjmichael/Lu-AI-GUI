@@ -1068,9 +1068,9 @@ mod profile_load_contract_tests{
     #[test]
     fn loaded_profile_applies_wire_context_and_max_tokens_to_one_model(){
         let path=std::env::temp_dir().join(format!(
-            "lu-model-profile-supervisor-{}-{}",
+            "lu-model-profile-supervisor-{}-{:?}",
             std::process::id(),
-            rand::random::<u64>()
+            std::thread::current().id()
         ));
         fs::create_dir_all(&path).unwrap();
         let mut f=fs::File::create(path.join("model.gguf")).unwrap();
