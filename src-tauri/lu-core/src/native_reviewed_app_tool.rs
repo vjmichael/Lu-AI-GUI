@@ -879,7 +879,13 @@ impl ReviewedApplicationTurnSession{
         crate::agent_reviewed_broker_bridge::verify_actual_broker_session(
             self,&binding
         ).map_err(|e|format!("Reviewed app registry refused claim: {e:?}"))?;
-        // The reviewed live broker is now bound to the exact planned tool.
+        // The live scheduled plan needs BOTH original native grants, not
+        // only the model-visible execute capability. Losing the host-only
+        // source-read permission invalidates every later model reply.
+        self.turn.require_native_continuation_capabilities(
+            &self.authority,
+            &[binding.reviewed_execute_id,binding.reviewed_read_id]
+        ).map_err(|e|format!("Reviewed plan capability revoked: {e:?}"))?;
         // A successful Protobuf dispatch with an UNSUPPORTED independent
         // result may be explained by ordinary chat, but cannot complete a
         // reviewed plan step or produce a verified scheduled model answer.
