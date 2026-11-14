@@ -137,7 +137,7 @@ def require_node_startup_ack(node,log):
     # Popen, before the actual JS protocol or stdin lifetime was initialized.
     # Consume this exact private bootstrap frame; it must NEVER reach Lu's
     # model/browser protocol or substitute for root /proc PIDFD admission.
-    wanted=b"LU_SEC06C_NODE_READY_V1\\n"
+    wanted=b"LU_SEC06C_NODE_READY_V1\n"
     frame=bytearray()
     until=time.monotonic()+8
     while time.monotonic()<until:
@@ -154,7 +154,7 @@ def require_node_startup_ack(node,log):
             reject("original Node closed its bootstrap pipe")
         frame.extend(data)
         if len(frame)>len(wanted):reject("untrusted Node bootstrap frame")
-        if data==b"\\n":
+        if data==b"\n":
             if bytes(frame)!=wanted:reject("wrong original Node bootstrap identity")
             return
     reject("original Node protocol initialization timed out")
