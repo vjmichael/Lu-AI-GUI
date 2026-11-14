@@ -29,17 +29,17 @@ pub trait NativeGitHubReadCredentialVault {
 // mock, environment variable, CLI argument, URL, Git config or project
 // file). Host OS account/provisioning remain independently authorized.
 // Neither a token value nor vault identity crosses the WebView boundary.
-#[cfg(all(feature="fin03-native-vault",any(windows,linux)))]
+#[cfg(all(feature="fin03-native-vault",any(windows,target_os="linux")))]
 pub struct NativeOsGitHubReadVault {
     serialized:std::sync::Mutex<()>,
 }
-#[cfg(all(feature="fin03-native-vault",any(windows,linux)))]
+#[cfg(all(feature="fin03-native-vault",any(windows,target_os="linux")))]
 impl Default for NativeOsGitHubReadVault {
     fn default()->Self{Self{
         serialized:std::sync::Mutex::new(()),
     }}
 }
-#[cfg(all(feature="fin03-native-vault",any(windows,linux)))]
+#[cfg(all(feature="fin03-native-vault",any(windows,target_os="linux")))]
 impl NativeGitHubReadCredentialVault for NativeOsGitHubReadVault {
     fn with_token<R,F>(&self,repo:&str,f:F)->Result<R,&'static str>
     where F:FnOnce(&str)->Result<R,&'static str>{

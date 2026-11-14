@@ -133,3 +133,14 @@ test('Group 6F aggregates four original native recovery inspectors without publi
     assert.doesNotMatch(production,forbidden);
   }
 });
+
+test('FIN03 6E05B actually compiles native Linux Secret Service and Windows vault type', () => {
+  const live=read('../../host/src/github_remote_live_policy.rs');
+  const diag=read('../../host/examples/fin03_live_vault_probe.rs');
+  assert.doesNotMatch(live, /any\(windows,linux\)/);
+  assert.match(live,/any\(windows,target_os="linux"\)/);
+  assert.match(diag,/NativeOsGitHubReadVault::default\(\)/);
+  assert.match(diag,/inspect_live_github_branch_policy\(/);
+  assert.match(diag,/authenticated_host_read/);
+  assert.doesNotMatch(diag,/set_password\(|std::process::Command|GitHub\s*PATCH|push\s*\(/i);
+});

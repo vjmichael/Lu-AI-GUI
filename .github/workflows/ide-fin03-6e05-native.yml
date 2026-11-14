@@ -56,6 +56,10 @@ jobs:
           # Compile native OS credential-manager integration explicitly;
           # no account token is provisioned, invoked, echoed or mocked.
           cargo test --manifest-path ide/host/Cargo.toml --features fin03-native-vault --lib github_remote_live_policy -- --nocapture
+          # Force compilation of the *actual* Windows Credential Manager or
+          # Linux Secret Service adapter, not just an empty cfg feature.
+          cargo check --manifest-path ide/host/Cargo.toml --features fin03-native-vault --example fin03_live_vault_probe
+          echo "FIN03_6E05B_REAL_OS_VAULT_TYPE_COMPILED=PASS_NO_CREDENTIALS_READ"
           cargo test --manifest-path ide/host/Cargo.toml --features fin03-native-vault --lib github_remote_publication_intent -- --nocapture
           cargo test --manifest-path ide/host/Cargo.toml --features fin03-native-vault --lib git_security_recovery_matrix -- --nocapture
           echo "IDE_GROUP6F_FOUR_ORIGINAL_NATIVE_GIT_RECOVERY_INSPECTORS=SOURCE_TESTED_NO_OS_APPROVAL"

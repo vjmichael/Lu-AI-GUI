@@ -207,3 +207,25 @@ proposal, or a competing writer are ALL classified as requiring operator
 reconciliation. **No case permits an automatic push, asserts a completed
 publication, reuses consent or releases an OS credential.** The actual live
 credential read and remote CAS are deliberately outside this module.
+
+## 6E-05B physical native credential read diagnostic (Nov 13)
+
+Corrected three `cfg(any(windows,linux))` guards to
+`cfg(any(windows,target_os="linux"))`. The former is not a reliable
+Rust operating-system target predicate: Linux compile jobs could claim
+feature completion while the real OS vault type was omitted.
+
+Added `ide/host/examples/fin03_live_vault_probe.rs` compiled in the
+original Windows/Linux feature-gated native CI. With an independently
+provisioned OS keychain entry, a local operator can run this **diagnostic**
+against an already saved and registered IDE project:
+
+`cargo run --manifest-path ide/host/Cargo.toml --features fin03-native-vault --example fin03_live_vault_probe -- <absolute-existing-catalog.json> <existing-project-id> --confirm-os-keychain-read`
+
+The diagnostic only reopens an already registered project, borrows a fixed
+repository-scoped token from the OS credential vault, sends 6 read-only
+pinned GitHub GETs, and prints **sanitized PASS/FAIL codes**. It never
+prints/stores a token or response body, requests credentials, pushes
+a ref, edits the project or claims installed acceptance. An OS keychain
+item has NOT been provisioned or accessed by this CI run. A physical
+operator must independently provision/approve any actual live test.
