@@ -240,6 +240,7 @@ pub mod registry;
 pub mod tasks;
 pub mod wire;
 pub mod workspace;
+pub mod workspace_inference;
 pub mod workspace_quarantine;
 
 pub use ansf::{AnsfError, AnsfStore, Chapter as AnsfChapter, Entry as AnsfEntry, EntryRole};
