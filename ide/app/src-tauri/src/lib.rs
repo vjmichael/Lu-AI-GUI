@@ -20,6 +20,7 @@ mod debug_backend;
 #[cfg(all(any(windows, target_os = "linux"), feature = "native-lsp"))]
 mod lsp_backend;
 mod terminal_broker;
+mod test_case_evidence;
 #[cfg(all(any(windows, target_os = "linux"), any(feature = "native-build", feature = "native-debug", feature = "native-lsp")))]
 mod global_native_custody;
 use std::{
@@ -985,6 +986,7 @@ async fn ide_git_execute_single_unstage(
  let sessions=Arc::clone(sessions.inner());
  let project_id=expected.project_id.clone();
  let cancel=sessions.begin(&project_id)?;
+ let unstage_session_id=project_id.clone();
  let result=tauri::async_runtime::spawn_blocking(move||{
     let fresh=registry.review_single_staged_unstage(&project_id)
        .map_err(str::to_owned)?;
@@ -1013,7 +1015,7 @@ async fn ide_git_execute_single_unstage(
     registry.execute_approved_single_unstage(&fresh,&cancel)
         .map_err(str::to_owned)
  }).await.map_err(|_|"FIN03_UNSTAGE_HOST_INTERRUPTED".to_owned());
- sessions.end(&project_id);
+  sessions.end(&unstage_session_id);
  result?
 }
 
@@ -1096,6 +1098,7 @@ async fn ide_git_execute_single_file_restore(
  let sessions=Arc::clone(sessions.inner());
  let id=expected.project_id.clone();
  let cancel=sessions.begin(&id)?;
+ let restore_session_id=id.clone();
  let result=tauri::async_runtime::spawn_blocking(move||{
   let fresh=registry.review_single_file_restore(&id).map_err(str::to_owned)?;
   if fresh.review_sha256!=expected.review_sha256 ||
@@ -1114,7 +1117,7 @@ async fn ide_git_execute_single_file_restore(
   }
   registry.execute_approved_single_file_restore(&fresh,&cancel).map_err(str::to_owned)
  }).await.map_err(|_|"FIN03_RESTORE_HOST_INTERRUPTED".to_owned());
- sessions.end(&id);
+  sessions.end(&restore_session_id);
  result?
 }
 #[tauri::command]
@@ -1146,6 +1149,7 @@ async fn ide_git_reconcile_unstage_recovery(
  let registry=Arc::clone(state.inner());
  let sessions=Arc::clone(sessions.inner());
  let token=sessions.begin(&project_id)?;
+ let recovery_session_id=project_id.clone();
  let result=tauri::async_runtime::spawn_blocking(move||{
    let state=registry.inspect_unstage_interrupted(&project_id)
        .map_err(str::to_owned)?;
@@ -1165,7 +1169,7 @@ async fn ide_git_reconcile_unstage_recovery(
    registry.reconcile_unstage_interrupted(&project_id)
       .map_err(str::to_owned)
  }).await.map_err(|_|"FIN03_UNSTAGE_RECOVERY_THREAD_INTERRUPTED".to_owned());
- sessions.end(&project_id);
+  sessions.end(&recovery_session_id);
  result?
 }
 /// G06C-02: read-only merge plan. No ref writes or user-approved grant.
@@ -4062,7 +4066,7 @@ async fn ide_terminal_open(
     sessions: State<'_, Arc<terminal_broker::TerminalSessions>>,
     project_id: String,
 ) -> Result<terminal_broker::TerminalSessionView, String> {
-    registry.source_capability(&project_id)
+    registry.verify_open_source_project(&project_id)
         .map_err(|_| "INT05D_REGISTERED_PROJECT_REQUIRED")?;
     sessions.open(&project_id).map_err(str::to_owned)
 }
@@ -4077,7 +4081,7 @@ async fn ide_terminal_submit(
     line: String,
     expected_manifest_sha256: Option<String>,
 ) -> Result<terminal_broker::TerminalReply, String> {
-    registry.source_capability(&project_id)
+    registry.verify_open_source_project(&project_id)
         .map_err(|_| "INT05D_REGISTERED_PROJECT_REQUIRED")?;
     let action = sessions.consume(&project_id, &session_id, sequence, &line)
         .map_err(str::to_owned)?;
