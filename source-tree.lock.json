@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "20b7845b4d1f26665a009509b07e5e7a6030e616",
-  "trackedFileCount": 1014,
+  "sourceCommitBeforeLock": "281da8e3ddd2babcb4f1fbc4e23d84b8b145349a",
+  "trackedFileCount": 1017,
   "files": [
     {
       "path": ".github/pull_request_template.md",
@@ -1424,8 +1424,12 @@
       "blob": "97ea8758f1f78e4743b9f49571a38fd2291647b2"
     },
     {
+      "path": "lu-desktop/src-tauri/src/inference_profile.rs",
+      "blob": "2e68783818cac69c6c16184b61dc7515de402aa1"
+    },
+    {
       "path": "lu-desktop/src-tauri/src/lib.rs",
-      "blob": "44ee22733a7720cc1fabbd6b3f7afa712c4651dd"
+      "blob": "c5d286e792bfb466a803fb6d73525f696e0db46f"
     },
     {
       "path": "lu-desktop/src-tauri/src/load_trace.rs",
@@ -2036,6 +2040,10 @@
       "blob": "a74d277d209b8bdd3e15a6ebc11d52e4ad19e1db"
     },
     {
+      "path": "lu-desktop/tests/r23-profile.test.mjs",
+      "blob": "d1041f384813b3cccc6e4b274319b6343f4ce5fa"
+    },
+    {
       "path": "lu-desktop/tests/reader-desktop.test.mjs",
       "blob": "b08e41c795ee1a5216dff0d0a42776961612d48a"
     },
@@ -2164,6 +2172,10 @@
       "blob": "7b8244cf5b14bef9b185b88337e7d64003a95d6c"
     },
     {
+      "path": "lu-desktop/web/inference_profile.mjs",
+      "blob": "1a23df2125e014037f41b50b4d8870ef5b3d21cc"
+    },
+    {
       "path": "lu-desktop/web/main.jsx",
       "blob": "9ed1ef0e0b3a6ae19859a1bfac529d7262d6fc15"
     },
@@ -2189,7 +2201,7 @@
     },
     {
       "path": "lu-desktop/web/native_windows.jsx",
-      "blob": "60b5fe360c05f0ff51f721f3329813d48c3f1d5b"
+      "blob": "148cd3010e34eab089603b0d001cf4170a6f7472"
     },
     {
       "path": "lu-desktop/web/response_view.mjs",
@@ -2881,7 +2893,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/inference_supervisor.rs",
-      "blob": "38bc8766bcee98e42f208ccdc5d5068a834e2643"
+      "blob": "ac9db2b8794acf7f4d5ac58c498fa66e5be0454c"
     },
     {
       "path": "src-tauri/lu-core/src/inference_wire.rs",
@@ -3317,7 +3329,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/persistent_llama_backend.rs",
-      "blob": "d2596aface2c2d80504b3dcfe7f2721334603ef4"
+      "blob": "e39f98983b79e68bd6ad2f01cb3c9cc4507d913c"
     },
     {
       "path": "src-tauri/lu-core/src/platform_compute.rs",
