@@ -74,7 +74,7 @@ fn directory_pages_are_sorted_bounded_and_cannot_turn_cursors_into_path_authorit
         );
     }
     assert_eq!(
-        registry.quick_open_source_paths(&id, "../").unwrap_err().code(),
+        registry.quick_open_source_paths(&id, "a\\\\b").unwrap_err().code(),
         "INVALID_SEARCH_QUERY"
     );
     registry.close(&id).unwrap();
@@ -82,6 +82,22 @@ fn directory_pages_are_sorted_bounded_and_cannot_turn_cursors_into_path_authorit
         registry.quick_open_source_paths(&id, "item").unwrap_err().code(),
         "PROJECT_NOT_OPEN"
     );
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn ranked_filename_results_are_hard_capped_and_report_partial_observation() {
+    let (root, registry, id) = fixture();
+    let project = root.join("project");
+    for n in 0..180 {
+        fs::write(project.join(format!("match-{n:04}.rs")), b"should stay unread").unwrap();
+    }
+    let result = registry.quick_open_source_paths(&id, "match").unwrap();
+    assert_eq!(result.matches.len(), 60);
+    assert!(result.truncated, "unreturned matches must never be presented as complete");
+    assert_eq!(result.matches.first().unwrap().relative_path, "match-0000.rs");
+    assert_eq!(result.matches.last().unwrap().relative_path, "match-0059.rs");
+    assert!(result.read_only && !result.source_files_read && !result.worktree_modified);
     fs::remove_dir_all(root).unwrap();
 }
 
