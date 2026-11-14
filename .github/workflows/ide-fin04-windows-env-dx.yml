@@ -92,6 +92,108 @@ jobs:
           $r.note='Diagnostics only: not a Lu security grant, human click, kernel debugger custody or release gate'
           $r|ConvertTo-Json -Depth 4|Set-Content (Join-Path $out 'report.json')
           Get-Content (Join-Path $out 'report.json')
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      # Python runtime is deliberately provisioned AFTER the first baseline:
+      # do not conceal the native hosted-VM 0xC0000135 by changing PATH first.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10.11'
+      - name: Independently stage and test CLI and actual LLDB-DAP with pinned Python DLL
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $folder=Join-Path $env:GITHUB_WORKSPACE 'Fin04WindowsDx'
+          $root=Join-Path $env:RUNNER_TEMP 'Fin04WindowsDxRuntime'
+          $bin=Join-Path $root 'bin'
+          New-Item -ItemType Directory -Path $bin -Force | Out-Null
+          $r=[ordered]@{
+            schema='lu.fin04.windows_dll_probe.v1'
+            exact_head=$env:GITHUB_SHA
+            cli_staged='NOT_TESTED'
+            dap_staged='NOT_TESTED'
+            dll_closure='NOT_TESTED'
+            note='Disposable unconfined loader diagnosis; not original SCM/Job/LLDB release authority'
+          }
+          $original='C:\Program Files\LLVM\bin'
+          $adapter=Get-Command lldb-dap.exe -ErrorAction SilentlyContinue
+          if($adapter){$original=Split-Path $adapter.Source -Parent}
+          $lldb=Join-Path $original 'lldb.exe'
+          $dap=Join-Path $original 'lldb-dap.exe'
+          $python=(Get-Command python.exe -ErrorAction Stop).Source
+          $runtime=Join-Path (Split-Path $python -Parent) 'python310.dll'
+          if(!(Test-Path $lldb -PathType Leaf) -or !(Test-Path $dap -PathType Leaf)){
+            $r.cli_staged='SKIP_reviewed_LLVM_binary_missing'
+            $r.dap_staged='SKIP_reviewed_LLVM_binary_missing'
+          }elseif(!(Test-Path $runtime -PathType Leaf)){
+            $r.cli_staged='SKIP_pinned_Python_DLL_missing'
+            $r.dap_staged='SKIP_pinned_Python_DLL_missing'
+          }else{
+            Copy-Item -LiteralPath $lldb -Destination (Join-Path $bin 'lldb.exe')
+            Copy-Item -LiteralPath $dap -Destination (Join-Path $bin 'lldb-dap.exe')
+            Get-ChildItem -LiteralPath $original -Filter '*.dll' -File | Copy-Item -Destination $bin
+            Copy-Item -LiteralPath $runtime -Destination (Join-Path $bin 'python310.dll') -Force
+            $r.cli_sha256=(Get-FileHash $lldb -Algorithm SHA256).Hash.ToLowerInvariant()
+            $r.dap_sha256=(Get-FileHash $dap -Algorithm SHA256).Hash.ToLowerInvariant()
+            $r.python310_sha256=(Get-FileHash $runtime -Algorithm SHA256).Hash.ToLowerInvariant()
+            $readobj=Join-Path $original 'llvm-readobj.exe'
+            if(Test-Path -LiteralPath $readobj -PathType Leaf){
+              $missing=[System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+              $files=@(Get-ChildItem -LiteralPath $bin -File | Where-Object {$_.Extension -in @('.exe','.dll')})
+              if($files.Count -gt 512){throw 'DENIED: DLL audit exceeds bounded file count'}
+              foreach($file in $files){
+                $raw=@(& $readobj --coff-imports $file.FullName 2>&1)
+                if($LASTEXITCODE -ne 0){throw 'DENIED: import reader rejected staged image'}
+                foreach($line in $raw){
+                  $name=([string]$line).Trim().ToLowerInvariant()
+                  if(!$name.StartsWith('name: ') -or !$name.EndsWith('.dll')){continue}
+                  $dll=$name.Substring(6)
+                  if($dll -notmatch '^[a-z0-9_.-]+\.dll        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fin04-win2022-dx
+          retention-days: 14
+          if-no-files-found: warn
+          path: Fin04WindowsDx
+){throw 'DENIED: malformed PE DLL import name'}
+                  if($dll.StartsWith('api-ms-win-') -or $dll.StartsWith('ext-ms-')){continue}
+                  if(!(Test-Path -LiteralPath (Join-Path $bin $dll)) -and
+                     !(Test-Path -LiteralPath (Join-Path $env:SystemRoot ('System32\' + $dll)))){
+                    [void]$missing.Add($dll)
+                  }
+                }
+              }
+              $r.dll_closure=if($missing.Count -eq 0){'STATIC_DIRECT_IMPORTS_RESOLVED'}else{'UNRESOLVED_STATIC_IMPORTS'}
+              $r.unresolved_direct_imports=@($missing | Sort-Object)
+            }else{$r.dll_closure='SKIP_llvm_readobj_missing'}
+            $testExe=Join-Path $folder 'main.exe'
+            if(Test-Path -LiteralPath $testExe -PathType Leaf){
+              $stdout=Join-Path $folder 'staged-lldb.out'
+              $stderr=Join-Path $folder 'staged-lldb.err'
+              $args=@('--batch','--no-lldbinit','-o','"breakpoint set --name main"','-o','run','-o','"thread list"','--',('"'+$testExe+'"'))
+              $proc=Start-Process -FilePath (Join-Path $bin 'lldb.exe') -ArgumentList $args -PassThru -NoNewWindow -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+              if(-not $proc.WaitForExit(40000)){
+                try{$proc.Kill()}catch{}
+                $r.cli_staged='FAIL_timeout'
+              }else{
+                $code=$proc.ExitCode
+                $r.cli_exit_uint32=([uint32]($code -band 0xffffffff)).ToString('X8')
+                $output=(Get-Content -Raw $stdout)+(Get-Content -Raw $stderr)
+                $r.cli_staged=if($code -eq 0 -and $output -match 'stop reason\s*=\s*breakpoint' -and $output -match '(?i)thread\s*#?[0-9]+'){'PASS_stopped_thread'}else{'FAIL_no_verified_stop'}
+              }
+            }else{$r.cli_staged='SKIP_compiled_debuggee_missing'}
+            $env:LU_IDE_WO6_DAP_BUNDLE=$root
+            $probe=@(& python ide/supervisor/fixtures/debug/probe_windows_dap_initialize.py 2>&1)
+            $r.dap_probe_exit=$LASTEXITCODE
+            $r.dap_staged=if($LASTEXITCODE -eq 0 -and ($probe -join ' ') -match 'initialize_pass_no_containment_claim'){'PASS_initialize_no_containment'}else{'FAIL_initialize'}
+            # Only the bounded classification line, never arbitrary child stderr.
+            $r.dap_probe_class=(@($probe|Where-Object{[string]$_ -match '^PROTECTED_WO6_DAP_PREFLIGHT='})|Select-Object -First 1) -join ''
+          }
+          $r|ConvertTo-Json -Depth 6 | Set-Content (Join-Path $folder 'runtime-report.json')
+          Get-Content (Join-Path $folder 'runtime-report.json')
+          Write-Host FIN04_BUNDLED_LLDB_NATIVE_DIAG_NOT_APPROVAL
       - name: Retain diagnostic observations
         if: always()
         uses: actions/upload-artifact@v4
