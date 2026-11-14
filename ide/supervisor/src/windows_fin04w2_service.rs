@@ -73,6 +73,13 @@ struct InstalledAuditConfig {
     original_supervisor_journal: PathBuf,
     #[cfg(feature="fin04w2-c2")]
     original_job_id: String,
+    // The split profile must bind the C2 debugger admission to a genuinely
+    // distinct, independently installed SCM target service. Only an
+    // administrator-controlled service.json can supply this image pin.
+    #[cfg(feature="fin04w2-split-native")]
+    approved_target_service_executable: PathBuf,
+    #[cfg(feature="fin04w2-split-native")]
+    expected_target_service_sha256: String,
     // CI-only first-party fixture. This cannot be selected or influenced by
     // a named-pipe client; only the preinstalled private service.json pins it.
     #[cfg(feature = "fin04w2-contained-probe")]
@@ -153,6 +160,17 @@ impl InstalledAuditConfig {
                 return Err(denied());
             }
             security::hash_executable(&probe.executable, &probe.expected_sha256)?;
+        }
+        #[cfg(feature="fin04w2-split-native")]
+        {
+            if !result.approved_target_service_executable.is_absolute()
+                || result.expected_target_service_sha256.len()!=64
+                || !result.expected_target_service_sha256.bytes().all(|b|b.is_ascii_hexdigit())
+            {return Err(denied());}
+            security::hash_executable(
+                &result.approved_target_service_executable,
+                &result.expected_target_service_sha256,
+            )?;
         }
         let sid = security::sid_of_named_service(NAME)?;
         security::verify_private_evidence_root_for(&root, &sid)?;
@@ -293,6 +311,20 @@ fn review_only(pipe:HANDLE,config:&InstalledAuditConfig)
         pipe,&config.approved_host_executable,
         &config.expected_host_sha256,&config.approved_host_user_sid,
     )?;
+    // The C2 one-use admission can never be upgraded to split-debugger
+    // authority merely because the old single-service probe succeeds.
+    // In the opt-in split profile require TWO live, differently named,
+    // separately restricted SCM processes with exact pinned image hashes.
+    // Hold their process handles throughout the bounded C2 transaction.
+    // This is service presence only: a target-side one-use IPC, target Job
+    // membership and stopped RIP still require independent evidence.
+    #[cfg(feature="fin04w2-split-native")]
+    let scm_pair=crate::windows_fin04w2_scm_pair::inspect_independent_service_pair(
+        &std::env::current_exe().map_err(|_|denied())?,
+        &config.expected_service_sha256,
+        &config.approved_target_service_executable,
+        &config.expected_target_service_sha256,
+    )?;
     fin04w2_c2::verify_fixed_request(
         &packet,&config.original_job_id,&config.review_only_plan,&nonce,
     )?;
@@ -315,6 +347,8 @@ fn review_only(pipe:HANDLE,config:&InstalledAuditConfig)
     // Every return on failure drops this exact owned Job and its suspended
     // child; no service-command path or alternate execution fallback.
     let job=windows_fin04w2_kernel::create_bounded_empty_debugger_job()?;
+    #[cfg(feature="fin04w2-split-native")]
+    scm_pair.reobserve()?;
     let child=job.prepare_fixed_probe(
         &config.fixed_probe.executable,
         &config.fixed_probe.expected_sha256,
@@ -328,6 +362,8 @@ fn review_only(pipe:HANDLE,config:&InstalledAuditConfig)
         &config.original_supervisor_journal,&config.original_job_id,
         &config.review_only_plan,C2JournalGate::Running,
     )?;
+    #[cfg(feature="fin04w2-split-native")]
+    scm_pair.reobserve()?;
     child.resume_and_verify()?;
     signal(pipe,b'X')?;
     expect_signal(pipe,b'R')?;
@@ -341,6 +377,8 @@ fn review_only(pipe:HANDLE,config:&InstalledAuditConfig)
         let _=deliver_terminal_reply(pipe,b'J');
         return Err(error);
     }
+    #[cfg(feature="fin04w2-split-native")]
+    scm_pair.reobserve()?;
     drop(job);
     // Keep the exact fixed protocol unchanged. F is evidence the kernel
     // Job was released only after the original ReleasePending was verified.
