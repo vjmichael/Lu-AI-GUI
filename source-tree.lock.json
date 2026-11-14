@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "0c7c1f431e187c6fb2a4400b7900313bfab4c6cd",
+  "sourceCommitBeforeLock": "20239857bc188496fecd688cfa5e893ed5d66626",
   "trackedFileCount": 1005,
   "files": [
     {
@@ -401,7 +401,7 @@
     },
     {
       "path": "benchmarks/e1/sec06c_browser_xauthority_contract.py",
-      "blob": "b93b98ffd8d4f286447edfb75caeb619e97716d1"
+      "blob": "af28a14df8d2124d98755a562334940b1cdcc856"
     },
     {
       "path": "benchmarks/e1/sec06c_root_owned_systemd_boundary.py",
@@ -1465,7 +1465,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/native_browser_host.rs",
-      "blob": "dc1419f0555d1802e070bc158a067889f02dc51a"
+      "blob": "4778a0089bcf1f05b2e85231e6d376920e42c8bc"
     },
     {
       "path": "lu-desktop/src-tauri/src/native_host_edit.rs",
