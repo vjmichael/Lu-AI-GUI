@@ -78,6 +78,25 @@ pub struct RecoveryDomainEvidence {
     pub automatic_retry_authorized:bool,
     pub automatic_git_mutation_authorized:bool,
 }
+fn unresolved_original_journal(state:&str,original_manual:bool)->bool{
+    // The old 6C inspectors may mark an otherwise empty or already
+    // terminal journal as "manual" solely because untracked or modified
+    // files exist. That is a legitimate starting state for stage/stash
+    // and must not create a GLOBAL recovery veto. All genuine
+    // interrupted/unknown phases retain their original manual bit.
+    if matches!(state,
+        "no_journal"|"verified_historical_fast_forward"
+        |"cancelled_before_checkout"
+        |"historical_verified_divergent_merge"
+        |"verified_original_replay"
+        |"cancelled_before_object_write"
+        |"verified_historical_commit"
+        |"cancelled_before_ref_update"
+    ){
+        return false;
+    }
+    original_manual
+}
 fn domain(name:&'static str,state:&'static str,manual:bool)
     ->RecoveryDomainEvidence{
     RecoveryDomainEvidence{
@@ -204,13 +223,17 @@ impl IdeWorkspaceRegistry{
         {return Err("G06F_ORIGINAL_RECOVERY_NOT_AUTHORITATIVE");}
         let domains=vec![
             domain("reviewed_commit",commit.state,
-                commit.operator_reconciliation_required),
+                unresolved_original_journal(commit.state,
+                    commit.operator_reconciliation_required)),
             domain("protected_fast_forward",fast.state,
-                fast.operator_reconciliation_required),
+                unresolved_original_journal(fast.state,
+                    fast.operator_reconciliation_required)),
             domain("protected_divergent_merge",divergent.state,
-                divergent.operator_reconciliation_required),
+                unresolved_original_journal(divergent.state,
+                    divergent.operator_reconciliation_required)),
             domain("protected_replay",replay.state,
-                replay.operator_reconciliation_required),
+                unresolved_original_journal(replay.state,
+                    replay.operator_reconciliation_required)),
             domain("partial_stage",stage.state,
                 stage.operator_reconciliation_required),
             domain("conflict_resolution",conflict.state,
@@ -385,6 +408,13 @@ mod tests{
         assert!(result.cross_domain_manual_reconciliation_required);
         assert!(!result.local_new_operation_preflight_clear);
         assert!(f.root.join(".git/index.lock").exists()); // never delete it
+    }
+    #[test]
+    fn terminal_historical_journal_with_dirty_files_is_not_a_new_approval(){
+        assert!(!unresolved_original_journal("verified_historical_fast_forward",true));
+        assert!(!unresolved_original_journal("no_journal",true));
+        assert!(unresolved_original_journal("published_ref_requires_operator_receipt",true));
+        assert!(unresolved_original_journal("ambiguous_replay_or_branch_drift",true));
     }
     #[test]
     fn ordinary_dirty_worktree_does_not_invent_a_cross_domain_recovery_block(){
