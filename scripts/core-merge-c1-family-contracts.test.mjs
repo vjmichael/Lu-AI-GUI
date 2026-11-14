@@ -49,3 +49,17 @@ test('C1 Browser keeps reviewed origin custody human challenge and no WebSocket 
   assert.deepEqual(manifest.files,[]);
   assert.equal(manifest.platform,'none');
 });
+
+test('C1 Browser protects exact bounded HTTPS origin scope across model redirects',()=>{
+  contains('src-tauri/lu-core/src/browser_authorized_execution.rs',[
+    'origins.is_empty()||origins.len()>32',
+    'origins.iter().any(|x|!valid_origin(x))',
+    'if url.len()>2048',
+    'self.approved.contains(&format!("https://{host}"))'
+  ]);
+  contains('lu-desktop/src-tauri/src/browser_model_desktop.rs',[
+    'BrowserOriginScope::from_host_grant(',
+    'browser_origin_list(&origins)?',
+    'Browser read escaped approved HTTPS origins'
+  ]);
+});
