@@ -191,6 +191,13 @@ pub(crate) fn inspect_current_worker_prerequisites() -> Result<(), SupervisorErr
 pub(crate) struct EmptyAuditJob {
     _owned: Token,
 }
+#[cfg(feature = "fin04w2-split-native")]
+impl EmptyAuditJob {
+    // Borrowed only by independently authenticated SCM-native code. The
+    // service must retain the owning handle through attach/cancellation.
+    pub(crate) fn held_split_job_handle(&self) -> HANDLE {self._owned.0}
+}
+
 pub(crate) fn create_bounded_empty_debugger_job() -> Result<EmptyAuditJob, SupervisorError> {
     inspect_current_service_principal()?;
     let acl = crate::windows_service_security::JobSecurity::new_debugger_service_owned()?;
