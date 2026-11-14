@@ -57,7 +57,7 @@ fn verify_suspended_receipt(
  if reply.len()!=141||reply[0]!=b'S'||session.len()!=40
      ||!session.starts_with("session-")
      ||!session[8..].bytes().all(|b|b.is_ascii_hexdigit())
-     ||reply[101..141]!=*session.as_bytes(){return Err(denied());}
+     ||&reply[101..141]!=session.as_bytes(){return Err(denied());}
  let pid=u32::from_le_bytes(reply[1..5].try_into().map_err(|_|denied())?);
  if pid==0{return Err(denied());}
  for (sha,bytes) in [
