@@ -108,6 +108,8 @@ export function TaskBoardWindow(){
   }
   async function reviewIndependentWitness(link,result,decision){
     if(!current||!active||busy||!result.reviewEligible||
+       (decision==='ACCEPTED_AS_SUPPORTING_EVIDENCE'&&
+        !result.criterionMethodReviewable)||
        criterionReason.trim().length<10||
        !current.reviewCurrent||active.needsHumanReconciliation)return;
     await act('Human decision appended to original ANSF criterion-evidence journal. Task status and tool authority unchanged.',async()=>{
@@ -629,6 +631,9 @@ export function TaskBoardWindow(){
                             <strong>Original step {result.stepIndex+1} · {result.historicalVerdict}</strong>
                             <p>Installed reviewed adapter: {result.toolId} ·
                               Native oracle: {result.independentMethod}</p>
+                            <p>{result.criterionMethodReviewable?
+                              'Original criterion matches this native method family; this does not prove the task is complete.':
+                              'No exact typed criterion-method match: reject relevance or request more evidence.'}</p>
                             <small>Original effect receipt: {result.receiptSha256} ·
                               Independently observed: {result.observedSha256}.</small>
                             <p>{result.reviewEligible?
@@ -639,7 +644,8 @@ export function TaskBoardWindow(){
                             {result.reviewEligible&&<div className="plan06Actions"
                               aria-label="Native human criterion-witness evidence decision">
                               <button type="button"
-                                disabled={busy||criterionReason.trim().length<10||
+                                disabled={busy||!result.criterionMethodReviewable||
+                                  criterionReason.trim().length<10||
                                   !current.reviewCurrent}
                                 onClick={()=>void reviewIndependentWitness(link,result,
                                   'ACCEPTED_AS_SUPPORTING_EVIDENCE')}>

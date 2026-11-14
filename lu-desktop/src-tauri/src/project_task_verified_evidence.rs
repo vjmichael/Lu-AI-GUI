@@ -162,6 +162,15 @@ fn add(
         profile,root,reg,task,expected_board,expected_reg,version,
         handoff,receipt,chat
     )?;
+    // Only prospective ACCEPTED supporting-evidence decisions require a
+    // typed criterion-method link. Historical v1 journal rows remain valid.
+    if decision=="ACCEPTED_AS_SUPPORTING_EVIDENCE"&&
+       !project_task_agent_handoff::criterion_supports_method(
+           &revision.acceptance_criteria,&witness.tool_id,
+           &witness.independent_method
+       ){
+        return Err("P0_TOOLS05_ACCEPT_REQUIRES_TYPED_CRITERION_METHOD".into())
+    }
     let mut conn=project_register_desktop::library(profile)?;
     let tx=conn.transaction_with_behavior(TransactionBehavior::Immediate)
         .map_err(|_|"P0_TOOLS05_AUDIT_BUSY")?;
@@ -380,6 +389,14 @@ pub(crate) async fn lu_project_task_review_independent_witness(
             expected_task_version,&handoff,&receipt,&chats.chats
         )).await.map_err(|_|"P0_TOOLS05_PREFLIGHT_INTERRUPTED")??
     };
+    // Preflight only: the append path repeats this after fresh OS approval.
+    if decision=="ACCEPTED_AS_SUPPORTING_EVIDENCE"&&
+       !project_task_agent_handoff::criterion_supports_method(
+           &before.0.acceptance_criteria,&before.1.tool_id,
+           &before.1.independent_method
+       ){
+        return Err("P0_TOOLS05_ACCEPT_REQUIRES_TYPED_CRITERION_METHOD".into())
+    }
     let message=format!(concat!(
         "Review ONE independently audited worker result against the EXACT current project criterion?\n\n",
         "Task: {} · v{}\nRequirement: {}\n\n",

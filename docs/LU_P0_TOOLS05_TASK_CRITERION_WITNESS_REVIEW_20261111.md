@@ -35,3 +35,22 @@ P0-Next gave a human-approved project task an original ANSF goal and agent-plan 
 **Deferred consolidated acceptance:** compiler, native Windows/Linux, genuine GGUF tool selection, installed app human interactions, restart recovery, CI/PR verification and regression testing when explicitly authorized.
 
 **Stop point:** P0-TOOLS-05 source handoff completed without CI or PR submission.
+
+## P0-NEXT-CM1 — method-to-criterion review admission (source candidate)
+
+New positive human supporting-evidence decisions require the EXACT current
+human-reviewed task criterion to start with a method binding, for example:
+
+    LU_CRITERION_METHOD_V1:lu.reviewed.git.head|GIT_HEAD_DIRECT_V1
+    Observe the original Git HEAD for a separate human source review.
+
+The original independently audited worker tool and oracle method must equal
+the header; generic or substituted Git/media receipts and unsupported PDF/Image
+methods cannot be accepted as supporting evidence. The host validates before
+the human dialog, and repeats the gate after OS-selected source rescan and
+original receipt reopening. The task UI disables positive review for unmatched
+criteria while retaining reject and needs-more-evidence. Original v1 history
+stays readable, all task completion and execution authority flags remain
+false, and no original SEC-06 acceptance or installed tests are waived.
+Rust unit tests cover exact and hostile ambiguous bindings. This separate
+source branch remains unmerged pending batched native acceptance.
