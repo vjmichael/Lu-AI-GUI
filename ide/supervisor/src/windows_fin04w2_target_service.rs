@@ -260,6 +260,12 @@ fn prepare_one_target(
         &cfg.approved_target_image,&cfg.expected_target_image_sha256,
         &cfg.approved_target_pdb,&cfg.expected_target_pdb_sha256,
     )?;
+    // Independently reopen and compare the actual service-sealed PE/PDB
+    // CodeView-to-PDB identity; a hash alone does not establish symbols.
+    crate::debug_symbol_verification::verify_exact_sealed_windows_pe_pdb(
+        suspended.image(),suspended.pdb(),
+        &cfg.expected_target_image_sha256,&cfg.expected_target_pdb_sha256,
+    )?;
     let pid=unsafe{GetProcessId(suspended.process())};
     if pid==0{return Err(denied());}
     pair.attest_debugger_client(pipe)?;

@@ -324,6 +324,39 @@ fn unit(bytes: &[u8], compile: bool, abbrev_size: usize) -> bool {
     }
 }
 
+/// Strict re-opened immutable PE/PDB pair identity. This validates the
+/// compiler RSDS ↔ PDB MSF7 GUID/age/DBI bytes, not a source-line mapping,
+/// debugger stop event, or execution authorization. Caller must separately
+/// verify OS Job/ACL/source-line and the effective WFP socket matrix.
+#[cfg(windows)]
+pub(crate) fn verify_exact_sealed_windows_pe_pdb(
+    pe:&Path,pdb:&Path,pe_sha:&str,pdb_sha:&str,
+)->Result<(),SupervisorError>{
+    use std::os::windows::fs::MetadataExt;
+    if !pe.is_absolute()||!pdb.is_absolute()||pe==pdb{return Err(denied());}
+    for (path,limit,expected) in [(pe,64*1024*1024_u64,pe_sha),
+        (pdb,512*1024*1024_u64,pdb_sha)]{
+        let m=fs::symlink_metadata(path).map_err(|_|denied())?;
+        if !m.is_file()||m.file_attributes()&0x400!=0
+            ||m.len()==0||m.len()>limit||expected.len()!=64
+            ||!expected.bytes().all(|b|b.is_ascii_hexdigit()){
+            return Err(denied());
+        }
+    }
+    let executable=fs::read(pe).map_err(|_|denied())?;
+    let symbols=fs::read(pdb).map_err(|_|denied())?;
+    if format!("{:x}",Sha256::digest(&executable))!=pe_sha.to_ascii_lowercase()
+        ||format!("{:x}",Sha256::digest(&symbols))!=pdb_sha.to_ascii_lowercase(){
+        return Err(denied());
+    }
+    let rsds=pe32plus_rsds(&executable).ok_or_else(denied)?;
+    let filename=pdb.file_name().and_then(|v|v.to_str()).ok_or_else(denied)?;
+    let stem=pe.file_stem().and_then(|v|v.to_str()).ok_or_else(denied)?;
+    if !filename.eq_ignore_ascii_case(&format!("{stem}.pdb"))
+        ||!rsds.name.eq_ignore_ascii_case(filename)
+        ||!pdb_info_dbi(&symbols,&rsds){return Err(denied());}
+    Ok(())
+}
 #[cfg(windows)]
 struct Rsds {
     guid: [u8; 16],

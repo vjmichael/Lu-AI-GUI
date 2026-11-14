@@ -453,9 +453,20 @@ fn review_only(pipe:HANDLE,config:&InstalledAuditConfig)
         )?;
         target.grant_original_running(&scm_pair)?;
         debugger.resume_after_original_running()?;
-        // Actual LLDB-DAP attach and stopped-thread/PDB receipts are a
-        // separately verified stage. Do not synthesize X/F completion from
-        // mere Running service, filter presence or one resumed thread.
+        // Genuine bounded native LLDB-DAP initialize/attach/stopped and
+        // stackTrace; unlike C2's benign fixture, this is a real debugger.
+        // DAP's thread/IP/line are UNTRUSTED candidates until the separate
+        // target SCM compares exact Job, OS-loaded PE and x64 thread RIP.
+        let stop=crate::windows_fin04w2_lldb_dap::attach_and_observe_stop(
+            &debugger,target.observed_target_pid(),
+        )?;
+        let os_thread=target.corroborate_stopped_rip(&scm_pair,stop.observed_pc)?;
+        if os_thread!=stop.thread_id||stop.source_line==0
+            ||stop.source_path.is_empty(){return Err(denied());}
+        // The original independent LLVM/PDB source-line oracle, patched
+        // kernel event-owner evidence and effective socket-denial receipts
+        // are still separate mandatory gates. Do not self-award X/F or
+        // fabricate a debugger completion after these partial observations.
         return Err(denied());
     }
     #[cfg(not(feature="fin04w2-split-native"))]
