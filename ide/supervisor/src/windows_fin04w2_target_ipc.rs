@@ -45,22 +45,23 @@ impl SuspendedTargetLease{
  /// PC originates in the correlated LLDB-DAP stackTrace, but only the
  /// independent target SCM can compare it to a genuine Job member's RIP.
  pub(crate) fn corroborate_stopped_rip(&mut self,pair:&IndependentScmPair,rip:u64)
-  ->Result<u32,SupervisorError>{
+  ->Result<(u32,u64),SupervisorError>{
   if self.phase!=LeasePhase::Running||rip==0{return Err(denied());}
   pair.attest_target_server(self.pipe.0)?;
   let mut req=[0u8;9];req[0]=b'V';req[1..].copy_from_slice(&rip.to_le_bytes());
   let mut n=0u32;
   if unsafe{WriteFile(self.pipe.0,req.as_ptr().cast(),9,&mut n,ptr::null_mut())}==0
       ||n!=9{return Err(denied());}
-  let mut proof=[0u8;13];read_exact(self.pipe.0,&mut proof,Duration::from_secs(20))?;
+  let mut proof=[0u8;21];read_exact(self.pipe.0,&mut proof,Duration::from_secs(20))?;
   if proof[0]!=b'P'||u64::from_le_bytes(proof[5..13].try_into().map_err(|_|denied())?)!=rip{
       return Err(denied());
   }
   let tid=u32::from_le_bytes(proof[1..5].try_into().map_err(|_|denied())?);
-  if tid==0{return Err(denied());}
+  let slide=u64::from_le_bytes(proof[13..21].try_into().map_err(|_|denied())?);
+  if tid==0||slide>u64::MAX-rip{return Err(denied());}
   self.reobserve(pair)?;
   self.phase=LeasePhase::StoppedObserved;
-  Ok(tid)
+  Ok((tid,slide))
  }
  pub(crate) fn reobserve(&self,pair:&IndependentScmPair)->Result<(),SupervisorError>{
   pair.attest_target_server(self.pipe.0)?;
@@ -73,7 +74,7 @@ impl SuspendedTargetLease{
  }
 }
 fn read_exact(pipe:HANDLE,out:&mut [u8],limit:Duration)->Result<(),SupervisorError>{
- if !matches!(out.len(),1|13|17|141){return Err(denied());}
+ if !matches!(out.len(),1|17|21|141){return Err(denied());}
  let deadline=Instant::now()+limit;
  loop{
   if Instant::now()>=deadline{return Err(denied());}

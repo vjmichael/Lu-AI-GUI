@@ -189,7 +189,7 @@ fn read_fixed(pipe:HANDLE,out:&mut [u8])->Result<(),SupervisorError>{
     Ok(())
 }
 fn write_all(pipe:HANDLE,bytes:&[u8])->Result<(),SupervisorError>{
-    if !matches!(bytes.len(),1|13|17|141){return Err(denied());}
+    if !matches!(bytes.len(),1|17|21|141){return Err(denied());}
     let mut written=0u32;
     if unsafe{WriteFile(
         pipe,bytes.as_ptr().cast(),bytes.len() as u32,&mut written,ptr::null_mut(),
@@ -351,9 +351,15 @@ fn prepare_one_target(
     )?;
     fin04w2_authority::verify_reserved_original_authorization(root,&original)?;
     pair.reobserve()?;
-    let mut observed=[0u8;13];observed[0]=b'P';
+    // OS-loaded relocation bias is computed ONLY inside the target SCM
+    // service, never supplied by LLDB/DAP or a model. The debugger checks
+    // its bounds against the same reviewed PDB source-line oracle.
+    let bias=module.loaded_base.checked_sub(module.preferred_base)
+        .ok_or_else(denied)?;
+    let mut observed=[0u8;21];observed[0]=b'P';
     observed[1..5].copy_from_slice(&sample.thread_id.to_le_bytes());
     observed[5..13].copy_from_slice(&sample.observed_rip.to_le_bytes());
+    observed[13..21].copy_from_slice(&bias.to_le_bytes());
     write_all(pipe,&observed)?;
     // Still no terminal receipt. Hold this service-owned process + Job
     // until the caller closes; dropping either lease kills the entire tree.

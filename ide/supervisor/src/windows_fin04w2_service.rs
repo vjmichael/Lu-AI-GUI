@@ -470,7 +470,8 @@ fn review_only(pipe:HANDLE,config:&InstalledAuditConfig)
         let stop=crate::windows_fin04w2_lldb_dap::attach_and_observe_stop(
             &debugger,target.observed_target_pid(),
         )?;
-        let os_thread=target.corroborate_stopped_rip(&scm_pair,stop.observed_pc)?;
+        let (os_thread,relocation_bias)=
+            target.corroborate_stopped_rip(&scm_pair,stop.observed_pc)?;
         if os_thread!=stop.thread_id||stop.source_line==0
             ||stop.source_path.is_empty(){return Err(denied());}
         // The first-party patched LLVM DebuggerThread must actually have
@@ -487,6 +488,10 @@ fn review_only(pipe:HANDLE,config:&InstalledAuditConfig)
             &root,&config.original_job_id,&config.review_only_plan_hash,
             &original_running,&owner,
         )?;
+        // The kernel-observed relocation bias is a fixed input for the
+        // original independent LLVM/PDB source-line oracle; it is not
+        // imported from a DAP stackTrace or caller IPC request.
+        let _relocation_bias=relocation_bias;
         // A late WFP rule or PE/PDB/journal mutation must invalidate even
         // an already observed DAP stop. These are OS readbacks, NOT a
         // substitute for effective hostile-socket or source-line proof.

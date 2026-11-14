@@ -211,6 +211,25 @@ pub(crate) fn verify_running_same_original_authorization(
     Ok(())
 }
 
+/// Return only the original fsynced Running entry HASH from the actual
+/// human-grant sequence. The first-party owner hook's kernel receipt is
+/// journal-bound to this SHA and cannot be replayed against another job.
+pub(crate) fn verified_running_entry_hash(
+    path:&Path,job_id:&str,plan:&JobPlan,sha:&str,
+    original:&FreshOriginalAuthorization,
+)->Result<String,SupervisorError>{
+    verify_running_same_original_authorization(path,job_id,plan,sha,original)?;
+    let receipts=original_receipts_from_path(path)?;
+    let running:Vec<&Receipt>=receipts.iter()
+        .filter(|r|r.body.job_id==job_id&&r.body.phase==JobPhase::Running)
+        .collect();
+    if running.len()!=1||running[0].entry_hash.len()!=64
+        ||!running[0].entry_hash.bytes().all(|c|c.is_ascii_hexdigit()){
+        return Err(denied());
+    }
+    Ok(running[0].entry_hash.clone())
+}
+
 fn original_receipts_from_path(path:&Path)->Result<Vec<Receipt>,SupervisorError>{
     if !path.is_absolute(){return Err(denied());}
     let meta=fs::symlink_metadata(path).map_err(|_|denied())?;
