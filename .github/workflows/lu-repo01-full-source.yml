@@ -2868,6 +2868,24 @@ jobs:
           [[ "$native" = /* ]] && test -f "$native" && test -x "$native"
           echo "LU_TOOLS03_TEST_GIT_PATH=$native" >> "$GITHUB_ENV"
           echo 'SEC06_LINUX_TRUSTED_GIT_PINNED=1'
+      - name: Provision finite SEC-06C Git manager for the UNCHANGED original Linux journal test
+        if: matrix.mode == 'linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          # This is only the same immutable reviewed Git service proved by
+          # the separate original SEC06C root-owned Git job. It does NOT
+          # re-enable the retired same-UID guardian or alter hostile fixtures.
+          sudo install -d -o root -g root -m 0755 /usr/libexec/lu
+          sudo install -o root -g root -m 0755 scripts/lu-sec06c-owned-git-launcher.py /usr/libexec/lu/lu-sec06c-launch-git
+          sudo install -o root -g root -m 0755 scripts/lu-sec06c-owned-git-worker.py /usr/libexec/lu/lu-sec06c-owned-git-worker
+          sudo install -o root -g root -m 0755 scripts/lu-sec06c-owned-kernel-manager.py /usr/libexec/lu/lu-sec06c-owned-kernel-manager
+          printf '%s ALL=(root) NOPASSWD: /usr/libexec/lu/lu-sec06c-launch-git *\n' "$USER" | sudo tee /etc/sudoers.d/lu-sec06c-original-git >/dev/null
+          sudo chmod 0440 /etc/sudoers.d/lu-sec06c-original-git
+          sudo visudo -cf /etc/sudoers.d/lu-sec06c-original-git
+          sudo test "$(stat -c %u /usr/libexec/lu/lu-sec06c-owned-kernel-manager)" = 0
+          sudo test "$(stat -c %u /usr/libexec/lu/lu-sec06c-launch-git)" = 0
+          test "$(id -u)" -ne 0
       - name: Pin real Windows Git executable for reviewed native worker
         if: matrix.mode == 'windows'
         shell: pwsh
