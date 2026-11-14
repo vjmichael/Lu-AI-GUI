@@ -14,7 +14,8 @@
 #![cfg(all(windows, debug_assertions, feature="fin04w2-split-native"))]
 
 use crate::{fin04w2_authority,windows_fin04w2_kernel::{self,EmptyAuditJob},
-    windows_fin04w2_split,windows_service_security,windows_worker,
+    windows_fin04w2_split,windows_fin04w2_target_seal,
+    windows_service_security,windows_worker,
     JobPlan,SupervisorError};
 use std::{
     ffi::OsStr, fs, mem::size_of, os::windows::ffi::OsStrExt,
@@ -115,7 +116,7 @@ impl Drop for Pending {
 pub(crate) struct PendingTarget {
     pending:Pending,
     profile:windows_worker::AppProfile,
-    image:PathBuf,
+    stage:windows_fin04w2_target_seal::SealedDebugTarget,
     image_sha256:String,
     job:HANDLE,
 }
@@ -123,24 +124,29 @@ impl PendingTarget {
     pub(crate) fn process(&self)->HANDLE {self.pending.process.0}
     pub(crate) fn job(&self)->HANDLE {self.job}
     pub(crate) fn sid(&self)->windows_sys::Win32::Security::PSID{self.profile.sid}
-    pub(crate) fn image(&self)->&Path {&self.image}
+    pub(crate) fn image(&self)->&Path {&self.stage.image}
+    pub(crate) fn pdb(&self)->&Path {&self.stage.pdb}
     pub(crate) fn image_sha256(&self)->&str {&self.image_sha256}
 }
 /// Only a native SCM service can build this exact target in its own Job.
 /// The reviewed source path and SHA originate in protected service config.
 pub(crate) fn prepare_appcontainer_target(
     job:&EmptyAuditJob, original_job_id:&str,
+    private_service_root:&Path,
     approved_image:&Path,expected_sha256:&str,
+    approved_pdb:&Path,expected_pdb_sha256:&str,
 )->Result<PendingTarget,SupervisorError>{
     windows_fin04w2_kernel::inspect_current_service_principal()?;
     windows_service_security::hash_executable(approved_image,expected_sha256)?;
     let profile=windows_worker::AppProfile::create(original_job_id)?;
+    // Keep LocalState writable only for harmless target scratch. Never
+    // place the executable or PDB there: the target could mutate either.
     let local=profile.local_state()?;
-    let image=local.join("debug-target.exe");
-    if image.exists(){return Err(denied());}
-    // File copies are never trusted by pathname alone: rehash staged bytes.
-    fs::copy(approved_image,&image).map_err(|_|denied())?;
-    windows_service_security::hash_executable(&image,expected_sha256)?;
+    let stage=windows_fin04w2_target_seal::stage_and_verify(
+        private_service_root,original_job_id,profile.sid,
+        approved_image,expected_sha256,approved_pdb,expected_pdb_sha256,
+    )?;
+    let image=&stage.image;
     let mut attrs=windows_worker::Attributes::with_count(2)?;
     let mut cap=SECURITY_CAPABILITIES::default();
     cap.AppContainerSid=profile.sid;
@@ -175,7 +181,7 @@ pub(crate) fn prepare_appcontainer_target(
     contained(pending.process.0,kernel_job)?;
     windows_worker::verify_suspended_appcontainer_token(pending.process.0,profile.sid)?;
     Ok(PendingTarget {
-        pending,profile,image,image_sha256:expected_sha256.to_owned(),
+        pending,profile,stage,image_sha256:expected_sha256.to_owned(),
         job:kernel_job,
     })
 }
@@ -288,9 +294,11 @@ pub(crate) struct PendingSplitPair {
 }
 pub(crate) fn prepare_pair(
     target_job:&EmptyAuditJob,debugger_job:&EmptyAuditJob,
+    private_service_root:&Path,
     original_journal:&Path, original_job_id:&str,
     original_plan:&JobPlan, original_plan_sha256:&str,
     target_image:&Path,target_sha256:&str,
+    target_pdb:&Path,target_pdb_sha256:&str,
     lldb_dap:&Path,lldb_sha256:&str,
 )->Result<PendingSplitPair,SupervisorError>{
     // An original approved one-use journal and sealed project binding are
@@ -307,7 +315,8 @@ pub(crate) fn prepare_pair(
         return Err(denied());
     }
     let target=prepare_appcontainer_target(
-        target_job,original_job_id,target_image,target_sha256,
+        target_job,original_job_id,private_service_root,
+        target_image,target_sha256,target_pdb,target_pdb_sha256,
     )?;
     let debugger=prepare_external_debugger(
         debugger_job,lldb_dap,lldb_sha256,
