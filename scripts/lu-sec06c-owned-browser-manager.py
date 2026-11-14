@@ -215,11 +215,15 @@ def main_run(a):
                 while time.monotonic()<deadline and child.poll() is None:
                     # PIDFDs prevent a recycled /proc PID from appearing to
                     # be the same original Chromium or Node process.
-                    for fd in (cfd,nfd):
+                    for label,fd in (("chromium",cfd),("node",nfd)):
                         watcher=select.poll()
                         watcher.register(fd,select.POLLIN)
                         if watcher.poll(0):
-                            refuse("original Chrome/Node PIDFD terminated during session")
+                            # Exact original pidfd, never a recycled numeric
+                            # PID or self-reported browser shutdown. Category
+                            # is diagnostic only; all deaths still reject.
+                            refuse("original "+label+" PIDFD terminated during session"
+                                   " mediator_exit="+str(child.poll()))
                     for pid in (cpid,npid):
                         if pathlib.Path(f"/proc/{pid}/cgroup").read_text().strip()!=expected:
                             refuse("original browser process escaped kernel leaf")

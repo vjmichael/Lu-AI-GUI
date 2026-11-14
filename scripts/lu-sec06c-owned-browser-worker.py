@@ -110,6 +110,28 @@ def chrome_pre_admission_failure(chrome,log,profile,xauthority):
     print("SEC06C_BROWSER_CHROMIUM_PRE_ADMISSION_FAILED "
           +"exit="+str(chrome.returncode)+" stderr="+text,file=sys.stderr,flush=True)
 
+def node_exit_diagnostic(node,log):
+    # Only fixed diagnostic classes leave the private scratch stream. Never
+    # print raw Node stderr, page URLs, model content, auth cookies or paths.
+    if node is None or node.poll() is None:return
+    log.flush()
+    log.seek(0)
+    raw=log.read(8192)
+    if b"ERR_MODULE_NOT_FOUND" in raw or b"MODULE_NOT_FOUND" in raw:
+        category="MODULE_RESOLUTION"
+    elif b"SyntaxError" in raw:
+        category="SCRIPT_SYNTAX"
+    elif b"EACCES" in raw or b"EPERM" in raw:
+        category="ACCESS_DENIED"
+    elif b"ERR_DLOPEN_FAILED" in raw:
+        category="NATIVE_LIBRARY"
+    elif b"Error" in raw:
+        category="NODE_RUNTIME_ERROR"
+    else:
+        category="UNCLASSIFIED"
+    print("SEC06C_BROWSER_NODE_EXIT category="+category+
+          " exit="+str(node.returncode),file=sys.stderr,flush=True)
+
 def run(a):
     if os.geteuid()==0:reject("browser process mediator must never run as root")
     if not HEX32.fullmatch(a.nonce):reject("original manager nonce invalid")
@@ -153,6 +175,10 @@ def run(a):
         startup_log.close()
         raise
     node=None
+    # Root manager never sees page stderr. A private unlinked scratch file
+    # retains only startup diagnostics until failure classification, not
+    # arbitrary page output, profile paths or prompt data.
+    node_log=tempfile.TemporaryFile(mode="w+b")
     try:
         until=time.monotonic()+25
         port=None
@@ -171,11 +197,12 @@ def run(a):
              "visibilityMode":a.mode,
              "cdpEndpoint":"http://127.0.0.1:"+str(port)},separators=(",",":"))
         node=subprocess.Popen([a.node,a.script],stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,stderr=node_log,
             env=env,cwd=str(pathlib.Path(a.script).parent),close_fds=True)
         if chrome.poll() is not None or node.poll() is not None:
             if chrome.poll() is not None:
                 chrome_pre_admission_failure(chrome,startup_log,profile,a.xauthority)
+            node_exit_diagnostic(node,node_log)
             reject("browser pair exited before original admission")
         # The privileged root manager independently reads BOTH /proc cgroups
         # before it forwards this fixed tuple to the desktop host.
@@ -192,13 +219,21 @@ def run(a):
             if node.stdout in ready and not forward(
                 node.stdout.fileno(),sys.stdout.fileno(),MAX_REPLY,out):
                 break
-        return 0 if chrome.poll() is None and node.poll() is None else 73
+        chrome_exit=chrome.poll()
+        node_exit=node.poll()
+        if chrome_exit is not None or node_exit is not None:
+            print("SEC06C_BROWSER_PAIR_EXIT chromium="+str(chrome_exit)+
+                  " node="+str(node_exit),file=sys.stderr,flush=True)
+            if node_exit is not None:
+                node_exit_diagnostic(node,node_log)
+        return 0 if chrome_exit is None and node_exit is None else 73
     finally:
         if node is not None and node.poll() is None:
             node.kill();node.wait(timeout=8)
         if chrome.poll() is None:
             chrome.kill();chrome.wait(timeout=8)
         startup_log.close()
+        node_log.close()
 def main():
     p=argparse.ArgumentParser(allow_abbrev=False)
     for name in ("nonce","chromium","chromium_sha","node","node_sha",
