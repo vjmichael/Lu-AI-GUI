@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "e66b9f51d94d1c135cb990500c64fe5c86dc0bb2",
+  "sourceCommitBeforeLock": "fad12f4bca7d12d38a7cf00862f8e2919e2d25ec",
   "trackedFileCount": 1017,
   "files": [
     {
@@ -1293,7 +1293,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/agent_memory_handoff.rs",
-      "blob": "30cc1dea2e4347ca68b15226b66af863baf7874b"
+      "blob": "8781ad378995f6bfa410385f9fa16291f984f6ab"
     },
     {
       "path": "lu-desktop/src-tauri/src/agent_memory_reasoning.rs",
@@ -1601,7 +1601,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/reviewed_app_desktop.rs",
-      "blob": "d5ad6c94bc16dd2dd4f844a7c1c40c35b95b7d5e"
+      "blob": "2d85219a1267d02e743464b7eef35e3effff018b"
     },
     {
       "path": "lu-desktop/src-tauri/src/reviewed_app_recovery.rs",
@@ -2621,7 +2621,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/agent_reviewed_broker_bridge.rs",
-      "blob": "1d77918bbd3ad27ed95f00696e4fbd6f065613b0"
+      "blob": "157835109ad691a1c96cd380e9539472b5c2114d"
     },
     {
       "path": "src-tauri/lu-core/src/agent_tool_loop.rs",
