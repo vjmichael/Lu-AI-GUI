@@ -248,6 +248,7 @@ pub(crate) fn prepare_external_debugger(
     let child_handles=[stdin.read.0,stdout.write.0,stderr.write.0];
     let mut attrs=windows_worker::Attributes::with_count(2)?;
     let kernel_job=job.held_split_job_handle();
+    windows_service_security::verify_debugger_job_kernel_acl(kernel_job)?;
     // UpdateProcThreadAttribute may reference the supplied HANDLE array
     // through CreateProcessW; keep storage alive in this stack frame.
     let job_array=[kernel_job];
