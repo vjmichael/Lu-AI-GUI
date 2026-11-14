@@ -51,6 +51,21 @@ def original_image_hash(path,sha,kind):
         for part in iter(lambda:src.read(65536),b""):h.update(part)
     if h.hexdigest()!=sha:refuse("reviewed "+kind+" bytes changed")
     return image
+def unprivileged_xauthority_path(raw):
+    """Bound an opaque path WITHOUT traversing private user directories.
+
+    The service root has no CAP_DAC_OVERRIDE by design. This value is never
+    opened by root, never used as a privileged executable or cgroup locator.
+    The original nonroot mediator will independently lstat/open it.
+    """
+    if not raw:return True
+    if len(raw)>1024 or not raw.startswith("/") or any(
+        ord(ch)<33 or ord(ch)>126 for ch in raw):
+        return False
+    p=pathlib.PurePosixPath(raw)
+    return (str(p)==raw and ".." not in p.parts and
+        not raw.startswith(("/proc/","/sys/","/dev/")))
+
 def origin_allowed(s):
     if not re.fullmatch(r"https://[a-z0-9.-]{3,253}",s):return False
     host=s[8:]
@@ -77,21 +92,21 @@ def fixed_browser_contract(a):
         or not 1<=len(a.origin)<=8 or len(set(a.origin))!=len(a.origin)
         or not all(map(origin_allowed,a.origin))):
         refuse("finite read-only browser origin/visibility contract invalid")
-    profile=pathlib.Path(a.profile)
-    if (not profile.is_absolute() or profile.is_symlink()
-        or profile.resolve(strict=True)!=profile or not profile.is_dir()
-        or profile.stat().st_uid!=a.uid or profile.stat().st_mode&0o022):
-        refuse("browser profile not original user-owned canonical directory")
+    # Root validates the IMMUTABLE lexical grant only. Canonical directory,
+    # symlink, mode and original user checks happen after the child UID drop;
+    # root may not traverse ~/.local/share or a private Xvfb directory.
+    if not a.profile or not unprivileged_xauthority_path(a.profile):
+        refuse("browser profile lexical grant invalid")
+    profile=pathlib.PurePosixPath(a.profile)
     if (not HEX64.fullmatch(a.policy_sha) or
         a.policy_sha!=hashlib.sha256(("\0".join(
             [str(profile),a.mode]+a.origin)+"\0").encode()).hexdigest()):
         refuse("original browser permission scope digest invalid")
-    if a.xauthority:
-        xauth=pathlib.Path(a.xauthority)
-        if (not xauth.is_absolute() or xauth.is_symlink()
-            or xauth.resolve(strict=True)!=xauth or not xauth.is_file()
-            or xauth.stat().st_uid!=a.uid):
-            refuse("X11 user cookie not independently owner-verified")
+    # Never call resolve/stat here: root has deliberately NO DAC-bypass
+    # capability and must not traverse a user's private Xvfb directory.
+    # The original nonroot mediator independently validates the cookie.
+    if not unprivileged_xauthority_path(a.xauthority):
+        refuse("X11 cookie path not bounded to nonprivileged use")
     chrom=original_image_hash(a.chromium,a.chromium_sha,"chromium")
     node=original_image_hash(a.node,a.node_sha,"node")
     script=original_image_hash(a.script,a.script_sha,"script")

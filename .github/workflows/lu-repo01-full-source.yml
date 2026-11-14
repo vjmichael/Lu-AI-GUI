@@ -3119,6 +3119,7 @@ jobs:
           test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
           node scripts/verify-source-tree.mjs
           python3 -m py_compile scripts/lu-sec06c-owned-browser-launcher.py scripts/lu-sec06c-owned-browser-manager.py scripts/lu-sec06c-owned-browser-worker.py benchmarks/e1/sec06c_browser_real_native.py benchmarks/e1/sec06c_browser_host_crash.py benchmarks/e1/sec06c_browser_guardian_loss.py
+          python3 benchmarks/e1/sec06c_browser_xauthority_contract.py
           cargo test --locked --manifest-path src-tauri/lu-win-worker-job/Cargo.toml --lib os_owned_browser -- --nocapture
           cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib browser_worker_supervisor -- --nocapture
       - name: Provision exact headed Playwright Chromium, Node and X11

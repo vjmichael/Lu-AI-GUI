@@ -33,6 +33,24 @@ def owned_image(path,digest):
         h=hashlib.sha256()
         for block in iter(lambda:f.read(65536),b""):h.update(block)
     if h.hexdigest()!=digest:reject("reviewed executable digest changed")
+def validate_original_user_xauthority(raw):
+    """Only the unprivileged original UID may inspect its X11 cookie.
+
+    Refuse links, directory substitution, permissive/foreign credentials and
+    unreadable cookies; the privileged manager never opens this user path.
+    """
+    xauth=pathlib.Path(raw)
+    if not xauth.is_absolute() or xauth.is_symlink():
+        reject("untrusted nonroot X11 cookie pathname")
+    if xauth.resolve(strict=True)!=xauth:
+        reject("noncanonical X11 cookie path")
+    meta=xauth.lstat()
+    if (not stat.S_ISREG(meta.st_mode) or meta.st_uid!=os.geteuid()
+        or meta.st_mode&0o077 or meta.st_nlink!=1 or
+        not 0<meta.st_size<=65536):
+        reject("original user X11 cookie owner, mode or size invalid")
+    return str(xauth)
+
 def require_go(nonce):
     p=pathlib.Path("/run/lu-sec06c")/(nonce+".go")
     until=time.monotonic()+20
@@ -88,14 +106,17 @@ def run(a):
     profile=pathlib.Path(a.profile)
     if (not profile.is_absolute() or profile.is_symlink() or
         profile.resolve(strict=True)!=profile or not profile.is_dir()
-        or profile.stat().st_uid!=os.geteuid()):
+        or profile.stat().st_uid!=os.geteuid()
+        or profile.stat().st_mode&0o022):
         reject("not original nonroot profile")
     if (hashlib.sha256(("\0".join([str(profile),a.mode]+a.origin)+"\0")
         .encode()).hexdigest()!=a.policy_sha):
         reject("changed browser human-origin authority")
     env={"PATH":"/usr/bin:/bin","LC_ALL":"C","HOME":str(pathlib.Path.home()),
          "DISPLAY":a.display}
-    if a.xauthority:env["XAUTHORITY"]=a.xauthority
+    if a.xauthority:
+        # The original Linux UID, NOT the root manager, checks X11 ownership.
+        env["XAUTHORITY"]=validate_original_user_xauthority(a.xauthority)
     require_go(a.nonce)
     portfile=profile/"DevToolsActivePort"
     if portfile.exists():reject("stale CDP endpoint or reused user profile")

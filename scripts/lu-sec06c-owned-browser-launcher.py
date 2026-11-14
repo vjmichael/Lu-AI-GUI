@@ -47,6 +47,21 @@ def digest(raw,expected):
         for data in iter(lambda:f.read(65536),b""):h.update(data)
     if h.hexdigest()!=expected:deny("reviewed executable bytes changed")
     return p
+def unprivileged_xauthority_path(raw):
+    """Bound an opaque path WITHOUT traversing private user directories.
+
+    The service root has no CAP_DAC_OVERRIDE by design. This value is never
+    opened by root, never used as a privileged executable or cgroup locator.
+    The original nonroot mediator will independently lstat/open it.
+    """
+    if not raw:return True
+    if len(raw)>1024 or not raw.startswith("/") or any(
+        ord(ch)<33 or ord(ch)>126 for ch in raw):
+        return False
+    p=pathlib.PurePosixPath(raw)
+    return (str(p)==raw and ".." not in p.parts and
+        not raw.startswith(("/proc/","/sys/","/dev/")))
+
 def origin(s):
     if len(s)>256 or not re.fullmatch(r"https://[a-z0-9.-]+",s):
         return False
@@ -90,23 +105,20 @@ def run(a):
         digest(binary,sha)
     if pathlib.Path(a.chromium).name not in ("chrome","chromium") or pathlib.Path(a.node).name!="node" or pathlib.Path(a.script).name!="lu_browser_worker.mjs":
         deny("reviewed browser executable type mismatch")
-    profile=pathlib.Path(a.profile)
-    if (not profile.is_absolute() or profile.is_symlink() or
-        profile.resolve(strict=True)!=profile or not profile.is_dir() or
-        profile.stat().st_uid!=uid or profile.stat().st_mode&0o022):
-        deny("untrusted original user browser profile")
+    # A production user's ~/.local/share may be 0700. The root launcher
+    # lacks CAP_DAC_OVERRIDE and must not inspect inside that private tree.
+    # Only the original nonroot mediator checks its actual directory/owner.
+    if not a.profile or not unprivileged_xauthority_path(a.profile):
+        deny("untrusted lexical original browser profile")
+    profile=pathlib.PurePosixPath(a.profile)
     if a.policy_sha!=policy(str(profile),a.mode,a.origin):
         deny("exact browser grant policy hash mismatch")
     if not HEX64.fullmatch(a.policy_sha):deny("invalid policy digest")
-    # No original user-provided app-supplied XAUTHORITY is promoted to an
-    # arbitrary file path. An optional checked user-owned X11 cookie is read
-    # only by the nonroot mediator.
-    if a.xauthority:
-        xauth=pathlib.Path(a.xauthority)
-        if (not xauth.is_absolute() or xauth.is_symlink() or
-            xauth.resolve(strict=True)!=xauth or not xauth.is_file()
-            or xauth.stat().st_uid!=uid):
-            deny("untrusted X11 user cookie")
+    # Root must NOT traverse /tmp/xvfb-run.<nonce> (0700 owned by the user).
+    # The path has no privileged effect; only the original nonroot mediator
+    # may lstat/open the cookie and confirm its owner after UID drop.
+    if not unprivileged_xauthority_path(a.xauthority):
+        deny("untrusted lexical X11 user cookie path")
     directory(RUN);directory(RECEIPTS)
     if (RUN/(a.nonce+".go")).exists() or (RECEIPTS/(a.nonce+".receipt")).exists():
         deny("one-use browser nonce already consumed")
