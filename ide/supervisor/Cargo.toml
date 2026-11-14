@@ -56,6 +56,14 @@ dev045d3-ci-oracle = ["dap-transport", "linux-worker"]
 # AppContainer / Job Object and SCM custody is observation-only.
 # No DAP control, CI symbolizer, action grant, or replay authority.
 fin04-release-owner-evidence = ["dap-transport", "protected-recovery-service"]
+# FIN-04W2 native source only: no default worker, LLDB or arbitrary command.
+fin04w2-protocol = ["dap-transport"]
+# Independent debugger SCM service with restricted identity/Job/WFP auditing.
+fin04w2-scm = ["fin04w2-protocol", "windows-worker"]
+# Exact fixed harmless worker probe, NOT a debugger or user program.
+fin04w2-contained-probe = ["fin04w2-scm"]
+# C2 fixed one-use service admission. Windows debug native tests only.
+fin04w2-c2 = ["fin04w2-contained-probe"]
 # D4C runs a pinned, native first-party LLVM PE/PDB reader only in
 # disposable debug CI; not a Lu release, Tauri command or general tool.
 dev045d4c-ci-oracle = ["dap-transport", "protected-recovery-service"]
