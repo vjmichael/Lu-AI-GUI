@@ -303,6 +303,11 @@ impl DapGateway {
     /// The native OS worker provides a single immutable bundled self-test
     /// executable path. The WebView cannot choose or modify this target.
     pub(crate) fn launch_fixed_fixture(&mut self, target: &str) -> Result<(), SupervisorError> {
+        // The outside-AppContainer debugger must NEVER launch a child
+        // using its own service token. It may attach only to a target
+        // independently created under the verified AppContainer Job.
+        #[cfg(all(windows, feature="fin04w2-split-native"))]
+        { let _=target; return Err(SupervisorError::InvalidApproval); }
         let frame = self
             .session
             .launch_fixed_fixture(target)
@@ -310,6 +315,11 @@ impl DapGateway {
         self.send(&frame)
     }
     pub(crate) fn launch_verified_project(&mut self, target: &str) -> Result<(), SupervisorError> {
+        // The outside-AppContainer debugger must NEVER launch a child
+        // using its own service token. It may attach only to a target
+        // independently created under the verified AppContainer Job.
+        #[cfg(all(windows, feature="fin04w2-split-native"))]
+        { let _=target; return Err(SupervisorError::InvalidApproval); }
         let frame = self
             .session
             .launch_verified_project(target)
