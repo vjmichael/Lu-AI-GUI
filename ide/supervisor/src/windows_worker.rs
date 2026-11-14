@@ -317,9 +317,9 @@ fn publish_output(
     Ok((parent.join(id), published_bytes, published_hash))
 }
 
-struct AppProfile {
+pub(crate) struct AppProfile {
     name: Vec<u16>,
-    sid: PSID,
+    pub(crate) sid: PSID,
 }
 impl Drop for AppProfile {
     fn drop(&mut self) {
@@ -333,7 +333,7 @@ impl Drop for AppProfile {
     }
 }
 impl AppProfile {
-    fn create(id: &str) -> Result<Self, SupervisorError> {
+    pub(crate) fn create(id: &str) -> Result<Self, SupervisorError> {
         if !valid_job_id(id) {
             return Err(SupervisorError::InvalidPlan);
         }
@@ -357,7 +357,7 @@ impl AppProfile {
         }
         Ok(Self { name, sid })
     }
-    fn local_state(&self) -> Result<PathBuf, SupervisorError> {
+    pub(crate) fn local_state(&self) -> Result<PathBuf, SupervisorError> {
         let mut sid_wide: *mut u16 = ptr::null_mut();
         if unsafe { ConvertSidToStringSidW(self.sid, &mut sid_wide) } == 0 || sid_wide.is_null() {
             return Err(denied());
@@ -395,7 +395,7 @@ fn read_wide(value: *const u16) -> Result<String, SupervisorError> {
     let slice = unsafe { std::slice::from_raw_parts(value, n) };
     String::from_utf16(slice).map_err(io_denied)
 }
-struct Attributes(Vec<usize>);
+pub(crate) struct Attributes(Vec<usize>);
 impl Attributes {
     fn new() -> Result<Self, SupervisorError> {
         // Two explicitly scoped stdio handles, no ambient inheritance.
@@ -405,7 +405,7 @@ impl Attributes {
     /// The original worker retains exactly two attributes and zero inherited
     /// handles. Do not widen the default Cargo build worker's OS rights.
     #[cfg(feature = "lsp-transport")]
-    fn with_count(count: u32) -> Result<Self, SupervisorError> {
+    pub(crate) fn with_count(count: u32) -> Result<Self, SupervisorError> {
         if !(2..=3).contains(&count) {
             return Err(denied());
         }
@@ -426,7 +426,7 @@ impl Attributes {
         Ok(Self(bytes))
     }
     #[cfg(not(feature = "lsp-transport"))]
-    fn with_count(count: u32) -> Result<Self, SupervisorError> {
+    pub(crate) fn with_count(count: u32) -> Result<Self, SupervisorError> {
         if count != 3 {
             return Err(denied());
         }
@@ -446,7 +446,7 @@ impl Attributes {
         }
         Ok(Self(bytes))
     }
-    fn raw(&mut self) -> *mut core::ffi::c_void {
+    pub(crate) fn raw(&mut self) -> *mut core::ffi::c_void {
         self.0.as_mut_ptr().cast()
     }
 }
@@ -568,7 +568,7 @@ struct AppContainerTokenInfo {
     sid: PSID,
 }
 
-fn verify_suspended_appcontainer_token(
+pub(crate) fn verify_suspended_appcontainer_token(
     process: HANDLE,
     expected_sid: PSID,
 ) -> Result<(), SupervisorError> {
