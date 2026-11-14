@@ -130,7 +130,11 @@ fn consolidate(
     ]){return Err("G06F_MISSING_ORIGINAL_DOMAIN");}
     let troubled=domains.iter().any(|d|d.manual_reconciliation_required);
     let git_busy=source.state!=RepositoryState::Clean;
-    let blocked=troubled||source.locked||source.dirty!=0||git_busy;
+    // Local staging/commit/stash can legitimately begin from dirty files.
+    // Their ORIGINAL per-operation source policy remains authoritative.
+    // 6F's global veto covers interrupted journal/recovery, foreign
+    // locks or an active Git operation, not generic modified files.
+    let blocked=troubled||source.locked||git_busy;
     let mut h=Sha256::new();
     for s in [id,&source.branch,&source.head,&source.index_sha256]{
         h.update((s.len() as u64).to_le_bytes());h.update(s.as_bytes());
@@ -362,6 +366,17 @@ mod tests{
         assert!(result.cross_domain_manual_reconciliation_required);
         assert!(!result.local_new_operation_preflight_clear);
         assert!(f.root.join(".git/index.lock").exists()); // never delete it
+    }
+    #[test]
+    fn ordinary_dirty_worktree_does_not_invent_a_cross_domain_recovery_block(){
+        let f=fixture();
+        fs::write(f.root.join("file.txt"),b"needs staging\n").unwrap();
+        let result=f.registry.inspect_group6f_git_recovery(&f.id).unwrap();
+        assert!(result.worktree_dirty);
+        assert!(!result.cross_domain_manual_reconciliation_required);
+        assert!(result.local_new_operation_preflight_clear);
+        assert!(!result.git_mutation_performed);
+        assert!(!result.os_human_approval_granted);
     }
     #[test]
     fn other_domains_cannot_hide_one_uncertain_transaction(){
