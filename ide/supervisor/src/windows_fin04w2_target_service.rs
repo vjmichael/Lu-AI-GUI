@@ -186,7 +186,7 @@ fn read_fixed(pipe:HANDLE,out:&mut [u8])->Result<(),SupervisorError>{
     Ok(())
 }
 fn write_all(pipe:HANDLE,bytes:&[u8])->Result<(),SupervisorError>{
-    if bytes.len()!=17&&bytes.len()!=5{return Err(denied());}
+    if bytes.len()!=17&&bytes.len()!=69{return Err(denied());}
     let mut written=0u32;
     if unsafe{WriteFile(
         pipe,bytes.as_ptr().cast(),bytes.len() as u32,&mut written,ptr::null_mut(),
@@ -244,11 +244,21 @@ fn prepare_one_target(
     let pid=unsafe{GetProcessId(suspended.process())};
     if pid==0{return Err(denied());}
     pair.attest_debugger_client(pipe)?;
-    // S plus the OS-observed PID is review evidence for the trusted debugger
-    // service only; a caller cannot select the PID. Never resume/attach here.
-    let mut response=[0u8;5];
+    // The target-side original sealed PE/PDB hashes accompany the OS PID.
+    // The debugger's separate administrator-pinned config must match BOTH.
+    // No caller may supply a path, target PID, executable or attach command.
+    let mut response=[0u8;69];
     response[0]=b'S';
-    response[1..].copy_from_slice(&pid.to_le_bytes());
+    response[1..5].copy_from_slice(&pid.to_le_bytes());
+    for (hex,dest) in [
+        (&cfg.expected_target_image_sha256,&mut response[5..37]),
+        (&cfg.expected_target_pdb_sha256,&mut response[37..69]),
+    ]{
+        for (i,b) in dest.iter_mut().enumerate(){
+            *b=u8::from_str_radix(&hex[i*2..i*2+2],16)
+                .map_err(|_|denied())?;
+        }
+    }
     write_all(pipe,&response)?;
     let deadline=Instant::now()+Duration::from_secs(45);
     let mut next_recheck=Instant::now();
