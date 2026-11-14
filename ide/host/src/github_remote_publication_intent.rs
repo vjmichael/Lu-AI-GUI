@@ -532,18 +532,26 @@ mod tests{
         stale.checked_unix_seconds=0;
         assert!(f.registry.inspect_group6f_remote_restart(
             &f.id,&private,&intent,&stale).is_err());
-        // A local active branch writer blocks all local new operations
-        // even when a fresh remote view still shows the expected old tip.
+        // A local active branch writer blocks new local mutations even
+        // when the earlier authenticated remote view was otherwise valid.
+        // Observe that remote view BEFORE the local lock is introduced:
+        // constructing a new preview afterward would intentionally change
+        // the original intent's source fingerprint and must be rejected.
+        let fresh_before_lock=observed(&f);
         let repo=Repository::open(&f.root).unwrap();
         let branch=repo.head().unwrap().name().unwrap().to_owned();
         drop(repo);
         let branch_lock=f.root.join(".git").join(format!("{branch}.lock"));
         fs::write(&branch_lock,b"competing writer").unwrap();
         let verdict=f.registry.inspect_group6f_remote_restart(
-            &f.id,&private,&intent,&observed(&f)).unwrap();
+            &f.id,&private,&intent,&fresh_before_lock).unwrap();
         assert!(verdict.local_git_reconciliation_required);
         assert!(!verdict.automatic_retry_authorized);
+        assert!(!verdict.remote_publication_authorized);
         assert_eq!(fs::read(&branch_lock).unwrap(),b"competing writer");
+        let altered_source_evidence=observed(&f);
+        assert!(f.registry.inspect_group6f_remote_restart(
+            &f.id,&private,&intent,&altered_source_evidence).is_err());
     }
 
     #[test]fn foreign_remote_or_dirty_project_never_prepares_intent(){
