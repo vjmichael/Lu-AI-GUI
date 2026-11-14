@@ -34,7 +34,7 @@ impl SuspendedTargetLease{
  }
 }
 fn read_exact(pipe:HANDLE,out:&mut [u8],limit:Duration)->Result<(),SupervisorError>{
- if out.len()!=17&&out.len()!=5{return Err(denied());}
+ if out.len()!=17&&out.len()!=69{return Err(denied());}
  let deadline=Instant::now()+limit;
  loop{
   if Instant::now()>=deadline{return Err(denied());}
@@ -51,6 +51,7 @@ fn read_exact(pipe:HANDLE,out:&mut [u8],limit:Duration)->Result<(),SupervisorErr
 }
 pub(crate) fn prepare_original_target(
  pair:&IndependentScmPair,job_id:&str,plan:&JobPlan,
+ expected_image_sha:&str,expected_pdb_sha:&str,
 )->Result<SuspendedTargetLease,SupervisorError>{
  pair.reobserve()?;
  let until=Instant::now()+Duration::from_secs(8);
@@ -79,11 +80,26 @@ pub(crate) fn prepare_original_target(
       &mut written,ptr::null_mut())}==0||written!=packet.len() as u32{
   return Err(denied());
  }
- let mut reply=[0u8;5];
+ let mut reply=[0u8;69];
  read_exact(pipe.0,&mut reply,Duration::from_secs(20))?;
  if reply[0]!=b'S'{return Err(denied());}
  let observed=u32::from_le_bytes(reply[1..5].try_into().map_err(|_|denied())?);
  if observed==0{return Err(denied());}
+ // Both sealed native image and PDB digests are independently pinned by
+ // the debugger-service administrator, not chosen by the pipe sender.
+ for (sha,bytes) in [
+  (expected_image_sha,&reply[5..37]),
+  (expected_pdb_sha,&reply[37..69]),
+ ]{
+  if sha.len()!=64||!sha.bytes().all(|b|b.is_ascii_hexdigit()){
+   return Err(denied());
+  }
+  for (i,b) in bytes.iter().enumerate(){
+   if *b!=u8::from_str_radix(&sha[i*2..i*2+2],16).map_err(|_|denied())?{
+    return Err(denied());
+   }
+  }
+ }
  let lease=SuspendedTargetLease{pipe,os_observed_target_pid:observed};
  lease.reobserve(pair)?;
  Ok(lease)
