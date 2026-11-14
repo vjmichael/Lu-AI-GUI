@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "21554b4b6071b85b2d59ff4d521f2cefd19c54c3",
-  "trackedFileCount": 1006,
+  "sourceCommitBeforeLock": "a81e636badabf80db2ebe2badd2be777378248b2",
+  "trackedFileCount": 1007,
   "files": [
     {
       "path": ".github/pull_request_template.md",
@@ -402,6 +402,10 @@
     {
       "path": "benchmarks/e1/sec06c_browser_xauthority_contract.py",
       "blob": "af28a14df8d2124d98755a562334940b1cdcc856"
+    },
+    {
+      "path": "benchmarks/e1/sec06c_retired_guardian_denial.py",
+      "blob": "86502856b2e3ea4099425eb8886e118dbf51eadb"
     },
     {
       "path": "benchmarks/e1/sec06c_root_owned_systemd_boundary.py",
@@ -1949,7 +1953,7 @@
     },
     {
       "path": "lu-desktop/tests/p0-sec06-consolidated.test.mjs",
-      "blob": "5aabc7a344eb8634fb1a61d9895987c848c5c607"
+      "blob": "d389b4639ac1f39ce2105c2b6efb96f2990b180c"
     },
     {
       "path": "lu-desktop/tests/p03-ai-ops.test.mjs",
@@ -2333,7 +2337,7 @@
     },
     {
       "path": "scripts/p0-sec06-consolidated.mjs",
-      "blob": "0136960b83107c57e32f92f98a5ea856b56e62a0"
+      "blob": "fbae1afbeed800116859dc58b260a4780b8e8f18"
     },
     {
       "path": "scripts/p0-sec06-windows-owner-observation.ps1",
