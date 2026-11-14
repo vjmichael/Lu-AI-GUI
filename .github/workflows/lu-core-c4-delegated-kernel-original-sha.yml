@@ -52,9 +52,13 @@ jobs:
           ancestor=leaf/"cgroup.procs"
           assert ancestor.stat().st_uid!=os.geteuid(),"UNSAFE_SAME_USER_ANCESTOR"
           try:
-              with ancestor.open("w"): pass
+              # Match Lu's original OpenOptions::write(true) exactly:
+              # O_WRONLY without O_TRUNC, and NEVER write any PID.
+              fd=os.open(ancestor,os.O_WRONLY|os.O_CLOEXEC)
           except PermissionError: pass
-          else: raise RuntimeError("UNSAFE_WRITABLE_CGROUP_ANCESTOR")
+          else:
+              os.close(fd)
+              raise RuntimeError("UNSAFE_WRITABLE_CGROUP_ANCESTOR")
           test=leaf/("lu-c4-kernel-"+secrets.token_hex(12))
           test.mkdir()
           try:
