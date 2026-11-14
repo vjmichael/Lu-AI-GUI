@@ -421,6 +421,7 @@ test('SEC06 verifier rejects changed original native log with correct head and l
       'linux-root-owned-unit-guardian-stall',
       'linux-root-owned-unit-worker-stall',
       'linux-root-owned-unit-ancestor-migration',
+      'linux-retired-guardian-admission-denial',
       'linux-os-owned-git-syntax','linux-os-owned-probe-syntax',
       'linux-os-owned-kernel-manager-syntax',
       'linux-os-owned-reviewed-native-syntax',
@@ -736,6 +737,10 @@ test('SEC06C OS-owned original PIDFD stall scenarios require genuine systemd sub
   assert.match(native,/"nativeMainSigkill": scenario in \("worker-main-sigkill","guardian-death"\)/);
   assert.match(native,/if scenario in \("cancel","ancestor-migration"\)/);
   assert.match(native,/SEC06C_ANCESTOR_ESCAPE_SUCCEEDED/);
+  assert.match(sec06,/linux-retired-guardian-admission-denial/);
+  const retired=path('benchmarks/e1/sec06c_retired_guardian_denial.py');
+  assert.match(retired,/SEC06C_BLOCKED_UNSAFE_WRITABLE_ANCESTOR/);
+  assert.match(retired,/historical_cases_preserved=4/);
   assert.match(native,/"nativeSupervisorActuallyStalled": scenario=="guardian-stall"/);
   assert.match(native,/"nativeWorkerActuallyStalled": scenario=="worker-stall"/);
   assert.match(native,/"setsidDescendantReaped": True/);

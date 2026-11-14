@@ -144,7 +144,8 @@ function sourceCases(){
   ],{timeout:30000});
   if(platform()!=='win32'){
     doCase('linux-negative-python-syntax','python3',[
-      '-m','py_compile','benchmarks/e1/p0_sec02_linux_guardian_negative.py'
+      '-m','py_compile','benchmarks/e1/p0_sec02_linux_guardian_negative.py',
+      'benchmarks/e1/sec06c_retired_guardian_denial.py'
     ],{timeout:30000});
     doCase('linux-host-crash-python-syntax','python3',[
       '-m','py_compile','benchmarks/e1/agent01l_cgroup_escape_crash_acceptance.py'
@@ -278,6 +279,7 @@ if(mode==='verify'){
                  'linux-root-owned-unit-guardian-stall',
                  'linux-root-owned-unit-worker-stall',
                  'linux-root-owned-unit-ancestor-migration',
+                 'linux-retired-guardian-admission-denial',
                  'linux-os-owned-git-syntax','linux-os-owned-probe-syntax',
                  'linux-os-owned-kernel-manager-syntax',
                  'linux-os-owned-reviewed-native-syntax',
@@ -401,6 +403,18 @@ if(mode==='verify'){
                 mustReject:['SEC06C_ROOT_OWNED_BOUNDARY_BLOCKED']
               });
             }
+            // Keep unchanged historical SEC02/05 verifier cases BELOW.
+            // This independent negative demonstrates why retired same-UID
+            // admission cannot stand in for the NEW OS-owned positive tests.
+            doCase('linux-retired-guardian-admission-denial','python3',[
+              'benchmarks/e1/sec06c_retired_guardian_denial.py',
+              '--fixture',fixture,'--guard',helper,
+              '--expected-sha',currentHead
+            ],{
+              env,timeout:45000,
+              mustContain:['SEC06C_RETIRED_GUARDIAN_FAIL_CLOSED_NATIVE_PASS=1',
+                           'positive_root_owned_cgroup_still_required=1']
+            });
             doCase('linux-original-host-sigkill','python3',[
               'benchmarks/e1/agent01l_cgroup_escape_crash_acceptance.py',
               '--guard',helper,'--parent',crashHost
