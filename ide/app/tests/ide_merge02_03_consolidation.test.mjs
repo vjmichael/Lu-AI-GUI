@@ -56,3 +56,39 @@ test('IDE-MERGE-03 restored SCM Job WFP source is opt-in, native-only and no LLD
   assert.match(nativeMenu,/FIN04C4_AUTOMATED_APPROVAL_FORBIDDEN/);
   assert.match(nativeMenu,/run_fixed_after_visible_native_consent/);
 });
+
+test('IDE-MERGE-03 never accepts two Jobs from one SCM service as independent custody', () => {
+  const launcher=source('../../supervisor/src/windows_fin04w2_split_launcher.rs');
+  const targetSeal=source('../../supervisor/src/windows_fin04w2_target_seal.rs');
+  const principal=source('../../supervisor/src/windows_fin04w2_kernel.rs');
+  const security=source('../../supervisor/src/windows_service_security.rs');
+  const pair=source('../../supervisor/src/windows_fin04w2_scm_pair.rs');
+  const split=source('../../supervisor/src/windows_fin04w2_split.rs');
+  assert.doesNotMatch(launcher,/pub\(crate\) fn prepare_pair\(/);
+  assert.match(launcher,/inspect_current_target_service_principal\(\)/);
+  assert.match(launcher,/verify_target_job_kernel_acl\(kernel_job\)/);
+  assert.match(launcher,/verify_debugger_job_kernel_acl\(kernel_job\)/);
+  assert.match(principal,/LuIdeDebugTargetBroker/);
+  assert.match(principal,/create_bounded_empty_target_job\(/);
+  assert.match(security,/new_target_service_owned\(/);
+  assert.match(security,/verify_target_job_kernel_acl\(/);
+  assert.match(targetSeal,/LuIdeDebugTargetBroker/);
+  assert.doesNotMatch(targetSeal,/"LuIdeDebuggerBroker"/);
+  assert.match(pair,/OpenSCManagerW/);
+  assert.match(pair,/QueryServiceStatusEx/);
+  assert.match(pair,/restricted_service_token/);
+  assert.match(pair,/self\.debugger\.pid==self\.target\.pid/);
+  assert.match(split,/attest_external_debugger_worker/);
+  assert.match(split,/attest_service_held_appcontainer_target/);
+  assert.doesNotMatch(split,/attest_split_pair\(/);
+});
+test('IDE-MERGE-03 split source never grants LLDB or attach from the WebView', () => {
+  const web=source('../web/main.jsx');
+  const desktop=source('../src-tauri/src/lib.rs');
+  const supervisor=source('../../supervisor/src/lib.rs');
+  const cargo=source('../../supervisor/Cargo.toml');
+  assert.doesNotMatch(web,/invoke\('ide_fin04w2_split/);
+  assert.doesNotMatch(desktop,/async fn ide_fin04w2_split/);
+  assert.match(supervisor,/feature="fin04w2-split-native"/);
+  assert.match(cargo,/fin04w2-split-native = \["fin04w2-c2"\]/);
+});
