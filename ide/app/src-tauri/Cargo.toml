@@ -1,0 +1,80 @@
+[package]
+name = "lu-ide-desktop"
+version = "0.1.0-alpha.1"
+edition = "2021"
+rust-version = "1.90"
+publish = false
+license = "Apache-2.0"
+description = "Standalone desktop IDE, optionally interoperable with Lu"
+
+[features]
+default = []
+# FIN-02: explicit integrated source feature profile, NOT a released
+# worker package. No developer-only debugger actions or Windows uv Sync.
+# Build script refuses this profile without a fully remeasured LSP stage;
+# every native runner separately verifies installed resources and OS admission.
+fin02-protected-alpha = ["native-lsp", "native-multilang", "native-project-debug"]
+# FIN05 Linux-only package Sync: ALL reviewed uv+Python bytes required at
+# build-time, plus the existing delegated-cgroup/Bubblewrap one-use OS worker.
+# This is not an automatic install, dependency Add/Remove, or Windows ACL grant.
+fin02-linux-offline-uv = ["fin02-protected-alpha", "native-package-uv"]
+# Opt-in, pinned native Windows/Linux LSP host. Never enabled by default.
+# Windows requires the reviewed D7D SCM; Linux requires root-owned bundle,
+# root-owned bwrap and delegated kernel cgroup-v2, with no permissive fallback.
+native-lsp = ["dep:lu-ide-execution-supervisor", "lu-ide-execution-supervisor/lsp-transport", "lu-ide-execution-supervisor/protected-recovery-service", "lu-ide-execution-supervisor/linux-worker"]
+# WO6 opt-in protected build/test. Both native OS workers are linked only
+# behind this explicit feature and still require exact installed release pins.
+# Linux runs fixed root-owned Cargo under cgroup-v2/Bubblewrap; Windows runs
+# the same fixed Cargo recipes via restricted LocalService/AppContainer Job.
+native-build = ["dep:lu-ide-execution-supervisor", "lu-ide-execution-supervisor/linux-worker", "lu-ide-execution-supervisor/protected-recovery-service"]
+# Independent release opt-in. No Windows/GTK installer enables this without
+# offline reviewed runtime resources, exact compile-time hashes and native
+# protected-worker acceptance on both OSes.
+native-multilang = ["native-build", "lu-ide-execution-supervisor/multilang-worker"]
+# IDE-05.3: opt-in fixed offline uv sync. Default remains no package execution.
+# Requires reviewed bundled runtime + exact installer hashes + OS containment.
+native-package-uv = ["native-multilang", "lu-ide-execution-supervisor/package-uv-worker"]
+# WO6 opt-in native LLDB-DAP self-test. Reviewed adapter and fixed debuggee
+# must be embedded in an installer-pinned bundle; no PATH debugger allowed.
+native-debug = ["dep:lu-ide-execution-supervisor", "lu-ide-execution-supervisor/dap-transport", "lu-ide-execution-supervisor/linux-worker", "lu-ide-execution-supervisor/protected-recovery-service"]
+# DEV-04.4: separate, explicit opt-in for a source/receipt-bound user project.
+# Default release and the fixed LLDB self-test do not acquire this ability.
+native-project-debug = ["native-debug", "native-build"]
+# Release owner-event observation only: no debugger controls are exposed.
+# Build time must independently verify the exact first-party LLVM provenance.
+fin04-release-event-observer = ["fin02-protected-alpha", "lu-ide-execution-supervisor/fin04-release-owner-evidence"]
+# Windows DEBUG ONLY, default OFF; native owner-window menu and fixed harmless C2 service only.
+fin04w2-c4-desktop = ["native-build", "lu-ide-execution-supervisor/fin04w2-c2"]
+# D6D native human-dialog bridge for Windows DEV BUILDS ONLY.
+# This intentionally cannot be compiled into a release/signed installer yet.
+dev046d-native-dialog = ["native-project-debug", "lu-ide-execution-supervisor/dev046d-native-dialog"]
+# FIN03 experimental one-file restore: no release package enables this by default.
+fin03-reviewed-restore = []
+# Source candidate only; no released profile enables destructive stash mutation.
+fin03-reviewed-stash = []
+
+[build-dependencies]
+tauri-build = { version = "2.6.3", features = [] }
+sha2 = "0.10"
+serde_json = "1"
+
+[dependencies]
+tauri = { version = "=2.12.5", features = [] }
+tauri-plugin-dialog = "2.7.1"
+lu-ide-workspace = { path = "../../host" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+rand = "0.8"
+
+[target.'cfg(windows)'.dependencies]
+lu-ide-execution-supervisor = { path = "../../supervisor", optional = true }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+lu-ide-execution-supervisor = { path = "../../supervisor", optional = true }
+
+[profile.dev]
+debug = 0
+[profile.release]
+lto = "thin"
+strip = true

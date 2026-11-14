@@ -1,0 +1,83 @@
+name: IDE DEV03.5 protected Jobs lifecycle source and native admission
+on:
+  push:
+    branches: [ide/dev03-5-protected-job-lifecycle-20261108]
+  pull_request:
+    paths:
+      - 'ide/app/**'
+      - 'ide/host/**'
+      - '.github/workflows/ide-dev03-5-job-lifecycle-native.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: dev035-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  native-lifecycle-contract:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 85
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2022]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.16.0'
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+      - name: Native Linux Tauri prerequisites
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libgtk-3-dev patchelf libssl-dev
+      - name: Verify exact source and hostile UI lifecycle projections
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          node --test ide/app/tests/protected_job_lifecycle.test.mjs \
+            ide/app/tests/native_build_output.test.mjs \
+            ide/app/tests/job_progress.test.mjs \
+            ide/app/tests/conventional_tests.test.mjs
+      - name: Rust host registered-project discovery and native supervisor
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --manifest-path ide/host/Cargo.toml --test conventional_tests --locked
+          cargo test --manifest-path ide/supervisor/Cargo.toml --all-targets --locked
+      - name: Native Tauri build and cancellation/recovery regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --manifest-path ide/app/src-tauri/Cargo.toml --features native-build --lib --locked dev035_native_lifecycle_tests
+          cargo check --manifest-path ide/app/src-tauri/Cargo.toml --features native-build --all-targets --locked
+      - name: Validate real installed acceptance fixture syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            pwsh -NoProfile -Command '$tokens=$null;$errors=$null;[void][System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path "ide/app/fixtures/Test-Wo8NativeDesktopUI.ps1").Path,[ref]$tokens,[ref]$errors); if ($errors.Count) {throw $errors[0]}'
+          else
+            python3 -m py_compile ide/app/fixtures/dev035_jobs_installed_atspi.py
+          fi
+      - name: Explicit acceptance boundary
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p .dev035-evidence
+          printf 'sha=%s\nos=%s\nsource_lifecycle=check_job_result\nprotected_job_stream_e2e=NEEDS_WO6_D7_NATIVE_OS_PASS\ninstalled_app_jobs_readonly=NEEDS_WO8_INSTALLED_OS_PASS\ninstalled_protected_cancel_recovery=OPEN\n' \
+            "$GITHUB_SHA" "$RUNNER_OS" > .dev035-evidence/status.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: dev035-native-${{ matrix.os }}
+          path: .dev035-evidence/status.txt
+          retention-days: 14
+          if-no-files-found: error

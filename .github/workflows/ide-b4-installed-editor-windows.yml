@@ -1,0 +1,198 @@
+name: IDE B4 real installed Windows split CodeMirror panes
+on:
+  push:
+    branches: ['ide/b4-split-editor-current-stack-20261108']
+  pull_request:
+    paths:
+      - 'ide/app/**'
+      - 'ide/docs/IDE_WORK_ORDER_08_INSTALLED_E2E_20261107.md'
+      - '.github/workflows/ide-b4-installed-editor-windows.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  installed-unsigned-native-ui:
+    runs-on: windows-2022
+    timeout-minutes: 85
+    env:
+      CARGO_INCREMENTAL: 0
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+      - name: Prove exact source checkout before installed build
+        shell: pwsh
+        run: |
+          if ((git rev-parse HEAD).Trim() -ine '${{ github.event.pull_request.head.sha || github.sha }}') {
+            throw 'DENIED: installed Windows source checkout is not exact pull-request head'
+          }
+      - name: Validate frontend and Rust host contract
+        working-directory: ide/app
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm run check
+      - name: Fetch resolved Cargo sources and embed third-party license notices
+        shell: pwsh
+        env:
+          SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          $ErrorActionPreference='Stop'
+          cargo fetch --locked --manifest-path ide/app/src-tauri/Cargo.toml
+          python ide/packaging/verify_p06_candidate_lock.py --repo-root . --platform windows-2022
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: installer resolved lock graph differs from reviewed OS evidence' }
+          npm ci --prefix ide/app --ignore-scripts --no-audit --no-fund
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: npm locked install failed' }
+          cargo fetch --locked --manifest-path ide/app/src-tauri/Cargo.toml
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: Cargo locked resolution failed' }
+          python ide/packaging/verify_p06_candidate_lock.py --repo-root . --platform windows-2022
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: locked reinstall changed OS dependency graph' }
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: cannot resolve native dependency license sources' }
+          python ide/packaging/verify_tauri_minor.py --repo-root .
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: resolved Tauri minor mismatch' }
+          python ide/packaging/upstream_notice_receipt.py --repo-root . --source-sha $env:SOURCE_SHA --output ide/app/src-tauri/upstream-notice-receipt.json
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: upstream licenses not retrieved from exact origins' }
+          python ide/packaging/collect_verification_licenses.py --repo-root . --output ide/app/src-tauri/verification-notices --source-sha $env:SOURCE_SHA --upstream-receipt ide/app/src-tauri/upstream-notice-receipt.json
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: third-party verification licenses not generated' }
+          Write-Host 'P04_UNSIGNED_INSTALLER_LICENSES=ACTUAL_RESOLVED_NOTICES_BUNDLED_NO_RELEASE_APPROVAL'
+      - name: Build real default-disabled unsigned Windows NSIS
+        working-directory: ide/app
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          npx --yes @tauri-apps/cli@2.12.4 build --config src-tauri/tauri.installed-smoke.conf.json --bundles nsis
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: real installed E2E NSIS build failed' }
+      - name: Verify all collected legal bytes against exact unsigned NSIS hash
+        shell: pwsh
+        env:
+          SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          $ErrorActionPreference='Stop'
+          $setup=@(Get-ChildItem 'ide/app/src-tauri/target/release/bundle/nsis' -Filter '*setup.exe' -File)
+          if ($setup.Count -ne 1) { throw 'DENIED: exact verified NSIS candidate required' }
+          python ide/packaging/verify_p04_license_bundle.py --license-root ide/app/src-tauri/verification-notices --source-sha $env:SOURCE_SHA --require-upstream --artifact $setup[0].FullName --receipt ide/app/src-tauri/verification-package-receipt.json
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: packaged Windows licenses do not match source and installer hash' }
+      - name: Attach unsigned Windows NSIS and matching resolved license bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: lu-ide-p04-windows-unsigned-verification
+          path: |
+            ide/app/src-tauri/target/release/bundle/nsis/*setup.exe
+            ide/app/src-tauri/verification-notices/**
+            ide/app/src-tauri/verification-package-receipt.json
+          if-no-files-found: error
+          retention-days: 7
+      - name: Parse real Windows UI acceptance fixture without executing it
+        shell: pwsh
+        run: |
+          $tokens=$null; $errors=$null
+          [void][System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path 'ide/app/fixtures/Test-Wo8NativeDesktopUI.ps1').Path,[ref]$tokens,[ref]$errors)
+          if ($errors.Count) { throw "DENIED: native acceptance fixture has invalid PowerShell: $($errors[0])" }
+      - name: Install actual unsigned NSIS, edit both native CodeMirror views, verify isolated writes, uninstall
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $setups=@(Get-ChildItem 'ide/app/src-tauri/target/release/bundle/nsis' -Filter '*setup.exe' -File)
+          if ($setups.Count -ne 1) { throw 'DENIED: real B4 installed UI requires one exact NSIS' }
+          $root=Join-Path $env:RUNNER_TEMP ('lu-ide-b4-installed-'+$env:GITHUB_RUN_ID)
+          $fixture=Join-Path $env:RUNNER_TEMP ('lu-ide-b4-editor-'+$env:GITHUB_RUN_ID)
+          if (Test-Path -LiteralPath $root) {throw 'DENIED: preexisting B4 install'}
+          New-Item -ItemType Directory -Path $fixture | Out-Null
+          [IO.File]::WriteAllText((Join-Path $fixture 'main.rs'),'fn main(){ println!("b4 main"); }')
+          [IO.File]::WriteAllText((Join-Path $fixture 'second.rs'),'pub fn second(){ println!("b4 second"); }')
+          $installed=$false
+          $removed=$false
+          try {
+            $process=Start-Process -FilePath $setups[0].FullName -ArgumentList @('/S',('/D='+$root)) -Wait -PassThru
+            if($process.ExitCode -ne 0){throw 'DENIED: B4 real NSIS install failed'}
+            $installed=$true
+            $exe=Join-Path $root 'lu-ide-desktop.exe'
+            if (!(Test-Path -LiteralPath $exe -PathType Leaf)){
+              throw 'DENIED: installed B4 desktop executable missing'
+            }
+            if (!(Test-Path -LiteralPath (Join-Path $root 'THIRD_PARTY_LICENSES\inventory.json'))) {
+              throw 'DENIED: installed B4 license notice inventory absent'
+            }
+            $sha=(Get-FileHash -Algorithm SHA256 -LiteralPath $exe).Hash
+            & 'ide/app/fixtures/Test-Wo8NativeDesktopUI.ps1' -InstalledExecutable $exe -ExpectedSha256 $sha -Scenario B4SplitEditor -FixtureRoot $fixture
+            if (!$?) {throw 'DENIED: OS UI Automation two-pane CodeMirror editing failed'}
+            $main=[IO.File]::ReadAllText((Join-Path $fixture 'main.rs'))
+            $second=[IO.File]::ReadAllText((Join-Path $fixture 'second.rs'))
+            if (!$main.Contains('B4_SECONDARY_ONLY') -or
+                !$second.Contains('B4_PRIMARY_ONLY')) {
+              throw 'DENIED: independently saved native split editor source missing'
+            }
+            # Reuse this same genuinely installed, license-verified NSIS.
+            # Real OS WebView2 UI + 48 files + OS child-process RSS and timings.
+            $perfFixture=Join-Path $env:RUNNER_TEMP ('lu-ide-b5-perf-'+$env:GITHUB_RUN_ID)
+            New-Item -ItemType Directory -Path $perfFixture | Out-Null
+            for($i=0;$i -lt 48;$i++) {
+              $leaf=if($i -eq 0){'main.rs'}else{'p{0:D2}.rs' -f ($i-1)}
+              $marker=if($i -eq 0){'main'}else{'p{0:D2}' -f ($i-1)}
+              $many=if($i -eq 0 -or $i%4 -eq 0){3000}else{80}
+              $line="// B5_SOURCE_$marker native editor benchmark bytes, never execute this source`n"
+              [IO.File]::WriteAllText((Join-Path $perfFixture $leaf),($line*$many),
+                [Text.UTF8Encoding]::new($false))
+            }
+            [IO.File]::WriteAllText((Join-Path $perfFixture 'p47.rs'),
+              "// B5_SOURCE_p47 must be denied as tab 49`n")
+            $metricFile=Join-Path $env:RUNNER_TEMP 'ide-b5-windows-installed-performance.json'
+            $env:B5_EXACT_CHECKOUT_SHA=(git rev-parse HEAD).Trim()
+            & pwsh -NoProfile -Sta -File 'ide/app/fixtures/Test-Wo8NativeDesktopUI.ps1' `
+              -InstalledExecutable $exe -ExpectedSha256 $sha `
+              -Scenario B5LargeProject -FixtureRoot $perfFixture `
+              -MetricsFile $metricFile
+            if ($LASTEXITCODE -ne 0) {
+              throw 'DENIED: installed B5 OS UI/memory/latency measurement failed'
+            }
+            if (!(Test-Path -LiteralPath $metricFile -PathType Leaf)) {
+              throw 'DENIED: installed B5 performance evidence file missing'
+            }
+            $actual=Get-Content -LiteralPath $metricFile -Raw | ConvertFrom-Json
+            if ($actual.schemaVersion -ne 1 -or
+                $actual.sourceCommit -cne $env:B5_EXACT_CHECKOUT_SHA -or
+                $actual.openRoundTripMs.Count -ne 47 -or
+                $actual.switchRoundTripMs.Count -ne 12 -or
+                $actual.memorySamples.Count -lt 6 -or
+                $actual.rssPeakObservedBytes -le 0 -or
+                !$actual.noImplicitSaveVerified -or
+                !$actual.bounded49thDenial -or
+                !$actual.explicitSaveVerified) {
+              throw 'DENIED: installed B5 memory and interaction sample incomplete'
+            }
+            Write-Host 'B5_WINDOWS_INSTALLED_OS_MEMORY_LOADING_INTERACTION=MEASURED_NOT_APPROVED'
+            $uninstallers=@(Get-ChildItem -LiteralPath $root -Filter '*uninstall*.exe' -File)
+            if ($uninstallers.Count -ne 1) {throw 'DENIED: real NSIS uninstaller missing'}
+            $done=Start-Process -FilePath $uninstallers[0].FullName -ArgumentList '/S' -Wait -PassThru
+            if ($done.ExitCode -ne 0 -or (Test-Path -LiteralPath $exe)) {
+              throw 'DENIED: B4 installed desktop uninstall not completed'
+            }
+            $removed=$true
+            Write-Host 'B4_REAL_INSTALLED_WINDOWS_TWO_PANE_SAVE_UNINSTALL=PASS'
+            Write-Host 'B4_SIGNED_RELEASE_AND_PROTECTED_WORKER=NOT_ACCEPTED'
+          } finally {
+            if ($installed -and !$removed) {
+              Write-Warning 'B4 installed acceptance incomplete; native uninstaller cleanup attempted'
+              $uninstallers=@(Get-ChildItem -LiteralPath $root -Filter '*uninstall*.exe' -File -ErrorAction SilentlyContinue)
+              foreach ($item in $uninstallers) {
+                try {Start-Process -FilePath $item.FullName -ArgumentList '/S' -Wait | Out-Null} catch {}
+              }
+            }
+          }
+
+      - name: Publish exact-head measured Windows WebView2 installed-editor OS receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ide-b5-windows-real-installed-editor-performance
+          path: ${{ runner.temp }}/ide-b5-windows-installed-performance.json
+          if-no-files-found: warn
+          retention-days: 7

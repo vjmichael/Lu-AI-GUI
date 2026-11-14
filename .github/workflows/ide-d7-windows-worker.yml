@@ -1,0 +1,44 @@
+name: IDE D7 Windows native production worker source checks
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'ide/supervisor/**'
+      - '.github/workflows/ide-d7-windows-worker.yml'
+  # No push micro-jobs on active IDE feature branches. The IDE-05 grouped
+  # native matrix runs at the task-group boundary. Keep PR/manual legacy gates.
+
+permissions:
+  contents: read
+
+# Keep only the newest exact PR-head OS acceptance run while older heads are superseded.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows-worker:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Compile native Windows worker feature
+        run: cargo check --manifest-path ide/supervisor/Cargo.toml --features windows-worker --all-targets
+      - name: Run supervisor and Windows worker unit tests
+        if: always()
+        run: cargo test --manifest-path ide/supervisor/Cargo.toml --features windows-worker
+      - name: Require exact Rust formatting
+        if: always()
+        run: cargo fmt --manifest-path ide/supervisor/Cargo.toml -- --check
+      - name: Assert production worker not exposed to Tauri
+        shell: pwsh
+        run: |
+          $src = Get-Content ide/app/src-tauri/src/lib.rs -Raw
+          if ($src -match 'execute_windows_worker|ide_run_job|ide_launch_worker|ide_execute_job') {
+            throw 'D7 worker must not be exposed before native OS acceptance'
+          }
+          $manifest = Get-Content ide/supervisor/Cargo.toml -Raw
+          if ($manifest -notmatch 'windows-worker = \[\]') { throw 'Explicit feature gate missing' }
+          Write-Host 'Windows worker isolated from installed desktop'

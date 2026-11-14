@@ -1,0 +1,98 @@
+name: IDE DEV-02.2 protected Rust Python C++ LSP native matrix
+on:
+  push:
+    branches: ['ide/dev02-protected-multilang-20261108']
+    paths:
+      - 'ide/app/**'
+      - 'ide/supervisor/**'
+      - 'ide/host/**'
+      - 'ide/packaging/**'
+      - '.github/workflows/ide-dev02-protected-multilang-native-ci.yml'
+  pull_request:
+    paths:
+      - 'ide/app/**'
+      - 'ide/supervisor/**'
+      - 'ide/host/**'
+      - 'ide/packaging/**'
+      - '.github/workflows/ide-dev02-protected-multilang-native-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  exact-head-frontend-native-host:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2022, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    env:
+      CARGO_INCREMENTAL: 0
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+          components: rustfmt
+      - name: Source pin/lock and unmodified manifest policy
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          test "$(git rev-parse HEAD:ide/app/package-lock.json)" = "dfe4412bfacfc22ad1149f5213f4a26aa49b4067"
+          test "$(git rev-parse HEAD:ide/app/src-tauri/Cargo.lock)" = "87d0045a4be1c78651f080300aba71c14dbe1f30"
+          python3 ide/packaging/verify_language_servers.py
+          if python3 ide/packaging/verify_language_servers.py --release; then
+            echo 'DENIED: unapproved LSP binary manifest was accepted for release'
+            exit 3
+          fi
+      - name: Install native Linux WebKit and development dependencies
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf libssl-dev libgtk-3-dev
+      - name: Genuine frontend build, all editor tests and capability proofs
+        working-directory: ide/app
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm run check
+      # Host and supervisor are independent Cargo projects without committed
+      # Cargo.lock. Only the Tauri installer graph has a reviewed immutable lock.
+      - name: Host LSP session and cross-platform containment source regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --manifest-path ide/host/Cargo.toml --all-targets
+          cargo test --manifest-path ide/supervisor/Cargo.toml --features 'lsp-transport,protected-recovery-service,linux-worker' --lib
+      - name: Compile actual Tauri native-lsp feature on this OS
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo check --manifest-path ide/app/src-tauri/Cargo.toml --features native-lsp --all-targets --locked
+          cargo test --manifest-path ide/app/src-tauri/Cargo.toml --features native-lsp --lib --locked
+      - name: Offline Linux approved-asset staging hostile tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s ide/packaging -p 'test_stage_linux_language_server_release.py' -v
+      - name: Source acceptance is NOT live OS LSP execution
+        shell: bash
+        run: |
+          echo 'DEV02_PROTECTED_MULTILANG_NATIVE_SOURCE=PASS'
+          echo 'DEV02_DEFAULT_LSP_EXECUTION=DISABLED'
+          echo 'DEV02_PROTECTED_WIN_LINUX_INSTALLED_EXECUTION=NOT_ACCEPTED'
+          echo 'DEV02_PYTHON_SEMANTIC_PYRIGHT=NOT_APPROVED'
+          echo 'DEV02_RELEASE_ASSET_AND_LEGAL=NOT_APPROVED'

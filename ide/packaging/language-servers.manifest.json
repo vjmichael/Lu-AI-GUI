@@ -1,0 +1,89 @@
+{
+  "schema": "lu.ide.lsp.bundle.v1",
+  "description": "Installer candidate inventory only. No binary is bundled or approved by this manifest.",
+  "autoInstallOnProjectOpen": false,
+  "allowUnpinnedExecutables": false,
+  "releaseApproved": false,
+  "servers": [
+    {
+      "id": "rust-analyzer",
+      "category": "native",
+      "mode": "planned",
+      "licenseExpression": "MIT OR Apache-2.0",
+      "noticeUpstream": "https://github.com/rust-lang/rust-analyzer",
+      "dependencies": [],
+      "releaseVersion": null,
+      "assetByPlatform": {},
+      "sha256ByPlatform": {},
+      "licenseNoticeFiles": [],
+      "copyrightReviewed": false,
+      "dependenciesAudited": false
+    },
+    {
+      "id": "clangd",
+      "category": "native",
+      "mode": "planned",
+      "licenseExpression": "Apache-2.0 WITH LLVM-exception",
+      "noticeUpstream": "https://github.com/llvm/llvm-project",
+      "dependencies": [
+        "LLVM runtime libraries"
+      ],
+      "releaseVersion": null,
+      "assetByPlatform": {},
+      "sha256ByPlatform": {},
+      "licenseNoticeFiles": [],
+      "copyrightReviewed": false,
+      "dependenciesAudited": false
+    },
+    {
+      "id": "ruff",
+      "category": "native",
+      "mode": "planned",
+      "licenseExpression": "MIT",
+      "noticeUpstream": "https://github.com/astral-sh/ruff",
+      "dependencies": [],
+      "releaseVersion": null,
+      "assetByPlatform": {},
+      "sha256ByPlatform": {},
+      "licenseNoticeFiles": [],
+      "copyrightReviewed": false,
+      "dependenciesAudited": false
+    },
+    {
+      "id": "pyright",
+      "category": "node",
+      "mode": "deferred",
+      "offlineStandaloneReviewed": false,
+      "licenseExpression": "MIT",
+      "noticeUpstream": "https://github.com/microsoft/pyright",
+      "dependencies": [
+        "Node.js runtime",
+        "transitive npm dependencies"
+      ],
+      "releaseVersion": null,
+      "assetByPlatform": {},
+      "sha256ByPlatform": {},
+      "licenseNoticeFiles": [],
+      "copyrightReviewed": false,
+      "dependenciesAudited": false
+    },
+    {
+      "id": "typescript-language-server",
+      "category": "node",
+      "mode": "deferred",
+      "licenseExpression": "MIT AND Apache-2.0",
+      "noticeUpstream": "https://github.com/typescript-language-server/typescript-language-server",
+      "dependencies": [
+        "Node.js runtime",
+        "TypeScript compiler",
+        "transitive npm dependencies"
+      ],
+      "releaseVersion": null,
+      "assetByPlatform": {},
+      "sha256ByPlatform": {},
+      "licenseNoticeFiles": [],
+      "copyrightReviewed": false,
+      "dependenciesAudited": false
+    }
+  ]
+}

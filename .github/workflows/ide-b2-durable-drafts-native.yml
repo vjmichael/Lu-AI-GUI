@@ -1,0 +1,78 @@
+name: IDE B2 durable private draft recovery native Windows Linux
+on:
+  push:
+    branches: ['ide/b2-persistent-draft-recovery-20261108']
+  pull_request:
+    paths:
+      - 'ide/host/**'
+      - 'ide/app/**'
+      - 'ide/docs/IDE_B2_DURABLE_DRAFTS_20261108.md'
+      - '.github/workflows/ide-b2-durable-drafts-native.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  exact-source-native-draft-recovery:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2022,ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    env:
+      CARGO_INCREMENTAL: 0
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+          components: rustfmt
+      - name: Verify immutable Tauri and npm release locks and no approved LSP
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          test "$(git rev-parse HEAD:ide/app/package-lock.json)" = "dfe4412bfacfc22ad1149f5213f4a26aa49b4067"
+          test "$(git rev-parse HEAD:ide/app/src-tauri/Cargo.lock)" = "87d0045a4be1c78651f080300aba71c14dbe1f30"
+          python3 ide/packaging/verify_language_servers.py
+          if python3 ide/packaging/verify_language_servers.py --release; then
+            echo 'DENIED: draft recovery source cannot approve LSP redistribution'
+            exit 3
+          fi
+      - name: Install Linux Tauri/WebKit native libraries
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf libssl-dev libgtk-3-dev
+      - name: Compile and execute genuine native private draft vault Rust tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --manifest-path ide/host/Cargo.toml --all-targets
+          echo B2_NATIVE_DURABLE_RESTART_CAS_TAMPER_SYMLINK_TESTS=PASS
+      - name: Run full real current CodeMirror frontend and typed schema suite
+        shell: bash
+        working-directory: ide/app
+        run: |
+          set -euo pipefail
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm run check
+          echo B2_PRIVATE_DRAFT_REFERENCE_AND_EDITOR_FRONTEND=PASS
+      - name: Compile exact current native Tauri release graph
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo check --manifest-path ide/app/src-tauri/Cargo.toml --locked --all-targets
+          echo B2_NATIVE_HOST_TAURI_PRIVATE_DRAFT_COMMANDS=PASS
+          echo B2_INSTALLED_NSYS_DEBIAN_EDITOR_ACCEPTANCE=OPEN

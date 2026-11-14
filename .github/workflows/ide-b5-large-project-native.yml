@@ -1,0 +1,106 @@
+name: IDE B5 bounded large-project editor working-set Windows Linux
+on:
+  push:
+    branches: ['ide/b5-large-project-editor-working-set-20261108']
+  pull_request:
+    paths:
+      - 'ide/app/**'
+      - 'ide/host/**'
+      - 'ide/docs/IDE_B5_LARGE_PROJECT_WORKING_SET_20261108.md'
+      - '.github/workflows/ide-b5-large-project-native.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  real-native-editor-bounded-workingset:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2022, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    env:
+      CARGO_INCREMENTAL: 0
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+      - name: Check exact B4 parent and prevent unrelated host/worker authority changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          B4_PARENT=93e8fad1fa48478e31ffebb62c89d6f1d0c3a2ed
+          git merge-base --is-ancestor "$B4_PARENT" HEAD
+          if ! git diff --quiet "$B4_PARENT" HEAD -- ide/host ide/supervisor ide/app/src-tauri ide/packaging; then
+            echo 'DENIED: performance-only B5 cannot expand reviewed native project/file/worker authority'
+            exit 2
+          fi
+          python3 ide/packaging/verify_tauri_minor.py --repo-root .
+          python3 ide/packaging/verify_language_servers.py
+          if python3 ide/packaging/verify_language_servers.py --release; then
+            echo 'DENIED: source editing must not enable unreviewed language-server redistribution'
+            exit 3
+          fi
+      - name: Install exact native Linux Tauri prerequisites
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf libssl-dev libgtk-3-dev
+      - name: Compile real installed Linux measurement fixture and shell wrapper
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile ide/app/fixtures/b5_linux_installed_perf_atspi.py
+          bash -n ide/app/fixtures/Test-B4InstalledDeb.sh
+          grep -q 'rssPeakObservedBytes' ide/app/fixtures/b5_linux_installed_perf_atspi.py
+          echo B5_LINUX_OS_MEASUREMENT_FIXTURE_SYNTAX=PASS
+      - name: Parse real Windows UIA/STA measurement fixture
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $tokens=$null; $errors=$null
+          [void][System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path 'ide/app/fixtures/Test-Wo8NativeDesktopUI.ps1').Path,
+            [ref]$tokens,[ref]$errors)
+          if($errors.Count){
+            throw "B5 real installed Windows UIA/metrics fixture parsing denied: $($errors[0])"
+          }
+          Write-Host B5_WINDOWS_OS_MEASUREMENT_FIXTURE_SYNTAX=PASS
+      - name: Build actual bundled UI and execute current CodeMirror / B2 / B3 / B4 / B5 tests
+        shell: bash
+        working-directory: ide/app
+        run: |
+          set -euo pipefail
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm run check
+          echo B5_NATIVE_LARGE_PROJECT_BOUNDED_48_TABS_AND_120_TREE_ENTRIES=PASS
+      - name: Benchmark actual Node 22 pure large tab-window logic, do not invent physical GUI metrics
+        shell: bash
+        working-directory: ide/app
+        run: |
+          set -euo pipefail
+          node --test tests/editor_working_set.test.mjs
+          echo B5_NODE_10000_SYNTHETIC_TAB_WINDOW_BENCHMARK_REPORTED=PASS
+          echo B5_REAL_INSTALLED_WINDOWS_LINUX_INTERACTIVE_MEMORY_LATENCY_ACCEPTANCE=OPEN
+      - name: Compile and test current native source browser and exact locked Tauri frontend
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --manifest-path ide/host/Cargo.toml --all-targets
+          cargo check --manifest-path ide/app/src-tauri/Cargo.toml --all-targets --locked
+          echo B5_NATIVE_HOST_AND_TAURI_SOURCE=PASS

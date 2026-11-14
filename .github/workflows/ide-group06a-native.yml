@@ -1,0 +1,103 @@
+# Group 6A-01/02/05/06/07: ONE exact-head Windows/Linux native source acceptance group.
+# Commit-bound: tests include local file blame, redacted refs and repository health.
+# No Git mutation, installed GUI proof or owner/operator approval is claimed.
+name: IDE Group 6A native branch and worktree inventory (not release)
+on:
+  push:
+    branches: [ide/group06a-git-repository-audit-20261110]
+    paths:
+      - '.github/workflows/ide-group06a-native.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ide-g06a-native-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  native-inventory:
+    name: Exact SHA Rust host, Node boundary and Tauri / ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2022]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 80
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 0 # ancestry check requires the full local commit chain
+      - name: Exact checked-out SHA
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          git merge-base --is-ancestor 2f1509f641d0f526c8185601057940b449a66605 HEAD
+          echo "IDE_G06A_EXACT_SOURCE=$GITHUB_SHA"
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+          components: rustfmt
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.16.0'
+      - name: Linux Tauri development libraries
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev libayatana-appindicator3-dev \
+            librsvg2-dev libgtk-3-dev patchelf libssl-dev
+      - name: Read-only Git boundary tests and frontend
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd ide/app
+          npm ci --ignore-scripts --no-audit --no-fund
+          node --test tests/g06a_git_repository_inventory.test.mjs
+          npm run build
+      - name: Real Rust host branch and linked-worktree tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --manifest-path ide/host/Cargo.toml --lib git_inventory
+          cargo test --manifest-path ide/host/Cargo.toml --all-targets
+          cargo fmt --manifest-path ide/host/Cargo.toml -- --check
+          echo IDE_G06A_GIT_INVENTORY_HOST=PASS
+      - name: Operator harness syntax (never execute human acceptance in CI)
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n ide/app/fixtures/Test-G06A-PhysicalLinuxGitInventory.sh
+          if [ "$RUNNER_OS" = Windows ]; then
+            powershell.exe -NoProfile -Command "`$tokens=`$null; `$errors=`$null; [System.Management.Automation.Language.Parser]::ParseFile('ide/app/fixtures/Test-G06A-PhysicalWindowsGitInventory.ps1', [ref]`$tokens, [ref]`$errors) | Out-Null; if (`$errors.Count -ne 0) { exit 1 }"
+          fi
+      - name: Native Tauri route compiles on this platform
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "$RUNNER_OS" = Windows ]; then
+            # The installed release icon is NOT replaced; this fixture
+            # creates only a deterministic temporary headless CI resource.
+            python ide/app/fixtures/make_g04d_ci_icon.py
+          fi
+          cargo check --locked --manifest-path ide/app/src-tauri/Cargo.toml --all-targets
+          echo IDE_G06A_NATIVE_TAURI=COMPILED_NOT_INSTALLED
+      - name: Source receipt (not operator acceptance)
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p .ide-g06a-receipts
+          printf 'sha=%s\nos=%s\nrun=%s\ninstalled_operator=OPEN\nlinked_external_access=DENIED\ngit_mutations=NOT_EXPOSED\n' \
+            "$GITHUB_SHA" "$RUNNER_OS" "$GITHUB_RUN_ID" > .ide-g06a-receipts/native.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ide-g06a-${{ matrix.os }}-${{ github.sha }}
+          path: .ide-g06a-receipts/
+          retention-days: 30
+          if-no-files-found: error
+          include-hidden-files: true

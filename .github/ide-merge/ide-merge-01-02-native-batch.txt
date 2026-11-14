@@ -1,0 +1,8 @@
+IDE-MERGE-01/02 project-search private-trash source-convergence batch
+Reconciled original run #43635766693: 4/4 exact-head native jobs PASS
+Original source head: f3d1e0f2033d78477d24750b84f1ea7bd7f3ed33
+No original native failures. New source-only cross-feature regression:
+P05 saved-text project search must reuse modern Quick Open private
+.lu-ide-* and casefolded generated-folder denial, including .lu-ide-trash.
+Retain original 4-job matrix, preserve installed/physical release gates.
+This marker selects ONE final source SHA for grouped Windows/Linux CI.

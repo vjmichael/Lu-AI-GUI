@@ -1,0 +1,93 @@
+# FIN-03 / 6E-05A: one coherent native read-only remote publication gate.
+# No GitHub credentials, remote writes, native consent simulation, install
+# or release authority. Exact source identity and original host fixture only.
+name: IDE FIN-03 6E-05 native publication preflight
+on:
+  pull_request:
+    paths:
+      - 'ide/host/**'
+      - 'ide/app/tests/fin03e05_remote_preflight.test.mjs'
+      - 'ide/docs/IDE_FIN03E05_REMOTE_PUBLICATION_PREFLIGHT.md'
+      - '.github/workflows/ide-fin03-6e05-native.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ide-fin03-6e05-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  native-registered-origin:
+    name: exact source and native host (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2022]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Exact source SHA
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          echo "FIN03_6E05_EXACT_SOURCE=VERIFIED"
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+      - name: Linux Secret Service build headers for optional native vault
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq pkg-config libdbus-1-dev libssl-dev
+      - name: Native read-only Git origin/index and hostile fixtures
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --manifest-path ide/host/Cargo.toml --lib github_remote_publication -- --nocapture
+          cargo test --manifest-path ide/host/Cargo.toml --lib github_remote_live_policy -- --nocapture
+          cargo test --manifest-path ide/host/Cargo.toml --lib github_remote_publication_intent -- --nocapture
+          cargo test --manifest-path ide/host/Cargo.toml --lib git_security_recovery_matrix -- --nocapture
+          cargo test --manifest-path ide/host/Cargo.toml --lib github_remote_native_consent -- --nocapture
+          # Compile native OS credential-manager integration explicitly;
+          # no account token is provisioned, invoked, echoed or mocked.
+          cargo test --manifest-path ide/host/Cargo.toml --features fin03-native-vault --lib github_remote_live_policy -- --nocapture
+          # Force compilation of the *actual* Windows Credential Manager or
+          # Linux Secret Service adapter, not just an empty cfg feature.
+          cargo check --manifest-path ide/host/Cargo.toml --features fin03-native-vault --example fin03_live_vault_probe
+          echo "FIN03_6E05B_REAL_OS_VAULT_TYPE_COMPILED=PASS_NO_CREDENTIALS_READ"
+          cargo test --manifest-path ide/host/Cargo.toml --features fin03-native-vault --lib github_remote_publication_intent -- --nocapture
+          cargo test --manifest-path ide/host/Cargo.toml --features fin03-native-vault --lib git_security_recovery_matrix -- --nocapture
+          echo "IDE_GROUP6F_FOUR_ORIGINAL_NATIVE_GIT_RECOVERY_INSPECTORS=SOURCE_TESTED_NO_OS_APPROVAL"
+
+          # Group 6F: re-run original independent Git security/recovery
+          # fixtures UNCHANGED. The new cross-domain gate is not accepted
+          # solely because its own source-pattern tests pass.
+          cargo test --manifest-path ide/host/Cargo.toml --lib git_reviewed_commit -- --nocapture
+          cargo test --manifest-path ide/host/Cargo.toml --lib git_protected_merge -- --nocapture
+          cargo test --manifest-path ide/host/Cargo.toml --lib git_protected_divergent_merge -- --nocapture
+          cargo test --manifest-path ide/host/Cargo.toml --lib git_protected_replay -- --nocapture
+          cargo test --manifest-path ide/host/Cargo.toml --lib git_partial_stage -- --nocapture
+          cargo test --manifest-path ide/host/Cargo.toml --lib git_conflict_resolution -- --nocapture
+          cargo test --manifest-path ide/host/Cargo.toml --lib git_reviewed_unstage -- --nocapture
+          cargo test --manifest-path ide/host/Cargo.toml --lib git_reviewed_restore -- --nocapture
+          cargo test --manifest-path ide/host/Cargo.toml --lib git_reviewed_stash_save -- --nocapture
+          echo "G06F_NINE_ORIGINAL_NATIVE_GIT_RECOVERY_FIXTURE_GROUPS=PASS"
+          echo "FIN03_6E05C_OFFLINE_INTENT_FSYNC_RESTART_DENIAL=SOURCE_TESTED_NO_REMOTE_WRITE"
+          echo "FIN03_6E05_NATIVE_OS_VAULT_COMPILE_AND_HOSTILE_FIXTURES=PASS"
+          echo "FIN03_6E05_ORIGINAL_NATIVE_PREVIEW_AND_SIX_READ_POLICY_FIXTURES=PASS"
+          echo "FIN03_6E05_REMOTE_MUTATION_AND_OS_CONSENT=NOT_TESTED"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: No remote write or credential UI route
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --test ide/app/tests/fin03e05_remote_preflight.test.mjs
+          echo "FIN03_6E05_NO_EXECUTION_SURFACE=PASS"

@@ -1,0 +1,62 @@
+name: IDE WO8 installed acceptance source and fixture safety
+on:
+  pull_request:
+    paths:
+      - 'ide/app/fixtures/Test-Wo8*'
+      - 'ide/app/fixtures/wo8_*'
+      - 'ide/app/src-tauri/tauri.wo8.linux.conf.json'
+      - 'ide/app/web/code_editor.jsx'
+      - 'ide/docs/IDE_WORK_ORDER_08_INSTALLED_E2E_20261107.md'
+      - 'ide/packaging/verify_wo8_installed_evidence.py'
+      - 'ide/packaging/test_verify_wo8_installed_evidence.py'
+      - 'ide/packaging/wo8-installed-evidence.json'
+      - '.github/workflows/ide-wo8-*'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  linux-static-native-test-harness:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Parse actual Linux installed acceptance shell
+        run: |
+          /usr/bin/python3 -m py_compile ide/app/fixtures/wo8_linux_editor_atspi.py
+          bash -n ide/app/fixtures/Test-Wo8InstalledDeb.sh
+          bash -n ide/app/fixtures/wo8_linux_window_acceptance.sh
+          python3 -m json.tool ide/app/src-tauri/tauri.wo8.linux.conf.json >/dev/null
+      - name: Validate installed acceptance receipt refusal and provenance rules
+        run: python3 -m unittest discover -s ide/packaging -p 'test_verify_wo8_installed_evidence.py' -v
+      - name: Ensure no fake accepted native result in source files
+        run: |
+          grep -q 'xvfb-run' ide/app/fixtures/Test-Wo8InstalledDeb.sh
+          grep -q 'xdotool search' ide/app/fixtures/wo8_linux_window_acceptance.sh
+          grep -q 'WO8_LINUX_PROTECTED_RUN_DEBUG=NOT_ACCEPTED' ide/app/fixtures/Test-Wo8InstalledDeb.sh
+  windows-parse-real-native-gui-test:
+    runs-on: windows-2022
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Parse native UI Automation and refuse unsupported test declarations
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $fixture=(Resolve-Path ide/app/fixtures/Test-Wo8NativeDesktopUI.ps1).Path
+          $tokens=$null
+          $errors=$null
+          [void][System.Management.Automation.Language.Parser]::ParseFile($fixture,[ref]$tokens,[ref]$errors)
+          if ($errors.Count -gt 0) { throw "DENIED: WO8 native UI fixture parse failed: $($errors[0])" }
+          if ((Get-Content $fixture -Raw) -notmatch 'UIAutomationClient' -or
+              (Get-Content $fixture -Raw) -notmatch 'Source editor text' -or
+              (Get-Content $fixture -Raw) -notmatch 'Get-FileHash') {
+            throw 'DENIED: real native UI and disk evidence missing'
+          }
+          Write-Host 'WO8_SOURCE_SYNTAX_ONLY=PASS'

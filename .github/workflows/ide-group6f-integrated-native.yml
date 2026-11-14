@@ -1,0 +1,288 @@
+# Consolidated source acceptance for the IDE Git stack in preparation for main.
+# This adds missing 6E/6D integration evidence without replacing original jobs
+# or interpreting hosted CI approvals as physical OS-human consent.
+name: IDE 6D-6E-6F integrated native and desktop source
+on:
+  # Source-convergence runs are deliberately batched: ordinary source pushes
+  # do NOT match this narrow push trigger. Change only this marker when the
+  # complete IDE integration group is ready for same-SHA native acceptance.
+  push:
+    branches:
+      - ide/integration-git-6c6d6e6f-to-main-20261113
+    paths:
+      - '.github/ide-merge/ide-merge-01-02-native-batch.txt'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'ide/**'
+      - '.github/workflows/ide-group6f-integrated-native.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ide-git-integration-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+env:
+  INTEGRATION_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+jobs:
+  original-native-git-matrix:
+    name: original 6D/6E/6F native Git security and restart / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2022]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.INTEGRATION_SOURCE_SHA }}
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Verify immutable integration source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$INTEGRATION_SOURCE_SHA"
+          echo "G06F_INTEGRATED_EXACT_HEAD=VERIFIED"
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+          components: rustfmt
+      # The source tree currently does not track Cargo.lock for its three
+      # independent IDE crates. Resolve ONCE per exact-head native job,
+      # then keep --locked for every actual compile/test. Publish the resolved
+      # lock bytes so this temporary provisioning can be replaced by
+      # REVIEWED TRACKED lockfiles; runtime resolution is not a release pin.
+      - name: Resolve missing IDE Cargo locks (not yet tracked release pins)
+        shell: bash
+        run: |
+          set -euo pipefail
+          for dir in ide/host ide/supervisor; do
+            if [ ! -s "$dir/Cargo.lock" ]; then
+              cargo generate-lockfile --manifest-path "$dir/Cargo.toml"
+            fi
+            test -s "$dir/Cargo.lock"
+          done
+          echo "IDE_CARGO_LOCK_PROVISIONED=UNTRACKED_NOT_RELEASE_PINNED"
+      - name: Archive generated exact-head native dependency locks
+        uses: actions/upload-artifact@v4
+        with:
+          name: ide-lock-original-${{ matrix.os }}-${{ env.INTEGRATION_SOURCE_SHA }}
+          path: |
+            ide/host/Cargo.lock
+            ide/supervisor/Cargo.lock
+          if-no-files-found: error
+          retention-days: 14
+      - name: Native original Git and remote recovery fixture groups
+        shell: bash
+        run: |
+          set -euo pipefail
+          for domain in \
+            git_reviewed_commit git_protected_merge git_protected_divergent_merge \
+            git_protected_replay git_partial_stage git_conflict_resolution \
+            git_reviewed_unstage git_reviewed_restore git_reviewed_stash_save \
+            git_conflict_inventory git_rebase_cherry_plan git_replay_quarantine \
+            git_divergent_verify github_pull_review github_remote_publication \
+            github_remote_live_policy github_remote_publication_intent \
+            github_remote_native_consent git_security_recovery_matrix; do
+            cargo test --locked --manifest-path ide/host/Cargo.toml --lib "$domain" -- --nocapture
+          done
+          cargo test --locked --manifest-path ide/host/Cargo.toml --test source_create -- --nocapture
+          cargo test --locked --manifest-path ide/host/Cargo.toml --test source_file_transactions -- --nocapture
+          cargo test --locked --manifest-path ide/host/Cargo.toml --test quick_open -- --nocapture
+          cargo test --locked --manifest-path ide/host/Cargo.toml --test project_search -- --nocapture
+          cargo test --locked --manifest-path ide/host/Cargo.toml --lib project_search -- --nocapture
+          cargo test --locked --manifest-path ide/host/Cargo.toml --lib quick_open -- --nocapture
+          cargo test --locked --manifest-path ide/host/Cargo.toml --lib package_preview -- --nocapture
+          cargo test --locked --manifest-path ide/supervisor/Cargo.toml --features fin04w2-c2 --lib fin04w2_c2 -- --nocapture
+          echo "IDE_MERGE02_ORIGINAL_NATIVE_FILE_OPS=PASS"
+          echo "IDE_MERGE03_C2_FIXED_JOURNAL_SOURCE=PASS"
+          echo "G06D_G06E_G06F_ORIGINAL_NATIVE_CROSS_DOMAIN=PASS"
+          echo "G06F_OS_HUMAN_APPROVAL=NOT_TESTED"
+          echo "G06F_REMOTE_CAS_AND_PUBLICATION=NOT_TESTED"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Original read-only and one-use UI source tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd ide/app
+          node --test \
+            tests/g06e01_github_pull_review.test.mjs \
+            tests/g06d01_conflict_inventory.test.mjs \
+            tests/g06d02_three_way_editor.test.mjs \
+            tests/g06d0304_protected_conflict_resolution.test.mjs \
+            tests/fin03e05_remote_preflight.test.mjs \
+            tests/ide_merge02_03_consolidation.test.mjs
+          echo "G06D_G06E_G06F_UI_BOUNDARY=PASS"
+  desktop-link-and-native-vault:
+    name: integrated real Tauri compile and OS vault link / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 70
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2022]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.INTEGRATION_SOURCE_SHA }}
+          persist-credentials: false
+      - name: Exact head
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$INTEGRATION_SOURCE_SHA"
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: IDE-MERGE-02 original P06 candidate-tree hash and hostile-path contracts (source only)
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s ide/packaging -p 'test_p06_shipping_content.py' -v
+          echo 'IDE_MERGE02_P06_SHIPPING_TREE_SOURCE=TEST_PASS_NOT_INSTALLED_ATTESTATION'
+      - name: Original pinned LLVM first-party WFP owner overlay source regression
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          python -m unittest discover -s ide/llvm18_owner -p test_pinned_chrono_overlay.py -v
+          if($LASTEXITCODE -ne 0){throw 'FIN04W2_ORIGINAL_LLDB_OWNER_WFP_OVERLAY_SOURCE_DENIED'}
+          Write-Host 'FIN04W2_LLDB_OWNER_WFP_OVERLAY=SOURCE_ONLY_NOT_NATIVE_LINK'
+      - name: Compile original fixed hostile WFP target with actual Windows PE/PDB
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $out=Join-Path $env:RUNNER_TEMP 'fin04w2-hostile-target.exe'
+          rustc --edition=2021 -C debuginfo=2 -C opt-level=0 -o $out ide/supervisor/fixtures/debug/fin04w2_wfp_target/src/main.rs
+          if($LASTEXITCODE -ne 0 -or !(Test-Path -LiteralPath $out)){
+            throw 'FIN04W2_ORIGINAL_HOSTILE_PE_COMPILER_DENIED'
+          }
+          $pdb=[IO.Path]::ChangeExtension($out,'pdb')
+          if(!(Test-Path -LiteralPath $pdb)){
+            throw 'FIN04W2_ORIGINAL_HOSTILE_PDB_MISSING'
+          }
+          Write-Host 'FIN04W2_HOSTILE_TARGET_PE_PDB_COMPILER=PASS_NOT_WFP_SOCKET'
+      - name: Parse protected real WFP and SCM loss acceptance harnesses
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          foreach($p in @(
+            'ide/packaging/Test-FIN04W2-EffectiveWfpNative.ps1',
+            'ide/packaging/Test-FIN04W2-ServiceLossNative.ps1',
+            'ide/packaging/Start-FIN04W2-LoopbackControl.ps1'
+          )) {
+            $tokens=$null; $errors=$null
+            [System.Management.Automation.Language.Parser]::ParseFile(
+              (Resolve-Path -LiteralPath $p).Path,
+              [ref]$tokens,[ref]$errors
+            ) | Out-Null
+            if($errors.Count -ne 0) {
+              foreach($syntaxError in $errors) {
+                Write-Host ('FIN04W2_HARNESS_PARSE_ERROR:'+ $p + ':' +
+                  $syntaxError.Extent.StartLineNumber + ':' + $syntaxError.Message)
+              }
+              throw ('FIN04W2_NATIVE_HARNESS_SYNTAX_DENIED:'+$p)
+            }
+          }
+          Write-Host 'FIN04W2_NATIVE_HARNESS_PARSE=PASS_NOT_ACTUAL_SCMS_OR_WFP'
+      - name: Native Linux desktop and Secret Service dependencies
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            pkg-config libdbus-1-dev libssl-dev libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev librsvg2-dev libgtk-3-dev patchelf
+      - name: Resolve missing native IDE Cargo locks before strict --locked compile
+        shell: bash
+        run: |
+          set -euo pipefail
+          for dir in ide/host ide/supervisor ide/app/src-tauri; do
+            if [ ! -s "$dir/Cargo.lock" ]; then
+              cargo generate-lockfile --manifest-path "$dir/Cargo.toml"
+            fi
+            test -s "$dir/Cargo.lock"
+          done
+          echo "IDE_CARGO_LOCK_PROVISIONED=UNTRACKED_NOT_RELEASE_PINNED"
+      - name: Archive exact-head desktop and debugger dependency locks
+        uses: actions/upload-artifact@v4
+        with:
+          name: ide-lock-desktop-${{ matrix.os }}-${{ env.INTEGRATION_SOURCE_SHA }}
+          path: |
+            ide/host/Cargo.lock
+            ide/supervisor/Cargo.lock
+            ide/app/src-tauri/Cargo.lock
+          if-no-files-found: error
+          retention-days: 14
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Build original standalone IDE frontend from checked-in npm lock
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd ide/app
+          npm ci --ignore-scripts
+          npm run build
+          test -s dist/index.html
+          test -s dist/assets/app.js
+          echo "IDE_MERGE03_FRONTEND_BUILT_FROM_NPM_LOCK=PASS"
+      - name: Native host OS-vault type and desktop compile
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo check --locked --manifest-path ide/host/Cargo.toml \
+            --features fin03-native-vault --example fin03_live_vault_probe
+          if [ "$RUNNER_OS" = Windows ]; then
+            # Inspect actual FIN-04 compiler errors independently of Tauri.
+            # The split code remains default-OFF and needs no GUI permission.
+            cargo check --locked --manifest-path ide/supervisor/Cargo.toml \
+              --features fin04w2-split-native --lib
+            cargo check --locked --manifest-path ide/supervisor/Cargo.toml \
+              --features fin04w2-split-native --bin windows_fin04w2_target_service
+            cargo check --locked --manifest-path ide/supervisor/Cargo.toml \
+              --features fin04w2-split-native --bin windows_fin04w2_debugger_service
+          fi
+          if [ "$RUNNER_OS" = Windows ] && [ ! -f ide/app/src-tauri/icons/icon.ico ]; then
+            python ide/app/fixtures/make_g04d_ci_icon.py
+          fi
+          cargo check --locked --manifest-path ide/app/src-tauri/Cargo.toml --all-targets
+          if [ "$RUNNER_OS" = Windows ]; then
+            cargo test --locked --manifest-path ide/app/src-tauri/Cargo.toml \
+              --features fin04w2-c4-desktop --lib fin04w2_c4_desktop::tests -- --nocapture
+            cargo test --locked --manifest-path ide/supervisor/Cargo.toml \
+              --features fin04w2-split-native --lib windows_fin04w2_target_service::tests -- --nocapture
+            cargo test --locked --manifest-path ide/supervisor/Cargo.toml \
+              --features fin04w2-split-native --lib windows_fin04w2_scm_pair::tests -- --nocapture
+            cargo test --locked --manifest-path ide/supervisor/Cargo.toml \
+              --features fin04w2-split-native --lib windows_fin04w2_target_ipc::tests -- --nocapture
+            cargo test --locked --manifest-path ide/supervisor/Cargo.toml \
+              --features fin04w2-split-native --lib windows_fin04w2_lldb_dap::tests -- --nocapture
+            cargo test --locked --manifest-path ide/supervisor/Cargo.toml \
+              --features fin04w2-split-native --lib fin04w2_authority::tests -- --nocapture
+            cargo test --locked --manifest-path ide/supervisor/Cargo.toml \
+              --features fin04w2-split-native --lib debug_symbol_verification::tests -- --nocapture
+            cargo test --locked --manifest-path ide/supervisor/Cargo.toml \
+              --features fin04w2-split-native --lib windows_service_security::tests -- --nocapture
+            echo "IDE_MERGE03_TARGET_IPC_FORGED_RECEIPT_NEGATIVES=PASS"
+            echo "IDE_MERGE03_TWO_SERVICES_NATIVE_IPC_AND_SUSPENDED_JOBS=NOT_TESTED"
+            echo "IDE_MERGE03_TARGET_SCM_SOURCE_COMPILE=PASS"
+            echo "IDE_MERGE03_INDEPENDENT_TARGET_SCM_INSTALLED=NOT_TESTED"
+            echo "IDE_MERGE03_SPLIT_SOURCE_COMPILE=PASS"
+            echo "IDE_MERGE03_SPLIT_NATIVE_SCM_AND_WFP_ACCEPTANCE=NOT_TESTED"
+            echo "IDE_MERGE03_C4_WINDOWS_NATIVE_COMPILE_AND_NEGATIVES=PASS"
+            echo "IDE_MERGE03_C4_PHYSICAL_APPROVAL=NOT_TESTED"
+          fi
+          echo "G06D_G06E_G06F_REAL_DESKTOP_SOURCE_LINK=PASS"
+          echo "G06F_NATIVE_VAULT_CREDENTIAL_USED=NO"
+          echo "G06F_INSTALLED_AND_HUMAN_ACCEPTANCE=NOT_TESTED"

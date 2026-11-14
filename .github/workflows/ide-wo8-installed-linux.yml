@@ -1,0 +1,99 @@
+name: IDE WO8 genuine Linux installed Debian and native GTK window
+on:
+  pull_request:
+    paths:
+      - 'ide/app/**'
+      - 'ide/docs/IDE_WORK_ORDER_08_INSTALLED_E2E_20261107.md'
+      - '.github/workflows/ide-wo8-installed-linux.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  linux-installed-deb:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    env:
+      CARGO_INCREMENTAL: 0
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+      - name: Verify exact source checkout for native installed package
+        run: |
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+      - name: Install native Linux Tauri and graphical acceptance prerequisites
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev librsvg2-dev patchelf libssl-dev libgtk-3-dev \
+            xvfb xauth xdotool dbus-x11 x11-utils at-spi2-core python3-pyatspi openbox
+      - name: Fetch resolved Cargo sources before collecting license notices
+        run: |
+          cargo fetch --locked --manifest-path ide/app/src-tauri/Cargo.toml
+      - name: Build frontend and real native Linux Debian package
+        working-directory: ide/app
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm run check
+          python ../packaging/verify_p06_candidate_lock.py --repo-root ../.. --platform ubuntu-24.04
+          npm ci --ignore-scripts --no-audit --no-fund
+          cargo fetch --locked --manifest-path src-tauri/Cargo.toml
+          python ../packaging/verify_p06_candidate_lock.py --repo-root ../.. --platform ubuntu-24.04
+          python ../packaging/verify_tauri_minor.py --repo-root ../..
+          python ../packaging/upstream_notice_receipt.py --repo-root ../.. --source-sha '${{ github.event.pull_request.head.sha || github.sha }}' --output src-tauri/upstream-notice-receipt.json
+          python ../packaging/collect_verification_licenses.py --repo-root ../.. --output src-tauri/verification-notices --source-sha '${{ github.event.pull_request.head.sha || github.sha }}' --upstream-receipt src-tauri/upstream-notice-receipt.json
+          npx --yes @tauri-apps/cli@2.12.4 build --config src-tauri/tauri.wo8.linux.conf.json --bundles deb
+      - name: Verify legal bytes and bind inventory to real Debian package digest
+        env:
+          SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          packages=(ide/app/src-tauri/target/release/bundle/deb/*.deb)
+          [[ "${#packages[@]}" -eq 1 ]] || { echo "DENIED: only one Debian package accepted"; exit 2; }
+          python ide/packaging/verify_p04_license_bundle.py --license-root ide/app/src-tauri/verification-notices --source-sha "$SOURCE_SHA" --require-upstream --artifact "${packages[0]}" --receipt ide/app/src-tauri/verification-package-receipt.json
+      - name: Attach unsigned Debian and matching resolved dependency licenses
+        uses: actions/upload-artifact@v4
+        with:
+          name: lu-ide-p04-linux-unsigned-verification
+          path: |
+            ide/app/src-tauri/target/release/bundle/deb/*.deb
+            ide/app/src-tauri/verification-notices/**
+            ide/app/src-tauri/verification-package-receipt.json
+          if-no-files-found: error
+          retention-days: 7
+      - name: Prove actual native Debian installer failure and restore previous version
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          packages=(ide/app/src-tauri/target/release/bundle/deb/*.deb)
+          [[ "${#packages[@]}" -eq 1 ]] || { echo 'DENIED: native dpkg test requires one exact unsigned package'; exit 2; }
+          bash ide/app/fixtures/Test-P04UnsignedDebBrokenUpgrade.sh "${packages[0]}"
+      - name: Real Debian installation GTK/X11 window and package removal
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          packages=(ide/app/src-tauri/target/release/bundle/deb/*.deb)
+          [[ "${#packages[@]}" -eq 1 ]] || { echo 'DENIED: unexpected Linux .deb count'; exit 2; }
+          if ! dpkg-deb --contents "${packages[0]}" | grep -F '/THIRD_PARTY_LICENSES/inventory.json' >/dev/null; then
+            echo 'DENIED: actual Debian package omitted third-party license inventory' >&2
+            exit 2
+          fi
+          dpkg-deb --contents "${packages[0]}" | grep -F '/THIRD_PARTY_LICENSES/upstream-fetch.json' >/dev/null || { echo 'DENIED: retrieved upstream licenses missing from real Debian package' >&2; exit 2; }
+          echo 'P04_NATIVE_DEBIAN_BUNDLED_LICENSE_INVENTORY=PASS'
+          bash ide/app/fixtures/Test-Wo8InstalledDeb.sh "${packages[0]}" "$(git rev-parse HEAD)"
+      - name: Evidence meaning
+        run: |
+          echo "Native Linux installed Debian GUI window and uninstall only."
+          echo "Not a protected Cargo/debugger, saved editing or release acceptance."

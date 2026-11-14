@@ -1,0 +1,73 @@
+name: IDE DEV04.3 ELF PE and debug symbol verification
+on:
+  push:
+    branches: [ide/dev04-3-executable-debug-symbols-20261108]
+  pull_request:
+    paths:
+      - 'ide/supervisor/**'
+      - 'ide/app/**'
+      - '.github/workflows/ide-dev04-3-debug-symbol-native.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ide-dev043-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  native-symbol-contract:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2022]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.16.0'
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+          components: rustfmt
+      - name: Install reviewed Linux Tauri development prerequisites
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libgtk-3-dev patchelf libssl-dev
+      - name: Verify exact-head checkout and frontend symbol identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          node --test ide/app/tests/debug_binary_evidence.test.mjs ide/app/tests/debug_symbol_evidence.test.mjs
+      - name: Native ELF/DWARF or PE/RSDS/PDB format security tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --manifest-path ide/supervisor/Cargo.toml --lib --locked debug_symbol_verification -- --nocapture
+          cargo test --manifest-path ide/supervisor/Cargo.toml --lib --locked debug_binary_witness
+      - name: Compile actual protected Windows/Linux Cargo acceptance fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            cargo check --manifest-path ide/supervisor/Cargo.toml --features windows-worker --example d7_windows_acceptance --locked
+          else
+            cargo check --manifest-path ide/supervisor/Cargo.toml --features linux-worker --example wo6_linux_native_build_acceptance --locked
+          fi
+      - name: Compile integrated Tauri with native build gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo check --manifest-path ide/app/src-tauri/Cargo.toml --features native-build --all-targets --locked
+      - name: Strict acceptance boundary
+        shell: bash
+        run: |
+          echo 'DEV043_SOURCE_NATIVE_FORMAT_TESTS: only job result establishes source compile'
+          echo 'DEV043_PROTECTED_BUILD_ELF_DWARF: requires separate genuine delegated Linux WO6 run'
+          echo 'DEV043_PROTECTED_BUILD_PE_PDB: requires separate genuine AppContainer D7B/D7D runs'
+          echo 'DEV043_INSTALLED_DEBUGGER_LAUNCH: NOT_ACCEPTED'

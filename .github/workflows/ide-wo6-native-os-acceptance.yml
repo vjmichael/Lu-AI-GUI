@@ -1,0 +1,395 @@
+name: IDE WO6 real protected LLDB-DAP OS acceptance
+on:
+  pull_request:
+    paths:
+      - 'ide/supervisor/**'
+      - 'ide/sandbox/**'
+      - 'ide/app/src-tauri/src/build_backend.rs'
+      - 'ide/app/web/protected_job_lifecycle.js'
+      - 'ide/app/web/main.jsx'
+      - '.github/workflows/ide-wo6-native-os-acceptance.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  native-windows-fixed-debugger:
+    # The fixed 17.14/14.44 MSVC pin is supplied by the reviewed
+    # Windows 2022 runner image, not by Windows 2025's newer VS image.
+    # Never loosen New-PinnedWindowsToolchain.ps1 to accept an unreviewed SDK.
+    runs-on: windows-2022
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Confirm exact reviewed commit before native kernel tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          echo 'DEV045B_NATIVE_EXACT_HEAD=VERIFIED'
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+      - uses: actions/setup-python@v5
+        with:
+          # Pinned upstream Windows Python used only for OS test DLL closure.
+          python-version: '3.10.11'
+      - name: Compile protected service, bootstrap and genuine LLDB-DAP fixture
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          cargo build --manifest-path ide/supervisor/Cargo.toml --features 'dap-transport,protected-recovery-service,dev045d4c-ci-oracle' --bin windows_recovery_service --bin windows_null_service_bootstrap --example wo6_native_dap_acceptance
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: native debugger test compilation failed' }
+      - name: Stage test-only self-measured LLDB-DAP and fixed debuggee
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $candidate=Get-Command lldb-dap.exe -ErrorAction SilentlyContinue
+          $lldb=if ($candidate) { $candidate.Source } else { 'C:\Program Files\LLVM\bin\lldb-dap.exe' }
+          if (!(Test-Path -LiteralPath $lldb)) { throw 'DENIED: no real LLDB-DAP installed; no fake adapter allowed' }
+          $origin=Split-Path $lldb -Parent
+          $clang=Join-Path $origin 'clang.exe'
+          if (!(Test-Path -LiteralPath $clang)) { throw 'DENIED: matching Clang unavailable' }
+          $symbolizer=Join-Path $origin 'llvm-symbolizer.exe'
+          if (!(Test-Path -LiteralPath $symbolizer -PathType Leaf)) {
+            throw 'DENIED: independent LLVM PDB reader missing from same reviewed native toolchain'
+          }
+          $bundle=Join-Path $env:RUNNER_TEMP 'wo6-dap-bundle'
+          New-Item -Force -ItemType Directory (Join-Path $bundle 'bin') | Out-Null
+          New-Item -Force -ItemType Directory (Join-Path $bundle 'debuggee') | Out-Null
+          Copy-Item -LiteralPath $lldb -Destination (Join-Path $bundle 'bin\lldb-dap.exe')
+          Copy-Item -LiteralPath $symbolizer -Destination (Join-Path $bundle 'bin\llvm-symbolizer.exe')
+          Get-ChildItem -LiteralPath $origin -Filter '*.dll' -File | Copy-Item -Destination (Join-Path $bundle 'bin')
+          Write-Host "DEV045D4C_INDEPENDENT_LLVM_PDB_READER_SHA256=$((Get-FileHash $symbolizer -Algorithm SHA256).Hash)"
+          Write-Host 'DEV045D4C_LLVM_READER_SCOPE=CI_ONLY_BUNDLE_BOUND'
+          # Actual PE audit on run 42391111210 identified precisely this DLL.
+          # No unpinned PATH search, arbitrary binary or general OS rights grant.
+          $python=(Get-Command python.exe -ErrorAction Stop).Source
+          $runtime=Join-Path (Split-Path $python -Parent) 'python310.dll'
+          if (!(Test-Path -LiteralPath $runtime -PathType Leaf)) {
+            throw 'DENIED: pinned Python 3.10 DLL unavailable'
+          }
+          $copied=Join-Path $bundle 'bin\python310.dll'
+          Copy-Item -LiteralPath $runtime -Destination $copied
+          Write-Host "P03_LLDB_PYTHON310_CI_DLL_SHA256=$((Get-FileHash $copied -Algorithm SHA256).Hash)"
+          Write-Host 'P03_LLDB_PYTHON310_SCOPE=CI_ONLY_NOT_RELEASE_APPROVED'
+          & $clang -g -O0 -o (Join-Path $bundle 'debuggee\wo6-selftest.exe') 'ide/supervisor/fixtures/debug/wo6_selftest.c'
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: first-party debuggee build failed' }
+          $adapter=Join-Path $bundle 'bin\lldb-dap.exe'
+          if (!(Test-Path -LiteralPath $adapter)) { throw 'DENIED: fixed native adapter missing' }
+          # LLDB-DAP --help and --version flags are NOT standardized DAP
+          # operations and may return nonzero for a healthy adapter. Real
+          # protected initialize/launch and OS cleanup below are mandatory;
+          # never substitute this file-existence check for executable proof.
+          Add-Content $env:GITHUB_ENV "LU_IDE_WO6_DAP_BUNDLE=$bundle"
+      - name: Audit bounded transitive Windows LLVM DLL imports before AppContainer admission
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $bin=Join-Path $env:LU_IDE_WO6_DAP_BUNDLE 'bin'
+          $origin=Get-Command lldb-dap.exe -ErrorAction SilentlyContinue
+          $reader=if ($origin) { Join-Path (Split-Path $origin.Source -Parent) 'llvm-readobj.exe' } else { 'C:\Program Files\LLVM\bin\llvm-readobj.exe' }
+          if (!(Test-Path -LiteralPath $reader)) {
+            Write-Host 'P03_LLDB_PE_IMPORT_AUDIT=reader_unavailable_not_a_pass'
+          } else {
+            $files=@(Get-ChildItem -LiteralPath $bin -File | Where-Object { $_.Extension -in @('.dll','.exe') })
+            if ($files.Count -gt 512) { throw 'DENIED: transitive LLVM import audit exceeds fixed entry limit' }
+            $fileCount=0
+            $missing=[System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+            foreach ($file in $files) {
+              $fileCount++
+              $raw=@(& $reader --coff-imports $file.FullName 2>&1)
+              if ($LASTEXITCODE -ne 0) { throw 'DENIED: LLVM PE import analysis rejected a staged binary' }
+              foreach ($item in $raw) {
+                $line=([string]$item).Trim().ToLowerInvariant()
+                if (!$line.StartsWith('name: ') -or !$line.EndsWith('.dll')) { continue }
+                $dll=$line.Substring(6)
+                if ($dll -notmatch '^[a-z0-9_.-]+\.dll$') { throw 'DENIED: invalid native import module name' }
+                if ($dll.StartsWith('api-ms-win-') -or $dll.StartsWith('ext-ms-')) { continue }
+                $inBundle=Test-Path -LiteralPath (Join-Path $bin $dll)
+                $inSystem=Test-Path -LiteralPath (Join-Path $env:SystemRoot ('System32\' + $dll))
+                if (!$inBundle -and !$inSystem) { [void]$missing.Add($dll) }
+              }
+            }
+            Write-Host "P03_LLDB_NATIVE_PE_FILES_AUDITED=$fileCount"
+            foreach ($dll in @($missing | Sort-Object)) { Write-Host "P03_LLDB_UNRESOLVED_TRANSITIVE_DLL=$dll" }
+            Write-Host "P03_LLDB_UNRESOLVED_TRANSITIVE_IMPORTS=$($missing.Count)"
+            Write-Host 'P03_LLDB_PE_IMPORT_AUDIT=diagnostic_only_not_a_loader_or_containment_pass'
+          }
+      - name: Unit-test bounded loader diagnosis and independently probe fixed LLDB initialize
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          python -m unittest ide/supervisor/fixtures/debug/test_probe_windows_dap_initialize.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: fixed loader probe unit tests failed' }
+          python ide/supervisor/fixtures/debug/probe_windows_dap_initialize.py
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: copied adapter cannot initialize outside AppContainer; no native containment claim' }
+      - name: Prepare exact offline MSVC and SDK for DEV-04.5B project build
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          & ./ide/supervisor/fixtures/New-PinnedWindowsToolchain.ps1 -OutputRoot (Join-Path $env:RUNNER_TEMP 'dev045b-offline-msvc') -LockPath (Join-Path $env:RUNNER_TEMP 'dev045b-observed-toolchain.json') -RustVersion '1.99.1' -SdkVersion '10.0.26100.0' -VsVersionPrefix '17.14.' -MsvcVersionPrefix '14.44.'
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: reviewed native Windows compiler bundle could not be staged' }
+          $lock=Get-Content (Join-Path $env:RUNNER_TEMP 'dev045b-observed-toolchain.json') -Raw | ConvertFrom-Json
+          if ($lock.windowsSdk -ne '10.0.26100.0' -or $lock.target -ne 'x86_64-pc-windows-msvc' -or $lock.reviewedPinMatched -or $lock.bundleSha256.Length -ne 64) {
+            throw 'DENIED: measured Windows SDK/LLVM Cargo bundle lock invalid'
+          }
+          Write-Host 'DEV045B_WINDOWS_OFFLINE_TOOLCHAIN=CI_ONLY_SELF_MEASURED'
+      - name: Verify actual AppContainer debuggee normal/cancel with independent SCM
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $service=(Resolve-Path 'ide/supervisor/target/debug/windows_recovery_service.exe').Path
+          $hostExe=(Resolve-Path 'ide/supervisor/target/debug/examples/wo6_native_dap_acceptance.exe').Path
+          $bootstrap=(Resolve-Path 'ide/supervisor/target/debug/windows_null_service_bootstrap.exe').Path
+          $installed=$false
+          $nulTouched=$false
+          try {
+            & 'ide/supervisor/fixtures/Install-ProtectedRecoveryService.ps1' -ServiceExecutable $service -ExpectedServiceSha256 (Get-FileHash $service -Algorithm SHA256).Hash -ApprovedHostExecutable $hostExe -ExpectedHostSha256 (Get-FileHash $hostExe -Algorithm SHA256).Hash -CiAcceptanceUnsigned -Start
+            if ($LASTEXITCODE -ne 0) { throw 'DENIED: restricted service installation failed' }
+            $installed=$true
+            $nulTouched=$true
+            & $bootstrap --grant-fixed-service
+            if ($LASTEXITCODE -ne 0) { throw 'DENIED: NUL bootstrap grant failed' }
+            & $bootstrap --verify-fixed-service
+            if ($LASTEXITCODE -ne 0) { throw 'DENIED: exact service NUL readback failed' }
+            $env:LU_IDE_WO6_DAP_TRUSTED_SERVICE=$service
+            $env:LU_IDE_E2_NATIVE_TRACE='1'
+            & $hostExe
+            if ($LASTEXITCODE -ne 0) { throw 'DENIED: protected native debugger normal acceptance failed' }
+            & $hostExe --cancel
+            if ($LASTEXITCODE -ne 0) { throw 'DENIED: protected native debugger cancellation/restart failed' }
+            # One and only verified project-DAP case: a genuine separately
+            # approved protected Cargo build → PE/PDB seal → SCM/AppContainer
+            # LLDB stop/threads/stack → durable restart + one-use replay denial.
+            & $hostExe --project-debug
+            if ($LASTEXITCODE -ne 0) { throw 'DENIED: real protected Cargo to project LLDB failed' }
+            & $hostExe --project-debug-cancel
+            if ($LASTEXITCODE -ne 0) { throw 'DENIED: real protected project LLDB cancellation, SCM Job reaping or durable receipts failed' }
+            # D4 has its own read-only OS module evidence, not a PDB line
+            # or thread RIP success. It must use this same restricted SCM
+            # service + AppContainer Job, never a standalone process.
+            & $hostExe --project-debug-module
+            if ($LASTEXITCODE -ne 0) { throw 'DENIED: live Job-scoped PE base and original durable build/debug receipts not independently verified' }
+            & $hostExe --project-debug-thread
+            if ($LASTEXITCODE -ne 0) { throw 'DENIED: real SCM Job scoped read-only thread context unavailable; no inferred PDB acceptance' }
+            & $hostExe --project-debug-line
+            if ($LASTEXITCODE -ne 0) {
+              throw 'DENIED: REAL protected LLDB Job/RIP, independent sealed PE/PDB line and two fsynced receipt chains did not all agree'
+            }
+            & $hostExe --project-debug-line-cancel
+            if ($LASTEXITCODE -ne 0) {
+              throw 'DENIED: REAL protected LLDB/PDB stop did not produce fsynced cancellation, full Job-tree termination and replay denial'
+            }
+          } finally {
+            if ($nulTouched) {
+              & $bootstrap --revoke-fixed-service
+              if ($LASTEXITCODE -ne 0) { throw 'DENIED: exact service NUL revoke failed' }
+            }
+            if ($installed) {
+              & sc.exe delete LuIdeRecoveryBroker 2>$null | Out-Null
+              if ($LASTEXITCODE -ne 0) { throw 'DENIED: protected SCM service delete failed' }
+            }
+            $global:LASTEXITCODE=0
+          }
+      - name: Upload CI-only observed compiler identity
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dev045b-windows-observed-msvc-lock
+          path: ${{ runner.temp }}/dev045b-observed-toolchain.json
+          if-no-files-found: ignore
+      - name: Label evidence
+        if: always()
+        run: echo "Test-only independently measured binaries; NOT license/signing/installed debugger release approval."
+  native-linux-delegated-fixed-debugger:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Confirm exact reviewed commit before native kernel tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          echo 'DEV045B_NATIVE_EXACT_HEAD=VERIFIED'
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+      - name: Install actual LLDB-DAP, Clang and Bubblewrap
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends bubblewrap clang-18 lldb-18 apparmor-profiles apparmor-utils
+          # Ubuntu 24.04 AppArmor may reject unprivileged bwrap userns with
+          # EPERM. Provision ONLY the distribution-reviewed bwrap-userns-
+          # restrict profile; never disable AppArmor or global userns policy.
+          profile=/usr/share/apparmor/extra-profiles/bwrap-userns-restrict
+          test -r "$profile" || { echo 'DENIED: reviewed distro bwrap profile unavailable'; exit 1; }
+          sudo install -o root -g root -m 0644 "$profile" /etc/apparmor.d/bwrap-userns-restrict
+          sudo apparmor_parser -r /etc/apparmor.d/bwrap-userns-restrict
+          test "$(sysctl -n kernel.apparmor_restrict_unprivileged_userns)" = 1
+          /usr/bin/bwrap --unshare-all --ro-bind /usr /usr --ro-bind-try /bin /bin --ro-bind-try /lib /lib --ro-bind-try /lib64 /lib64 --proc /proc --dev /dev -- /usr/bin/true ||
+            { echo 'DENIED: unprivileged Bubblewrap namespace still forbidden under scoped AppArmor profile'; exit 1; }
+          test -x /usr/bin/systemd-run
+          test -f /sys/fs/cgroup/cgroup.controllers
+      - name: Root-own immutable test-only adapter and fixed debuggee
+        shell: bash
+        run: |
+          set -euo pipefail
+          adapter=''
+          for exe in /usr/bin/lldb-dap-18 /usr/bin/lldb-dap; do
+            if test -x "$exe"; then adapter="$exe"; break; fi
+          done
+          test -n "$adapter" || { echo 'DENIED: genuine packaged LLDB-DAP not available'; exit 1; }
+          clang-18 -g -O0 -o "$RUNNER_TEMP/wo6-selftest" ide/supervisor/fixtures/debug/wo6_selftest.c
+          sudo install -d -o root -g root -m 755 /opt/lu-ide-wo6-dap-test/bin
+          sudo install -d -o root -g root -m 755 /opt/lu-ide-wo6-dap-test/debuggee
+          sudo install -o root -g root -m 755 "$adapter" /opt/lu-ide-wo6-dap-test/bin/lldb-dap
+          sudo install -o root -g root -m 755 "$RUNNER_TEMP/wo6-selftest" /opt/lu-ide-wo6-dap-test/debuggee/wo6-selftest
+          test "$(stat -c %u /opt/lu-ide-wo6-dap-test/bin/lldb-dap)" = 0
+      - name: Classify native LLDB adapter distribution and copied-bundle initialization
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Fixed protocol request, no project execution. Distinguishes broken
+          # distro resource lookup from genuine kernel/stdio/DAP failures.
+          # Only fixed categories are shown; raw stderr and paths are hidden.
+          python3 ide/supervisor/fixtures/debug/probe_lldb_dap_initialize.py
+      - name: Classify exact fixed LLDB launch under distro, copied and Bwrap namespace
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Diagnostic only, no altered ptrace/AppArmor/sysctl privileges.
+          # A positive result is NOT cgroup custody or original debugger acceptance.
+          python3 ide/supervisor/fixtures/debug/probe_lldb_dap_launch.py
+      - name: Compile trusted fixed delegated OS host and native DAP fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo build --manifest-path ide/sandbox/Cargo.toml --bin linux_cgroup_prepare --bin linux_delegated_ci_wo6_dap_host
+          cargo build --manifest-path ide/supervisor/Cargo.toml --features 'dap-transport,linux-worker' --example wo6_native_dap_acceptance
+      - name: Verify independent crash replay, real delegated normal and cancellation
+        shell: bash
+        run: |
+          set -euo pipefail
+          host="$(realpath ide/sandbox/target/debug/linux_delegated_ci_wo6_dap_host)"
+          for mode in crash normal cancel; do
+            args=()
+            if [[ "$mode" == crash ]]; then args+=(--crash-verify); fi
+            if [[ "$mode" == cancel ]]; then args+=(--cancel); fi
+            rc=0
+            sudo /usr/bin/systemd-run --wait --collect --pipe \
+              --unit=lu-ide-delegated \
+              --property=Type=exec \
+              --property=User=runner \
+              --property=Group=runner \
+              --property='Delegate=cpu memory pids' \
+              --property=DelegateSubgroup=lu-ide-host \
+              "$host" "${args[@]}" || rc=$?
+            if [[ "$rc" != 0 ]]; then
+              echo 'DENIED: native delegated LLDB-DAP did not meet OS acceptance'
+              sudo systemctl show lu-ide-delegated.service --no-pager --property=Result,ExecMainCode,ExecMainStatus,Delegate,DelegateSubgroup || true
+              sudo journalctl -u lu-ide-delegated.service --no-pager -n 40 --output=cat || true
+              exit "$rc"
+            fi
+            echo "PASS: genuine Linux delegated LLDB-DAP $mode"
+          done
+      - name: Label evidence
+        run: echo "Native test-only kernel acceptance, not release signed debugger/installed app."
+
+  native-linux-protected-cargo:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Confirm exact reviewed commit before native kernel tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          echo 'DEV045B_NATIVE_EXACT_HEAD=VERIFIED'
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+      - name: Install root-owned fixed offline Cargo and Bubblewrap
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends bubblewrap rustc cargo clang-18 lldb-18 llvm-18 apparmor-profiles apparmor-utils
+          profile=/usr/share/apparmor/extra-profiles/bwrap-userns-restrict
+          test -r "$profile" || { echo 'DENIED: reviewed distribution Bubblewrap profile unavailable'; exit 1; }
+          sudo install -o root -g root -m 0644 "$profile" /etc/apparmor.d/bwrap-userns-restrict
+          sudo apparmor_parser -r /etc/apparmor.d/bwrap-userns-restrict
+          test "$(sysctl -n kernel.apparmor_restrict_unprivileged_userns)" = 1
+          /usr/bin/bwrap --unshare-all --ro-bind /usr /usr --ro-bind-try /bin /bin --ro-bind-try /lib /lib --ro-bind-try /lib64 /lib64 --proc /proc --dev /dev -- /usr/bin/true ||
+            { echo 'DENIED: real unprivileged bwrap namespace creation denied; global restrictions unchanged'; exit 1; }
+          for file in /usr/bin/bwrap /usr/bin/cargo /usr/bin/rustc; do
+            test -f "$file"
+            test "$(stat -c %u "$file")" = 0
+          done
+          test -x /usr/bin/systemd-run
+      - name: Provision root-owned test-only LLDB-DAP and fixed self-test identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          adapter=''
+          for file in /usr/bin/lldb-dap-18 /usr/bin/lldb-dap; do
+            if test -x "$file"; then adapter="$file"; break; fi
+          done
+          test -n "$adapter" || { echo 'DENIED: native LLDB-DAP unavailable'; exit 1; }
+          clang-18 -g -O0 -o "$RUNNER_TEMP/wo6-selftest" ide/supervisor/fixtures/debug/wo6_selftest.c
+          sudo install -d -o root -g root -m 755 /opt/lu-ide-wo6-dap-test/bin
+          sudo install -d -o root -g root -m 755 /opt/lu-ide-wo6-dap-test/debuggee
+          sudo install -o root -g root -m 755 "$adapter" /opt/lu-ide-wo6-dap-test/bin/lldb-dap
+          sudo install -o root -g root -m 755 "$RUNNER_TEMP/wo6-selftest" /opt/lu-ide-wo6-dap-test/debuggee/wo6-selftest
+      - name: Compile actual delegated cgroup helper and Cargo acceptance fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Test-only independent LLVM reader. Compiler embeds the measured
+          # SHA at build time; no runtime environment can replace the pin.
+          test -f /usr/lib/llvm-18/bin/llvm-symbolizer
+          test "$(stat -c %u /usr/lib/llvm-18/bin/llvm-symbolizer)" = 0
+          export LU_IDE_D3_LINUX_SYMBOLIZER_SHA256="$(sha256sum /usr/lib/llvm-18/bin/llvm-symbolizer | cut -d' ' -f1)"
+          test "${#LU_IDE_D3_LINUX_SYMBOLIZER_SHA256}" = 64
+          cargo build --manifest-path ide/sandbox/Cargo.toml --bin linux_cgroup_prepare --bin linux_delegated_ci_wo6_build_host
+          cargo build --manifest-path ide/supervisor/Cargo.toml --features 'linux-worker,dap-transport,dev045d3-ci-oracle' --example wo6_linux_native_build_acceptance
+      - name: Real isolated Cargo check, test and cancellation with kernel receipts
+        shell: bash
+        run: |
+          set -euo pipefail
+          host="$(realpath ide/sandbox/target/debug/linux_delegated_ci_wo6_build_host)"
+          for mode in --check --test --build --project-debug --project-debug-cancel --cancel; do
+            rc=0
+            sudo /usr/bin/systemd-run --wait --collect --pipe \
+              --unit=lu-ide-delegated \
+              --property=Type=exec \
+              --property=User=runner \
+              --property=Group=runner \
+              --property='Delegate=cpu memory pids' \
+              --property=DelegateSubgroup=lu-ide-host \
+              "$host" "$mode" || rc=$?
+            if [[ "$rc" -ne 0 ]]; then
+              echo 'DENIED: actual delegated Linux Cargo OS evidence failed'
+              sudo systemctl show lu-ide-delegated.service --no-pager --property=Result,ExecMainStatus,Delegate,DelegateSubgroup || true
+              sudo journalctl -u lu-ide-delegated.service --no-pager -n 40 --output=cat || true
+              exit "$rc"
+            fi
+            echo "PASS: genuine delegated Linux Cargo $mode, journal restart"
+          done
+      - name: Scope
+        run: echo "Native OS check/test/cancel fixture only; installed desktop and release toolchain acceptance remain independent."

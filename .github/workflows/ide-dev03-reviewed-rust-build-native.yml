@@ -1,0 +1,110 @@
+name: IDE DEV03.2 reviewed Rust Cargo Build native
+on:
+  push:
+    branches: [ide/dev03-reviewed-rust-build-20261108]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ide-dev03-rust-build-exact-head
+  cancel-in-progress: true
+
+jobs:
+  rust-build-native:
+    name: Fixed protected Rust build / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2022, ubuntu-24.04]
+    timeout-minutes: 100
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Exact commit plus unchanged execution admission implementation
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          B=80486012e817de2f6c64892695e66ebb99292286
+          git merge-base --is-ancestor "$B" HEAD
+          # Snapshot is intentionally extended for fixed rust_build only.
+          # Never suppress failures in broker/admission invariants.
+          git diff --exit-code "$B" HEAD -- \
+            ide/sandbox ide/host/src/browser.rs \
+            ide/supervisor/src/windows_broker.rs \
+            ide/supervisor/src/windows_service_security.rs \
+            ide/supervisor/src/windows_recovery_service.rs \
+            ide/supervisor/src/windows_service_client.rs \
+            ide/supervisor/src/windows_cap_tree.rs \
+            ide/supervisor/src/linux_lsp_worker.rs
+          echo DEV03_EXISTING_NATIVE_ADMISSION_UNCHANGED=PASS
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+          components: rustfmt
+      - name: Native Ubuntu Tauri build prerequisites
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev libayatana-appindicator3-dev \
+            librsvg2-dev libgtk-3-dev patchelf libssl-dev
+      - name: Locked Node regression and UI bundle
+        working-directory: ide/app
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci --ignore-scripts --no-audit --no-fund
+          node --test tests/dev03_rust_build_contract.test.mjs
+          node --test tests/project_run_profiles.test.mjs
+          npm run check
+          echo DEV03_RUST_BUILD_FRONTEND_PASS
+      - name: Native Rust host fixed intent and profile regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --manifest-path ide/host/Cargo.toml --all-targets
+          echo DEV03_RUST_BUILD_HOST_PASS
+      - name: Original native protected OS worker test suite
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            cargo test --manifest-path ide/supervisor/Cargo.toml \
+              --features protected-recovery-service --all-targets
+          else
+            cargo test --manifest-path ide/supervisor/Cargo.toml \
+              --features linux-worker --all-targets
+          fi
+          echo DEV03_RUST_BUILD_SUPERVISOR_PASS
+      - name: Locked native opt-in Tauri Build worker compilation
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo check --locked --manifest-path ide/app/src-tauri/Cargo.toml \
+            --features native-build --all-targets
+          echo DEV03_RUST_BUILD_OPTIN_TAURI_PASS
+          echo DEV03_RUST_BUILD_INSTALLED_APP_E2E=OPEN
+      - name: Exact-head source evidence for each OS
+        shell: bash
+        if: always()
+        run: |
+          mkdir -p .dev03-receipts
+          printf 'sha=%s\nrunner=%s\nrun=%s\ninstalled=OPEN\n' \
+            "$GITHUB_SHA" "$RUNNER_OS" "$GITHUB_RUN_ID" \
+            > .dev03-receipts/reviewed-rust-build.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ide-dev03-reviewed-rust-build-${{ matrix.os }}
+          path: .dev03-receipts/reviewed-rust-build.txt
+          if-no-files-found: error
+          retention-days: 14

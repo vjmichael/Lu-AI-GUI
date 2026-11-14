@@ -1,0 +1,223 @@
+name: IDE WO9 installed native Git, workflow and ZIP acceptance
+on:
+  pull_request:
+    paths:
+      - 'ide/host/**'
+      - 'ide/app/**'
+      - '.github/workflows/ide-wo9-installed-native.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  installed-windows-git-portfolio:
+    runs-on: windows-2022
+    timeout-minutes: 100
+    env:
+      CARGO_INCREMENTAL: 0
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+      - name: Exact source and native UI fixture syntax
+        shell: pwsh
+        run: |
+          if ((git rev-parse HEAD).Trim() -ine '${{ github.event.pull_request.head.sha || github.sha }}') { throw 'DENIED: source head drift' }
+          $tokens=$null; $errors=$null
+          [void][System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path ide/app/fixtures/Test-Wo8NativeDesktopUI.ps1).Path,[ref]$tokens,[ref]$errors)
+          if ($errors.Count) { throw "DENIED: native UI fixture invalid $($errors[0])" }
+      - name: Native build of complete unsigned installed Windows Lu IDE
+        working-directory: ide/app
+        shell: pwsh
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm run check
+          cargo fetch --locked --manifest-path src-tauri/Cargo.toml
+          python ../packaging/verify_p06_candidate_lock.py --repo-root ../.. --platform windows-2022
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: WO9 Windows dependency graph drift' }
+          npm ci --ignore-scripts --no-audit --no-fund
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: WO9 Windows npm locked reinstall failure' }
+          cargo fetch --locked --manifest-path src-tauri/Cargo.toml
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: WO9 Windows Cargo locked fetch failure' }
+          python ../packaging/verify_p06_candidate_lock.py --repo-root ../.. --platform windows-2022
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: WO9 Windows post-lock drift' }
+          python ../packaging/verify_tauri_minor.py --repo-root ../..
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: transitive Tauri runtime mismatch' }
+          python ../packaging/upstream_notice_receipt.py --repo-root ../.. --source-sha '${{ github.event.pull_request.head.sha || github.sha }}' --output src-tauri/upstream-notice-receipt.json
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: actual upstream notice retrieval failed' }
+          python ../packaging/collect_verification_licenses.py --repo-root ../.. --output src-tauri/verification-notices --source-sha '${{ github.event.pull_request.head.sha || github.sha }}' --upstream-receipt src-tauri/upstream-notice-receipt.json
+          npx --yes @tauri-apps/cli@2.12.4 build --config src-tauri/tauri.installed-smoke.conf.json --bundles nsis
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: native NSIS build failed' }
+      - name: Bind actual Windows WO9 package to resolved third-party notices
+        shell: pwsh
+        env:
+          SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          $ErrorActionPreference='Stop'
+          $setups=@(Get-ChildItem ide/app/src-tauri/target/release/bundle/nsis -Filter '*setup.exe' -File)
+          if ($setups.Count -ne 1) { throw 'DENIED: WO9 review expected one installer' }
+          python ide/packaging/verify_p04_license_bundle.py --license-root ide/app/src-tauri/verification-notices --source-sha $env:SOURCE_SHA --require-upstream --artifact $setups[0].FullName --receipt ide/app/src-tauri/wo9-verification-package-receipt.json
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: WO9 signed-source license proof missing' }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lu-ide-wo9-windows-unsigned-and-licenses
+          path: |
+            ide/app/src-tauri/target/release/bundle/nsis/*setup.exe
+            ide/app/src-tauri/verification-notices/**
+            ide/app/src-tauri/wo9-verification-package-receipt.json
+          if-no-files-found: error
+          retention-days: 7
+      - name: OS-installed WebView, workflow review, reviewed Git commit and uninstall
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          Set-StrictMode -Version Latest
+          $installers=@(Get-ChildItem ide/app/src-tauri/target/release/bundle/nsis -File -Filter '*setup.exe')
+          if ($installers.Count -ne 1) { throw 'DENIED: one exact NSIS installer required' }
+          $root=Join-Path $env:RUNNER_TEMP ('wo9-installed-'+$env:GITHUB_RUN_ID)
+          $exe=Join-Path $root 'lu-ide-desktop.exe'
+          if ((Test-Path $root) -or (Get-Service LuIdeRecoveryBroker -ErrorAction SilentlyContinue)) {
+            throw 'DENIED: runner not a clean disposable native install'
+          }
+          $installed=$false
+          try {
+            $proc=Start-Process $installers[0].FullName -ArgumentList @('/S',('/D='+$root)) -PassThru -Wait
+            if ($proc.ExitCode -ne 0 -or !(Test-Path -LiteralPath $exe)) { throw 'DENIED: actual installed NSIS failed' }
+            $installed=$true
+            $nativeNotice=Join-Path $root 'THIRD_PARTY_LICENSES\inventory.json'
+            if (!(Test-Path -LiteralPath $nativeNotice -PathType Leaf)) {
+              throw 'DENIED: installed WO9 native Windows package omitted third-party license evidence'
+            }
+            if (!(Test-Path -LiteralPath (Join-Path $root 'THIRD_PARTY_LICENSES\upstream-fetch.json') -PathType Leaf)) {
+              throw 'DENIED: WO9 installed NSIS omitted upstream legal source receipt'
+            }
+            $sha=(Get-FileHash -Algorithm SHA256 -LiteralPath $exe).Hash
+            foreach($kind in @('portfolio','git')) {
+              $fixture=Join-Path $env:RUNNER_TEMP ('wo9-'+$kind+'-'+$env:GITHUB_RUN_ID)
+              New-Item -ItemType Directory (Join-Path $fixture 'dist') -Force | Out-Null
+              [IO.File]::WriteAllText((Join-Path $fixture 'main.rs'),"fn main() { println!(`"native`"); }`n")
+              [IO.File]::WriteAllText((Join-Path $fixture 'dist/verified.tar'),"verified native WO9 artifact")
+              & git -C $fixture init -q
+              & git -C $fixture add main.rs dist/verified.tar
+              & git -C $fixture -c user.name='WO9 fixture' -c user.email='wo9@localhost.invalid' commit -q -m 'fixed native CI fixture'
+              if ($LASTEXITCODE -ne 0) { throw 'DENIED: test fixture not clean and committed' }
+              if ($kind -eq 'git') {
+                $hook=Join-Path $fixture '.git/hooks/pre-commit'
+                [IO.File]::WriteAllText($hook,"#!/bin/sh`nprintf hook-was-executed > WO9_UNAUTHORIZED_HOOK`nexit 94`n")
+              }
+              $scenario=if($kind -eq 'git'){'Wo9ReviewedGit'} else {'Wo9WorkflowPortfolio'}
+              & ide/app/fixtures/Test-Wo8NativeDesktopUI.ps1 -InstalledExecutable $exe -ExpectedSha256 $sha -FixtureRoot $fixture -Scenario $scenario
+              if (!$?) { throw "DENIED: real installed $kind native UI acceptance" }
+              if (Test-Path (Join-Path $fixture 'WO9_UNAUTHORIZED_HOOK')) {
+                throw 'DENIED: Git hooks were executed by the installed app'
+              }
+            }
+            $uninstallers=@(Get-ChildItem $root -File -Filter '*uninstall*.exe')
+            if ($uninstallers.Count -ne 1) { throw 'DENIED: installed NSIS uninstaller missing' }
+            $out=Start-Process $uninstallers[0].FullName -ArgumentList '/S' -PassThru -Wait
+            if ($out.ExitCode -ne 0 -or (Test-Path $exe)) { throw 'DENIED: native NSIS uninstall failed' }
+            $installed=$false
+            Write-Host 'WO9_WINDOWS_INSTALLED_REVIEWED_GIT_AND_PORTFOLIO=PASS'
+            Write-Host 'WO9_SIGNED_PACKAGE_ACCEPTANCE=NOT_TESTED'
+          } finally {
+            if ($installed) { Write-Warning 'WO9 native installed test failed; release denied' }
+          }
+  installed-linux-gtk-zip:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 105
+    env:
+      CARGO_INCREMENTAL: 0
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+      - name: Install real Debian GTK/WebKit/X11 and native AT-SPI dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf libssl-dev libgtk-3-dev xvfb xauth xdotool dbus-x11 x11-utils at-spi2-core python3-pyatspi openbox
+      - name: Native installed Linux source and frontend checks
+        working-directory: ide/app
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm run check
+          cargo fetch --locked --manifest-path src-tauri/Cargo.toml
+          python ../packaging/verify_p06_candidate_lock.py --repo-root ../.. --platform ubuntu-24.04
+          npm ci --ignore-scripts --no-audit --no-fund
+          cargo fetch --locked --manifest-path src-tauri/Cargo.toml
+          python ../packaging/verify_p06_candidate_lock.py --repo-root ../.. --platform ubuntu-24.04
+          python ../packaging/verify_tauri_minor.py --repo-root ../..
+          python ../packaging/upstream_notice_receipt.py --repo-root ../.. --source-sha '${{ github.event.pull_request.head.sha || github.sha }}' --output src-tauri/upstream-notice-receipt.json
+          python ../packaging/collect_verification_licenses.py --repo-root ../.. --output src-tauri/verification-notices --source-sha '${{ github.event.pull_request.head.sha || github.sha }}' --upstream-receipt src-tauri/upstream-notice-receipt.json
+          npx --yes @tauri-apps/cli@2.12.4 build --config src-tauri/tauri.wo8.linux.conf.json --bundles deb
+      - name: Bind actual WO9 Debian package to resolved license evidence
+        env:
+          SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          packages=(ide/app/src-tauri/target/release/bundle/deb/*.deb)
+          [[ "${#packages[@]}" == 1 ]] || { echo 'DENIED: WO9 one Debian package required'; exit 2; }
+          python ide/packaging/verify_p04_license_bundle.py --license-root ide/app/src-tauri/verification-notices --source-sha "$SOURCE_SHA" --require-upstream --artifact "${packages[0]}" --receipt ide/app/src-tauri/wo9-verification-package-receipt.json
+          dpkg-deb --contents "${packages[0]}" | grep -F '/THIRD_PARTY_LICENSES/inventory.json' >/dev/null
+          dpkg-deb --contents "${packages[0]}" | grep -F '/THIRD_PARTY_LICENSES/upstream-fetch.json' >/dev/null
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lu-ide-wo9-linux-unsigned-and-licenses
+          path: |
+            ide/app/src-tauri/target/release/bundle/deb/*.deb
+            ide/app/src-tauri/verification-notices/**
+            ide/app/src-tauri/wo9-verification-package-receipt.json
+          if-no-files-found: error
+          retention-days: 7
+      - name: Real Debian installation, OS picker, GTK portfolio and verified ZIP bytes
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          shopt -s nullglob
+          bundles=(ide/app/src-tauri/target/release/bundle/deb/*.deb)
+          [[ ${#bundles[@]} -eq 1 ]] || { echo DENIED:unexpected_deb_count; exit 2; }
+          deb="${bundles[0]}"
+          package="$(dpkg-deb --field "$deb" Package)"
+          test "$package" = lu-ide
+          test "$(dpkg-deb --field "$deb" Architecture)" = amd64
+          sha256sum "$deb"
+          sudo dpkg --install "$deb"
+          cleanup() { sudo dpkg --remove "$package" || true; }
+          trap cleanup EXIT
+          test -x /usr/bin/lu-ide-desktop
+          fixture="$RUNNER_TEMP/wo9-linux-fixture-$GITHUB_RUN_ID"
+          exportdir="$RUNNER_TEMP/wo9-linux-export-$GITHUB_RUN_ID"
+          mkdir -m 700 -p "$fixture/dist" "$exportdir"
+          printf 'fn main() { println!("native"); }\n' > "$fixture/main.rs"
+          printf 'independently verified WO9 package\n' > "$fixture/dist/verified.tar"
+          git -C "$fixture" init -q
+          git -C "$fixture" add main.rs dist/verified.tar
+          git -C "$fixture" -c user.name='WO9 native fixture' -c user.email='wo9@localhost.invalid' commit -q -m 'fixed native data'
+          python3 -m py_compile ide/app/fixtures/wo9_linux_workflow_atspi.py
+          env WO8_INSTALLED_EXE=/usr/bin/lu-ide-desktop WO8_FIXTURE_ROOT="$fixture" WO9_EXPORT_ROOT="$exportdir" \
+            WEBKIT_DISABLE_COMPOSITING_MODE=1 WEBKIT_DISABLE_DMABUF_RENDERER=1 GDK_BACKEND=x11 \
+            dbus-run-session -- xvfb-run -a -s '-screen 0 1280x800x24' \
+            bash -c 'openbox >/dev/null 2>&1 & exec /usr/bin/python3 ide/app/fixtures/wo9_linux_workflow_atspi.py'
+          test "$(find "$exportdir" -name '*.zip' -type f | wc -l)" -eq 1
+          if sudo dpkg --remove "$package"; then true; else exit 1; fi
+          test ! -x /usr/bin/lu-ide-desktop
+          trap - EXIT
+          echo 'WO9_NATIVE_LINUX_INSTALLED_ZIP_AND_UNINSTALL=PASS'
+          echo 'WO9_SIGNED_RELEASE=NOT_ACCEPTED'

@@ -1,0 +1,98 @@
+# IDE G06C-02: immutable read-only local merge plan (NOT branch-write consent).
+name: IDE G06C02 reviewed local merge plan (source only)
+on:
+  push:
+    branches: [ide/group06c02-reviewed-merge-plan-20261110]
+    paths:
+      - '.github/workflows/ide-group06c02-native.yml'
+      - 'ide/host/src/git_merge_plan.rs'
+      - 'ide/host/src/git_branch_operations.rs'
+      - 'ide/host/src/lib.rs'
+      - 'ide/app/src-tauri/src/lib.rs'
+      - 'ide/app/web/main.jsx'
+      - 'ide/app/tests/g06c02_reviewed_merge_plan.test.mjs'
+      - 'ide/docs/IDE_GROUP06C02_REVIEWED_MERGE_PLAN_20261110.md'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ide-g06c02-native-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  native-review:
+    name: G06C02 exact source Git tree + desktop / ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2022]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 70
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify exact head, prior 6C01 and 6B implementation lineage
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          git merge-base --is-ancestor 3234aeb514c81c37f7f4098ed6e654915a8cf65c HEAD
+          git merge-base --is-ancestor ea584951d7b5acea85e7f1ad9502ba4a461a8f87 HEAD
+          echo G06C02_EXACT_SOURCE="$GITHUB_SHA"
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+          components: rustfmt
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.16.0'
+      - name: Linux native Tauri toolchain dependencies
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev libayatana-appindicator3-dev \
+            librsvg2-dev libgtk-3-dev patchelf libssl-dev
+      - name: Genuine libgit2 graph, overlap, lock and source evidence tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --manifest-path ide/host/Cargo.toml --lib git_merge_plan
+          cargo test --manifest-path ide/host/Cargo.toml --lib git_branch_operations
+          rustfmt --edition 2021 --check ide/host/src/git_merge_plan.rs ide/host/src/git_branch_operations.rs
+          echo IDE_G06C02_MERGE_PLANNING=REAL_LOCAL_GIT_READS_NO_REF_MUTATION
+      - name: Frontend hostile contracts and real JS bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd ide/app
+          npm ci --ignore-scripts --no-audit --no-fund
+          node --test tests/g06c_local_branch_operations.test.mjs tests/g06c02_reviewed_merge_plan.test.mjs
+          npm run build
+          echo IDE_G06C02_WEB=SOURCE_ONLY_NO_CONSENT
+      - name: Tauri typed host review bridge compile
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "$RUNNER_OS" = Windows ] && [ ! -f ide/app/src-tauri/icons/icon.ico ]; then
+            python ide/app/fixtures/make_g04d_ci_icon.py
+          fi
+          cargo check --locked --manifest-path ide/app/src-tauri/Cargo.toml --all-targets
+          echo IDE_G06C02_TAURI=COMPILED_NO_EXECUTOR
+      - name: Record source-only evidence and unperformed human gates
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p ide-g06c02-receipts
+          printf 'source_sha=%s\nos=%s\nmerge_plan=READ_ONLY\nconflicts=CONSERVATIVE_METADATA_OVERLAP_ONLY\nref_writes=NEVER\nhooks=NEVER\noperator_approval=DEFERRED\ninstalled_acceptance=DEFERRED\n' \
+            "$GITHUB_SHA" "$RUNNER_OS" > ide-g06c02-receipts/source.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ide-g06c02-${{ matrix.os }}-${{ github.sha }}
+          path: ide-g06c02-receipts/
+          retention-days: 7

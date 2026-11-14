@@ -1,0 +1,139 @@
+# Lu IDE P05 — GitHub PR and CI consolidation audit
+
+**Audit date:** November 7, 2026  
+**Branch:** `ide/release-closeout-p05-20261107` stacked on [P04 draft #84](https://github.com/vjmichael/Lu-AI-GUI/pull/84), source candidate `bc4fd78685c342675e4a80556970e934125a0e20`.  
+**Status:** Source and workflow inventories committed; exact-head CI verification pending. No PR was retargeted, closed or merged, and no native/release workflow was removed.
+
+## Decision and boundaries
+
+P05 reduces GitHub duplication **without losing source code, original commit history, approval boundaries or OS evidence**. The current user instruction is to work on P05, not to waive P03/P04 native and release gates. P03 real protected Windows LLDB-DAP/clangd and Linux debuggee acceptance and P04 real installed Win/Linux editing, protected Run/Test/Debug, reviewed notices, signed packages and transactional installer acceptance are separately open. The signed identity remains deferred. **P07/WO10 is explicitly deferred until after Lu Core v1.0 and user authorization.**
+
+The GitHub repository currently had **78 open user PRs**, of which **30 open IDE-specific PRs** were identified by exact `ide/` branch. This replaces the older planning snapshot of 26 IDE PRs. GitHub Git Trees for each PR's exact head were compared against the pinned P04 candidate, checking **`ide/` and `.github/workflows/ide-*` paths and blob SHA-1s**, not merely PR titles or first-page diffs. The full machine-readable [PR inventory](../packaging/p05-pr-source-audit.json) includes exact head and base branch, historical IDE file count, modified-existing-blob count, missing paths and current retain/disposition reason. The [workflow inventory](../packaging/p05-workflow-coverage.json) locks all 38 original GitHub workflow blobs and disables automated CI-pruning authority.
+
+**Important:** A historical file present under the same name but with a different blob is **not** proof the old functionality was preserved or lost. No PR can be closed solely from source-path coverage; native OS acceptance, changed behavior, reviewed rollback, release/CI ownership and explicit source disposition must be assessed independently. The P05 source checker is a provenance guard, not release acceptance.
+
+## Full IDE PR review inventory
+
+| PR | Exact head SHA prefix | IDE files at head | Candidate differing existing blobs | Missing candidate paths | Classification | Disposition |
+| --- | --- | ---: | ---: | ---: | --- | --- |
+| [#43](https://github.com/vjmichael/Lu-AI-GUI/pull/43) | `3cb62b2d1519` | 84 | 27 | 3 | parallel unported | Retain draft/open |
+| [#45](https://github.com/vjmichael/Lu-AI-GUI/pull/45) | `21b1d88aaa83` | 87 | 27 | 6 | parallel unported | Retain draft/open |
+| [#46](https://github.com/vjmichael/Lu-AI-GUI/pull/46) | `a94c5d6af266` | 84 | 22 | 3 | parallel unported | Retain draft/open |
+| [#47](https://github.com/vjmichael/Lu-AI-GUI/pull/47) | `efe731d874e1` | 88 | 23 | 0 | historical stack | Retain draft/open |
+| [#48](https://github.com/vjmichael/Lu-AI-GUI/pull/48) | `ca606dfb378c` | 90 | 23 | 0 | historical stack | Retain draft/open |
+| [#49](https://github.com/vjmichael/Lu-AI-GUI/pull/49) | `1dd4a58d84d6` | 93 | 21 | 0 | historical stack | Retain draft/open |
+| [#50](https://github.com/vjmichael/Lu-AI-GUI/pull/50) | `c403a8ba47d6` | 96 | 19 | 0 | historical stack | Retain draft/open |
+| [#51](https://github.com/vjmichael/Lu-AI-GUI/pull/51) | `ef623bfd22f8` | 99 | 21 | 0 | historical stack | Retain draft/open |
+| [#52](https://github.com/vjmichael/Lu-AI-GUI/pull/52) | `c091fbe174b8` | 102 | 22 | 0 | historical stack | Retain draft/open |
+| [#53](https://github.com/vjmichael/Lu-AI-GUI/pull/53) | `272c6637b4e7` | 107 | 27 | 0 | historical stack | Retain draft/open |
+| [#54](https://github.com/vjmichael/Lu-AI-GUI/pull/54) | `32b208a76ed1` | 111 | 29 | 0 | historical stack | Retain draft/open |
+| [#55](https://github.com/vjmichael/Lu-AI-GUI/pull/55) | `341b3ab5ea26` | 114 | 28 | 0 | historical stack | Retain draft/open |
+| [#56](https://github.com/vjmichael/Lu-AI-GUI/pull/56) | `c36858ca215f` | 117 | 26 | 0 | historical stack | Retain draft/open |
+| [#58](https://github.com/vjmichael/Lu-AI-GUI/pull/58) | `6923b43f52ad` | 121 | 30 | 0 | historical stack | Retain draft/open |
+| [#60](https://github.com/vjmichael/Lu-AI-GUI/pull/60) | `b172095a6a10` | 124 | 31 | 0 | historical stack | Retain draft/open |
+| [#62](https://github.com/vjmichael/Lu-AI-GUI/pull/62) | `4c2b639c379d` | 131 | 37 | 0 | historical stack | Retain draft/open |
+| [#63](https://github.com/vjmichael/Lu-AI-GUI/pull/63) | `988bf11a3607` | 142 | 47 | 0 | historical stack | Retain draft/open |
+| [#64](https://github.com/vjmichael/Lu-AI-GUI/pull/64) | `73b8a5bc8f77` | 146 | 49 | 0 | historical stack | Retain draft/open |
+| [#65](https://github.com/vjmichael/Lu-AI-GUI/pull/65) | `bd39d01129f8` | 174 | 26 | 0 | historical stack | Retain draft/open |
+| [#68](https://github.com/vjmichael/Lu-AI-GUI/pull/68) | `91134704c308` | 180 | 25 | 0 | historical stack | Retain draft/open |
+| [#69](https://github.com/vjmichael/Lu-AI-GUI/pull/69) | `785ca287d74c` | 183 | 25 | 0 | historical stack | Retain draft/open |
+| [#70](https://github.com/vjmichael/Lu-AI-GUI/pull/70) | `c0b83a304566` | 202 | 30 | 0 | historical stack | Retain draft/open |
+| [#73](https://github.com/vjmichael/Lu-AI-GUI/pull/73) | `d42586345a8f` | 226 | 33 | 0 | historical stack | Retain draft/open |
+| [#74](https://github.com/vjmichael/Lu-AI-GUI/pull/74) | `bd0f4f1280fb` | 240 | 37 | 0 | historical stack | Retain draft/open |
+| [#75](https://github.com/vjmichael/Lu-AI-GUI/pull/75) | `0d271606c8bc` | 252 | 38 | 0 | historical stack | Retain draft/open |
+| [#76](https://github.com/vjmichael/Lu-AI-GUI/pull/76) | `8d59bce140d1` | 261 | 43 | 9 | deferred do not merge | Retain draft/open |
+| [#78](https://github.com/vjmichael/Lu-AI-GUI/pull/78) | `a8b0a8f02708` | 254 | 38 | 0 | phase chain | Retain draft/open |
+| [#79](https://github.com/vjmichael/Lu-AI-GUI/pull/79) | `fab2c06e4745` | 257 | 28 | 0 | phase chain | Retain draft/open |
+| [#80](https://github.com/vjmichael/Lu-AI-GUI/pull/80) | `ed070647dde2` | 263 | 15 | 0 | phase chain | Retain draft/open |
+| [#84](https://github.com/vjmichael/Lu-AI-GUI/pull/84) | `bc4fd78685c3` | 290 | 0 | 0 | phase chain | Retain draft/open |
+
+All 30 PRs remain **open/draft**. Every one contains at least historical code/data that must remain reviewable; there is no basis for a blanket "superseded; close" action. Of the 30, 26 have **zero entirely missing IDE/CI paths** at the pinned candidate, but some existing files differ, usually because newer work evolved them. The other four (#43, #45, #46, #76) have source files absent from the candidate and require explicit tracking.
+
+## Unported independent source and deliberate exclusion
+
+- **#43, revision-aware buffer identity:** `ide/app/web/buffer_identity.js`, `ide/app/tests/buffer_identity.test.mjs` and `ide/docs/IDE_BUFFER_REFERENCES.md` are absent. Both source blob SHA-1s and docs are pinned in the machine inventory. The modern CodeMirror editor is not proven compatible with the older API. **Retain, review if feature port is required.**
+- **#45, installed native buffer acceptance:** includes exactly the three shared #43 missing blobs plus `ide-buf-installed-acceptance.yml`, `tauri.installed-acceptance.conf.json` and `windows-installed-buffer-smoke.ps1`. The three shared blobs match #43 exactly. **Do not claim acceptance by current WO8 installed CI unless the reviewed buffer behavior is ported and tested.**
+- **#46, Find in Project:** `ide/host/src/project_search.rs`, `ide/host/tests/project_search.rs` and `ide/docs/IDE_PROJECT_SEARCH.md` are absent; this is an actual omitted feature, not an old renamed workflow. **Retain PR or independently port with explicit owner scope, source review and tests.**
+- **#76, WO10 bridge:** exactly nine IDE/CI files are absent, intentionally. `ide/bridge-contract`, `bridge_policy.rs`, `bridge_wire.rs`, `bridge.proto` and its workflow remain **excluded** under P07's post-v1.0 decision. **DO NOT MERGE, PORT, RETARGET OR CLOSE until user-directed post-v1.0 review.**
+
+P01 also flagged late fixes on #47, #53, #56, #58, #70, #73 and #74. They have no missing *filenames* at the P04 snapshot, but their differing blobs and run histories require explicit semantic and CI evidence comparison before PR consolidation. The other ancestral WO9-era PRs have path coverage but must not be auto-closed. For P01's detailed lineage discussion, consult [IDE P01 source audit](IDE_P01_INTEGRATION_AUDIT_20261107.md).
+
+## CI workflow inventory and reduction decisions
+
+All **38** GitHub `ide-*.yml` workflows found at the P04 exact head are currently pinned by original Git blob. Existing concurrency settings, path/branch filters, manual-only signed gates and exact-head native jobs remain unchanged by P05.
+
+The workflows overlap in **topic**, but do not necessarily test equivalent things:
+
+| Area | Candidate or older proof | Reduction safety decision |
+| --- | --- | --- |
+| Native Windows containment | D7B/D7C/D7D, AppContainer, OS-rights, sandbox, WO6 | **Retain** until P03 direct Windows service/Job/LLDB proof independently accepted |
+| Linux cgroups and protected clangd | sandbox, WO4 delegation, WO5 real clangd, E2 Linux, P03 OS checks | **Retain** until current exact-head kernel and editor operations pass |
+| DAP/Cargo and failure recovery | WO6 protocol/OS, native desktop, E2, protected recovery | **Retain** native permissions, real debugger launch and cleanup gates |
+| Installed Windows/Linux UI and Git/ZIP | WO8 and WO9 actual NSIS/DEB and native UI | **Retain** both, as WO9 adds Git/ZIP behavior WO8 doesn't prove |
+| License and signing | WO7 preflight, P04 evidence, manual signed installer/upgrade workflows | **Retain**, user deferred final signature identity but not license verification |
+| Older source/protocol checks | E1/E2, supervisor-core, standalone, continuity and appcontainer | Review after P03/P04 replace their particular assertions, not by filename similarity |
+| Manual signer-only runs | WO7/WO8/WO9 signed acceptance and P04 upgrade/reinstall | **Never auto-delete** because source jobs pass. These require separate trust/artifacts. |
+
+P05 `verify_p05_pr_inventory.py` reads both pin sets, rejects forged PR closure/native acceptance, incomplete historical exception lists, WO10 import or removed CI. It verifies every original workflow's exact Git **blob SHA** in the current checkout on Windows and Linux; any change requires explicit inventory update and independent review. The P05 CI workflow is new and separate. No native check has been redirected to mock behavior, skipped or made `continue-on-error` to gain a green result.
+
+## Remaining P05 gates
+
+- [x] Inventory all 30 presently open IDE PR heads/bases; record exact source hashes, omitted paths and unresolved blob differences.
+- [x] Account for parallel B2/B3 source and preserve excluded WO10 with explicit exact pinned paths.
+- [x] Inventory all 38 IDE CI workflows and mark every one as retained until an accepted equivalent exists.
+- [x] Add Windows/Linux automated fail-closed PR and workflow integrity guard (source committed; exact-head CI acceptance pending).
+- [ ] Compare semantics of modified older implementation/fixture blobs and their historical OS receipts with current P03/P04 evidence; identify any additional missing behavior not detectable by names or hashes alone.
+- [ ] After independent acceptance of P02–P04 replacement: decide individually whether to retarget, close or merge old PRs; preserve human review and history. **Current authorized closures: 0.**
+- [ ] Only after replacement gates pass, consolidate/restrict duplicate CI triggers without dropping required native security, installed GUI, rollback, signed package or legal checks.
+- [ ] Close P05 source audit when CI passes and final disposition/reduction is genuinely evidenced; otherwise mark P05 **OPEN**, not a forced green phase.
+
+**Stop at P05. P06 has not started. P07/WO10 remains deferred.**
+
+## E2 native installed workflow repair — no CI security reduction
+
+[P05 exact-head run 42411301514](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42411301514) found E2's two protocol/editor checks and Windows native Tauri host passed, but the installed Windows NSIS smoke failed with `resource path verification-notices doesn't exist`. P04 had introduced a required embedded legal notice resource; two older E2 workflows built their NSIS package without preparing it. Both now run the actual resolved dependency license collector before Tauri packaging, verify the exact package SHA and notice bytes after build, and upload installers **with** their notice bundles and SHA receipts. Missing files fail closed. No installed smoke, containment check, workflow, job or permission was deleted. The workflow source inventory records both previous Git blob SHAs, their revised Git blob SHAs and the precise bounded review reason. **Real installed E2 retest of this new head remains open.**
+
+P05 audit source CI passed on **both Windows and Linux** at `43bfbc9772b50db1d8b38aa554cccbaa15d421c2` with 12 hostile tests each. The updated E2 workflow audit and new 13th negative test require a new exact-head run; prior green evidence is not transferable.
+
+## P05 historical semantic reconciliation — source work completed
+
+GitHub commit comparisons established **15 zero-ahead WO9 Git ancestors**, **seven late-diverged patches**, **three independent unported B2/B3 feature branches (#43/#45/#46)**, **one deliberately excluded WO10 bridge (#76)** and **four P01–P04 stacked phase PRs**—all 30 original P05 snapshot PRs. [Semantic provenance](../packaging/p05-semantic-reconciliation.json) stores original SHAs, actual ancestry/patch classifications and exact source checks. The seven late patches were read, not inferred from titles: #47 multiline capability matcher, #53 historical Rust formatting, #56/#58 WinSock denial diagnostics, #70 missing WO6 historical OS receipts (now preserved in the WO6 work-order doc), #73 signed desktop test fixture, and #74 native Openbox/keyboard focus plus Windows basename corrections.
+
+P05 source reconciliation is **complete**; B2/B3 features are intentionally **not ported** and remain open as separately scoped feature decisions. Historical CI outcomes are not reclassified as current-head native tests. No old IDE PR may be closed or retargeted and no native/security/signed workflow may be removed until P03/P04 replacement gates independently pass. This remaining operational clean-up is **externally blocked**, not hidden under a fake source PASS.
+
+## P05 operational disposition — reviewed, no unsafe changes
+
+All 38 original IDE workflow jobs/files now have a [machine-readable retain/phase-owner decision](../packaging/p05-ci-retention-decision.json) keyed to their reviewed Git blob and P02/P03/P04 acceptance category. The **P05-specific review is complete**: no older IDE PR qualifies for closure/retarget, and **zero** original CI workflows qualify for deactivation or trigger pruning while P03/P04 real native/installed/release gates remain open. This is a **positive retention decision**, not unfinished source inventory work. We also repaired both E2 NSIS smoke workflows to stage their mandatory bundled third-party licenses rather than disabling native installed checks; current exact-head OS retest is separate.
+
+The previously open P05 checklist items E/F have therefore been **evaluated and dispositioned as blocked operations**, to be executed only after their replacement gates are verified. P05 source and policy development can be treated as completed pending its exact-head Windows/Linux source CI; the draft PR and original PR/CI history remain open and preserved. There is no authority to falsely set `P02/P03/P04=PASS`, close 30 historic PRs, or remove 38 original workflows merely to claim this phase complete.
+
+## P05 actual E2 failure triage and exact Tauri-version fix — November 7
+
+The latest 85cf291 exact-head [P05 source CI](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42414577131) passed both native Windows/Linux source test matrices. Separately, [E2 unsigned installed NSIS](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42414577089) and [E2 supervised LSP installed smoke](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42414577126) each failed in the **real NSIS build** step, after successful P04 license-resource preparation: Cargo's unbounded `tauri = "2.11.5"` resolved to 2.12.5, while JavaScript `@tauri-apps/api` remained 2.11.1. Upstream Tauri requires matching major/minor versions.
+
+P05 now pins Rust `tauri = "=2.11.5"`, matching the existing pinned JavaScript API and CLI 2.11.x. A new fail-closed source checker and eight positive/hostile tests require exact Rust/JS pins, matching CLI minor, both genuine installed NSIS steps, and a matching installed npm API version where present. P05 Windows/Linux CI executes them before promoting any source gate; original E2 workflows and their native OS interactions are preserved unchanged, hence their source-pinned provenance inventory remains valid.
+
+**Evidence boundary:** A passing version-alignment test proves only deterministic declared compatibility. Real Windows install/launch/restart/uninstall, subsequent native security/GUI correctness, dependency-license review and signed release gates remain pending until an actual successful exact-head run. Zero historical PR closures or CI removals authorized.
+
+## Nov 7 continuation: actual transitive Tauri native failure and upstream notice recovery
+
+- Exact-head OS builds at `9d28f22` reached the Rust native compiler and failed due **Tauri 2.11.5 ↔ 2.12.x runtime family skew**, beyond the original JavaScript version check. Aligned exact Rust `tauri = "=2.12.5"`, JS API `2.12.4`, CLI `2.12.4`; added resolved Cargo.lock runtime-family guard and adversarial tests. Only a genuine installed OS run can prove the repair.
+- User requested upstream licenses in **every verification submission**. Both E2 Windows NSIS workflows now retrieve complete original license texts for LLVM, CPython, Tauri (both MIT and Apache-2.0 at tauri-v2.12.5), CodeMirror, and esbuild directly from their upstream pinned GitHub tags. They compare exact text with the reviewed repo copies (Windows CRLF normalized); unexpected changes, missing bytes, network failure, symlink or oversized responses are denied.
+- A source-SHA-bound `upstream-fetch.json` with six URLs, revisions and SHA-256s is copied **into actual `verification-notices/` installer resources** and included in CI artifacts alongside full texts, resolved npm/Cargo notice files and the exact native package SHA receipt. `verify_p04_license_bundle.py --require-upstream` now rejects a missing/mismatched receipt. Additional package legal gaps remain explicitly unresolved and no release/legal approval has been asserted.
+- Both prior E2 workflow SHA pins and review history were preserved and updated, the new E2 source blob IDs and 38-workflow retention decisions remain audited. No prior GitHub PR or safety CI retired. Exact-head CI and installed artifact acceptance now pending.
+
+## Native verification package coverage extension — November 7
+
+The upstream notice provenance policy is now implemented beyond both initial E2 Windows smoke jobs in WO8 installed Windows NSIS, WO8 installed Linux Debian and both WO9 installed Windows/Linux CI jobs. Each job fetches all six pinned original upstream licenses and submits actual resolved npm/Cargo notices, a source-SHA-bound provenance record inside the package's `THIRD_PARTY_LICENSES` directory, and an exact package SHA receipt. Each job tests the current Tauri runtime family before compilation and uses the current aligned Tauri 2.12 CLI. Installed Windows/Linux checks require the upstream receipt file in the real native package. CI retains all real installed edit/ZIP/Git/rollback tests. Three historical workflow original SHA identities are preserved separately from the repaired current blob SHA; no original PR/CI retired. Exact-head native results pending. Signed release and upstream legal reviews remain default deny.
+
+## WO9 exact installed failure repair — November 7
+
+Real P05 exact-head native run [WO9 42416663597](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42416663597) exposed a genuine CI pipeline flaw: WO9 Windows executed the upstream receipt writer twice and duplicated the collector's `--upstream-receipt` option; Linux had zero upstream receipt fetch/forwarding despite its required package audit. These mistakes caused **missing receipt** denial on real Debian verification. Repaired both exact native jobs to fetch once, collect once and verify once. A new targeted Windows/Linux source assertion checks all six independently packaged E2/WO8/WO9 jobs preserve one actual upstream fetch and receipt, plus exact current Tauri CLI; real installed rechecks still required. The actual Linux GTK folder picker and Windows UI dialog confirmation problems remain separate failures.
+
+## P02/P04 native folder picker repair — November 7
+
+Inspected real P05 OS installed failure logs: Windows installer/GUI shell **passed**, then selected fixture directory failed at `native_picker_confirmation_not_found` because the fixture blindly searched every desktop button globally and treated Enter-accepted paths as errors. The revised fixture accepts a typed path **only when the exact unique project becomes visible through the installed app's real UI Automation tree**, otherwise invokes an OS native confirmation button only inside a dialog owned by the installed process/HWND. Linux .deb and GTK window **passed**, but the native picker saw zero accessible rows for the ephemeral fixture after navigating to its parent; the fixture now types the exact target directory into GTK's native location entry, confirms exclusively through actual AT-SPI dialog actions, and still requires registered project UI and later real disk save/restart. Strict source regressions preserve the native witness; exact-head OS acceptance still must be run and is not inferred from source tests.
+
+## Live Windows native picker failure identified and repaired, not yet accepted
+
+Installed WO9 run 42418856344 reached its actual Windows OS chooser. The previous heuristic mistakenly saw the fixture directory NAME inside the still-open chooser and treated it as registered. An actual UIA snapshot then showed the chooser's Select Folder element as ControlType.Pane, not Button, and the app's Edit control remained absent. Revised OS-only fixture: search owned native windows of the installed Tauri PID/owner HWND, accept a real Pane/Button via InvokePattern or bounded user32 physical pointer input, and reject still-open Select Folder windows before checking actual IDE project registration and Edit. No JS, DOM, Tauri IPC or backend bypass; repeat real Windows installed acceptance required.

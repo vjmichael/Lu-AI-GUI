@@ -1,0 +1,83 @@
+name: IDE B11 reviewed merge native source regression
+on:
+  push:
+    branches: [ide/b11-reviewed-conflict-merge-20261108]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ide-b11-exact-source
+  cancel-in-progress: true
+
+jobs:
+  b11-exact-head:
+    name: B11 genuine native source check - ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 95
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2022, ubuntu-24.04]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify exact event commit and unchanged source authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          B10=ab20deade3974f14770fa94f1f6c3687f36dcc13
+          git merge-base --is-ancestor "$B10" HEAD
+          git diff --exit-code "$B10" HEAD -- \
+            ide/host ide/supervisor ide/app/src-tauri \
+            ide/packaging ide/app/fixtures
+          echo "B11_NO_NATIVE_AUTHORITY_EXPANSION=PASS"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Exact B11 Node and all earlier editor tests
+        working-directory: ide/app
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci --ignore-scripts --no-audit --no-fund
+          node --test tests/editor_conflict_merge.test.mjs
+          npm run check
+          echo "B11_FRONTEND_SOURCE_REGRESSIONS=PASS"
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+      - name: Install original native GTK/Tauri compilation requirements
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev libayatana-appindicator3-dev \
+            librsvg2-dev libgtk-3-dev patchelf libssl-dev
+      - name: Native host and locked Tauri source compilation
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --manifest-path ide/host/Cargo.toml --all-targets
+          cargo check --manifest-path ide/app/src-tauri/Cargo.toml --all-targets --locked
+          echo "B11_NATIVE_HOST_AND_DESKTOP_COMPILE=PASS"
+          echo "B11_INSTALLED_UNDO_MERGE_CONFLICT_GUI_ACCEPTANCE=OPEN"
+      - name: Record exact source receipt even on failure
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p .b11-receipts
+          printf 'commit=%s\nrunner=%s\njob=%s\ninstalledGUI=OPEN\n' \
+            "$GITHUB_SHA" "$RUNNER_OS" "$GITHUB_RUN_ID" \
+            > .b11-receipts/source-native-receipt.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ide-b11-source-${{ matrix.os }}
+          path: .b11-receipts/source-native-receipt.txt
+          if-no-files-found: error
+          retention-days: 14

@@ -1,0 +1,333 @@
+{
+  "schema": "lu.ide.p05.workflow-coverage.v1",
+  "sourceCandidateSha": "bc4fd78685c342675e4a80556970e934125a0e20",
+  "observedWorkflowCount": 38,
+  "requiredWorkflows": [
+    {
+      "path": ".github/workflows/ide-alpha-windows.yml",
+      "blobSha": "7680fdafd56458a9cff1ec6b6ea1478e5c662c7c",
+      "disposition": "retain_until_verified_replacement",
+      "criticalNativeOrReleaseEvidence": false,
+      "replacementAccepted": false,
+      "prTriggerPruningAuthorized": false
+    },
+    {
+      "path": ".github/workflows/ide-appcontainer-windows.yml",
+      "blobSha": "0031405812af8347a32123fefdd2050e4b20c8d8",
+      "disposition": "retain_until_verified_replacement",
+      "criticalNativeOrReleaseEvidence": true,
+      "replacementAccepted": false,
+      "prTriggerPruningAuthorized": false
+    },
+    {
+      "path": ".github/workflows/ide-continuity.yml",
+      "blobSha": "286b52f3fa1004d9fdf28306f6002a775772e9f1",
+      "disposition": "retain_until_verified_replacement",
+      "criticalNativeOrReleaseEvidence": false,
+      "replacementAccepted": false,
+      "prTriggerPruningAuthorized": false
+    },
+    {
+      "path": ".github/workflows/ide-d7-windows-worker.yml",
+      "blobSha": "518635e58bbac5b249bfeadba7e60c90b9d0010c",
+      "disposition": "retain_until_verified_replacement",
+      "criticalNativeOrReleaseEvidence": true,
+      "replacementAccepted": false,
+      "prTriggerPruningAuthorized": false
+    },
+    {
+      "path": ".github/workflows/ide-d7b-native-acceptance.yml",
+      "blobSha": "f70955319c621cbd08cd2a7a6f7eac77caffc3a1",
+      "disposition": "retain_until_verified_replacement",
+      "criticalNativeOrReleaseEvidence": true,
+      "replacementAccepted": false,
+      "prTriggerPruningAuthorized": false
+    },
+    {
+      "path": ".github/workflows/ide-d7c-windows-capability.yml",
+      "blobSha": "a4277dffbcd0026ada381f38813205a4c9354c4c",
+      "disposition": "retain_until_verified_replacement",
+      "criticalNativeOrReleaseEvidence": true,
+      "replacementAccepted": false,
+      "prTriggerPruningAuthorized": false
+    },
+    {
+      "path": ".github/workflows/ide-d7d-protected-service.yml",
+      "blobSha": "ce56f987cb056c01ef7be58318d70c9e136aafad",
+      "disposition": "retain_until_verified_replacement",
+      "criticalNativeOrReleaseEvidence": true,
+      "replacementAccepted": false,
+      "prTriggerPruningAuthorized": false
+    },
+    {
+      "path": ".github/workflows/ide-e1-lsp-foundation.yml",
+      "blobSha": "10e8cb970bda58aa9213125443590a4e9d433c1b",
+      "disposition": "retain_until_verified_replacement",
+      "criticalNativeOrReleaseEvidence": false,
+      "replacementAccepted": false,
+      "prTriggerPruningAuthorized": false
+    },
+    {
+      "path": ".github/workflows/ide-e2-native-lsp.yml",
+      "blobSha": "8ca27a7f666460e021b45c2e5469d532d0a82071",
+      "disposition": "retain_until_verified_replacement",
+      "criticalNativeOrReleaseEvidence": true,
+      "replacementAccepted": false,
+      "prTriggerPruningAuthorized": false
+    },
+    {
+      "path": ".github/workflows/ide-e2-supervised-lsp.yml",
+      "blobSha": "c2be7149dc3424d7c296aae2f98a6fd37b99c77b",
+      "disposition": "retain_until_verified_replacement",
+      "criticalNativeOrReleaseEvidence": true,
+      "replacementAccepted": false,
+      "prTriggerPruningAuthorized": false,
+      "originalBlobSha": "6b922291b4bc8eab1d164f121cccc329c12a4f96",
+      "reviewedRepair": "P04 exact unsigned NSIS/source license inventory and SHA receipt, P05 resolved Tauri compatibility guard plus independently fetched exact upstream notice bytes and bundled hashed retrieval proof; native installed and security gates retained"
+    },
+    {
+      "path": ".github/workflows/ide-e2-unsigned-installed-smoke.yml",
+      "blobSha": "6d8761823e67575cb979b15570f8fb44d571d4d5",
+      "disposition": "retain_until_verified_replacement",
+      "criticalNativeOrReleaseEvidence": true,
+      "replacementAccepted": false,
+      "prTriggerPruningAuthorized": false,
+      "originalBlobSha": "02fae6f43669b03cb2bf96758a13ae366dd91ab1",
+      "reviewedRepair": "P04 exact unsigned NSIS/source license inventory and SHA receipt, P05 resolved Tauri compatibility guard plus independently fetched exact upstream notice bytes and bundled hashed retrieval proof; native installed and security gates retained"
+    },
+    {
+      "path": ".github/workflows/ide-p02-native-checks.yml",
+      "blobSha": "b8f80361b98df9f93ee7439ab44242f3d9587f70",
+      "disposition": "retain_until_verified_replacement",
+      "criticalNativeOrReleaseEvidence": true,
+      "replacementAccepted": false,
+      "prTriggerPruningAuthorized": false
+    },
+    {
+      "path": ".github/workflows/ide-p03-native-security-checks.yml",
+      "blobSha": "aa567ec48ce084f5c698f77cdd07de381fa72221",
+      "disposition": "retain_until_verified_replacement",
+      "criticalNativeOrReleaseEvidence": true,
+      "replacementAccepted": false,
+      "prTriggerPruningAuthorized": false
+    },
+    {
+      "path": ".github/workflows/ide-p04-linux-upgrade.yml",
+      "blobSha": "5819cdc1508e2ded93b14a3eda0a6046b18259e0",
+      "disposition": "retain_until_verified_replacement",
+      "criticalNativeOrReleaseEvidence": true,
+      "replacementAccepted": false,
+      "prTriggerPruningAuthorized": false
+    },
+    {
+      "path": ".github/workflows/ide-p04-signed-reinstall.yml",
+      "blobSha": "9a23b270e06245f0140d18732ed5fc79eb32bf37",
+      "disposition": "retain_until_verified_replacement",
+      "criticalNativeOrReleaseEvidence": true,
+      "replacementAccepted": false,
+      "prTriggerPruningAuthorized": false
+    },
+    {
+      "path": ".github/workflows/ide-p04-source-acceptance.yml",
+      "blobSha": "4c4659bc09ee1529b4ef5583311b51f9bcccba0d",
+      "disposition": "retain_until_verified_replacement",
+      "criticalNativeOrReleaseEvidence": true,
+      "replacementAccepted": false,
+      "prTriggerPruningAuthorized": false
+    },
+    {
+      "path": ".github/workflows/ide-p04-upgrade-native.yml",
+      "blobSha": "ff101bac8fab4873f5eba247d0494f6bf37181f0",
+      "disposition": "retain_until_verified_replacement",
+      "criticalNativeOrReleaseEvidence": true,
+      "replacementAccepted": false,
+      "prTriggerPruningAuthorized": false
+    },
+    {
+      "path": ".github/workflows/ide-sandbox-linux.yml",
+      "blobSha": "ea60133db84b0c909773c7f15030c950f43891dc",
+      "disposition": "retain_until_verified_replacement",
+      "criticalNativeOrReleaseEvidence": true,
+      "replacementAccepted": false,
+      "prTriggerPruningAuthorized": false
+    },
+    {
+      "path": ".github/workflows/ide-sandbox-windows.yml",
+      "blobSha": "4344a3563b9151e874443c5000639114342e66b5",
+      "disposition": "retain_until_verified_replacement",
+      "criticalNativeOrReleaseEvidence": true,
+      "replacementAccepted": false,
+      "prTriggerPruningAuthorized": false
+    },
+    {
+      "path": ".github/workflows/ide-standalone.yml",
+      "blobSha": "cb3142c60154bcc22aee12b36b9080e415a1aba5",
+      "disposition": "retain_until_verified_replacement",
+      "criticalNativeOrReleaseEvidence": false,
+      "replacementAccepted": false,
+      "prTriggerPruningAuthorized": false
+    },
+    {
+      "path": ".github/workflows/ide-supervisor-core.yml",
+      "blobSha": "e0d26f80713cdf498c3bfdf82645498dddf34e16",
+      "disposition": "retain_until_verified_replacement",
+      "criticalNativeOrReleaseEvidence": true,
+      "replacementAccepted": false,
+      "prTriggerPruningAuthorized": false
+    },
+    {
+      "path": ".github/workflows/ide-supervisor-os-rights.yml",
+      "blobSha": "54eeabf51d698cb3342e624cb8157a23a1bcdcc5",
+      "disposition": "retain_until_verified_replacement",
+      "criticalNativeOrReleaseEvidence": true,
+      "replacementAccepted": false,
+      "prTriggerPruningAuthorized": false
+    },
+    {
+      "path": ".github/workflows/ide-wo4-linux-native-delegation.yml",
+      "blobSha": "a2fe91d09757347f206ba39e5618c4d3803c42c6",
+      "disposition": "retain_until_verified_replacement",
+      "criticalNativeOrReleaseEvidence": true,
+      "replacementAccepted": false,
+      "prTriggerPruningAuthorized": false
+    },
+    {
+      "path": ".github/workflows/ide-wo4-linux-source.yml",
+      "blobSha": "2fb1a5571f36a8905c0264d28d82f5e33ee0e2fc",
+      "disposition": "retain_until_verified_replacement",
+      "criticalNativeOrReleaseEvidence": true,
+      "replacementAccepted": false,
+      "prTriggerPruningAuthorized": false
+    },
+    {
+      "path": ".github/workflows/ide-wo5-native-linux-clangd.yml",
+      "blobSha": "12fd318caa638fa4e0c773256145d483588b9a83",
+      "disposition": "retain_until_verified_replacement",
+      "criticalNativeOrReleaseEvidence": true,
+      "replacementAccepted": false,
+      "prTriggerPruningAuthorized": false
+    },
+    {
+      "path": ".github/workflows/ide-wo6-build-test-dap.yml",
+      "blobSha": "fe7bddaee39a93d4a063e8067cc2fcf03e317cb3",
+      "disposition": "retain_until_verified_replacement",
+      "criticalNativeOrReleaseEvidence": true,
+      "replacementAccepted": false,
+      "prTriggerPruningAuthorized": false
+    },
+    {
+      "path": ".github/workflows/ide-wo6-native-desktop.yml",
+      "blobSha": "7d480b2627f3fa7c42756b301e653f6ca4cd8cb7",
+      "disposition": "retain_until_verified_replacement",
+      "criticalNativeOrReleaseEvidence": true,
+      "replacementAccepted": false,
+      "prTriggerPruningAuthorized": false
+    },
+    {
+      "path": ".github/workflows/ide-wo6-native-os-acceptance.yml",
+      "blobSha": "d7627899b3a6cafc7b383f00abbb2b9e7107fe2d",
+      "disposition": "retain_until_verified_replacement",
+      "criticalNativeOrReleaseEvidence": true,
+      "replacementAccepted": false,
+      "prTriggerPruningAuthorized": false
+    },
+    {
+      "path": ".github/workflows/ide-wo7-installed-acceptance.yml",
+      "blobSha": "b1046bc7277ccb31924e3ed3b78d7afb22595d1e",
+      "disposition": "retain_until_verified_replacement",
+      "criticalNativeOrReleaseEvidence": true,
+      "replacementAccepted": false,
+      "prTriggerPruningAuthorized": false
+    },
+    {
+      "path": ".github/workflows/ide-wo7-signed-release-preflight.yml",
+      "blobSha": "6413844fdaa579840441d538d21bb62cf605fc93",
+      "disposition": "retain_until_verified_replacement",
+      "criticalNativeOrReleaseEvidence": true,
+      "replacementAccepted": false,
+      "prTriggerPruningAuthorized": false
+    },
+    {
+      "path": ".github/workflows/ide-wo8-installed-linux.yml",
+      "blobSha": "cbb33c566a492ed176d7af8ef381019c5753605e",
+      "disposition": "retain_until_verified_replacement",
+      "criticalNativeOrReleaseEvidence": true,
+      "replacementAccepted": false,
+      "prTriggerPruningAuthorized": false,
+      "originalBlobSha": "8229a794134a7b852a993ae3520ab878803718b1",
+      "reviewedRepair": "P04 exact unsigned NSIS/source license inventory and SHA receipt, P05 resolved Tauri compatibility guard plus independently fetched exact upstream notice bytes and bundled hashed retrieval proof; native installed and security gates retained"
+    },
+    {
+      "path": ".github/workflows/ide-wo8-installed-windows.yml",
+      "blobSha": "8fadc3f1829e62123b9da6a5e6bbd49a3f3ec36f",
+      "disposition": "retain_until_verified_replacement",
+      "criticalNativeOrReleaseEvidence": true,
+      "replacementAccepted": false,
+      "prTriggerPruningAuthorized": false,
+      "originalBlobSha": "f3389b9e2439c9e0eb87635791bd046b0ecd315e",
+      "reviewedRepair": "P04 exact unsigned NSIS/source license inventory and SHA receipt, P05 resolved Tauri compatibility guard plus independently fetched exact upstream notice bytes and bundled hashed retrieval proof; native installed and security gates retained"
+    },
+    {
+      "path": ".github/workflows/ide-wo8-protected-recovery.yml",
+      "blobSha": "52261be31b317839ea55a3e6e2fb145193ce2331",
+      "disposition": "retain_until_verified_replacement",
+      "criticalNativeOrReleaseEvidence": true,
+      "replacementAccepted": false,
+      "prTriggerPruningAuthorized": false
+    },
+    {
+      "path": ".github/workflows/ide-wo8-signed-protected-e2e.yml",
+      "blobSha": "08e2ab350b9e0c9e88958a40a3eeca59a3a66df5",
+      "disposition": "retain_until_verified_replacement",
+      "criticalNativeOrReleaseEvidence": true,
+      "replacementAccepted": false,
+      "prTriggerPruningAuthorized": false
+    },
+    {
+      "path": ".github/workflows/ide-wo8-source-safety.yml",
+      "blobSha": "d5ccdf5a4a9832d6a659586cae4c627ab20bc14c",
+      "disposition": "retain_until_verified_replacement",
+      "criticalNativeOrReleaseEvidence": true,
+      "replacementAccepted": false,
+      "prTriggerPruningAuthorized": false
+    },
+    {
+      "path": ".github/workflows/ide-wo9-advanced-workflows.yml",
+      "blobSha": "5949c11d2a288520f7fb97f3bd758fbdf862f7cd",
+      "disposition": "retain_until_verified_replacement",
+      "criticalNativeOrReleaseEvidence": true,
+      "replacementAccepted": false,
+      "prTriggerPruningAuthorized": false
+    },
+    {
+      "path": ".github/workflows/ide-wo9-installed-native.yml",
+      "blobSha": "60c1bf3d20fb08dcdcfd183a8ffec76599fa6c52",
+      "disposition": "retain_until_verified_replacement",
+      "criticalNativeOrReleaseEvidence": true,
+      "replacementAccepted": false,
+      "prTriggerPruningAuthorized": false,
+      "originalBlobSha": "ef57ffe24b71f61c3f05b3ec44aa2faa96bdc7de",
+      "reviewedRepair": "P04 exact unsigned NSIS/source license inventory and SHA receipt, P05 resolved Tauri compatibility guard plus independently fetched exact upstream notice bytes and bundled hashed retrieval proof; native installed and security gates retained"
+    },
+    {
+      "path": ".github/workflows/ide-wo9-signed-protected-acceptance.yml",
+      "blobSha": "8931e49493e2559cf5368f93b72029418902001c",
+      "disposition": "retain_until_verified_replacement",
+      "criticalNativeOrReleaseEvidence": true,
+      "replacementAccepted": false,
+      "prTriggerPruningAuthorized": false
+    }
+  ],
+  "nativeReleaseSecurityClosure": "pending",
+  "reason": "No P02–P04 exact-head independently accepted replacement; preserve all 38 workflow source blobs and their run histories.",
+  "releaseApproved": false,
+  "reviewedSourceRepair": {
+    "description": "Two E2 native installed-smoke build paths were red because P04 Tauri resources require verification-notices; added resolved licenses + strict artifact receipts and no deleted tests.",
+    "workflowPaths": [
+      ".github/workflows/ide-e2-supervised-lsp.yml",
+      ".github/workflows/ide-e2-unsigned-installed-smoke.yml"
+    ],
+    "originalBaseCandidateSha": "bc4fd78685c342675e4a80556970e934125a0e20",
+    "nativeInstalledAcceptance": "pending"
+  }
+}

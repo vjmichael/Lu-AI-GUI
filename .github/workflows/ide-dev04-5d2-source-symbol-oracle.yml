@@ -1,0 +1,126 @@
+name: IDE DEV04.5D2 independent native ELF and PDB line mapping
+on:
+  pull_request:
+    paths:
+      - 'ide/packaging/verify_dev045d2_line_oracle.py'
+      - 'ide/packaging/test_verify_dev045d2_line_oracle.py'
+      - 'ide/host/src/dap_source_lines.rs'
+      - 'ide/supervisor/src/dap_transport.rs'
+      - 'ide/supervisor/src/linux_lsp_worker.rs'
+      - 'ide/supervisor/src/windows_lsp_worker.rs'
+      - '.github/workflows/ide-dev04-5d2-source-symbol-oracle.yml'
+      - 'ide/docs/IDE_DEV045D2_INDEPENDENT_STOP_LINE_20261108.md'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: dev045d2-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  independent-real-debug-info:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2022]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Require exact candidate commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          echo "DEV045D2_EXACT_HEAD=PASS"
+      - name: Verify native LLVM compiler and independent symbol oracle available
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          if ($IsWindows) {
+            $llvm='C:\Program Files\LLVM\bin'
+            if (Test-Path $llvm) { $env:PATH="$llvm;$env:PATH" }
+            foreach ($name in @('clang-cl','lld-link','llvm-symbolizer')) {
+              if (!(Get-Command $name -ErrorAction SilentlyContinue)) {
+                throw "DEV045D2_NATIVE_LLVM_TOOL_UNAVAILABLE:$name"
+              }
+            }
+          } else {
+            foreach ($name in @('clang','nm','llvm-symbolizer')) {
+              if (!(Get-Command $name -ErrorAction SilentlyContinue)) {
+                throw "DEV045D2_NATIVE_LLVM_TOOL_UNAVAILABLE:$name"
+              }
+            }
+          }
+          Write-Host 'DEV045D2_NATIVE_TOOLCHAIN_PRESENT=PASS'
+      - name: Execute real compiled LLVM ELF DWARF or PE PDB and hostile oracle tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "$RUNNER_OS" = Windows ]; then
+            export PATH="/c/Program Files/LLVM/bin:$PATH"
+          fi
+          python -m unittest discover -s ide/packaging -p 'test_verify_dev045d2_line_oracle.py' -v
+          echo 'DEV045D2_INDEPENDENT_COMPILER_LINE_SEMANTICS=TESTED'
+          echo 'DEV045D2_LIVE_PROTECTED_STOP_PC_AND_KERNEL_SLIDE=NOT_ACCEPTED'
+  native-source-and-worker-compile:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2022]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Verify commit identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+      - name: Acquire explicit native Rust compiler and formatter
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.88.0 --profile minimal
+          rustup component add rustfmt --toolchain 1.88.0
+      - name: Compile and test host stopped-PC parser
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo +1.88.0 test --manifest-path ide/host/Cargo.toml --lib stopped_instruction_pointer_claim_is_strictly_hex_or_absent
+          cargo +1.88.0 test --manifest-path ide/host/Cargo.toml --lib dev045d
+      - name: Compile native protected transport source (not kernel execution)
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "$RUNNER_OS" = Windows ]; then
+            cargo +1.88.0 check --manifest-path ide/supervisor/Cargo.toml --features 'dap-transport,windows-worker,protected-recovery-service'
+          else
+            cargo +1.88.0 check --manifest-path ide/supervisor/Cargo.toml --features 'dap-transport,linux-worker'
+          fi
+      - name: Confirm no browser debugger authority created
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          s=Path('ide/host/src/dap_source_lines.rs').read_text()
+          tool=Path('ide/packaging/verify_dev045d2_line_oracle.py').read_text()
+          assert 'instruction_address: Option<u64>' in s
+          assert 'debugger_execution_authorized: false' in s
+          assert 'installed_app_accepted: false' in s
+          assert 'stoppedPcKernelAttested": False' in tool
+          assert 'runtimeSlideKernelAttested": False' in tool
+          assert 'breakpointsSteppingVariablesEnabled": False' in tool
+          assert 'subprocess.run(command' in tool
+          assert 'shell=True' not in tool
+          print('DEV045D2_NATIVE_SOURCE_NO_ESCALATION=PASS')
+          PY

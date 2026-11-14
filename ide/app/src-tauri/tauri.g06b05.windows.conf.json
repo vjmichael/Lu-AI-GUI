@@ -1,0 +1,16 @@
+{
+  "bundle": {
+    "active": true,
+    "targets": [
+      "nsis"
+    ],
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser"
+      }
+    },
+    "resources": {
+      "verification-notices/": "THIRD_PARTY_LICENSES"
+    }
+  }
+}

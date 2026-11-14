@@ -1,0 +1,88 @@
+#!/usr/bin/env bash
+# B4 native Linux installed .deb two-pane editing acceptance.
+# This is an installed-app smoke, NOT a signed or protected worker acceptance.
+set -euo pipefail
+deny() { echo "B4_NATIVE_LINUX_DENIED:$1" >&2; exit 1; }
+[[ "${GITHUB_ACTIONS:-}" == true && -n "${RUNNER_TEMP:-}" ]] || deny disposable_native_runner_only
+[[ $# -eq 2 ]] || deny usage_deb_path_and_exact_source_sha
+deb="$(realpath -- "$1")"
+head_sha="$2"
+[[ "$head_sha" =~ ^[a-f0-9]{40}$ ]] || deny exact_commit_sha_missing
+actual_sha="$(git rev-parse HEAD)"
+[[ "$actual_sha" == "$head_sha" ]] || deny exact_head_drift
+[[ "$deb" == "$PWD/ide/app/src-tauri/target/release/bundle/deb/"* ]] || deny package_outside_build_output
+[[ -f "$deb" && ! -L "$deb" ]] || deny missing_or_linked_package
+[[ "$(dpkg-deb --field "$deb" Architecture)" == amd64 ]] || deny unexpected_package_arch
+package="$(dpkg-deb --field "$deb" Package)"
+[[ "$package" == lu-ide-desktop || "$package" == lu-ide ]] || deny unexpected_package_identity
+[[ "$(dpkg-query --show --showformat='${Status}' "$package" 2>/dev/null || true)" != "install ok installed" ]] || deny preexisting_package
+echo "WO8_LINUX_DEB_SHA256=$(sha256sum "$deb" | cut -d' ' -f1)"
+installed=0
+cleanup() {
+  if [[ "$installed" -eq 1 ]]; then
+    if ! sudo dpkg --remove "$package"; then
+      echo 'WO8_NATIVE_LINUX_DENIED:debian_uninstall_failed' >&2
+      exit 1
+    fi
+    if dpkg-query --show --showformat='${Status}' "$package" 2>/dev/null | grep -q 'install ok installed'; then
+      echo 'WO8_NATIVE_LINUX_DENIED:package_remains_installed' >&2
+      exit 1
+    fi
+  fi
+}
+trap cleanup EXIT
+sudo dpkg --install "$deb" || deny native_deb_install_failed
+installed=1
+exec_path=/usr/bin/lu-ide-desktop
+[[ -x "$exec_path" ]] || deny installed_desktop_executable_missing
+# The unsigned default install must not stage native debug/tool execution.
+[[ ! -e /usr/lib/lu-ide-desktop/resources/debugger/bin/lldb-dap ]] || deny default_install_bundled_debugger
+fixture="$RUNNER_TEMP/lu-ide-wo8-linux-${GITHUB_RUN_ID:-fixture}"
+mkdir -m 700 -- "$fixture"
+env WO8_INSTALLED_EXE="$exec_path" WO8_FIXTURE_ROOT="$fixture" \
+  dbus-run-session -- xvfb-run -a -s '-screen 0 1280x800x24' \
+  bash ide/app/fixtures/wo8_linux_window_acceptance.sh || deny real_graphical_launch_failed
+echo "B4_LINUX_INSTALLED_DEB_GRAPHICAL_LAUNCH=PASS"
+# Real native GTK chooser, CodeMirror, system clipboard and process restart.
+printf 'fn main() { println!("b4 original main"); }\n' >"${fixture}/main.rs"
+printf 'pub fn second() { println!("b4 other"); }\n' >"${fixture}/second.rs"
+env WO8_INSTALLED_EXE="$exec_path" WO8_FIXTURE_ROOT="$fixture" \
+  dbus-run-session -- xvfb-run -a -s '-screen 0 1280x800x24' \
+  /usr/bin/python3 ide/app/fixtures/b4_linux_installed_split_atspi.py || deny linux_b4_split_editor_acceptance_failed
+echo "B4_LINUX_REAL_INSTALLED_TWO_PANE_EDITOR_SAVE=PASS"
+# Same installed .deb, independent 48-tab workload with real GTK/AT-SPI
+# interactions and kernel /proc descendant memory measurements.
+perf="$RUNNER_TEMP/lu-ide-b5-linux-${GITHUB_RUN_ID:-fixture}"
+mkdir -m 700 -- "$perf"
+python3 - "$perf" <<'PY'
+from pathlib import Path
+import sys
+folder=Path(sys.argv[1])
+for number in range(48):
+    name="main.rs" if number==0 else f"p{number-1:02d}.rs"
+    marker="main" if number==0 else f"p{number-1:02d}"
+    long=number==0 or number%4==0
+    line=f"// B5_SOURCE_{marker} native editor benchmark bytes, never execute this source\n"
+    text=line*(3000 if long else 80)
+    if number==0 and not 130*1024<=len(text.encode())<=512*1024:
+        raise SystemExit("B5_NATIVE_LINUX_DENIED:invalid_large_file_fixture")
+    (folder/name).write_text(text,encoding="utf-8")
+(folder/"p47.rs").write_text("// B5_SOURCE_p47 must be rejected as tab 49\n",encoding="utf-8")
+PY
+env B5_EXACT_CHECKOUT_SHA="$head_sha" WO8_INSTALLED_EXE="$exec_path" WO8_FIXTURE_ROOT="$perf" \
+  dbus-run-session -- xvfb-run -a -s '-screen 0 1280x800x24' \
+  /usr/bin/python3 ide/app/fixtures/b5_linux_installed_perf_atspi.py \
+  || deny linux_b5_real_ui_rss_latency_acceptance_failed
+[[ -s "$RUNNER_TEMP/ide-b5-linux-installed-performance.json" ]] \
+  || deny missing_real_linux_os_performance_receipt
+python3 - "$RUNNER_TEMP/ide-b5-linux-installed-performance.json" "$head_sha" <<'PY'
+import json,sys
+r=json.load(open(sys.argv[1],encoding="utf-8"))
+assert r["schemaVersion"]==1 and r["sourceCommit"]==sys.argv[2]
+assert len(r["openRoundTripMs"])==47
+assert len(r["switchRoundTripMs"])==12
+assert r["bounded49thDenial"] and r["explicitSaveVerified"] and r["noImplicitSaveVerified"]
+assert r["rssPeakObservedBytes"]>0
+print("B5_REAL_INSTALLED_LINUX_PERFORMANCE_RECEIPT=MEASURED_NOT_APPROVED")
+PY
+echo "B4_PROTECTED_RUN_DEBUG_AND_SIGNED_RELEASE=NOT_ACCEPTED"

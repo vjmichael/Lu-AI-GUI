@@ -1,0 +1,115 @@
+name: IDE DEV04.5D5 pinned LLVM owner-event native Windows acceptance
+on:
+  pull_request:
+    paths:
+      - 'ide/llvm18_owner/**'
+      - 'ide/supervisor/src/windows_event_owner.rs'
+      - 'ide/supervisor/src/windows_lsp_worker.rs'
+      - 'ide/supervisor/src/windows_kernel_pc.rs'
+      - 'ide/supervisor/src/lsp_transport.rs'
+      - 'ide/supervisor/src/dap_transport.rs'
+      - 'ide/supervisor/src/lib.rs'
+      - 'ide/supervisor/Cargo.toml'
+      - 'ide/supervisor/examples/wo6_native_dap_acceptance.rs'
+      - '.github/workflows/ide-dev04-5d5-owner-event-native.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: dev045d5-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  windows-pinned-llvm18-native:
+    # The fixed CMake VS17.2022 generator must run where a genuine
+    # registered VS2022 instance exists. Windows 2025 failed this exact
+    # native configure before compiling LLVM; never substitute an unpinned
+    # generator or treat offline MSVC files as a registered VS instance.
+    runs-on: windows-2022
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+          components: rustfmt
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10.11'
+      - name: Require exact reviewed head
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+      - name: Compile protected host owner-event records and test negative cases
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $features='dap-transport,protected-recovery-service,dev045d5-ci-event-owner'
+          cargo test --manifest-path ide/supervisor/Cargo.toml --features $features --lib windows_event_owner
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: owner-event parser/nonce/replay tests failed' }
+          cargo check --manifest-path ide/supervisor/Cargo.toml --features $features --example wo6_native_dap_acceptance
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: real Windows host owner-event compile failed' }
+          cargo check --release --manifest-path ide/supervisor/Cargo.toml --features 'dap-transport,protected-recovery-service'
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: Windows regular release compile regressed' }
+      - name: Stage exact reviewed offline Windows SDK and MSVC toolchain
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          & ./ide/supervisor/fixtures/New-PinnedWindowsToolchain.ps1 -OutputRoot (Join-Path $env:RUNNER_TEMP 'dev045d5-offline-msvc') -LockPath (Join-Path $env:RUNNER_TEMP 'dev045d5-msvc-lock.json') -RustVersion '1.99.1' -SdkVersion '10.0.26100.0' -VsVersionPrefix '17.14.' -MsvcVersionPrefix '14.44.'
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: independent offline Cargo/SDK bundle failed' }
+      - name: Require a registered original Visual Studio 17.14 generator before LLVM
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $vswhere=Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+          if (!(Test-Path -LiteralPath $vswhere -PathType Leaf)) { throw 'FIN04_LLVM_REGISTERED_VSWHERE_MISSING' }
+          $instances=@((& $vswhere -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -format json) | ConvertFrom-Json)
+          $matching=@($instances | Where-Object { $_.installationVersion -match '^17\.14\.' -and (Test-Path -LiteralPath $_.installationPath -PathType Container) })
+          if ($matching.Count -ne 1) { throw 'FIN04_LLVM_REGISTERED_VS17_14_UNAVAILABLE' }
+          Write-Host 'FIN04_LLVM_REGISTERED_VS17_14=VERIFIED_NOT_KERNEL_ACCEPTED'
+      - name: Compile real source-pinned LLVM18 DebuggerThread and produce hashed owner binary
+        shell: pwsh
+        run: |
+          & ide/llvm18_owner/Build-PinnedOwnerWindows.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: modified LLVM18 LLDB Windows build failed' }
+      - name: Real SCM/AppContainer owner stop, PE/PDB, cancellation and journal restart
+        shell: pwsh
+        run: |
+          & ide/llvm18_owner/Test-PinnedOwnerWindows.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: native protected stop/owner/journal acceptance failed' }
+      - name: Preserve binary source and offline compiler lock evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dev045d5-windows-native-locks
+          path: |
+            ${{ runner.temp }}/lu-owner-llvm18-lock.json
+            ${{ runner.temp }}/dev045d5-msvc-lock.json
+          if-no-files-found: ignore
+      - name: No installed or release acceptance inferred
+        if: always()
+        shell: bash
+        run: |
+          echo 'DEV045D5_SIGNED_RELEASE=NOT_ACCEPTED'
+          echo 'DEV045D5_OS_COMPILATION=REQUIRES_EXACT_HEAD_JOB_LOGS'
+  linux-default-regression:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+      - name: Existing Linux cgroup LLDB unchanged
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          cargo check --manifest-path ide/supervisor/Cargo.toml --features 'dap-transport,linux-worker'
+          echo 'DEV045D5_LINUX_CGROUP=COMPILED_NOT_NATIVE_ACCEPTED'

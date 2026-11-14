@@ -1,0 +1,210 @@
+#!/usr/bin/env python3
+"""No GTK dependency: fail-closed selection policy and real fixture contract."""
+from pathlib import Path
+import unittest
+from gtk_chooser_confirmation_policy import (
+    candidate_captions, retry_requires_native_fallback,
+    exact_native_directory_row
+)
+
+
+class ChooserPolicyTests(unittest.TestCase):
+    def test_explicit_native_folder_caption_is_preferred(self):
+        self.assertEqual(
+            candidate_captions(["Open", "Select Folder", "Choose Folder"], 0),
+            ("select folder", "choose folder", "open"))
+        self.assertEqual(candidate_captions(["Open Folder", "Open"], 0),
+                         ("open folder", "open"))
+
+    def test_generic_open_is_allowed_once_not_repeated(self):
+        self.assertEqual(candidate_captions(["Open"], 0), ("open",))
+        for retry in (1, 2, 3):
+            self.assertEqual(candidate_captions(["Open"], retry), ())
+            self.assertTrue(retry_requires_native_fallback(["Open"], retry))
+
+    def test_only_native_confirmation_vocabulary_can_be_selected(self):
+        self.assertEqual(
+            candidate_captions(["Delete", "Cancel", "Open New Window"], 0), ())
+        self.assertEqual(candidate_captions(["select", "Open", "Cancel"], 2),
+                         ("select",))
+
+    def test_invalid_retry_does_not_expand_authority(self):
+        for index in (-1, 4, 500):
+            self.assertEqual(candidate_captions(["Open"], index), ())
+        self.assertEqual(candidate_captions([None, 123, {"name": "Open"}], 0), ())
+
+    def test_native_directory_row_requires_exact_identity(self):
+        self.assertTrue(exact_native_directory_row(
+            "fixture-42", "", "fixture-42", "table cell"))
+        self.assertTrue(exact_native_directory_row(
+            "", "fixture-42", "fixture-42", "label", ("table cell",)))
+        self.assertFalse(exact_native_directory_row(
+            "", "fixture-42", "fixture-42", "label"))
+        self.assertFalse(exact_native_directory_row(
+            "", "fixture-42", "fixture-42", "text", ("entry",)))
+        self.assertFalse(exact_native_directory_row(
+            "fixture-42-next", "", "fixture-42", "table cell"))
+        self.assertFalse(exact_native_directory_row(
+            "fixture-42", "", "fixture-42", "button"))
+        self.assertFalse(exact_native_directory_row(
+            "", "fixture-42", "fixture-42", "dialog"))
+        self.assertFalse(exact_native_directory_row(
+            "fixture-42", "", "../fixture-42", "table cell"))
+
+    def test_actual_installed_atspi_script_requires_native_outcome(self):
+        fixture = Path(__file__).with_name("wo8_linux_editor_atspi.py").read_text(
+            encoding="utf-8")
+        self.assertIn("from gtk_chooser_confirmation_policy import candidate_captions",
+                      fixture)
+        self.assertIn("if _x11_dialog_activation(attempt):", fixture)
+        self.assertIn("if _atspi_bounded_chooser_mouse(attempt):", fixture)
+        self.assertIn("key(\"Return\")", fixture)
+        self.assertIn('native_key = ("Return", "alt+s", "alt+o", "Return")[attempt]', fixture)
+        self.assertIn("P04_GTK_NATIVE_CONFIRM_KEY=",fixture)
+        self.assertIn("def _native_accept_button_from_visible_chooser(attempt):", fixture)
+        self.assertIn("P04_GTK_NATIVE_ACTION_ROW=", fixture)
+        self.assertIn("if _native_accept_button_from_visible_chooser(attempt):", fixture)
+        self.assertIn('caption in ("cancel", "close", "back", "previous", "up", "abort")', fixture)
+        self.assertIn("rect.x >= chooser.x + chooser.width * 0.55", fixture)
+        self.assertIn("if len(candidates) != 1:", fixture)
+
+        # Do not return after the unreliable spatial action before trying
+        # real native OS affirmative keys for the same confirmed GTK dialog.
+        section=fixture.split("def _native_picker_confirm",1)[1].split(
+            "def _native_chooser_still_open",1)[0]
+        self.assertLess(section.index("if _x11_dialog_activation(attempt):"),
+                        section.index("if _atspi_bounded_chooser_mouse(attempt):"))
+
+        self.assertIn("key(\"ctrl+l\")", fixture)
+        self.assertIn("if _native_chooser_still_open():", fixture)
+        self.assertIn("def _native_chooser_diagnostics():", fixture)
+        self.assertIn("def _native_parent_and_exact_child():", fixture)
+        self.assertIn("P04_GTK_PARENT_LOCATION=exact_native_parent_submitted", fixture)
+        self.assertIn("def _deep_visible_gtk_chooser_nodes():", fixture)
+        self.assertIn("def _focus_native_gtk_file_list():", fixture)
+        self.assertIn("P04_GTK_NATIVE_FILE_LIST_FOCUS=", fixture)
+        self.assertIn("def _focus_gtk_file_list_via_bounded_pointer():", fixture)
+        self.assertIn("P04_GTK_FILE_LIST_POINTER=verified_native_chooser_interior_attempt",
+                      fixture)
+        self.assertIn("if not _focus_gtk_file_list_via_bounded_pointer():", fixture)
+        self.assertIn("rect.width < 480 or rect.height < 340", fixture)
+        self.assertIn("rect.x + 200 < x < rect.x + rect.width - 40", fixture)
+
+        self.assertIn("for node in _deep_visible_gtk_chooser_nodes():", fixture)
+        self.assertIn("if not _focus_native_gtk_file_list():", fixture)
+        self.assertIn(
+            "P04_GTK_CHILD_TYPEAHEAD=native_candidate_preserved_until_real_confirmation",
+            fixture)
+        block=fixture.split("def _native_parent_and_exact_child():",1)[1].split(
+            "def select_native_folder():",1)[0]
+        self.assertIn("return True", block)
+        self.assertIn("return _select_real_fixture_directory()", block)
+        self.assertNotIn("return True\n\n\ndef select_native_folder", block)
+        self.assertNotIn('key("space")', block)
+        self.assertIn('deny("native_folder_chooser_did_not_register_project")', fixture)
+        self.assertIn("_native_chooser_diagnostics()", fixture)
+        self.assertIn("P04_GTK_NATIVE_CHOOSER_INVENTORY=", fixture)
+        self.assertIn("and states.contains(pyatspi.STATE_SHOWING)", fixture)
+        self.assertIn("and states.contains(pyatspi.STATE_VISIBLE)", fixture)
+        self.assertIn("Never print raw accessible names", fixture)
+        self.assertIn("deny(\"native_folder_chooser_not_accepted\")", fixture)
+        self.assertIn("outcome = _wait_for_native_registered_project(seconds=20)", fixture)
+        self.assertIn('if outcome != "registered_exact_root_and_webview":', fixture)
+        self.assertIn("P04_NATIVE_GTK_REGISTRATION_RESULT=", fixture)
+        selector=fixture.split("def select_native_folder():",1)[1].split(
+            "def editor_project():",1)[0]
+        self.assertIn("parent_child_candidate = _native_parent_and_exact_child()", selector)
+        self.assertIn("P04_GTK_SELECTION_ROUTE=verified_native_parent_child", selector)
+        self.assertIn("P04_GTK_DIRECTORY_ROW_INVENTORY=", fixture)
+        self.assertIn("cwd=str(ROOT.parent)", fixture)
+        self.assertIn("tuple(ancestors)", fixture)
+        self.assertIn("P04_GTK_SELECTION_ROUTE=chooser_closed_before_location_fallback", fixture)
+        self.assertIn("if depth < 28:", fixture)
+        self.assertIn("exact_native_directory_row(", fixture)
+        self.assertIn("P04_GTK_SELECTION_ROUTE=exact_native_location_alt_open", selector)
+        self.assertIn("P04_GTK_SELECTION_ROUTE=exact_native_location_return", selector)
+        self.assertIn("P04_GTK_PARENT_CHILD_RETRY=native_selection_attempt", selector)
+        self.assertIn('if outcome != "registered_exact_root_and_webview":', selector)
+        self.assertIn("P04_GTK_EXACT_PATH_SELECTION=exact_fixture_reasserted_in_native_chooser",
+                      selector)
+        self.assertIn('type_text(str(ROOT))', selector)
+
+        self.assertIn("P04_NATIVE_GTK_HOST_PICKER_RESULT=", fixture)
+        self.assertIn("def _native_catalog_project_disposition():", fixture)
+        self.assertIn('str(row.get("root", "")) == str(ROOT)', fixture)
+        self.assertIn('str(row.get("root", "")) == str(ROOT.parent)', fixture)
+        self.assertIn('observed == "exact_native_root_persisted"', fixture)
+        self.assertIn('_registered_native_project_is_exposed()', fixture)
+        self.assertIn("IDE_G02_WEBVIEW_PROJECT_CONTROLS=", fixture)
+        self.assertIn('name == "Edit project " + ROOT.name', fixture)
+        self.assertIn('name == "Reopen project " + ROOT.name', fixture)
+        self.assertIn('_activate_exact_project_button("Edit project ", seconds=18)', fixture)
+        self.assertIn('_activate_exact_project_button("Reopen project ", seconds=3,', fixture)
+        self.assertIn("IDE_G02_NATIVE_ACTIVE_EDITOR_BUTTON=verified_exact_project", fixture)
+        self.assertNotIn('accessible("Open · editor available"', fixture)
+        self.assertIn("def _native_conflict_warning_and_draft(seconds=16):", fixture)
+        self.assertIn("def _native_source_editor_nodes():", fixture)
+        self.assertIn('node.name or "").strip() != "Source explorer and editor"', fixture)
+        self.assertIn("while stack and scanned < 8000:", fixture)
+        self.assertIn("if depth < 28:", fixture)
+        self.assertIn("for node in _native_source_editor_nodes():", fixture)
+        self.assertIn("IDE_G02_LINUX_NATIVE_EXTERNAL_CONFLICT_ALERT_AND_DRAFT=PASS", fixture)
+        self.assertIn('name == "Unsaved source tab main.rs"', fixture)
+        self.assertIn('name == "Unsaved editor draft main.rs"', fixture)
+        self.assertIn("active_dirty_status = True", fixture)
+        self.assertIn("def _real_active_editor_save_remains_enabled():", fixture)
+        self.assertIn('node.name or "").strip() != "Save · Ctrl+S"', fixture)
+        self.assertIn("state.contains(pyatspi.STATE_ENABLED)", fixture)
+        self.assertIn("return len(matches) == 1", fixture)
+        self.assertIn("if alert and (dirty_tab or active_dirty_status or save_still_enabled):", fixture)
+        self.assertIn("IDE_G02_LINUX_DIRTY_SOURCE_WITNESS=", fixture)
+        self.assertIn('name == "File changed on disk. Unsaved edits preserved"', fixture)
+        self.assertNotIn('accessible("File changed on disk"', fixture)
+        self.assertNotIn('accessible("Unsaved", seconds=10)', fixture)
+        web = Path(__file__).parents[1].joinpath("web", "main.jsx").read_text(
+            encoding="utf-8")
+        self.assertIn("aria-label={'Edit project ' + project.displayName}", web)
+        self.assertIn("aria-label={'Reopen project ' + project.displayName}", web)
+        self.assertIn("'File changed on disk. Unsaved edits preserved' : undefined", web)
+        self.assertIn('aria-describedby="ide-visible-error-message"', web)
+        self.assertIn("Unsaved source tab ' : 'Saved source tab '", web)
+        self.assertIn("'Unsaved editor draft ' : 'Saved editor source '", web)
+        self.assertIn('role="status"', web)
+        self.assertIn("activeTab.dirty", web)
+        self.assertIn("disabled={!activeTab.dirty || explorerPending || !!savingKey}", web)
+        self.assertIn("{savingKey === activeTab.key ? 'Saving…' : 'Save · Ctrl+S'}", web)
+        self.assertIn("project.active && <button", web)
+        self.assertIn("deny(\"native_folder_chooser_did_not_register_project\")", fixture)
+        self.assertNotIn("subprocess.run([\"gh\"", fixture)
+
+
+    def test_real_windows_b5_measurement_has_one_exact_source_gate(self):
+        script = Path(__file__).with_name("Test-Wo8NativeDesktopUI.ps1").read_text(
+            encoding="utf-8")
+        self.assertEqual(script.count("function B5-Memory("), 1,
+                         "Duplicate function after final cleanup is not executable")
+        self.assertEqual(script.count("b5_performance_source_commit_not_exact_checkout"), 1)
+        self.assertIn("if ($env:B5_EXACT_CHECKOUT_SHA -notmatch '^[a-f0-9]{40}$' -or",
+                      script)
+        self.assertIn("sourceCommit=$env:B5_EXACT_CHECKOUT_SHA", script)
+        self.assertIn("rssPeakObservedBytes", script)
+        self.assertIn("privatePeakObservedBytes", script)
+        self.assertNotIn("\n -or\n          (git rev-parse HEAD)", script)
+        self.assertTrue(script.rstrip().endswith("}"),
+                        "Unexpected executable block after the native app cleanup")
+
+
+    def test_real_installed_gtk_wrapper_requires_ewmh_window_manager(self):
+        script = Path(__file__).with_name("Test-Wo8InstalledDeb.sh").read_text(
+            encoding="utf-8")
+        self.assertIn('command -v openbox >/dev/null', script)
+        self.assertIn('openbox >/dev/null 2>&1 &', script)
+        self.assertIn('xprop -root _NET_SUPPORTING_WM_CHECK', script)
+        self.assertIn('WO8_NATIVE_LINUX_DENIED:ewmh_window_manager_not_verified',script)
+        self.assertIn('WO8_NATIVE_LINUX_X11_EWMH_WM=verified', script)
+        self.assertIn('/usr/bin/python3 ide/app/fixtures/wo8_linux_editor_atspi.py', script)
+        self.assertIn('|| deny linux_native_editor_acceptance_failed',script)
+
+
+if __name__ == "__main__":
+    unittest.main()

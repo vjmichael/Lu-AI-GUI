@@ -1,0 +1,465 @@
+:root{color-scheme:dark;font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#0c111a;color:#e5edf8}
+*{box-sizing:border-box}body{margin:0}button{font:inherit;cursor:pointer}button:disabled{cursor:not-allowed;opacity:.48}
+button:focus-visible{outline:2px solid #84c4fd;outline-offset:3px}
+.ideShell{display:flex;height:100vh;min-height:500px;overflow:hidden}
+.ideRail{width:262px;min-width:234px;display:flex;flex-direction:column;background:#111b2a;border-right:1px solid #26364a}
+.ideBrand{display:flex;align-items:center;gap:12px;padding:25px 20px 26px;border-bottom:1px solid #26364a}
+.brandSymbol{width:39px;height:39px;border-radius:12px;background:linear-gradient(145deg,#92d6ff,#5e8cfd);color:#11243c;display:grid;place-items:center;font-weight:900;font-size:26px}
+.ideBrand span{display:flex;flex-direction:column;gap:3px}.ideBrand strong{font-size:16px}.ideBrand small{color:#91a5bc;font-size:11px}
+.ideNav{display:flex;flex-direction:column;gap:6px;padding:20px 12px}.navItem{display:flex;align-items:center;gap:13px;padding:12px 13px;text-align:left;background:transparent;border:1px solid transparent;border-radius:9px;color:#bbcada;font-size:13px}
+.navItem span{min-width:18px;font-size:18px}.navItem.selected{background:#1c334c;border-color:#395e7e;color:#fff}.navItem small{margin-left:auto;font-size:10px;color:#7790a8}
+.ideRailFooter{margin-top:auto;border-top:1px solid #26364a;padding:20px 18px;color:#93a8bc;font-size:12px;line-height:1.5}
+.bridgeLine{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.bridgeLine strong{font-size:11px;color:#b1becd;font-weight:500;margin-left:15px}.bridgeDot{width:7px;height:7px;border-radius:50%;background:#8492a5}
+.ideRailFooter p{margin-bottom:0}
+.ideMain{min-width:0;flex:1;display:flex;flex-direction:column;background:#0c111a}
+.ideTopBar{display:flex;align-items:center;justify-content:space-between;gap:18px;border-bottom:1px solid #26364a;padding:32px 37px 28px}
+.eyebrow{letter-spacing:1.7px;font-size:10px;font-weight:700;color:#7e9db9}
+.ideTopBar h1{font-size:28px;letter-spacing:-.6px;margin:8px 0}.ideTopBar p{font-size:13px;color:#95aac0;margin:0}
+.ideControls{display:flex;gap:10px}.ghostBtn,.primaryBtn{border-radius:8px;padding:11px 15px;font-weight:600;font-size:12px;border:1px solid #46607a;color:#d9eaff;background:#203246;white-space:nowrap}
+.primaryBtn{color:#071a2c;background:#83c8fa;border-color:#a4dcff}.ghostBtn:not(:disabled):hover{background:#304b66}.primaryBtn:not(:disabled):hover{background:#b3e1ff}
+.workspaceContent{padding:35px 37px;overflow:auto;flex:1}
+.sectionHeading{display:flex;align-items:center;gap:13px;margin-bottom:20px}.sectionHeading h2{font-size:16px;margin:0}.sectionHeading span{font-size:11px;color:#85a5c2;background:#192d40;padding:4px 9px;border-radius:30px}
+.emptyState{border:1px dashed #344f67;border-radius:16px;background:#101e2d;text-align:center;padding:54px 30px;max-width:650px;margin:auto;display:flex;flex-direction:column;align-items:center;gap:12px}
+.emptySymbol{font-size:41px;color:#79bbec}.emptyState h3{font-size:19px;margin:0}.emptyState p{max-width:420px;line-height:1.65;font-size:13px;color:#a1b5c9;margin:0 0 6px}
+/* Preserve empty grid tracks so a lone project does not expand across the row. */
+.projectGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(275px,1fr));gap:14px}
+.projectCard{display:flex;gap:15px;align-items:start;min-width:0;border:1px solid #30465d;background:#142131;border-radius:12px;padding:19px}
+.projectIcon{width:36px;height:36px;border-radius:9px;display:grid;place-items:center;background:#29455e;color:#93cbee;font-size:23px;flex-shrink:0}
+.projectDetails{min-width:0;flex:1}.projectDetails h3{margin:0;font-size:15px;overflow-wrap:anywhere}.projectDetails p{font-size:12px;color:#95aec6;line-height:1.4;margin:7px 0}.projectDetails small{font-family:monospace;font-size:10px;color:#7c91a6}
+.projectActions{align-self:center}
+.infoNotice{margin-top:28px;border:1px solid #3a546a;border-radius:10px;padding:14px 17px;color:#a6bcd0;font-size:12px;line-height:1.6}.infoNotice strong{color:#d8eafa}
+.errorMsg{padding:12px;background:#4c2532;border-radius:9px;color:#ffe0e4;display:flex;justify-content:space-between;gap:15px;margin-bottom:18px}.errorMsg button{background:none;border:none;color:inherit;text-decoration:underline}
+.successMsg{color:#a7e4be;font-size:12px}
+.noticeBanner{display:flex;align-items:center;justify-content:space-between;gap:14px;border-radius:7px;padding:10px 14px;line-height:1.45}
+.noticeContent{min-width:0;overflow-wrap:anywhere}
+.noticeDismiss{flex:none;display:grid;place-items:center;min-width:27px;min-height:27px;padding:0 6px;border:1px solid transparent;border-radius:5px;background:transparent;color:inherit;font-size:20px;line-height:1}
+.noticeDismiss:hover{border-color:currentColor;background:#ffffff14}
+.noticeDismiss:focus-visible{outline:2px solid #84c4fd;outline-offset:2px}
+.stageConfirmation{background:#12382b;border:1px solid #368e65;border-left:4px solid #4dd491;color:#c6f8da;font-weight:650}
+/* Saved-file confirmation uses warm amber instead of a subdued green label. */
+.saveConfirmation{color:#ffe48c;background:#332b17;border:1px solid #aa842f;border-left:4px solid #f5c451;border-radius:7px;padding:10px 14px;font-weight:650;line-height:1.45}
+.ideStatusBar{display:flex;justify-content:space-between;align-items:center;padding:8px 18px;border-top:1px solid #26364a;color:#91a8bd;font-size:11px}
+@media(max-width:800px){.ideRail{width:208px;min-width:208px}.ideTopBar{padding:22px;align-items:flex-start;flex-direction:column}.workspaceContent{padding:24px}.ideControls{width:100%}.ideControls button{flex:1}}
+
+/* IDE-02 read-only source viewer; project files are never executed. */
+.projectActions{display:flex;flex-direction:column;gap:7px}
+.projectActions .primaryBtn,.projectActions .ghostBtn{min-width:86px}
+.appError,.appMessage{margin:12px 24px 0}
+.sourceWorkspace{display:grid;grid-template-columns:minmax(220px,290px) minmax(0,1fr);min-height:0;flex:1;overflow:hidden}
+.sourceTree{overflow:auto;border-right:1px solid #30445b;background:#101b2b}
+.sourceTreeHeader{padding:18px 18px 12px;display:flex;justify-content:space-between;align-items:center;font-size:13px}
+.sourceTreeHeader span{font-size:10px;color:#a3c5db;border:1px solid #3d5d75;padding:4px 7px;border-radius:4px}
+.sourceMutationToolbar{display:flex;flex-wrap:wrap;gap:5px;padding:0 12px 9px}
+.sourceMutationToolbar button{font-size:11px;padding:5px 8px}
+.sourceMutationForm{margin:0 12px 12px;padding:10px;border:1px solid #3d5d75;border-radius:6px;display:grid;gap:6px}
+.sourceMutationForm label{color:#c6d9ec;font-size:12px}
+.sourceMutationForm input,.sourceMutationForm select{min-width:0;width:100%;box-sizing:border-box;padding:7px;border:1px solid #4c6885;border-radius:4px;background:#0c1828;color:#f2f6fc}
+.sourceMutationForm p{font-size:11px;line-height:1.45;color:#b2c7d9;margin:4px 0}
+.sourceMutationButtons{display:flex;flex-wrap:wrap;gap:7px}
+.sourcePath{padding:5px 18px 14px;color:#9db3c8;font-size:12px;overflow-wrap:anywhere}
+.pathLink{color:#a2d5ff;text-decoration:underline;border:0;background:none;padding:0}
+.fileRow{display:flex;gap:10px;align-items:center;text-align:left;padding:9px 18px;border:0;width:100%;color:#dbe8f5;background:transparent;min-width:0;font-size:12px}
+.fileRow:hover:not(:disabled),.fileRow.active{background:#1d3955}
+.fileRow:disabled{opacity:.54}.fileGlyph{min-width:14px;color:#80bee5;font-size:14px}
+.fileName{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.backRow{color:#a9d5ef;background:#1b2b40}
+.treeCaution{padding:9px 18px;color:#d8b589;font-size:11px}
+.sourcePreview{min-width:0;display:flex;flex-direction:column;overflow:hidden}
+.sourcePreviewHeader{display:flex;justify-content:space-between;align-items:center;gap:20px;padding:13px 22px;background:#162538;border-bottom:1px solid #34485c;font-size:12px}
+.sourcePreviewHeader strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sourcePreviewHeader span{color:#9aafc5;white-space:nowrap;font-size:11px}
+.sourceCode{padding:22px 26px;margin:0;flex:1;overflow:auto;white-space:pre;tab-size:4;font-family:ui-monospace,SFMono-Regular,Consolas,"Liberation Mono",monospace;font-size:13px;line-height:1.55;color:#d9ebfa}
+.sourcePreviewEmpty{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:10px;flex:1;padding:30px;color:#abc0d2}
+.sourcePreviewEmpty h3{margin:0;font-size:18px;color:#e6f2ff}
+.sourcePreviewEmpty p{max-width:420px;font-size:12px;line-height:1.6}
+@media(max-width:800px){.sourceWorkspace{grid-template-columns:minmax(175px,35%) minmax(0,1fr)}.sourcePreviewHeader{flex-direction:column;align-items:flex-start;gap:4px}}
+
+/* R3 — independent human-owned tabbed CodeMirror editor. */
+.editorTabs{display:flex;overflow-x:auto;flex-shrink:0;min-height:38px;background:#0e1a29;border-bottom:1px solid #2c4257;scrollbar-width:thin}
+.editorTab{display:flex;flex-shrink:0;align-items:center;max-width:230px;border-right:1px solid #304358;position:relative}
+.editorTab.selected{background:#1c3046;border-bottom:2px solid #7bc9fa}
+.editorTabSelect{display:flex;align-items:center;gap:7px;padding:9px 6px 9px 14px;max-width:195px;min-width:0;background:transparent;color:#b9c9dc;border:0;font-size:12px}
+.editorTab.selected .editorTabSelect{color:#fff}
+.editorTabSelect>span:first-child{overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.unsavedDot{color:#f9c77b;font-size:13px;line-height:1}
+.editorTabClose{background:transparent;color:#a1b9cf;border:0;font-size:18px;min-width:25px;height:28px;padding:0}
+.editorTabClose:not(:disabled):hover{color:#fff;background:#344b60;border-radius:4px}
+.editorToolbar{display:flex;gap:9px;align-items:center;font-size:11px}
+.editorToolButton{padding:6px 12px;font-size:11px}
+.codeEditorHost{flex:1;min-height:0;overflow:hidden}
+.codeEditorHost .cm-editor{height:100%}
+.codeEditorHost .cm-scroller{overflow:auto}
+.editorInfoBar{padding:8px 15px;font-size:11px;color:#99aec5;border-top:1px solid #2e435c;background:#101e2f;line-height:1.4}
+@media(max-width:850px){.editorToolbar{gap:5px;flex-wrap:wrap}.sourcePreviewHeader{align-items:flex-start}.editorToolButton{padding:5px 7px}}
+
+/* Registered-project removal changes IDE catalog only; never disk files. */
+.removeProjectBtn{border:1px solid #705061;background:#2a1d2c;color:#f3cbd7;border-radius:8px;padding:8px 10px;font-size:11px;font-weight:600;white-space:nowrap}
+.removeProjectBtn:not(:disabled):hover{background:#422536;border-color:#b97686}
+.removeProjectBtn:disabled{opacity:.48;cursor:not-allowed}
+.removeProjectBtn:focus-visible{outline:2px solid #f1b6c8;outline-offset:3px}
+
+/* Bounded, read-only change review: foundation for future Lu coding proposals. */
+.reviewOverlay{position:fixed;z-index:80;inset:0;background:rgba(2,8,18,.8);display:flex;align-items:center;justify-content:center;padding:30px}
+.reviewDialog{display:flex;flex-direction:column;gap:12px;max-height:min(88vh,890px);width:min(900px,100%);min-width:0;border:1px solid #4c6884;border-radius:12px;background:#102032;box-shadow:0 24px 75px rgba(0,0,0,.55);padding:18px}
+.reviewHeader{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+.reviewHeader h2{margin:0;font-size:18px}
+.reviewHeader p{margin:5px 0 0;color:#a8bfd3;font-size:12px;overflow-wrap:anywhere}
+.reviewNotice{margin:0;font-size:12px;line-height:1.5;color:#a9c8df}
+.reviewLines{flex:1;min-height:80px;overflow:auto;background:#090f1b;border:1px solid #34495f;border-radius:6px;font-size:12px;font-family:Consolas,"Cascadia Code",ui-monospace,monospace}
+.reviewHunk{border-bottom:1px solid #354b64}
+.reviewHunkHeader{position:sticky;top:0;background:#1c3655;color:#a7d8fa;font-size:11px;padding:7px 12px;font-family:inherit;z-index:1}
+.reviewLine{display:grid;grid-template-columns:38px 38px 18px minmax(0,1fr);align-items:start;padding:2px 8px;gap:6px;min-height:23px;border-bottom:1px solid rgba(255,255,255,.035)}
+.reviewOldNumber,.reviewNewNumber{text-align:right;color:#809cb3;font-size:10px;user-select:none}
+.reviewMark{text-align:center;color:#829db4}
+.reviewLine code{font-family:inherit;color:#d7e9f6;white-space:pre-wrap;overflow-wrap:anywhere}
+.reviewLine.added{background:#14372c}.reviewLine.added .reviewMark{color:#83d4a3}
+.reviewLine.removed{background:#40202c}.reviewLine.removed .reviewMark{color:#ef9aaa}
+.reviewLine.context{background:#132338}
+.reviewNoNewline{font-size:10px;color:#eac281}
+.reviewWarning{border:1px solid #b68143;background:#322715;color:#f6dcaf;padding:9px;border-radius:6px;font-size:12px}
+.reviewActions{display:flex;justify-content:flex-end;align-items:center;gap:10px}
+@media(max-width:700px){.reviewOverlay{padding:6px}.reviewDialog{max-height:95vh}.reviewHeader{flex-wrap:wrap}.reviewActions{flex-wrap:wrap}}
+
+/* R3.5: data-only proposal inbox. All payload text stays escaped React text. */
+.proposalWorkspace{flex:1;overflow:auto;padding:25px 30px;display:flex;flex-direction:column;gap:18px}
+.proposalIntro{display:flex;justify-content:space-between;align-items:flex-start;gap:14px}
+.proposalIntro h2{margin:0 0 8px;font-size:19px}
+.proposalIntro p{color:#a8b9cd;font-size:13px;max-width:730px;line-height:1.5;margin:0}
+.proposalIntro>span{color:#a8c4e4;font-size:12px;white-space:nowrap;padding:6px 10px;background:#1c3047;border-radius:20px}
+.proposalGrid{display:grid;grid-template-columns:minmax(300px,1fr) minmax(320px,1.1fr);gap:18px;align-items:start}
+.proposalCompose,.proposalList{background:#111f30;border:1px solid #34495e;border-radius:12px;padding:20px;display:flex;flex-direction:column;gap:13px;min-width:0}
+.proposalCompose h3,.proposalList h3{font-size:16px;margin:0}
+.proposalCompose p{font-size:12px;line-height:1.6;color:#adc0d3;margin:0}
+.proposalCompose label{font-size:12px;color:#e1eefb;font-weight:650}
+.proposalJsonInput{width:100%;min-height:210px;max-height:400px;resize:vertical;background:#080f1b;color:#e7edf8;border:1px solid #4a6281;border-radius:8px;padding:12px;font:12px/1.55 Consolas,"Cascadia Code",monospace}
+.proposalJsonInput:focus{outline:2px solid #74bdf0;outline-offset:2px}
+.proposalNotice{font-size:12px;color:#f4cf84;line-height:1.5;border-left:3px solid #b78d3b;padding:7px 9px;background:#2b261b;border-radius:4px}
+.proposalEmpty{font-size:13px;line-height:1.6;color:#a8bad0;padding:24px 10px}
+.proposalItem{display:flex;flex-direction:column;gap:11px;background:#1a2a3f;border:1px solid #35526f;border-radius:9px;padding:14px}
+.proposalItemHeader{display:flex;justify-content:space-between;align-items:center;gap:12px}
+.proposalItemHeader strong{font-size:13px;overflow-wrap:anywhere}
+.proposalStatus{text-transform:capitalize;white-space:nowrap;color:#cde1f2;background:#33475f;border-radius:6px;padding:3px 7px;font-size:11px}
+.proposalStatus.approved_for_staging{color:#f2df9e;background:#5b481d}
+.proposalStatus.rejected{color:#f0b1b8;background:#502a36}
+.proposalItem p{margin:0;font-size:12px;line-height:1.45;color:#c5d7e6;overflow-wrap:anywhere}
+.proposalItem small{color:#9aadc3;overflow-wrap:anywhere}
+.proposalItemActions{display:flex;gap:8px;flex-wrap:wrap}
+.proposalReviewDialog{width:min(1020px,100%);max-height:90vh}
+.proposalReviewFiles{overflow-y:auto;flex:1;display:flex;flex-direction:column;gap:17px;min-height:100px}
+.proposalReviewFile{display:flex;flex-direction:column;gap:6px}
+.proposalReviewFile h3{margin:0;font-size:14px;overflow-wrap:anywhere}
+.proposalReviewFile p{color:#a8bed0;font-size:12px;margin:0 0 4px}
+.proposalReviewFile .reviewLines{max-height:330px;flex:none;overflow:auto}
+.proposalRationale{font-size:12px;margin:0;color:#e0ebf4;line-height:1.5;overflow-wrap:anywhere}
+@media(max-width:1100px){.proposalGrid{grid-template-columns:1fr}}
+@media(max-width:650px){.proposalWorkspace{padding:14px}.proposalIntro{flex-wrap:wrap}.proposalCompose,.proposalList{padding:13px}}
+
+/* Standalone editor R3.7: bounded, in-memory find in active buffer. */
+.editorFindBar{display:flex;align-items:center;gap:9px;background:#19283b;border-bottom:1px solid #36536c;padding:7px 14px}
+.editorFindBar input{min-width:80px;max-width:320px;flex:1;background:#0d1724;color:#edf7ff;border:1px solid #54718a;border-radius:5px;padding:7px 10px}
+.editorFindBar button{background:#283f55;color:#d7eafe;border:1px solid #4e6980;border-radius:5px;min-width:30px;min-height:30px}
+.editorFindBar button:disabled{opacity:.45}.editorFindCount{font-size:11px;color:#abc3d9;white-space:nowrap}
+
+/* Wave A2: human-readable view of trusted, non-executable capability metadata. */
+.capabilityWorkspace{overflow-y:auto}
+.capabilityNotice{font-size:12px;line-height:1.55;color:#bfd4e8;max-width:880px}
+.capabilityGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(275px,1fr));gap:14px;padding-bottom:24px}
+.capabilityCard{border:1px solid #35516a;background:#15263a;border-radius:10px;padding:15px;min-width:0}
+.capabilityCard h3{margin:0;font-size:14px;color:#e9f3ff}
+.capabilityCard p{font-size:12px;line-height:1.5;color:#b6cbe0}
+.capabilityHeading{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.capabilityEffect{font-size:10px;border:1px solid #5a7185;color:#d2e5f6;padding:4px 6px;border-radius:5px;white-space:nowrap}
+.capabilityCard dl{display:grid;grid-template-columns:100px minmax(0,1fr);gap:8px;margin:12px 0 0;font-size:11px}
+.capabilityCard dt{color:#90a9c0}.capabilityCard dd{margin:0;color:#e2edf7;overflow-wrap:anywhere}
+
+/* Wave A3: local-only continuity viewer, not a shell or executor. */
+.continuityWorkspace{overflow-y:auto}
+.continuityBody{max-width:1050px;padding-bottom:30px;color:#c6d8e9;font-size:12px}
+.continuityBody h3{margin:22px 0 10px;color:#e9f3ff}
+.continuityBody code{overflow-wrap:anywhere}
+.continuityEvents{display:grid;gap:9px}
+.continuityEvent,.continuityDocument{border:1px solid #38536b;border-radius:8px;background:#15273a;padding:12px;margin-bottom:10px}
+.continuityEvent span{color:#a6bed2;font-size:11px;margin-left:12px}
+.continuityEvent p{margin:6px 0}
+.continuityDocument pre{overflow:auto;max-height:180px;white-space:pre-wrap;word-break:break-word;padding:10px;border-radius:5px;background:#0d1a2a;color:#e1ecf6}
+
+.capabilitySchemaDetails{margin-top:12px;color:#b8d6eb;font-size:11px}
+.capabilitySchemaDetails summary{cursor:pointer;padding:7px;border:1px solid #42617c;border-radius:5px}
+.capabilitySchemaDetails pre{max-height:250px;overflow:auto;white-space:pre-wrap;word-break:break-word;background:#0d1a2a;border-radius:5px;padding:10px}
+
+/* Evidence values are selectable text, not runnable file links. */
+.continuityEvent code{user-select:text;overflow-wrap:anywhere}
+
+.continuityCapture{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.continuityCapture h3{margin:10px 0}
+
+/* Wave B: Find + Replace stays visually attached to the human-owned editor. */
+.editorFindPanel{border-bottom:1px solid #36536c;background:#19283b}
+.editorFindPanel .editorFindBar{border-bottom:0}
+.editorReplaceBar{display:flex;align-items:center;gap:9px;padding:0 14px 9px 14px}
+.editorReplaceBar input{min-width:80px;max-width:320px;flex:1;background:#0d1724;color:#edf7ff;border:1px solid #54718a;border-radius:5px;padding:7px 10px}
+.editorReplaceBar button{background:#283f55;color:#d7eafe;border:1px solid #4e6980;border-radius:5px;min-height:30px;padding:5px 10px}
+.editorReplaceBar button:disabled{opacity:.45}
+.editorFindOption{color:#c8dceb;font-size:11px;display:flex;align-items:center;gap:5px;white-space:nowrap}
+.editorFindOption input{min-width:auto;max-width:none;flex:none}
+@media(max-width:750px){.editorFindBar,.editorReplaceBar{flex-wrap:wrap}.editorFindCount{white-space:normal}}
+
+/* Wave C: explicit human read-only development evidence. */
+.gitReviewControls{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.gitReviewControls label{font-size:12px;color:#bad2e7}
+.gitReviewControls select{background:#102137;color:#eef7ff;border:1px solid #506c87;border-radius:6px;padding:7px}
+.gitPatchPreview{white-space:pre-wrap;overflow-wrap:anywhere;overflow:auto;max-height:380px;font:12px Consolas,"Cascadia Code",monospace;background:#091523;color:#e7eff8;padding:12px;border-radius:6px}
+.continuityEvent button.ghostBtn{align-self:flex-start;max-width:max-content;margin-top:6px}
+
+/* C6 task notes: keyboard-accessible native controls, no simulated acceptance badge. */
+.taskEditor { display: grid; gap: 0.55rem; max-width: 42rem; padding: 1rem 0; }
+.taskEditor input[type="text"], .taskEditor select {
+  width: 100%; box-sizing: border-box; color: inherit;
+  background: var(--surface, #20242c); border: 1px solid var(--border, #646b75);
+  border-radius: 6px; padding: 0.55rem;
+}
+.taskGateChoices { display: flex; flex-wrap: wrap; gap: 0.65rem; border: 1px solid var(--border, #646b75); }
+.taskGateChoices label { display: inline-flex; align-items: center; gap: 0.35rem; }
+.taskEditor :focus-visible, .taskGateChoices :focus-visible { outline: 2px solid #efcb42; outline-offset: 2px; }
+
+/* Wave D1: accessible job-intent review. Never styles consent as execution success. */
+.jobIntentComposer { display: grid; gap: 0.7rem; max-width: 45rem; }
+.jobIntentComposer select {
+  padding: 0.6rem; border: 1px solid var(--border, #707781);
+  background: var(--surface, #20242c); color: inherit; border-radius: 6px;
+}
+.jobIntentConsent { display: flex; gap: 0.6rem; align-items: center; margin: 0.5rem 0; }
+.jobIntentConsent input:focus-visible, .jobIntentComposer select:focus-visible {
+  outline: 2px solid #efcb42; outline-offset: 2px;
+}
+
+
+/* Wave E2 — bounded, read-only LSP presentation. The diagnostics are text
+   decorations, never interpreted as a markup or an executable action. */
+.cm-lsp-error {text-decoration:underline wavy #ed7183;text-underline-offset:3px}
+.cm-lsp-warning {text-decoration:underline wavy #eac16c;text-underline-offset:3px}
+.cm-lsp-note {text-decoration:underline dotted #92b7e3;text-underline-offset:3px}
+.lspResultPanel{padding:8px 15px;border-top:1px solid #34485c;background:#14263c;
+  max-height:175px;overflow:auto;font-size:12px;display:flex;flex-direction:column;gap:5px}
+.lspResultPanel>strong{color:#cadbec;font-size:11px;position:sticky;top:0;background:#14263c}
+.lspDiagnostic,.lspSuggestion{width:100%;display:flex;align-items:baseline;gap:10px;
+  padding:5px 7px;text-align:left;color:#d9e6f2;background:transparent;border:1px solid transparent;
+  border-radius:4px;cursor:pointer;font:inherit}
+.lspDiagnostic:hover,.lspSuggestion:hover,.lspDiagnostic:focus-visible,
+.lspSuggestion:focus-visible{background:#213954;border-color:#54718b}
+.lspDiagnostic span:first-child{color:#e3ba7a;flex-shrink:0}
+.lspDiagnostic span:last-child{overflow-wrap:anywhere}
+.lspSuggestion code{font-weight:700;color:#c9e5fb}
+.lspSuggestion span{color:#a3b7cc;white-space:normal}
+.lspResultPanel pre{font-size:11px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere;
+  color:#c4d6e8;margin:0 0 5px;font-family:Consolas,monospace}
+
+/* DEV-02.1 read-only, revision-gated diagnostic navigation over open tabs. */
+.lspProjectProblems{padding:10px 14px;border-top:1px solid #435c73;
+  max-height:275px;overflow:auto;background:#122539;display:flex;
+  flex-direction:column;gap:8px;color:#dce8f3;font-size:12px}
+.lspProjectProblemsHeading{display:flex;justify-content:space-between;
+  flex-wrap:wrap;align-items:center;gap:8px}
+.lspProjectProblemsHeading h3{font-size:13px;margin:0;line-height:1.35;
+  color:#e6f1fd;flex:1 1 190px}
+.lspResultPanel pre:focus-visible{outline:2px solid #b6e1ff;
+  outline-offset:3px}
+.lspRecoveryNotice{display:inline-flex;align-items:center;padding:4px 8px;
+  border:1px solid #ce976e;border-radius:4px;color:#ffdda9;
+  font-size:12px;font-weight:650;max-width:280px;line-height:1.4}
+.lspProjectProblemsFilters{display:flex;gap:8px;flex-wrap:wrap;
+  align-items:center}
+.lspProjectProblemsFilters label{font-size:11px;color:#bcd1e5}
+.lspProjectProblemsFilters input,.lspProjectProblemsFilters select{
+  padding:7px;min-width:130px;max-width:100%;border:1px solid #6d8299;
+  border-radius:5px;background:#091927;color:#f4f8fc;font:inherit}
+.lspProjectProblemsFilters input{flex:1 1 175px}
+.lspProjectProblemsFilters input:focus-visible,.lspProjectProblemsFilters select:focus-visible,
+.lspProjectProblem:focus-visible{outline:2px solid #f0c95a;outline-offset:2px}
+.lspProblemCounts{margin:0;color:#b5d6eb;font-size:11px}
+.lspProblemCaution{margin:0;color:#f2c98a;font-size:11px;line-height:1.4}
+.lspProjectProblemsResults{display:flex;flex-direction:column;gap:4px;
+  max-height:175px;overflow:auto}
+.lspProjectProblem{display:flex;flex-direction:column;gap:4px;align-items:flex-start;
+  padding:8px 9px;border:1px solid #47627d;border-radius:5px;
+  font:inherit;color:#dfebf6;background:#193149;cursor:pointer;text-align:left}
+.lspProjectProblem:hover{background:#284765}
+.lspProjectProblem span:first-child{font-size:11px;color:#f0cd8a}
+.lspProjectProblem span:last-child{overflow-wrap:anywhere;white-space:pre-wrap}
+
+/* B3 saved-file search. The pane does not offer replace-all or run commands. */
+.projectSearchWorkspace{display:flex;flex-direction:column;gap:12px}
+.projectSearchControls{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.projectSearchControls>input{background:#101e30;border:1px solid #4e6b84;border-radius:6px;color:#eff8ff;padding:10px 12px;flex:1;min-width:200px}
+.projectSearchControls label{display:flex;align-items:center;gap:6px;color:#c3dbed;font-size:12px;white-space:nowrap}
+.projectSearchControls label input{width:auto;min-width:0;flex:none}
+.projectSearchSummary{color:#a5c7dc;font-size:12px}
+.projectSearchResults{display:flex;flex-direction:column;gap:8px;max-height:calc(100vh - 350px);overflow-y:auto}
+.projectSearchHit{display:flex;flex-direction:column;align-items:flex-start;gap:6px;text-align:left;width:100%;background:#16293d;border:1px solid #3a5570;border-radius:8px;color:#e9f5ff;padding:12px;cursor:pointer}
+.projectSearchHit:hover,.projectSearchHit:focus-visible{border-color:#87b8e0;background:#1e344e}
+.projectSearchHit:disabled{opacity:.6;cursor:wait}
+.projectSearchHit code{font:12px Consolas,"Cascadia Code",ui-monospace,monospace;white-space:pre-wrap;overflow-wrap:anywhere;color:#d7e7f6}
+.projectSearchHit small{color:#93b3cb;overflow-wrap:anywhere}
+
+/* B2 private app-data draft recovery, deliberately distinct from Save. */
+.draftRecoveryReferenceBar{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:8px 12px;background:#12233b;border-top:1px solid #35506d}
+.draftRecoveryReferenceBar label{font-size:11px;color:#bcd5eb}
+.draftRecoveryReferenceBar input{flex:1;min-width:220px;padding:6px 8px;background:#09172a;color:#e4effb;border:1px solid #4b667d;border-radius:5px;font:11px ui-monospace,Consolas,monospace}
+.draftRecoveryReferenceBar button{white-space:nowrap}
+
+/* B4: independent CodeMirror EditorState in each pane; never duplicate one tab. */
+.editorLayoutToolbar{display:flex;align-items:center;gap:10px;padding:7px 12px;background:#142438;border-bottom:1px solid #34465c;flex-wrap:wrap;font-size:11px;color:#aec5dc}
+.editorLayoutToolbar label{white-space:nowrap}
+.editorLayoutToolbar select{max-width:340px;min-width:140px;background:#0b1b2d;border:1px solid #456482;color:#e7f4ff;padding:6px 9px;border-radius:6px}
+.splitEditorGrid{flex:1;display:flex;min-height:0;min-width:0;overflow:hidden}
+.splitEditorGrid.enabled{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+.splitPrimaryPane,.splitSecondaryPane{display:flex;flex-direction:column;min-height:0;min-width:0;overflow:hidden}
+.splitEditorGrid.single>.splitPrimaryPane{flex:1;width:100%;min-width:0}
+.splitSecondaryPane{border-left:2px solid #456985;background:#111f31}
+.splitSecondaryHeader{display:flex;gap:8px;align-items:center;flex-wrap:wrap;min-height:39px;padding:7px 10px;border-bottom:1px solid #40576e;font-size:11px}
+.splitSecondaryHeader strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:35%;color:#e0edf9}
+.splitSecondaryHeader span{color:#95b5d0}
+.splitSecondaryHeader .ghostBtn{padding:5px 8px}
+.splitSecondaryPlaceholder{display:flex;justify-content:center;align-items:center;flex-direction:column;padding:18px;text-align:center;color:#acc5df;font-size:12px;flex:1}
+@media(max-width:1100px){.splitEditorGrid.enabled{grid-template-columns:minmax(0,1fr)}.splitSecondaryPane{border-left:0;border-top:2px solid #456985}.splitEditorGrid.enabled{grid-template-rows:minmax(0,1fr) minmax(0,1fr)}}
+
+/* B5: bound DOM work regardless of the 48 retained editor undo histories. */
+.editorTabPage{flex-shrink:0;min-width:29px;border:0;border-right:1px solid #354b61;background:#192c40;color:#cae3f6;font-size:20px;cursor:pointer}
+.editorTabPage:disabled{opacity:.35;cursor:default}
+.editorTabCount{align-self:center;flex-shrink:0;padding:0 10px;color:#a6c3d9;font-size:10px;white-space:nowrap}
+.editorTabJump{flex-shrink:0;min-width:120px;max-width:175px;margin:4px;background:#12263b;color:#def1ff;border:1px solid #40607b;border-radius:5px;font-size:11px}
+.treeLoadMore{color:#aed5f3;border-top:1px solid #3a5974;background:#142a43;justify-content:center;font-size:11px}
+.editorTabs .editorTab{max-width:185px}
+.editorTabs .editorTabSelect{max-width:158px}
+
+.sourceGoToFile{display:flex;gap:6px;align-items:stretch;padding:8px 10px;border-bottom:1px solid #30445b}
+.sourceGoToFile input{flex:1;min-width:0;color:#e4f0fa;background:#07182b;border:1px solid #48667e;padding:7px;border-radius:4px;font:11px Consolas,ui-monospace,monospace}
+.sourceGoToFile button{flex:none;border:1px solid #4d7595;border-radius:4px;background:#18344c;color:#cee8f8;font-size:11px;cursor:pointer}
+.sourceGoToFile button:disabled{opacity:.4;cursor:default}
+
+/* B10: read-only external source drift report and bounded three-way excerpts. */
+.diskAuditPanel,.diskComparisonPanel{flex:none;display:flex;flex-direction:column;gap:8px;padding:10px 12px;background:#102439;border-bottom:1px solid #4c6780;max-height:280px;overflow-y:auto;font-size:12px;color:#d3e7f7}
+.diskAuditHeading{display:flex;justify-content:space-between;gap:12px;align-items:center}
+.diskAuditPanel p,.diskComparisonPanel p{margin:0;color:#b5cfdf;line-height:1.5}
+.diskAuditRows{display:flex;flex-direction:column;gap:4px}
+.diskAuditRow{display:flex;align-items:center;flex-wrap:wrap;gap:8px;padding:5px 8px;background:#183149;border-radius:5px}
+.diskAuditRow code{font:11px ui-monospace,Consolas,monospace;overflow-wrap:anywhere}
+.diskAuditRow strong{color:#f6d28f;font-weight:600}
+.diskAuditRow span{color:#e6c2ad}
+.diskAuditRow button{margin-left:auto}
+.diskComparisonPanel{max-height:370px}
+.diskComparisonBlock{display:flex;flex-direction:column;gap:6px;border-top:1px solid #35506d;padding-top:8px}
+.diskCompareColumns{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px}
+.diskCompareColumns>div{min-width:0}
+.diskCompareColumns pre{font:11px/1.5 ui-monospace,Consolas,monospace;white-space:pre-wrap;overflow-wrap:anywhere;max-height:120px;overflow:auto;background:#071729;border:1px solid #35526b;border-radius:5px;margin:4px 0;padding:8px}
+.diskCompareColumns small{color:#f4c589}
+@media(max-width:900px){.diskCompareColumns{grid-template-columns:minmax(0,1fr)}}
+
+/* B11: explicit conflict choices. All source samples render as escaped React
+ * text, never as HTML or an executable patch. Bound available panel space. */
+.mergeReviewPanel{flex:none;display:flex;flex-direction:column;gap:10px;padding:12px;background:#13283b;border-top:2px solid #6a94ac;border-bottom:1px solid #42647a;max-height:390px;overflow:auto;color:#dfebf5;font-size:12px}
+.mergeReviewPanel p{margin:0;line-height:1.55;color:#bcd3e3}
+.mergeReviewPanel code{color:#e4c792}
+.mergeReviewPanel .primaryBtn{align-self:flex-start}
+.mergeConflict{padding:9px;min-width:0;border:1px solid #50748b;border-radius:6px}
+.mergeConflict legend{color:#e8caa0;padding:0 5px;font-weight:600}
+.mergeConflictChoices{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px}
+.mergeConflictChoice{min-width:0;border:1px solid #4c647b;border-radius:5px;padding:8px;display:flex;flex-direction:column;gap:7px;background:#091e2f;cursor:pointer}
+.mergeConflictChoice:has(input:checked){border-color:#aad8f9;background:#193f57}
+.mergeConflictChoice>span{display:flex;align-items:center;gap:5px;font-weight:600}
+.mergeConflictChoice input{accent-color:#89c6ed}
+.mergeConflictChoice pre{min-height:45px;max-height:110px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;margin:0;padding:7px;background:#071625;color:#e0f1ff;font:11px/1.5 ui-monospace,Consolas,monospace}
+.mergeConflictChoice small{color:#ffd6a1}
+@media(max-width:1000px){.mergeConflictChoices{grid-template-columns:minmax(0,1fr)}}
+
+/* C7: native C6 task source linkage. No source contents or task verdicts here. */
+.taskSourceLinkBar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 12px;background:#10283b;border-bottom:1px solid #4b6a7c;color:#deecf6;font-size:11px}
+.taskSourceLinkBar>strong{color:#e6cc9d;white-space:nowrap}
+.taskSourceLinkBar label{color:#bcd4e8}
+.taskSourceLinkBar select{min-width:130px;max-width:310px;flex:1;background:#071a2b;color:#e8f3fb;border:1px solid #51708a;border-radius:5px;padding:6px}
+.taskSourceLinkBar>small{color:#9fc5db;flex-basis:100%;line-height:1.4}
+.taskLinkedSources{display:flex;flex-direction:column;gap:6px;margin:8px 0;padding:8px 10px;background:#12273b;border:1px solid #39556b;border-radius:6px}
+.taskLinkedSources>p{margin:0;color:#afcce2;font-size:11px}
+.taskLinkedSourceRow{display:flex;align-items:center;flex-wrap:wrap;gap:8px;padding:6px;background:#0e1f31;border-radius:4px;font-size:11px}
+.taskLinkedSourceRow code{color:#deefff;overflow-wrap:anywhere}
+.taskLinkedSourceRow>span{color:#edc694}
+.taskLinkedSourceRow>small{color:#b7d2e5}
+.taskLinkedSourceRow>.ghostBtn{margin-left:auto}
+
+/* DEV-03.1: read-only fixed build/test profile discovery, never run authority. */
+.dev03ProfileGrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;padding:10px 0}
+.dev03ProfileCard{display:flex;flex-direction:column;gap:7px;min-width:0;padding:11px;background:#0d2538;border:1px solid #35566e;border-radius:7px;color:#dbebf7}
+.dev03ProfileCard>.capabilityHeading{display:flex;align-items:center;justify-content:space-between;gap:6px}
+.dev03ProfileCard>.capabilityHeading small{color:#b8d2e5}
+.dev03ProfileCard p{margin:0;overflow-wrap:anywhere;font-size:12px;line-height:1.5}
+.dev03ProfileCard>small{color:#a5cada;overflow-wrap:anywhere}
+.dev03ProfileCard>.ghostBtn{align-self:start}
+@media(max-width:900px){.dev03ProfileGrid{grid-template-columns:minmax(0,1fr)}}
+
+/* DEV-03.2B: immutable, strictly non-executable native adapter review. */
+.dev03AdapterReview{display:flex;flex-direction:column;gap:8px}
+.dev03AdapterReview>.ghostBtn{align-self:start}
+.dev03AdapterReceipt{display:flex;flex-direction:column;gap:6px;padding:9px;border:1px solid #6a7884;border-radius:6px;background:#101f2d}
+.dev03AdapterReceipt>strong{color:#f1cf9a}
+.dev03AdapterReceipt p{font-size:11px;overflow-wrap:anywhere;margin:0;color:#bed0df}
+.dev03AdapterReceipt code{color:#e5edf5;white-space:normal;overflow-wrap:anywhere}
+
+/* IDE-INT01-F: visible keyboard focus/working status without extra editor mounts. */
+.sourceWorkspaceStatus{margin:0;padding:7px 12px;background:#172b41;
+  border-bottom:1px solid #3d5872;color:#c5ddef;line-height:1.45;
+  font-size:12px;overflow-wrap:anywhere;flex-shrink:0}
+.editorFocusLabel{font-size:12px;font-weight:650;padding:5px 8px;
+  background:#26435f;color:#ebf6ff;border-radius:6px}
+.splitPrimaryPane.focused,.splitSecondaryPane.focused{
+  box-shadow:inset 0 0 0 2px #8fcfff}
+.splitPrimaryPane:focus-within,.splitSecondaryPane:focus-within{
+  box-shadow:inset 0 0 0 2px #b6e1ff}
+.lspProjectProblems:focus-visible{outline:2px solid #b6e1ff;
+  outline-offset:-3px}
+.ideJobsSourceReturn{display:flex;align-items:center;flex-wrap:wrap;
+  gap:10px;margin:4px 0 17px;padding:11px 13px;background:#152b40;
+  border:1px solid #385c7b;border-radius:8px}
+.ideJobsSourceReturn p{flex:1 1 300px;font-size:12px;line-height:1.5;
+  margin:0;color:#bcd3e6}
+.editorLayoutToolbar[role="toolbar"]{align-content:center}
+.editorLayoutToolbar .ghostBtn:focus-visible,
+.ideJobsSourceReturn .ghostBtn:focus-visible{
+  outline:3px solid #b6e1ff;outline-offset:3px}
+@media (max-width:850px){
+  .sourceWorkspaceStatus{font-size:11px}
+  .ideJobsSourceReturn{flex-direction:column;align-items:flex-start}
+  .editorLayoutToolbar[role="toolbar"]{gap:6px}
+  .editorLayoutToolbar[role="toolbar"] .ghostBtn{white-space:normal}
+}
+
+
+/* INT03-E: bounded, accessible reported test-case observations. No
+   runner-generated path is a link until native source revalidation. */
+.int03TestCases{display:flex;flex-direction:column;gap:9px}
+.int03TestCases .capabilityHeading{align-items:center;flex-wrap:wrap;gap:8px}
+.int03TestCases h4{margin:0;font-size:14px}
+.int03TestCases label{display:flex;align-items:center;gap:8px}
+.int03TestCases select{max-width:240px;background:#101f2e;color:#ecf4fc;
+  padding:6px 8px;border:1px solid #7894ae;border-radius:5px;font:inherit}
+.int03TestCaseList{max-height:260px;overflow:auto;display:flex;
+  flex-direction:column;gap:6px;margin:0;padding:0 0 0 22px}
+.int03TestCase{padding:7px 5px;border-bottom:1px solid #35495f;
+  overflow-wrap:anywhere;line-height:1.45}
+.int03TestCase>span{display:block;margin-bottom:5px}
+.int03TestCase .ghostBtn{white-space:normal;text-align:left}
+.int03TestCase small{display:block;color:#f1c98e}
+.int03TestCases select:focus-visible,
+.int03TestCase button:focus-visible{outline:2px solid #e4c66b;outline-offset:3px}
+
+
+/* IDE-INT04: read-only, bounded first stopped-source and custody status.
+   A source link never sends LLDB commands, breakpoints or new launch rights. */
+.int04StoppedSource{padding:10px 12px;border-left:2px solid #7e9cbb;
+  display:flex;flex-direction:column;gap:7px;overflow-wrap:anywhere}
+.int04StoppedSource h4{margin:0;font-size:14px}
+.int04StoppedSource p{margin:3px 0;line-height:1.45}
+.int04StoppedSource button{align-self:flex-start;max-width:100%;
+  white-space:normal;text-align:left}
+.int04StoppedSource button:focus-visible{outline:2px solid #f6d48f;outline-offset:3px}
+.int04RecoveryNotice{border-left:2px solid #d2a56a;padding:7px 10px;
+  line-height:1.5}
