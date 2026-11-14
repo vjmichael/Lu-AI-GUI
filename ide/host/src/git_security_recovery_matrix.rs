@@ -307,6 +307,25 @@ impl IdeWorkspaceRegistry{
         })
     }
 }
+impl IdeWorkspaceRegistry{
+    /// Source-only, non-authorizing 6F check to run immediately BEFORE
+    /// every original one-use mutation. The operation's own original
+    /// native consent, revocation, source and journal checks still decide
+    /// execution. The sole exception allows the conflict-resolution
+    /// workflow to inspect a legitimate Git Merge state; it never exempts
+    /// a pending journal or foreign lock.
+    pub(crate) fn require_group6f_no_pending_recovery(
+        &self,project_id:&str,allow_git_conflict_state:bool,
+    )->Result<(),&'static str>{
+        let e=self.inspect_group6f_git_recovery(project_id)?;
+        if e.foreign_git_lock_present
+            ||e.domains.iter().any(|d|d.manual_reconciliation_required)
+            ||(e.git_operation_in_progress&&!allow_git_conflict_state){
+            return Err("G06F_CROSS_DOMAIN_RECOVERY_VETO");
+        }
+        Ok(())
+    }
+}
 #[cfg(test)]
 mod tests{
     use super::*;

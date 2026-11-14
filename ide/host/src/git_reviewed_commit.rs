@@ -416,6 +416,9 @@ impl IdeWorkspaceRegistry {
         {
             return Err("G06B_COMMIT_INVALID_OR_CANCELLED_PLAN");
         }
+        self.require_group6f_no_pending_recovery(
+            &expected.stage.project_id,false,
+        )?;
         let fresh = self.preview_reviewed_partial_commit(
             &expected.stage,
             expected.mode.clone(),

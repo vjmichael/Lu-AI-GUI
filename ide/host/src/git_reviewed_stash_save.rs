@@ -55,6 +55,7 @@ impl IdeWorkspaceRegistry {
      expected.worktree_modified || cancel.load(Ordering::SeqCst)!=0 {
     return Err("FIN03_STASH_AUTHORITY_DENIED");
   }
+  self.require_group6f_no_pending_recovery(&expected.project_id,false)?;
   let fresh=self.review_one_file_stash_save(&expected.project_id)?;
   if fresh.review_sha256!=expected.review_sha256 ||
      fresh.relative_path!=expected.relative_path ||

@@ -660,6 +660,9 @@ impl IdeWorkspaceRegistry {
         {
             return Err("G06B_STAGE_NOT_APPROVED_OR_CANCELLED");
         }
+        self.require_group6f_no_pending_recovery(
+            &reviewed.plan.project_id,false,
+        )?;
         let fresh = self.select_reviewed_git_hunks(&reviewed.plan, &reviewed.selected_ids)?;
         if fresh.selection_sha256 != reviewed.selection_sha256
             || fresh.selected_ids != reviewed.selected_ids

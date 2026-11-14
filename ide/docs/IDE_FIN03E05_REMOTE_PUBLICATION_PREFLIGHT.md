@@ -230,3 +230,20 @@ prints/stores a token or response body, requests credentials, pushes
 a ref, edits the project or claims installed acceptance. An OS keychain
 item has NOT been provisioned or accessed by this CI run. A physical
 operator must independently provision/approve any actual live test.
+
+## Group 6F-03 — Original native Git mutation admission enforcement
+
+Before each existing original approved Git write method reaches its first
+mutation point, it now invokes `require_group6f_no_pending_recovery`.
+This covers reviewed commit, fast-forward/divergent merge, cherry-pick/rebase,
+partial staging, conflict resolution, unstage, single-file restore and stash
+save. An unresolved original operation journal, foreign lock or active Git
+operation vetoes another operation. Conflict-resolution alone may work in
+a pre-existing Git conflict state, subject to its unchanged original
+candidate/source/one-use checks; it cannot waive other pending journals.
+Ordinary dirty files are NOT globally blocked, because partial staging,
+restore and stash legitimately operate on modified sources.
+
+This new gate does not replace or mint original OS approval, lock/CAS
+witnesses, private file receipt or native installed consent. Exact-head
+Windows/Linux regressions and hostile cancellation/recovery remain pending.

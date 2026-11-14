@@ -170,6 +170,7 @@ impl IdeWorkspaceRegistry{
  /// immediately before the libgit2 index commit point.
  pub fn execute_approved_single_unstage(&self,expected:&ReviewedUnstage,
     cancel:&AtomicU8)->Result<UnstageReceipt,&'static str>{
+  self.require_group6f_no_pending_recovery(&expected.project_id,false)?;
   let fresh=self.review_single_staged_unstage(&expected.project_id)?;
   if fresh.review_sha256!=expected.review_sha256||
     fresh.head_sha!=expected.head_sha||

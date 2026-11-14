@@ -449,6 +449,7 @@ impl IdeWorkspaceRegistry {
         if cancel.load(Ordering::SeqCst) != 0 {
             return Err("G06C04_CANCELLED_BEFORE_REVIEW");
         }
+        self.require_group6f_no_pending_recovery(id,false)?;
         let original = self.review_local_rebase_cherry_pick(id, kind, branch)?;
         let repo = exact_repo(self, id)?;
         let build = compute_in_sandbox(&repo, &original, id)?;

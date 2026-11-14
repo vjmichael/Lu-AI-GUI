@@ -84,6 +84,7 @@ impl IdeWorkspaceRegistry {
   cancel:&AtomicU8)->Result<SingleFileRestoreReceipt,&'static str>{
   if expected.operation_authorized || expected.source_files_modified || expected.refs_modified ||
      cancel.load(Ordering::SeqCst)!=0{return Err("FIN03_RESTORE_NOT_AUTHORIZED");}
+  self.require_group6f_no_pending_recovery(&expected.project_id,false)?;
   let fresh=self.review_single_file_restore(&expected.project_id)?;
   if fresh.review_sha256!=expected.review_sha256 || fresh.head_sha!=expected.head_sha ||
      fresh.relative_path!=expected.relative_path{return Err("FIN03_RESTORE_SOURCE_CHANGED");}
