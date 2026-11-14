@@ -34,7 +34,7 @@ impl SuspendedTargetLease{
  }
 }
 fn read_exact(pipe:HANDLE,out:&mut [u8],limit:Duration)->Result<(),SupervisorError>{
- if out.len()!=17&&out.len()!=69{return Err(denied());}
+ if out.len()!=17&&out.len()!=141{return Err(denied());}
  let deadline=Instant::now()+limit;
  loop{
   if Instant::now()>=deadline{return Err(denied());}
@@ -49,9 +49,35 @@ fn read_exact(pipe:HANDLE,out:&mut [u8],limit:Duration)->Result<(),SupervisorErr
       &mut read,ptr::null_mut())}==0||read!=out.len() as u32{return Err(denied());}
  Ok(())
 }
+/// This is deliberately pure: independent native tests may inject forged
+/// PE/PDB, approval hash, session or PID responses without creating a Job.
+fn verify_suspended_receipt(
+ reply:&[u8],image:&str,pdb:&str,approval:&str,session:&str,
+)->Result<u32,SupervisorError>{
+ if reply.len()!=141||reply[0]!=b'S'||session.len()!=40
+     ||!session.starts_with("session-")
+     ||!session[8..].bytes().all(|b|b.is_ascii_hexdigit())
+     ||reply[101..141]!=*session.as_bytes(){return Err(denied());}
+ let pid=u32::from_le_bytes(reply[1..5].try_into().map_err(|_|denied())?);
+ if pid==0{return Err(denied());}
+ for (sha,bytes) in [
+     (image,&reply[5..37]),(pdb,&reply[37..69]),
+     (approval,&reply[69..101]),
+ ]{
+     if sha.len()!=64||!sha.bytes().all(|b|b.is_ascii_hexdigit()){
+         return Err(denied());
+     }
+     for (i,b) in bytes.iter().enumerate(){
+         if *b!=u8::from_str_radix(&sha[i*2..i*2+2],16)
+             .map_err(|_|denied())?{return Err(denied());}
+     }
+ }
+ Ok(pid)
+}
 pub(crate) fn prepare_original_target(
  pair:&IndependentScmPair,job_id:&str,plan:&JobPlan,
  expected_image_sha:&str,expected_pdb_sha:&str,
+ expected_approval_sha:&str,expected_session:&str,
 )->Result<SuspendedTargetLease,SupervisorError>{
  pair.reobserve()?;
  let until=Instant::now()+Duration::from_secs(8);
@@ -80,26 +106,12 @@ pub(crate) fn prepare_original_target(
       &mut written,ptr::null_mut())}==0||written!=packet.len() as u32{
   return Err(denied());
  }
- let mut reply=[0u8;69];
+ let mut reply=[0u8;141];
  read_exact(pipe.0,&mut reply,Duration::from_secs(20))?;
- if reply[0]!=b'S'{return Err(denied());}
- let observed=u32::from_le_bytes(reply[1..5].try_into().map_err(|_|denied())?);
- if observed==0{return Err(denied());}
- // Both sealed native image and PDB digests are independently pinned by
- // the debugger-service administrator, not chosen by the pipe sender.
- for (sha,bytes) in [
-  (expected_image_sha,&reply[5..37]),
-  (expected_pdb_sha,&reply[37..69]),
- ]{
-  if sha.len()!=64||!sha.bytes().all(|b|b.is_ascii_hexdigit()){
-   return Err(denied());
-  }
-  for (i,b) in bytes.iter().enumerate(){
-   if *b!=u8::from_str_radix(&sha[i*2..i*2+2],16).map_err(|_|denied())?{
-    return Err(denied());
-   }
-  }
- }
+ let observed=verify_suspended_receipt(
+  &reply,expected_image_sha,expected_pdb_sha,
+  expected_approval_sha,expected_session,
+ )?;
  let lease=SuspendedTargetLease{pipe,os_observed_target_pid:observed};
  lease.reobserve(pair)?;
  Ok(lease)
@@ -107,6 +119,29 @@ pub(crate) fn prepare_original_target(
 #[cfg(test)]
 mod tests{
  use super::*;
+ #[test]
+ fn forged_approval_session_or_target_digest_fails_without_a_kernel_grant(){
+     let image="a".repeat(64);let pdb="b".repeat(64);
+     let approval="c".repeat(64);let session=format!("session-{}","d".repeat(32));
+     let mut reply=[0u8;141];reply[0]=b'S';reply[1..5].copy_from_slice(&42u32.to_le_bytes());
+     for (off,hex) in [(5usize,&image),(37,&pdb),(69,&approval)]{
+         for i in 0..32{
+             reply[off+i]=u8::from_str_radix(&hex[i*2..i*2+2],16).unwrap();
+         }
+     }
+     reply[101..].copy_from_slice(session.as_bytes());
+     assert_eq!(verify_suspended_receipt(
+         &reply,&image,&pdb,&approval,&session).unwrap(),42);
+     let mut fake=reply;fake[69]^=1;
+     assert!(verify_suspended_receipt(&fake,&image,&pdb,&approval,&session).is_err());
+     let mut fake=reply;fake[141-1]^=1;
+     assert!(verify_suspended_receipt(&fake,&image,&pdb,&approval,&session).is_err());
+     let mut fake=reply;fake[5]^=1;
+     assert!(verify_suspended_receipt(&fake,&image,&pdb,&approval,&session).is_err());
+     let mut fake=reply;fake[1..5].fill(0);
+     assert!(verify_suspended_receipt(&fake,&image,&pdb,&approval,&session).is_err());
+     assert!(verify_suspended_receipt(&reply[..140],&image,&pdb,&approval,&session).is_err());
+ }
  #[test]
  fn only_one_fixed_target_endpoint_without_client_pid_or_path(){
   assert_eq!(ENDPOINT,r"\\.\pipe\LuIdeDebugTargetBroker.v1");
