@@ -85,3 +85,26 @@ test('FIN03 6E05B uses OS native credential read only, not WebView secrets', () 
     'remote_write_route_available:false',
   ]) assert.ok(code.includes(fence), fence);
 });
+
+test('FIN03 6E05C offline intent remains host-only and never remotely executes', () => {
+  const intent = read('../../host/src/github_remote_publication_intent.rs');
+  const code = intent.split('#[cfg(test)]')[0];
+  assert.match(host, /mod github_remote_publication_intent;/);
+  assert.match(code, /pub\(crate\) fn prepare_github_remote_publication_intent\(/);
+  assert.match(code, /graph_descendant_of\(to,from\)/);
+  assert.match(code, /create_new\(true\)/);
+  assert.match(code, /file\.sync_all\(\)/);
+  assert.match(code, /reconciliation_required_no_remote_retry/);
+  for (const forbidden of [
+    /Command\s*::\s*new\(/, /ureq\s*::/,
+    /\.push_to\s*\(/, /\.set_target\s*\(/,
+    /\.push\s*\(/, /\.set_password\s*\(/,
+  ]) assert.doesNotMatch(code, forbidden);
+  assert.doesNotMatch(tauri, /ide_github_remote_publish_execute|ide_github_read_token/);
+  for (const testName of [
+    'offline_intent_requires_real_local_ancestry_without_write_authority',
+    'stale_or_moved_snapshot_denies_even_with_claimed_policy',
+    'journal_one_use_fsync_then_restart_never_retries',
+    'foreign_remote_or_dirty_project_never_prepares_intent',
+  ]) assert.ok(intent.includes('fn '+testName+'('), testName);
+});

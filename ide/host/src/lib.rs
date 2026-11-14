@@ -48,6 +48,9 @@ pub mod github_review_state;
 pub mod github_branch_rules;
 pub mod github_remote_publication;
 pub mod github_remote_live_policy;
+// 6E-05C: native-only offline plan and one-use prepared journal.
+// No Tauri route, credential, OS consent or GitHub mutation.
+mod github_remote_publication_intent;
 pub mod inbox;
 pub mod inventory;
 pub mod inventory_history;

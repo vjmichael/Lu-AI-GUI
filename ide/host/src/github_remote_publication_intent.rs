@@ -137,7 +137,7 @@ fn prepare_from_native(
     let to=Oid::from_str(&pre.local_head).map_err(|_|"FIN03_C_INVALID_COMMIT")?;
     if from==to
         ||repo.find_commit(from).is_err()||repo.find_commit(to).is_err()
-        ||repo.graph_descendant_of(to,from)!=Ok(true)
+        ||repo.graph_descendant_of(to,from).ok()!=Some(true)
         ||repo.head().ok().and_then(|h|h.target())!=Some(to)
     {return Err("FIN03_C_NO_VERIFIED_FORWARD_COMMIT");}
     let policy=live.policy_response_sha256.as_ref().unwrap().clone();
@@ -203,6 +203,9 @@ fn verify_record(v:&PreparedJournal)->Result<(),&'static str>{
 pub(crate) fn fsync_prepared_intent_once(
     host_private_dir:&Path,intent:&RemotePublicationIntent,
 )->Result<(),&'static str>{
+    // The installed caller must independently prove this private directory
+    // is owner-only, non-reparse and kernel-backed before using this helper.
+    // Filesystem metadata checks here DO NOT constitute that OS ACL proof.
     if !host_private_dir.is_absolute()
         ||!valid_sha(&intent.intent_sha256,64)
         ||fs::symlink_metadata(host_private_dir).ok().is_none_or(|m|

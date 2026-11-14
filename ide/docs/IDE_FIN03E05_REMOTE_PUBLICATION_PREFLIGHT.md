@@ -122,3 +122,35 @@ concurrent-writer refusal and recovery.
 **Independent FIN-04 gate:** FIN-04W2-C original Windows six-phase
 transaction remains blocked. New W2-C2 work must be isolated from
 6E-05B and must not admit LLDB or W2-D.
+
+## 6E-05C-01 — Offline publication intent and restart denial (Nov 13)
+
+**Source implementation, not remote publication.** A new host-internal module
+`ide/host/src/github_remote_publication_intent.rs` takes the original
+registered-project read-only preflight and the separately observed 6E-05B
+six-GET read result. It independently reopens the exact local repository and
+requires:
+
+- same registered project, canonical origin, branch, HEAD, clean index,
+  snapshot digest, non-divergent tracking ref and no foreign Git lock;
+- a freshly observed exact ref and stable protection/ruleset result, with
+  all 6E-05B authorization and mutation booleans still false;
+- the observed remote commit must already exist in the registered local
+  object database and be an **actual ancestor** of the new local HEAD
+  (not merely a GitHub-provided `localIsDescendant` Boolean).
+
+The resulting intent pins exact old and proposed commit IDs, snapshot hash,
+policy hash, source project/repository/branch and timestamp. Its typed grant
+fields serialize exclusively as **false**, including publication, native OS
+approval, CAS and restart retry. Host-only `create_new` journal preparation
+stores a bounded hash-correlated JSON record, calls `sync_all`, rejects
+duplicates, and on restart requires **manual reconciliation with no
+automatic remote write**. Corrupted/mismatched records reject. Directory
+ACL attestation, parent-directory durability, physical OS consent, actual
+remote CAS and after-write ref readback remain separate, OPEN gates.
+
+Real Git hostile fixtures cover an observed ancestor, a stale/moved ref,
+forged approval and dirty project, plus duplicate prepared journal and
+tampered restart denial. The original Windows/Linux 6E-05A/B tests remain
+unchanged and are run in the same batch. **No credential usage, remote
+write, native OS approval, Git process or installed acceptance** was done.

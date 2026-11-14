@@ -1,5 +1,18 @@
 # Lu IDE — Current project state (authoritative handoff)
 
+## FIN-03 / Group 6E-05C-01 — independent offline journal and replay fence (Nov 13, 2026)
+
+Source-only on PR #230: exact local Git ancestry is rechecked against
+separately observed live ref/policy evidence, producing a no-authority
+publication intent with all approval/write booleans permanently false.
+One-use prepared journal uses create-new and fsync; duplicate or tampered
+restart is blocked, and no automatic GitHub write is available. Native
+Windows/Linux source tests are newly queued and NOT yet accepted.
+6E-05B physical credential provision/live read remains open independently.
+6E-05C OS confirmation, genuine compare-and-swap, readback, interrupted
+publication recovery and Group 6F/6G acceptance are still pending. FIN-04
+debugger CI is parallel and does not block this source work.
+
 ## FIN-03 / Group 6E-05A — separate protected remote-publication preflight (Nov 13, 2026)
 
 **Next unblocked task while FIN-04W2-C remains denied.** Independent branch `ide/fin03-6e05-protected-remote-preflight-20261113` is based on the existing `ide/fin01d-custody-closeout-20261112` head, **not** FIN-04 PR #227. Implemented a native-only, read-only publication candidate for a registered ordinary local Git checkout, with canonical same-origin GitHub identity, exact branch/HEAD/index SHA, cached remote-tracking commit, clean/dirty/conflict and foreign-lock checks, source reobservation and conservative local ancestry. Even a locally fast-forwardable branch is NOT live remote-ref evidence. Every review explicitly denies remote execution, credentials, OS approval, publication success and installed acceptance. Added Rust real-Git fixtures and frontend source-boundary tests. **No CI/native/compiler run or physical consent is claimed at this commit.** Detailed scope: `ide/docs/IDE_FIN03E05_REMOTE_PUBLICATION_PREFLIGHT.md`.
