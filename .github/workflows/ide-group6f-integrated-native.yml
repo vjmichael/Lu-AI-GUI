@@ -155,6 +155,19 @@ jobs:
             ide/app/src-tauri/Cargo.lock
           if-no-files-found: error
           retention-days: 14
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Build original standalone IDE frontend from checked-in npm lock
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd ide/app
+          npm ci --ignore-scripts
+          npm run build
+          test -s dist/index.html
+          test -s dist/assets/app.js
+          echo "IDE_MERGE03_FRONTEND_BUILT_FROM_NPM_LOCK=PASS"
       - name: Native host OS-vault type and desktop compile
         shell: bash
         run: |
