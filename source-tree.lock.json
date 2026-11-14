@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "4ea1c30084e7decaac73b512c01ab2dd13e9d74b",
+  "sourceCommitBeforeLock": "56704ae2e494f2264b5496764952ff84dea3f56c",
   "trackedFileCount": 1018,
   "files": [
     {
@@ -69,7 +69,7 @@
     },
     {
       "path": ".github/workflows/lu-core-merge-c4-grouped.yml",
-      "blob": "991f4315424fd7bc2272430e615e60a5997da3dd"
+      "blob": "6d6232223ab89e473fa78444589933672a91270c"
     },
     {
       "path": ".github/workflows/lu-development-ledger.yml",
@@ -241,7 +241,7 @@
     },
     {
       "path": ".github/workflows/lu-repo01-full-source.yml",
-      "blob": "44465b9aecccb7fa704c6dbbe9c2b8ab7d9a13df"
+      "blob": "13a9a28d0fcf2693c4f74c99eb0611a5ad1edaca"
     },
     {
       "path": ".github/workflows/lu-tools-01-05-integration.yml",
@@ -2273,7 +2273,7 @@
     },
     {
       "path": "scripts/lu-ci-group-policy.test.mjs",
-      "blob": "60034ad023631600cb02eb7228ca556814f9b7d3"
+      "blob": "90ac8752b2d29f55e824ea259ab6314e49ab2a76"
     },
     {
       "path": "scripts/lu-ci-superseded-queue.mjs",
