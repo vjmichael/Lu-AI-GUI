@@ -48,6 +48,9 @@ jobs:
       - name: CORE-01F isolated read-only merge preflight source contracts
         if: hashFiles('scripts/core01f-merge-preflight.test.mjs') != ''
         run: node --test scripts/core01f-merge-preflight.test.mjs
+      - name: CORE-01F-04 read-only original hosted evidence gate negative cases
+        if: hashFiles('scripts/core01f-acceptance-reconcile.test.mjs') != ''
+        run: node --test scripts/core01f-acceptance-reconcile.test.mjs
       - name: CORE-01F full P0 bridge original blob and provenance audit
         if: hashFiles('scripts/core01f-bridge-review.test.mjs') != ''
         run: |
