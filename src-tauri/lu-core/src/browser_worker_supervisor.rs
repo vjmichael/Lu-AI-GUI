@@ -200,6 +200,12 @@ impl OwnedBrowserWorker {
     pub fn sec06c_installed()->bool{
         LinuxOsOwnedBrowserSession::installed()
     }
+    #[cfg(target_os="linux")]
+    pub fn sec06c_reconcile_previous(profile:&Path)->Result<(),BrowserSupervisorError>{
+        if !profile.exists(){return Ok(())}
+        LinuxOsOwnedBrowserSession::reconcile_previous(profile)
+            .map_err(BrowserSupervisorError::Spawn)
+    }
     pub fn launch(config:BrowserLaunchConfig,browser:Option<OwnedBrowserWindow>)
         ->Result<Self,BrowserSupervisorError>{
         // Before verified joint SEC-06C browser custody exists, the old
@@ -275,6 +281,11 @@ impl OwnedBrowserWorker {
         display:&str,xauthority:Option<&Path>,
     )->Result<Self,BrowserSupervisorError>{
         config.validate()?;
+        // Replay denial on restart: inspect every previous user-owned
+        // admission journal against the independent exact root-owned kernel
+        // receipt BEFORE issuing a fresh session. Old grants are never reused.
+        LinuxOsOwnedBrowserSession::reconcile_previous(&config.trusted_profile)
+            .map_err(BrowserSupervisorError::Spawn)?;
         if config.cdp_endpoint.is_some()||!chromium.is_absolute()
             ||!chromium.is_file()||!trusted_xdotool.is_absolute()
             ||!trusted_xdotool.is_file(){

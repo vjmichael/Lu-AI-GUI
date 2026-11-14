@@ -209,9 +209,16 @@ impl DesktopBrowserHost {
         }
         drop(session);
         let package_available=self.packaged_components_present();
-        let launch_ready=self.package_verified()
+        #[cfg(target_os="linux")]
+        let recovery_ready=OwnedBrowserWorker::sec06c_reconcile_previous(
+            &self.app_data.join("lu-browser-profile")).is_ok();
+        #[cfg(not(target_os="linux"))]
+        let recovery_ready=true;
+        let launch_ready=self.package_verified()&&recovery_ready
             &&Self::require_browser_kernel_custody().is_ok();
-        let reason=if launch_ready{
+        let reason=if !recovery_ready{
+            "SEC06C_BROWSER_PRIOR_KERNEL_CUSTODY_UNRECONCILED: operator review required".into()
+        }else if launch_ready{
             "Verified browser package ready".into()
         }else if package_available{
             "Browser files exist, but signed/pinned runtime admission is not complete".into()
@@ -357,6 +364,11 @@ impl DesktopBrowserHost {
         if !self.package_verified(){
             return Err("Lu browser runtime unavailable: missing reviewed, pinned package".into());
         }
+        Self::require_browser_kernel_custody()?;
+        #[cfg(target_os="linux")]
+        OwnedBrowserWorker::sec06c_reconcile_previous(
+            &self.app_data.join("lu-browser-profile"))
+            .map_err(|e|format!("SEC06C_BROWSER_PRIOR_KERNEL_CUSTODY_UNRECONCILED: {e:?}"))?;
         Ok(())
     }
 }

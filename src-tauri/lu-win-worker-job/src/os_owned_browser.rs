@@ -7,7 +7,7 @@
 //! cgroup leaf; no process-group kill or child exit can witness cleanup.
 #![cfg(target_os="linux")]
 use std::{
-    fs::{self,File,OpenOptions},io::{self,Read},
+    fs::{self,File,OpenOptions},io::{self,Read,Write},
     os::{fd::AsRawFd,unix::fs::{MetadataExt,OpenOptionsExt,PermissionsExt}},
     path::{Path,PathBuf},process::{Child,Command,Stdio},
     time::{Duration,Instant},
@@ -107,6 +107,177 @@ fn verified_member(pid:u32,unit:&str,nonce:&str)->io::Result<PathBuf>{
     }
     Ok(path)
 }
+
+const JOURNAL_BEGIN:&str="LU_SEC06C_BROWSER_JOURNAL_V1";
+const JOURNAL_EVENT_ADMITTED:&str="EVENT=OS_PAIR_ADMITTED\n";
+const JOURNAL_EVENT_CLOSED:&str="EVENT=ROOT_KERNEL_EMPTY_VERIFIED\n";
+const JOURNAL_EVENT_RECONCILED:&str="EVENT=RECONCILED_NO_REPLAY\n";
+/// This user-owned journal is UNTRUSTED historical correlation, never a
+/// trusted kernel custody receipt. The only authoritative cleanup proof is
+/// the separately immutable root-owned record re-opened on every restart.
+struct OriginalBrowserJournal {
+    path:PathBuf,nonce:String,chat:String,turn:String,call:String,
+    chromium_sha:String,node_sha:String,script_sha:String,
+    policy_sha:String,uid:u32,
+}
+impl OriginalBrowserJournal {
+    fn filename(nonce:&str)->String{
+        format!(".lu-sec06c-browser-{nonce}.journal")
+    }
+    fn identity(&self)->String{
+        format!("{JOURNAL_BEGIN}\nNONCE={}\nCHAT={}\nTURN={}\nCALL={}\nCHROMIUM_SHA256={}\nNODE_SHA256={}\nSCRIPT_SHA256={}\nPOLICY_SHA256={}\nORIGINAL_UID={}\n",
+            self.nonce,self.chat,self.turn,self.call,
+            self.chromium_sha,self.node_sha,self.script_sha,self.policy_sha,self.uid)
+    }
+    fn initial(profile:&Path,nonce:&str,chat:&str,turn:&str,call:&str,
+        chromium_sha:&str,node_sha:&str,script_sha:&str,policy_sha:&str,
+        uid:u32,
+    )->io::Result<Self>{
+        if uid==0||uid!=unsafe{geteuid()}||!hex(nonce,32)
+            ||!hex(chromium_sha,64)||!hex(node_sha,64)
+            ||!hex(script_sha,64)||!hex(policy_sha,64)
+            ||!id(chat)||!id(turn)||!id(call){
+            return Err(io::Error::other("SEC06C browser journal origin invalid"))
+        }
+        let profile_meta=fs::symlink_metadata(profile)?;
+        if !profile_meta.is_dir()||profile_meta.file_type().is_symlink()
+            ||profile_meta.uid()!=uid||profile_meta.permissions().mode()&0o022!=0{
+            return Err(io::Error::other("SEC06C browser original profile not owned"))
+        }
+        let journal=Self{
+            path:profile.join(Self::filename(nonce)),nonce:nonce.into(),
+            chat:chat.into(),turn:turn.into(),call:call.into(),
+            chromium_sha:chromium_sha.into(),node_sha:node_sha.into(),
+            script_sha:script_sha.into(),policy_sha:policy_sha.into(),uid,
+        };
+        let mut file=OpenOptions::new().write(true).create_new(true)
+            .mode(0o600).custom_flags(NOFOLLOW).open(&journal.path)?;
+        file.write_all(journal.identity().as_bytes())?;
+        file.sync_all()?;
+        File::open(profile)?.sync_all()?; // Durable original admission intent.
+        Ok(journal)
+    }
+    fn load(path:&Path)->io::Result<Self>{
+        let mut file=OpenOptions::new().read(true).custom_flags(NOFOLLOW)
+            .open(path)?;
+        let meta=file.metadata()?;
+        if !meta.is_file()||meta.nlink()!=1||meta.uid()!=unsafe{geteuid()}
+            ||meta.permissions().mode()&0o077!=0||meta.len()>2048{
+            return Err(io::Error::other("SEC06C browser original journal unsafe"))
+        }
+        let mut bytes=Vec::new();(&mut file).take(2049).read_to_end(&mut bytes)?;
+        let raw=String::from_utf8(bytes).map_err(|_|
+            io::Error::other("SEC06C browser journal is not original UTF-8"))?;
+        let rows=raw.lines().collect::<Vec<_>>();
+        if rows.len()<10||rows[0]!=JOURNAL_BEGIN{
+            return Err(io::Error::other("SEC06C browser journal header corrupt"))
+        }
+        let field=|index:usize,prefix:&str|->io::Result<String>{
+            rows[index].strip_prefix(prefix).map(str::to_owned).ok_or_else(||
+                io::Error::other("SEC06C journal original identity field missing"))
+        };
+        let nonce=field(1,"NONCE=")?;
+        let chat=field(2,"CHAT=")?;
+        let turn=field(3,"TURN=")?;
+        let call=field(4,"CALL=")?;
+        let chromium_sha=field(5,"CHROMIUM_SHA256=")?;
+        let node_sha=field(6,"NODE_SHA256=")?;
+        let script_sha=field(7,"SCRIPT_SHA256=")?;
+        let policy_sha=field(8,"POLICY_SHA256=")?;
+        let uid=field(9,"ORIGINAL_UID=")?.parse::<u32>().map_err(|_|
+            io::Error::other("SEC06C browser journal UID not original"))?;
+        if uid==0||uid!=unsafe{geteuid()}||!hex(&nonce,32)
+            ||!hex(&chromium_sha,64)||!hex(&node_sha,64)
+            ||!hex(&script_sha,64)||!hex(&policy_sha,64)
+            ||!id(&chat)||!id(&turn)||!id(&call)
+            ||path.file_name().and_then(|v|v.to_str())
+               !=Some(Self::filename(&nonce).as_str()){
+            return Err(io::Error::other("SEC06C browser journal scope spoofed"))
+        }
+        let events=&rows[10..];
+        if events.iter().any(|v|!matches!(*v,
+            "EVENT=OS_PAIR_ADMITTED"|"EVENT=ROOT_KERNEL_EMPTY_VERIFIED"
+            |"EVENT=RECONCILED_NO_REPLAY"))
+            ||events.iter().filter(|v|**v=="EVENT=OS_PAIR_ADMITTED").count()>1
+            ||events.iter().filter(|v|**v=="EVENT=ROOT_KERNEL_EMPTY_VERIFIED").count()>1
+            ||events.iter().filter(|v|**v=="EVENT=RECONCILED_NO_REPLAY").count()>1{
+            return Err(io::Error::other("SEC06C original journal event forged"))
+        }
+        let journal=Self{path:path.into(),nonce,chat,turn,call,chromium_sha,
+            node_sha,script_sha,policy_sha,uid};
+        if !raw.starts_with(&journal.identity()){
+            return Err(io::Error::other("SEC06C browser immutable journal prefix changed"))
+        }
+        Ok(journal)
+    }
+    fn append(&self,event:&str)->io::Result<()>{
+        if !matches!(event,JOURNAL_EVENT_ADMITTED|JOURNAL_EVENT_CLOSED
+            |JOURNAL_EVENT_RECONCILED){
+            return Err(io::Error::other("SEC06C browser journal event not finite"))
+        }
+        let mut file=OpenOptions::new().append(true).custom_flags(NOFOLLOW)
+            .open(&self.path)?;
+        let meta=file.metadata()?;
+        if !meta.is_file()||meta.nlink()!=1||meta.uid()!=unsafe{geteuid()}
+            ||meta.permissions().mode()&0o077!=0||meta.len()>2048{
+            return Err(io::Error::other("SEC06C browser journal changed before fsync"))
+        }
+        file.write_all(event.as_bytes())?;
+        file.sync_all()
+    }
+    fn original_root_receipt(&self)->io::Result<()>{
+        let dir=Path::new(RECEIPTS);
+        let meta=fs::symlink_metadata(dir)?;
+        if !meta.is_dir()||meta.file_type().is_symlink()
+            ||meta.uid()!=0||meta.permissions().mode()&0o022!=0{
+            return Err(io::Error::other("SEC06C original browser receipt root unsafe"))
+        }
+        let receipt=dir.join(format!("{}.receipt",self.nonce));
+        let mut file=OpenOptions::new().read(true).custom_flags(NOFOLLOW)
+            .open(receipt)?;
+        let m=file.metadata()?;
+        if !m.is_file()||m.uid()!=0||m.nlink()!=1
+            ||m.permissions().mode()&0o022!=0||m.len()>2048{
+            return Err(io::Error::other("SEC06C root-owned browser receipt altered"))
+        }
+        let mut bytes=Vec::new();(&mut file).take(2049).read_to_end(&mut bytes)?;
+        let expected=format!(
+            "LU_SEC06C_OWNED_BROWSER_V1\nNONCE={}\nCHAT={}\nTURN={}\nCALL={}\nCHROMIUM_SHA256={}\nNODE_SHA256={}\nSCRIPT_SHA256={}\nPOLICY_SHA256={}\nUNIT=lu-sec06c-browser-{}.service\nORIGINAL_UID={}\nKERNEL_EMPTY=1\nEFFECT=STOPPED\n",
+            self.nonce,self.chat,self.turn,self.call,self.chromium_sha,
+            self.node_sha,self.script_sha,self.policy_sha,self.nonce,self.uid);
+        if bytes!=expected.as_bytes(){
+            return Err(io::Error::other("SEC06C original browser root receipt mismatch"))
+        }
+        Ok(())
+    }
+    /// Called before a new human-authorized browser grant can start.
+    /// The old journal never grants a new browser worker; any missing or
+    /// tampered root receipt blocks further execution for operator review.
+    fn reconcile_previous(profile:&Path)->io::Result<()>{
+        for entry in fs::read_dir(profile)?{
+            let path=entry?.path();
+            let Some(name)=path.file_name().and_then(|v|v.to_str())
+                .map(str::to_owned)else{continue};
+            if !name.starts_with(".lu-sec06c-browser-")||!name.ends_with(".journal"){
+                continue
+            }
+            let record=Self::load(&path)?;
+            record.original_root_receipt()?;
+            // Do not automatically relaunch a session or reauthorize a task.
+            // A fresh grant is separately required by DesktopBrowserHost.
+            let mut file=OpenOptions::new().read(true).custom_flags(NOFOLLOW)
+                .open(&path)?;
+            let mut data=String::new();
+            file.read_to_string(&mut data)?;
+            if !data.contains(JOURNAL_EVENT_CLOSED)
+                &&!data.contains(JOURNAL_EVENT_RECONCILED){
+                record.append(JOURNAL_EVENT_RECONCILED)?;
+            }
+        }
+        Ok(())
+    }
+}
+
 pub struct BrowserKernelAdmission {
     pub chromium_pid:u32,
     pub node_pid:u32,
@@ -117,8 +288,12 @@ pub struct LinuxOsOwnedBrowserSession{
     nonce:String,chat:String,turn:String,call:String,
     chromium_sha:String,node_sha:String,script_sha:String,policy_sha:String,
     uid:u32,admission:BrowserKernelAdmission,verified:bool,
+    journal:OriginalBrowserJournal,
 }
 impl LinuxOsOwnedBrowserSession {
+    pub fn reconcile_previous(profile:&Path)->io::Result<()>{
+        OriginalBrowserJournal::reconcile_previous(profile)
+    }
     pub fn installed()->bool{
         let exe=Path::new(LAUNCHER);
         exe.is_file()&&root_file(exe).unwrap_or(false)
@@ -151,6 +326,11 @@ impl LinuxOsOwnedBrowserSession {
         let uid=unsafe{geteuid()};
         if uid==0{return Err(io::Error::other("SEC06C browser host must not be root"))}
         let nonce=original_nonce()?;
+        // Journal the precise original intent BEFORE spawning any service.
+        // A crash between this fsync and kernel admission is deliberately
+        // uncertain until independently reconciled; never infer success.
+        let journal=OriginalBrowserJournal::initial(profile,&nonce,chat,turn,call,
+            chromium_sha,node_sha,script_sha,policy_sha,uid)?;
         let mut cmd=Command::new("/usr/bin/sudo");
         cmd.args(["-n",LAUNCHER,"--nonce",&nonce,"--chat",chat,
                   "--turn",turn,"--call",call,"--chromium"]);
@@ -194,12 +374,21 @@ impl LinuxOsOwnedBrowserSession {
                 return Err(e);
             }
         };
-        Ok(Some((child,Self{
+        let mut scope=Self{
             nonce,chat:chat.to_owned(),turn:turn.to_owned(),call:call.to_owned(),
             chromium_sha:chromium_sha.to_owned(),node_sha:node_sha.to_owned(),
             script_sha:script_sha.to_owned(),policy_sha:policy_sha.to_owned(),
-            uid,admission,verified:false,
-        })))
+            uid,admission,verified:false,journal,
+        };
+        if let Err(error)=scope.journal.append(JOURNAL_EVENT_ADMITTED){
+            // The OS pair may already have executed. Close the lifetime
+            // channel, verify actual root-owned cleanup, then fail without
+            // transforming an incomplete user journal into authorization.
+            drop(child.stdin.take());
+            let _=scope.stop_and_verify(&mut child);
+            return Err(error);
+        }
+        Ok(Some((child,scope)))
     }
     pub fn admission(&self)->&BrowserKernelAdmission{&self.admission}
     pub fn session_live(&self)->bool{
@@ -241,7 +430,9 @@ impl LinuxOsOwnedBrowserSession {
         let deadline=Instant::now()+Duration::from_secs(42);
         loop{
             if client.try_wait()?.is_some(){
-                self.receipt()?;self.verified=true;return Ok(());
+                self.receipt()?;
+                self.journal.append(JOURNAL_EVENT_CLOSED)?;
+                self.verified=true;return Ok(());
             }
             if Instant::now()>=deadline {
                 return Err(io::Error::other("SEC06C browser kernel cleanup not attested"))
@@ -268,6 +459,34 @@ mod tests{
         ]{
             assert!(browser_identity(record.as_bytes(),&n).is_err());
         }
+    }
+    #[test]
+    fn original_browser_journal_requires_independent_root_receipt_on_restart(){
+        // Source-only negative. A same-user writable journal is NEVER an
+        // authority, even with a valid original nonce and a forged "verified"
+        // marker; the root-only kernel receipt must genuinely exist.
+        if unsafe{geteuid()}==0{return;}
+        let dir=std::env::temp_dir().join(format!(
+            "lu-sec06c-browser-journal-{}-{}",
+            std::process::id(),original_nonce().unwrap()));
+        fs::create_dir(&dir).unwrap();
+        let n=original_nonce().unwrap();
+        let record=OriginalBrowserJournal::initial(&dir,&n,
+            &format!("c-{}","a".repeat(32)),
+            &format!("g-{}","b".repeat(32)),
+            "browser-task-original",
+            &"c".repeat(64),&"d".repeat(64),&"e".repeat(64),
+            &"f".repeat(64),unsafe{geteuid()}).unwrap();
+        assert!(record.path.is_file());
+        assert!(OriginalBrowserJournal::reconcile_previous(&dir).is_err(),
+            "User-owned journal is NOT an independent kernel cleanup receipt");
+        record.append(JOURNAL_EVENT_ADMITTED).unwrap();
+        record.append(JOURNAL_EVENT_CLOSED).unwrap();
+        assert!(OriginalBrowserJournal::reconcile_previous(&dir).is_err(),
+            "Forged local STOPPED marker cannot replace real root receipt");
+        let loaded=OriginalBrowserJournal::load(&record.path).unwrap();
+        assert_eq!(loaded.identity(),record.identity());
+        fs::remove_dir_all(dir).unwrap();
     }
     #[test]
     fn browser_origin_scope_refuses_urls_and_local_hosts(){
