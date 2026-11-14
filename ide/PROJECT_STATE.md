@@ -1,5 +1,20 @@
 # Lu IDE — Current project state (authoritative handoff)
 
+## FIN-04W2-C3B — stricter trusted Win32 owner proof (November 13, 2026)
+
+Stacked on C3 source-only draft PR #232 at 59216d75. The default-off
+C2 harmless-worker native consent path now requires a visible, enabled,
+foreground, same-process **top-level** Windows owner before AND after the
+OS dialog; the post-click foreground guard rejects focus changes. The
+fixed dialog uses real line breaks so the source identity and strict
+NO-LLDB notice remain legible. Negative native tests also reject a foreign
+OS desktop HWND, changed manifest, target-binding and project identity,
+and missing target binding. The original Supervisor/SCM/Job/WFP/one-use
+path is unchanged. Exact-head Windows/Linux native and SCM matrix results
+are pending for this new branch; no actual Tauri owner menu/button,
+physical consent, installed source/build/PDB receipt, W2-D, LLDB,
+installation or release is authorized.
+
 ## Group 6B-05 — installed commit/amend and independent Git recovery (Nov 10, 2026)
 
 Built a disposable real-Git integrity oracle and 12 cross-platform adversarial tests,
