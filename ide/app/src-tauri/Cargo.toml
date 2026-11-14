@@ -43,6 +43,8 @@ native-project-debug = ["native-debug", "native-build"]
 # Release owner-event observation only: no debugger controls are exposed.
 # Build time must independently verify the exact first-party LLVM provenance.
 fin04-release-event-observer = ["fin02-protected-alpha", "lu-ide-execution-supervisor/fin04-release-owner-evidence"]
+# Windows DEBUG ONLY, default OFF; native owner-window menu and fixed harmless C2 service only.
+fin04w2-c4-desktop = ["native-build", "lu-ide-execution-supervisor/fin04w2-c2"]
 # D6D native human-dialog bridge for Windows DEV BUILDS ONLY.
 # This intentionally cannot be compiled into a release/signed installer yet.
 dev046d-native-dialog = ["native-project-debug", "lu-ide-execution-supervisor/dev046d-native-dialog"]
