@@ -13,7 +13,7 @@ use lu_ide_workspace::{
     lsp::DiagnosticSource,
     lsp_session::{LspEvent, LspPhase, Position},
 };
-#[cfg(all(debug_assertions, feature = "fin04w-ci-bridge"))]
+// Shared LSP/DAP pipe writer imports must compile irrespective of FIN-04W.
 use std::{
     ffi::OsStr,
     io,
