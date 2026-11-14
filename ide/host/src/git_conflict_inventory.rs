@@ -263,7 +263,16 @@ mod tests {
             (2u16, b"ours\n".as_slice()),
             (3u16, b"theirs\n".as_slice()),
         ] {
-            let mut entry = ancestor.clone();
+            // git2::IndexEntry is not Clone; copy the owned fixture entry
+            // explicitly, including the path bytes and original file mode.
+            let mut entry = git2::IndexEntry {
+                ctime: ancestor.ctime, mtime: ancestor.mtime,
+                dev: ancestor.dev, ino: ancestor.ino, mode: ancestor.mode,
+                uid: ancestor.uid, gid: ancestor.gid,
+                file_size: ancestor.file_size, id: ancestor.id,
+                flags: ancestor.flags, flags_extended: ancestor.flags_extended,
+                path: ancestor.path.clone(),
+            };
             entry.id = repo.blob(bytes).unwrap();
             entry.file_size = bytes.len() as u32;
             entry.flags = (entry.flags & !0x3000) | (stage << 12);

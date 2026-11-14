@@ -1,5 +1,21 @@
 # Lu IDE — Development changelog
 
+## 2026-11-13 — FIN-03 / 6E-05A remote publication preflight, no write authority
+
+Added `ide/host/src/github_remote_publication.rs` as a native,
+registered-project-only, source-rechecked local GitHub publication review.
+It hashes the bounded original index, checks exact ordinary branch/HEAD,
+validated GitHub origin, cached tracking ref, local ancestry, dirty Git
+state, foreign locks and push-URL overrides. The original source is
+rechecked before returning a non-authoritative preview digest. All
+network, credential, remote-write, one-use native approval and installed
+acceptance fields are explicitly false; there is no Tauri/LLM executable
+route. Added real-Git Rust fixtures, Node source-boundary contracts and
+a separate task document. Windows/Linux native compiler and physical
+app acceptance **not yet run**. Work is on a separate branch so failed
+FIN-04W2-C #43483699020 is not superseded or weakened. No LLDB/W2-D.
+
+
 ## 2026-11-10 — Group 6B-04 reviewed commits and explicit amend
 
 Added durable, separately OS-authorized staged-hunk commit and

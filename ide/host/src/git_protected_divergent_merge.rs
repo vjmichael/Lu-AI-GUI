@@ -355,6 +355,7 @@ impl IdeWorkspaceRegistry {
             reviewed_result_sha256: result_digest.to_owned(),
             reviewed_plan_sha256: plan_digest.to_owned(),
         };
+        self.require_group6f_no_pending_recovery(id,false)?;
         append(&journal_file, &j)?;
         if cancel.compare_exchange(0, 1, Ordering::SeqCst, Ordering::SeqCst).is_err() {
             j.phase = "cancelled".into();
@@ -586,6 +587,10 @@ mod tests {
         let mut config = repo.config().unwrap();
         config.set_str("user.name", "Local fixture operator").unwrap();
         config.set_str("user.email", "local@localhost.invalid").unwrap();
+        // Pin the disposable Git repository's checkout conversion policy.
+        // Windows runners may inherit global autocrlf=true; the original
+        // byte-exact LF checkout and crash-recovery assertions are retained.
+        config.set_bool("core.autocrlf", false).unwrap();
         drop(config);
         let sig = repo.signature().unwrap();
         let mut index = repo.index().unwrap();

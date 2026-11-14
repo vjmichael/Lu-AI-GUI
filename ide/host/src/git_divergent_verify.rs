@@ -291,12 +291,14 @@ mod tests {
     }
     fn snapshot(root: &Path) -> (Vec<u8>, Vec<u8>, Vec<u8>, String, String) {
         let repo = Repository::open(root).unwrap();
+        // Drop the borrowed git2::Reference before its owning Repository.
+        let head = repo.head().unwrap().target().unwrap().to_string();
+        let feature = repo.refname_to_id("refs/heads/feature").unwrap().to_string();
         (
             fs::read(root.join("one.txt")).unwrap(),
             fs::read(root.join("two.txt")).unwrap(),
             fs::read(root.join(".git/index")).unwrap(),
-            repo.head().unwrap().target().unwrap().to_string(),
-            repo.refname_to_id("refs/heads/feature").unwrap().to_string(),
+            head, feature,
         )
     }
     #[test]

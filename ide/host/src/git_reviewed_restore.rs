@@ -93,6 +93,7 @@ impl IdeWorkspaceRegistry {
   let marker=repo.path().join("lu-ide-fin03-restore-active.json");
   let backup_name=format!("lu-ide-fin03-restore-backup-{}.bin",expected.review_sha256);
   let backup=repo.path().join(&backup_name);
+  self.require_group6f_no_pending_recovery(&expected.project_id,false)?;
   let backup_file=OpenOptions::new().write(true).create_new(true).open(&backup)
    .map_err(|_|"FIN03_RESTORE_BACKUP_EXISTS_OR_UNWRITABLE")?;
   let mut backup_file=backup_file;

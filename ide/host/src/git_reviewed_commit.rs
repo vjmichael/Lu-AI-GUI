@@ -433,6 +433,9 @@ impl IdeWorkspaceRegistry {
                 return Err("G06B_COMMIT_RECOVERY_REQUIRED");
             }
         }
+        self.require_group6f_no_pending_recovery(
+            &expected.stage.project_id,false,
+        )?;
         let lock_path = gitdir.join("index.lock");
         let lock = OpenOptions::new()
             .write(true)

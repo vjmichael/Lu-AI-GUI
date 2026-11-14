@@ -1,5 +1,47 @@
 # Lu IDE — Current project state (authoritative handoff)
 
+## IDE Group 6F-01 — cross-domain original Git recovery matrix (Nov 13, 2026)
+
+Added native read-only reconciliation of original reviewed commit,
+fast-forward merge, divergent merge, and cherry-pick/rebase recovery
+inspectors at one rechecked registered Git source identity. Foreign locks,
+unresolved journals, dirty worktrees and source drift block NEW operations;
+all automatic retry/rollback/publication flags remain false. Real-Git hostile
+fixtures and original native Windows/Linux batch are included. No approval,
+remote CAS, credential provisioning or physical acceptance is claimed.
+Remaining Group 6F includes full interrupted process/death and remote
+publication integration; Group 6G is separate.
+
+## FIN-03 / Group 6E-05D — no-repeat remote reconciliation source (Nov 13, 2026)
+
+Added host-only recovery classification on the exact original prepared
+journal and fresh six-GET 6E-05B observation. Unchanged, proposed and
+competing remote heads all remain **nonterminal, no auto-retry**; no token,
+push, OS consent or completion status is produced. Original CAS and
+installed native acceptance remain open independently of FIN-04.
+
+## FIN-03 / Group 6E-05C-01 — independent offline journal and replay fence (Nov 13, 2026)
+
+Source-only on PR #230: exact local Git ancestry is rechecked against
+separately observed live ref/policy evidence, producing a no-authority
+publication intent with all approval/write booleans permanently false.
+One-use prepared journal uses create-new and fsync; duplicate or tampered
+restart is blocked, and no automatic GitHub write is available. Native
+Windows/Linux source tests are newly queued and NOT yet accepted.
+6E-05B physical credential provision/live read remains open independently.
+6E-05C OS confirmation, genuine compare-and-swap, readback, interrupted
+publication recovery and Group 6F/6G acceptance are still pending. FIN-04
+debugger CI is parallel and does not block this source work.
+
+## FIN-03 / Group 6E-05A — separate protected remote-publication preflight (Nov 13, 2026)
+
+**Next unblocked task while FIN-04W2-C remains denied.** Independent branch `ide/fin03-6e05-protected-remote-preflight-20261113` is based on the existing `ide/fin01d-custody-closeout-20261112` head, **not** FIN-04 PR #227. Implemented a native-only, read-only publication candidate for a registered ordinary local Git checkout, with canonical same-origin GitHub identity, exact branch/HEAD/index SHA, cached remote-tracking commit, clean/dirty/conflict and foreign-lock checks, source reobservation and conservative local ancestry. Even a locally fast-forwardable branch is NOT live remote-ref evidence. Every review explicitly denies remote execution, credentials, OS approval, publication success and installed acceptance. Added Rust real-Git fixtures and frontend source-boundary tests. **No CI/native/compiler run or physical consent is claimed at this commit.** Detailed scope: `ide/docs/IDE_FIN03E05_REMOTE_PUBLICATION_PREFLIGHT.md`.
+
+FIN-04W2-C remains **BLOCKED** separately. Actual original run [#43483699020](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/43483699020) had Windows/Linux compiler/authorization unit PASS, W2-A/B OS tests PASS, but its genuine Windows original host denied `SUPERVISOR_OS_CONTAINMENT_NOT_VERIFIED` after restricted SCM READY, WFP filter and original Prepared receipt. The six-phase native transaction and service one-use receipt are **NOT ACCEPTED**. No LLDB, W2-D, NSIS installation or production debugger grant is authorized. A later W2-C repair must use its own branch and exact-head native receipts.
+
+**Next 6E-05 work:** host-authenticated credential design and independently verified current remote ref/ruleset observation, separate per-use OS consent, fsynced remote update receipts and restart/cancellation/competing-writer denial. Group 6F consolidated Git security/recovery and 6G native/installed acceptance follow; physical-user approval remains separate. Local desktop/worktree/Delivered inspection: **UNKNOWN, NOT INSPECTED** from remote GitHub tool access.
+
+
 ## Group 6B-05 — installed commit/amend and independent Git recovery (Nov 10, 2026)
 
 Built a disposable real-Git integrity oracle and 12 cross-platform adversarial tests,

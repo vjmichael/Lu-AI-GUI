@@ -378,6 +378,7 @@ impl IdeWorkspaceRegistry {
             candidate_blob_oid: String::new(),
             resulting_index_sha256: String::new(),
         };
+        self.require_group6f_no_pending_recovery(id,true)?;
         journal_append(&journal, &j)?;
         if cancel.compare_exchange(0, 1, Ordering::SeqCst, Ordering::SeqCst).is_err() {
             j.phase = "cancelled".to_owned();

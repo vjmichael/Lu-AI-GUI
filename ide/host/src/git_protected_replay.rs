@@ -529,6 +529,7 @@ impl IdeWorkspaceRegistry {
         if cancel.load(Ordering::SeqCst) != 0 {
             return Err("G06C04_CANCELLED_BEFORE_JOURNAL");
         }
+        self.require_group6f_no_pending_recovery(id,false)?;
         append(&journal_file, &j)?;
         if cancel
             .compare_exchange(0, 1, Ordering::SeqCst, Ordering::SeqCst)
