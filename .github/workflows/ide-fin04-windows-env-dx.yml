@@ -136,7 +136,30 @@ jobs:
             Copy-Item -LiteralPath $lldb -Destination (Join-Path $bin 'lldb.exe')
             Copy-Item -LiteralPath $dap -Destination (Join-Path $bin 'lldb-dap.exe')
             Get-ChildItem -LiteralPath $original -Filter '*.dll' -File | Copy-Item -Destination $bin
-            Copy-Item -LiteralPath $runtime -Destination (Join-Path $bin 'python310.dll') -Force
+            # Same CLI, all other LLVM DLLs and debuggee. Remove only
+            # Python 3.10 from disposable bin before the first run.
+            $stagedPython=Join-Path $bin 'python310.dll'
+            if(Test-Path -LiteralPath $stagedPython){Remove-Item -LiteralPath $stagedPython -Force}
+            $testTarget=Join-Path $folder 'main.exe'
+            if(Test-Path -LiteralPath $testTarget -PathType Leaf) {
+              $withoutOut=Join-Path $folder 'without-python310.out'
+              $withoutErr=Join-Path $folder 'without-python310.err'
+              $unmodifiedPath=$env:PATH
+              try {
+                $env:PATH=$bin + ';' + (Join-Path $env:SystemRoot 'System32')
+                $ablateArgs=@('--batch','--no-lldbinit','-o','"breakpoint set --name main"','-o','run','-o','"thread list"','--',('"'+$testTarget+'"'))
+                $without=Start-Process -FilePath (Join-Path $bin 'lldb.exe') -ArgumentList $ablateArgs -PassThru -NoNewWindow -RedirectStandardOutput $withoutOut -RedirectStandardError $withoutErr
+                if(-not $without.WaitForExit(30000)){
+                  try{$without.Kill()}catch{}
+                  $r.cli_without_python310='FAIL_timeout'
+                }else{
+                  $r.cli_without_python310_exit=$without.ExitCode
+                  $r.cli_without_python310=if($without.ExitCode -eq -1073741515){'FAIL_missing_dll_0xC0000135'}else{'OTHER_exit_' + $without.ExitCode}
+                }
+              }finally{$env:PATH=$unmodifiedPath}
+            }else{$r.cli_without_python310='SKIP_debuggee_missing'}
+            # Only add pinned Python DLL before the second staged LLDB run.
+            Copy-Item -LiteralPath $runtime -Destination $stagedPython -Force
             $r.cli_sha256=(Get-FileHash $lldb -Algorithm SHA256).Hash.ToLowerInvariant()
             $r.dap_sha256=(Get-FileHash $dap -Algorithm SHA256).Hash.ToLowerInvariant()
             $r.python310_sha256=(Get-FileHash $runtime -Algorithm SHA256).Hash.ToLowerInvariant()
