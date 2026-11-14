@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "979bd66500039085993aa7f1999d17fbb6c1829b",
+  "sourceCommitBeforeLock": "6d3640293d3b131a68cd72328d9908c3d4206cda",
   "trackedFileCount": 1006,
   "files": [
     {
@@ -2281,7 +2281,7 @@
     },
     {
       "path": "scripts/lu-sec06c-owned-browser-worker.py",
-      "blob": "045ff1e23b4e6ab4e683bb7ae72f44c8fe0c9c45"
+      "blob": "0a63a38c83272db4905502f6927b8202739a55f1"
     },
     {
       "path": "scripts/lu-sec06c-owned-git-launcher.py",
