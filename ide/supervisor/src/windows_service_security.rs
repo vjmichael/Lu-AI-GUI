@@ -736,7 +736,18 @@ impl JobSecurity {
     /// The actual kernel descriptor must still be independently read back
     /// before an OS worker is accepted.
     pub(crate) fn new_debugger_service_owned() -> Result<Self, SupervisorError> {
-        let sid = sid_of_named_service("LuIdeDebuggerBroker")?;
+        Self::new_split_service_owned("LuIdeDebuggerBroker")
+    }
+    #[cfg(feature="fin04w2-split-native")]
+    pub(crate) fn new_target_service_owned() -> Result<Self, SupervisorError> {
+        Self::new_split_service_owned("LuIdeDebugTargetBroker")
+    }
+    fn new_split_service_owned(service_name: &str) -> Result<Self, SupervisorError> {
+        if service_name != "LuIdeDebuggerBroker"
+            && service_name != "LuIdeDebugTargetBroker" {
+            return Err(denied());
+        }
+        let sid = sid_of_named_service(service_name)?;
         let sddl = format!("D:P(A;;GA;;;SY)(A;;GA;;;{})", sid);
         let mut descriptor = ptr::null_mut();
         if unsafe {
@@ -792,8 +803,19 @@ impl JobSecurity {
 /// SYSTEM and the separate debugger service SID are allowed; no desktop
 /// host, administrators, Users or Everyone ACE is permitted.
 pub(crate) fn verify_debugger_job_kernel_acl(job: HANDLE) -> Result<(), SupervisorError> {
+    verify_split_job_kernel_acl(job, "LuIdeDebuggerBroker")
+}
+#[cfg(feature="fin04w2-split-native")]
+pub(crate) fn verify_target_job_kernel_acl(job: HANDLE) -> Result<(), SupervisorError> {
+    verify_split_job_kernel_acl(job, "LuIdeDebugTargetBroker")
+}
+fn verify_split_job_kernel_acl(job: HANDLE, service_name: &str) -> Result<(), SupervisorError> {
+    if service_name != "LuIdeDebuggerBroker"
+        && service_name != "LuIdeDebugTargetBroker" {
+        return Err(denied());
+    }
     let system = parse_sid("S-1-5-18")?;
-    let service = parse_sid(&sid_of_named_service("LuIdeDebuggerBroker")?)?;
+    let service = parse_sid(&sid_of_named_service(service_name)?)?;
     let mut dacl = ptr::null_mut();
     let mut descriptor = ptr::null_mut();
     if unsafe {
@@ -860,7 +882,19 @@ pub(crate) fn verify_debugger_job_kernel_acl(job: HANDLE) -> Result<(), Supervis
 #[cfg(feature="fin04w2-split-native")]
 pub(crate) fn verify_restricted_debugger_service_sid(token:HANDLE)
     ->Result<(),SupervisorError>{
-    let sid=parse_sid(&sid_of_named_service("LuIdeDebuggerBroker")?)?;
+    verify_restricted_split_service_sid(token,"LuIdeDebuggerBroker")
+}
+#[cfg(feature="fin04w2-split-native")]
+pub(crate) fn verify_restricted_target_service_sid(token:HANDLE)
+    ->Result<(),SupervisorError>{
+    verify_restricted_split_service_sid(token,"LuIdeDebugTargetBroker")
+}
+#[cfg(feature="fin04w2-split-native")]
+fn verify_restricted_split_service_sid(token:HANDLE,service_name:&str)
+    ->Result<(),SupervisorError>{
+    if service_name!="LuIdeDebuggerBroker"
+        &&service_name!="LuIdeDebugTargetBroker" {return Err(denied());}
+    let sid=parse_sid(&sid_of_named_service(service_name)?)?;
     if !query_token_sid_list(
         token,TokenRestrictedSids,sid.0,true,
     )? {return Err(denied());}
