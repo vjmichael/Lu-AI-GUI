@@ -283,9 +283,9 @@ impl IdeWorkspaceRegistry {
         plan_digest: &str, result_digest: &str, cancel: &AtomicU8)
         -> Result<ApprovedDivergentMergeReceipt, &'static str> {
         if cancel.load(Ordering::SeqCst) != 0 { return Err("G06C03B_CANCELLED"); }
-        self.require_group6f_no_pending_recovery(id,false)?;
         let evidence = self.revalidate_protected_divergent_merge(
             id, selected, plan_digest, result_digest)?;
+        self.require_group6f_no_pending_recovery(id,false)?;
         let repo = exact_repo(self, id)?;
         let root = self.registered_git_root(id).map_err(|_| "G06C03B_PROJECT_NOT_OPEN")?;
         let scratch = ReplaySandbox::open(&repo)?;
