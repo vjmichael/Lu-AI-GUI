@@ -1,8 +1,16 @@
-# Manual owner-controlled test on a genuinely delegated native Linux host.
+# Manual operator-approved SINGLE-JOB EPHEMERAL runner on a disposable Linux VM.
+# The repository is PUBLIC. Do not connect a persistent/privileged host.
+# This job has no sudo privileges and does not run the independent root-owned
+# SEC-06C matrix, which requires a separately protected admin-controlled host.
 # Tests the immutable PR #235 source, not current main or a synthetic fixture.
 name: Lu C4 exact-SHA Linux delegated kernel acceptance
 on:
   workflow_dispatch:
+    inputs:
+      one_time_label:
+        description: 'One-time lu-c4-<24 hexadecimal> runner label'
+        required: true
+        type: string
 permissions:
   contents: read
 concurrency:
@@ -12,7 +20,7 @@ env:
   LU_C4_EXACT_SHA: 2fb253ab35bc3b451b9c07b89f5549aec26c32e3
 jobs:
   genuine-kernel-custody:
-    runs-on: [self-hosted, linux, x64, lu-cgroup-v2-delegated]
+    runs-on: [self-hosted, linux, x64, lu-cgroup-v2-delegated, "${{ inputs.one_time_label }}"]
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
@@ -20,6 +28,17 @@ jobs:
           ref: 2fb253ab35bc3b451b9c07b89f5549aec26c32e3
           persist-credentials: false
           clean: true
+      - name: Verify one-use runner selection is not a general shared label
+        env:
+          LU_C4_ONE_TIME_LABEL: ${{ inputs.one_time_label }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$LU_C4_ONE_TIME_LABEL" =~ ^lu-c4-[0-9a-f]{24}$ ]] || {
+            echo 'One-time 24-hex runner label required' >&2
+            exit 1
+          }
+          test "$(id -u)" -ne 0
       - name: Check original SHA and source-tree lock
         shell: bash
         run: |
@@ -99,7 +118,7 @@ jobs:
       - name: Record exact scope; no broader release authorization
         shell: bash
         run: |
-          printf 'SHA=%s\nLINUX_KERNEL_CUSTODY=PASS\nSEC06F=OPEN\nWINDOWS_PHYSICAL=OPEN\nQWEN_27B_PHYSICAL=OPEN\n' \
+          printf 'SHA=%s\nLINUX_KERNEL_CUSTODY=PASS\nSEC06C_LINUX_MATRIX=OPEN\nSEC06F=OPEN\nWINDOWS_PHYSICAL=OPEN\nQWEN_27B_PHYSICAL=OPEN\n' \
             "$LU_C4_EXACT_SHA" > c4-native-os/limited-result.txt
           echo "Original Linux cgroup-v2 kernel custody: **PASS at $LU_C4_EXACT_SHA**. Not full SEC-06F or installed release." >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
@@ -110,35 +129,3 @@ jobs:
           retention-days: 30
           if-no-files-found: warn
 
-  original-sec06c-linux-matrix:
-    needs: genuine-kernel-custody
-    runs-on: [self-hosted, linux, x64, lu-cgroup-v2-delegated]
-    timeout-minutes: 180
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: 2fb253ab35bc3b451b9c07b89f5549aec26c32e3
-          persist-credentials: false
-          clean: true
-      - name: Independent root-owned systemd Delegate=yes original matrix
-        shell: bash
-        run: |
-          set -euo pipefail
-          test "$(git rev-parse HEAD)" = "$LU_C4_EXACT_SHA"
-          node scripts/verify-source-tree.mjs
-          command -v systemd-run
-          test "$(id -u)" -ne 0
-          sudo -n /usr/bin/systemd-run --version
-          mkdir -p c4-sec06-os
-          python3 scripts/sec06-linux-delegated-runner.py \
-            --outer --expected-sha "$LU_C4_EXACT_SHA" \
-            --evidence "$GITHUB_WORKSPACE/c4-sec06-os" 2>&1 | tee c4-sec06-os/original-matrix.log
-          node -e "const f=require('fs');const p=JSON.parse(f.readFileSync('c4-sec06-os/linux.receipt.json'));if(p.head!==process.env.LU_C4_EXACT_SHA||p.allNativeCasesPassed!==true||p.status!=='PROVISIONAL_NATIVE_PASS_OWNER_GATE_PENDING')process.exit(1)"
-          echo "Original SEC-06C Linux native matrix: **PROVISIONAL** at $LU_C4_EXACT_SHA. Windows/installed acceptance remains open." >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: lu-c4-original-sha-sec06c-linux
-          path: c4-sec06-os/
-          retention-days: 30
-          if-no-files-found: warn
