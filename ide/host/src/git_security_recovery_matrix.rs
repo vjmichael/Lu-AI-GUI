@@ -60,9 +60,15 @@ fn snapshot(repo:&Repository)->Result<SourceSnapshot,&'static str>{
     let statuses=repo.statuses(Some(&mut opts))
         .map_err(|_|"G06F_STATUS_UNAVAILABLE")?;
     if statuses.len()>MAX_STATUS{return Err("G06F_STATUS_OVER_LIMIT");}
+    // A concurrent writer may hold the specific branch ref lock while
+    // HEAD, the index and packed-refs are unlocked. Never admit another
+    // protected operation on that branch, and never remove its lock.
+    let branch_lock=repo.path().join(format!("{branch}.lock"));
     let locked=repo.path().join("index.lock").exists()
         ||repo.path().join("HEAD.lock").exists()
-        ||repo.path().join("packed-refs.lock").exists();
+        ||repo.path().join("packed-refs.lock").exists()
+        ||repo.path().join("config.lock").exists()
+        ||branch_lock.exists();
     Ok(SourceSnapshot{
         branch,head,index_sha256:format!("{:x}",Sha256::digest(&bytes)),
         locked,state:repo.state(),dirty:statuses.len(),
@@ -418,6 +424,26 @@ mod tests{
         assert!(result.cross_domain_manual_reconciliation_required);
         assert!(!result.local_new_operation_preflight_clear);
         assert!(f.root.join(".git/index.lock").exists()); // never delete it
+    }
+    #[test]
+    fn branch_ref_and_config_locks_are_foreign_writers_not_clean_preflights(){
+        let f=fixture();
+        let repo=exact_repo(&f.registry,&f.id).unwrap();
+        let branch=repo.head().unwrap().name().unwrap().to_owned();
+        let branch_lock=f.root.join(".git").join(format!("{branch}.lock"));
+        fs::write(&branch_lock,b"foreign branch update").unwrap();
+        let blocked=f.registry.inspect_group6f_git_recovery(&f.id).unwrap();
+        assert!(blocked.foreign_git_lock_present);
+        assert!(!blocked.local_new_operation_preflight_clear);
+        assert!(f.registry.require_group6f_no_pending_recovery(&f.id,false).is_err());
+        assert_eq!(fs::read(&branch_lock).unwrap(),b"foreign branch update");
+        fs::remove_file(&branch_lock).unwrap();
+        let config_lock=f.root.join(".git/config.lock");
+        fs::write(&config_lock,b"foreign configuration update").unwrap();
+        let blocked=f.registry.inspect_group6f_git_recovery(&f.id).unwrap();
+        assert!(blocked.foreign_git_lock_present);
+        assert!(!blocked.local_new_operation_preflight_clear);
+        assert_eq!(fs::read(&config_lock).unwrap(),b"foreign configuration update");
     }
     #[test]
     fn terminal_historical_journal_with_dirty_files_is_not_a_new_approval(){
