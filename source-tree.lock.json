@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "bc4d3fadc89ee4e7a8db526a0caff993f008be2d",
-  "trackedFileCount": 1004,
+  "sourceCommitBeforeLock": "0c7c1f431e187c6fb2a4400b7900313bfab4c6cd",
+  "trackedFileCount": 1005,
   "files": [
     {
       "path": ".github/pull_request_template.md",
@@ -237,7 +237,7 @@
     },
     {
       "path": ".github/workflows/lu-repo01-full-source.yml",
-      "blob": "270f1a5fc18429d733b9fc6d1e79235af0495011"
+      "blob": "d698fe1e22b0de150f622938ee816573ee46f274"
     },
     {
       "path": ".github/workflows/lu-tools-01-05-integration.yml",
@@ -398,6 +398,10 @@
     {
       "path": "benchmarks/e1/sec06c_browser_real_native.py",
       "blob": "95f1ea74c14062c5ad16086235366cc2a8f5f8bc"
+    },
+    {
+      "path": "benchmarks/e1/sec06c_browser_xauthority_contract.py",
+      "blob": "b93b98ffd8d4f286447edfb75caeb619e97716d1"
     },
     {
       "path": "benchmarks/e1/sec06c_root_owned_systemd_boundary.py",
@@ -2265,15 +2269,15 @@
     },
     {
       "path": "scripts/lu-sec06c-owned-browser-launcher.py",
-      "blob": "7c9fe94331fa2032dec98bf881b8af7321972307"
+      "blob": "005029e3b23d919bfdc1d680bb2ee95b767a9170"
     },
     {
       "path": "scripts/lu-sec06c-owned-browser-manager.py",
-      "blob": "24ebdb9acc57a2027294dc55d3d1417bff1b842b"
+      "blob": "9d9e7bd5ff21a224ea081c5cff808b62afaefe82"
     },
     {
       "path": "scripts/lu-sec06c-owned-browser-worker.py",
-      "blob": "a24ed09b911a8b4d6603ef4ea3308d967a80c5d9"
+      "blob": "70052a1300d9d83e1ce5e1b9017618bd3af491a0"
     },
     {
       "path": "scripts/lu-sec06c-owned-git-launcher.py",
