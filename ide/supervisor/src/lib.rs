@@ -42,6 +42,8 @@ mod windows_fin04w2_split_launcher;
 mod windows_fin04w2_target_seal;
 #[cfg(all(windows,debug_assertions,feature="fin04w2-split-native"))]
 mod windows_fin04w2_wfp;
+#[cfg(all(windows,debug_assertions,feature="fin04w2-split-native"))]
+mod windows_fin04w2_scm_pair;
 #[cfg(all(target_os = "linux", feature = "linux-worker"))]
 pub mod linux_worker;
 pub mod live_output;
