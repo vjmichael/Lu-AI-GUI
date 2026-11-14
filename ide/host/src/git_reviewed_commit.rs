@@ -416,9 +416,6 @@ impl IdeWorkspaceRegistry {
         {
             return Err("G06B_COMMIT_INVALID_OR_CANCELLED_PLAN");
         }
-        self.require_group6f_no_pending_recovery(
-            &expected.stage.project_id,false,
-        )?;
         let fresh = self.preview_reviewed_partial_commit(
             &expected.stage,
             expected.mode.clone(),
@@ -429,6 +426,9 @@ impl IdeWorkspaceRegistry {
         if &fresh != expected {
             return Err("G06B_COMMIT_STALE_OR_FORGED_PLAN");
         }
+        self.require_group6f_no_pending_recovery(
+            &expected.stage.project_id,false,
+        )?;
         let (repo, gitdir) = safe_repo(self, &fresh.stage.project_id)?;
         let journal_file = journal_path(self, &fresh.stage.project_id)?;
         if let Some(last) = last_journal(&journal_file)? {
