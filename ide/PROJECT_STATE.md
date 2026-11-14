@@ -1,5 +1,13 @@
 # Lu IDE — Current project state (authoritative handoff)
 
+## FIN-03 / Group 6E-05D — no-repeat remote reconciliation source (Nov 13, 2026)
+
+Added host-only recovery classification on the exact original prepared
+journal and fresh six-GET 6E-05B observation. Unchanged, proposed and
+competing remote heads all remain **nonterminal, no auto-retry**; no token,
+push, OS consent or completion status is produced. Original CAS and
+installed native acceptance remain open independently of FIN-04.
+
 ## FIN-03 / Group 6E-05C-01 — independent offline journal and replay fence (Nov 13, 2026)
 
 Source-only on PR #230: exact local Git ancestry is rechecked against

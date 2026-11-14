@@ -154,3 +154,20 @@ forged approval and dirty project, plus duplicate prepared journal and
 tampered restart denial. The original Windows/Linux 6E-05A/B tests remain
 unchanged and are run in the same batch. **No credential usage, remote
 write, native OS approval, Git process or installed acceptance** was done.
+
+## 6E-05D — No-retry remote recovery classifier (source, Nov 13)
+
+An interrupted/prepared journal is never an authorization to retry.
+Independent native readback must match the exact original project, branch,
+source preview and policy digest and be fresh before classifying its remote
+tip. Three exclusively **nonterminal, non-writing** results are possible:
+
+- original remote tip unchanged — reconciliation required, **no retry**;
+- proposed tip visible — potentially another writer, **not proof Lu pushed**;
+- unknown third-party tip — competing-writer quarantine, **no overwrite**.
+
+A changed original journal, mismatched ref/policy, malformed digest or stale
+readback denies classification altogether. The code contains no push, token
+transport or OS approval path. Native positive remote publication and
+cancellation/service death are not tested or accepted here. These tests
+only establish conservative offline recovery logic.

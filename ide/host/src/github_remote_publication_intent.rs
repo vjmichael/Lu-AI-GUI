@@ -252,6 +252,96 @@ pub(crate) fn recover_prepared_intent(
     }
     Ok("reconciliation_required_no_remote_retry")
 }
+
+/// 6E-05D restart classification is NEVER terminal success or authority.
+#[derive(Debug,Clone,Copy,PartialEq,Eq,Serialize)]
+#[serde(rename_all="snake_case")]
+pub(crate) enum UncertainRemoteOutcome{
+    RefUnchangedNoRetry,
+    RefMatchesProposedButUnproven,
+    CompetingRemoteWriterQuarantine,
+}
+fn journal_file(
+    private:&Path,digest:&str,
+)->Result<PreparedJournal,&'static str>{
+    if !private.is_absolute()||!valid_sha(digest,64){
+        return Err("FIN03_C_RECOVERY_SCOPE_INVALID");
+    }
+    let path=private.join(format!("{digest}.prepared.json"));
+    let m=fs::symlink_metadata(&path)
+        .map_err(|_|"FIN03_C_PREPARED_JOURNAL_MISSING")?;
+    if !m.is_file()||m.file_type().is_symlink()||m.len()>MAX_JOURNAL_BYTES{
+        return Err("FIN03_C_RESTART_JOURNAL_TAMPERED");
+    }
+    let mut bytes=Vec::new();
+    fs::File::open(&path)
+        .map_err(|_|"FIN03_C_RECOVERY_READ_FAILED")?
+        .take(MAX_JOURNAL_BYTES+1)
+        .read_to_end(&mut bytes)
+        .map_err(|_|"FIN03_C_RECOVERY_READ_FAILED")?;
+    let record:PreparedJournal=serde_json::from_slice(&bytes)
+        .map_err(|_|"FIN03_C_RESTART_JOURNAL_TAMPERED")?;
+    verify_record(&record)?;
+    if record.intent_sha256!=digest{
+        return Err("FIN03_C_RECOVERY_SCOPE_CHANGED");
+    }
+    Ok(record)
+}
+/// Each classification requires a fresh independently reobserved native
+/// GET response plus the exact original prepared journal. NONE can retry,
+/// confirm completion, spend a native approval, or alter a remote reference.
+pub(crate) fn classify_uncertain_publication_on_restart(
+    private:&Path,intent:&RemotePublicationIntent,
+    remote:&LiveBranchPolicyEvidence,
+)->Result<UncertainRemoteOutcome,&'static str>{
+    let original=journal_file(private,&intent.intent_sha256)?;
+    if original.expected_remote_commit!=intent.expected_remote_commit
+        ||original.proposed_local_commit!=intent.proposed_local_commit
+        ||!valid_sha(&intent.observed_policy_sha256,64)
+        ||!valid_sha(&intent.source_preview_sha256,64)
+        ||!valid_sha(&intent.expected_remote_commit,40)
+        ||!valid_sha(&intent.proposed_local_commit,40)
+        ||intent.expected_remote_commit==intent.proposed_local_commit
+        ||intent.intent_sha256!=digest(&[
+            &intent.project_id,&intent.repository,&intent.branch,
+            &intent.expected_remote_commit,&intent.proposed_local_commit,
+            &intent.source_preview_sha256,&intent.observed_policy_sha256,
+            &intent.observed_at_unix_seconds.to_string(),
+            &intent.generated_at_unix_seconds.to_string(),
+        ])
+    {return Err("FIN03_D_ORIGINAL_INTENT_OR_JOURNAL_CHANGED");}
+    let at=now()?;
+    if remote.schema_version!=1||remote.project_id!=intent.project_id
+        ||remote.repository!=intent.repository||remote.branch!=intent.branch
+        ||remote.exact_local_head!=intent.proposed_local_commit
+        ||remote.exact_local_preview_sha256!=intent.source_preview_sha256
+        ||!remote.authenticated_host_read||!remote.source_rechecked
+        ||!remote.remote_ref_same_on_recheck||!remote.policy_same_on_recheck
+        ||!remote.branch_protection_observed||!remote.branch_rules_observed
+        ||remote.error_code.is_some()
+        ||remote.native_approval_verified||remote.remote_mutation_performed
+        ||remote.current_remote_write_lease||remote.remote_write_route_available
+        ||remote.checked_unix_seconds<intent.generated_at_unix_seconds
+        ||at<remote.checked_unix_seconds
+        ||at-remote.checked_unix_seconds>MAX_REMOTE_AGE_SECONDS
+        ||remote.policy_response_sha256.as_deref()
+            !=Some(intent.observed_policy_sha256.as_str())
+    {return Err("FIN03_D_REMOTE_RECONCILIATION_UNVERIFIED");}
+    let observed=remote.remote_head_sha256.as_deref()
+        .ok_or("FIN03_D_REMOTE_REF_MISSING")?;
+    if !valid_sha(observed,40){return Err("FIN03_D_REMOTE_REF_INVALID");}
+    // All three outcomes are UNTRUSTED/NO-RETRY. The proposed-tip equality
+    // may be a third-party writer publishing the same commit; it is NOT
+    // proof that Lu performed a publication.
+    Ok(if observed==intent.expected_remote_commit{
+        UncertainRemoteOutcome::RefUnchangedNoRetry
+    }else if observed==intent.proposed_local_commit{
+        UncertainRemoteOutcome::RefMatchesProposedButUnproven
+    }else{
+        UncertainRemoteOutcome::CompetingRemoteWriterQuarantine
+    })
+}
+
 #[cfg(test)]
 mod tests{
     use super::*;
@@ -357,5 +447,34 @@ mod tests{
         let p=observed(&f);
         fs::write(f.root.join("p.txt"),"dirty").unwrap();
         assert!(f.registry.prepare_github_remote_publication_intent(&f.id,&p).is_err());
+    }
+
+    #[test]fn interrupted_publication_never_retries_or_claims_success(){
+        let f=fixture();let policy=observed(&f);
+        let i=f.registry.prepare_github_remote_publication_intent(&f.id,&policy).unwrap();
+        let journal=f.dir.join("pending");
+        fs::create_dir(&journal).unwrap();
+        fsync_prepared_intent_once(&journal,&i).unwrap();
+        let mut second=observed(&f);
+        assert_eq!(
+            classify_uncertain_publication_on_restart(&journal,&i,&second).unwrap(),
+            UncertainRemoteOutcome::RefUnchangedNoRetry
+        );
+        second.remote_head_sha256=Some(f.new.clone());
+        assert_eq!(
+            classify_uncertain_publication_on_restart(&journal,&i,&second).unwrap(),
+            UncertainRemoteOutcome::RefMatchesProposedButUnproven
+        );
+        second.remote_head_sha256=Some("f".repeat(40));
+        assert_eq!(
+            classify_uncertain_publication_on_restart(&journal,&i,&second).unwrap(),
+            UncertainRemoteOutcome::CompetingRemoteWriterQuarantine
+        );
+        second.policy_response_sha256=Some("b".repeat(64));
+        assert!(classify_uncertain_publication_on_restart(
+            &journal,&i,&second,
+        ).is_err());
+        assert_eq!(recover_prepared_intent(&journal,&i.intent_sha256).unwrap(),
+            "reconciliation_required_no_remote_retry");
     }
 }
