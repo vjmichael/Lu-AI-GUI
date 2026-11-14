@@ -138,6 +138,13 @@ pub(crate) fn descend(mut dir: Dir, parts: &[String]) -> Result<Dir, BrowserErro
 }
 
 impl IdeWorkspaceRegistry {
+    /// Public verification only: Tauri receives no capability handle or root path.
+    /// The native picker and currently-open project remain the sole source authority.
+    pub fn verify_open_source_project(&self, project_id: &str) -> Result<(), BrowserError> {
+        let _capability = self.source_capability(project_id)?;
+        Ok(())
+    }
+
     /// Create an ephemeral capability from the host-only catalog. The identity
     /// of the picked root is revalidated on each call. All subsequent lookup
     /// happens within the cap-std Dir (never ambient absolute path joins).
