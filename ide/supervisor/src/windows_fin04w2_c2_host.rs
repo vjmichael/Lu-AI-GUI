@@ -209,3 +209,176 @@ mod tests{
         assert!(!witness.matches(&witness.job_id,&plan).unwrap());
     }
 }
+
+
+// FIN-04W2-C3 source gate: an explicit, trusted Win32 desktop confirmation.
+// This entrypoint is NOT exposed to Tauri, WebView, model/tool IPC or the
+// independent LocalService broker. C2 remains the sole fixed benign executor.
+// This source path does NOT constitute physical installed OS-dialog acceptance.
+#[link(name = "user32")]
+extern "system" {
+    fn IsWindow(window: *mut std::ffi::c_void) -> i32;
+    fn IsWindowVisible(window: *mut std::ffi::c_void) -> i32;
+    fn GetForegroundWindow() -> *mut std::ffi::c_void;
+    fn GetWindowThreadProcessId(
+        window: *mut std::ffi::c_void, pid: *mut u32,
+    ) -> u32;
+    fn MessageBoxW(
+        window: *mut std::ffi::c_void, message: *const u16,
+        caption: *const u16, flags: u32,
+    ) -> i32;
+}
+
+fn c3_owner_window(
+    window: *mut std::ffi::c_void, require_foreground: bool,
+) -> Result<(), SupervisorError> {
+    if window.is_null() {
+        return Err(SupervisorError::InvalidApproval);
+    }
+    let mut pid = 0u32;
+    if unsafe { IsWindow(window) } == 0
+        || unsafe { IsWindowVisible(window) } == 0
+        || unsafe { GetWindowThreadProcessId(window, &mut pid) } == 0
+        || pid != unsafe { windows_sys::Win32::System::Threading::GetCurrentProcessId() }
+        || (require_foreground && unsafe { GetForegroundWindow() } != window)
+    {
+        return Err(SupervisorError::InvalidApproval);
+    }
+    Ok(())
+}
+
+fn c3_exact_plan(expected: &JobPlan, observed: &JobPlan)
+    -> Result<(), SupervisorError>
+{
+    if !crate::validate_plan(expected)
+        || expected.recipe_id != "dap_lldb_project"
+        || expected.effect_class != "debug_inspection_isolated"
+        || expected != observed
+    {
+        return Err(SupervisorError::WrongProjectOrSource);
+    }
+    Ok(())
+}
+
+fn c3_original_prepared(
+    supervisor: &Supervisor, job_id: &str, plan: &JobPlan,
+) -> Result<(), SupervisorError> {
+    let digest = crate::fingerprint(plan)?;
+    if !supervisor.inspect()?.iter().any(|item| {
+        item.job_id == job_id && item.project_id == plan.project_id
+            && item.plan_sha256 == digest
+            && item.phase == JobPhase::Prepared
+            && !item.requires_reconciliation
+    }) {
+        return Err(SupervisorError::InvalidApproval);
+    }
+    Ok(())
+}
+
+/// Proposed native desktop integration for one reviewed FIRST-PARTY C2
+/// benign worker. The trusted caller must supply its real foreground
+/// top-level native window and a host-owned, freshly reobserved complete
+/// project/source/input/toolchain plan. No WebView text, model-generated
+/// prompt, selected EXE, PID or DAP method enters the OS dialog.
+///
+/// The original in-memory grant is minted ONLY after an explicit Win32
+/// Yes selection, a second same-process window identity check, and a
+/// fresh *complete* plan reobservation. The existing C2 restricted SCM,
+/// one-use receipt, WFP, Job and original durable state machine remain
+/// the only execution path. The OS dialog is never exercised by CI.
+pub fn run_fixed_after_visible_native_consent<F>(
+    supervisor: &Supervisor,
+    job_id: &str,
+    plan: &JobPlan,
+    native_owner_window: *mut std::ffi::c_void,
+    mut trusted_reobserve_plan: F,
+    pinned_service_binary: &Path,
+    pinned_service_sha: &str,
+) -> Result<(), SupervisorError>
+where
+    F: FnMut() -> Result<JobPlan, SupervisorError>,
+{
+    // CI may establish a simulation receipt but may NEVER claim it was
+    // the native OS dialog. Hostile environment flags only add denials.
+    if std::env::var_os("CI").is_some()
+        || std::env::var_os("GITHUB_ACTIONS").is_some()
+        || std::env::var_os("LU_FIN04W2_NATIVE_FIXTURE_ROOT").is_some()
+    {
+        return Err(SupervisorError::InvalidApproval);
+    }
+    c3_owner_window(native_owner_window, true)?;
+    c3_original_prepared(supervisor, job_id, plan)?;
+    c3_exact_plan(plan, &trusted_reobserve_plan()?)?;
+
+    // Fixed text, native user32 message box and default NO. This does
+    // not accept a caller-composed prompt, hidden approval or silent
+    // elevation. The full plan's immutable source coordinates are shown.
+    let message = format!(
+        "Allow ONE isolated Lu IDE first-party benign-worker test?\\n\\nProject ID: {}\\nSource commit: {}\\n\\nNo LLDB, debugging, custom commands, network permission or publication is authorized.\\n\\nChoose No to cancel.",
+        plan.project_id, plan.source_head,
+    );
+    let message: Vec<u16> = message.encode_utf16().chain([0]).collect();
+    let caption: Vec<u16> = "Lu IDE — Approve fixed native test"
+        .encode_utf16().chain([0]).collect();
+    // MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2. No SYSTEMMODAL,
+    // Task Scheduler, background service session or auto-Yes path.
+    let clicked = unsafe {
+        MessageBoxW(
+            native_owner_window, message.as_ptr(), caption.as_ptr(),
+            0x0000_0004 | 0x0000_0030 | 0x0000_0100,
+        )
+    };
+    if clicked != 6 { // IDYES; 0, IDNO and every error fail closed.
+        return Err(SupervisorError::InvalidApproval);
+    }
+    c3_owner_window(native_owner_window, false)?;
+    c3_original_prepared(supervisor, job_id, plan)?;
+    c3_exact_plan(plan, &trusted_reobserve_plan()?)?;
+    let digest = crate::fingerprint(plan)?;
+    supervisor.record_human_approval(
+        job_id, &digest, &plan.source_head, true,
+    )?;
+    // No alternate privileged launch route, and no arbitrary process:
+    // hand off to the exact previously accepted C2 benign transaction.
+    run_fixed_after_original_approval(
+        supervisor, job_id, plan, pinned_service_binary, pinned_service_sha,
+    )
+}
+
+#[cfg(test)]
+mod fin04w2_c3_source_tests {
+    use super::*;
+    #[test]
+    fn invalid_native_parent_cannot_be_approved() {
+        assert!(c3_owner_window(ptr::null_mut(), true).is_err());
+        assert!(c3_owner_window(ptr::null_mut(), false).is_err());
+    }
+    #[test]
+    fn changed_source_or_input_snapshot_cannot_keep_original_approval() {
+        let original = JobPlan {
+            project_id: format!("ide-{}", "a".repeat(32)),
+            recipe_id: "dap_lldb_project".into(),
+            source_head: "b".repeat(40),
+            input_snapshot_sha256: "c".repeat(64),
+            manifest_sha256: "d".repeat(64),
+            toolchain_sha256: "e".repeat(64),
+            debug_target_binding_sha256: Some("f".repeat(64)),
+            runtime_limit_ms: 90_000, memory_limit_bytes: 512*1024*1024,
+            process_limit: 16, log_limit_bytes: 64*1024,
+            effect_class: "debug_inspection_isolated".into(),
+        };
+        assert!(c3_exact_plan(&original, &original).is_ok());
+        let mut changed = original.clone();
+        changed.source_head = "0".repeat(40);
+        assert!(c3_exact_plan(&original, &changed).is_err());
+        changed = original.clone();
+        changed.input_snapshot_sha256 = "0".repeat(64);
+        assert!(c3_exact_plan(&original, &changed).is_err());
+        changed = original.clone();
+        changed.toolchain_sha256 = "0".repeat(64);
+        assert!(c3_exact_plan(&original, &changed).is_err());
+        changed = original.clone();
+        changed.recipe_id = "foreign".into();
+        assert!(c3_exact_plan(&original, &changed).is_err());
+    }
+}
