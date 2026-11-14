@@ -441,21 +441,17 @@ async fn model_cannot_expand_grants_or_inject_a_workspace() {
     // Bad model outputs do not consume a call slot.
     assert_eq!(turn.step_count(), 0);
     authority.revoke_task("task-1").unwrap();
-    let after = turn
-        .handle_model_reply(
+    // C3 continuation revocation is now an admission failure before ANY
+    // native dispatch or error-payload feedback. A revoked prior turn must
+    // never reach the tool runner, even to receive PERMISSION_DENIED.
+    assert_eq!(
+        turn.handle_model_reply(
             r#"{"kind":"tool","name":"lu_files_read_text","arguments":{"path":"notes.txt"}}"#,
-            &catalog,
-            &registry,
-            &authority,
-            &Permitted,
-        )
-        .await
-        .unwrap();
-    let ToolTurnOutcome::ToolResult { data, .. } = after else {
-        panic!("expected error result")
-    };
-    assert_eq!(data["ok"], false);
-    assert_eq!(data["error"]["code"], "PERMISSION_DENIED");
+            &catalog, &registry, &authority, &Permitted,
+        ).await,
+        Err(ToolTurnError::Revoked)
+    );
+    assert_eq!(turn.step_count(), 0, "revoked call may not dispatch");
     assert_eq!(
         turn.handle_model_reply(
             r#"{"kind":"final","text":"done"}"#,
