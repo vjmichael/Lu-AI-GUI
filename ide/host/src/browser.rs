@@ -106,7 +106,11 @@ pub(crate) fn validate_relative(path: &str, allow_root: bool) -> Result<Vec<Stri
     }
     let mut parts = Vec::new();
     for item in path.split('/') {
-        if item.is_empty() || item == "." || item == ".." || item.contains(':') {
+        // Recoverable project trash is host-internal custody, never a
+        // renderer-browsable source directory or preview path. Deny all
+        // depth positions so a user cannot traverse into retired payloads.
+        if item.eq_ignore_ascii_case(".lu-ide-trash")
+            || item.is_empty() || item == "." || item == ".." || item.contains(':') {
             return Err(BrowserError::InvalidPath);
         }
         if Path::new(item).components().count() != 1
@@ -194,6 +198,7 @@ impl IdeWorkspaceRegistry {
             };
             if name == "."
                 || name == ".."
+                || name.eq_ignore_ascii_case(".lu-ide-trash")
                 || name.contains('\\')
                 || name.chars().any(char::is_control)
             {
