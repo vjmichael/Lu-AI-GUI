@@ -446,6 +446,9 @@ fn review_only(pipe:HANDLE,config:&InstalledAuditConfig)
             &config.original_supervisor_journal,&config.original_job_id,
             &config.review_only_plan,&config.review_only_plan_hash,&original,
         )?;
+        crate::fin04w2_authority::verify_reserved_original_authorization(
+            &root,&original,
+        )?;
         scm_pair.reobserve()?;
         crate::windows_fin04w2_wfp::require_exact_outbound_blocks(
             &config.approved_lldb_dap_executable,&staged_target,

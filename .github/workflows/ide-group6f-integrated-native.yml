@@ -137,6 +137,10 @@ jobs:
             cargo test --locked --manifest-path ide/supervisor/Cargo.toml \
               --features fin04w2-split-native --lib windows_fin04w2_lldb_dap::tests -- --nocapture
             cargo test --locked --manifest-path ide/supervisor/Cargo.toml \
+              --features fin04w2-split-native --lib fin04w2_authority::tests -- --nocapture
+            cargo test --locked --manifest-path ide/supervisor/Cargo.toml \
+              --features fin04w2-split-native --lib debug_symbol_verification::tests -- --nocapture
+            cargo test --locked --manifest-path ide/supervisor/Cargo.toml \
               --features fin04w2-split-native --lib windows_service_security::tests -- --nocapture
             echo "IDE_MERGE03_TARGET_IPC_FORGED_RECEIPT_NEGATIVES=PASS"
             echo "IDE_MERGE03_TWO_SERVICES_NATIVE_IPC_AND_SUSPENDED_JOBS=NOT_TESTED"

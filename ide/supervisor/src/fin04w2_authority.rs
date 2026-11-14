@@ -293,6 +293,9 @@ pub(crate) fn consume_once_in_private_service_root(
         || proof.admission_entry_sha256.len() != 64
         || !proof.plan_sha256.bytes().all(|b|b.is_ascii_hexdigit())
         || !proof.admission_entry_sha256.bytes().all(|b|b.is_ascii_hexdigit())
+        || proof.session_id.len()!=40
+        || !proof.session_id.starts_with("session-")
+        || !proof.session_id[8..].bytes().all(|b|b.is_ascii_hexdigit())
     { return Err(denied()); }
     let mut digest=Sha256::new();
     digest.update(proof.job_id.as_bytes());
@@ -318,6 +321,45 @@ pub(crate) fn consume_once_in_private_service_root(
     Ok(())
 }
 
+/// Reopen both independently fsynced service reservations just before
+/// RUNNING; a missing, rewritten, symlinked, truncated or other-session
+/// record is a denial even if the original journal is still valid. The
+/// deterministic file name is job+plan scoped, not an approval-entry nonce,
+/// so restarting cannot create an alternate one-use reservation.
+#[cfg(windows)]
+pub(crate) fn verify_reserved_original_authorization(
+    root:&Path,authorized:&FreshOriginalAuthorization,
+)->Result<(),SupervisorError>{
+    let meta=fs::symlink_metadata(root).map_err(|_|denied())?;
+    use std::os::windows::fs::MetadataExt;
+    if !root.is_absolute()||!meta.is_dir()||meta.file_attributes()&0x400!=0{
+        return Err(denied());
+    }
+    if !valid_job(&authorized.job_id)
+        || authorized.plan_sha256.len()!=64
+        || authorized.approved_entry_sha256.len()!=64
+        || !authorized.plan_sha256.bytes().all(|b|b.is_ascii_hexdigit())
+        || !authorized.approved_entry_sha256.bytes().all(|b|b.is_ascii_hexdigit())
+        || authorized.session_id.len()!=40
+        || !authorized.session_id.starts_with("session-")
+        || !authorized.session_id[8..].bytes().all(|b|b.is_ascii_hexdigit()){
+        return Err(denied());
+    }
+    let mut digest=Sha256::new();
+    digest.update(authorized.job_id.as_bytes());
+    digest.update(authorized.plan_sha256.as_bytes());
+    let name=format!("fin04w2-consumed-{:x}.receipt",digest.finalize());
+    let file=root.join(name);
+    let current=fs::symlink_metadata(&file).map_err(|_|denied())?;
+    if !current.is_file()||current.file_attributes()&0x400!=0
+        ||current.len()==0||current.len()>512{return Err(denied());}
+    let expected=format!("fin04w2-original-consumed-v1\n{}\n{}\n{}\n{}\n",
+        authorized.job_id,authorized.plan_sha256,
+        authorized.approved_entry_sha256,authorized.session_id);
+    let observed=fs::read(&file).map_err(|_|denied())?;
+    if observed!=expected.as_bytes(){return Err(denied());}
+    Ok(())
+}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -403,6 +445,17 @@ mod tests {
         assert!(verify_original_execution_phase(
             &source,&job.job_id,&plan,&sha,JobPhase::Running,
         ).is_ok());
+        assert!(verify_running_same_original_authorization(
+            &source,&job.job_id,&plan,&sha,&pre,
+        ).is_ok());
+        let false_identity=FreshOriginalAuthorization{
+            job_id:pre.job_id.clone(),plan_sha256:pre.plan_sha256.clone(),
+            approved_entry_sha256:"0".repeat(64),
+            session_id:pre.session_id.clone(),
+        };
+        assert!(verify_running_same_original_authorization(
+            &source,&job.job_id,&plan,&sha,&false_identity,
+        ).is_err());
         assert!(verify_original_execution_phase(
             &source,&job.job_id,&plan,&sha,JobPhase::ReleasePending,
         ).is_err());
@@ -431,13 +484,31 @@ mod tests {
             job_id:format!("job-{}","c".repeat(32)),
             plan_sha256:"d".repeat(64),
             admission_entry_sha256:"e".repeat(64),
-            session_id:"session-ci".into(),
+            session_id:format!("session-{}","a".repeat(32)),
         };
         consume_once_in_private_service_root(&root,&proof).unwrap();
+        let original=FreshOriginalAuthorization{
+            job_id:proof.job_id.clone(),plan_sha256:proof.plan_sha256.clone(),
+            approved_entry_sha256:proof.admission_entry_sha256.clone(),
+            session_id:proof.session_id.clone(),
+        };
+        verify_reserved_original_authorization(&root,&original).unwrap();
         assert!(consume_once_in_private_service_root(&root,&proof).is_err());
         let mut rewritten=proof.clone();
         rewritten.admission_entry_sha256="f".repeat(64);
         assert!(consume_once_in_private_service_root(&root,&rewritten).is_err());
+        let mut wrong=FreshOriginalAuthorization{
+            job_id:proof.job_id.clone(),plan_sha256:proof.plan_sha256.clone(),
+            approved_entry_sha256:"f".repeat(64),
+            session_id:proof.session_id.clone(),
+        };
+        assert!(verify_reserved_original_authorization(&root,&wrong).is_err());
+        wrong.approved_entry_sha256=proof.admission_entry_sha256.clone();
+        wrong.session_id=format!("session-{}","b".repeat(32));
+        assert!(verify_reserved_original_authorization(&root,&wrong).is_err());
+        let receipt=std::fs::read_dir(&root).unwrap().next().unwrap().unwrap().path();
+        std::fs::write(&receipt,b"tampered").unwrap();
+        assert!(verify_reserved_original_authorization(&root,&original).is_err());
         let _=std::fs::remove_dir_all(&root);
     }
 

@@ -316,6 +316,7 @@ fn prepare_one_target(
             &cfg.sealed_plan,&cfg.sealed_plan_sha256,&original,
         )?;
     }
+    fin04w2_authority::verify_reserved_original_authorization(root,&original)?;
     // The effective-socket denial matrix remains a separate native gate;
     // an OS WFP filter snapshot alone is not represented as such a pass.
     crate::windows_fin04w2_wfp::require_target_outbound_blocks(suspended.image())?;
