@@ -99,10 +99,16 @@ impl Drop for OwnedSid {
 pub fn sid_of_service() -> Result<String, SupervisorError> {
     sid_of_named_service(SERVICE_NAME)
 }
-// Fixed two independently installed service identities, never a request-
- // supplied name. The recovery service retains its original identity.
+// Only the three fixed SCM service names are resolvable. The separate
+// target service is recognized ONLY in the explicitly gated split profile;
+// no untrusted packet may nominate a service or Windows SID.
+fn allowed_scm_service_name(service_name: &str) -> bool {
+    matches!(service_name, "LuIdeRecoveryBroker" | "LuIdeDebuggerBroker")
+        || (cfg!(feature = "fin04w2-split-native")
+            && service_name == "LuIdeDebugTargetBroker")
+}
 pub(crate) fn sid_of_named_service(service_name: &str) -> Result<String, SupervisorError> {
-    if !matches!(service_name, "LuIdeRecoveryBroker" | "LuIdeDebuggerBroker") {
+    if !allowed_scm_service_name(service_name) {
         return Err(denied());
     }
     let name = ws(&format!("NT SERVICE\\{service_name}"));
@@ -1232,6 +1238,17 @@ pub(crate) fn verify_private_evidence_root_for(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn split_target_sid_uses_only_the_feature_gated_fixed_scm_identity() {
+        assert!(allowed_scm_service_name("LuIdeRecoveryBroker"));
+        assert!(allowed_scm_service_name("LuIdeDebuggerBroker"));
+        assert_eq!(allowed_scm_service_name("LuIdeDebugTargetBroker"),
+            cfg!(feature = "fin04w2-split-native"));
+        assert!(!allowed_scm_service_name("LuIdeDebugTargetBroker.v1"));
+        assert!(!allowed_scm_service_name("LuIdeDebugTargetBroker\\\\evil"));
+        assert!(!allowed_scm_service_name("LuIdeDebuggerBrokerExtra"));
+        assert!(!allowed_scm_service_name("LuIdeWhateverBroker"));
+    }
     #[test]
     fn client_pipe_dacl_does_not_allow_pipe_instance_creation() {
         let sid = "S-1-5-21-11-22-33-1001";
