@@ -16,6 +16,41 @@ export const CHAIN=Object.freeze([
 ]);
 const HEX=/^[a-f0-9]{40}$/;
 const LEDGER='docs/LU_DEVELOPMENT_LEDGER.md';
+export const PROTECTED_MAIN_FILES=Object.freeze([
+ LEDGER,'.github/workflows/lu-development-ledger.yml'
+]);
+// Main owns the authoritative ledger and its write-capable metadata workflow.
+// This is a report of exact immutable blobs, NOT a merge/rebase plan executor.
+export function reconcileProtectedMain({mainSha,mainBlobs,coreBlobs,reviewBlobs,
+ legacyBlobs=null}){
+ const problems=[];
+ if(!/^[a-f0-9]{40}$/.test(mainSha||''))problems.push('MAIN_IDENTITY_INVALID');
+ const rows=[];
+ for(const path of PROTECTED_MAIN_FILES){
+   const main=mainBlobs?.[path],core=coreBlobs?.[path],review=reviewBlobs?.[path];
+   if(![main,core,review].every(x=>/^[a-f0-9]{40}$/.test(x||'')))
+     problems.push('MISSING_PROTECTED_BLOB:'+path);
+   const legacy=legacyBlobs===null?null:legacyBlobs[path];
+   if(legacyBlobs!==null&&!/^[a-f0-9]{40}$/.test(legacy||''))
+     problems.push('MISSING_LEGACY_BLOB:'+path);
+   rows.push({
+     path,mainBlob:main,coreCandidateBlob:core,core01fReviewBlob:review,
+     legacyReconciliationBlob:legacy,coreDiffersFromMain:core!==main,
+     core01fDiffersFromMain:review!==main,
+     legacyReviewIsStale:legacy!==null&&legacy!==main,
+     requiredIntegrationSource:'EXACT_CURRENT_MAIN_BLOB',
+     automaticResolutionAllowed:false
+   });
+ }
+ return {schema:'lu-core01f-protected-main-collision-v1',
+   sourceMainSha:mainSha,valid:problems.length===0,problems,
+   files:rows,legacyReviewProvided:legacyBlobs!==null,
+   staleLegacyPaths:rows.filter(x=>x.legacyReviewIsStale).map(x=>x.path),
+   preserveMainExactBlobForEveryProtectedPath:true,
+   noAutomaticWriteOrMerge:true,
+   mainIntegrationAuthorized:false,releaseAuthorized:false};
+}
+
 
 export function excludedCorePath(path){
  if(typeof path!=='string'||!path||path.startsWith('/')||
@@ -75,11 +110,13 @@ export function integrationPlan({coreSha,currentSha,coreDelta=[],bridgeDelta=[],
 export function decision({chainValid,candidateDescendsFromReviewed,
  currentDescendsFromReviewed,candidateSourceLockVerified,
  currentSourceLockVerified,scopeViolations=[],mainOnlyPaths=[],
- expectedCandidateMatches=true}){
+ expectedCandidateMatches=true,expectedMainMatches=true,protectedMainVerified=false}){
  const blockers=[];
  if(!chainValid||!currentDescendsFromReviewed)blockers.push('NON_ANCESTRAL_STACK');
  if(!candidateDescendsFromReviewed)blockers.push('CORE01E_NOT_DESCENDANT_OF_REVIEWED');
  if(!expectedCandidateMatches)blockers.push('CANDIDATE_HEAD_DRIFT');
+ if(!expectedMainMatches)blockers.push('MAIN_HEAD_DRIFT');
+ if(!protectedMainVerified)blockers.push('MAIN_PROTECTED_BLOBS_NOT_VERIFIED');
  if(!candidateSourceLockVerified)blockers.push('CANDIDATE_SOURCE_LOCK_NOT_VERIFIED');
  if(!currentSourceLockVerified)blockers.push('CURRENT_SOURCE_LOCK_NOT_VERIFIED');
  if(scopeViolations.length)blockers.push('EXCLUDED_SOURCE_PATH');
@@ -114,6 +151,8 @@ if(process.argv[1]&&resolve(process.argv[1])===here){
  const mainRef=arg('--main-ref','origin/main');
  const coreRef=arg('--core-ref','origin/lu/core01-source-convergence-no-ide-no-kobold-20261112');
  const expectedCoreSha=arg('--expect-core-sha',null);
+ const expectedMainSha=arg('--expect-main-sha',null);
+ const legacyRef=arg('--legacy-reconcile-ref',null);
  const cmd=(exe,args)=>spawnSync(exe,args,{cwd:root,encoding:'utf8',
    timeout:120000,maxBuffer:16*1024*1024,
    env:{...process.env,GIT_OPTIONAL_LOCKS:'0'}});
@@ -134,6 +173,8 @@ if(process.argv[1]&&resolve(process.argv[1])===here){
    }
    if(expectedCoreSha!==null&&!HEX.test(expectedCoreSha))
      throw Error('Expected CORE-01E candidate must be exact 40-char SHA');
+   if(expectedMainSha!==null&&!HEX.test(expectedMainSha))throw Error('Invalid expected main SHA');
+   if(legacyRef!==null&&(!/^[A-Za-z0-9._\/-]+$/.test(legacyRef)||legacyRef.startsWith('-')))throw Error('Invalid legacy review ref');
    const mainSha=git('rev-parse','--verify',mainRef+'^{commit}');
    const coreSha=git('rev-parse','--verify',coreRef+'^{commit}');
    const currentSha=git('rev-parse','HEAD');
@@ -148,6 +189,15 @@ if(process.argv[1]&&resolve(process.argv[1])===here){
    const candidateDescendsFromReviewed=ancestor(reviewed,coreSha);
    const common=git('merge-base',mainSha,coreSha);
    const mainOnlyPaths=diff(common,mainSha);
+   const protectedAt=(sha)=>Object.fromEntries(PROTECTED_MAIN_FILES.map(path=>[
+     path,git('rev-parse','--verify',sha+':'+path)
+   ]));
+   const legacySha=legacyRef===null?null:git('rev-parse','--verify',legacyRef+'^{commit}');
+   const protectedMain=reconcileProtectedMain({
+     mainSha,mainBlobs:protectedAt(mainSha),coreBlobs:protectedAt(coreSha),
+     reviewBlobs:protectedAt(currentSha),
+     legacyBlobs:legacySha===null?null:protectedAt(legacySha)
+   });
    const scope=[];
    for(let i=1;i<CHAIN.length;i++){
      const parent=CHAIN[i-1],child=CHAIN[i];
@@ -189,13 +239,16 @@ if(process.argv[1]&&resolve(process.argv[1])===here){
      chainValid:ancestry.every(x=>x.ancestor),candidateDescendsFromReviewed,
      currentDescendsFromReviewed,candidateSourceLockVerified:candidateLock.valid,
      currentSourceLockVerified,scopeViolations:violations,mainOnlyPaths,
-     expectedCandidateMatches:expectedCoreSha===null||expectedCoreSha===coreSha
+     expectedCandidateMatches:expectedCoreSha===null||expectedCoreSha===coreSha,
+     expectedMainMatches:expectedMainSha===null||expectedMainSha===mainSha,
+     protectedMainVerified:protectedMain.valid
    });
    const plan=integrationPlan({coreSha,currentSha,coreDelta,bridgeDelta,
      mainOnlyPaths,currentContainsCandidate:ancestor(coreSha,currentSha)});
    process.stdout.write(JSON.stringify({...verdict,
      historicalReviewedCore01eSha:reviewed,currentSha,mainSha,coreSha,
-     expectedCoreSha,mainCommonAncestorSha:common,
+     expectedCoreSha,expectedMainSha,mainCommonAncestorSha:common,
+     protectedMain,legacyReconciliationSha:legacySha,
      candidateDescendsFromReviewed,currentDescendsFromReviewed,
      chain:CHAIN,ancestry,scope,mainOnlyPaths,
      candidateSourceLock:candidateLock,currentSourceLockVerified,

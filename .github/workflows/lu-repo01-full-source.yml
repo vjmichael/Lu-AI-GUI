@@ -101,11 +101,13 @@ jobs:
           git show-ref --verify refs/remotes/origin/main
           git show-ref --verify refs/remotes/origin/lu/core01-source-convergence-no-ide-no-kobold-20261112
           core_sha="$(git rev-parse --verify origin/lu/core01-source-convergence-no-ide-no-kobold-20261112^{commit})"
+          main_sha="$(git rev-parse --verify origin/main^{commit})"
           mkdir -p core01f-source-review
           node scripts/core01f-merge-preflight.mjs \
             --main-ref origin/main \
             --core-ref origin/lu/core01-source-convergence-no-ide-no-kobold-20261112 \
             --expect-core-sha "$core_sha" \
+            --expect-main-sha "$main_sha" \
             | tee core01f-source-review/candidate-integration.json
           node --input-type=module -e '
             import {readFileSync} from "node:fs";
@@ -115,8 +117,11 @@ jobs:
               r.sec06fAccepted!==false ||
               r.mergeAuthorized!==false ||
               r.releaseAuthorized!==false ||
-              r.coreSha!==process.argv[1])process.exit(1);
-          ' "$core_sha"
+              r.coreSha!==process.argv[1] ||
+              r.mainSha!==process.argv[2] ||
+              r.protectedMain?.valid!==true ||
+              r.protectedMain?.mainIntegrationAuthorized!==false)process.exit(1);
+          ' "$core_sha" "$main_sha"
           echo 'CORE01F source topology only; SEC-06C/06F and installed merge gates remain OPEN.' >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
         if: always()

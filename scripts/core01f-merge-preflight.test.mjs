@@ -1,12 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {CHAIN,excludedCorePath,verifyCandidateSourceLock,integrationPlan,decision} from './core01f-merge-preflight.mjs';
+import {CHAIN,PROTECTED_MAIN_FILES,excludedCorePath,verifyCandidateSourceLock,reconcileProtectedMain,integrationPlan,decision} from './core01f-merge-preflight.mjs';
 
 const ready={chainValid:true,candidateDescendsFromReviewed:true,
   currentDescendsFromReviewed:true,candidateSourceLockVerified:true,
   currentSourceLockVerified:true,scopeViolations:[],
-  mainOnlyPaths:['docs/LU_DEVELOPMENT_LEDGER.md'],expectedCandidateMatches:true};
+  mainOnlyPaths:['docs/LU_DEVELOPMENT_LEDGER.md'],expectedCandidateMatches:true,
+  expectedMainMatches:true,protectedMainVerified:true};
 const hex='a'.repeat(40),parent='b'.repeat(40);
 const locked=()=>({
  manifest:{schema:1,sourceCommitBeforeLock:parent,trackedFileCount:2,
@@ -116,4 +117,36 @@ test('PR228 has a separate opt-in exact-head source-only integration job',()=>{
  assert.match(section,/SOURCE_INTEGRATION_REVIEWABLE_ONLY/);
  assert.match(section,/sec06fAccepted!==false/);
  assert.doesNotMatch(section,/systemd-run|npm install|cargo test|NSIS|dpkg -i|git merge|git rebase/);
+});
+
+test('CORE01F-03 main ledger and scheduled workflow protected by immutable main blobs',()=>{
+ assert.deepEqual(PROTECTED_MAIN_FILES,[
+   'docs/LU_DEVELOPMENT_LEDGER.md',
+   '.github/workflows/lu-development-ledger.yml'
+ ]);
+ const a='a'.repeat(40),b='b'.repeat(40),c='c'.repeat(40);
+ const main=Object.fromEntries(PROTECTED_MAIN_FILES.map(p=>[p,a]));
+ const core=Object.fromEntries(PROTECTED_MAIN_FILES.map(p=>[p,b]));
+ const review=Object.fromEntries(PROTECTED_MAIN_FILES.map(p=>[p,b]));
+ const legacy={...main,[PROTECTED_MAIN_FILES[0]]:c};
+ const result=reconcileProtectedMain({mainSha:a,mainBlobs:main,
+   coreBlobs:core,reviewBlobs:review,legacyBlobs:legacy});
+ assert.equal(result.valid,true);
+ assert.deepEqual(result.staleLegacyPaths,[PROTECTED_MAIN_FILES[0]]);
+ assert.ok(result.files.every(x=>x.requiredIntegrationSource==='EXACT_CURRENT_MAIN_BLOB'));
+ assert.ok(result.files.every(x=>x.automaticResolutionAllowed===false));
+ assert.equal(result.mainIntegrationAuthorized,false);
+ assert.equal(result.noAutomaticWriteOrMerge,true);
+});
+test('CORE01F-03 refuses missing protected blobs, wrong main identity and drift',()=>{
+ const a='a'.repeat(40),blobs=Object.fromEntries(PROTECTED_MAIN_FILES.map(p=>[p,a]));
+ assert.equal(reconcileProtectedMain({mainSha:'unsafe',mainBlobs:blobs,
+   coreBlobs:blobs,reviewBlobs:blobs}).valid,false);
+ const missing={...blobs};delete missing[PROTECTED_MAIN_FILES[0]];
+ const denied=reconcileProtectedMain({mainSha:a,mainBlobs:blobs,
+   coreBlobs:missing,reviewBlobs:blobs});
+ assert.equal(denied.valid,false);
+ assert.ok(denied.problems.includes('MISSING_PROTECTED_BLOB:'+PROTECTED_MAIN_FILES[0]));
+ const verdict=decision({...ready,expectedMainMatches:false,protectedMainVerified:false});
+ assert.deepEqual(verdict.blockers,['MAIN_HEAD_DRIFT','MAIN_PROTECTED_BLOBS_NOT_VERIFIED']);
 });
