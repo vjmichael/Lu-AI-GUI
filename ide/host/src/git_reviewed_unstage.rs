@@ -181,13 +181,13 @@ impl IdeWorkspaceRegistry{
     cancel.load(Ordering::SeqCst)!=0{
     return Err("FIN03_UNSTAGE_STALE_OR_CANCELLED");
   }
-  self.require_group6f_no_pending_recovery(&expected.project_id,false)?;
   let (repo,head,path,old)=inspected_repo(self,&expected.project_id)?;
   let mut j=Journal{
     schema:1,project_id:expected.project_id.clone(),head_sha:head.clone(),
     relative_path:path.clone(),review_sha256:fresh.review_sha256.clone(),
     before:fresh.index_sha256.clone(),after:None,phase:"prepared".into(),
   };
+  self.require_group6f_no_pending_recovery(&expected.project_id,false)?;
   append(&repo,&j)?;
   if cancel.compare_exchange(0,1,Ordering::SeqCst,Ordering::SeqCst).is_err(){
     // Even a pre-commit interrupt is left for explicit reconciliation.
