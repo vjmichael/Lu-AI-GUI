@@ -1,7 +1,8 @@
-IDE-MERGE-01/02 reviewed source-reconciliation native batch
-Source parent: 82626e68fa187a1f2ca0fd8307b1622616980965
-Grouped original SHA 82626e68fa187a1f2ca0fd8307b1622616980965 result: 3/4 passing, Windows parse failure.
-This batch reconciles the PowerShell expression at original lines 129-130
-and restores original DEV-01 eight-second and private .lu-ide-* exclusion
-contracts inside current Quick Open. All other existing native gates retained.
-Use GitHub Actions event HEAD only; no release or physical authorization.
+IDE-MERGE-01/02 project-search private-trash source-convergence batch
+Reconciled original run #43635766693: 4/4 exact-head native jobs PASS
+Original source head: f3d1e0f2033d78477d24750b84f1ea7bd7f3ed33
+No original native failures. New source-only cross-feature regression:
+P05 saved-text project search must reuse modern Quick Open private
+.lu-ide-* and casefolded generated-folder denial, including .lu-ide-trash.
+Retain original 4-job matrix, preserve installed/physical release gates.
+This marker selects ONE final source SHA for grouped Windows/Linux CI.

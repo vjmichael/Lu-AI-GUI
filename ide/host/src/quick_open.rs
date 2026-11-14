@@ -19,7 +19,7 @@ const PAGE_SIZE: usize = 120;
 // Retain the original DEV-01 eight-second budget without reverting to its obsolete indexer.
 const MAX_SCAN_DURATION: Duration = Duration::from_secs(8);
 
-fn generated(name: &str) -> bool {
+pub(crate) fn generated(name: &str) -> bool {
     // Case-insensitive like the original DEV-01 index. The native file
     // transactions module stores reversible trash in .lu-ide-trash; neither
     // that nor other private .lu-ide-* directories belong in Quick Open.

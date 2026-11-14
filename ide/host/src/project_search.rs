@@ -82,25 +82,11 @@ fn literal_offsets(line: &str, query: &str, case_sensitive: bool) -> Vec<(usize,
 }
 
 fn excluded(name: &str) -> bool {
-    matches!(
-        name,
-        ".git"
-            | ".hg"
-            | ".svn"
-            | "node_modules"
-            | "target"
-            | "dist"
-            | "build"
-            | ".venv"
-            | "venv"
-            | "__pycache__"
-            | ".next"
-            | ".cache"
-            | "site-packages"
-            | "vendor"
-            | ".idea"
-            | ".turbo"
-    )
+    // The native file transaction system keeps recoverable contents in
+    // .lu-ide-trash. Never read those bytes through project-wide saved-text
+    // search. Share the modern Quick Open exclusion policy to avoid allowing
+    // private .lu-ide-* folders or case variants in one search surface.
+    crate::quick_open::generated(name)
 }
 
 fn excerpt(line: &str, start: usize, end: usize) -> String {
