@@ -355,6 +355,9 @@ jobs:
     timeout-minutes: 150
     env:
       LU_E1_P07_LLAMA_PORT: '18972'
+      # The genuine first tool is a mandatory native observation; never
+      # use the transport's fail-closed unconstrained/raw default.
+      LU_E1_P07_RESPONSE_PROTOCOL: json_schema
       MODEL_SHA256: 7af3fdf842f87b24672f8a7f1dd50404043f0bfb71093ff91c31d2b49df4631d
     steps:
       - uses: actions/checkout@v4
@@ -420,6 +423,20 @@ jobs:
             sleep 2
           done
           test "$ready" = 1
+      - name: Prove local b12143 llama.cpp enforces actual model grammar before native tool acceptance
+        shell: bash
+        run: |
+          set -euo pipefail
+          PYTHONPATH=benchmarks/e1 python3 - <<'PY'
+          import os
+          from e1_p07_llama_completion import (
+              assert_grammar_enforced,assert_tool_grammar_enforced,
+          )
+          port=int(os.environ["LU_E1_P07_LLAMA_PORT"])
+          assert_grammar_enforced(port)
+          assert_tool_grammar_enforced(port)
+          print("C4_GENUINE_LLAMA_JSON_TOOL_GRAMMAR_ENFORCED=1")
+          PY
       - name: Genuine Qwen planning and original host native plan-tool-oracle-restart sequence
         shell: bash
         run: |
