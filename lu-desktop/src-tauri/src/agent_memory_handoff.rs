@@ -18,6 +18,40 @@ use lu_core::{
 
 const MAX_MODEL_BYTES:usize=4096;
 
+/// The host-reconciled oracle and OS-custody state MUST agree with a
+/// historical UI preview before a next-step candidate can be shown to
+/// model reasoning. A model-facing review candidate is not permission.
+fn safe_plan_preview(
+    progress:&agent_plan_progress::AgentPlanProgress,
+    recovery:&lu_core::agent_recovery_decision::RecoveryDecision,
+)->serde_json::Value{
+    let preview=&progress.continuation_preview;
+    let first=recovery.status=="REVIEW_FIRST_STEP_ONLY"
+        &&preview.status=="MANUAL_ONE_STEP_REVIEW_ONLY"
+        &&preview.candidate_step_index==Some(0);
+    let child=recovery.status=="REVIEW_NEW_STEP_WITH_FRESH_AUTHORIZATION_ONLY"
+        &&preview.status=="PREPARE_NEW_CHILD_PLAN_ONLY"
+        &&preview.candidate_step_index.is_some()
+        &&recovery.independently_observed_steps>0
+        &&recovery.steps.iter().all(|s|
+            s.evidence_status=="VERIFIED_AT_OBSERVATION"
+            &&s.descendant_custody=="INDEPENDENTLY_ATTESTED");
+    serde_json::json!({
+        "status":if first { "FIRST_STEP_REVIEW_POSSIBLE" }
+            else if child {"FRESH_CHILD_PLAN_REVIEW_POSSIBLE"}
+            else {"RECOVERY_OR_REVIEW_REQUIRED"},
+        "candidateStepIndex":if first||child{
+            preview.candidate_step_index
+        }else{None},
+        "sourceFreshness":"NOT_RECHECKED",
+        "newHumanReviewRequired":true,
+        "liveNativeToolAuthority":false,
+        "automaticExecution":false,
+        "priorGrantReusable":false,
+        "currentIndependentRecovery":recovery.status
+    })
+}
+
 /// Exact CURRENT human syntax. Never interpret archived messages, attached
 /// files, tool results or model tokens as a request to load plan memory.
 pub(crate) fn explicit_agent_handoff_request(prompt:&str)->Option<String>{
@@ -103,6 +137,7 @@ pub(crate) fn original_agent_handoff(
         "independentlyObservedSteps":checked.independently_observed_steps,
         "independentEvidence":independently_checked,
         "nextActionRequiresHumanReview":checked.next_action,
+        "reviewedNextStep":safe_plan_preview(&progress,&checked),
         "executionAuthority":"NOT_AUTHORIZED_FOR_EXECUTION",
         "priorGrantReusable":false,
         "automaticRetryAllowed":false,
@@ -120,6 +155,48 @@ pub(crate) fn original_agent_handoff(
 #[cfg(test)]
 mod tests{
     use super::*;
+    #[test]
+    fn planner_continuation_never_promotes_historical_link_without_new_os_proof(){
+        use lu_core::agent_recovery_decision::{RecoveryDecision,ReconciledStep};
+        let preview=agent_plan_progress::AgentContinuationPreview{
+            candidate_step_index:Some(1),
+            status:"PREPARE_NEW_CHILD_PLAN_ONLY",
+            required_action:"Review a fresh child plan",
+            live_source_reverified:false,
+            execution_authority:"NOT_AUTHORIZED_FOR_EXECUTION"
+        };
+        let plan=agent_plan_progress::AgentPlanProgress{
+            plan_id:"p-a".into(),original_human_turn_id:"g-a".into(),
+            plan_state:"OBSERVATIONS_ONLY".into(),
+            latest_revision:1,revision_sha256:Some("a".repeat(64)),
+            revision_review:"APPROVED_PLAN_ONLY".into(),pending_source_checks:0,
+            supervisor_state:"RELEASED".into(),step_count:2,steps:Vec::new(),
+            next_safe_action:"human review",continuation_preview:preview,
+            lineage_status:"ROOT_PLAN_NO_CONTINUATION".into(),
+            lineage_generations:0,lineage_parent_id:None,
+            execution_authority:"NOT_AUTHORIZED_FOR_EXECUTION"
+        };
+        let mut decision=RecoveryDecision{
+            status:"STOP_DESCENDANT_CUSTODY_UNPROVEN",
+            next_action:"Reconcile OS custody",
+            linked_generations:0,independently_observed_steps:1,
+            steps:vec![ReconciledStep{
+                step_index:0,human_turn_id:"g-b".into(),
+                evidence_status:"VERIFIED_AT_OBSERVATION",
+                descendant_custody:"NOT_PROVEN"
+            }],
+            execution_authority:"NOT_AUTHORIZED_FOR_EXECUTION"
+        };
+        let denied=safe_plan_preview(&plan,&decision);
+        assert!(denied["candidateStepIndex"].is_null());
+        assert_eq!(denied["liveNativeToolAuthority"],false);
+        decision.status="REVIEW_NEW_STEP_WITH_FRESH_AUTHORIZATION_ONLY";
+        decision.steps[0].descendant_custody="INDEPENDENTLY_ATTESTED";
+        let reviewed=safe_plan_preview(&plan,&decision);
+        assert_eq!(reviewed["candidateStepIndex"],1);
+        assert_eq!(reviewed["automaticExecution"],false);
+        assert_eq!(reviewed["newHumanReviewRequired"],true);
+    }
     #[test]
     fn only_explicit_bounded_current_human_plan_request_is_recognized(){
         let p=format!("p-{}","a".repeat(32));

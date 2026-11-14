@@ -55,11 +55,8 @@
     use crate::agent_plan_revisions::ExpectedDeliverable;
     matches!(
         (step.kind,step.expected),
-        (PlanStepKind::CollectSource,ExpectedDeliverable::SourceReferences)
-        |(PlanStepKind::Inspect,ExpectedDeliverable::SourceReferences)
-        |(PlanStepKind::Inspect,ExpectedDeliverable::StructuredFindings)
-        |(PlanStepKind::IndependentlyCheck,ExpectedDeliverable::IndependentWitness)
-    )
+        (PlanStepKind::IndependentlyCheck,ExpectedDeliverable::IndependentWitness)
+    ) && !step.deliverable_id.is_empty()
  }
  #[allow(clippy::too_many_arguments)]
  pub fn preflight_reviewed_broker(
@@ -224,9 +221,9 @@
         use crate::agent_plan_ledger::PlanStepKind;
         use crate::agent_plan_revisions::{RevisionStep,ExpectedDeliverable};
         let build=|kind,expected|RevisionStep{
-            kind,depends_on:None,deliverable_id:String::new(),expected
+            kind,depends_on:None,deliverable_id:"d-actual".into(),expected
         };
-        assert!(supported_reviewed_step(&build(
+        assert!(!supported_reviewed_step(&build(
             PlanStepKind::CollectSource,ExpectedDeliverable::SourceReferences)));
         assert!(supported_reviewed_step(&build(
             PlanStepKind::IndependentlyCheck,ExpectedDeliverable::IndependentWitness)));
