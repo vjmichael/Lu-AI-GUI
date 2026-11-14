@@ -306,6 +306,42 @@ pub fn validate_approved_host_user_sid(value: &str) -> Result<(), SupervisorErro
     let _parsed = parse_sid(value)?;
     Ok(())
 }
+// Dedicated SCM-to-SCM pipe: only SYSTEM, the exact target service and the
+// exact debugger service have DACL rights. The debugger SID gets data access,
+// never FILE_CREATE_PIPE_INSTANCE, owner/DACL change, or admin/user fallback.
+// This differs from the interactive host C2 pipe and is never constructed
+// from a caller-supplied service name or identity.
+#[cfg(feature="fin04w2-split-native")]
+pub(crate) fn split_target_pipe_security() -> Result<PipeSecurity, SupervisorError> {
+    let target=sid_of_named_service("LuIdeDebugTargetBroker")?;
+    let debugger=sid_of_named_service("LuIdeDebuggerBroker")?;
+    if target==debugger {return Err(denied());}
+    let sddl=format!(
+        "D:P(A;;GA;;;SY)(A;;GA;;;{})(A;;0x0012019b;;;{})",
+        target,debugger,
+    );
+    let mut descriptor=ptr::null_mut();
+    if unsafe{ConvertStringSecurityDescriptorToSecurityDescriptorW(
+        ws(&sddl).as_ptr(),1,&mut descriptor,ptr::null_mut(),
+    )}==0||descriptor.is_null(){return Err(denied());}
+    let mut result=PipeSecurity{
+        descriptor:OwnedSid(descriptor),
+        attributes:SECURITY_ATTRIBUTES{
+            nLength:size_of::<SECURITY_ATTRIBUTES>() as u32,
+            lpSecurityDescriptor:descriptor,bInheritHandle:0,
+        },
+    };
+    result.attributes.lpSecurityDescriptor=result.descriptor.0;
+    Ok(result)
+}
+#[cfg(feature="fin04w2-split-native")]
+pub(crate) fn verify_split_target_pipe_security(pipe:HANDLE)
+    ->Result<(),SupervisorError>{
+    verify_created_pipe_security_for_exact_sid(
+        pipe,&sid_of_named_service("LuIdeDebuggerBroker")?,
+        &sid_of_named_service("LuIdeDebugTargetBroker")?,
+    )
+}
 impl PipeSecurity {
     pub fn new(approved_user_sid: &str) -> Result<Self, SupervisorError> {
         Self::new_for_service(approved_user_sid, &sid_of_service()?)
@@ -386,10 +422,15 @@ pub(crate) fn verify_created_pipe_security_for(
     pinned_service_sid: &str,
 ) -> Result<(), SupervisorError> {
     validate_approved_host_user_sid(approved_user_sid)?;
+    verify_created_pipe_security_for_exact_sid(pipe,approved_user_sid,pinned_service_sid)
+}
+fn verify_created_pipe_security_for_exact_sid(
+    pipe:HANDLE,client_sid:&str,pinned_service_sid:&str,
+)->Result<(),SupervisorError>{
     if !pinned_service_sid.starts_with("S-1-5-80-") {
         return Err(denied());
     }
-    let user = parse_sid(approved_user_sid)?;
+    let user = parse_sid(client_sid)?;
     let service = parse_sid(pinned_service_sid)?;
     let system = parse_sid("S-1-5-18")?;
     let mut dacl = ptr::null_mut();
@@ -1248,6 +1289,17 @@ mod tests {
         assert!(!allowed_scm_service_name("LuIdeDebugTargetBroker\\\\evil"));
         assert!(!allowed_scm_service_name("LuIdeDebuggerBrokerExtra"));
         assert!(!allowed_scm_service_name("LuIdeWhateverBroker"));
+    }
+    #[test]
+    fn scm_pair_pipe_has_only_fixed_non_creating_debugger_client() {
+        #[cfg(feature="fin04w2-split-native")]{
+            assert!(allowed_scm_service_name("LuIdeDebugTargetBroker"));
+            // The client mask is deliberately distinct from GA and excludes
+            // FILE_CREATE_PIPE_INSTANCE (0x4) and WRITE_DAC (0x40000).
+            assert_eq!(0x0012_019b_u32 & (0x4|0x40000|0x80000),0);
+            assert!(split_target_pipe_security().is_err()
+                || allowed_scm_service_name("LuIdeDebuggerBroker"));
+        }
     }
     #[test]
     fn client_pipe_dacl_does_not_allow_pipe_instance_creation() {
