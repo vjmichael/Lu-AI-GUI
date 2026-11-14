@@ -22,13 +22,13 @@ use std::{
     path::{Path,PathBuf},ptr,
 };
 use windows_sys::Win32::{
-    Foundation::{CloseHandle,HANDLE,SetHandleInformation,WAIT_TIMEOUT},
+    Foundation::{CloseHandle,HANDLE,SetHandleInformation,WAIT_TIMEOUT,WAIT_OBJECT_0},
     Security::{SECURITY_ATTRIBUTES,SECURITY_CAPABILITIES},
     System::{
         JobObjects::IsProcessInJob,
-        Pipes::CreatePipe,
+        Pipes::{CreatePipe,PeekNamedPipe},
         Threading::{
-            CreateProcessW,
+            CreateProcessW,GetExitCodeProcess,
             ResumeThread,TerminateProcess,UpdateProcThreadAttribute,WaitForSingleObject,
             CREATE_NO_WINDOW,CREATE_SUSPENDED,CREATE_UNICODE_ENVIRONMENT,
             EXTENDED_STARTUPINFO_PRESENT,PROCESS_INFORMATION,
@@ -396,6 +396,113 @@ pub(crate) fn prepare_external_debugger(
         pending,stdin_write:stdin.write,stdout_read:stdout.read,
         stderr_read:stderr.read,owner,job:kernel_job,
     })
+}
+
+/// A one-shot first-party LLVM symbolizer executes only inside the SAME
+/// independently SCM-owned restricted debugger Job, never from a host
+/// std::process::Command fallback. It sees one sealed PE/PDB pair and one
+/// OS-verified RIP+relocation bias; the human cannot choose arbitrary argv.
+/// The exact bundle/SHA are pinned in protected service config. WFP exact
+/// app V4/V6 BLOCK rules must already exist before this worker resumes.
+/// The result remains untrusted until the ORIGINAL independent PDB/source
+/// parser verifies the returned JSON, followed by job and receipt rechecks.
+pub(crate) fn read_llvm_pdb_line_inside_debugger_job(
+    job:&EmptyAuditJob,symbolizer:&Path,symbolizer_sha:&str,
+    sealed_exe:&Path,expected_exe_sha:&str,
+    stopped_rip:u64,os_bias:u64,
+)->Result<serde_json::Value,SupervisorError>{
+    use std::time::{Duration,Instant};
+    windows_fin04w2_kernel::inspect_current_service_principal()?;
+    if symbolizer.file_name()!=Some(OsStr::new("llvm-symbolizer.exe"))
+        ||!symbolizer.is_absolute()||!sealed_exe.is_absolute()
+        ||stopped_rip==0||os_bias>stopped_rip{return Err(denied());}
+    for p in [symbolizer,sealed_exe]{
+        if p.to_string_lossy().contains('"')||p.to_string_lossy().contains('\0')
+            ||p.to_string_lossy().contains('\r')||p.to_string_lossy().contains('\n'){
+            return Err(denied());
+        }
+    }
+    windows_service_security::hash_executable(symbolizer,symbolizer_sha)?;
+    windows_service_security::hash_executable(sealed_exe,expected_exe_sha)?;
+    crate::windows_fin04w2_wfp::require_debugger_tool_outbound_blocks(symbolizer)?;
+    let stdout=pipe()?;
+    let stdin=pipe()?;
+    private_handle(stdout.read.0)?;
+    private_handle(stdin.write.0)?;
+    let child_handles=[stdin.read.0,stdout.write.0];
+    let mut attrs=windows_worker::Attributes::with_count(2)?;
+    let kernel_job=job.held_split_job_handle();
+    windows_service_security::verify_debugger_job_kernel_acl(kernel_job)?;
+    let job_array=[kernel_job];
+    job_attribute(&mut attrs,&job_array)?;
+    if unsafe{UpdateProcThreadAttribute(attrs.raw(),0,HANDLE_LIST,
+        child_handles.as_ptr().cast(),size_of::<HANDLE>()*child_handles.len(),
+        ptr::null_mut(),ptr::null())}==0{return Err(denied());}
+    let bin=symbolizer.parent().ok_or_else(denied)?;
+    let private_root=PathBuf::from(std::env::var_os("ProgramData")
+        .ok_or_else(denied)?).join("LuIdeDebuggerBroker");
+    let env=environment(&private_root,bin)?;
+    let quoted=format!(
+        "\"{}\" \"--obj={}\" --output-style=JSON --functions=none --no-inlines --adjust-vma=0x{:x} 0x{:x}",
+        symbolizer.display(),sealed_exe.display(),os_bias,stopped_rip,
+    );
+    let exe=wide(symbolizer.as_os_str());
+    let mut args=wide(OsStr::new(&quoted));
+    let cwd=wide(bin.as_os_str());
+    let mut startup=STARTUPINFOEXW::default();
+    startup.StartupInfo.cb=size_of::<STARTUPINFOEXW>() as u32;
+    startup.StartupInfo.dwFlags=STARTF_USESTDHANDLES;
+    startup.StartupInfo.hStdInput=stdin.read.0;
+    startup.StartupInfo.hStdOutput=stdout.write.0;
+    startup.StartupInfo.hStdError=stdout.write.0;
+    startup.lpAttributeList=attrs.raw();
+    let mut info=PROCESS_INFORMATION::default();
+    if unsafe{CreateProcessW(exe.as_ptr(),args.as_mut_ptr(),
+        ptr::null(),ptr::null(),1,
+        CREATE_SUSPENDED|CREATE_NO_WINDOW|CREATE_UNICODE_ENVIRONMENT|
+            EXTENDED_STARTUPINFO_PRESENT,
+        env.as_ptr().cast(),cwd.as_ptr(),&startup.StartupInfo,&mut info,
+    )}==0{return Err(denied());}
+    let mut child=Pending::from_information(info)?;
+    contained(child.process.0,kernel_job)?;
+    windows_service_security::hash_executable(symbolizer,symbolizer_sha)?;
+    crate::windows_fin04w2_wfp::require_debugger_tool_outbound_blocks(symbolizer)?;
+    child.resume_once()?;
+    // Prevent a live writer on the parent from suppressing end-of-output.
+    drop(stdin);
+    drop(stdout.write);
+    let stdout_read=stdout.read;
+    let deadline=Instant::now()+Duration::from_secs(6);
+    let mut content=Vec::new();
+    loop{
+        if Instant::now()>=deadline{return Err(denied());}
+        let mut available=0u32;
+        let peek=unsafe{PeekNamedPipe(stdout_read.0,ptr::null_mut(),0,
+            ptr::null_mut(),&mut available,ptr::null_mut())};
+        if peek!=0&&available>0{
+            if content.len()+available as usize>8192{return Err(denied());}
+            let mut scratch=[0u8;2048];
+            let capacity=available.min(scratch.len() as u32);
+            let mut got=0u32;
+            if unsafe{windows_sys::Win32::Storage::FileSystem::ReadFile(
+                stdout_read.0,scratch.as_mut_ptr().cast(),capacity,
+                &mut got,ptr::null_mut())}==0||got==0{return Err(denied());}
+            content.extend_from_slice(&scratch[..got as usize]);
+        }else if unsafe{WaitForSingleObject(child.process.0,0)}==WAIT_OBJECT_0{
+            // Drain any final buffered bytes before interpreting exit code.
+            if peek==0||available==0{break;}
+        }else if peek==0{return Err(denied());}
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    let mut exit=u32::MAX;
+    if unsafe{GetExitCodeProcess(child.process.0,&mut exit)}==0
+        ||exit!=0||content.is_empty()||content.len()>8192{
+        return Err(denied());
+    }
+    windows_service_security::hash_executable(symbolizer,symbolizer_sha)?;
+    windows_service_security::hash_executable(sealed_exe,expected_exe_sha)?;
+    contained(child.process.0,kernel_job)?;
+    serde_json::from_slice(&content).map_err(|_|denied())
 }
 
 /// The former prepare_pair could create both workers from ONE SCM service,

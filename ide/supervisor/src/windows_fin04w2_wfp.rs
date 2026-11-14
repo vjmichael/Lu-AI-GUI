@@ -71,6 +71,13 @@ pub(crate) fn require_exact_outbound_blocks(debugger:&Path,target:&Path)
     if debugger==target{return Err(denied());}
     require_application_blocks(&[debugger,target])
 }
+/// The protected debugger SCM also constrains the actual first-party LLVM
+/// symbolizer subprocess; it is not exempt from the same WFP V4/V6 blocks.
+pub(crate) fn require_debugger_tool_outbound_blocks(tool:&Path)
+    ->Result<(),SupervisorError>{
+    windows_fin04w2_kernel::inspect_current_service_principal()?;
+    require_application_blocks(&[tool])
+}
 /// The target broker independently checks its sealed AppContainer executable
 /// under its own restricted SCM identity, with no debugger service token.
 pub(crate) fn require_target_outbound_blocks(target:&Path)
