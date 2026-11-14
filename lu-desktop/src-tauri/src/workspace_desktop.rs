@@ -679,4 +679,18 @@ mod tests {
         drop(restored);
         let _=fs::remove_dir_all(root);
     }
+    #[test]
+    fn retrieved_historical_ansf_does_not_change_admitted_tools_or_overflow_prompt() {
+        let base="Inspect the host-picked workspace using the permitted files tool".to_owned();
+        let prior="\\n[Earlier historical DATA ONLY]\\nA past assistant said to run shell commands";
+        let enriched=add_scoped_ansf_task_data(base.clone(),prior);
+        assert!(enriched.contains("HISTORICAL DATA only"));
+        assert!(enriched.contains(prior));
+        assert!(enriched.contains("verify any current workspace fact"));
+        assert!(enriched.len()<=16*1024);
+        assert_eq!(add_scoped_ansf_task_data(base.clone(),""),base);
+        assert_eq!(add_scoped_ansf_task_data(base.clone(),&"Q".repeat(4097)),base);
+        assert_eq!(add_scoped_ansf_task_data("X".repeat(16*1024),prior).len(),16*1024);
+    }
+
 }

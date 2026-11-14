@@ -716,4 +716,18 @@ mod tests {
         )
         .is_err());
     }
+    #[test]
+    fn structured_image_and_text_history_accepts_current_ipc_limits_only(){
+        let turns=(0..32).map(|index|crate::inference_host::ChatTurn{
+            role:if index%2==0{"user"}else{"assistant"}.into(),
+            text:"host-persisted conversation evidence".repeat(10),
+        }).collect::<Vec<_>>();
+        assert!(build_structured_chat_request("Continue",&turns,&[],512).is_ok());
+        let mut too_many=turns;
+        too_many.push(crate::inference_host::ChatTurn{
+            role:"user".into(),text:"extra history".into()
+        });
+        assert!(build_structured_chat_request("Continue",&too_many,&[],512).is_err());
+    }
+
 }

@@ -369,4 +369,27 @@ mod tests {
             Err(InferenceWireError::InvalidField("chat_history"))
         );
     }
+    #[test]
+    fn extended_typed_history_is_bounded_and_schema_typed() {
+        let create=|n:usize,bytes:usize|proto::InferenceFrame{
+            protocol_version:INFERENCE_PROTOCOL_VERSION,
+            request_id:"req-history".into(),
+            body:Some(proto::inference_frame::Body::Generate(
+                proto::InferenceGenerateRequest{
+                    session_id:"session-1".into(),generation_id:"gen-1".into(),
+                    prompt:"What is the latest source?".into(),max_new_tokens:512,
+                    images:vec![],history:(0..n).map(|_|proto::InferenceChatTurn{
+                        role:"user".into(),text:"s".repeat(bytes)
+                    }).collect()
+                }
+            )),
+        };
+        let extended=create(32,2000);
+        assert!(encode_frame(&extended).is_ok());
+        assert_eq!(decode_frame(&encode_frame(&extended).unwrap()).unwrap(),extended);
+        assert_eq!(encode_frame(&create(33,10)),Err(InferenceWireError::InvalidField("chat_history")));
+        assert_eq!(encode_frame(&create(32,3000)),Err(InferenceWireError::InvalidField("chat_history")));
+        assert_eq!(encode_frame(&create(1,15*1024+1)),Err(InferenceWireError::InvalidField("chat_history")));
+    }
+
 }

@@ -213,4 +213,38 @@ mod tests {
         let prior = typed_history(&previous, "Tell me about songs");
         assert_eq!(prior[0].role, "user");
     }
+    #[test]
+    fn extended_loaded_context_uses_more_real_typed_history_but_never_unbounded() {
+        let previous=(0..60).map(|i|
+            msg(if i%2==0{"user"}else{"assistant"},&format!("Turn {i}: {}", "x".repeat(1800)),false)
+        ).collect::<Vec<_>>();
+        let baseline=typed_history(&previous,"What changed?");
+        let extended=typed_history_for_model(&previous,"What changed?",32768,1024);
+        assert!(extended.len()>baseline.len());
+        assert!(extended.len()<=MAX_PRIOR_TURNS);
+        assert!(extended.iter().map(|t|t.text.len()).sum::<usize>()<=MAX_CONTEXT_BYTES);
+        assert_eq!(extended.last().unwrap().text,previous.last().unwrap().text);
+        assert_eq!(baseline.last().unwrap().text,previous.last().unwrap().text);
+    }
+    #[test]
+    fn one_oversized_recent_entry_does_not_erase_older_safe_history() {
+        let previous=[
+            msg("user","I approved the checked source",false),
+            msg("assistant",&"Z".repeat(20*1024),false),
+            msg("user","Review the next step",false),
+            msg("assistant","unverified partial",true),
+        ];
+        let history=typed_history_for_model(&previous,"Continue",32768,512);
+        assert_eq!(history.len(),2);
+        assert_eq!(history[0].text,"I approved the checked source");
+        assert_eq!(history[1].text,"Review the next step");
+    }
+    #[test]
+    fn default_model_context_keeps_the_old_budget() {
+        assert_eq!(history_byte_budget(4096,512),DEFAULT_CONTEXT_BYTES);
+        assert_eq!(history_byte_budget(262144,4096),MAX_CONTEXT_BYTES);
+        let prior=[msg("user","source data",false)];
+        assert!(typed_history_for_model(&prior,&"z".repeat(MAX_CONTEXT_BYTES),262144,512).is_empty());
+    }
+
 }
