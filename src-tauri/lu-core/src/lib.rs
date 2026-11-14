@@ -286,4 +286,5 @@ pub use ownership_store::{OwnershipStore, OwnershipStoreError};
 pub use registry::{DispatchError, NativeToolRegistry, RegistryError, ToolResponse};
 pub use tasks::{TaskRecord, TaskState, TaskStore, TaskStoreError};
 pub use workspace::{WorkspaceError, WorkspaceHost, WorkspaceInstance, WorkspaceState};
+pub use workspace_inference::{CancellationRequested as WorkspaceCancellationRequested, WorkspaceInferenceAction, WorkspaceInferenceError, WorkspaceInferenceGate, WorkspaceInferencePolicy, WorkspaceInferenceTask};
 pub use workspace_quarantine::{IntakeReceipt, IntakeStatus, QuarantineError, WorkspaceQuarantine};
