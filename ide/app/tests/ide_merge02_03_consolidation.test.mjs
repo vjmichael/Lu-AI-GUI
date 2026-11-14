@@ -95,5 +95,5 @@ test('IDE-MERGE-03 split source never grants LLDB or attach from the WebView', (
   assert.doesNotMatch(web,/invoke\('ide_fin04w2_split/);
   assert.doesNotMatch(desktop,/async fn ide_fin04w2_split/);
   assert.match(supervisor,/feature="fin04w2-split-native"/);
-  assert.match(cargo,/fin04w2-split-native = \["fin04w2-c2"\]/);
+  assert.match(cargo,/fin04w2-split-native = \["fin04w2-c2", "protected-recovery-service"\]/);
 });

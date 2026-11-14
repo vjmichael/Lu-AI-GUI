@@ -175,6 +175,10 @@ jobs:
               [ref]$tokens,[ref]$errors
             ) | Out-Null
             if($errors.Count -ne 0) {
+              foreach($syntaxError in $errors) {
+                Write-Host ('FIN04W2_HARNESS_PARSE_ERROR:'+ $p + ':' +
+                  $syntaxError.Extent.StartLineNumber + ':' + $syntaxError.Message)
+              }
               throw ('FIN04W2_NATIVE_HARNESS_SYNTAX_DENIED:'+$p)
             }
           }

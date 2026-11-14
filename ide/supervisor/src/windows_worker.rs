@@ -1686,6 +1686,7 @@ pub fn reconcile_windows_interrupted(
 /// refusal; missing Jobs count only when original durable records are
 /// terminal and the worker implementation's kill-on-last-handle semantics
 /// were independently established by native acceptance.
+#[cfg(feature = "protected-recovery-service")]
 pub fn verify_global_worker_quiescence(
     owner_pid:u32, jobs:&[JobSummary]
 )->Result<crate::KernelQuiescenceWitness,SupervisorError>{
@@ -1763,6 +1764,7 @@ pub fn verify_global_worker_quiescence(
     })
 }
 
+#[cfg(feature = "protected-recovery-service")]
 pub fn reconcile_windows_interrupted_via_service(
     supervisor: &Supervisor,
     id: &str,
@@ -1816,6 +1818,7 @@ pub fn reconcile_windows_interrupted_via_service(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(feature = "protected-recovery-service")]
     #[test]
     fn fin01d_kernel_attestation_never_accepts_the_live_recovery_owner(){
         assert!(verify_global_worker_quiescence(std::process::id(),&[]).is_err());
