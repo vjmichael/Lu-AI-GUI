@@ -750,3 +750,23 @@ async fn planned_turn_cannot_finalize_from_a_successful_unverified_tool_reply() 
     drop(registry);
     remove_workspace(folder);
 }
+
+#[test]
+fn scheduled_model_continuation_requires_original_hidden_read_grant_too() {
+    let (folder, registry, catalog, authority, origin, _) = setup();
+    let visible = BTreeSet::from(["lu_files_read_text".into()]);
+    let mut turn = NativeToolTurn::new(
+        &catalog, &authority, origin, "thread:conversation-1".into(), &visible,
+    ).unwrap();
+    // The host can add only an already-authorized exact native capability.
+    assert_eq!(turn.require_native_continuation_capabilities(
+        &authority, &["lu.reviewed.git.repo-read"]
+    ), Err(ToolTurnError::Revoked));
+    assert!(turn.require_native_continuation_capabilities(
+        &authority, &["lu.files.read_text","lu.inspect.search_text"]
+    ).is_ok());
+    assert!(turn.ensure_continuation_authorized(&authority).is_ok());
+    authority.revoke_task("task-1").unwrap();
+    assert!(turn.ensure_continuation_authorized(&authority).is_err());
+    drop(turn); drop(catalog); drop(registry); remove_workspace(folder);
+}
