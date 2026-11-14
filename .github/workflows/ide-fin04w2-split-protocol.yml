@@ -9,6 +9,7 @@ on:
       - 'ide/supervisor/src/dap_transport.rs'
       - 'ide/supervisor/src/windows_fin04w2_split.rs'
       - 'ide/supervisor/src/windows_fin04w2_split_launcher.rs'
+      - 'ide/supervisor/src/windows_fin04w2_target_seal.rs'
       - 'ide/supervisor/src/windows_fin04w2_kernel.rs'
       - 'ide/supervisor/src/windows_worker.rs'
       - 'ide/supervisor/src/lib.rs'
@@ -52,6 +53,8 @@ jobs:
           cargo test --manifest-path ide/supervisor/Cargo.toml --features fin04w2-split-native local_runner_is_not_the_independent_debugger_service -- --nocapture
           if ($LASTEXITCODE -ne 0) { throw 'DENIED: non-service minted an attach target' }
           cargo test --manifest-path ide/supervisor/Cargo.toml --features fin04w2-split-native caller_without_installed_service_identity_cannot_prepare_split_target -- --nocapture
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: native target preparation must require service identity' }
+          cargo test --manifest-path ide/supervisor/Cargo.toml --features fin04w2-split-native unapproved_local_runner_cannot_stage_a_mutable_debuggee -- --nocapture
           if ($LASTEXITCODE -ne 0) { throw 'DENIED: native split launcher bypassed restricted service identity' }
       - name: Preserve independent production security gates
         shell: pwsh
