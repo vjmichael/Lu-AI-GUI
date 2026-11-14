@@ -202,6 +202,81 @@ impl IdeWorkspaceRegistry{
         consolidate(project_id,&before,domains)
     }
 }
+
+/// Group 6F-02 — one cross-domain restart verdict for local Git +
+/// original remote 6E-05C prepared journal. All outcomes prohibit a push.
+/// This method cannot call credentials, GitHub, Tauri or OS approval code;
+/// a caller must bring a NEW, genuinely host-authenticated 6E-05B read.
+#[derive(Debug,Serialize)]
+#[serde(rename_all="camelCase")]
+pub struct CrossDomainRemoteRecovery {
+    pub schema_version:u32,
+    pub project_id:String,
+    pub exact_local_head:String,
+    pub original_intent_sha256:String,
+    pub remote_classification:&'static str,
+    pub local_git_reconciliation_required:bool,
+    pub remote_operator_reconciliation_required:bool,
+    pub source_rechecked_after_remote_classification:bool,
+    pub remote_publication_authorized:bool,
+    pub remote_publication_claimed_completed:bool,
+    pub native_approval_carried_over:bool,
+    pub automatic_retry_authorized:bool,
+    pub remote_mutation_performed:bool,
+}
+impl IdeWorkspaceRegistry{
+    pub(crate) fn inspect_group6f_remote_restart(
+        &self,project_id:&str,
+        host_private_journal:&std::path::Path,
+        original:&crate::github_remote_publication_intent::RemotePublicationIntent,
+        fresh:&crate::github_remote_live_policy::LiveBranchPolicyEvidence,
+    )->Result<CrossDomainRemoteRecovery,&'static str>{
+        let before=self.inspect_group6f_git_recovery(project_id)?;
+        if original.project_id!=project_id
+            ||original.proposed_local_commit!=before.exact_source_head
+            ||original.schema_version!=1
+            ||original.intent_sha256.len()!=64
+        {return Err("G06F_REMOTE_SOURCE_OR_INTENT_DRIFT");}
+        let classified=
+            crate::github_remote_publication_intent::
+                classify_uncertain_publication_on_restart(
+                    host_private_journal,original,fresh,
+                )?;
+        let after=self.inspect_group6f_git_recovery(project_id)?;
+        if before.evidence_sha256!=after.evidence_sha256
+            ||before.exact_branch_ref!=after.exact_branch_ref
+            ||before.exact_index_sha256!=after.exact_index_sha256
+        {return Err("G06F_REMOTE_LOCAL_STATE_CHANGED");}
+        // All three classes remain UNCERTAIN, not "published". Even a
+        // matching proposed tip could have been written independently.
+        let state=match classified{
+            crate::github_remote_publication_intent::
+                UncertainRemoteOutcome::RefUnchangedNoRetry=>
+                    "old_tip_still_visible_no_retry",
+            crate::github_remote_publication_intent::
+                UncertainRemoteOutcome::RefMatchesProposedButUnproven=>
+                    "proposed_tip_visible_not_our_publication",
+            crate::github_remote_publication_intent::
+                UncertainRemoteOutcome::CompetingRemoteWriterQuarantine=>
+                    "competing_writer_quarantine",
+        };
+        Ok(CrossDomainRemoteRecovery{
+            schema_version:1,project_id:project_id.to_owned(),
+            exact_local_head:after.exact_source_head,
+            original_intent_sha256:original.intent_sha256.clone(),
+            remote_classification:state,
+            local_git_reconciliation_required:
+                before.cross_domain_manual_reconciliation_required,
+            remote_operator_reconciliation_required:true,
+            source_rechecked_after_remote_classification:true,
+            remote_publication_authorized:false,
+            remote_publication_claimed_completed:false,
+            native_approval_carried_over:false,
+            automatic_retry_authorized:false,
+            remote_mutation_performed:false,
+        })
+    }
+}
 #[cfg(test)]
 mod tests{
     use super::*;

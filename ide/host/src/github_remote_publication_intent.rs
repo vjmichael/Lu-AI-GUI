@@ -442,6 +442,32 @@ mod tests{
         fs::write(&path,b"{\"phase\":\"approved\"}").unwrap();
         assert!(recover_prepared_intent(&journal,&i.intent_sha256).is_err());
     }
+    #[test]fn group6f_cross_domain_remote_recovery_stays_denied_for_matching_tip(){
+        let f=fixture();let old=observed(&f);
+        let intent=f.registry.prepare_github_remote_publication_intent(&f.id,&old).unwrap();
+        let dir=f.dir.join("private-6f");
+        fs::create_dir(&dir).unwrap();
+        fsync_prepared_intent_once(&dir,&intent).unwrap();
+        let mut fresh=observed(&f);
+        fresh.remote_head_sha256=Some(f.new.clone());
+        let r=f.registry.inspect_group6f_remote_restart(
+            &f.id,&dir,&intent,&fresh,
+        ).unwrap();
+        assert_eq!(r.remote_classification,"proposed_tip_visible_not_our_publication");
+        assert!(r.remote_operator_reconciliation_required);
+        assert!(r.source_rechecked_after_remote_classification);
+        assert!(!r.remote_publication_authorized);
+        assert!(!r.remote_publication_claimed_completed);
+        assert!(!r.automatic_retry_authorized);
+        // A foreign Git index lock vetoes the local side independently,
+        // including when the remote appears to match the intended tip.
+        fs::write(f.root.join(".git/index.lock"),b"foreign").unwrap();
+        let blocked=f.registry.inspect_group6f_remote_restart(
+            &f.id,&dir,&intent,&fresh,
+        ).unwrap();
+        assert!(blocked.local_git_reconciliation_required);
+        assert!(!blocked.automatic_retry_authorized);
+    }
     #[test]fn foreign_remote_or_dirty_project_never_prepares_intent(){
         let f=fixture();
         let p=observed(&f);

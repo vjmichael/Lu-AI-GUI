@@ -195,3 +195,15 @@ optional OS vault compilation.
 Group 6F still requires native/interrupted-process security matrices,
 actual authorized remote CAS lifecycle, Windows/Linux race and crash
 adversarial results, and installed recovery. Group 6G remains open.
+
+## Group 6F-02 — Cross-domain remote restart gate (source)
+
+The Group 6F inspector now joins the four original local Git recovery
+results with the exact 6E-05C prepared-only journal and an independently
+supplied, fresh 6E-05B observed remote state. It checks local project/HEAD,
+journal/intended commit, freshness, original policy digest and local source
+again after the remote comparison. An unchanged tip, a tip matching the
+proposal, or a competing writer are ALL classified as requiring operator
+reconciliation. **No case permits an automatic push, asserts a completed
+publication, reuses consent or releases an OS credential.** The actual live
+credential read and remote CAS are deliberately outside this module.
