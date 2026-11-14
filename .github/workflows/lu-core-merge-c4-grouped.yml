@@ -126,6 +126,9 @@ jobs:
             --test host_reviewed_route_durable -- --nocapture \
             2>&1 | tee c4-native-evidence/durable-tool-ipc.log
       - name: Original compiled desktop command and task completion reconciliation
+        # Independent check: still gather native host diagnostics after a
+        # separate lu-core test fails. The job remains FAILED on that test.
+        if: always()
         shell: bash
         run: |
           set -euo pipefail
@@ -135,6 +138,9 @@ jobs:
             --lib project_task_verified_evidence::tests -- --nocapture \
             2>&1 | tee c4-native-evidence/task-criterion-reconciliation.log
       - name: Current UI source and typed-Protobuf history check after native compilation
+        # Keep collecting the original frontend receipt even if Rust fails;
+        # never suppress the failed status in final grouped reconciliation.
+        if: always()
         shell: bash
         run: |
           set -euo pipefail
