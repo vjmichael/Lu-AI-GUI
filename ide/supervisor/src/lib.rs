@@ -45,6 +45,8 @@ mod windows_fin04w2_wfp;
 #[cfg(all(windows,debug_assertions,feature="fin04w2-split-native"))]
 mod windows_fin04w2_scm_pair;
 #[cfg(all(windows,debug_assertions,feature="fin04w2-split-native"))]
+mod windows_fin04w2_target_ipc;
+#[cfg(all(windows,debug_assertions,feature="fin04w2-split-native"))]
 pub mod windows_fin04w2_target_service;
 #[cfg(all(target_os = "linux", feature = "linux-worker"))]
 pub mod linux_worker;
