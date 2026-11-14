@@ -1,0 +1,1154 @@
+{
+  "schema": "lu-core01f-bridge-review-v1",
+  "sourceAttribution": "verified_git_trees_and_compare_metadata_not_native_acceptance",
+  "r00Head": "e61d4bf998bccf51074b01c864df208c233eb2f8",
+  "bridgeHead": "cc312e281b5989a0a9fb972eb04b9e34215a77da",
+  "core01eReviewedHead": "97dd1e897c4cf73a1fd8d8bf36f1233b081322c0",
+  "bridgeDistinctAncestryCommits": 257,
+  "bridgeFirstParentCommits": 253,
+  "changedPaths": 125,
+  "deletedPaths": 0,
+  "preservedExactBlobAtCore01e": 105,
+  "modifiedDownstreamAtCore01e": 20,
+  "domains": {
+    "build_provisioning_acceptance": 18,
+    "regression_or_model_witness": 20,
+    "design_or_acceptance_ledger": 19,
+    "core_desktop_integration": 21,
+    "ansf_provenance_and_memory": 9,
+    "llama_multimodal_and_model_lifecycle": 6,
+    "authorization_custody_and_effects": 9,
+    "project_plans_and_human_review": 19,
+    "desktop_presentation": 4
+  },
+  "nativeAndInstalledAccepted": false,
+  "mergeAuthorized": false,
+  "releaseAuthorized": false,
+  "files": [
+    {
+      "path": ".github/workflows/lu-browser-research-acceptance.yml",
+      "change": "modified",
+      "baseBlob": "58021b8bfbb0c0304d9af8fbd78d19d48045dc49",
+      "bridgeBlob": "4af7e5e797321f2d88dc39cdc6b0cea24c57ab95",
+      "core01eBlob": "4af7e5e797321f2d88dc39cdc6b0cea24c57ab95",
+      "bridgeIdentityAtCore01e": "EXACT",
+      "domain": "build_provisioning_acceptance"
+    },
+    {
+      "path": ".github/workflows/lu-plan07d-installed.yml",
+      "change": "added",
+      "baseBlob": null,
+      "bridgeBlob": "e6fb2ef454c50d0cd53f1fba6e565115cdc92f3b",
+      "core01eBlob": "e6fb2ef454c50d0cd53f1fba6e565115cdc92f3b",
+      "bridgeIdentityAtCore01e": "EXACT",
+      "domain": "build_provisioning_acceptance"
+    },
+    {
+      "path": ".github/workflows/lu-repo01-full-source.yml",
+      "change": "modified",
+      "baseBlob": "e9371026719c1ac9865d5f4d5eb4b831e98aaa45",
+      "bridgeBlob": "0d70ebdc7b7949a7e296b2b3d23e1b3cdb9aa548",
+      "core01eBlob": "f0e67ec8dddc99330df55e6ba892fdc1b1d6f841",
+      "bridgeIdentityAtCore01e": "LATER_CHANGED",
+      "domain": "build_provisioning_acceptance"
+    },
+    {
+      "path": "benchmarks/e1/e1_p07_llama_completion.py",
+      "change": "modified",
+      "baseBlob": "e5fbd88ef456e7e7029dbae7570bb9504863ec42",
+      "bridgeBlob": "783f5d2ac6b1e0edd72045058b541582f46fb97f",
+      "core01eBlob": "783f5d2ac6b1e0edd72045058b541582f46fb97f",
+      "bridgeIdentityAtCore01e": "EXACT",
+      "domain": "regression_or_model_witness"
+    },
+    {
+      "path": "benchmarks/e1/plan04_real_gguf_synthesis.py",
+      "change": "added",
+      "baseBlob": null,
+      "bridgeBlob": "183ec814ac9693e51995540f5e5687deee780d99",
+      "core01eBlob": "183ec814ac9693e51995540f5e5687deee780d99",
+      "bridgeIdentityAtCore01e": "EXACT",
+      "domain": "regression_or_model_witness"
+    },
+    {
+      "path": "benchmarks/e1/plan07b_real_gguf_task_updates.py",
+      "change": "added",
+      "baseBlob": null,
+      "bridgeBlob": "3f8a037c5bf321c701f98c9707062c0abd0f9c2b",
+      "core01eBlob": "3f8a037c5bf321c701f98c9707062c0abd0f9c2b",
+      "bridgeIdentityAtCore01e": "EXACT",
+      "domain": "regression_or_model_witness"
+    },
+    {
+      "path": "benchmarks/e1/test_e1_p07_llama_completion.py",
+      "change": "modified",
+      "baseBlob": "266f408d9c7fc0e9f7607f6d500c7125a0a34f9a",
+      "bridgeBlob": "7b6736823baacc6810544703331277cc02418e46",
+      "core01eBlob": "7b6736823baacc6810544703331277cc02418e46",
+      "bridgeIdentityAtCore01e": "EXACT",
+      "domain": "regression_or_model_witness"
+    },
+    {
+      "path": "benchmarks/e1/test_plan07b_real_gguf_task_updates.py",
+      "change": "added",
+      "baseBlob": null,
+      "bridgeBlob": "ba728e48e3ad9f7d33be8ff861e0e196c72e9505",
+      "core01eBlob": "ba728e48e3ad9f7d33be8ff861e0e196c72e9505",
+      "bridgeIdentityAtCore01e": "EXACT",
+      "domain": "regression_or_model_witness"
+    },
+    {
+      "path": "docs/LU_KIAF_ACTIVE_EXECUTION_LEDGER_20261108.md",
+      "change": "modified",
+      "baseBlob": "f53ff635272ea31ef8d96a69103d9d55cac15fce",
+      "bridgeBlob": "02a28646128ad3ba55d520a42e60f3ca3b72a29a",
+      "core01eBlob": "02a28646128ad3ba55d520a42e60f3ca3b72a29a",
+      "bridgeIdentityAtCore01e": "EXACT",
+      "domain": "design_or_acceptance_ledger"
+    },
+    {
+      "path": "docs/LU_P0_AUTH_UNIFIED_NATIVE_CUSTODY_RECOVERY_20261111.md",
+      "change": "added",
+      "baseBlob": null,
+      "bridgeBlob": "c8585c6ff46b9e9618514c899d199edd8c824866",
+      "core01eBlob": "c8585c6ff46b9e9618514c899d199edd8c824866",
+      "bridgeIdentityAtCore01e": "EXACT",
+      "domain": "design_or_acceptance_ledger"
+    },
+    {
+      "path": "docs/LU_P0_MEMORY_ORIGINAL_CROSS_SESSION_CONTINUITY_20261111.md",
+      "change": "added",
+      "baseBlob": null,
+      "bridgeBlob": "34a4a937eda58706b95c5a177d8c562db52123de",
+      "core01eBlob": "34a4a937eda58706b95c5a177d8c562db52123de",
+      "bridgeIdentityAtCore01e": "EXACT",
+      "domain": "design_or_acceptance_ledger"
+    },
+    {
+      "path": "docs/LU_P0_NEXT_PROJECT_AGENT_HANDOFF_20261111.md",
+      "change": "added",
+      "baseBlob": null,
+      "bridgeBlob": "a37ddd23fba1c6541fd4ddf1eee4127ce910b562",
+      "core01eBlob": "a37ddd23fba1c6541fd4ddf1eee4127ce910b562",
+      "bridgeIdentityAtCore01e": "EXACT",
+      "domain": "design_or_acceptance_ledger"
+    },
+    {
+      "path": "docs/LU_P0_SOURCE_RECONCILIATION_REPAIRS_20261111.md",
+      "change": "added",
+      "baseBlob": null,
+      "bridgeBlob": "c0dcb37bd9a3b60cc8833b8fb7015680635842a9",
+      "core01eBlob": "c0dcb37bd9a3b60cc8833b8fb7015680635842a9",
+      "bridgeIdentityAtCore01e": "EXACT",
+      "domain": "design_or_acceptance_ledger"
+    },
+    {
+      "path": "docs/LU_P0_TOOLS01_MULTI_DOCUMENT_MODEL_LOOP_20261111.md",
+      "change": "added",
+      "baseBlob": null,
+      "bridgeBlob": "c7a8e735d488e056403105161715380e4f105da5",
+      "core01eBlob": "c7a8e735d488e056403105161715380e4f105da5",
+      "bridgeIdentityAtCore01e": "EXACT",
+      "domain": "design_or_acceptance_ledger"
+    },
+    {
+      "path": "docs/LU_P0_TOOLS02_REVIEWED_FILE_EFFECTS_20261111.md",
+      "change": "added",
+      "baseBlob": null,
+      "bridgeBlob": "87abe6946c8957a516912342ce8ccf3a807cba7c",
+      "core01eBlob": "87abe6946c8957a516912342ce8ccf3a807cba7c",
+      "bridgeIdentityAtCore01e": "EXACT",
+      "domain": "design_or_acceptance_ledger"
+    },
+    {
+      "path": "docs/LU_P0_TOOLS03_ANSF_NATIVE_SOURCE_PROVENANCE_20261111.md",
+      "change": "added",
+      "baseBlob": null,
+      "bridgeBlob": "c1a1b7aadf8227f80d562eb6a56f3ef613aa3616",
+      "core01eBlob": "c1a1b7aadf8227f80d562eb6a56f3ef613aa3616",
+      "bridgeIdentityAtCore01e": "EXACT",
+      "domain": "design_or_acceptance_ledger"
+    },
+    {
+      "path": "docs/LU_P0_TOOLS04_SPECIALIST_ADAPTERS_20261111.md",
+      "change": "added",
+      "baseBlob": null,
+      "bridgeBlob": "ee9c8bddbb0c5a1151e129b274e8889ebde2a572",
+      "core01eBlob": "ee9c8bddbb0c5a1151e129b274e8889ebde2a572",
+      "bridgeIdentityAtCore01e": "EXACT",
+      "domain": "design_or_acceptance_ledger"
+    },
+    {
+      "path": "docs/LU_P0_TOOLS05_TASK_CRITERION_WITNESS_REVIEW_20261111.md",
+      "change": "added",
+      "baseBlob": null,
+      "bridgeBlob": "29dce3d7fa7e58b4b785524a22f870d76cb4bbea",
+      "core01eBlob": "29dce3d7fa7e58b4b785524a22f870d76cb4bbea",
+      "bridgeIdentityAtCore01e": "EXACT",
+      "domain": "design_or_acceptance_ledger"
+    },
+    {
+      "path": "docs/LU_PLAN01_PROJECT_DISCOVERY_20261110.md",
+      "change": "added",
+      "baseBlob": null,
+      "bridgeBlob": "34dcd4071aed805df8c285422f690dc4a61455a6",
+      "core01eBlob": "34dcd4071aed805df8c285422f690dc4a61455a6",
+      "bridgeIdentityAtCore01e": "EXACT",
+      "domain": "design_or_acceptance_ledger"
+    },
+    {
+      "path": "docs/LU_PLAN02_PROJECT_EVIDENCE_GRAPH_20261110.md",
+      "change": "added",
+      "baseBlob": null,
+      "bridgeBlob": "47bd724c436e5cb6b316bb929a69834d7103c289",
+      "core01eBlob": "47bd724c436e5cb6b316bb929a69834d7103c289",
+      "bridgeIdentityAtCore01e": "EXACT",
+      "domain": "design_or_acceptance_ledger"
+    },
+    {
+      "path": "docs/LU_PLAN03_PROJECT_STATUS_20261110.md",
+      "change": "added",
+      "baseBlob": null,
+      "bridgeBlob": "fb25baefc11bba37e77db822bf9694ba59e3d7d0",
+      "core01eBlob": "fb25baefc11bba37e77db822bf9694ba59e3d7d0",
+      "bridgeIdentityAtCore01e": "EXACT",
+      "domain": "design_or_acceptance_ledger"
+    },
+    {
+      "path": "docs/LU_PLAN04_GENUINE_GGUF_TASK_SYNTHESIS_20261110.md",
+      "change": "added",
+      "baseBlob": null,
+      "bridgeBlob": "c793f45fb7dea8492b883cec84d750d25cd22321",
+      "core01eBlob": "c793f45fb7dea8492b883cec84d750d25cd22321",
+      "bridgeIdentityAtCore01e": "EXACT",
+      "domain": "design_or_acceptance_ledger"
+    },
+    {
+      "path": "docs/LU_PLAN05_DURABLE_TASK_REGISTER_20261110.md",
+      "change": "added",
+      "baseBlob": null,
+      "bridgeBlob": "de26c5d1f35a83830ba34278738fc2fed7143ab5",
+      "core01eBlob": "de26c5d1f35a83830ba34278738fc2fed7143ab5",
+      "bridgeIdentityAtCore01e": "EXACT",
+      "domain": "design_or_acceptance_ledger"
+    },
+    {
+      "path": "docs/LU_PLAN06_NATIVE_TASK_LIST_20261110.md",
+      "change": "added",
+      "baseBlob": null,
+      "bridgeBlob": "85f1d8dc57ec56efbaf110a721f48340b523c730",
+      "core01eBlob": "85f1d8dc57ec56efbaf110a721f48340b523c730",
+      "bridgeIdentityAtCore01e": "EXACT",
+      "domain": "design_or_acceptance_ledger"
+    },
+    {
+      "path": "docs/LU_PLAN07D_INSTALLED_ACCEPTANCE_20261111.md",
+      "change": "added",
+      "baseBlob": null,
+      "bridgeBlob": "d8d1e51d9afd7eae5a5b8362bfa081e7ed4c0c2f",
+      "core01eBlob": "d8d1e51d9afd7eae5a5b8362bfa081e7ed4c0c2f",
+      "bridgeIdentityAtCore01e": "EXACT",
+      "domain": "design_or_acceptance_ledger"
+    },
+    {
+      "path": "docs/LU_PLAN07_EVIDENCE_DRIVEN_TASK_UPDATES_20261110.md",
+      "change": "added",
+      "baseBlob": null,
+      "bridgeBlob": "e5c77449642a24d192e3ed1401fd0891b9da0fbd",
+      "core01eBlob": "e5c77449642a24d192e3ed1401fd0891b9da0fbd",
+      "bridgeIdentityAtCore01e": "EXACT",
+      "domain": "design_or_acceptance_ledger"
+    },
+    {
+      "path": "docs/P0_QWEN38_RADEON_PHYSICAL_ACCEPTANCE.md",
+      "change": "added",
+      "baseBlob": null,
+      "bridgeBlob": "900c38577c14e0041a3192dc2f1d5a108f7d7c71",
+      "core01eBlob": "900c38577c14e0041a3192dc2f1d5a108f7d7c71",
+      "bridgeIdentityAtCore01e": "EXACT",
+      "domain": "design_or_acceptance_ledger"
+    },
+    {
+      "path": "lu-desktop/packaging/NSIS_CURRENT_DEV_PREVIEW.nsi",
+      "change": "modified",
+      "baseBlob": "3badbc63dfb947d4b31370d461e7274713753e5b",
+      "bridgeBlob": "c041d632cb44564b36ec4bcc22118bc37209e6c8",
+      "core01eBlob": "c041d632cb44564b36ec4bcc22118bc37209e6c8",
+      "bridgeIdentityAtCore01e": "EXACT",
+      "domain": "build_provisioning_acceptance"
+    },
+    {
+      "path": "lu-desktop/scripts/check-ui.mjs",
+      "change": "modified",
+      "baseBlob": "b92bf9fa1249726c8e41200b8123bb84c03a1d6f",
+      "bridgeBlob": "135e6dc94c0348b40b3a6f2817dcb5452a8aef58",
+      "core01eBlob": "135e6dc94c0348b40b3a6f2817dcb5452a8aef58",
+      "bridgeIdentityAtCore01e": "EXACT",
+      "domain": "core_desktop_integration"
+    },
+    {
+      "path": "lu-desktop/src-tauri/capabilities/default.json",
+      "change": "modified",
+      "baseBlob": "625e4f6e822111009e74b45e2b85ea0314f0804a",
+      "bridgeBlob": "cbbb98bce1289e7acc1c75606fc55d999558cc02",
+      "core01eBlob": "cbbb98bce1289e7acc1c75606fc55d999558cc02",
+      "bridgeIdentityAtCore01e": "EXACT",
+      "domain": "core_desktop_integration"
+    },
+    {
+      "path": "lu-desktop/src-tauri/src/ansf_chat_store.rs",
+      "change": "modified",
+      "baseBlob": "5ac79bc40dc0951c02b6fd027601408aa0c7a8ed",
+      "bridgeBlob": "b9e2cdc92370f1f5a9dbdbebbdb97dc9fbe5960d",
+      "core01eBlob": "7287b80ad4207dd617adacbfd80ad48da69c21f0",
+      "bridgeIdentityAtCore01e": "LATER_CHANGED",
+      "domain": "ansf_provenance_and_memory"
+    },
+    {
+      "path": "lu-desktop/src-tauri/src/ansf_source_evidence.rs",
+      "change": "added",
+      "baseBlob": null,
+      "bridgeBlob": "75b99d623d1691560ea87d6b5968f3be1102418c",
+      "core01eBlob": "75b99d623d1691560ea87d6b5968f3be1102418c",
+      "bridgeIdentityAtCore01e": "EXACT",
+      "domain": "ansf_provenance_and_memory"
+    },
+    {
+      "path": "lu-desktop/src-tauri/src/browser_model_desktop.rs",
+      "change": "modified",
+      "baseBlob": "12b6a9a0cea452387074685f9de5cf0ca3bf7c39",
+      "bridgeBlob": "543938e5818a85b8d33d942724de6dde25b553bf",
+      "core01eBlob": "3acd71830a4c2f9d983a0da0b1dcac658818b094",
+      "bridgeIdentityAtCore01e": "LATER_CHANGED",
+      "domain": "llama_multimodal_and_model_lifecycle"
+    },
+    {
+      "path": "lu-desktop/src-tauri/src/engine_memory.rs",
+      "change": "added",
+      "baseBlob": null,
+      "bridgeBlob": "200e872aeef4ab24daf11a7c9a129cc592da1804",
+      "core01eBlob": "200e872aeef4ab24daf11a7c9a129cc592da1804",
+      "bridgeIdentityAtCore01e": "EXACT",
+      "domain": "ansf_provenance_and_memory"
+    },
+    {
+      "path": "lu-desktop/src-tauri/src/generation_queue.rs",
+      "change": "modified",
+      "baseBlob": "525d4316c9b1aa98f21ce5d3ef1c92cf001e5269",
+      "bridgeBlob": "5e705d03e8e31f7e6fb99c2a4bf99d5f28393601",
+      "core01eBlob": "863229b380fc08f71f97714da85bdca03ff7bc23",
+      "bridgeIdentityAtCore01e": "LATER_CHANGED",
+      "domain": "core_desktop_integration"
+    },
+    {
+      "path": "lu-desktop/src-tauri/src/host_clock.rs",
+      "change": "added",
+      "baseBlob": null,
+      "bridgeBlob": "6261f273080c7c8aeb90352f2b40c7f0a6657fef",
+      "core01eBlob": "b3ca2ed9d301b1cd5f6d830ac5b291ff6a5d5184",
+      "bridgeIdentityAtCore01e": "LATER_CHANGED",
+      "domain": "core_desktop_integration"
+    },
+    {
+      "path": "lu-desktop/src-tauri/src/lib.rs",
+      "change": "modified",
+      "baseBlob": "0a1243279c087b15e6be5c7bce758ab6c09e7d9f",
+      "bridgeBlob": "3f899999be2568680a6e195d67cc0261ae83cd0f",
+      "core01eBlob": "c5e134dcb76420cf6742616c4348ba4124f29970",
+      "bridgeIdentityAtCore01e": "LATER_CHANGED",
+      "domain": "core_desktop_integration"
+    },
+    {
+      "path": "lu-desktop/src-tauri/src/model_file_effect_handoff.rs",
+      "change": "added",
+      "baseBlob": null,
+      "bridgeBlob": "bc119c6dc04c1cf3a66cb7edf36561658a750e4d",
+      "core01eBlob": "bc119c6dc04c1cf3a66cb7edf36561658a750e4d",
+      "bridgeIdentityAtCore01e": "EXACT",
+      "domain": "authorization_custody_and_effects"
+    },
+    {
+      "path": "lu-desktop/src-tauri/src/model_transfer_desktop.rs",
+      "change": "added",
+      "baseBlob": null,
+      "bridgeBlob": "b8eecf745d633b3329871c66ccb51a6e6339472e",
+      "core01eBlob": "b8eecf745d633b3329871c66ccb51a6e6339472e",
+      "bridgeIdentityAtCore01e": "EXACT",
+      "domain": "ansf_provenance_and_memory"
+    },
+    {
+      "path": "lu-desktop/src-tauri/src/native_action_proposal.rs",
+      "change": "modified",
+      "baseBlob": "ef5241161a8328ab980fb7c010e094f7ecb83c2b",
+      "bridgeBlob": "9c5e8f28bbea6a037674bf6f40b969be6ec9332b",
+      "core01eBlob": "9fa10f7edc264cd7700db8a802167c771e05ffcc",
+      "bridgeIdentityAtCore01e": "LATER_CHANGED",
+      "domain": "authorization_custody_and_effects"
+    },
+    {
+      "path": "lu-desktop/src-tauri/src/observe_desktop.rs",
+      "change": "modified",
+      "baseBlob": "d3eed53d1651a976c9abea643023f99c0f29d8a5",
+      "bridgeBlob": "d04cdef875ebea730690042c3c061f3fd831c7f3",
+      "core01eBlob": "d04cdef875ebea730690042c3c061f3fd831c7f3",
+      "bridgeIdentityAtCore01e": "EXACT",
+      "domain": "core_desktop_integration"
+    },
+    {
+      "path": "lu-desktop/src-tauri/src/p0_auth_custody.rs",
+      "change": "added",
+      "baseBlob": null,
+      "bridgeBlob": "5fd403b82f825d1b78b7a32d94ce2b34caac0178",
+      "core01eBlob": "348ad9e9ee0cf5dd1cca8bc9988e0cfcfea7e3bd",
+      "bridgeIdentityAtCore01e": "LATER_CHANGED",
+      "domain": "authorization_custody_and_effects"
+    },
+    {
+      "path": "lu-desktop/src-tauri/src/p0_auth_desktop.rs",
+      "change": "added",
+      "baseBlob": null,
+      "bridgeBlob": "c1a7e8ed4af7ee0604334ca8bd1ff424c57608ba",
+      "core01eBlob": "c33234cef2359a8c64f4eda4c78f035fabb20d1f",
+      "bridgeIdentityAtCore01e": "LATER_CHANGED",
+      "domain": "authorization_custody_and_effects"
+    },
+    {
+      "path": "lu-desktop/src-tauri/src/p0_memory_continuity.rs",
+      "change": "added",
+      "baseBlob": null,
+      "bridgeBlob": "87dfa416e11a1b047a5c0db8cc8ea093cc044197",
+      "core01eBlob": "87dfa416e11a1b047a5c0db8cc8ea093cc044197",
+      "bridgeIdentityAtCore01e": "EXACT",
+      "domain": "ansf_provenance_and_memory"
+    },
+    {
+      "path": "lu-desktop/src-tauri/src/project_discovery_desktop.rs",
+      "change": "added",
+      "baseBlob": null,
+      "bridgeBlob": "c7ff06505a2f6470d1b290b3e16570ea7035b4b1",
+      "core01eBlob": "c7ff06505a2f6470d1b290b3e16570ea7035b4b1",
+      "bridgeIdentityAtCore01e": "EXACT",
+      "domain": "project_plans_and_human_review"
+    },
+    {
+      "path": "lu-desktop/src-tauri/src/project_evidence_desktop.rs",
+      "change": "added",
+      "baseBlob": null,
+      "bridgeBlob": "2bdcf92526541aecdd01f34811f1dd22076db2fa",
+      "core01eBlob": "2bdcf92526541aecdd01f34811f1dd22076db2fa",
+      "bridgeIdentityAtCore01e": "EXACT",
+      "domain": "project_plans_and_human_review"
+    },
+    {
+      "path": "lu-desktop/src-tauri/src/project_register_desktop.rs",
+      "change": "added",
+      "baseBlob": null,
+      "bridgeBlob": "0e87d969e357b1e36b106830a480bed8a008a752",
+      "core01eBlob": "0e87d969e357b1e36b106830a480bed8a008a752",
+      "bridgeIdentityAtCore01e": "EXACT",
+      "domain": "project_plans_and_human_review"
+    },
+    {
+      "path": "lu-desktop/src-tauri/src/project_review_decisions_desktop.rs",
+      "change": "added",
+      "baseBlob": null,
+      "bridgeBlob": "32dc5ff74181fd733ef90cb8d5590198fadabae2",
+      "core01eBlob": "b284f6bd410102d504058d4a4676b0565266d159",
+      "bridgeIdentityAtCore01e": "LATER_CHANGED",
+      "domain": "project_plans_and_human_review"
+    },
+    {
+      "path": "lu-desktop/src-tauri/src/project_status_desktop.rs",
+      "change": "added",
+      "baseBlob": null,
+      "bridgeBlob": "100bc21aa5c2c9ff3ab03d662387f1b2846b5be4",
+      "core01eBlob": "100bc21aa5c2c9ff3ab03d662387f1b2846b5be4",
+      "bridgeIdentityAtCore01e": "EXACT",
+      "domain": "project_plans_and_human_review"
+    },
+    {
+      "path": "lu-desktop/src-tauri/src/project_task_agent_handoff.rs",
+      "change": "added",
+      "baseBlob": null,
+      "bridgeBlob": "e2483d324d492f8d2ac2e7ee7098f7f0a14cdad7",
+      "core01eBlob": "e2483d324d492f8d2ac2e7ee7098f7f0a14cdad7",
+      "bridgeIdentityAtCore01e": "EXACT",
+      "domain": "project_plans_and_human_review"
+    },
+    {
+      "path": "lu-desktop/src-tauri/src/project_task_board_desktop.rs",
+      "change": "added",
+      "baseBlob": null,
+      "bridgeBlob": "d403fb19a00b847ebf9d34f11c1c867f91234f87",
+      "core01eBlob": "d403fb19a00b847ebf9d34f11c1c867f91234f87",
+      "bridgeIdentityAtCore01e": "EXACT",
+      "domain": "project_plans_and_human_review"
+    },
+    {
+      "path": "lu-desktop/src-tauri/src/project_task_desktop.rs",
+      "change": "added",
+      "baseBlob": null,
+      "bridgeBlob": "c68c0cc40d668ddc132b54c23ebc6f500f372670",
+      "core01eBlob": "c68c0cc40d668ddc132b54c23ebc6f500f372670",
+      "bridgeIdentityAtCore01e": "EXACT",
+      "domain": "project_plans_and_human_review"
+    },
+    {
+      "path": "lu-desktop/src-tauri/src/project_task_verified_evidence.rs",
+      "change": "added",
+      "baseBlob": null,
+      "bridgeBlob": "241bd95ae3ec65d1c708ef56aeb31476045790ba",
+      "core01eBlob": "241bd95ae3ec65d1c708ef56aeb31476045790ba",
+      "bridgeIdentityAtCore01e": "EXACT",
+      "domain": "project_plans_and_human_review"
+    },
+    {
+      "path": "lu-desktop/src-tauri/src/project_update_model_desktop.rs",
+      "change": "added",
+      "baseBlob": null,
+      "bridgeBlob": "86de8d1223bf3fc0004f9736964319aec9d039bb",
+      "core01eBlob": "86de8d1223bf3fc0004f9736964319aec9d039bb",
+      "bridgeIdentityAtCore01e": "EXACT",
+      "domain": "project_plans_and_human_review"
+    },
+    {
+      "path": "lu-desktop/src-tauri/src/project_updates_desktop.rs",
+      "change": "added",
+      "baseBlob": null,
+      "bridgeBlob": "a48ab0dbabd06bb74b75c004371c25b1954847ea",
+      "core01eBlob": "a48ab0dbabd06bb74b75c004371c25b1954847ea",
+      "bridgeIdentityAtCore01e": "EXACT",
+      "domain": "project_plans_and_human_review"
+    },
+    {
+      "path": "lu-desktop/src-tauri/src/prompt_context.rs",
+      "change": "modified",
+      "baseBlob": "2ebb92a17aab24ef9e9ed00b142fec96d7b0c9ad",
+      "bridgeBlob": "1cb51235b064a890c78892fec20fce4dd819a380",
+      "core01eBlob": "1cb51235b064a890c78892fec20fce4dd819a380",
+      "bridgeIdentityAtCore01e": "EXACT",
+      "domain": "core_desktop_integration"
+    },
+    {
+      "path": "lu-desktop/src-tauri/src/reader_desktop.rs",
+      "change": "modified",
+      "baseBlob": "735ca67cc4df06d87b3b677fcc09e60c3b2f666e",
+      "bridgeBlob": "691cd88e86f2d79af84d1df394d11fc64f0b4bcf",
+      "core01eBlob": "691cd88e86f2d79af84d1df394d11fc64f0b4bcf",
+      "bridgeIdentityAtCore01e": "EXACT",
+      "domain": "ansf_provenance_and_memory"
+    },
+    {
+      "path": "lu-desktop/src-tauri/src/research_desktop.rs",
+      "change": "modified",
+      "baseBlob": "11fc438c0e54260d62f187fc988c24bb00f366bb",
+      "bridgeBlob": "4438e1ffacdfecb843486975ff13493790a0e95f",
+      "core01eBlob": "4438e1ffacdfecb843486975ff13493790a0e95f",
+      "bridgeIdentityAtCore01e": "EXACT",
+      "domain": "core_desktop_integration"
+    },
+    {
+      "path": "lu-desktop/src-tauri/src/reviewed_app_desktop.rs",
+      "change": "modified",
+      "baseBlob": "321d20b54d055a998e3622509d02108dc24c6684",
+      "bridgeBlob": "0cbb56bbe23714c5426ac322c94641c40ddec984",
+      "core01eBlob": "d5ad6c94bc16dd2dd4f844a7c1c40c35b95b7d5e",
+      "bridgeIdentityAtCore01e": "LATER_CHANGED",
+      "domain": "authorization_custody_and_effects"
+    },
+    {
+      "path": "lu-desktop/src-tauri/src/vision_context.rs",
+      "change": "modified",
+      "baseBlob": "9defd55bc0bb7162812bbcec708a309c623d2fee",
+      "bridgeBlob": "2e508998a6a3502bb16d5ee8547f3bd57ae649f1",
+      "core01eBlob": "2e508998a6a3502bb16d5ee8547f3bd57ae649f1",
+      "bridgeIdentityAtCore01e": "EXACT",
+      "domain": "llama_multimodal_and_model_lifecycle"
+    },
+    {
+      "path": "lu-desktop/src-tauri/src/workspace_desktop.rs",
+      "change": "modified",
+      "baseBlob": "a64cd09ccd8da543495d3d93c5094b81beee5aa6",
+      "bridgeBlob": "39ea2106a4a07b0ce5401ce89375379283dbc4e4",
+      "core01eBlob": "aa2d18f3863566406f5718c48842a09ee6e62bae",
+      "bridgeIdentityAtCore01e": "LATER_CHANGED",
+      "domain": "core_desktop_integration"
+    },
+    {
+      "path": "lu-desktop/tests/browser-model-read.test.mjs",
+      "change": "modified",
+      "baseBlob": "cf34cc64b6bc38ce90ba60809c9e2726567161a2",
+      "bridgeBlob": "cea473bd6f72057509b681cdb54a41c52f66e14c",
+      "core01eBlob": "cea473bd6f72057509b681cdb54a41c52f66e14c",
+      "bridgeIdentityAtCore01e": "EXACT",
+      "domain": "regression_or_model_witness"
+    },
+    {
+      "path": "lu-desktop/tests/browser-native-authorization.test.mjs",
+      "change": "modified",
+      "baseBlob": "c60f247494ca6a6da8296f476a13f606873ba8f6",
+      "bridgeBlob": "6871bac3b9468a870c0156e05ce669b56266c98e",
+      "core01eBlob": "6871bac3b9468a870c0156e05ce669b56266c98e",
+      "bridgeIdentityAtCore01e": "EXACT",
+      "domain": "regression_or_model_witness"
+    },
+    {
+      "path": "lu-desktop/tests/p0-browser-bundle.test.mjs",
+      "change": "added",
+      "baseBlob": null,
+      "bridgeBlob": "4cc4480724918fa804a391fe73ab4d1700702309",
+      "core01eBlob": "4cc4480724918fa804a391fe73ab4d1700702309",
+      "bridgeIdentityAtCore01e": "EXACT",
+      "domain": "regression_or_model_witness"
+    },
+    {
+      "path": "lu-desktop/tests/p0-browser-real-ci-gate.test.mjs",
+      "change": "added",
+      "baseBlob": null,
+      "bridgeBlob": "a59a6f69d96816f572124bf5840c1058a3b6805f",
+      "core01eBlob": "a59a6f69d96816f572124bf5840c1058a3b6805f",
+      "bridgeIdentityAtCore01e": "EXACT",
+      "domain": "regression_or_model_witness"
+    },
+    {
+      "path": "lu-desktop/tests/p0-hf-transfer-transaction.test.mjs",
+      "change": "added",
+      "baseBlob": null,
+      "bridgeBlob": "a3b644215827d8c1d72812b4567e2e66f724ed8a",
+      "core01eBlob": "a3b644215827d8c1d72812b4567e2e66f724ed8a",
+      "bridgeIdentityAtCore01e": "EXACT",
+      "domain": "regression_or_model_witness"
+    },
+    {
+      "path": "lu-desktop/tests/p0-installed-gui-smoke.test.mjs",
+      "change": "added",
+      "baseBlob": null,
+      "bridgeBlob": "8618fb25b0382b1390955d33460b884bcb2f5f2e",
+      "core01eBlob": "8618fb25b0382b1390955d33460b884bcb2f5f2e",
+      "bridgeIdentityAtCore01e": "EXACT",
+      "domain": "regression_or_model_witness"
+    },
+    {
+      "path": "lu-desktop/tests/p0-memory-telemetry.test.mjs",
+      "change": "added",
+      "baseBlob": null,
+      "bridgeBlob": "6f81cb5cf27d35b0f26655bd690c57563d26a3ae",
+      "core01eBlob": "6f81cb5cf27d35b0f26655bd690c57563d26a3ae",
+      "bridgeIdentityAtCore01e": "EXACT",
+      "domain": "regression_or_model_witness"
+    },
+    {
+      "path": "lu-desktop/tests/p0-native-intent.test.mjs",
+      "change": "added",
+      "baseBlob": null,
+      "bridgeBlob": "de3e49a11441103ab17161f331c1e94425f2f2a0",
+      "core01eBlob": "5e7e79ab0c0006cc5259218dd3c486c9e5f7991d",
+      "bridgeIdentityAtCore01e": "LATER_CHANGED",
+      "domain": "regression_or_model_witness"
+    },
+    {
+      "path": "lu-desktop/tests/p0-native-window-separation.test.mjs",
+      "change": "added",
+      "baseBlob": null,
+      "bridgeBlob": "200503a22677351eea84c27d87f97d2c6882664f",
+      "core01eBlob": "200503a22677351eea84c27d87f97d2c6882664f",
+      "bridgeIdentityAtCore01e": "EXACT",
+      "domain": "regression_or_model_witness"
+    },
+    {
+      "path": "lu-desktop/tests/p0-physical-ux-contract.test.mjs",
+      "change": "added",
+      "baseBlob": null,
+      "bridgeBlob": "9d50c027947e510e4cbd68158f3710beb400b527",
+      "core01eBlob": "eaa01cb0e3c3a8d30457ad2e1f78aaf9f248ade9",
+      "bridgeIdentityAtCore01e": "LATER_CHANGED",
+      "domain": "regression_or_model_witness"
+    },
+    {
+      "path": "lu-desktop/tests/p0-qwen38-radeon-handoff.test.mjs",
+      "change": "added",
+      "baseBlob": null,
+      "bridgeBlob": "c198045e72d793c6b19a77a010ba5e5a9fa367e3",
+      "core01eBlob": "c198045e72d793c6b19a77a010ba5e5a9fa367e3",
+      "bridgeIdentityAtCore01e": "EXACT",
+      "domain": "regression_or_model_witness"
+    },
+    {
+      "path": "lu-desktop/tests/p0-research-provider-bundle.test.mjs",
+      "change": "added",
+      "baseBlob": null,
+      "bridgeBlob": "6af44cabe7a2f0eef35cd8d5b47299963ae149bd",
+      "core01eBlob": "6af44cabe7a2f0eef35cd8d5b47299963ae149bd",
+      "bridgeIdentityAtCore01e": "EXACT",
+      "domain": "regression_or_model_witness"
+    },
+    {
+      "path": "lu-desktop/tests/preview-dual-backend.test.mjs",
+      "change": "modified",
+      "baseBlob": "ae52d7406c85dd91dd6c297b9ae629e6331c5b86",
+      "bridgeBlob": "e495c5fc16b0d9c6026855f401579690849a56d3",
+      "core01eBlob": "e495c5fc16b0d9c6026855f401579690849a56d3",
+      "bridgeIdentityAtCore01e": "EXACT",
+      "domain": "regression_or_model_witness"
+    },
+    {
+      "path": "lu-desktop/tests/task-board.test.mjs",
+      "change": "added",
+      "baseBlob": null,
+      "bridgeBlob": "7097b98da26145221ca4c2b136fcec87ada498d1",
+      "core01eBlob": "7097b98da26145221ca4c2b136fcec87ada498d1",
+      "bridgeIdentityAtCore01e": "EXACT",
+      "domain": "regression_or_model_witness"
+    },
+    {
+      "path": "lu-desktop/tests/workspace-desktop.test.mjs",
+      "change": "modified",
+      "baseBlob": "0526e575c31e33a93fe147595659177971e87a4b",
+      "bridgeBlob": "07ade0dbfd983138927dccca78e64eeddc1020d2",
+      "core01eBlob": "07ade0dbfd983138927dccca78e64eeddc1020d2",
+      "bridgeIdentityAtCore01e": "EXACT",
+      "domain": "regression_or_model_witness"
+    },
+    {
+      "path": "lu-desktop/web/main.jsx",
+      "change": "modified",
+      "baseBlob": "1a7666a4bd0755f3cf1c8e6c9f4115fcd046a8a8",
+      "bridgeBlob": "fbdbbd65e879a632ea90a23719afe4d2cfb12291",
+      "core01eBlob": "f22dea47d59c9e5d32f5b027825a22d9836e1ca2",
+      "bridgeIdentityAtCore01e": "LATER_CHANGED",
+      "domain": "desktop_presentation"
+    },
+    {
+      "path": "lu-desktop/web/native_intent.mjs",
+      "change": "added",
+      "baseBlob": null,
+      "bridgeBlob": "aa33fa16d006ce808c7f93b36e8fe9cf2af4f52d",
+      "core01eBlob": "daab0d2040c8cd508c78cafd5aceb98ca3b6fa5e",
+      "bridgeIdentityAtCore01e": "LATER_CHANGED",
+      "domain": "desktop_presentation"
+    },
+    {
+      "path": "lu-desktop/web/native_windows.jsx",
+      "change": "added",
+      "baseBlob": null,
+      "bridgeBlob": "60b5fe360c05f0ff51f721f3329813d48c3f1d5b",
+      "core01eBlob": "60b5fe360c05f0ff51f721f3329813d48c3f1d5b",
+      "bridgeIdentityAtCore01e": "EXACT",
+      "domain": "desktop_presentation"
+    },
+    {
+      "path": "lu-desktop/web/styles.css",
+      "change": "modified",
+      "baseBlob": "f5624e1b3681f493c1ec4db984db1f749e0425bf",
+      "bridgeBlob": "3a28ae9743a528e89cb708d25fbd57f486a1d987",
+      "core01eBlob": "3a28ae9743a528e89cb708d25fbd57f486a1d987",
+      "bridgeIdentityAtCore01e": "EXACT",
+      "domain": "desktop_presentation"
+    },
+    {
+      "path": "lu-desktop/web/task_board.jsx",
+      "change": "added",
+      "baseBlob": null,
+      "bridgeBlob": "bd5d8cb29453af00ec1e743de94cca388d35960f",
+      "core01eBlob": "bd5d8cb29453af00ec1e743de94cca388d35960f",
+      "bridgeIdentityAtCore01e": "EXACT",
+      "domain": "project_plans_and_human_review"
+    },
+    {
+      "path": "lu-desktop/web/task_board_model.mjs",
+      "change": "added",
+      "baseBlob": null,
+      "bridgeBlob": "55585d88f7a69602b223af99946bd361797b1e26",
+      "core01eBlob": "55585d88f7a69602b223af99946bd361797b1e26",
+      "bridgeIdentityAtCore01e": "EXACT",
+      "domain": "project_plans_and_human_review"
+    },
+    {
+      "path": "scripts/build-current-windows-nsis.ps1",
+      "change": "modified",
+      "baseBlob": "f43f3cb40853b8b702ee8854d886086a81649938",
+      "bridgeBlob": "3d2b5b2420d958e4a629664b1268c9b31e60af1d",
+      "core01eBlob": "3d2b5b2420d958e4a629664b1268c9b31e60af1d",
+      "bridgeIdentityAtCore01e": "EXACT",
+      "domain": "build_provisioning_acceptance"
+    },
+    {
+      "path": "scripts/m3-windows-nsis-cycle.ps1",
+      "change": "modified",
+      "baseBlob": "e3fca8ec177c5b6cd3bbc2dd004e8bf22033f79b",
+      "bridgeBlob": "9bede8de776a22430351b48535e7056caa943019",
+      "core01eBlob": "9bede8de776a22430351b48535e7056caa943019",
+      "bridgeIdentityAtCore01e": "EXACT",
+      "domain": "build_provisioning_acceptance"
+    },
+    {
+      "path": "scripts/p0-qwen38-radeon-physical.ps1",
+      "change": "added",
+      "baseBlob": null,
+      "bridgeBlob": "6d33e3546b0611efa64555ff4039ad4a2268143b",
+      "core01eBlob": "6d33e3546b0611efa64555ff4039ad4a2268143b",
+      "bridgeIdentityAtCore01e": "EXACT",
+      "domain": "build_provisioning_acceptance"
+    },
+    {
+      "path": "scripts/p0-windows-installed-gui-smoke.ps1",
+      "change": "added",
+      "baseBlob": null,
+      "bridgeBlob": "2cab5dcf6658f36a97ec7c39a61f8108b550568e",
+      "core01eBlob": "2cab5dcf6658f36a97ec7c39a61f8108b550568e",
+      "bridgeIdentityAtCore01e": "EXACT",
+      "domain": "build_provisioning_acceptance"
+    },
+    {
+      "path": "scripts/plan05-readonly-ansf-witness.py",
+      "change": "added",
+      "baseBlob": null,
+      "bridgeBlob": "2fc419500a634da31af3f301ab750b6ebdf9a8c0",
+      "core01eBlob": "2fc419500a634da31af3f301ab750b6ebdf9a8c0",
+      "bridgeIdentityAtCore01e": "EXACT",
+      "domain": "build_provisioning_acceptance"
+    },
+    {
+      "path": "scripts/plan05-windows-installed-acceptance.ps1",
+      "change": "added",
+      "baseBlob": null,
+      "bridgeBlob": "eae89c1b0cd73cddb4eb4316b6c09237c0bdf595",
+      "core01eBlob": "eae89c1b0cd73cddb4eb4316b6c09237c0bdf595",
+      "bridgeIdentityAtCore01e": "EXACT",
+      "domain": "build_provisioning_acceptance"
+    },
+    {
+      "path": "scripts/plan06-readonly-ansf-witness.py",
+      "change": "added",
+      "baseBlob": null,
+      "bridgeBlob": "4c1bd6301b55ddaeec5b1ae2b1cddd6ef624493a",
+      "core01eBlob": "4c1bd6301b55ddaeec5b1ae2b1cddd6ef624493a",
+      "bridgeIdentityAtCore01e": "EXACT",
+      "domain": "build_provisioning_acceptance"
+    },
+    {
+      "path": "scripts/plan06-windows-installed-acceptance.ps1",
+      "change": "added",
+      "baseBlob": null,
+      "bridgeBlob": "f328b1fb1dd6efea339cf1e4704d544bb03807f4",
+      "core01eBlob": "f328b1fb1dd6efea339cf1e4704d544bb03807f4",
+      "bridgeIdentityAtCore01e": "EXACT",
+      "domain": "build_provisioning_acceptance"
+    },
+    {
+      "path": "scripts/plan07b-independent-original-ansf-oracle.py",
+      "change": "added",
+      "baseBlob": null,
+      "bridgeBlob": "1c7a1e3466bfb87214838cf21ec1ae79caa1f167",
+      "core01eBlob": "1c7a1e3466bfb87214838cf21ec1ae79caa1f167",
+      "bridgeIdentityAtCore01e": "EXACT",
+      "domain": "build_provisioning_acceptance"
+    },
+    {
+      "path": "scripts/plan07b-real-gguf-acceptance.sh",
+      "change": "added",
+      "baseBlob": null,
+      "bridgeBlob": "1e4ebbc38b12145135aee8f3613bdda1a37e3137",
+      "core01eBlob": "1e4ebbc38b12145135aee8f3613bdda1a37e3137",
+      "bridgeIdentityAtCore01e": "EXACT",
+      "domain": "build_provisioning_acceptance"
+    },
+    {
+      "path": "scripts/plan07d-debian-installed-human.py",
+      "change": "added",
+      "baseBlob": null,
+      "bridgeBlob": "585a8b4c18fee640a4f9dc4cab3a4a9e8530c838",
+      "core01eBlob": "585a8b4c18fee640a4f9dc4cab3a4a9e8530c838",
+      "bridgeIdentityAtCore01e": "EXACT",
+      "domain": "build_provisioning_acceptance"
+    },
+    {
+      "path": "scripts/plan07d-debian-installed-smoke.py",
+      "change": "added",
+      "baseBlob": null,
+      "bridgeBlob": "c65fd618ab5541d15483b20c453fc2e1bbafda00",
+      "core01eBlob": "c65fd618ab5541d15483b20c453fc2e1bbafda00",
+      "bridgeIdentityAtCore01e": "EXACT",
+      "domain": "build_provisioning_acceptance"
+    },
+    {
+      "path": "scripts/plan07d-readonly-ansf-witness.py",
+      "change": "added",
+      "baseBlob": null,
+      "bridgeBlob": "38963b03c9e721e8d0366bfbaac42eb6408fd5de",
+      "core01eBlob": "38963b03c9e721e8d0366bfbaac42eb6408fd5de",
+      "bridgeIdentityAtCore01e": "EXACT",
+      "domain": "build_provisioning_acceptance"
+    },
+    {
+      "path": "scripts/plan07d-windows-installed-acceptance.ps1",
+      "change": "added",
+      "baseBlob": null,
+      "bridgeBlob": "89737d1ba0ecf130e63ae26dd5e4d8e15b4951a1",
+      "core01eBlob": "89737d1ba0ecf130e63ae26dd5e4d8e15b4951a1",
+      "bridgeIdentityAtCore01e": "EXACT",
+      "domain": "build_provisioning_acceptance"
+    },
+    {
+      "path": "source-tree.lock.json",
+      "change": "modified",
+      "baseBlob": "b8f928ad0e27f26fd14d8f119fdf3e7698173ca0",
+      "bridgeBlob": "236da8250689fb5d17cfcf57b52dd5c0c31b0fbe",
+      "core01eBlob": "f47189ed8e96c5b70b3c3d94f8a9ffd7e63f3960",
+      "bridgeIdentityAtCore01e": "LATER_CHANGED",
+      "domain": "core_desktop_integration"
+    },
+    {
+      "path": "src-tauri/lu-core/src/agent_recovery_decision.rs",
+      "change": "modified",
+      "baseBlob": "38b85ca8f05cf95d3830f046f0cc01ad4db10355",
+      "bridgeBlob": "7e82aef53dbe8f5560fdb5dc765248183858dacc",
+      "core01eBlob": "7e82aef53dbe8f5560fdb5dc765248183858dacc",
+      "bridgeIdentityAtCore01e": "EXACT",
+      "domain": "core_desktop_integration"
+    },
+    {
+      "path": "src-tauri/lu-core/src/ai_operations.rs",
+      "change": "modified",
+      "baseBlob": "7115785b3caa187babdce579bed7ef00affc0a61",
+      "bridgeBlob": "59657714758f8188ef986fdb9c9377f45e33849a",
+      "core01eBlob": "59657714758f8188ef986fdb9c9377f45e33849a",
+      "bridgeIdentityAtCore01e": "EXACT",
+      "domain": "core_desktop_integration"
+    },
+    {
+      "path": "src-tauri/lu-core/src/ansf_belief_revision.rs",
+      "change": "modified",
+      "baseBlob": "46f652dc9bd7f2b20f4aac2510a07d7c191bb37d",
+      "bridgeBlob": "395d1fcd1ba9b935b33170308947c648911bf34e",
+      "core01eBlob": "395d1fcd1ba9b935b33170308947c648911bf34e",
+      "bridgeIdentityAtCore01e": "EXACT",
+      "domain": "ansf_provenance_and_memory"
+    },
+    {
+      "path": "src-tauri/lu-core/src/conversation_authority.rs",
+      "change": "modified",
+      "baseBlob": "38d4f59524a16a00d6ac531623448c76798c4610",
+      "bridgeBlob": "5046b79e9b20782da9db67b81b5e442eea245bec",
+      "core01eBlob": "5046b79e9b20782da9db67b81b5e442eea245bec",
+      "bridgeIdentityAtCore01e": "EXACT",
+      "domain": "authorization_custody_and_effects"
+    },
+    {
+      "path": "src-tauri/lu-core/src/lib.rs",
+      "change": "modified",
+      "baseBlob": "d5c0a26ebc407647d0bf07a8a967c45a5210fa1d",
+      "bridgeBlob": "8e26921592a8c5b696692f4b5f17c97b368dc26d",
+      "core01eBlob": "3be9865f6b43ed3ca393f95dd752c95f89cc61c1",
+      "bridgeIdentityAtCore01e": "LATER_CHANGED",
+      "domain": "core_desktop_integration"
+    },
+    {
+      "path": "src-tauri/lu-core/src/model_provider_staging.rs",
+      "change": "added",
+      "baseBlob": null,
+      "bridgeBlob": "8dc81fb5bef9c4a1bad498e92d1c64fa1620d715",
+      "core01eBlob": "8dc81fb5bef9c4a1bad498e92d1c64fa1620d715",
+      "bridgeIdentityAtCore01e": "EXACT",
+      "domain": "llama_multimodal_and_model_lifecycle"
+    },
+    {
+      "path": "src-tauri/lu-core/src/model_provider_transport.rs",
+      "change": "added",
+      "baseBlob": null,
+      "bridgeBlob": "d826cab5879548fff8d943492f7cd2e40ff324a6",
+      "core01eBlob": "d826cab5879548fff8d943492f7cd2e40ff324a6",
+      "bridgeIdentityAtCore01e": "EXACT",
+      "domain": "authorization_custody_and_effects"
+    },
+    {
+      "path": "src-tauri/lu-core/src/multimodal_http.rs",
+      "change": "modified",
+      "baseBlob": "038222d1fafc80c3100557e982cdd52f60a7b886",
+      "bridgeBlob": "63d2eddb8f95005aa70196fdfde91001ea337c1f",
+      "core01eBlob": "63d2eddb8f95005aa70196fdfde91001ea337c1f",
+      "bridgeIdentityAtCore01e": "EXACT",
+      "domain": "llama_multimodal_and_model_lifecycle"
+    },
+    {
+      "path": "src-tauri/lu-core/src/multimodal_saved_turn.rs",
+      "change": "modified",
+      "baseBlob": "46d3c4105580551056209132db2bd3c30510726b",
+      "bridgeBlob": "6dc0cea3501ad31ffcfd106b1be423f8b281a446",
+      "core01eBlob": "6dc0cea3501ad31ffcfd106b1be423f8b281a446",
+      "bridgeIdentityAtCore01e": "EXACT",
+      "domain": "llama_multimodal_and_model_lifecycle"
+    },
+    {
+      "path": "src-tauri/lu-core/src/native_app_typed_ffprobe.rs",
+      "change": "modified",
+      "baseBlob": "cac2bd3e06542e3d6410dab6f029818ede502981",
+      "bridgeBlob": "056717855f856adcd78d7f808df6ceeb634ff2a6",
+      "core01eBlob": "056717855f856adcd78d7f808df6ceeb634ff2a6",
+      "bridgeIdentityAtCore01e": "EXACT",
+      "domain": "core_desktop_integration"
+    },
+    {
+      "path": "src-tauri/lu-core/src/native_app_typed_git.rs",
+      "change": "modified",
+      "baseBlob": "745b2fd28231e350964d64b39e1ac07347dc3c0a",
+      "bridgeBlob": "b2a0297028a0732da9ad7816b00b39d44de1f01b",
+      "core01eBlob": "b2a0297028a0732da9ad7816b00b39d44de1f01b",
+      "bridgeIdentityAtCore01e": "EXACT",
+      "domain": "core_desktop_integration"
+    },
+    {
+      "path": "src-tauri/lu-core/src/native_app_typed_specialist.rs",
+      "change": "added",
+      "baseBlob": null,
+      "bridgeBlob": "c2e0307b2f9838a61f4b459dc685204b0ffb544a",
+      "core01eBlob": "c2e0307b2f9838a61f4b459dc685204b0ffb544a",
+      "bridgeIdentityAtCore01e": "EXACT",
+      "domain": "core_desktop_integration"
+    },
+    {
+      "path": "src-tauri/lu-core/src/native_background_process.rs",
+      "change": "modified",
+      "baseBlob": "728a637074593a63a200a0761bf14f402b8c9799",
+      "bridgeBlob": "9e5b7a21bb51fb6ddf591662fcd93bc1f72d7be0",
+      "core01eBlob": "fb7f83ebda27fa8cc20bfd07a5aec6e22e116707",
+      "bridgeIdentityAtCore01e": "LATER_CHANGED",
+      "domain": "authorization_custody_and_effects"
+    },
+    {
+      "path": "src-tauri/lu-core/src/native_git_inspect.rs",
+      "change": "modified",
+      "baseBlob": "34a784371ca65e46f65159a037560a2402d434ff",
+      "bridgeBlob": "a51f396c334df92ae0ea54e7bde7835483d4e956",
+      "core01eBlob": "a51f396c334df92ae0ea54e7bde7835483d4e956",
+      "bridgeIdentityAtCore01e": "EXACT",
+      "domain": "core_desktop_integration"
+    },
+    {
+      "path": "src-tauri/lu-core/src/native_reader_pdf.rs",
+      "change": "modified",
+      "baseBlob": "f73bdba8fce0d244c75a9b592396d032495f32b5",
+      "bridgeBlob": "053e6c4a869288c838bd0cdcae48a5515dc05b6c",
+      "core01eBlob": "053e6c4a869288c838bd0cdcae48a5515dc05b6c",
+      "bridgeIdentityAtCore01e": "EXACT",
+      "domain": "ansf_provenance_and_memory"
+    },
+    {
+      "path": "src-tauri/lu-core/src/native_reader_tool.rs",
+      "change": "modified",
+      "baseBlob": "d1a0acec7d61f12a2e013ecc4f174c3d1efb6295",
+      "bridgeBlob": "b47342040283ab77a74632b3b256c311016b4532",
+      "core01eBlob": "b47342040283ab77a74632b3b256c311016b4532",
+      "bridgeIdentityAtCore01e": "EXACT",
+      "domain": "ansf_provenance_and_memory"
+    },
+    {
+      "path": "src-tauri/lu-core/src/native_reviewed_app_tool.rs",
+      "change": "modified",
+      "baseBlob": "7580da533ec9bf8cbc08d843317fefe5f739b2d8",
+      "bridgeBlob": "a7aef12e6ed23c7c6a5bc9f50412a50a85dc2e33",
+      "core01eBlob": "a7aef12e6ed23c7c6a5bc9f50412a50a85dc2e33",
+      "bridgeIdentityAtCore01e": "EXACT",
+      "domain": "authorization_custody_and_effects"
+    },
+    {
+      "path": "src-tauri/lu-core/src/native_workspace_read_turn.rs",
+      "change": "modified",
+      "baseBlob": "3f4cb36c04c58a8e73bdb46d35cda53c3f1035ce",
+      "bridgeBlob": "133c36ed60ce5035b21ed78a962dcd4466440a21",
+      "core01eBlob": "133c36ed60ce5035b21ed78a962dcd4466440a21",
+      "bridgeIdentityAtCore01e": "EXACT",
+      "domain": "core_desktop_integration"
+    },
+    {
+      "path": "src-tauri/lu-core/src/project_evidence_graph.rs",
+      "change": "added",
+      "baseBlob": null,
+      "bridgeBlob": "af385a8c180d42f8528be2395e123eee491d0152",
+      "core01eBlob": "af385a8c180d42f8528be2395e123eee491d0152",
+      "bridgeIdentityAtCore01e": "EXACT",
+      "domain": "project_plans_and_human_review"
+    },
+    {
+      "path": "src-tauri/lu-core/src/project_status_classifier.rs",
+      "change": "added",
+      "baseBlob": null,
+      "bridgeBlob": "68168751411bb9327f2e18ec8ecde5be8f9ee860",
+      "core01eBlob": "68168751411bb9327f2e18ec8ecde5be8f9ee860",
+      "bridgeIdentityAtCore01e": "EXACT",
+      "domain": "project_plans_and_human_review"
+    },
+    {
+      "path": "src-tauri/lu-core/src/project_task_register.rs",
+      "change": "added",
+      "baseBlob": null,
+      "bridgeBlob": "c34b9829d0008ca733f348ef589c06d1f259c774",
+      "core01eBlob": "c34b9829d0008ca733f348ef589c06d1f259c774",
+      "bridgeIdentityAtCore01e": "EXACT",
+      "domain": "project_plans_and_human_review"
+    },
+    {
+      "path": "src-tauri/lu-core/src/project_task_synthesis.rs",
+      "change": "added",
+      "baseBlob": null,
+      "bridgeBlob": "e25eb06d989922b423559afe1146893ca8d54a19",
+      "core01eBlob": "e25eb06d989922b423559afe1146893ca8d54a19",
+      "bridgeIdentityAtCore01e": "EXACT",
+      "domain": "project_plans_and_human_review"
+    },
+    {
+      "path": "src-tauri/lu-core/src/project_task_update_model.rs",
+      "change": "added",
+      "baseBlob": null,
+      "bridgeBlob": "584863145a01b55cceed3eba0741421a9508ebec",
+      "core01eBlob": "584863145a01b55cceed3eba0741421a9508ebec",
+      "bridgeIdentityAtCore01e": "EXACT",
+      "domain": "project_plans_and_human_review"
+    },
+    {
+      "path": "src-tauri/lu-core/src/project_task_updates.rs",
+      "change": "added",
+      "baseBlob": null,
+      "bridgeBlob": "a382ffa9f1dcb75e9b71189837904bfab51d95c0",
+      "core01eBlob": "a382ffa9f1dcb75e9b71189837904bfab51d95c0",
+      "bridgeIdentityAtCore01e": "EXACT",
+      "domain": "project_plans_and_human_review"
+    },
+    {
+      "path": "src-tauri/lu-core/src/reviewed_outcome_oracle.rs",
+      "change": "modified",
+      "baseBlob": "b7dac21a9934e3f4510c392799a2163e4557831d",
+      "bridgeBlob": "28109bb94dde8962c38b19a11194e2288a0c1f86",
+      "core01eBlob": "28109bb94dde8962c38b19a11194e2288a0c1f86",
+      "bridgeIdentityAtCore01e": "EXACT",
+      "domain": "core_desktop_integration"
+    },
+    {
+      "path": "src-tauri/lu-core/src/web_http_fetch.rs",
+      "change": "modified",
+      "baseBlob": "f52bcc080669d72aecb7ed9f2a7b8c4f648b24f8",
+      "bridgeBlob": "0e9a17a3ec4e72d8031406de4808a92ba6ff236b",
+      "core01eBlob": "0e9a17a3ec4e72d8031406de4808a92ba6ff236b",
+      "bridgeIdentityAtCore01e": "EXACT",
+      "domain": "core_desktop_integration"
+    },
+    {
+      "path": "src-tauri/lu-core/tests/e1_reviewed_model_tools.rs",
+      "change": "modified",
+      "baseBlob": "6677080ba349bea45a39a88bd4d82cfc7c1c4949",
+      "bridgeBlob": "ffa600a6de6b3b22f789d8ce49f5e0607b96b446",
+      "core01eBlob": "6f80fb7ee3547949e4ece4bf5784e524833422a0",
+      "bridgeIdentityAtCore01e": "LATER_CHANGED",
+      "domain": "llama_multimodal_and_model_lifecycle"
+    },
+    {
+      "path": "src-tauri/lu-core/tests/hf_p05_real_network.rs",
+      "change": "added",
+      "baseBlob": null,
+      "bridgeBlob": "b0717d5910349ab5a1629809fc1b481ffcecaa75",
+      "core01eBlob": "b0717d5910349ab5a1629809fc1b481ffcecaa75",
+      "bridgeIdentityAtCore01e": "EXACT",
+      "domain": "core_desktop_integration"
+    }
+  ]
+}
