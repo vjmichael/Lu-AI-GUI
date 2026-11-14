@@ -1108,7 +1108,12 @@ mod profile_load_contract_tests{
             Err(SupervisorError::InvalidRequest)
         );
         sup.reserve_generation("session-1","gen-ok","req-ok","hi",1024).unwrap();
-        sup.cancel("session-1","gen-ok","cancel-ok").unwrap();
+        // Completing (or interrupting) the actual reserved engine call
+        // releases the generation lease before model unload.
+        let _ = sup.run_reserved(
+            "session-1","gen-ok","req-ok","hi".into(),1024,|_|Ok(())
+        );
+        assert_eq!(sup.status().unwrap().generation_id,None);
         sup.unload("session-1","unload-ok").unwrap();
         assert_eq!(released.load(Ordering::SeqCst),1);
         fs::remove_dir_all(path).unwrap();

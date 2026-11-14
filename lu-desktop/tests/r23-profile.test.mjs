@@ -44,7 +44,7 @@ test('source-witness: model-specific settings reach protected llama.cpp runtime'
  const sup=readFileSync(new URL('../../src-tauri/lu-core/src/inference_supervisor.rs',import.meta.url),'utf8');
  const settings=readFileSync(new URL('../web/native_windows.jsx',import.meta.url),'utf8');
  for(const name of ['lu_model_inference_profile','lu_model_save_inference_profile'])
-   assert.match(code,new RegExp('fn '+name+'\\\\('));
+   assert.match(code,new RegExp('fn '+name+'\\('));
  assert.match(code,/new_with_model_profile/);
  assert.match(code,/threads: NonZeroUsize::new\(profile\.threads as usize\)/);
  assert.match(code,/context_tokens: profile\.context_tokens/);
