@@ -115,6 +115,8 @@ jobs:
             cli_staged='NOT_TESTED'
             dap_staged='NOT_TESTED'
             dll_closure='NOT_TESTED'
+            python_runtime='python310.dll'
+            comparison='unbundled_cli_vs_python310_staged_cli_and_real_DAP'
             note='Disposable unconfined loader diagnosis; not original SCM/Job/LLDB release authority'
           }
           $original='C:\Program Files\LLVM\bin'
@@ -138,6 +140,9 @@ jobs:
             $r.cli_sha256=(Get-FileHash $lldb -Algorithm SHA256).Hash.ToLowerInvariant()
             $r.dap_sha256=(Get-FileHash $dap -Algorithm SHA256).Hash.ToLowerInvariant()
             $r.python310_sha256=(Get-FileHash $runtime -Algorithm SHA256).Hash.ToLowerInvariant()
+            # Previous exact hosted-run SHA256 pinned by original FIN-04W run
+            # #43549136359. A runtime change is evidence, not authority.
+            $r.python310_matches_reviewed_ci_bytes=($r.python310_sha256 -eq '14b06796f288bc6599e458fb23a944ab0c843e9868058f02a91d4606533505ed')
             $readobj=Join-Path $original 'llvm-readobj.exe'
             if(Test-Path -LiteralPath $readobj -PathType Leaf){
               $missing=[System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
