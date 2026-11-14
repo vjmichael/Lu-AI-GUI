@@ -102,14 +102,13 @@ jobs:
             lu-desktop/tests/agent01k-independent-recovery.test.mjs \
             lu-desktop/tests/reviewed-tool-feedback.test.mjs \
             2>&1 | tee c4-native-evidence/frontend-contracts.log
-      - name: Current React desktop bundle and checks
+      - name: Current React desktop bundle
         shell: bash
         run: |
           set -euo pipefail
           cd lu-desktop
           npm ci --no-audit --no-fund
           npm run build
-          npm run check
       - name: Original Rust model/tool Protobuf, plan and receipt regressions
         shell: bash
         run: |
@@ -135,6 +134,11 @@ jobs:
           cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml \
             --lib project_task_verified_evidence::tests -- --nocapture \
             2>&1 | tee c4-native-evidence/task-criterion-reconciliation.log
+      - name: Current UI source and typed-Protobuf history check after native compilation
+        shell: bash
+        run: |
+          set -euo pipefail
+          (cd lu-desktop && npm run check) 2>&1 | tee c4-native-evidence/desktop-ui-check.log
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -211,7 +215,7 @@ jobs:
           retention-days: 14
           if-no-files-found: warn
 
-  linux-real-cgroup-and-root-owned-git:
+  linux-real-cgroup:
     needs: exact-source-admission
     runs-on: ubuntu-24.04
     timeout-minutes: 115
@@ -269,6 +273,49 @@ jobs:
             2>&1 | tee c4-linux-kernel-evidence/native-cgroup-git-restart.log
           grep -Fq 'test result: ok. 1 passed; 0 failed;' \
             c4-linux-kernel-evidence/native-cgroup-git-restart.log
+      - name: Fail closed on absent cgroup delegation
+        if: failure()
+        shell: bash
+        run: |
+          if grep -Fq 'AGENT01L_CGROUP_DELEGATION_NOT_AVAILABLE=1' c4-linux-kernel-evidence/kernel-crash-escape.log 2>/dev/null; then
+            echo 'Delegated cgroup-v2 kernel capability unavailable: real Linux custody is NOT accepted.' >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo 'Original Linux kernel/native or finite root-owned worker acceptance FAILED or did not run. See original logs.' >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lu-c4-linux-real-kernel-custody
+          path: c4-linux-kernel-evidence/
+          retention-days: 14
+          if-no-files-found: warn
+
+  linux-original-root-owned-git:
+    needs: exact-source-admission
+    runs-on: ubuntu-24.04
+    timeout-minutes: 95
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify original Linux source and finite root-owned broker test compilation
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          mkdir -p c4-linux-kernel-evidence
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          node scripts/verify-source-tree.mjs
+          python3 -m py_compile             scripts/lu-sec06c-owned-git-launcher.py             scripts/lu-sec06c-owned-git-worker.py             scripts/lu-sec06c-owned-kernel-manager.py
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml             --lib sec06c --no-run
       - name: Ephemeral root-owned finite Git broker and real original worker journals
         shell: bash
         env:
@@ -294,19 +341,10 @@ jobs:
             --lib sec06c_owned_git_host_sigkill_recovery_original_journal \
             -- --ignored --nocapture \
             2>&1 | tee c4-linux-kernel-evidence/root-owned-sigkill.log
-      - name: Fail closed on absent cgroup delegation
-        if: failure()
-        shell: bash
-        run: |
-          if grep -Fq 'AGENT01L_CGROUP_DELEGATION_NOT_AVAILABLE=1' c4-linux-kernel-evidence/kernel-crash-escape.log 2>/dev/null; then
-            echo 'Delegated cgroup-v2 kernel capability unavailable: real Linux custody is NOT accepted.' >> "$GITHUB_STEP_SUMMARY"
-          else
-            echo 'Original Linux kernel/native or finite root-owned worker acceptance FAILED or did not run. See original logs.' >> "$GITHUB_STEP_SUMMARY"
-          fi
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: lu-c4-linux-real-kernel-custody
+          name: lu-c4-linux-root-owned-git
           path: c4-linux-kernel-evidence/
           retention-days: 14
           if-no-files-found: warn
@@ -427,7 +465,8 @@ jobs:
       - exact-source-admission
       - native-planner-ipc-desktop
       - original-security-recovery
-      - linux-real-cgroup-and-root-owned-git
+      - linux-real-cgroup
+      - linux-original-root-owned-git
       - genuine-local-qwen
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -438,7 +477,8 @@ jobs:
           SOURCE: ${{ needs.exact-source-admission.result }}
           NATIVE: ${{ needs.native-planner-ipc-desktop.result }}
           RECOVERY: ${{ needs.original-security-recovery.result }}
-          LINUX: ${{ needs.linux-real-cgroup-and-root-owned-git.result }}
+          LINUX: ${{ needs.linux-real-cgroup.result }}
+          ROOT_GIT: ${{ needs.linux-original-root-owned-git.result }}
           QWEN: ${{ needs.genuine-local-qwen.result }}
         shell: bash
         run: |
@@ -449,7 +489,8 @@ jobs:
             echo "Source admission: $SOURCE"
             echo "Windows/Linux native: $NATIVE"
             echo "Windows/Linux security and recovery: $RECOVERY"
-            echo "Linux kernel cgroup + root-owned original Git: $LINUX"
+            echo "Linux delegated kernel cgroup: $LINUX"
+            echo "Original independently root-owned Git worker: $ROOT_GIT"
             echo "Actual pinned Qwen GGUF: $QWEN"
             echo "Installed Windows and physical owner Qwen 27B remain separately open."
           } >> "$GITHUB_STEP_SUMMARY"
@@ -457,4 +498,5 @@ jobs:
           test "$NATIVE" = success
           test "$RECOVERY" = success
           test "$LINUX" = success
+          test "$ROOT_GIT" = success
           test "$QWEN" = success
