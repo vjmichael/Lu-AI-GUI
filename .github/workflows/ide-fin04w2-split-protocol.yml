@@ -1,0 +1,56 @@
+# Split debugger/target: compile and protocol gates only.
+# Original Windows SCM/Job/WFP + six-phase acceptance remains separate.
+name: IDE FIN-04W2 split debugger protocol and native target witness
+on:
+  pull_request:
+    paths:
+      - 'ide/host/src/dap_session.rs'
+      - 'ide/host/Cargo.toml'
+      - 'ide/supervisor/src/dap_transport.rs'
+      - 'ide/supervisor/src/windows_fin04w2_split.rs'
+      - 'ide/supervisor/src/lib.rs'
+      - 'ide/supervisor/Cargo.toml'
+      - '.github/workflows/ide-fin04w2-split-protocol.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  windows-split-contract:
+    runs-on: windows-2022
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Confirm exact source identity
+        shell: pwsh
+        run: |
+          if ((git rev-parse HEAD).Trim() -ne '${{ github.event.pull_request.head.sha || github.sha }}') {
+            throw 'DENIED: split debugger source SHA mismatch'
+          }
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+      - name: Test native-only DAP attach and reject fake response
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          cargo test --manifest-path ide/host/Cargo.toml --features fin04w2-split-protocol split_debugger_ -- --nocapture
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: split DAP grammar failed' }
+          cargo test --manifest-path ide/host/Cargo.toml --features fin04w2-split-protocol split_attach_ -- --nocapture
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: split attach correlation failed' }
+      - name: Compile live Windows AppContainer target witness and service gate
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          cargo check --manifest-path ide/supervisor/Cargo.toml --features fin04w2-split-native
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: split native contract compile failed' }
+          cargo test --manifest-path ide/supervisor/Cargo.toml --features fin04w2-split-native local_runner_is_not_the_independent_debugger_service -- --nocapture
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: non-service minted an attach target' }
+      - name: Preserve independent production security gates
+        shell: pwsh
+        run: |
+          Write-Host FIN04W2_SPLIT=SOURCE_AND_NEGATIVE_TEST_ONLY
+          Write-Host FIN04W2_ORIGINAL_SCM_JOB_WFP=NOT_REPLACED
+          Write-Host FIN04W2_REAL_ATTACH_AND_STOP=NOT_YET_ACCEPTED
