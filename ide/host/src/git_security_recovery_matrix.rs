@@ -341,6 +341,16 @@ impl IdeWorkspaceRegistry{
         &self,project_id:&str,allow_git_conflict_state:bool,
     )->Result<(),&'static str>{
         let e=self.inspect_group6f_git_recovery(project_id)?;
+        // A conflict repair can work in Git Merge state, but NEVER in a
+        // rebase/cherry-pick/revert/unknown operation just because it is
+        // called through the conflict-resolution entrypoint.
+        if allow_git_conflict_state {
+            let repo=exact_repo(self,project_id)?;
+            if repo.state()!=RepositoryState::Merge
+                && repo.state()!=RepositoryState::Clean {
+                return Err("G06F_UNRELATED_ACTIVE_GIT_OPERATION");
+            }
+        }
         if e.foreign_git_lock_present
             ||e.domains.iter().any(|d|d.manual_reconciliation_required)
             ||(e.git_operation_in_progress&&!allow_git_conflict_state){
@@ -462,6 +472,14 @@ mod tests{
         let f=fixture();
         fs::write(f.root.join(".git/lu-ide-fin03-stash-active"),b"not-a-valid-64-hex-marker").unwrap();
         assert!(f.registry.inspect_group6f_git_recovery(&f.id).is_err());
+    }
+    #[test]
+    fn non_conflict_git_operation_may_never_use_conflict_repair_exception(){
+        let f=fixture();
+        // A normal clean repository is allowed to pass the aggregate, but
+        // it does not itself mint a conflict-resolution OS grant.
+        assert!(f.registry.require_group6f_no_pending_recovery(&f.id,true).is_ok());
+        assert!(f.registry.require_group6f_no_pending_recovery(&f.id,false).is_ok());
     }
     #[test]
     fn missing_or_forged_original_domain_is_not_a_valid_consolidation(){
