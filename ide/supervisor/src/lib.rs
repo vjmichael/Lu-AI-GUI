@@ -33,6 +33,11 @@ pub mod windows_fin04w2_host;
 // separate identity/ACL/WFP/service custody must precede any debugger launch.
 #[cfg(all(windows, debug_assertions, feature = "fin04w2-scm"))]
 mod windows_fin04w2_kernel;
+// Default-OFF split-trust target witness. Only the independent Windows
+// service can derive a PID from a live AppContainer process HANDLE.
+// This does not create LLDB or grant a DAP attach in any released build.
+#[cfg(all(windows, debug_assertions, feature = "fin04w2-split-native"))]
+mod windows_fin04w2_split;
 // Separate SCM-only debugger broker, with no worker launch or IPC until the
 // Windows ACL/WFP/exact-Job and authenticated protocol gates are complete.
 #[cfg(all(windows, debug_assertions, feature = "fin04w2-scm"))]
