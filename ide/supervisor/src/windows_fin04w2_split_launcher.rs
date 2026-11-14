@@ -13,9 +13,9 @@
 //! no shell, no process resumption and no general OS command dispatcher.
 #![cfg(all(windows, debug_assertions, feature="fin04w2-split-native"))]
 
-use crate::{windows_fin04w2_kernel::{self,EmptyAuditJob},
+use crate::{fin04w2_authority,windows_fin04w2_kernel::{self,EmptyAuditJob},
     windows_fin04w2_split,windows_service_security,windows_worker,
-    SupervisorError};
+    JobPlan,SupervisorError};
 use std::{
     ffi::OsStr, fs, mem::size_of, os::windows::ffi::OsStrExt,
     path::{Path,PathBuf},ptr,
@@ -288,11 +288,22 @@ pub(crate) struct PendingSplitPair {
 }
 pub(crate) fn prepare_pair(
     target_job:&EmptyAuditJob,debugger_job:&EmptyAuditJob,
-    original_job_id:&str,
+    original_journal:&Path, original_job_id:&str,
+    original_plan:&JobPlan, original_plan_sha256:&str,
     target_image:&Path,target_sha256:&str,
     lldb_dap:&Path,lldb_sha256:&str,
 )->Result<PendingSplitPair,SupervisorError>{
-    if target_job.held_split_job_handle()==debugger_job.held_split_job_handle(){
+    // An original approved one-use journal and sealed project binding are
+    // mandatory BEFORE either native process is even created suspended.
+    // The caller must independently reserve the original service replay
+    // barrier and verify private ACL/WFP before any later resume.
+    let _approval=fin04w2_authority::verify_original_authorized_file(
+        original_journal,original_job_id,original_plan,original_plan_sha256,
+    )?;
+    if original_plan.debug_target_binding_sha256.is_none()
+        || original_plan.recipe_id!="dap_lldb_project"
+        || original_plan.effect_class!="debug_inspection_isolated"
+        || target_job.held_split_job_handle()==debugger_job.held_split_job_handle(){
         return Err(denied());
     }
     let target=prepare_appcontainer_target(
