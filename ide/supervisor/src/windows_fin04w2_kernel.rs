@@ -38,8 +38,11 @@ impl Drop for Token {
         }
     }
 }
-fn service_sid() -> Result<Vec<usize>, SupervisorError> {
-    let name: Vec<u16> = OsStr::new("NT SERVICE\\LuIdeDebuggerBroker")
+fn service_sid(service_name:&str) -> Result<Vec<usize>, SupervisorError> {
+    if service_name!="LuIdeDebuggerBroker"
+        &&service_name!="LuIdeDebugTargetBroker" {return Err(denied());}
+    let account=format!("NT SERVICE\\\\{}",service_name);
+    let name: Vec<u16> = OsStr::new(&account)
         .encode_wide().chain([0]).collect();
     let mut sid_len = 0u32;
     let mut domain_len = 0u32;
@@ -110,6 +113,15 @@ fn contains_sid(
 /// Only its OS token, not any string or caller-supplied PID, identifies it.
 /// This is insufficient for service request admission, WFP or debugger launch.
 pub(crate) fn inspect_current_service_principal() -> Result<(), SupervisorError> {
+    inspect_current_split_service_principal("LuIdeDebuggerBroker")
+}
+#[cfg(feature="fin04w2-split-native")]
+pub(crate) fn inspect_current_target_service_principal() -> Result<(), SupervisorError> {
+    inspect_current_split_service_principal("LuIdeDebugTargetBroker")
+}
+fn inspect_current_split_service_principal(service_name:&str) -> Result<(), SupervisorError> {
+    if service_name!="LuIdeDebuggerBroker"
+        && service_name!="LuIdeDebugTargetBroker" {return Err(denied());}
     let mut raw = ptr::null_mut();
     if unsafe { OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY | TOKEN_DUPLICATE, &mut raw) } == 0 {
         return Err(denied());
@@ -149,7 +161,7 @@ pub(crate) fn inspect_current_service_principal() -> Result<(), SupervisorError>
         || unsafe { EqualSid(user.User.Sid, local_service.as_mut_ptr().cast()) } == 0 {
         return Err(denied());
     }
-    let mut service = service_sid()?;
+    let mut service = service_sid(service_name)?;
     // CheckTokenMembership requires an impersonation token. The kernel
     // primary token is duplicated for this READ-ONLY query; neither
     // impersonation nor its resulting handle is used for execution.
@@ -192,8 +204,15 @@ pub(crate) struct EmptyAuditJob {
     _owned: Token,
 }
 pub(crate) fn create_bounded_empty_debugger_job() -> Result<EmptyAuditJob, SupervisorError> {
-    inspect_current_service_principal()?;
-    let acl = crate::windows_service_security::JobSecurity::new_debugger_service_owned()?;
+    create_bounded_empty_split_service_job("LuIdeDebuggerBroker")
+}
+#[cfg(feature="fin04w2-split-native")]
+pub(crate) fn create_bounded_empty_target_job() -> Result<EmptyAuditJob, SupervisorError> {
+    create_bounded_empty_split_service_job("LuIdeDebugTargetBroker")
+}
+fn create_bounded_empty_split_service_job(service_name:&str) -> Result<EmptyAuditJob, SupervisorError> {
+    inspect_current_split_service_principal(service_name)?;
+    let acl = crate::windows_service_security::JobSecurity::new_split_service_owned(service_name)?;
     // The name is derived only inside the authenticated service process,
     // not from the original untrusted client packet.
     let unique = format!("Local\\LuIdeFin04W2Audit_{:016x}", rand::random::<u64>());
@@ -274,7 +293,7 @@ pub(crate) fn create_bounded_empty_debugger_job() -> Result<EmptyAuditJob, Super
     } == 0 || usage.ActiveProcesses != 0 {
         return Err(denied());
     }
-    crate::windows_service_security::verify_debugger_job_kernel_acl(job.0)?;
+    crate::windows_service_security::verify_split_job_kernel_acl(job.0,service_name)?;
     Ok(EmptyAuditJob { _owned: job })
 }
 
