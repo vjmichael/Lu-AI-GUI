@@ -125,6 +125,33 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: '1.99.1'
+      - uses: actions/setup-python@v5
+        if: runner.os == 'Windows'
+        with:
+          python-version: '3.11'
+      - name: Original pinned LLVM first-party WFP owner overlay source regression
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          python -m unittest discover -s ide/llvm18_owner -p test_pinned_chrono_overlay.py -v
+          if($LASTEXITCODE -ne 0){throw 'FIN04W2_ORIGINAL_LLDB_OWNER_WFP_OVERLAY_SOURCE_DENIED'}
+          Write-Host 'FIN04W2_LLDB_OWNER_WFP_OVERLAY=SOURCE_ONLY_NOT_NATIVE_LINK'
+      - name: Compile original fixed hostile WFP target with actual Windows PE/PDB
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $out=Join-Path $env:RUNNER_TEMP 'fin04w2-hostile-target.exe'
+          rustc --edition=2021 -C debuginfo=2 -C opt-level=0 -o $out ide/supervisor/fixtures/debug/fin04w2_wfp_target/src/main.rs
+          if($LASTEXITCODE -ne 0 -or !(Test-Path -LiteralPath $out)){
+            throw 'FIN04W2_ORIGINAL_HOSTILE_PE_COMPILER_DENIED'
+          }
+          $pdb=[IO.Path]::ChangeExtension($out,'pdb')
+          if(!(Test-Path -LiteralPath $pdb)){
+            throw 'FIN04W2_ORIGINAL_HOSTILE_PDB_MISSING'
+          }
+          Write-Host 'FIN04W2_HOSTILE_TARGET_PE_PDB_COMPILER=PASS_NOT_WFP_SOCKET'
       - name: Parse protected real WFP and SCM loss acceptance harnesses
         if: runner.os == 'Windows'
         shell: pwsh
@@ -132,7 +159,8 @@ jobs:
           $ErrorActionPreference = 'Stop'
           foreach($p in @(
             'ide/packaging/Test-FIN04W2-EffectiveWfpNative.ps1',
-            'ide/packaging/Test-FIN04W2-ServiceLossNative.ps1'
+            'ide/packaging/Test-FIN04W2-ServiceLossNative.ps1',
+            'ide/packaging/Start-FIN04W2-LoopbackControl.ps1'
           )) {
             $tokens=$null; $errors=$null
             [System.Management.Automation.Language.Parser]::ParseFile(
