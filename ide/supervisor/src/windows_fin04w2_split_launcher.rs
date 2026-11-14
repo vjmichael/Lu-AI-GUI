@@ -136,7 +136,7 @@ pub(crate) fn prepare_appcontainer_target(
     approved_image:&Path,expected_sha256:&str,
     approved_pdb:&Path,expected_pdb_sha256:&str,
 )->Result<PendingTarget,SupervisorError>{
-    windows_fin04w2_kernel::inspect_current_service_principal()?;
+    windows_fin04w2_kernel::inspect_current_target_service_principal()?;
     windows_service_security::hash_executable(approved_image,expected_sha256)?;
     let profile=windows_worker::AppProfile::create(original_job_id)?;
     // Keep LocalState writable only for harmless target scratch. Never
@@ -158,6 +158,8 @@ pub(crate) fn prepare_appcontainer_target(
         size_of::<SECURITY_CAPABILITIES>(),
         ptr::null_mut(),ptr::null())}==0{return Err(denied());}
     let kernel_job=job.held_split_job_handle();
+    // This exact kernel DACL must name the TARGET service, not just any Job.
+    windows_service_security::verify_target_job_kernel_acl(kernel_job)?;
     // UpdateProcThreadAttribute may reference the supplied HANDLE array
     // through CreateProcessW; keep storage alive in this stack frame.
     let job_array=[kernel_job];
@@ -284,51 +286,16 @@ pub(crate) fn prepare_external_debugger(
     })
 }
 
-/// Both first-party reviewed processes are staged SUSPENDED with different
-/// Job leases. The service MUST verify original grant+WFP and externally
-/// reobserve the two held tokens before resuming either process.
-/// Nothing here accepts an arbitrary PID or grants a runnable debug session.
-pub(crate) struct PendingSplitPair {
-    pub(crate) debugger:PendingDebugger,
-    pub(crate) target:PendingTarget,
-}
-pub(crate) fn prepare_pair(
-    target_job:&EmptyAuditJob,debugger_job:&EmptyAuditJob,
-    private_service_root:&Path,
-    original_journal:&Path, original_job_id:&str,
-    original_plan:&JobPlan, original_plan_sha256:&str,
-    target_image:&Path,target_sha256:&str,
-    target_pdb:&Path,target_pdb_sha256:&str,
-    lldb_dap:&Path,lldb_sha256:&str,
-    liblldb_sha256:&str,python310_sha256:&str,
-)->Result<PendingSplitPair,SupervisorError>{
-    // An original approved one-use journal and sealed project binding are
-    // mandatory BEFORE either native process is even created suspended.
-    // The caller must independently reserve the original service replay
-    // barrier and verify private ACL/WFP before any later resume.
-    let _approval=fin04w2_authority::verify_original_authorized_file(
-        original_journal,original_job_id,original_plan,original_plan_sha256,
-    )?;
-    if original_plan.debug_target_binding_sha256.is_none()
-        || original_plan.recipe_id!="dap_lldb_project"
-        || original_plan.effect_class!="debug_inspection_isolated"
-        || target_job.held_split_job_handle()==debugger_job.held_split_job_handle(){
-        return Err(denied());
-    }
-    let target=prepare_appcontainer_target(
-        target_job,original_job_id,private_service_root,
-        target_image,target_sha256,target_pdb,target_pdb_sha256,
-    )?;
-    let debugger=prepare_external_debugger(
-        debugger_job,lldb_dap,lldb_sha256,
-        liblldb_sha256,python310_sha256,
-    )?;
-    windows_fin04w2_split::attest_separate_debugger_worker(
-        debugger.process(),debugger.job(),target.process(),target.job(),
-    )?;
-    Ok(PendingSplitPair{debugger,target})
-}
-
+/// The former prepare_pair could create both workers from ONE SCM service,
+/// which is not independent custody even with two distinct Job handles.
+/// Deliberately delete that path. Only the target broker may stage the lowbox
+/// target, and only the debugger broker may stage LLDB. Cross-service handoff
+/// requires independently authenticated SCM IPC and original C2 grant receipts
+/// before ANY thread resumes. Neither role may synthesize the other's approval.
+///
+/// This is intentionally not a runnable split-debugger transaction: until the
+/// distinct target-broker SCM IPC and stopped-RIP/recovery matrix are accepted,
+/// the native desktop must continue to expose only the harmless fixed C2 probe.
 #[cfg(test)]
 mod tests {
     use super::*;
