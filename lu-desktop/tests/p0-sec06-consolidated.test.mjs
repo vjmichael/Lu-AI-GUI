@@ -373,7 +373,9 @@ test('SEC06 positive custodian receipt requires exact original admission identit
 });
 test('SEC06F independent receipt reconciliation preserves same SHA, all native OS gates and owner separation',()=>{
   const workflow=readFileSync(join(root,'.github/workflows/lu-repo01-full-source.yml'),'utf8');
-  const section=workflow.split('  core01e-sec06f-original-receipts:\n')[1]
+  // Windows checkout may use CRLF. Parse only the section marker; keep all
+  // exact original native receipt and independent-owner assertions unchanged.
+  const section=workflow.split(/  core01e-sec06f-original-receipts:\r?\n/)[1]
     ?.split('  p0-gate-installed-windows:')[0];
   assert.ok(section,'SEC-06F reconciliation job missing');
   assert.match(section,/core01e-sec06-native/);
