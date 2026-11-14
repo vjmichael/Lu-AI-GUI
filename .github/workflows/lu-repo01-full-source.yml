@@ -3167,6 +3167,16 @@ jobs:
           printf '%s ALL=(root) NOPASSWD: /usr/libexec/lu/lu-sec06c-launch-browser *\n' "$USER" | sudo tee /etc/sudoers.d/lu-sec06c-browser-ci >/dev/null
           sudo chmod 0440 /etc/sudoers.d/lu-sec06c-browser-ci
           sudo visudo -cf /etc/sudoers.d/lu-sec06c-browser-ci
+          # Ubuntu 24.04 blocks Chromium's user-namespace sandbox unless
+          # a root-owned AppArmor profile grants userns to the *exact*
+          # executable. No global sysctl relaxation and NO --no-sandbox.
+          sudo apt-get install -y -qq --no-install-recommends apparmor apparmor-utils
+          test "$(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns)" = 1
+          sudo aa-status --enabled
+          sudo install -o root -g root -m 0644 scripts/lu-sec06c-browser-userns.apparmor /etc/apparmor.d/lu-sec06c-browser-ci
+          sudo apparmor_parser --replace /etc/apparmor.d/lu-sec06c-browser-ci
+          sudo aa-status | grep -F 'lu-sec06c-chromium'
+          echo 'SEC06C_BROWSER_EXACT_CHROMIUM_USERNS_APPARMOR=1'
           test "$(id -u)" -ne 0
           for file in /usr/lib/lu/browser/chrome /usr/lib/lu/browser/node /usr/lib/lu/browser/lu_browser_worker.mjs /usr/libexec/lu/lu-sec06c-owned-browser-manager; do
             test -f "$file" && test "$(stat -c %u "$file")" = 0

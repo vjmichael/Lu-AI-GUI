@@ -682,3 +682,17 @@ test('SEC06C Chrome startup failure logs bounded redacted stderr without bypassi
   assert.match(mediator,/reject\("original Chromium died before admission"\)/);
   assert.doesNotMatch(mediator,/--no-sandbox|--disable-setuid-sandbox/);
 });
+
+test('SEC06C Chromium userns is granted to a single root-owned installed path, not disabled globally',()=>{
+  const workflow=readFileSync(join(root,'.github/workflows/lu-repo01-full-source.yml'),'utf8');
+  const profile=readFileSync(join(root,'scripts/lu-sec06c-browser-userns.apparmor'),'utf8');
+  const mediator=readFileSync(join(root,'scripts/lu-sec06c-owned-browser-worker.py'),'utf8');
+  assert.match(profile,/profile lu-sec06c-chromium \/usr\/lib\/lu\/browser\/chrome flags=\(unconfined\)/);
+  assert.match(profile,/\buserns,/);
+  assert.doesNotMatch(profile,/\*|\/home\/|\/tmp\//);
+  assert.match(workflow,/apparmor_parser --replace \/etc\/apparmor.d\/lu-sec06c-browser-ci/);
+  assert.match(workflow,/SEC06C_BROWSER_EXACT_CHROMIUM_USERNS_APPARMOR=1/);
+  assert.match(workflow,/apparmor_restrict_unprivileged_userns\)" = 1/);
+  assert.doesNotMatch(workflow,/echo 0 \| sudo tee \/proc\/sys\/kernel\/apparmor_restrict_unprivileged_userns/);
+  assert.doesNotMatch(mediator,/--no-sandbox|--disable-setuid-sandbox/);
+});
