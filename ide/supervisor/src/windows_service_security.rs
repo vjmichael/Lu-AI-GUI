@@ -31,14 +31,16 @@ use windows_sys::Win32::{
         AclSizeInformation,
         Authorization::{
             ConvertSidToStringSidW, ConvertStringSecurityDescriptorToSecurityDescriptorW,
-            ConvertStringSidToSidW, GetNamedSecurityInfoW, GetSecurityInfo, SE_FILE_OBJECT,
-            SE_KERNEL_OBJECT,
+            ConvertStringSidToSidW, GetNamedSecurityInfoW, GetSecurityInfo, SetSecurityInfo,
+            SE_FILE_OBJECT, SE_KERNEL_OBJECT,
         },
         CheckTokenMembership, DuplicateToken, EqualSid, GetAce, GetAclInformation,
-        GetSecurityDescriptorControl, GetTokenInformation, IsTokenRestricted, LookupAccountNameW,
+        GetSecurityDescriptorControl, GetSecurityDescriptorDacl, GetTokenInformation,
+        IsTokenRestricted, LookupAccountNameW,
         RevertToSelf, SecurityImpersonation, TokenGroups, TokenIsAppContainer, TokenRestrictedSids,
         TokenUser, ACCESS_ALLOWED_ACE, ACL_SIZE_INFORMATION, DACL_SECURITY_INFORMATION,
-        SECURITY_ATTRIBUTES, SE_DACL_PROTECTED, SID_AND_ATTRIBUTES, TOKEN_DUPLICATE, TOKEN_GROUPS,
+        SECURITY_ATTRIBUTES, SE_DACL_PROTECTED, PROTECTED_DACL_SECURITY_INFORMATION,
+        SID_AND_ATTRIBUTES, TOKEN_DUPLICATE, TOKEN_GROUPS,
         TOKEN_QUERY, TOKEN_USER,
     },
     System::{
@@ -96,6 +98,88 @@ impl Drop for OwnedSid {
         }
     }
 }
+/// FIN-04W2: Windows process-object debugger attach rights are distinct
+/// from Job custody. This exact suspended *target process HANDLE* gets
+/// full native debug-control rights for only the fixed trusted debugger
+/// service SID; the target SCM retains the JOB HANDLE and its two-ACE
+/// exclusive Job ACL. No interactive users, lowbox package, administrators,
+/// generic service account or WebView receive attach rights. Native kernel
+/// DACL readback rejects any injected/extra process security principal.
+#[cfg(feature="fin04w2-split-native")]
+pub(crate) fn seal_exact_target_process_debug_acl(
+    process:HANDLE,
+)->Result<(),SupervisorError>{
+    if process.is_null(){return Err(denied());}
+    let target=sid_of_named_service("LuIdeDebugTargetBroker")?;
+    let debugger=sid_of_named_service("LuIdeDebuggerBroker")?;
+    if target==debugger{return Err(denied());}
+    // Explicit masks avoid GENERIC_ALL mapping ambiguity on processes;
+    // 0x001fffff is Win32 PROCESS_ALL_ACCESS (this is DEBUGGER authority
+    // over ONLY the exact target, not filesystem/Job/service access).
+    const PROCESS_ALL:u32=0x001F_FFFF;
+    let sddl=format!(
+        "D:P(A;;0x{PROCESS_ALL:08x};;;SY)(A;;0x{PROCESS_ALL:08x};;;{target})\
+         (A;;0x{PROCESS_ALL:08x};;;{debugger})",
+    );
+    let mut sd=ptr::null_mut();
+    if unsafe{ConvertStringSecurityDescriptorToSecurityDescriptorW(
+        ws(&sddl).as_ptr(),1,&mut sd,ptr::null_mut(),
+    )}==0||sd.is_null(){return Err(denied());}
+    let _owned=OwnedSid(sd);
+    let mut present=0i32;
+    let mut defaulted=0i32;
+    let mut dacl=ptr::null_mut();
+    if unsafe{GetSecurityDescriptorDacl(
+        sd,&mut present,&mut dacl,&mut defaulted,
+    )}==0||present!=1||dacl.is_null(){return Err(denied());}
+    if unsafe{SetSecurityInfo(process,SE_KERNEL_OBJECT,
+        DACL_SECURITY_INFORMATION|PROTECTED_DACL_SECURITY_INFORMATION,
+        ptr::null_mut(),ptr::null_mut(),dacl,ptr::null_mut(),
+    )}!=0{return Err(denied());}
+    verify_exact_target_process_debug_acl(process)
+}
+#[cfg(feature="fin04w2-split-native")]
+pub(crate) fn verify_exact_target_process_debug_acl(
+    process:HANDLE,
+)->Result<(),SupervisorError>{
+    if process.is_null(){return Err(denied());}
+    let ids=[
+        parse_sid("S-1-5-18")?,
+        parse_sid(&sid_of_named_service("LuIdeDebugTargetBroker")?)?,
+        parse_sid(&sid_of_named_service("LuIdeDebuggerBroker")?)?,
+    ];
+    let mut sd=ptr::null_mut();
+    let mut dacl=ptr::null_mut();
+    if unsafe{GetSecurityInfo(process,SE_KERNEL_OBJECT,DACL_SECURITY_INFORMATION,
+        ptr::null_mut(),ptr::null_mut(),&mut dacl,ptr::null_mut(),&mut sd,
+    )}!=0||dacl.is_null()||sd.is_null(){return Err(denied());}
+    let _sd=OwnedSid(sd);
+    let mut control=0u16;let mut revision=0u32;
+    if unsafe{GetSecurityDescriptorControl(sd,&mut control,&mut revision)}==0
+        ||control&SE_DACL_PROTECTED==0{return Err(denied());}
+    let mut info=ACL_SIZE_INFORMATION::default();
+    if unsafe{GetAclInformation(dacl,
+        (&mut info as *mut ACL_SIZE_INFORMATION).cast(),
+        size_of::<ACL_SIZE_INFORMATION>() as u32,AclSizeInformation,
+    )}==0||info.AceCount!=3{return Err(denied());}
+    let mut seen=[false;3];
+    for idx in 0..3{
+        let mut raw=ptr::null_mut();
+        if unsafe{GetAce(dacl,idx,&mut raw)}==0||raw.is_null(){return Err(denied());}
+        let ace=unsafe{&*(raw as *const ACCESS_ALLOWED_ACE)};
+        if ace.Header.AceType!=0||ace.Header.AceFlags!=0
+            ||ace.Header.AceSize<size_of::<ACCESS_ALLOWED_ACE>() as u16
+            ||ace.Mask!=0x001F_FFFF{return Err(denied());}
+        let sid=(&ace.SidStart as *const u32).cast_mut().cast();
+        let which=ids.iter().position(|id|unsafe{EqualSid(sid,id.0)}!=0)
+            .ok_or_else(denied)?;
+        if seen[which]{return Err(denied());}
+        seen[which]=true;
+    }
+    if seen!=[true,true,true]{return Err(denied());}
+    Ok(())
+}
+
 pub fn sid_of_service() -> Result<String, SupervisorError> {
     sid_of_named_service(SERVICE_NAME)
 }

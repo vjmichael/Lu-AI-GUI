@@ -140,6 +140,9 @@ impl PendingTarget {
         ->Result<(),SupervisorError>{
         windows_fin04w2_kernel::inspect_current_target_service_principal()?;
         contained(self.pending.process.0,self.job)?;
+        windows_service_security::verify_exact_target_process_debug_acl(
+            self.pending.process.0,
+        )?;
         windows_worker::verify_suspended_appcontainer_token(
             self.pending.process.0,self.profile.sid,
         )?;
@@ -212,6 +215,10 @@ pub(crate) fn prepare_appcontainer_target(
     let pending=Pending::from_information(info)?;
     contained(pending.process.0,kernel_job)?;
     windows_worker::verify_suspended_appcontainer_token(pending.process.0,profile.sid)?;
+    // Only the target SCM process can alter the new suspended process DACL.
+    // LLDB's separate restricted service SID gets precisely its intended
+    // Win32 debug attach rights, never Job custody or mutable stage files.
+    windows_service_security::seal_exact_target_process_debug_acl(pending.process.0)?;
     Ok(PendingTarget {
         pending,profile,stage,image_sha256:expected_sha256.to_owned(),
         job:kernel_job,
