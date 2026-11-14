@@ -269,8 +269,10 @@ impl DapGateway {
     #[cfg(all(windows, debug_assertions, feature="fin04w2-split-native"))]
     pub(crate) fn attach_service_held_appcontainer_target(
         &mut self,
+        debugger: windows_sys::Win32::Foundation::HANDLE,
+        debugger_job: windows_sys::Win32::Foundation::HANDLE,
         child: windows_sys::Win32::Foundation::HANDLE,
-        service_job: windows_sys::Win32::Foundation::HANDLE,
+        target_job: windows_sys::Win32::Foundation::HANDLE,
         appcontainer_sid: windows_sys::Win32::Security::PSID,
         sealed_binary: &std::path::Path,
         binary_sha256: &str,
@@ -279,11 +281,14 @@ impl DapGateway {
         plan: &crate::JobPlan,
         plan_sha256: &str,
     ) -> Result<(), SupervisorError> {
+        // Verify both real process identities, distinct Job memberships,
+        // exact original service restricted SID, and the target zero-capability
+        // AppContainer. A bare PID or LLDB DAP claim never grants attach.
         // Observe OS identity twice, including immediately BEFORE send.
         // A stale plan, dead service, escaped target or swapped image denies.
-        let get_pid=||crate::windows_fin04w2_split::attest_service_held_appcontainer_target(
-            child,service_job,appcontainer_sid,sealed_binary,binary_sha256,
-            journal,job_id,plan,plan_sha256,
+        let get_pid=||crate::windows_fin04w2_split::attest_split_pair(
+            debugger,debugger_job,child,target_job,appcontainer_sid,
+            sealed_binary,binary_sha256,journal,job_id,plan,plan_sha256,
         );
         let pid=get_pid()?;
         if self.job_id!=job_id || self.plan_sha256!=plan_sha256
