@@ -38,6 +38,7 @@ export function TaskBoardWindow(){
   const shown=useMemo(()=>shownTasks(all,filter,search),[all,filter,search]);
   const groups=useMemo(()=>taskGroups(shown),[shown]);
   async function reload(){
+    setCompletionReconciliation(null);
     const result=await invoke('lu_project_board_list');
     if(!Array.isArray(result))throw Error('Unrecognized native board response');
     setBoards(result);
@@ -149,7 +150,7 @@ export function TaskBoardWindow(){
           })
         ]);
         setCriterionReviews(reviews);setAgentLinks(links);
-        setCriterionReason('');
+        setCriterionReason('');setCompletionReconciliation(null);
       }
       return entry;
     });
