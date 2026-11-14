@@ -19,7 +19,7 @@ use windows_sys::Win32::{
         Services::{
             CloseServiceHandle,OpenSCManagerW,OpenServiceW,QueryServiceStatusEx,
             SC_MANAGER_CONNECT,SC_STATUS_PROCESS_INFO,SERVICE_QUERY_STATUS,
-            SERVICE_RUNNING,SERVICE_STATUS_PROCESS,
+            SERVICE_RUNNING,SERVICE_STATUS_PROCESS,SERVICE_WIN32_OWN_PROCESS,
         },
         Threading::{
             OpenProcess,OpenProcessToken,QueryFullProcessImageNameW,
@@ -49,6 +49,7 @@ fn status(service: *mut std::ffi::c_void)->Result<SERVICE_STATUS_PROCESS,Supervi
         size_of::<SERVICE_STATUS_PROCESS>() as u32,&mut size)}==0
         ||size!=size_of::<SERVICE_STATUS_PROCESS>() as u32
         ||value.dwCurrentState!=SERVICE_RUNNING
+        ||value.dwServiceType!=SERVICE_WIN32_OWN_PROCESS
         ||value.dwProcessId==0{
         return Err(denied());
     }
@@ -103,6 +104,7 @@ struct LiveService {
     process:ProcessHandle,
     pid:u32,
     pinned_image:PathBuf,
+    pinned_sha:String,
     name:&'static str,
 }
 impl LiveService {
@@ -140,7 +142,8 @@ impl LiveService {
             return Err(denied());
         }
         Ok(Self{_scm:scm,service,process,pid:observed.dwProcessId,
-            pinned_image:pinned_image.to_path_buf(),name})
+            pinned_image:pinned_image.to_path_buf(),
+            pinned_sha:expected_sha.to_owned(),name})
     }
     fn reobserve(&self)->Result<(),SupervisorError>{
         if status(self.service.0)?.dwProcessId!=self.pid
@@ -150,6 +153,10 @@ impl LiveService {
               !=self.pinned_image.as_os_str().to_string_lossy().to_lowercase(){
             return Err(denied());
         }
+        // A query handle alone does not freeze the on-disk service image.
+        // Recheck the exact administrator-pinned executable digest at each
+        // observation boundary, alongside the live PID and token identity.
+        security::hash_executable(&self.pinned_image,&self.pinned_sha)?;
         restricted_service_token(self.process.0,self.name)
     }
 }
