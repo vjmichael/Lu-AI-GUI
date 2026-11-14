@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "941550f589c1a05891745d00b7a6973f80d94c71",
-  "trackedFileCount": 1003,
+  "sourceCommitBeforeLock": "bc4d3fadc89ee4e7a8db526a0caff993f008be2d",
+  "trackedFileCount": 1004,
   "files": [
     {
       "path": ".github/pull_request_template.md",
@@ -237,7 +237,7 @@
     },
     {
       "path": ".github/workflows/lu-repo01-full-source.yml",
-      "blob": "c91c1b18db2efbc92ba8ef0511a106cb2f8a5c6d"
+      "blob": "270f1a5fc18429d733b9fc6d1e79235af0495011"
     },
     {
       "path": ".github/workflows/lu-tools-01-05-integration.yml",
@@ -386,6 +386,10 @@
     {
       "path": "benchmarks/e1/r00_genuine_kiaf_comparison.py",
       "blob": "532e83256556951c5df8156d812235b2bb17997f"
+    },
+    {
+      "path": "benchmarks/e1/sec06c_browser_guardian_loss.py",
+      "blob": "714e090cf70330c74ac7c9f8c8b5ae3ee21efc0b"
     },
     {
       "path": "benchmarks/e1/sec06c_browser_host_crash.py",
@@ -1457,7 +1461,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/native_browser_host.rs",
-      "blob": "a8a4516dd769b7e759b084f37bf16ccf566a81cb"
+      "blob": "dc1419f0555d1802e070bc158a067889f02dc51a"
     },
     {
       "path": "lu-desktop/src-tauri/src/native_host_edit.rs",
@@ -1941,7 +1945,7 @@
     },
     {
       "path": "lu-desktop/tests/p0-sec06-consolidated.test.mjs",
-      "blob": "3349103d07f222023ee040d836eae1110c101188"
+      "blob": "e608bd50c789eb9df30a64b81b3781853a123c28"
     },
     {
       "path": "lu-desktop/tests/p03-ai-ops.test.mjs",
