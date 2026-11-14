@@ -1,0 +1,137 @@
+# Manual operator-approved SINGLE-JOB EPHEMERAL runner on a disposable Linux VM.
+# The repository is PUBLIC. Do not connect a persistent/privileged host.
+# This job has no sudo privileges and does not run the independent root-owned
+# SEC-06C matrix, which requires a separately protected admin-controlled host.
+# Tests the immutable PR #235 source, not current main or a synthetic fixture.
+name: Lu C4 exact-SHA Linux delegated kernel acceptance
+on:
+  workflow_dispatch:
+    inputs:
+      one_time_label:
+        description: 'One-time lu-c4-<24 hexadecimal> runner label'
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: lu-c4-delegated-2fb253ab35bc3b451b9c07b89f5549aec26c32e3
+  cancel-in-progress: false
+env:
+  LU_C4_EXACT_SHA: 2fb253ab35bc3b451b9c07b89f5549aec26c32e3
+jobs:
+  genuine-kernel-custody:
+    runs-on: [self-hosted, linux, x64, lu-cgroup-v2-delegated, "${{ inputs.one_time_label }}"]
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 2fb253ab35bc3b451b9c07b89f5549aec26c32e3
+          persist-credentials: false
+          clean: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - name: Verify one-use runner selection is not a general shared label
+        env:
+          LU_C4_ONE_TIME_LABEL: ${{ inputs.one_time_label }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$LU_C4_ONE_TIME_LABEL" =~ ^lu-c4-[0-9a-f]{24}$ ]] || {
+            echo 'One-time 24-hex runner label required' >&2
+            exit 1
+          }
+          test "$(id -u)" -ne 0
+      - name: Check original SHA and source-tree lock
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p c4-native-os
+          test "$(git rev-parse HEAD)" = "$LU_C4_EXACT_SHA"
+          node scripts/verify-source-tree.mjs | tee c4-native-os/source-check.log
+          git rev-parse HEAD > c4-native-os/exact-sha.txt
+          sha256sum source-tree.lock.json > c4-native-os/source-lock-sha256.txt
+      - name: Prove real nonroot delegated cgroup v2 with protected ancestor
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat /proc/self/cgroup > c4-native-os/host-cgroup.txt
+          python3 - <<'PY' | tee c4-native-os/delegation-preflight.log
+          import os,pathlib,secrets
+          assert os.geteuid()!=0,"ROOT_WORKER_NOT_ACCEPTED"
+          lines=pathlib.Path("/proc/self/cgroup").read_text().splitlines()
+          own=[s[3:] for s in lines if s.startswith("0::")]
+          assert len(lines)==len(own)==1 and own[0]!="/","NO_NONROOT_CGROUP_V2_LEAF"
+          root=pathlib.Path("/sys/fs/cgroup").resolve(strict=True)
+          leaf=(root/own[0].lstrip("/")).resolve(strict=True)
+          assert leaf.is_relative_to(root) and leaf!=root,"UNTRUSTED_CGROUP_PATH"
+          mounts=pathlib.Path("/proc/self/mountinfo").read_text().splitlines()
+          valid=[x for x in mounts if " - cgroup2 " in x and
+                 x.split(" - ",1)[0].split()[4]=="/sys/fs/cgroup" and
+                 "rw" in x.split(" - ",1)[0].split()[5].split(",")]
+          assert len(valid)==1,"CGROUP_MOUNT_NOT_WRITABLE"
+          assert os.getxattr(leaf,"user.delegate")==b"1","SYSTEMD_DELEGATE_NOT_ATTESTED"
+          ancestor=leaf/"cgroup.procs"
+          assert ancestor.stat().st_uid!=os.geteuid(),"UNSAFE_SAME_USER_ANCESTOR"
+          try:
+              # Match Lu's original OpenOptions::write(true) exactly:
+              # O_WRONLY without O_TRUNC, and NEVER write any PID.
+              fd=os.open(ancestor,os.O_WRONLY|os.O_CLOEXEC)
+          except PermissionError: pass
+          else:
+              os.close(fd)
+              raise RuntimeError("UNSAFE_WRITABLE_CGROUP_ANCESTOR")
+          test=leaf/("lu-c4-kernel-"+secrets.token_hex(12))
+          test.mkdir()
+          try:
+              assert (test/"cgroup.kill").is_file(),"NO_REAL_CGROUP_KILL"
+              assert "populated 0" in (test/"cgroup.events").read_text().splitlines()
+          finally: test.rmdir()
+          print("LU_C4_PROTECTED_DELEGATED_KERNEL=1")
+          PY
+          grep -Fxq 'LU_C4_PROTECTED_DELEGATED_KERNEL=1' c4-native-os/delegation-preflight.log
+      - name: Build original first-party kernel guard and host crash fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo build --locked --manifest-path src-tauri/lu-win-worker-job/Cargo.toml \
+            --features e1-p08-crash-fixture \
+            --bin lu-linux-cgroup-guard --bin lu-e1-p08-linux-cgroup-crash-parent
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib sec06c --no-run
+      - name: Original SIGKILL setsid escaped descendant kernel evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 benchmarks/e1/agent01l_cgroup_escape_crash_acceptance.py \
+            --guard "$GITHUB_WORKSPACE/src-tauri/lu-win-worker-job/target/debug/lu-linux-cgroup-guard" \
+            --parent "$GITHUB_WORKSPACE/src-tauri/lu-win-worker-job/target/debug/lu-e1-p08-linux-cgroup-crash-parent" \
+            2>&1 | tee c4-native-os/original-escaped-descendant.log
+          grep -Fq 'AGENT01L_NATIVE_CGROUP_ESCAPED_DESCENDANT_PASS=1' \
+            c4-native-os/original-escaped-descendant.log
+      - name: Original Git kernel custody cold restart and replay denial
+        shell: bash
+        env:
+          LU_AGENT01L_TEST_CGROUP_GUARD: ${{ github.workspace }}/src-tauri/lu-win-worker-job/target/debug/lu-linux-cgroup-guard
+        run: |
+          set -euo pipefail
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --lib native_background_process::tests::agent01l_linux_real_git_cgroup_custody_after_restart \
+            -- --ignored --nocapture 2>&1 | tee c4-native-os/original-git-restart.log
+          grep -Fq 'test result: ok. 1 passed; 0 failed;' c4-native-os/original-git-restart.log
+      - name: Record exact scope; no broader release authorization
+        shell: bash
+        run: |
+          printf 'SHA=%s\nLINUX_KERNEL_CUSTODY=PASS\nSEC06C_LINUX_MATRIX=OPEN\nSEC06F=OPEN\nWINDOWS_PHYSICAL=OPEN\nQWEN_27B_PHYSICAL=OPEN\n' \
+            "$LU_C4_EXACT_SHA" > c4-native-os/limited-result.txt
+          echo "Original Linux cgroup-v2 kernel custody: **PASS at $LU_C4_EXACT_SHA**. Not full SEC-06F or installed release." >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lu-c4-original-sha-kernel-custody
+          path: c4-native-os/
+          retention-days: 30
+          if-no-files-found: warn
+
