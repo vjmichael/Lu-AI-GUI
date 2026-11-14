@@ -82,6 +82,7 @@ jobs:
           done
           cargo test --locked --manifest-path ide/host/Cargo.toml --test source_create -- --nocapture
           cargo test --locked --manifest-path ide/host/Cargo.toml --test source_file_transactions -- --nocapture
+          cargo test --locked --manifest-path ide/host/Cargo.toml --test quick_open -- --nocapture
           cargo test --locked --manifest-path ide/host/Cargo.toml --lib package_preview -- --nocapture
           cargo test --locked --manifest-path ide/supervisor/Cargo.toml --features fin04w2-c2 --lib fin04w2_c2 -- --nocapture
           echo "IDE_MERGE02_ORIGINAL_NATIVE_FILE_OPS=PASS"
