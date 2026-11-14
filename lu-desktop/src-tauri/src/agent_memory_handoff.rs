@@ -196,6 +196,44 @@ mod tests{
         assert_eq!(reviewed["candidateStepIndex"],1);
         assert_eq!(reviewed["automaticExecution"],false);
         assert_eq!(reviewed["newHumanReviewRequired"],true);
+        let mut missing=decision.clone();
+        missing.steps.clear();
+        missing.independently_observed_steps=0;
+        assert!(safe_plan_preview(&plan,&missing)["candidateStepIndex"].is_null());
+        let mut inconsistent=plan;
+        inconsistent.continuation_preview.status="STOP_MISSING_WITNESS";
+        assert!(safe_plan_preview(&inconsistent,&decision)["candidateStepIndex"].is_null());
+    }
+    #[test]
+    fn source_inspection_preview_never_implicitly_authorizes_execution(){
+        use lu_core::agent_recovery_decision::RecoveryDecision;
+        let mut p=agent_plan_progress::AgentPlanProgress{
+            plan_id:"p-x".into(),original_human_turn_id:"g-y".into(),
+            plan_state:"OBSERVATIONS_ONLY".into(),latest_revision:1,
+            revision_sha256:None,revision_review:"APPROVED_PLAN_ONLY".into(),
+            pending_source_checks:0,supervisor_state:"NOT_CLAIMED".into(),
+            step_count:1,steps:Vec::new(),next_safe_action:"review",
+            continuation_preview:agent_plan_progress::AgentContinuationPreview{
+                candidate_step_index:Some(0),
+                status:"MANUAL_ONE_STEP_REVIEW_ONLY",required_action:"fresh review",
+                live_source_reverified:false,
+                execution_authority:"NOT_AUTHORIZED_FOR_EXECUTION"
+            },
+            lineage_status:"ROOT_PLAN_NO_CONTINUATION".into(),
+            lineage_generations:0,lineage_parent_id:None,
+            execution_authority:"NOT_AUTHORIZED_FOR_EXECUTION"
+        };
+        let decision=RecoveryDecision{
+            status:"REVIEW_FIRST_STEP_ONLY",next_action:"fresh review",
+            linked_generations:0,independently_observed_steps:0,
+            steps:Vec::new(),execution_authority:"NOT_AUTHORIZED_FOR_EXECUTION"
+        };
+        let preview=safe_plan_preview(&p,&decision);
+        assert_eq!(preview["candidateStepIndex"],0);
+        assert_eq!(preview["liveNativeToolAuthority"],false);
+        assert_eq!(preview["sourceFreshness"],"NOT_RECHECKED");
+        p.continuation_preview.status="STOP_UNSUPPORTED_STEP_TYPE";
+        assert!(safe_plan_preview(&p,&decision)["candidateStepIndex"].is_null());
     }
     #[test]
     fn only_explicit_bounded_current_human_plan_request_is_recognized(){

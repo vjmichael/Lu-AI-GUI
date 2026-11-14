@@ -47,9 +47,11 @@
     BrokerNotRegistered,PlanStepNotReviewedOperation,OutcomeNotIndependentlyVerified,
  }
  // AGENT-01F: a reviewed Git/FFprobe read is not a generic plan-step
- // executor. Inspecting sources and independently witnessing a source fact
- // are the only current step classes the broker can serve. A PRESENT or
- // HUMAN_REVIEW step must not silently become a native execution request.
+ // executor. The durable original deliverable ledger currently accepts ONLY
+ // independently checked witnesses. Source references/structured findings
+ // have not received a source-specific original receipt contract and must
+ // not be promoted merely because preflight knows a tool name.
+ // PRESENT and HUMAN_REVIEW are likewise nonexecuting plan data.
  fn supported_reviewed_step(step:&crate::agent_plan_revisions::RevisionStep)->bool{
     use crate::agent_plan_ledger::PlanStepKind;
     use crate::agent_plan_revisions::ExpectedDeliverable;
@@ -225,8 +227,16 @@
         };
         assert!(!supported_reviewed_step(&build(
             PlanStepKind::CollectSource,ExpectedDeliverable::SourceReferences)));
+        assert!(!supported_reviewed_step(&build(
+            PlanStepKind::Inspect,ExpectedDeliverable::SourceReferences)));
+        assert!(!supported_reviewed_step(&build(
+            PlanStepKind::Inspect,ExpectedDeliverable::StructuredFindings)));
         assert!(supported_reviewed_step(&build(
             PlanStepKind::IndependentlyCheck,ExpectedDeliverable::IndependentWitness)));
+        let empty=RevisionStep{kind:PlanStepKind::IndependentlyCheck,
+            expected:ExpectedDeliverable::IndependentWitness,depends_on:None,
+            deliverable_id:String::new()};
+        assert!(!supported_reviewed_step(&empty));
         for kind in [PlanStepKind::Present,PlanStepKind::HumanReview,PlanStepKind::Analyze]{
             assert!(!supported_reviewed_step(&build(
                 kind,ExpectedDeliverable::Explanation)));
