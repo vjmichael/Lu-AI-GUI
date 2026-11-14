@@ -486,7 +486,8 @@ fn review_only(pipe:HANDLE,config:&InstalledAuditConfig)
         // DAP's thread/IP/line are UNTRUSTED candidates until the separate
         // target SCM compares exact Job, OS-loaded PE and x64 thread RIP.
         let stop=crate::windows_fin04w2_lldb_dap::attach_and_observe_stop(
-            &debugger,target.observed_target_pid(),
+            &debugger,target.observed_target_pid(),&scm_pair,&target,
+            ||STOP.load(Ordering::SeqCst),
         )?;
         let (os_thread,relocation_bias)=
             target.corroborate_stopped_rip(&scm_pair,stop.observed_pc)?;

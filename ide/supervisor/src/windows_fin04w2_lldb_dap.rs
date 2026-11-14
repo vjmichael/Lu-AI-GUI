@@ -5,7 +5,12 @@
 //! reobserves thread RIP, loaded PE, source and PDB. This module never
 //! authorizes a debugger action or asserts installed/runtime acceptance.
 #![cfg(all(windows,debug_assertions,feature="fin04w2-split-native"))]
-use crate::{windows_fin04w2_split_launcher::PendingDebugger,SupervisorError};
+use crate::{
+    windows_fin04w2_split_launcher::PendingDebugger,
+    windows_fin04w2_scm_pair::IndependentScmPair,
+    windows_fin04w2_target_ipc::SuspendedTargetLease,
+    SupervisorError,
+};
 use serde_json::{json,Value};
 use std::{ptr,thread,time::{Duration,Instant}};
 use windows_sys::Win32::{
@@ -59,11 +64,13 @@ struct NativeDap{
     output:HANDLE,
     incoming:Vec<u8>,
     transferred:usize,
+    next_health_check:Instant,
 }
 impl NativeDap{
     fn new(debugger:&PendingDebugger)->Self{
         let (input,output)=debugger.stdio_handles();
-        Self{input,output,incoming:Vec::new(),transferred:0}
+        Self{input,output,incoming:Vec::new(),transferred:0,
+            next_health_check:Instant::now()}
     }
     fn send(&mut self,seq:u32,command:&'static str,args:Value)
         ->Result<(),SupervisorError>{
@@ -83,8 +90,18 @@ impl NativeDap{
             ||written!=frame.len() as u32{return Err(denied());}
         Ok(())
     }
-    fn receive(&mut self,deadline:Instant)->Result<Value,SupervisorError>{
+    fn receive<F:Fn()->bool>(
+        &mut self,deadline:Instant,
+        pair:&IndependentScmPair,target:&SuspendedTargetLease,
+        stop_requested:&F,
+    )->Result<Value,SupervisorError>{
         loop{
+            if stop_requested(){return Err(denied());}
+            if Instant::now()>=self.next_health_check{
+                pair.reobserve()?;
+                target.reobserve(pair)?;
+                self.next_health_check=Instant::now()+Duration::from_millis(500);
+            }
             if let Some(item)=extract_frame(&mut self.incoming)?{
                 if item.get("type").and_then(Value::as_str)==Some("request"){
                     return Err(denied()); // never grant reverse runInTerminal
@@ -168,8 +185,10 @@ fn source_from_stack(v:&Value,tid:u32)->Result<StoppedCandidate,SupervisorError>
 /// debugger SCM-held Job; the untrusted target PID originates from the
 /// target SCM's independent kernel GetProcessId and sealed original request.
 /// Returned candidate is NOT an OS stop, source line, PDB or release proof.
-pub(crate) fn attach_and_observe_stop(
+pub(crate) fn attach_and_observe_stop<F:Fn()->bool>(
     debugger:&PendingDebugger,target_pid:u32,
+    pair:&IndependentScmPair,target:&SuspendedTargetLease,
+    stop_requested:F,
 )->Result<StoppedCandidate,SupervisorError>{
     if target_pid==0{return Err(denied());}
     let mut dap=NativeDap::new(debugger);
@@ -183,7 +202,7 @@ pub(crate) fn attach_and_observe_stop(
     let mut initialized=false;
     let mut init_ack=false;
     while !init_ack{
-        let v=dap.receive(deadline)?;
+        let v=dap.receive(deadline,pair,target,&stop_requested)?;
         if response_ok(&v,1,"initialize")?{init_ack=true;continue;}
         if v.get("type").and_then(Value::as_str)==Some("event"){
             if v.get("event").and_then(Value::as_str)==Some("initialized"){
@@ -196,7 +215,7 @@ pub(crate) fn attach_and_observe_stop(
     let mut stopped=None;
     let mut configured=false;
     while !(attach_ack&&stopped.is_some()){
-        let v=dap.receive(deadline)?;
+        let v=dap.receive(deadline,pair,target,&stop_requested)?;
         if response_ok(&v,2,"attach")?{
             attach_ack=true;
         }else if response_ok(&v,3,"configurationDone")?{
@@ -216,7 +235,7 @@ pub(crate) fn attach_and_observe_stop(
     let tid=stopped.ok_or_else(denied)?;
     dap.send(4,"stackTrace",json!({"threadId":tid,"startFrame":0,"levels":1}))?;
     loop{
-        let v=dap.receive(deadline)?;
+        let v=dap.receive(deadline,pair,target,&stop_requested)?;
         if v.get("type").and_then(Value::as_str)==Some("response"){
             if response_ok(&v,3,"configurationDone")?{continue;}
             return source_from_stack(&v,tid);
