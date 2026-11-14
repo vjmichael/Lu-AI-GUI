@@ -107,6 +107,7 @@ pub mod gguf_metadata_summary;
 pub mod host_resource_authority;
 pub mod host_session;
 pub mod host_typed_evidence;
+pub mod generation_loop_guard;
 pub mod inference_bridge;
 pub mod inference_host;
 pub mod inference_image_refs;

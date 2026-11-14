@@ -22,9 +22,9 @@ use crate::{
     registry::NativeToolRegistry,
 };
 
-/// Large absolute emergency limit, not a small fixed reasoning loop cap.
-/// Repeated identical tool results stop after MAX_IDENTICAL_RESULTS.
-pub const MAX_TOOL_STEPS:u32=32;
+/// Counter overflow sentinel, NOT a small fixed ceiling on useful tool calls.
+/// Existing per-turn grants, verified progress and cancellation govern execution.
+pub const MAX_TOOL_STEPS:u32=u32::MAX;
 pub const MAX_IDENTICAL_RESULTS:u8=3;
 pub const MAX_MODEL_FRAME_BYTES: usize = 64 * 1024;
 
