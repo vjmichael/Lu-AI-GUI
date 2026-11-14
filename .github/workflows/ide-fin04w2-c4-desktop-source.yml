@@ -1,0 +1,68 @@
+name: IDE FIN-04W2-C4 native desktop source and negatives
+on:
+  pull_request:
+    paths:
+      - 'ide/app/src-tauri/**'
+      - 'ide/supervisor/**'
+      - '.github/workflows/ide-fin04w2-c4-desktop-source.yml'
+permissions:
+  contents: read
+concurrency:
+  group: fin04w2-c4-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  windows-c4-source:
+    runs-on: windows-2022
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Verify exact source head
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          echo FIN04W2_C4_EXACT_SOURCE=PASS
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Build first-party frontend
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd ide/app
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm run build
+      - name: Real Windows Tauri native menu compiler and negative tests
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          cargo test --manifest-path ide/app/src-tauri/Cargo.toml --features fin04w2-c4-desktop --lib fin04w2_c4_desktop::tests -- --nocapture
+          if ($LASTEXITCODE -ne 0) {throw 'DENIED: C4 compiler or negatives'}
+          Write-Host FIN04W2_C4_NATIVE_DESKTOP_SOURCE=PASS
+          Write-Host FIN04W2_C4_PHYSICAL_HUMAN_APPROVAL=NOT_TESTED
+      - name: No WebView and model execution surface
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $src=Get-Content 'ide/app/src-tauri/src/fin04w2_c4_desktop.rs' -Raw
+          $host=Get-Content 'ide/app/src-tauri/src/lib.rs' -Raw
+          if ($src -match '#\[tauri::command\]' -or $host -match 'ide_fin04w2_c4'
+            -or $src -notmatch 'run_fixed_after_visible_native_consent'
+            -or $src -notmatch 'native_project_debug_target'
+            -or $src -notmatch 'FIN04C4_AUTOMATED_APPROVAL_FORBIDDEN') {
+            throw 'DENIED: C4 native-only authority boundary weakened'
+          }
+          Write-Host FIN04W2_C4_NATIVE_ONLY_BOUNDARY=PASS
+      - name: Default desktop remains absent C4
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          cargo check --manifest-path ide/app/src-tauri/Cargo.toml --lib
+          if ($LASTEXITCODE -ne 0) {throw 'DENIED: default desktop compilation'}
+          Write-Host FIN04W2_C4_DEFAULT_DESKTOP_NO_NATIVE_MENU=PASS

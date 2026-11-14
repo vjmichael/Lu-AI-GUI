@@ -5,6 +5,7 @@ on:
   pull_request:
     paths:
       - 'ide/supervisor/**'
+      - 'ide/app/src-tauri/**' # C4 native desktop links existing fixed service
       - '.github/workflows/ide-fin04w2-contained-native.yml'
 permissions:
   contents: read

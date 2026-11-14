@@ -1,5 +1,26 @@
 # Lu IDE — Development changelog
 
+## 2026-11-13 — FIN-04W2-C4 Windows native desktop source integration
+
+Added a default-off Windows debug-only Tauri OS menu for preparing,
+approving or cancelling one reviewed C2 benign-worker operation. A
+fresh private Cargo snapshot must match the original protected
+completed build's full manifest/toolchain/binary/symbol identity.
+Only a single active native registered project is accepted; Tauri
+obtains its own HWND, never a renderer-provided one. Original Supervisor
+retains its in-memory one-use grant and fsynced journal across both
+menu stages; service is separately administrator-configured for that
+exact Job+plan. No service config writer, new executable/command/PID,
+LLDB/DAP, JS invoke, simulated approval or installer authority.
+The new host reuses the existing FIN-01 create_new global native-worker
+fence across the entire pending/consent/SCM lifecycle, with original
+build/debug/LSP journal checks, anti-replacement marker checks and release
+only after terminal reconciliation. Stale/uncertain admissions keep it.
+
+Native Windows tests and original OS receipt gates require exact-head
+reconciliation; physical operator consent is NOT claimed.
+
+
 ## 2026-11-13 — FIN-04W2-C3B Win32 consent boundary hardening
 
 Tightened the default-off, source-only C3 native consent owner predicate
