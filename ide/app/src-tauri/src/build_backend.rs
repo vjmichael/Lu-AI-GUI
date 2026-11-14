@@ -2235,7 +2235,7 @@ impl NativeBuildRuntime {
         // against its reviewed binary hash. Linux uses original cgroup
         // custody and does not require any executable toolchain at cleanup.
         #[cfg(windows)]
-        let install = installation(app).or_else(|_| {
+        let install = installation(app).or_else(|_| -> Result<Installation, String> {
             #[cfg(feature = "native-multilang")]
             {
                 ["python_pytest", "js_tests", "cpp_cmake_build"]
