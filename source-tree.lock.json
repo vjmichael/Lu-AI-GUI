@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "750036fce91d4daa24e42963d58d96e6e20d97bd",
+  "sourceCommitBeforeLock": "2b1529b3b86c7f2d3e4fd7f83f9a0e3e3bffc419",
   "trackedFileCount": 991,
   "files": [
     {
@@ -597,7 +597,7 @@
     },
     {
       "path": "docs/LU_CORE01F_MERGE_CONSOLIDATION_20261112.md",
-      "blob": "4ac75efeb015eaa48a4ccb87d55b8c2f18ce9c06"
+      "blob": "262e7dc474a79836b6fb7aa2caadaad45872cbab"
     },
     {
       "path": "docs/LU_CORE01F_P0_BRIDGE_BLOB_REVIEW_20261112.json",
@@ -2229,11 +2229,11 @@
     },
     {
       "path": "scripts/core01f-merge-preflight.mjs",
-      "blob": "b4508116cedb7c20ea7ed16905f81a83bd2d78c5"
+      "blob": "aa4ca24a30e65faf2bd65890561fc090485803e6"
     },
     {
       "path": "scripts/core01f-merge-preflight.test.mjs",
-      "blob": "48c0149fabd0ca6ea8de5b31e63faa1daa0012ed"
+      "blob": "c6d448b7c02cb5cb95300edabde8f4d68e4405db"
     },
     {
       "path": "scripts/linux/org.lu.desktop.observe-learn.policy",
