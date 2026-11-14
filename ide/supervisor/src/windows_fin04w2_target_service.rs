@@ -250,9 +250,10 @@ fn prepare_one_target(
     let mut response=[0u8;69];
     response[0]=b'S';
     response[1..5].copy_from_slice(&pid.to_le_bytes());
+    let (first,second)=response.split_at_mut(37);
     for (hex,dest) in [
-        (&cfg.expected_target_image_sha256,&mut response[5..37]),
-        (&cfg.expected_target_pdb_sha256,&mut response[37..69]),
+        (&cfg.expected_target_image_sha256,&mut first[5..37]),
+        (&cfg.expected_target_pdb_sha256,&mut second[..32]),
     ]{
         for (i,b) in dest.iter_mut().enumerate(){
             *b=u8::from_str_radix(&hex[i*2..i*2+2],16)
