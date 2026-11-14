@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "20239857bc188496fecd688cfa5e893ed5d66626",
+  "sourceCommitBeforeLock": "2ed514a32aa02fc682e0a224f721184c526df42a",
   "trackedFileCount": 1005,
   "files": [
     {
@@ -405,7 +405,7 @@
     },
     {
       "path": "benchmarks/e1/sec06c_root_owned_systemd_boundary.py",
-      "blob": "79552a2882adf1113820d26a9f6e769e7ef10d65"
+      "blob": "57466065171a510fb868b9919a1e5dcce81bfb0b"
     },
     {
       "path": "benchmarks/e1/test_agent01g_qwen_plan_probe.py",
@@ -1949,7 +1949,7 @@
     },
     {
       "path": "lu-desktop/tests/p0-sec06-consolidated.test.mjs",
-      "blob": "e608bd50c789eb9df30a64b81b3781853a123c28"
+      "blob": "b253e3057daf38015c3c814562cf496a5b56915b"
     },
     {
       "path": "lu-desktop/tests/p03-ai-ops.test.mjs",
@@ -2277,7 +2277,7 @@
     },
     {
       "path": "scripts/lu-sec06c-owned-browser-worker.py",
-      "blob": "70052a1300d9d83e1ce5e1b9017618bd3af491a0"
+      "blob": "75631fdbb306be7406a9a936f49009dea42f7224"
     },
     {
       "path": "scripts/lu-sec06c-owned-git-launcher.py",
