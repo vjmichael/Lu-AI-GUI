@@ -13,12 +13,12 @@
 //! no shell, no process resumption and no general OS command dispatcher.
 #![cfg(all(windows, debug_assertions, feature="fin04w2-split-native"))]
 
-use crate::{fin04w2_authority,windows_fin04w2_kernel::{self,EmptyAuditJob},
-    windows_fin04w2_split,windows_fin04w2_target_seal,
+use crate::{windows_fin04w2_kernel::{self,EmptyAuditJob},
+    windows_fin04w2_target_seal,windows_event_owner,
     windows_service_security,windows_worker,
-    JobPlan,SupervisorError};
+    SupervisorError};
 use std::{
-    ffi::OsStr, fs, mem::size_of, os::windows::ffi::OsStrExt,
+    ffi::OsStr, fs, io::Read, mem::size_of, os::windows::ffi::OsStrExt,
     path::{Path,PathBuf},ptr,
 };
 use windows_sys::Win32::{
@@ -240,9 +240,10 @@ fn private_handle(h:HANDLE)->Result<(),SupervisorError>{
 /// service-restricted Job. Its three stdio handles are explicitly allowlisted.
 pub(crate) struct PendingDebugger {
     pending:Pending,
-    pub(crate) stdin_write:Owned,
-    pub(crate) stdout_read:Owned,
-    pub(crate) stderr_read:Owned,
+    stdin_write:Owned,
+    stdout_read:Owned,
+    stderr_read:Owned,
+    owner:windows_event_owner::OwnerSideband,
     job:HANDLE,
 }
 impl PendingDebugger {
@@ -250,6 +251,20 @@ impl PendingDebugger {
     pub(crate) fn job(&self)->HANDLE {self.job}
     pub(crate) fn stdio_handles(&self)->(HANDLE,HANDLE){
         (self.stdin_write.0,self.stdout_read.0)
+    }
+    /// Real pinned LLVM DebuggerThread writes a non-forgeable 76-byte
+    /// event to the one-use inherited private pipe (NOT DAP stdout).
+    /// Validate its owner thread against the actual OS-held LLDB handle.
+    pub(crate) fn observe_real_kernel_owner_stop(&mut self,
+        target_pid:u32,target_tid:u32,target_rip:u64,
+    )->Result<windows_event_owner::OwnerEvent,SupervisorError>{
+        contained(self.pending.process.0,self.job)?;
+        let record=self.owner.current(target_pid,target_tid,target_rip)?;
+        crate::windows_kernel_pc::verify_lldb_event_owner_thread(
+            self.pending.process.0,record.owner_tid,
+        )?;
+        contained(self.pending.process.0,self.job)?;
+        Ok(record)
     }
     pub(crate) fn resume_after_original_running(&mut self)
         ->Result<(),SupervisorError>{
@@ -263,7 +278,8 @@ impl PendingDebugger {
 }
 pub(crate) fn prepare_external_debugger(
     job:&EmptyAuditJob, reviewed_lldb_dap:&Path, expected_sha256:&str,
-    reviewed_liblldb_sha256:&str, reviewed_python310_sha256:&str,
+    reviewed_liblldb_sha256:&str,reviewed_llvm_symbolizer_sha256:&str,
+    reviewed_owner_manifest_sha256:&str,
 )->Result<PendingDebugger,SupervisorError>{
     windows_fin04w2_kernel::inspect_current_service_principal()?;
     windows_service_security::hash_executable(reviewed_lldb_dap,expected_sha256)?;
@@ -272,22 +288,63 @@ pub(crate) fn prepare_external_debugger(
     }
     let bundle=reviewed_lldb_dap.parent().ok_or_else(denied)?;
     if !bundle.is_absolute(){return Err(denied());}
-    // The reviewed service configuration pins exact native runtime BYTES;
-    // bare file existence is not sufficient. PATH is still bounded to
-    // this exact bundle plus System32; no desktop/system Python fallback.
+    // The *original* pinned LLVM 18.1.8 first-party owner build disables
+    // Python. Requiring python310.dll would reject the very patched LLDB
+    // binary whose owner events are essential to native FIN-04 acceptance.
+    // Instead pin actual liblldb, llvm-symbolizer and the upstream/owner
+    // provenance manifest independently under administrator-owned config.
     windows_service_security::hash_executable(
         &bundle.join("liblldb.dll"),reviewed_liblldb_sha256,
     )?;
     windows_service_security::hash_executable(
-        &bundle.join("python310.dll"),reviewed_python310_sha256,
+        &bundle.join("llvm-symbolizer.exe"),reviewed_llvm_symbolizer_sha256,
     )?;
+    let bundle_root=bundle.parent().ok_or_else(denied)?;
+    let manifest=bundle_root.join("fin04-owner-provenance.json");
+    windows_service_security::hash_executable(
+        &manifest,reviewed_owner_manifest_sha256,
+    )?;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all="camelCase",deny_unknown_fields)]
+    struct FirstParty {
+        schema:String,upstream_commit:String,observer_only:bool,
+        production_debugger_actions:bool,replay_authorized:bool,
+        header_sha256:String,patcher_sha256:String,
+        patched_debugger_thread_sha256:String,
+        patched_progress_event_header_sha256:String,
+        lldb_dap_exe_sha256:String,
+    }
+    let bytes=fs::read(&manifest).map_err(|_|denied())?;
+    if bytes.is_empty()||bytes.len()>8192{return Err(denied());}
+    let attested:FirstParty=serde_json::from_slice(&bytes).map_err(|_|denied())?;
+    if attested.schema!="lu.ide.fin04.first-party-lldb-owner.v1"
+        ||attested.upstream_commit!="3b5b5c1ec4a3095ab096dd780e84d7ab81f3d7ff"
+        ||!attested.observer_only||attested.production_debugger_actions
+        ||attested.replay_authorized
+        ||attested.lldb_dap_exe_sha256.to_ascii_lowercase()
+            !=expected_sha256.to_ascii_lowercase()
+        ||[
+            &attested.header_sha256,&attested.patcher_sha256,
+            &attested.patched_debugger_thread_sha256,
+            &attested.patched_progress_event_header_sha256,
+        ].iter().any(|x|x.len()!=64||!x.bytes().all(|c|c.is_ascii_hexdigit())){
+        return Err(denied());
+    }
     let stdin=pipe()?;
     let stdout=pipe()?;
     let stderr=pipe()?;
+    let owner_pipe=pipe()?;
+    // Only the patched debugger inherits the owner event WRITE handle.
+    // The target inherits none of these handles (distinct SCM process).
     private_handle(stdin.write.0)?;
     private_handle(stdout.read.0)?;
     private_handle(stderr.read.0)?;
-    let child_handles=[stdin.read.0,stdout.write.0,stderr.write.0];
+    private_handle(owner_pipe.read.0)?;
+    let child_handles=[stdin.read.0,stdout.write.0,stderr.write.0,owner_pipe.write.0];
+    use rand::{rngs::OsRng,RngCore};
+    let mut owner_nonce=[0u8;16];
+    OsRng.fill_bytes(&mut owner_nonce);
+    let nonce_hex=owner_nonce.iter().map(|b|format!("{b:02x}")).collect::<String>();
     let mut attrs=windows_worker::Attributes::with_count(2)?;
     let kernel_job=job.held_split_job_handle();
     windows_service_security::verify_debugger_job_kernel_acl(kernel_job)?;
@@ -304,7 +361,14 @@ pub(crate) fn prepare_external_debugger(
     let mut args=wide(OsStr::new(&format!("\"{}\"",reviewed_lldb_dap.display())));
     let private_root=PathBuf::from(std::env::var_os("ProgramData")
         .ok_or_else(denied)?).join("LuIdeDebuggerBroker");
-    let env=environment(&private_root,bundle)?;
+    let mut env=environment(&private_root,bundle)?;
+    if env.pop()!=Some(0){return Err(denied());}
+    let extra=format!(
+        "LU_IDE_OWNER_NONCE={nonce_hex}\0LU_IDE_OWNER_PIPE_HANDLE={:x}\0\0",
+        owner_pipe.write.0 as usize,
+    );
+    env.extend(extra.encode_utf16());
+    if env.len()>32767{return Err(denied());}
     let mut startup=STARTUPINFOEXW::default();
     startup.StartupInfo.cb=size_of::<STARTUPINFOEXW>() as u32;
     startup.StartupInfo.dwFlags=STARTF_USESTDHANDLES;
@@ -321,11 +385,16 @@ pub(crate) fn prepare_external_debugger(
     )}==0{return Err(denied());}
     let pending=Pending::from_information(info)?;
     contained(pending.process.0,kernel_job)?;
-    // No lowbox attribute was supplied; independent service-SID attestation
-    // checks the actual child token before any resume or attach.
+    // Only this process owns the private read handle. Transfer it exactly
+    // once to the original kernel-event reader; that reader closes on EOF.
+    // The local writer handle drops on return; the patched LLDB child
+    // retains only the expressly allowlisted inherited writer.
+    let reader=owner_pipe.read.0 as usize;
+    std::mem::forget(owner_pipe.read);
+    let owner=windows_event_owner::start_owner_pipe_reader(reader,owner_nonce)?;
     Ok(PendingDebugger{
         pending,stdin_write:stdin.write,stdout_read:stdout.read,
-        stderr_read:stderr.read,job:kernel_job,
+        stderr_read:stderr.read,owner,job:kernel_job,
     })
 }
 

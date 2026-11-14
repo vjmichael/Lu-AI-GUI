@@ -234,7 +234,7 @@ pub(crate) fn job_has_member(job: HANDLE, pid: u32) -> Result<bool, SupervisorEr
 /// already verified against an inherited pipe nonce and monotonic sequence.
 /// Independently ensure this real Win32 thread belongs to Lu's original
 /// protected LLDB process HANDLE. A DAP or model-supplied TID is not accepted.
-#[cfg(any(all(debug_assertions, feature = "dev045d5-ci-event-owner"), feature = "fin04-release-owner-evidence"))]
+#[cfg(any(all(debug_assertions, feature = "dev045d5-ci-event-owner"), feature = "fin04-release-owner-evidence",all(debug_assertions,feature="fin04w2-split-native")))]
 pub(crate) fn verify_lldb_event_owner_thread(
     ll_process: HANDLE,
     owner_tid: u32,

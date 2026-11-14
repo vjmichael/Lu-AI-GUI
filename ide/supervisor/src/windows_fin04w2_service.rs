@@ -97,7 +97,9 @@ struct InstalledAuditConfig {
     #[cfg(feature="fin04w2-split-native")]
     expected_liblldb_sha256: String,
     #[cfg(feature="fin04w2-split-native")]
-    expected_python310_sha256: String,
+    expected_llvm_symbolizer_sha256: String,
+    #[cfg(feature="fin04w2-split-native")]
+    expected_owner_manifest_sha256: String,
     // CI-only first-party fixture. This cannot be selected or influenced by
     // a named-pipe client; only the preinstalled private service.json pins it.
     #[cfg(feature = "fin04w2-contained-probe")]
@@ -196,7 +198,8 @@ impl InstalledAuditConfig {
                 &result.expected_target_pdb_sha256,
                 &result.expected_lldb_dap_sha256,
                 &result.expected_liblldb_sha256,
-                &result.expected_python310_sha256,
+                &result.expected_llvm_symbolizer_sha256,
+                &result.expected_owner_manifest_sha256,
             ]{
                 if sha.len()!=64||!sha.bytes().all(|b|b.is_ascii_hexdigit()){
                     return Err(denied());
@@ -411,11 +414,12 @@ fn review_only(pipe:HANDLE,config:&InstalledAuditConfig)
             &config.expected_target_pdb_sha256,
             &original.approved_entry_sha256,&original.session_id,
         )?;
-        let debugger=crate::windows_fin04w2_split_launcher::prepare_external_debugger(
+        let mut debugger=crate::windows_fin04w2_split_launcher::prepare_external_debugger(
             &job,&config.approved_lldb_dap_executable,
             &config.expected_lldb_dap_sha256,
             &config.expected_liblldb_sha256,
-            &config.expected_python310_sha256,
+            &config.expected_llvm_symbolizer_sha256,
+            &config.expected_owner_manifest_sha256,
         )?;
         if debugger.process().is_null()||target.observed_target_pid()==0{
             return Err(denied());
@@ -469,6 +473,20 @@ fn review_only(pipe:HANDLE,config:&InstalledAuditConfig)
         let os_thread=target.corroborate_stopped_rip(&scm_pair,stop.observed_pc)?;
         if os_thread!=stop.thread_id||stop.source_line==0
             ||stop.source_path.is_empty(){return Err(denied());}
+        // The first-party patched LLVM DebuggerThread must actually have
+        // received the kernel EXCEPTION_DEBUG_EVENT. The owner evidence
+        // comes from its private inherited pipe/nonce, never from DAP.
+        let owner=debugger.observe_real_kernel_owner_stop(
+            target.observed_target_pid(),stop.thread_id,stop.observed_pc,
+        )?;
+        let original_running=crate::fin04w2_authority::verified_running_entry_hash(
+            &config.original_supervisor_journal,&config.original_job_id,
+            &config.review_only_plan,&config.review_only_plan_hash,&original,
+        )?;
+        let _owner_receipt=crate::windows_event_owner::persist_native_owner_receipt(
+            &root,&config.original_job_id,&config.review_only_plan_hash,
+            &original_running,&owner,
+        )?;
         // A late WFP rule or PE/PDB/journal mutation must invalidate even
         // an already observed DAP stop. These are OS readbacks, NOT a
         // substitute for effective hostile-socket or source-line proof.
