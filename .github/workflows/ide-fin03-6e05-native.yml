@@ -64,6 +64,20 @@ jobs:
           cargo test --manifest-path ide/host/Cargo.toml --features fin03-native-vault --lib github_remote_publication_intent -- --nocapture
           cargo test --manifest-path ide/host/Cargo.toml --features fin03-native-vault --lib git_security_recovery_matrix -- --nocapture
           echo "IDE_GROUP6F_FOUR_ORIGINAL_NATIVE_GIT_RECOVERY_INSPECTORS=SOURCE_TESTED_NO_OS_APPROVAL"
+
+          # Group 6F: re-run original independent Git security/recovery
+          # fixtures UNCHANGED. The new cross-domain gate is not accepted
+          # solely because its own source-pattern tests pass.
+          cargo test --manifest-path ide/host/Cargo.toml --lib git_reviewed_commit -- --nocapture
+          cargo test --manifest-path ide/host/Cargo.toml --lib git_protected_merge -- --nocapture
+          cargo test --manifest-path ide/host/Cargo.toml --lib git_protected_divergent_merge -- --nocapture
+          cargo test --manifest-path ide/host/Cargo.toml --lib git_protected_replay -- --nocapture
+          cargo test --manifest-path ide/host/Cargo.toml --lib git_partial_stage -- --nocapture
+          cargo test --manifest-path ide/host/Cargo.toml --lib git_conflict_resolution -- --nocapture
+          cargo test --manifest-path ide/host/Cargo.toml --lib git_reviewed_unstage -- --nocapture
+          cargo test --manifest-path ide/host/Cargo.toml --lib git_reviewed_restore -- --nocapture
+          cargo test --manifest-path ide/host/Cargo.toml --lib git_reviewed_stash_save -- --nocapture
+          echo "G06F_NINE_ORIGINAL_NATIVE_GIT_RECOVERY_FIXTURE_GROUPS=PASS"
           echo "FIN03_6E05C_OFFLINE_INTENT_FSYNC_RESTART_DENIAL=SOURCE_TESTED_NO_REMOTE_WRITE"
           echo "FIN03_6E05_NATIVE_OS_VAULT_COMPILE_AND_HOSTILE_FIXTURES=PASS"
           echo "FIN03_6E05_ORIGINAL_NATIVE_PREVIEW_AND_SIX_READ_POLICY_FIXTURES=PASS"
