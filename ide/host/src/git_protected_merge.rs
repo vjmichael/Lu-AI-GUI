@@ -422,7 +422,6 @@ impl IdeWorkspaceRegistry {
             return Err("G06C03_CANCELLED_BEFORE_EXECUTION");
         }
         let plan = approved_fast_forward_plan(self, project_id, selected_branch, digest)?;
-        self.require_group6f_no_pending_recovery(project_id,false)?;
         let repo = exact_repo(self, project_id)?;
         let root = self
             .registered_git_root(project_id)
@@ -471,6 +470,7 @@ impl IdeWorkspaceRegistry {
         if cancel.load(Ordering::SeqCst) != 0 {
             return Err("G06C03_CANCELLED_BEFORE_PREPARE");
         }
+        self.require_group6f_no_pending_recovery(project_id,false)?;
         append(&journal_path, &journal)?;
         if cancel
             .compare_exchange(0, 1, Ordering::SeqCst, Ordering::SeqCst)
