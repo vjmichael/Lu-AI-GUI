@@ -817,7 +817,10 @@ impl ChatStore {
             // Library workspace/path before opening a local ordinary book.
             // A missing/unsafe book fails closed, not a silently missing fact.
             let book=self.require(source_chat)?;
-            let entries=book.search(source_chat,&fts,4).map_err(to_err)?;
+            // The model sees only live revisions. Explicit source-ID navigation
+            // still opens immutable original versions on human request.
+            let entries=book.search_current_messages(source_chat,&fts,4)
+                .map_err(to_err)?;
             let mut best:Option<(usize,RecallHit)>=None;
             for entry in entries{
                 if !matches!(entry.role.as_str(),"user"|"assistant"){continue}

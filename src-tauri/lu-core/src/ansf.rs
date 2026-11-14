@@ -495,6 +495,53 @@ impl AnsfStore {
         Ok((rows,has_more))
     }
 
+    /// FTS retrieval for CURRENT messages only. Immutable originals and
+    /// intermediate edits remain addressable through search()/read_entry(),
+    /// but default model recall must not surface superseded user wording.
+    /// Filter revisions in SQL BEFORE ranking/limit; filtering a four-hit
+    /// result in the desktop would silently miss valid current matches.
+    pub fn search_current_messages(
+        &self,
+        session_id: &str,
+        query: &str,
+        limit: usize,
+    ) -> Result<Vec<Entry>, AnsfError> {
+        if !valid_id(session_id)
+            || query.trim().is_empty()
+            || query.len() > 256
+            || limit == 0
+            || limit > MAX_PAGE
+        {
+            return Err(AnsfError::InvalidInput);
+        }
+        let conn = self.conn.lock().map_err(|_| AnsfError::Locked)?;
+        let mut stmt = conn.prepare(
+            "SELECT e.id,e.session_id,e.chapter_id,e.message_id,e.role,e.summary,e.content
+             FROM ansf_entries_fts f JOIN ansf_entries e ON e.id=f.rowid
+             WHERE ansf_entries_fts MATCH ?1 AND e.session_id=?2
+               AND NOT EXISTS (
+                 SELECT 1 FROM ansf_entry_edits original_edit
+                 WHERE original_edit.session_id=e.session_id
+                   AND original_edit.original_entry_id=e.id
+               )
+               AND NOT EXISTS (
+                 SELECT 1 FROM ansf_entry_edits old_revision
+                 JOIN ansf_entry_edits newer
+                   ON newer.session_id=old_revision.session_id
+                  AND newer.original_entry_id=old_revision.original_entry_id
+                  AND newer.revision_number>old_revision.revision_number
+                 WHERE old_revision.session_id=e.session_id
+                   AND old_revision.revised_entry_id=e.id
+               )
+             ORDER BY bm25(ansf_entries_fts),e.id LIMIT ?3",
+        )?;
+        let rows = stmt.query_map(
+            params![query, session_id, limit as i64],
+            Self::map_entry,
+        )?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+    }
+
     /// Local book search. A separate, future Library index will locate books;
     /// this search narrows to exact archived entries within this SQLite file.
     pub fn search(
