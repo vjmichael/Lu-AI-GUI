@@ -1204,7 +1204,9 @@ async fn agent01g_genuine_gguf_requires_fresh_ansf_review_native_git_oracle_and_
     let tasks=Arc::new(TaskStore::open(&task_path).unwrap());
     tasks.bind_reviewed_human_turn(&chat,&fresh_turn).unwrap();
     let effects=Arc::new(EffectJournal::open(&effect_path).unwrap());
-    let supervisor=Arc::new(BackgroundProcessSupervisor::new(Arc::clone(&tasks)));
+    let supervisor=Arc::new(BackgroundProcessSupervisor::new_for_reviewed_host(
+        Arc::clone(&tasks),root.clone()
+    ));
     let mut selected=git_config(&git,&repo);
     selected.executable.workspace_id=fresh_turn.clone();
     let mut session=ReviewedApplicationTurnSession::from_verified_host_task(
@@ -1498,7 +1500,9 @@ async fn agent01i_genuine_qwen_two_fresh_approvals_independent_git_and_restart()
     let tasks=Arc::new(TaskStore::open(&task_path).unwrap());
     tasks.bind_reviewed_human_turn(&chat,&fresh_turn).unwrap();
     let effects=Arc::new(EffectJournal::open(&effect_path).unwrap());
-    let supervisor=Arc::new(BackgroundProcessSupervisor::new(Arc::clone(&tasks)));
+    let supervisor=Arc::new(BackgroundProcessSupervisor::new_for_reviewed_host(
+        Arc::clone(&tasks),root.clone()
+    ));
     let mut selected=git_config(&git,&repo);
     selected.executable.workspace_id=fresh_turn.clone();
     let mut session=ReviewedApplicationTurnSession::from_verified_host_task(
@@ -1698,7 +1702,9 @@ async fn agent01i_genuine_qwen_two_fresh_approvals_independent_git_and_restart()
         &root.join(format!("lu-reviewed-effects-{child_turn}.sqlite"))
     ).unwrap());
     let child_supervisor=Arc::new(
-        BackgroundProcessSupervisor::new(Arc::clone(&child_tasks))
+        BackgroundProcessSupervisor::new_for_reviewed_host(
+            Arc::clone(&child_tasks),root.clone()
+        )
     );
     let mut child_git=git_config(&git,&repo);
     child_git.executable.workspace_id=child_turn.clone();
