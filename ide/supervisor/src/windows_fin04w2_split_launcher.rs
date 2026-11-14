@@ -287,6 +287,7 @@ pub(crate) fn prepare_external_debugger(
     job:&EmptyAuditJob, reviewed_lldb_dap:&Path, expected_sha256:&str,
     reviewed_liblldb_sha256:&str,reviewed_llvm_symbolizer_sha256:&str,
     reviewed_owner_manifest_sha256:&str,
+    admin_opt_in_hostile_wfp_probe:bool,
 )->Result<PendingDebugger,SupervisorError>{
     windows_fin04w2_kernel::inspect_current_service_principal()?;
     windows_service_security::hash_executable(reviewed_lldb_dap,expected_sha256)?;
@@ -370,8 +371,14 @@ pub(crate) fn prepare_external_debugger(
         .ok_or_else(denied)?).join("LuIdeDebuggerBroker");
     let mut env=environment(&private_root,bundle)?;
     if env.pop()!=Some(0){return Err(denied());}
+    // Only the administrator-pinned sealed service config can enable this
+    // exact live WFP test. Never inherit a desktop/model-supplied flag or
+    // take an arbitrary address, PID, command, script or service path.
+    let wfp=if admin_opt_in_hostile_wfp_probe{
+        "LU_IDE_OWNER_WFP_PROBE=1\0"
+    }else{""};
     let extra=format!(
-        "LU_IDE_OWNER_NONCE={nonce_hex}\0LU_IDE_OWNER_PIPE_HANDLE={:x}\0\0",
+        "LU_IDE_OWNER_NONCE={nonce_hex}\0LU_IDE_OWNER_PIPE_HANDLE={:x}\0{wfp}\0",
         owner_pipe.write.0 as usize,
     );
     env.extend(extra.encode_utf16());

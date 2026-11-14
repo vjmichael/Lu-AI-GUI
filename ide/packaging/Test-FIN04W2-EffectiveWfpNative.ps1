@@ -42,6 +42,13 @@ if($IPv4Destination.AddressFamily -ne [Net.Sockets.AddressFamily]::InterNetwork 
    $IPv6Destination.AddressFamily -ne [Net.Sockets.AddressFamily]::InterNetworkV6){
   Deny 'both_IP_families_required'
 }
+# The reviewed first-party patched LLDB and target fixture hard-code these
+# addresses; accepting arbitrary caller ports would test the wrong policy.
+if($Port -ne 49281 -or
+   !$IPv4Destination.Equals([Net.IPAddress]::Loopback) -or
+   !$IPv6Destination.Equals([Net.IPAddress]::IPv6Loopback)){
+  Deny 'only_reviewed_dual_loopback_socket_probe_allowed'
+}
 function Observe([int]$observedProcessId,[string]$exe,[string]$sha){
   $native=Get-CimInstance Win32_Process -Filter ("ProcessId="+$observedProcessId)
   if(!$native -or !$native.ExecutablePath){Deny 'native_Process_missing'}

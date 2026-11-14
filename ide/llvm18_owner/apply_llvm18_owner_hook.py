@@ -42,7 +42,8 @@ def apply(root: Path) -> None:
     content = replace_one(
         content,
         '#include "DebuggerThread.h"\n',
-        '#include "DebuggerThread.h"\n#include "LuIdeOwnerEvent.h"\n',
+        '#include <winsock2.h>\n#include "DebuggerThread.h"\n'
+        '#include "LuIdeOwnerEvent.h"\n',
     )
     content = replace_one(
         content,

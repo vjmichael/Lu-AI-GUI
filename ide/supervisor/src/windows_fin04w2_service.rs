@@ -100,6 +100,11 @@ struct InstalledAuditConfig {
     expected_llvm_symbolizer_sha256: String,
     #[cfg(feature="fin04w2-split-native")]
     expected_owner_manifest_sha256: String,
+    // Strictly opt-in first-party fixed loopback 127.0.0.1/::1:49281
+    // hostile WFP probe; admin-pinned config ONLY, never a DAP request.
+    #[cfg(feature="fin04w2-split-native")]
+    #[serde(default)]
+    wfp_hostile_probe: bool,
     // Independently reviewed immutable original compiler source snapshot,
     // never selected from the DAP source/path or a WebView instruction.
     #[cfg(feature="fin04w2-split-native")]
@@ -438,6 +443,7 @@ fn review_only(pipe:HANDLE,config:&InstalledAuditConfig)
             &config.expected_liblldb_sha256,
             &config.expected_llvm_symbolizer_sha256,
             &config.expected_owner_manifest_sha256,
+            config.wfp_hostile_probe,
         )?;
         if debugger.process().is_null()||target.observed_target_pid()==0{
             return Err(denied());

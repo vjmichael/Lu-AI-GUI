@@ -16,7 +16,14 @@
 #ifndef _WIN32
 #error Lu IDE owner-event hook is Windows-only
 #endif
+// The pinned overlay injects winsock2.h BEFORE DebuggerThread.h and
+// any Windows.h include. Never use the legacy winsock.h API in LLDB.
+#ifndef _WINSOCK2API_
+#error FIN04W2 pinned first-party WFP probe requires winsock2-first include
+#endif
 #include <windows.h>
+#include <ws2tcpip.h>
+#pragma comment(lib, "Ws2_32.lib")
 #include <cstdint>
 #include <cstring>
 
@@ -50,6 +57,47 @@ inline int Hex(char c) {
   if (c >= 'a' && c <= 'f') return c - 'a' + 10;
   if (c >= 'A' && c <= 'F') return c - 'A' + 10;
   return -1;
+}
+// Test-only source-integrated outgoing socket attempts from the EXACT
+// pinned lldb-dap.exe itself, never a surrogate executable. Fixed loopback
+// 127.0.0.1 / ::1 port 49281. The host's independent Windows 5157 WFP
+// audit must still correlate real per-process kernel filter runtime IDs.
+// Without the service-owned opt-in environment this code is inert.
+inline void DemandHostileWfpBlocked(int family) {
+  SOCKET sock = ::socket(family, SOCK_STREAM, IPPROTO_TCP);
+  if (sock == INVALID_SOCKET) Deny();
+  int rc = 0;
+  if (family == AF_INET) {
+    sockaddr_in addr = {};
+    addr.sin_family = AF_INET;
+    addr.sin_port = ::htons(49281);
+    addr.sin_addr.S_un.S_addr = ::htonl(INADDR_LOOPBACK);
+    rc = ::connect(sock, reinterpret_cast<sockaddr *>(&addr), sizeof(addr));
+  } else if (family == AF_INET6) {
+    sockaddr_in6 addr = {};
+    addr.sin6_family = AF_INET6;
+    addr.sin6_port = ::htons(49281);
+    addr.sin6_addr.u.Byte[15] = 1; // ::1
+    rc = ::connect(sock, reinterpret_cast<sockaddr *>(&addr), sizeof(addr));
+  } else {
+    ::closesocket(sock);
+    Deny();
+  }
+  const int error = ::WSAGetLastError();
+  if (::closesocket(sock) != 0 || rc != SOCKET_ERROR || error != WSAEACCES)
+    Deny();
+}
+inline void OptionalExactWfpProbe() {
+  char flag[3] = {};
+  DWORD read = ::GetEnvironmentVariableA(
+      "LU_IDE_OWNER_WFP_PROBE", flag, sizeof(flag));
+  if (read == 0) return;
+  if (read != 1 || flag[0] != '1') Deny();
+  WSADATA data = {};
+  if (::WSAStartup(MAKEWORD(2, 2), &data) != 0) Deny();
+  DemandHostileWfpBlocked(AF_INET);
+  DemandHostileWfpBlocked(AF_INET6);
+  if (::WSACleanup() != 0) Deny();
 }
 class Owner {
   HANDLE pipe_ = INVALID_HANDLE_VALUE;
@@ -89,6 +137,9 @@ class Owner {
     // Prevent this private write capability from being inherited by the
     // inferior when LLDB's ProcessLauncherWindows creates the debuggee.
     if (!::SetHandleInformation(pipe_, HANDLE_FLAG_INHERIT, 0)) Deny();
+    // This is not proof by itself: the independent admin tester must
+    // correlate Security/5157 BFE events for the same PID and both IPs.
+    OptionalExactWfpProbe();
     enabled_ = true;
   }
   void Send(DWORD kind, DWORD pid, DWORD tid, DWORD code, DWORD first,
