@@ -20,6 +20,10 @@ mod debug_backend;
 #[cfg(all(any(windows, target_os = "linux"), feature = "native-lsp"))]
 mod lsp_backend;
 mod terminal_broker;
+// Test-case observations depend on the opt-in native supervisor's durable
+// live-output and input snapshot types. Default desktop has no process
+// execution capability and must not unconditionally link that crate.
+#[cfg(all(any(windows,target_os="linux"),feature="native-build"))]
 mod test_case_evidence;
 #[cfg(all(any(windows, target_os = "linux"), any(feature = "native-build", feature = "native-debug", feature = "native-lsp")))]
 mod global_native_custody;
