@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "6d3640293d3b131a68cd72328d9908c3d4206cda",
+  "sourceCommitBeforeLock": "21554b4b6071b85b2d59ff4d521f2cefd19c54c3",
   "trackedFileCount": 1006,
   "files": [
     {
@@ -405,7 +405,7 @@
     },
     {
       "path": "benchmarks/e1/sec06c_root_owned_systemd_boundary.py",
-      "blob": "68822436f69c7c75d97dde97464a3f63ca708fa1"
+      "blob": "9f3f84cc7ffa0c0bbfbc0d0a3ee3c9735413b8e9"
     },
     {
       "path": "benchmarks/e1/test_agent01g_qwen_plan_probe.py",
@@ -1949,7 +1949,7 @@
     },
     {
       "path": "lu-desktop/tests/p0-sec06-consolidated.test.mjs",
-      "blob": "cd97a256af11bfb560ff22f53bc8f8daeef13e8a"
+      "blob": "5aabc7a344eb8634fb1a61d9895987c848c5c607"
     },
     {
       "path": "lu-desktop/tests/p03-ai-ops.test.mjs",
@@ -2333,7 +2333,7 @@
     },
     {
       "path": "scripts/p0-sec06-consolidated.mjs",
-      "blob": "4173bc27a32fadf6864ca1ac827eaffe76dcad74"
+      "blob": "0136960b83107c57e32f92f98a5ea856b56e62a0"
     },
     {
       "path": "scripts/p0-sec06-windows-owner-observation.ps1",
