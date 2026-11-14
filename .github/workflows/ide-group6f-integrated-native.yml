@@ -55,6 +55,11 @@ jobs:
             github_remote_native_consent git_security_recovery_matrix; do
             cargo test --locked --manifest-path ide/host/Cargo.toml --lib "$domain" -- --nocapture
           done
+          cargo test --locked --manifest-path ide/host/Cargo.toml --test source_create -- --nocapture
+          cargo test --locked --manifest-path ide/host/Cargo.toml --test source_file_transactions -- --nocapture
+          cargo test --locked --manifest-path ide/supervisor/Cargo.toml --features fin04w2-c2 --lib fin04w2_c2 -- --nocapture
+          echo "IDE_MERGE02_ORIGINAL_NATIVE_FILE_OPS=PASS"
+          echo "IDE_MERGE03_C2_FIXED_JOURNAL_SOURCE=PASS"
           echo "G06D_G06E_G06F_ORIGINAL_NATIVE_CROSS_DOMAIN=PASS"
           echo "G06F_OS_HUMAN_APPROVAL=NOT_TESTED"
           echo "G06F_REMOTE_CAS_AND_PUBLICATION=NOT_TESTED"
@@ -71,7 +76,8 @@ jobs:
             tests/g06d01_conflict_inventory.test.mjs \
             tests/g06d02_three_way_editor.test.mjs \
             tests/g06d0304_protected_conflict_resolution.test.mjs \
-            tests/fin03e05_remote_preflight.test.mjs
+            tests/fin03e05_remote_preflight.test.mjs \
+            tests/ide_merge02_03_consolidation.test.mjs
           echo "G06D_G06E_G06F_UI_BOUNDARY=PASS"
   desktop-link-and-native-vault:
     name: integrated real Tauri compile and OS vault link / ${{ matrix.os }}
@@ -113,6 +119,12 @@ jobs:
             python ide/app/fixtures/make_g04d_ci_icon.py
           fi
           cargo check --locked --manifest-path ide/app/src-tauri/Cargo.toml --all-targets
+          if [ "$RUNNER_OS" = Windows ]; then
+            cargo test --locked --manifest-path ide/app/src-tauri/Cargo.toml \
+              --features fin04w2-c4-desktop --lib fin04w2_c4_desktop::tests -- --nocapture
+            echo "IDE_MERGE03_C4_WINDOWS_NATIVE_COMPILE_AND_NEGATIVES=PASS"
+            echo "IDE_MERGE03_C4_PHYSICAL_APPROVAL=NOT_TESTED"
+          fi
           echo "G06D_G06E_G06F_REAL_DESKTOP_SOURCE_LINK=PASS"
           echo "G06F_NATIVE_VAULT_CREDENTIAL_USED=NO"
           echo "G06F_INSTALLED_AND_HUMAN_ACCEPTANCE=NOT_TESTED"
