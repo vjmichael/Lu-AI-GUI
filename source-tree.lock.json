@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "61199b0e9a7440c6f5baa26662f69c1c894cb2be",
+  "sourceCommitBeforeLock": "f29b7d29d57d8e20e57436572f367ee06e80e39a",
   "trackedFileCount": 1007,
   "files": [
     {
@@ -901,7 +901,7 @@
     },
     {
       "path": "docs/LU_P0_TOOLS05_TASK_CRITERION_WITNESS_REVIEW_20261111.md",
-      "blob": "29dce3d7fa7e58b4b785524a22f870d76cb4bbea"
+      "blob": "31bc678de913e16fc0b346dad1432f7aab71055d"
     },
     {
       "path": "docs/LU_P0_WIN_CHAT_204_20261111.md",
@@ -1553,7 +1553,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/project_task_agent_handoff.rs",
-      "blob": "e2483d324d492f8d2ac2e7ee7098f7f0a14cdad7"
+      "blob": "1876b4a8c33334afd54ec7b3ef5f3bce69229d34"
     },
     {
       "path": "lu-desktop/src-tauri/src/project_task_board_desktop.rs",
@@ -1565,7 +1565,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/project_task_verified_evidence.rs",
-      "blob": "241bd95ae3ec65d1c708ef56aeb31476045790ba"
+      "blob": "d75b88728be176dd5d649ff4233786b2ac110f0d"
     },
     {
       "path": "lu-desktop/src-tauri/src/project_update_model_desktop.rs",
@@ -2209,7 +2209,7 @@
     },
     {
       "path": "lu-desktop/web/task_board.jsx",
-      "blob": "bd5d8cb29453af00ec1e743de94cca388d35960f"
+      "blob": "76264d4c537d180085bc232766422fa9cec31493"
     },
     {
       "path": "lu-desktop/web/task_board_model.mjs",
