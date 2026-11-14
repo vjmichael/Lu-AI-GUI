@@ -443,10 +443,10 @@ mod tests{
         assert!(recover_prepared_intent(&journal,&i.intent_sha256).is_err());
     }
     #[test]fn native_consent_preview_binds_exact_policy_and_denies_competing_tip(){
-        let f=fixture();let observed=observed(&f);
-        let i=f.registry.prepare_github_remote_publication_intent(&f.id,&observed).unwrap();
+        let f=fixture();let initial_observation=observed(&f);
+        let i=f.registry.prepare_github_remote_publication_intent(&f.id,&initial_observation).unwrap();
         let review=f.registry.review_exact_remote_publication_consent(
-            &f.id,&i,&observed,
+            &f.id,&i,&initial_observation,
         ).unwrap();
         assert_eq!(review.previous_remote_commit,f.old);
         assert_eq!(review.proposed_local_commit,f.new);
