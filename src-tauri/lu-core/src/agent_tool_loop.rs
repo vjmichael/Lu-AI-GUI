@@ -322,6 +322,30 @@ impl NativeToolTurn {
         self.done = true;
     }
 
+    /// Host-only live-session binding for an independently reviewed plan step.
+    /// Scheduled Git/media effects require BOTH the model-visible execute ID
+    /// and the host-only read ID to remain authorized for every continuation.
+    /// This never opens a new grant; model output cannot call this API.
+    pub fn require_native_continuation_capabilities(
+        &mut self,
+        authority: &ConversationAuthority,
+        required_ids: &[&str],
+    ) -> Result<(), ToolTurnError> {
+        if self.done || required_ids.is_empty() {
+            return Err(ToolTurnError::Revoked);
+        }
+        let permitted = authority
+            .permitted_tool_ids(&self.origin)
+            .map_err(ToolTurnError::Unauthorized)?;
+        if required_ids.iter().any(|id| !permitted.contains(*id)) {
+            return Err(ToolTurnError::Revoked);
+        }
+        for id in required_ids {
+            self.continuation_native_ids.insert((*id).into());
+        }
+        Ok(())
+    }
+
     /// A previous valid grant never authorizes a later model continuation.
     /// Check the host task's *current* authority after every async tool call,
     /// not only before model dispatch. Other unadvertised grants cannot be
