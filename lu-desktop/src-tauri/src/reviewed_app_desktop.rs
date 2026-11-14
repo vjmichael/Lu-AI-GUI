@@ -1205,8 +1205,11 @@ async fn reviewed_app_ask_internal(
                     ))?;
                 // Independent journal/oracle and the immutable plan must
                 // agree on the same deliverable, not just on the step number.
-                if witness.deliverable_id!=target.deliverable_id{
-                    return Err("Verified tool witness targets a different planned deliverable".into())
+                if witness.deliverable_id!=target.deliverable_id
+                    ||witness.execution_turn_id!=gid_run
+                    ||witness.tool_id!=binding.reviewed_execute_id
+                    ||witness.status!="VERIFIED_AT_OBSERVATION"{
+                    return Err("Verified tool witness does not match exact planned execution turn or deliverable".into())
                 }
                 host_verified_note=format!(
                     "\n\n[Lu host independent source observation: {} by {} \
@@ -1225,6 +1228,12 @@ async fn reviewed_app_ask_internal(
                     "deliverableId":witness.deliverable_id,
                     "status":witness.status,
                     "method":witness.independent_method,
+                    "originalReceiptSha256":witness.receipt_sha256,
+                    "independentObservedSha256":witness.observed_sha256,
+                    "originalExecutionTurnId":witness.execution_turn_id,
+                    "taskCompleted":false,
+                    "nativeRequirementAccepted":false,
+                    "completionReconciliation":"REQUIRES_NATIVE_SOURCE_AND_HUMAN_CRITERION_REVIEW",
                     "executionAuthority":"NOT_AUTHORIZED_FOR_NEXT_STEP"
                 }));
             }
