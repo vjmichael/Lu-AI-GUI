@@ -590,6 +590,12 @@ test('SEC06C browser puts Chrome, Node and setsid descendants under one root-own
   assert.match(manager,/EFFECT=.*STOPPED/);
   assert.match(mediator,/chrome=subprocess\.Popen/);
   assert.match(mediator,/node=subprocess\.Popen/);
+  assert.match(mediator,/require_node_startup_ack\(node,node_log\)/);
+  assert.match(mediator,/LU_SEC06C_NODE_READY_V1/);
+  assert.match(mediator,/original Node protocol initialization timed out/);
+  const nodeWorker=path('src-tauri/lu-core/workers/lu_browser_worker.mjs');
+  assert.match(nodeWorker,/LU_SEC06C_STARTUP_ACK/);
+  assert.match(nodeWorker,/LU_SEC06C_NODE_READY_V1/);
   assert.match(mediator,/require_go\(a\.nonce\)/);
   assert.match(mediator,/connectOverCDP|cdpEndpoint/);
   assert.match(proof,/BrowserKernelAdmission/);

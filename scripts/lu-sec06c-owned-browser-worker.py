@@ -132,6 +132,33 @@ def node_exit_diagnostic(node,log):
     print("SEC06C_BROWSER_NODE_EXIT category="+category+
           " exit="+str(node.returncode),file=sys.stderr,flush=True)
 
+def require_node_startup_ack(node,log):
+    # The old mediator falsely advertised the Node PID immediately after
+    # Popen, before the actual JS protocol or stdin lifetime was initialized.
+    # Consume this exact private bootstrap frame; it must NEVER reach Lu's
+    # model/browser protocol or substitute for root /proc PIDFD admission.
+    wanted=b"LU_SEC06C_NODE_READY_V1\\n"
+    frame=bytearray()
+    until=time.monotonic()+8
+    while time.monotonic()<until:
+        if node.poll() is not None:
+            node_exit_diagnostic(node,log)
+            reject("original Node exited before verified bootstrap")
+        ready,_,_=select.select([node.stdout],[],[],.05)
+        if not ready:continue
+        data=os.read(node.stdout.fileno(),1)
+        if not data:
+            try:node.wait(timeout=1)
+            except subprocess.TimeoutExpired:pass
+            node_exit_diagnostic(node,log)
+            reject("original Node closed its bootstrap pipe")
+        frame.extend(data)
+        if len(frame)>len(wanted):reject("untrusted Node bootstrap frame")
+        if data==b"\\n":
+            if bytes(frame)!=wanted:reject("wrong original Node bootstrap identity")
+            return
+    reject("original Node protocol initialization timed out")
+
 def run(a):
     if os.geteuid()==0:reject("browser process mediator must never run as root")
     if not HEX32.fullmatch(a.nonce):reject("original manager nonce invalid")
@@ -196,6 +223,7 @@ def run(a):
              "origins":a.origin,"profileDirectory":str(profile),
              "visibilityMode":a.mode,
              "cdpEndpoint":"http://127.0.0.1:"+str(port)},separators=(",",":"))
+        env["LU_SEC06C_STARTUP_ACK"]="1"
         node=subprocess.Popen([a.node,a.script],stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,stderr=node_log,
             env=env,cwd=str(pathlib.Path(a.script).parent),close_fds=True)
@@ -204,6 +232,12 @@ def run(a):
                 chrome_pre_admission_failure(chrome,startup_log,profile,a.xauthority)
             node_exit_diagnostic(node,node_log)
             reject("browser pair exited before original admission")
+        require_node_startup_ack(node,node_log)
+        if chrome.poll() is not None or node.poll() is not None:
+            if chrome.poll() is not None:
+                chrome_pre_admission_failure(chrome,startup_log,profile,a.xauthority)
+            node_exit_diagnostic(node,node_log)
+            reject("browser pair died after Node bootstrap")
         # The privileged root manager independently reads BOTH /proc cgroups
         # before it forwards this fixed tuple to the desktop host.
         sys.stdout.write("LU_SEC06C_BROWSER_READY_V1\t"+a.nonce+"\t"+
