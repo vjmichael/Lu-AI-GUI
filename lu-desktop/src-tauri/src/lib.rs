@@ -9230,6 +9230,7 @@ pub fn run() {
             project_task_agent_handoff::lu_project_task_agent_handoffs,
             project_task_agent_handoff::lu_project_task_prepare_agent_plan,
             project_task_verified_evidence::lu_project_task_criterion_evidence_history,
+            project_task_verified_evidence::lu_project_task_reconcile_completion,
             project_task_verified_evidence::lu_project_task_review_independent_witness,
             p0_auth_desktop::lu_p0_authority_posture,
             p0_auth_desktop::lu_p0_cancel_chat_operations,
