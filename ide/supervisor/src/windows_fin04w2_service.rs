@@ -100,6 +100,12 @@ struct InstalledAuditConfig {
     expected_llvm_symbolizer_sha256: String,
     #[cfg(feature="fin04w2-split-native")]
     expected_owner_manifest_sha256: String,
+    // Independently reviewed immutable original compiler source snapshot,
+    // never selected from the DAP source/path or a WebView instruction.
+    #[cfg(feature="fin04w2-split-native")]
+    approved_original_source_file: PathBuf,
+    #[cfg(feature="fin04w2-split-native")]
+    expected_original_source_sha256: String,
     // CI-only first-party fixture. This cannot be selected or influenced by
     // a named-pipe client; only the preinstalled private service.json pins it.
     #[cfg(feature = "fin04w2-contained-probe")]
@@ -192,7 +198,14 @@ impl InstalledAuditConfig {
                 &result.expected_target_service_sha256,
             )?;
             if !result.approved_target_image.is_absolute()
-                ||!result.approved_lldb_dap_executable.is_absolute(){return Err(denied());}
+                ||!result.approved_lldb_dap_executable.is_absolute()
+                ||!result.approved_original_source_file.is_absolute()
+                ||result.approved_original_source_file.file_name()
+                    !=Some(std::ffi::OsStr::new("main.rs"))
+                ||result.approved_original_source_file.parent()
+                    .and_then(|p|p.file_name())!=Some(std::ffi::OsStr::new("src")){
+                return Err(denied());
+            }
             for sha in [
                 &result.expected_target_image_sha256,
                 &result.expected_target_pdb_sha256,
@@ -200,6 +213,7 @@ impl InstalledAuditConfig {
                 &result.expected_liblldb_sha256,
                 &result.expected_llvm_symbolizer_sha256,
                 &result.expected_owner_manifest_sha256,
+                &result.expected_original_source_sha256,
             ]{
                 if sha.len()!=64||!sha.bytes().all(|b|b.is_ascii_hexdigit()){
                     return Err(denied());
@@ -212,6 +226,10 @@ impl InstalledAuditConfig {
             security::hash_executable(
                 &result.approved_lldb_dap_executable,
                 &result.expected_lldb_dap_sha256,
+            )?;
+            security::hash_executable(
+                &result.approved_original_source_file,
+                &result.expected_original_source_sha256,
             )?;
         }
         let sid = security::sid_of_named_service(NAME)?;
@@ -507,10 +525,58 @@ fn review_only(pipe:HANDLE,config:&InstalledAuditConfig)
             &root,&original,
         )?;
         target.reobserve(&scm_pair)?;
-        // The original independent LLVM/PDB source-line oracle, patched
-        // kernel event-owner evidence and effective socket-denial receipts
-        // are still separate mandatory gates. Do not self-award X/F or
-        // fabricate a debugger completion after these partial observations.
+        // Reuse the ORIGINAL independently protected PE/PDB/source-line
+        // parser, but run a pinned native llvm-symbolizer.exe in a separate
+        // child of this same SCM-owned, capped debugger Job. Neither DAP
+        // output nor the target broker supplies an untrusted executable path,
+        // source location or arbitrary command.
+        let staged_pdb=staged_target.with_extension("pdb");
+        let symbolizer=config.approved_lldb_dap_executable
+            .parent().ok_or_else(denied)?.join("llvm-symbolizer.exe");
+        let source_line=crate::windows_stopped_line_oracle::
+            verify_split_native_stopped_source_with_reader(
+                &staged_target,&staged_pdb,
+                &config.expected_target_image_sha256,
+                &config.expected_target_pdb_sha256,
+                &config.approved_original_source_file,
+                &config.expected_original_source_sha256,
+                &stop.source_path,stop.source_line,
+                stop.observed_pc,relocation_bias,
+                |pe,bias,rip|{
+                    crate::windows_fin04w2_split_launcher::
+                        read_llvm_pdb_line_inside_debugger_job(
+                            &job,&symbolizer,
+                            &config.expected_llvm_symbolizer_sha256,
+                            pe,&config.expected_target_image_sha256,rip,bias,
+                        )
+                },
+            )?;
+        if !source_line.independent_llvm_pdb_source_line_verified
+            ||source_line.verified_rip!=stop.observed_pc
+            ||source_line.verified_line!=stop.source_line
+            ||source_line.os_relocation_bias!=relocation_bias{
+            return Err(denied());
+        }
+        security::hash_executable(&config.approved_original_source_file,
+            &config.expected_original_source_sha256)?;
+        crate::windows_fin04w2_wfp::require_exact_outbound_blocks(
+            &config.approved_lldb_dap_executable,&staged_target,
+        )?;
+        crate::windows_fin04w2_wfp::require_debugger_tool_outbound_blocks(
+            &symbolizer,
+        )?;
+        crate::fin04w2_authority::verify_running_same_original_authorization(
+            &config.original_supervisor_journal,&config.original_job_id,
+            &config.review_only_plan,&config.review_only_plan_hash,&original,
+        )?;
+        crate::fin04w2_authority::verify_reserved_original_authorization(
+            &root,&original,
+        )?;
+        target.reobserve(&scm_pair)?;
+        // Real LLDB debug event, OS stopped RIP and LLVM/PDB mapping have
+        // SOURCE routes here. FIN-04 terminal X/F is still denied until
+        // effective WFP hostile socket, verified immutable build lineage,
+        // independent SCM loss/recovery and physical Windows acceptance.
         return Err(denied());
     }
     #[cfg(not(feature="fin04w2-split-native"))]
