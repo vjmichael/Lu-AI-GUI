@@ -1,0 +1,102 @@
+# FIN-04 diagnostic only. Does not grant debugger or production authorization.
+name: IDE FIN-04 Windows environment compatibility DX
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/ide-fin04-windows-env-dx.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  win2022-diagnostic:
+    runs-on: windows-2022
+    timeout-minutes: 12
+    steps:
+      - name: OS, restricted-token and LLDB baseline diagnostics
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $out=Join-Path $env:GITHUB_WORKSPACE 'Fin04WindowsDx'
+          New-Item -ItemType Directory -Path $out -Force | Out-Null
+          $os=Get-CimInstance Win32_OperatingSystem
+          $p=[Security.Principal.WindowsPrincipal]::new([Security.Principal.WindowsIdentity]::GetCurrent())
+          $r=[ordered]@{schema='lu.fin04.win_env_dx.v1';source_sha=$env:GITHUB_SHA;os=$os.Caption;version=$os.Version;build=$os.BuildNumber;interactive=[Environment]::UserInteractive;elevated=$p.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator);lldb='NOT_RUN'}
+          $cs=@'
+          using System;
+          using System.Runtime.InteropServices;
+          public class Fin04Dx {
+            [StructLayout(LayoutKind.Sequential)] public struct SA {public IntPtr sid;public uint attr;}
+            [DllImport("kernel32.dll")] static extern IntPtr GetCurrentProcess();
+            [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr h);
+            [DllImport("kernel32.dll",SetLastError=true)] static extern IntPtr CreateJobObject(IntPtr a,string name);
+            [DllImport("advapi32.dll",SetLastError=true)] static extern bool OpenProcessToken(IntPtr p,uint access,out IntPtr t);
+            [DllImport("advapi32.dll",SetLastError=true)] static extern bool CreateRestrictedToken(IntPtr t,uint flags,uint n,IntPtr d,uint pn,IntPtr p,uint c,IntPtr a,out IntPtr result);
+            [DllImport("advapi32.dll",CharSet=CharSet.Unicode,SetLastError=true)] static extern bool ConvertStringSidToSid(string s,out IntPtr a);
+            [DllImport("advapi32.dll")] static extern IntPtr FreeSid(IntPtr sid);
+            [DllImport("kernel32.dll")] static extern IntPtr LocalFree(IntPtr h);
+            [DllImport("userenv.dll",CharSet=CharSet.Unicode)] static extern int DeriveAppContainerSidFromAppContainerName(string s,out IntPtr sid);
+            public static string Job(){IntPtr j=CreateJobObject(IntPtr.Zero,null);if(j==IntPtr.Zero)return "win32_"+Marshal.GetLastWin32Error();CloseHandle(j);return "created_discarded";}
+            public static string Token(int mode){
+              IntPtr t=IntPtr.Zero,r=IntPtr.Zero,a=IntPtr.Zero,g=IntPtr.Zero,n=IntPtr.Zero,m=IntPtr.Zero;bool owned=false;
+              try {
+                if(!OpenProcessToken(GetCurrentProcess(),10,out t))return "open_win32_"+Marshal.GetLastWin32Error();
+                int hr=DeriveAppContainerSidFromAppContainerName("LuIdeFin04DxTemp",out a);owned=(hr==0&&a!=IntPtr.Zero);
+                if(mode==3&&!owned)return "derive_hresult_"+hr.ToString("X8");
+                if(!ConvertStringSidToSid("S-1-15-2-1",out g))return "global_sid_error";
+                if(!ConvertStringSidToSid("S-1-5-12",out n))return "nt_sid_error";
+                IntPtr[] s=mode==0?new IntPtr[0]:mode==1?new[]{n}:mode==2?new[]{g}:new[]{a,g};
+                int stride=Marshal.SizeOf(typeof(SA));if(s.Length>0){m=Marshal.AllocHGlobal(stride*s.Length);for(int i=0;i<s.Length;i++)Marshal.StructureToPtr(new SA{sid=s[i],attr=0},IntPtr.Add(m,i*stride),false);}
+                bool ok=CreateRestrictedToken(t,5,0,IntPtr.Zero,0,IntPtr.Zero,(uint)s.Length,m,out r);
+                int err=ok?0:Marshal.GetLastWin32Error();return ok?"accepted_discarded":"win32_"+err;
+              } finally {
+                if(m!=IntPtr.Zero)Marshal.FreeHGlobal(m);if(r!=IntPtr.Zero)CloseHandle(r);if(t!=IntPtr.Zero)CloseHandle(t);
+                if(owned)FreeSid(a);if(g!=IntPtr.Zero)LocalFree(g);if(n!=IntPtr.Zero)LocalFree(n);
+              }
+            }
+          }
+          '@
+          try{
+            Add-Type -TypeDefinition $cs -Language CSharp -ErrorAction Stop
+            $r.job_create=[Fin04Dx]::Job()
+            $r.token_none=[Fin04Dx]::Token(0)
+            $r.token_nt_restricted=[Fin04Dx]::Token(1)
+            $r.token_all_packages=[Fin04Dx]::Token(2)
+            $r.token_app_and_all=[Fin04Dx]::Token(3)
+          }catch{$r.native_api_exception=$_.Exception.GetType().Name}
+          $lldb='C:\Program Files\LLVM\bin\lldb.exe'
+          $clang='C:\Program Files\LLVM\bin\clang.exe'
+          if(!(Test-Path $lldb)){$cmd=Get-Command lldb.exe -ErrorAction SilentlyContinue;if($cmd){$lldb=$cmd.Source}}
+          if(!(Test-Path $clang)){$cmd=Get-Command clang.exe -ErrorAction SilentlyContinue;if($cmd){$clang=$cmd.Source}}
+          if(!(Test-Path $lldb)){$r.lldb='SKIP_lldb_missing'}
+          elseif(!(Test-Path $clang)){$r.lldb='SKIP_compiler_missing'}
+          else{
+            $r.lldb_sha256=(Get-FileHash $lldb -Algorithm SHA256).Hash.ToLowerInvariant()
+            $src=Join-Path $out 'main.c';$exe=Join-Path $out 'main.exe'
+            '__declspec(noinline) int f(int n){volatile int v=n+1;return v;} int main(void){volatile int v=f(6);return v==7?0:1;}'|Set-Content $src -Encoding Ascii
+            $compileOutput=& $clang -g -O0 -gcodeview -o $exe $src 2>&1
+            $compileCode=$LASTEXITCODE
+            $compileOutput|Select-Object -Last 25|Set-Content (Join-Path $out 'compile.log')
+            if($compileCode -ne 0 -or !(Test-Path $exe)){$r.lldb='SKIP_compilation_failed'}
+            else{
+              $stdout=Join-Path $out 'lldb.out';$stderr=Join-Path $out 'lldb.err'
+              $args=@('--batch','--no-lldbinit','-o','"breakpoint set --name main"','-o','run','-o','"thread list"','--',('"'+$exe+'"'))
+              $proc=Start-Process -FilePath $lldb -ArgumentList $args -NoNewWindow -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+              if(-not $proc.WaitForExit(45000)){try{$proc.Kill()}catch{};$r.lldb='FAIL_timeout'}
+              else{
+                $output=(Get-Content $stdout -Raw)+(Get-Content $stderr -Raw)
+                $r.lldb_exit=$proc.ExitCode
+                $r.lldb=if($output -match 'stop reason\s*=\s*breakpoint' -and $output -match '(?i)thread\s*#?[0-9]+'){'PASS_stopped_thread'}else{'FAIL_no_stopped_thread'}
+              }
+            }
+          }
+          $r.note='Diagnostics only: not a Lu security grant, human click, kernel debugger custody or release gate'
+          $r|ConvertTo-Json -Depth 4|Set-Content (Join-Path $out 'report.json')
+          Get-Content (Join-Path $out 'report.json')
+      - name: Retain diagnostic observations
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fin04-win2022-dx
+          retention-days: 14
+          if-no-files-found: warn
+          path: Fin04WindowsDx
