@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "ef5bebab008165d3186742d293963563c070e8b4",
+  "sourceCommitBeforeLock": "99004c3f5f9ca69c41152dadca4696bf3c09d157",
   "trackedFileCount": 1006,
   "files": [
     {
@@ -1949,7 +1949,7 @@
     },
     {
       "path": "lu-desktop/tests/p0-sec06-consolidated.test.mjs",
-      "blob": "d11636a2e5f758c0878885bbb7f1ccfd7cdf556a"
+      "blob": "f21acac15459d4ce99dea6395294e7f854258987"
     },
     {
       "path": "lu-desktop/tests/p03-ai-ops.test.mjs",
