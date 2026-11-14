@@ -3813,6 +3813,104 @@ async fn ide_draft_discard(
     }).await.map_err(|_|"DRAFT_DISCARD_TASK_UNAVAILABLE".to_owned())?
 }
 
+/// Exact-source no-clobber rename/move of one regular file in the same
+/// native registered project. Directories and cross-project moves are denied.
+#[tauri::command]
+async fn ide_move_source_file(
+    state: State<'_, Arc<IdeWorkspaceRegistry>>,
+    project_id: String, source_path: String, destination_path: String,
+    expected_revision: String,
+    ledger: State<'_, Arc<DevelopmentLedger>>,
+) -> Result<lu_ide_workspace::source_file_transactions::FileOperationReceipt, String> {
+    let registry = Arc::clone(state.inner());
+    let ledger = Arc::clone(ledger.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        let receipt = registry.move_source_file(
+            &project_id, &source_path, &destination_path, &expected_revision,
+        ).map_err(|error| error.code().to_owned())?;
+        observe(&ledger, &project_id, "source.move",
+            "File moved without replacing another file",
+            Some(&receipt.revision), receipt.current_relative_path.as_deref());
+        Ok(receipt)
+    }).await.map_err(|_| "SOURCE_MOVE_TASK_UNAVAILABLE".to_owned())?
+}
+
+/// Project-local durable trash is a recoverable file-only action, not delete.
+/// The native host never invokes the model, terminal, or shell.
+#[tauri::command]
+async fn ide_trash_source_file(
+    state: State<'_, Arc<IdeWorkspaceRegistry>>,
+    project_id: String, source_path: String, expected_revision: String,
+    ledger: State<'_, Arc<DevelopmentLedger>>,
+) -> Result<lu_ide_workspace::source_file_transactions::FileOperationReceipt, String> {
+    let registry = Arc::clone(state.inner());
+    let ledger = Arc::clone(ledger.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        let receipt = registry.trash_source_file(
+            &project_id, &source_path, &expected_revision,
+        ).map_err(|error| error.code().to_owned())?;
+        observe(&ledger, &project_id, "source.trash",
+            "File placed in project-local recoverable trash",
+            Some(&receipt.revision), Some(&receipt.original_relative_path));
+        Ok(receipt)
+    }).await.map_err(|_| "SOURCE_TRASH_TASK_UNAVAILABLE".to_owned())?
+}
+#[tauri::command]
+async fn ide_list_trashed_sources(
+    state: State<'_, Arc<IdeWorkspaceRegistry>>, project_id: String,
+) -> Result<Vec<lu_ide_workspace::source_file_transactions::TrashedFile>, String> {
+    let registry = Arc::clone(state.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        registry.list_trashed_source_files(&project_id)
+            .map_err(|error| error.code().to_owned())
+    }).await.map_err(|_| "SOURCE_TRASH_LIST_TASK_UNAVAILABLE".to_owned())?
+}
+#[tauri::command]
+async fn ide_restore_source_file(
+    state: State<'_, Arc<IdeWorkspaceRegistry>>,
+    project_id: String, token: String,
+    ledger: State<'_, Arc<DevelopmentLedger>>,
+) -> Result<lu_ide_workspace::source_file_transactions::FileOperationReceipt, String> {
+    let registry = Arc::clone(state.inner());
+    let ledger = Arc::clone(ledger.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        let receipt = registry.restore_source_file(&project_id, &token)
+            .map_err(|error| error.code().to_owned())?;
+        observe(&ledger, &project_id, "source.restore",
+            "File restored exclusively from project-local trash",
+            Some(&receipt.revision), receipt.current_relative_path.as_deref());
+        Ok(receipt)
+    }).await.map_err(|_| "SOURCE_RESTORE_TASK_UNAVAILABLE".to_owned())?
+}
+
+/// Human-only native filesystem creation; the parent is an already-open,
+/// picker-authorized project capability. No arbitrary desktop path or overwrite.
+#[tauri::command]
+async fn ide_create_source_entry(
+    state: State<'_, Arc<IdeWorkspaceRegistry>>,
+    project_id: String,
+    relative_dir: String,
+    name: String,
+    kind: String,
+    ledger: State<'_, Arc<DevelopmentLedger>>,
+) -> Result<lu_ide_workspace::source_create::SourceCreateReceipt, String> {
+    let registry = Arc::clone(state.inner());
+    let ledger = Arc::clone(ledger.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        let created = registry
+            .create_source_entry(&project_id, &relative_dir, &name, &kind)
+            .map_err(|error| error.code().to_owned())?;
+        observe(
+            &ledger, &project_id, "source.create",
+            "Empty source entry created through native project capability",
+            created.revision.as_deref(), Some(&created.relative_path),
+        );
+        Ok(created)
+    })
+    .await
+    .map_err(|_| "SOURCE_CREATE_TASK_UNAVAILABLE".to_owned())?
+}
+
 /// An explicit user-initiated save with optimistic file-revision protection.
 /// There is no model-origin tool path or unrestricted filesystem write command.
 #[tauri::command]
@@ -4286,6 +4384,11 @@ pub fn run() {
             ide_read_source_span,
             ide_review_source_change,
             ide_save_source_file,
+            ide_create_source_entry,
+            ide_move_source_file,
+            ide_trash_source_file,
+            ide_list_trashed_sources,
+            ide_restore_source_file,
             ide_import_proposal,
             ide_list_proposals,
             ide_review_proposal,
