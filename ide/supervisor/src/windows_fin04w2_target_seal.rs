@@ -156,6 +156,73 @@ pub(crate) fn verify_readonly_stage_entry(
     if !seen.into_iter().all(|b|b){return Err(denied());}
     Ok(())
 }
+/// The parent never grants package access: only the exact new per-job leaf
+/// may be traversed by this target SID, after its files are sealed.
+fn apply_private_parent_sddl(path:&Path,descriptor:&str)
+    ->Result<(),SupervisorError>{
+    let mut sd=ptr::null_mut();
+    let mut sd_len=0u32;
+    if unsafe{ConvertStringSecurityDescriptorToSecurityDescriptorW(
+        w(OsStr::new(descriptor)).as_ptr(),1,&mut sd,&mut sd_len)
+    }==0||sd.is_null()||sd_len==0{return Err(denied());}
+    let sd=Local(sd);
+    let mut present=0i32;
+    let mut dacl=ptr::null_mut();
+    let mut defaulted=0i32;
+    if unsafe{GetSecurityDescriptorDacl(
+        sd.0,&mut present,&mut dacl,&mut defaulted)
+    }==0||present==0||dacl.is_null(){return Err(denied());}
+    if unsafe{SetNamedSecurityInfoW(
+        w(path.as_os_str()).as_mut_ptr(),SE_FILE_OBJECT,
+        DACL_SECURITY_INFORMATION|PROTECTED_DACL_SECURITY_INFORMATION,
+        ptr::null_mut(),ptr::null_mut(),dacl,ptr::null_mut(),
+    )}!=0{return Err(denied());}
+    Ok(())
+}
+fn verify_private_stage_parent(path:&Path)->Result<(),SupervisorError>{
+    let service=literal_sid(&windows_service_security::sid_of_named_service(
+        "LuIdeDebuggerBroker")?)?;
+    let system=literal_sid("S-1-5-18")?;
+    let mut dacl=ptr::null_mut();
+    let mut sd=ptr::null_mut();
+    if unsafe{GetNamedSecurityInfoW(
+        w(path.as_os_str()).as_ptr(),SE_FILE_OBJECT,DACL_SECURITY_INFORMATION,
+        ptr::null_mut(),ptr::null_mut(),&mut dacl,ptr::null_mut(),&mut sd)
+    }!=0||sd.is_null()||dacl.is_null(){return Err(denied());}
+    let _sd=Local(sd);
+    let mut control=0u16;
+    let mut revision=0u32;
+    if unsafe{GetSecurityDescriptorControl(
+        sd,&mut control,&mut revision)
+    }==0||control&SE_DACL_PROTECTED==0{return Err(denied());}
+    let mut info=ACL_SIZE_INFORMATION::default();
+    if unsafe{GetAclInformation(
+        dacl,(&mut info as *mut ACL_SIZE_INFORMATION).cast(),
+        size_of::<ACL_SIZE_INFORMATION>() as u32,AclSizeInformation)
+    }==0||info.AceCount!=2{return Err(denied());}
+    let mut seen=[false;2];
+    for i in 0..2 {
+        let mut raw=ptr::null_mut();
+        if unsafe{GetAce(dacl,i,&mut raw)}==0||raw.is_null(){return Err(denied());}
+        let ace=unsafe{&*(raw as *const ACCESS_ALLOWED_ACE)};
+        if ace.Header.AceType!=0||ace.Header.AceFlags!=OICI
+            ||ace.Header.AceSize<size_of::<ACCESS_ALLOWED_ACE>() as u16
+            ||ace.Mask!=ALL{return Err(denied());}
+        let sid=(&ace.SidStart as *const u32).cast_mut().cast();
+        let k=if unsafe{EqualSid(sid,system.0)}!=0{0}
+            else if unsafe{EqualSid(sid,service.0)}!=0{1}
+            else{return Err(denied());};
+        if seen[k]{return Err(denied());}
+        seen[k]=true;
+    }
+    if seen!=[true,true]{return Err(denied());}
+    Ok(())
+}
+struct IncompleteStage(PathBuf);
+impl Drop for IncompleteStage {
+    fn drop(&mut self){let _=fs::remove_dir_all(&self.0);}
+}
+
 pub(crate) struct SealedDebugTarget {
     pub(crate) image:PathBuf,
     pub(crate) pdb:PathBuf,
@@ -178,13 +245,24 @@ pub(crate) fn stage_and_verify(
     eligible_file(pdb)?;
     windows_service_security::hash_executable(pdb,pdb_sha256)?;
     let parent=service_root.join("sealed-debug-targets");
+    // The service root is already independently validated; a NEW parent
+    // inherits no package capability and is immediately locked to two SIDs.
+    if !parent.exists(){
+        fs::create_dir(&parent).map_err(|_|denied())?;
+        let descriptor=format!(
+            "D:P(A;OICI;0x{ALL:08x};;;SY)(A;OICI;0x{ALL:08x};;;{service})"
+        );
+        apply_private_parent_sddl(&parent,&descriptor)?;
+    }
     let parent_meta=fs::symlink_metadata(&parent).map_err(|_|denied())?;
     if !parent_meta.is_dir()||parent_meta.file_attributes()&REPARSE!=0{
         return Err(denied());
     }
+    verify_private_stage_parent(&parent)?;
     let root=parent.join(original_job_id);
     if root.exists(){return Err(denied());}
     fs::create_dir(&root).map_err(|_|denied())?;
+    let mut incomplete=Some(IncompleteStage(root.clone()));
     let exe=root.join("debug-target.exe");
     let symbols=root.join("debug-target.pdb");
     fs::copy(image,&exe).map_err(|_|denied())?;
@@ -202,5 +280,7 @@ pub(crate) fn stage_and_verify(
     // Rehash AFTER ACL application with FILE_SHARE_READ-only access.
     windows_service_security::hash_executable(&exe,image_sha256)?;
     windows_service_security::hash_executable(&symbols,pdb_sha256)?;
+    // Only the successful, independently reobserved stage escapes cleanup.
+    incomplete.take();
     Ok(SealedDebugTarget{image:exe,pdb:symbols,root})
 }
