@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "a649d9dd7a6395ba02392785a5f5731c3b7340c2",
-  "trackedFileCount": 1008,
+  "sourceCommitBeforeLock": "0a2221c8cff69cb62efb48314e10069e42242e1e",
+  "trackedFileCount": 1010,
   "files": [
     {
       "path": ".github/pull_request_template.md",
@@ -2877,7 +2877,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/lib.rs",
-      "blob": "6ae4b4fb6c6247d446da43a7d7d9db6e52baef01"
+      "blob": "f46e1fd1773c9d76eb7340cb9abacc3ab3b9559c"
     },
     {
       "path": "src-tauri/lu-core/src/linux_device_hints.rs",
@@ -3278,6 +3278,10 @@
     {
       "path": "src-tauri/lu-core/src/operational_asset_ledger.rs",
       "blob": "4b108afe5024997f7796af17117ebf5056fa1dc2"
+    },
+    {
+      "path": "src-tauri/lu-core/src/operational_memory.rs",
+      "blob": "26421309ff9979faaa32ea300965badd1718558a"
     },
     {
       "path": "src-tauri/lu-core/src/ownership_store.rs",
@@ -3850,6 +3854,10 @@
     {
       "path": "src-tauri/lu-core/tests/native_zip_extract_authority.rs",
       "blob": "a2e2d08bbe80b44d3c772fe1d4cdd4c0ca34efb2"
+    },
+    {
+      "path": "src-tauri/lu-core/tests/operational_memory.rs",
+      "blob": "e5fa2cfec4847e2a3041f2e7b64e0d46105d35e1"
     },
     {
       "path": "src-tauri/lu-core/tests/ownership_store.rs",
