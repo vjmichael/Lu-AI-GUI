@@ -666,9 +666,6 @@ impl IdeWorkspaceRegistry {
         {
             return Err("G06B_STAGE_SELECTION_STALE_OR_FORGED");
         }
-        self.require_group6f_no_pending_recovery(
-            &reviewed.plan.project_id,false,
-        )?;
         let (repo, _root, gitdir) = verified_repo(self, &fresh.plan.project_id, true)?;
         let old_index_path = gitdir.join("index");
         let path = journal_path(self, &fresh.plan.project_id)?;
@@ -691,6 +688,9 @@ impl IdeWorkspaceRegistry {
         }
         let projected = selected_index_bytes(&pinned.index_bytes, &fresh)?;
         let staged_sha = sha(&projected);
+        self.require_group6f_no_pending_recovery(
+            &reviewed.plan.project_id,false,
+        )?;
         let oid = repo
             .blob(&projected)
             .map_err(|_| "G06B_STAGE_BLOB_WRITE_FAILED")?;
