@@ -5,6 +5,13 @@ on:
     branches: [ide/group06d01-conflict-inventory-20261111]
     paths:
       - '.github/ide-group06d-batch-trigger.txt'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'ide/host/**'
+      - 'ide/app/**'
+      - 'ide/supervisor/**'
+      - '.github/workflows/ide-group06d01-native.yml'
   workflow_dispatch:
 permissions:
   contents: read
