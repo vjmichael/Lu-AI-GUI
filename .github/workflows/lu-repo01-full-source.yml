@@ -3656,8 +3656,8 @@ jobs:
           sudo install -o root -g root -m 0755 scripts/lu-sec06c-owned-git-worker.py /usr/libexec/lu/lu-sec06c-owned-git-worker
           sudo install -o root -g root -m 0755 scripts/lu-sec06c-owned-probe-launcher.py /usr/libexec/lu/lu-sec06c-launch-probe
           sudo install -o root -g root -m 0755 scripts/lu-sec06c-owned-probe-worker.py /usr/libexec/lu/lu-sec06c-owned-probe-worker
-          printf '%s ALL=(root) NOPASSWD: /usr/libexec/lu/lu-sec06c-launch-git *\\n' "$USER" | sudo tee /etc/sudoers.d/lu-sec06c-gguf-git-ci >/dev/null
-          printf '%s ALL=(root) NOPASSWD: /usr/libexec/lu/lu-sec06c-launch-probe *\\n' "$USER" | sudo tee /etc/sudoers.d/lu-sec06c-gguf-probe-ci >/dev/null
+          printf '%s ALL=(root) NOPASSWD: /usr/libexec/lu/lu-sec06c-launch-git *\n' "$USER" | sudo tee /etc/sudoers.d/lu-sec06c-gguf-git-ci >/dev/null
+          printf '%s ALL=(root) NOPASSWD: /usr/libexec/lu/lu-sec06c-launch-probe *\n' "$USER" | sudo tee /etc/sudoers.d/lu-sec06c-gguf-probe-ci >/dev/null
           sudo chmod 0440 /etc/sudoers.d/lu-sec06c-gguf-git-ci /etc/sudoers.d/lu-sec06c-gguf-probe-ci
           sudo visudo -cf /etc/sudoers.d/lu-sec06c-gguf-git-ci
           sudo visudo -cf /etc/sudoers.d/lu-sec06c-gguf-probe-ci
