@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "64cbb3ea4663aded57e6a63d736d87baed06828f",
-  "trackedFileCount": 991,
+  "sourceCommitBeforeLock": "b18e7d043572d69616d5587a1056a1e06bfb2da7",
+  "trackedFileCount": 993,
   "files": [
     {
       "path": ".github/pull_request_template.md",
@@ -237,7 +237,7 @@
     },
     {
       "path": ".github/workflows/lu-repo01-full-source.yml",
-      "blob": "bf40276323b06d7992bb21f9ae19ba3a606c7c6c"
+      "blob": "57b2e53290b6a65b52ff87a117e91cd9db564847"
     },
     {
       "path": ".github/workflows/lu-tools-01-05-integration.yml",
@@ -597,7 +597,7 @@
     },
     {
       "path": "docs/LU_CORE01F_MERGE_CONSOLIDATION_20261112.md",
-      "blob": "836433b3d1fad253d99079b34145178aa1c1d38e"
+      "blob": "2b5350b8ab46b005e1d7490ba872710c97b9b028"
     },
     {
       "path": "docs/LU_CORE01F_P0_BRIDGE_BLOB_REVIEW_20261112.json",
@@ -2218,6 +2218,14 @@
     {
       "path": "scripts/core01-verify-scope.test.mjs",
       "blob": "226dc38b4215e8df8297bbc378d580f0ef08637f"
+    },
+    {
+      "path": "scripts/core01f-acceptance-reconcile.mjs",
+      "blob": "63eea01b69c1d864a8f7ac00d7c000d003894c53"
+    },
+    {
+      "path": "scripts/core01f-acceptance-reconcile.test.mjs",
+      "blob": "233f0c722aa334319781c5c1c6812e408fba6ae2"
     },
     {
       "path": "scripts/core01f-bridge-review.mjs",
