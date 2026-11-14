@@ -126,8 +126,8 @@ if(@(Get-ObservedAlive).Count -ne 0){
   Deny 'original_workers_or_descendants_not_terminated'
 }
 $after=Get-CimInstance Win32_Service -Filter ("Name='"+$ServiceToLose+"'")
-if(!$after -or ($LossMode -eq 'HardKill' -and $after.ProcessId -eq $oldSvcId
-  -and $after.State -eq 'Running')){Deny 'original_SCM_service_loss_not_observed'}
+if(!$after -or ($LossMode -eq 'HardKill' -and $after.ProcessId -eq $oldSvcId -and
+  $after.State -eq 'Running')){Deny 'original_SCM_service_loss_not_observed'}
 # Restart tests only that old workers do not *spontaneously* resurrect.
 # A true malicious replay requires a separate original C2 IPC attempt with
 # the already-consumed journal; this read-only observer CANNOT certify it.

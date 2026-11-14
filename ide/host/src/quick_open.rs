@@ -1,7 +1,7 @@
 //! INT01-E: bounded, nonexecuting project filename search and sorted directory pages.
 //! A native registered cap-std root remains authoritative. No filesystem writes,
 //! symlink traversal, shell, network, source text indexing or ambient path access.
-use std::collections::{BTreeSet, VecDeque};
+use std::{collections::{BTreeSet, VecDeque}, time::{Duration, Instant}};
 
 use serde::Serialize;
 
@@ -16,14 +16,25 @@ const MAX_DIRECTORIES_VISITED: usize = 3_000;
 const MAX_DEPTH: usize = 24;
 const MAX_RESULTS: usize = 60;
 const PAGE_SIZE: usize = 120;
+// Retain the original DEV-01 eight-second budget without reverting to its obsolete indexer.
+const MAX_SCAN_DURATION: Duration = Duration::from_secs(8);
 
 fn generated(name: &str) -> bool {
-    matches!(
-        name,
-        ".git" | ".hg" | ".svn" | "node_modules" | "target" | "dist" | "build"
-            | ".venv" | "venv" | "__pycache__" | ".next" | ".cache"
-            | "site-packages" | "vendor" | ".idea" | ".turbo"
-    )
+    // Case-insensitive like the original DEV-01 index. The native file
+    // transactions module stores reversible trash in .lu-ide-trash; neither
+    // that nor other private .lu-ide-* directories belong in Quick Open.
+    let lower = name.to_ascii_lowercase();
+    lower.starts_with(".lu-ide-")
+        || matches!(
+            lower.as_str(),
+            ".git" | ".hg" | ".svn" | "node_modules" | "target" | "dist" | "build"
+                | ".venv" | "venv" | "__pycache__" | ".next" | ".cache"
+                | "site-packages" | "vendor" | ".idea" | ".turbo"
+        )
+}
+
+fn scan_time_exhausted(started: Instant) -> bool {
+    started.elapsed() >= MAX_SCAN_DURATION
 }
 
 fn rank(path: &str, query: &str) -> Option<u8> {
@@ -99,6 +110,7 @@ impl IdeWorkspaceRegistry {
             return Err(BrowserError::InvalidSearch);
         }
         let root = self.source_capability(project_id)?;
+        let started = Instant::now();
         let mut pending = VecDeque::new();
         pending.push_back((Vec::<String>::new(), 0usize));
         let mut examined = 0usize;
@@ -106,7 +118,7 @@ impl IdeWorkspaceRegistry {
         let mut limited = false;
         let mut candidates: Vec<(u8, String, u64)> = Vec::new();
         'walk: while let Some((parts, depth)) = pending.pop_front() {
-            if dirs >= MAX_DIRECTORIES_VISITED {
+            if dirs >= MAX_DIRECTORIES_VISITED || scan_time_exhausted(started) {
                 limited = true;
                 break;
             }
@@ -122,7 +134,7 @@ impl IdeWorkspaceRegistry {
             // deterministic. Directory metadata is never used as a path grant.
             let mut names = Vec::new();
             for item in dir.entries()? {
-                if examined >= MAX_ENTRIES_VISITED {
+                if examined >= MAX_ENTRIES_VISITED || scan_time_exhausted(started) {
                     limited = true;
                     break 'walk;
                 }
@@ -137,6 +149,10 @@ impl IdeWorkspaceRegistry {
             }
             names.sort();
             for name in names {
+                if scan_time_exhausted(started) {
+                    limited = true;
+                    break 'walk;
+                }
                 let mut next = parts.clone();
                 next.push(name);
                 let path = next.join("/");
@@ -221,12 +237,13 @@ impl IdeWorkspaceRegistry {
         }
         let root = self.source_capability(project_id)?;
         let folder = descend(root, &components)?;
+        let started = Instant::now();
         let mut top = BTreeSet::new();
         let mut examined = 0usize;
         let mut candidates = 0usize;
         let mut scan_limited = false;
         for item in folder.entries()? {
-            if examined >= MAX_ENTRIES_VISITED {
+            if examined >= MAX_ENTRIES_VISITED || scan_time_exhausted(started) {
                 scan_limited = true;
                 break;
             }
@@ -298,5 +315,27 @@ impl IdeWorkspaceRegistry {
             entries_examined: examined,
             read_only: true,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{generated, scan_time_exhausted};
+    use std::time::{Duration, Instant};
+
+    #[test]
+    fn historical_index_private_and_casefolded_ignored_names_stay_hidden() {
+        for name in [".lu-ide-trash", ".Lu-IDE-Recovery", ".GIT", "NODE_MODULES",
+                     "Target", "vendor", ".VENV"] {
+            assert!(generated(name), "{name}");
+        }
+        assert!(!generated("source.rs"));
+    }
+
+    #[test]
+    fn historical_eight_second_budget_fails_closed_without_sleeping() {
+        let stale = Instant::now().checked_sub(Duration::from_secs(9)).unwrap();
+        assert!(scan_time_exhausted(stale));
+        assert!(!scan_time_exhausted(Instant::now()));
     }
 }

@@ -101,6 +101,23 @@ fn ranked_filename_results_are_hard_capped_and_report_partial_observation() {
     fs::remove_dir_all(root).unwrap();
 }
 
+#[test]
+fn quick_open_never_indexes_private_trash_or_mixed_case_generated_directory_names() {
+    let (root, registry, id) = fixture();
+    let project = root.join("project");
+    for hidden in [".lu-ide-trash", ".Lu-IDE-Checkpoint", ".GIT", "NODE_MODULES"] {
+        let dir = project.join(hidden);
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("private-secret-file.rs"), b"must not be indexed").unwrap();
+    }
+    fs::write(project.join("visible-secret-file.rs"), b"visible").unwrap();
+    let result = registry.quick_open_source_paths(&id, "secret-file").unwrap();
+    assert_eq!(result.matches.len(), 1, "private trash or generated data escaped into Quick Open");
+    assert_eq!(result.matches[0].relative_path, "visible-secret-file.rs");
+    assert!(!result.source_files_read && !result.process_started && result.read_only);
+    fs::remove_dir_all(root).unwrap();
+}
+
 #[cfg(unix)]
 #[test]
 fn project_quick_open_skips_generated_folders_and_external_symlinks() {
