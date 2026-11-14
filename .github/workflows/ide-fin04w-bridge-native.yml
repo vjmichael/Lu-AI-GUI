@@ -1,7 +1,7 @@
-# FIN-04W isolated debugger execution bridge experiment.
-# Fails closed on unsupported Windows privilege, file namespace or OS event.
-# The original Windows AppContainer and all Linux jobs remain unchanged.
-name: IDE FIN-04W CI-only Windows restricted debugger bridge
+# FIN-04W diagnostic reuses the original verified AppContainer launch contract.
+# Retired the unsupported package-SID CreateRestrictedToken path (Win32 87).
+# Fail closed on missing SCM/Job/NUL lease, sandbox identity or LLDB evidence.
+name: IDE FIN-04W CI-only AppContainer debugger integration
 on:
   pull_request:
     paths:
@@ -144,7 +144,7 @@ jobs:
             throw 'DENIED: measured Windows SDK/LLVM Cargo bundle lock invalid'
           }
           Write-Host 'DEV045B_WINDOWS_OFFLINE_TOOLCHAIN=CI_ONLY_SELF_MEASURED'
-      - name: CI-only FIN-04W restricted debugger with original SCM Job and receipts
+      - name: CI-only FIN-04W zero-capability AppContainer debugger with original SCM Job and receipts
         shell: pwsh
         run: |
           $ErrorActionPreference='Stop'
@@ -164,8 +164,9 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw 'DENIED: exact service NUL readback failed' }
             $env:LU_IDE_WO6_DAP_TRUSTED_SERVICE=$service
             $env:LU_IDE_E2_NATIVE_TRACE='1'
-            # Only this disposable native binary contains the alternative
-            # restricted-token launcher; production has no such feature.
+            # Debug-only selection now uses the SAME documented AppContainer
+            # SECURITY_CAPABILITIES process-creation contract. Never grants a
+            # lower-integrity non-AppContainer fallback or release authority.
             $env:LU_IDE_FIN04W_CI_BRIDGE='1'
             & $hostExe
             if ($LASTEXITCODE -ne 0) { throw 'DENIED: protected native debugger normal acceptance failed' }
