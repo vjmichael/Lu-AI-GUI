@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "6f4eae8d3377c2c3ad3c9b09373e0613ce339cb4",
+  "sourceCommitBeforeLock": "807bddf04d72c84f97f3cfe5147156b1e2f176e2",
   "trackedFileCount": 1007,
   "files": [
     {
@@ -237,7 +237,7 @@
     },
     {
       "path": ".github/workflows/lu-repo01-full-source.yml",
-      "blob": "b19ad6f9d8c58a00c11226450f3ccf0115f95349"
+      "blob": "47fd9e4e4030595fab0fd16f758f025d54150f7a"
     },
     {
       "path": ".github/workflows/lu-tools-01-05-integration.yml",
@@ -1953,7 +1953,7 @@
     },
     {
       "path": "lu-desktop/tests/p0-sec06-consolidated.test.mjs",
-      "blob": "db8dc28225dabb96c1ca5cbd2a4985a59a2818ee"
+      "blob": "311bc8db53484d703362b22e6b113ebb0812e959"
     },
     {
       "path": "lu-desktop/tests/p03-ai-ops.test.mjs",
