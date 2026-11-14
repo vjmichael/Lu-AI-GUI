@@ -203,6 +203,13 @@ pub(crate) fn inspect_current_worker_prerequisites() -> Result<(), SupervisorErr
 pub(crate) struct EmptyAuditJob {
     _owned: Token,
 }
+// The owner-scoped handle is NEVER serialized, passed over IPC, or used
+// to transfer Job custody to the other SCM service. This repairs the
+// recovered split launcher's missing typed Job-handle interface.
+#[cfg(feature="fin04w2-split-native")]
+impl EmptyAuditJob {
+    pub(crate) fn held_split_job_handle(&self)->HANDLE {self._owned.0}
+}
 pub(crate) fn create_bounded_empty_debugger_job() -> Result<EmptyAuditJob, SupervisorError> {
     create_bounded_empty_split_service_job("LuIdeDebuggerBroker")
 }

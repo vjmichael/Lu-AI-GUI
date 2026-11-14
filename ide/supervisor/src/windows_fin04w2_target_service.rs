@@ -19,7 +19,7 @@ use crate::{
     windows_fin04w2_scm_pair as scm_pair,
     windows_fin04w2_split_launcher,
     windows_service_security as security,
-    JobPlan,SupervisorError,
+    JobPhase,JobPlan,SupervisorError,
 };
 use serde::Deserialize;
 use std::{
@@ -169,8 +169,8 @@ unsafe extern "system" fn control(code:u32,_event:u32,_data:*mut std::ffi::c_voi
     0
 }
 fn read_fixed(pipe:HANDLE,out:&mut [u8])->Result<(),SupervisorError>{
-    if out.len()!=fin04w2_c2::WIRE_BYTES{return Err(denied());}
-    let deadline=Instant::now()+Duration::from_secs(5);
+    if !matches!(out.len(),1|9|74){return Err(denied());}
+    let deadline=Instant::now()+Duration::from_secs(if out.len()==74{5}else{30});
     loop{
         if STOP.load(Ordering::SeqCst)||Instant::now()>=deadline{
             return Err(denied());
@@ -189,7 +189,7 @@ fn read_fixed(pipe:HANDLE,out:&mut [u8])->Result<(),SupervisorError>{
     Ok(())
 }
 fn write_all(pipe:HANDLE,bytes:&[u8])->Result<(),SupervisorError>{
-    if bytes.len()!=17&&bytes.len()!=141{return Err(denied());}
+    if !matches!(bytes.len(),1|13|17|141){return Err(denied());}
     let mut written=0u32;
     if unsafe{WriteFile(
         pipe,bytes.as_ptr().cast(),bytes.len() as u32,&mut written,ptr::null_mut(),
@@ -255,7 +255,7 @@ fn prepare_one_target(
     pair.reobserve()?;
     // Actual native AppContainer/Job preparation INSIDE the target SCM
     // service, not a second child Job in the debugger's service process.
-    let suspended=windows_fin04w2_split_launcher::prepare_appcontainer_target(
+    let mut suspended=windows_fin04w2_split_launcher::prepare_appcontainer_target(
         job,&cfg.original_job_id,root,
         &cfg.approved_target_image,&cfg.expected_target_image_sha256,
         &cfg.approved_target_pdb,&cfg.expected_target_pdb_sha256,
@@ -289,21 +289,64 @@ fn prepare_one_target(
     if original.session_id.len()!=40{return Err(denied());}
     response[101..141].copy_from_slice(original.session_id.as_bytes());
     write_all(pipe,&response)?;
+    // G is NOT a grant. The target service must independently replay the
+    // ORIGINAL host's fsynced Running receipt AFTER the one-use grant was
+    // consumed. No caller-submitted PID/path/boolean or approval JSON.
+    let mut grant=[0u8;1];read_fixed(pipe,&mut grant)?;
+    if grant!=[b'G']||STOP.load(Ordering::SeqCst){return Err(denied());}
+    pair.attest_debugger_client(pipe)?;
+    {
+        if unsafe{ImpersonateNamedPipeClient(pipe)}==0{return Err(denied());}
+        struct Revert;
+        impl Drop for Revert{
+            fn drop(&mut self){if unsafe{RevertToSelf()}==0{std::process::abort();}}
+        }
+        let _revert=Revert;
+        security::verify_original_approval_journal_acl(
+            &cfg.original_supervisor_journal,&cfg.approved_host_user_sid,
+        )?;
+        fin04w2_authority::verify_original_execution_phase(
+            &cfg.original_supervisor_journal,&cfg.original_job_id,
+            &cfg.sealed_plan,&cfg.sealed_plan_sha256,JobPhase::Running,
+        )?;
+    }
+    // The effective-socket denial matrix remains a separate native gate;
+    // an OS WFP filter snapshot alone is not represented as such a pass.
+    crate::windows_fin04w2_wfp::require_target_outbound_blocks(suspended.image())?;
+    pair.reobserve()?;
+    suspended.resume_after_original_running()?;
+    write_all(pipe,b'T')?;
+    // Native readback is independent of the LLDB-DAP stopped message.
+    // V carries only the DAP-observed PC for comparison with actual Job,
+    // loaded image, and two matching Win32 stopped-thread RIP samples.
+    let mut observation=[0u8;9];read_fixed(pipe,&mut observation)?;
+    if observation[0]!=b'V'||STOP.load(Ordering::SeqCst){return Err(denied());}
+    pair.attest_debugger_client(pipe)?;
+    let rip=u64::from_le_bytes(observation[1..9].try_into().map_err(|_|denied())?);
+    if rip==0{return Err(denied());}
+    let module=crate::windows_kernel_pc::observe_job_module(
+        job.held_split_job_handle(),suspended.image(),
+        suspended.image_sha256(),rip,
+    )?;
+    let sample=crate::windows_kernel_pc::sample_job_thread_rip(
+        job.held_split_job_handle(),&module,
+    )?;
+    if !sample.two_matching_samples||!sample.job_membership_rechecked
+        ||sample.process_id!=pid||sample.observed_rip!=rip{return Err(denied());}
+    let mut observed=[0u8;13];observed[0]=b'P';
+    observed[1..5].copy_from_slice(&sample.thread_id.to_le_bytes());
+    observed[5..13].copy_from_slice(&sample.observed_rip.to_le_bytes());
+    write_all(pipe,&observed)?;
+    // Still no terminal receipt. Hold this service-owned process + Job
+    // until the caller closes; dropping either lease kills the entire tree.
     let deadline=Instant::now()+Duration::from_secs(45);
-    let mut next_recheck=Instant::now();
     while !STOP.load(Ordering::SeqCst)&&Instant::now()<deadline{
         let mut available=0u32;
-        if unsafe{PeekNamedPipe(
-            pipe,ptr::null_mut(),0,ptr::null_mut(),&mut available,ptr::null_mut(),
-        )}==0||available!=0{return Err(denied());}
-        if Instant::now()>=next_recheck{
-            pair.attest_debugger_client(pipe)?;
-            next_recheck=Instant::now()+Duration::from_millis(500);
-        }
-        thread::sleep(Duration::from_millis(25));
+        if unsafe{PeekNamedPipe(pipe,ptr::null_mut(),0,ptr::null_mut(),
+            &mut available,ptr::null_mut())}==0||available!=0{return Err(denied());}
+        pair.attest_debugger_client(pipe)?;
+        thread::sleep(Duration::from_millis(100));
     }
-    // Not success: without genuine debugger attachment and controlled
-    // Running/RIP evidence the target is terminated, never released.
     Err(denied())
 }
 fn run_scm_service(handle:windows_sys::Win32::System::Services::SERVICE_STATUS_HANDLE)

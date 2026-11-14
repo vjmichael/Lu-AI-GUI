@@ -22,14 +22,14 @@ use std::{
     path::{Path,PathBuf},ptr,
 };
 use windows_sys::Win32::{
-    Foundation::{CloseHandle,HANDLE,SetHandleInformation},
+    Foundation::{CloseHandle,HANDLE,SetHandleInformation,WAIT_TIMEOUT},
     Security::{SECURITY_ATTRIBUTES,SECURITY_CAPABILITIES},
     System::{
         JobObjects::IsProcessInJob,
         Pipes::CreatePipe,
         Threading::{
             CreateProcessW,
-            TerminateProcess,UpdateProcThreadAttribute,WaitForSingleObject,
+            ResumeThread,TerminateProcess,UpdateProcThreadAttribute,WaitForSingleObject,
             CREATE_NO_WINDOW,CREATE_SUSPENDED,CREATE_UNICODE_ENVIRONMENT,
             EXTENDED_STARTUPINFO_PRESENT,PROCESS_INFORMATION,
             PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES,
@@ -89,6 +89,15 @@ struct Pending {
     thread:Owned,
 }
 impl Pending {
+    fn resume_once(&mut self)->Result<(),SupervisorError>{
+        if unsafe{WaitForSingleObject(self.process.0,0)}!=WAIT_TIMEOUT{
+            return Err(denied());
+        }
+        // A single original CREATE_SUSPENDED suspension must be consumed
+        // only by the owning SCM process, after independent RUNNING journal.
+        if unsafe{ResumeThread(self.thread.0)}!=1{return Err(denied());}
+        Ok(())
+    }
     fn from_information(pi:PROCESS_INFORMATION)->Result<Self,SupervisorError>{
         let process=Owned::new(pi.hProcess)?;
         let thread=match Owned::new(pi.hThread){
@@ -127,6 +136,27 @@ impl PendingTarget {
     pub(crate) fn image(&self)->&Path {&self.stage.image}
     pub(crate) fn pdb(&self)->&Path {&self.stage.pdb}
     pub(crate) fn image_sha256(&self)->&str {&self.image_sha256}
+    pub(crate) fn resume_after_original_running(&mut self)
+        ->Result<(),SupervisorError>{
+        windows_fin04w2_kernel::inspect_current_target_service_principal()?;
+        contained(self.pending.process.0,self.job)?;
+        windows_worker::verify_suspended_appcontainer_token(
+            self.pending.process.0,self.profile.sid,
+        )?;
+        windows_fin04w2_target_seal::verify_readonly_stage_entry(
+            &self.stage.root,self.profile.sid,true,
+        )?;
+        windows_fin04w2_target_seal::verify_readonly_stage_entry(
+            &self.stage.image,self.profile.sid,false,
+        )?;
+        windows_fin04w2_target_seal::verify_readonly_stage_entry(
+            &self.stage.pdb,self.profile.sid,false,
+        )?;
+        windows_service_security::hash_executable(&self.stage.image,&self.image_sha256)?;
+        self.pending.resume_once()?;
+        contained(self.pending.process.0,self.job)?;
+        Ok(())
+    }
 }
 /// Only a native SCM service can build this exact target in its own Job.
 /// The reviewed source path and SHA originate in protected service config.
@@ -218,6 +248,18 @@ pub(crate) struct PendingDebugger {
 impl PendingDebugger {
     pub(crate) fn process(&self)->HANDLE {self.pending.process.0}
     pub(crate) fn job(&self)->HANDLE {self.job}
+    pub(crate) fn stdio_handles(&self)->(HANDLE,HANDLE){
+        (self.stdin_write.0,self.stdout_read.0)
+    }
+    pub(crate) fn resume_after_original_running(&mut self)
+        ->Result<(),SupervisorError>{
+        windows_fin04w2_kernel::inspect_current_service_principal()?;
+        windows_service_security::verify_debugger_job_kernel_acl(self.job)?;
+        contained(self.pending.process.0,self.job)?;
+        self.pending.resume_once()?;
+        contained(self.pending.process.0,self.job)?;
+        Ok(())
+    }
 }
 pub(crate) fn prepare_external_debugger(
     job:&EmptyAuditJob, reviewed_lldb_dap:&Path, expected_sha256:&str,

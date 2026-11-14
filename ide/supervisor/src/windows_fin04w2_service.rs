@@ -422,10 +422,40 @@ fn review_only(pipe:HANDLE,config:&InstalledAuditConfig)
         }
         target.reobserve(&scm_pair)?;
         scm_pair.reobserve()?;
-        // Positive *preparation* is not permission to run LLDB/DAP or the
-        // untrusted target. No S acknowledgment, original Running receipt or
-        // positive completion is emitted until an independent attach/RIP,
-        // effective WFP denial and death/replay matrix exists.
+        // The real executable is the *sealed* image in the target service's
+        // immutable per-job stage, NOT the source-build PE path.
+        let target_name=config.approved_target_image.file_name().ok_or_else(denied)?;
+        let staged_target=std::env::var_os("ProgramData").ok_or_else(denied)
+            .map(PathBuf::from)?.join("LuIDEDebugTargetBroker")
+            .join("sealed-debug-targets").join(&config.original_job_id)
+            .join(target_name);
+        security::hash_executable(&staged_target,&config.expected_target_image_sha256)?;
+        crate::windows_fin04w2_wfp::require_exact_outbound_blocks(
+            &config.approved_lldb_dap_executable,&staged_target,
+        )?;
+        // ONLY the original native host's one-use grant can consume the
+        // Authorized state and fsync RUNNING; this S is a suspended custody
+        // acknowledgment, not authorization by the debugger SCM itself.
+        signal(pipe,b'S')?;
+        expect_signal(pipe,b'G')?;
+        fin04w2_c2::verify_original_path(
+            &config.original_supervisor_journal,&config.original_job_id,
+            &config.review_only_plan,C2JournalGate::Running,
+        )?;
+        crate::fin04w2_authority::verify_original_execution_phase(
+            &config.original_supervisor_journal,&config.original_job_id,
+            &config.review_only_plan,&config.review_only_plan_hash,
+            crate::JobPhase::Running,
+        )?;
+        scm_pair.reobserve()?;
+        crate::windows_fin04w2_wfp::require_exact_outbound_blocks(
+            &config.approved_lldb_dap_executable,&staged_target,
+        )?;
+        target.grant_original_running(&scm_pair)?;
+        debugger.resume_after_original_running()?;
+        // Actual LLDB-DAP attach and stopped-thread/PDB receipts are a
+        // separately verified stage. Do not synthesize X/F completion from
+        // mere Running service, filter presence or one resumed thread.
         return Err(denied());
     }
     #[cfg(not(feature="fin04w2-split-native"))]
