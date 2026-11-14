@@ -45,6 +45,22 @@ static STOP: AtomicBool = AtomicBool::new(false);
 static STARTUP_STAGE: AtomicU32 = AtomicU32::new(0);
 static AUDIT_USED: AtomicBool = AtomicBool::new(false);
 fn denied() -> SupervisorError { SupervisorError::NoContainment }
+#[cfg(feature="fin04w2-split-native")]
+fn require_native_split_wfp_admission(
+    _pair:&windows_fin04w2_split_launcher::PendingSplitPair,
+)->Result<(),SupervisorError>{
+    // A future native implementation must query the live BFE/WFP filter
+    // engine for the EXACT two approved image identities, independently
+    // verify active outbound denial under each token, and retain/reobserve
+    // its filter leases through the entire debug session.
+    //
+    // A PowerShell rule name, bool in service.json, old CI log, firewall
+    // configuration receipt or AppContainer zero capabilities alone is NOT
+    // effective WFP proof for the outside-lowbox LLDB worker. There is no
+    // developer fallback and NO process can be resumed at this gate.
+    Err(denied())
+}
+
 fn wide(value: &str) -> Vec<u16> { value.encode_utf16().chain([0]).collect() }
 struct Handle(HANDLE);
 impl Drop for Handle {
@@ -399,6 +415,16 @@ fn review_only(pipe: HANDLE, config: &InstalledAuditConfig) -> Result<(), Superv
                 &split.target_pdb,&split.pdb_sha256,
                 &split.lldb_dap_executable,&split.lldb_dap_sha256,
             )?;
+            // Unlike the old benign W2-C single-worker transaction, the
+            // split session needs TWO exact active WFP denials and a native
+            // kernel policy readback BEFORE S. A false or stale WFP receipt
+            // cannot cause the original host to mark a split job Running.
+            // This positive OS policy verifier is deliberately not yet
+            // implemented; it returns NoContainment instead of fabricating
+            // source-only proof. Both suspended processes and both Jobs are
+            // reaped on failure while the original creator grant remains
+            // unconsumed. Release/attach remains disallowed.
+            require_native_split_wfp_admission(&pair)?;
             // This positive handshake is limited to creation while
             // SUSPENDED. It is not an LLDB "initialize", stop or release.
             send_fixed_signal(pipe,b'S')?;
