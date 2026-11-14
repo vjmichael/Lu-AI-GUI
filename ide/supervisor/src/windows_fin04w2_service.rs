@@ -80,6 +80,24 @@ struct InstalledAuditConfig {
     approved_target_service_executable: PathBuf,
     #[cfg(feature="fin04w2-split-native")]
     expected_target_service_sha256: String,
+    // Both SCM services independently pin the same original target bytes.
+    // The target service checks its own protected config and seal/Job;
+    // neither peer trusts caller-provided PE, PDB or a DAP-request PID.
+    #[cfg(feature="fin04w2-split-native")]
+    approved_target_image: PathBuf,
+    #[cfg(feature="fin04w2-split-native")]
+    expected_target_image_sha256: String,
+    #[cfg(feature="fin04w2-split-native")]
+    expected_target_pdb_sha256: String,
+    // Only the debugger SCM service may prepare this pinned LLDB bundle.
+    #[cfg(feature="fin04w2-split-native")]
+    approved_lldb_dap_executable: PathBuf,
+    #[cfg(feature="fin04w2-split-native")]
+    expected_lldb_dap_sha256: String,
+    #[cfg(feature="fin04w2-split-native")]
+    expected_liblldb_sha256: String,
+    #[cfg(feature="fin04w2-split-native")]
+    expected_python310_sha256: String,
     // CI-only first-party fixture. This cannot be selected or influenced by
     // a named-pipe client; only the preinstalled private service.json pins it.
     #[cfg(feature = "fin04w2-contained-probe")]
@@ -170,6 +188,27 @@ impl InstalledAuditConfig {
             security::hash_executable(
                 &result.approved_target_service_executable,
                 &result.expected_target_service_sha256,
+            )?;
+            if !result.approved_target_image.is_absolute()
+                ||!result.approved_lldb_dap_executable.is_absolute(){return Err(denied());}
+            for sha in [
+                &result.expected_target_image_sha256,
+                &result.expected_target_pdb_sha256,
+                &result.expected_lldb_dap_sha256,
+                &result.expected_liblldb_sha256,
+                &result.expected_python310_sha256,
+            ]{
+                if sha.len()!=64||!sha.bytes().all(|b|b.is_ascii_hexdigit()){
+                    return Err(denied());
+                }
+            }
+            security::hash_executable(
+                &result.approved_target_image,
+                &result.expected_target_image_sha256,
+            )?;
+            security::hash_executable(
+                &result.approved_lldb_dap_executable,
+                &result.expected_lldb_dap_sha256,
             )?;
         }
         let sid = security::sid_of_named_service(NAME)?;
@@ -344,11 +383,41 @@ fn review_only(pipe:HANDLE,config:&InstalledAuditConfig)
     fin04w2_c2::reserve_once(
         &root,&config.original_job_id,&config.review_only_plan,
     )?;
-    // Every return on failure drops this exact owned Job and its suspended
-    // child; no service-command path or alternate execution fallback.
+    // The independent debugger SCM Job must be held while the exact
+    // target broker prepares a separately Job-custodied suspended AppContainer.
+    // Both services reserve the SAME original human-approved Job before
+    // either executable can run. This is intentionally a NON-RUNNABLE
+    // two-process source gate until independent LLDB stopped-RIP acceptance.
     let job=windows_fin04w2_kernel::create_bounded_empty_debugger_job()?;
     #[cfg(feature="fin04w2-split-native")]
-    scm_pair.reobserve()?;
+    {
+        scm_pair.reobserve()?;
+        let target=crate::windows_fin04w2_target_ipc::prepare_original_target(
+            &scm_pair,&config.original_job_id,&config.review_only_plan,
+            &config.expected_target_image_sha256,
+            &config.expected_target_pdb_sha256,
+        )?;
+        let debugger=crate::windows_fin04w2_split_launcher::prepare_external_debugger(
+            &job,&config.approved_lldb_dap_executable,
+            &config.expected_lldb_dap_sha256,
+            &config.expected_liblldb_sha256,
+            &config.expected_python310_sha256,
+        )?;
+        if debugger.process().is_null()||target.observed_target_pid()==0{
+            return Err(denied());
+        }
+        target.reobserve(&scm_pair)?;
+        scm_pair.reobserve()?;
+        // Positive *preparation* is not permission to run LLDB/DAP or the
+        // untrusted target. No S acknowledgment, original Running receipt or
+        // positive completion is emitted until an independent attach/RIP,
+        // effective WFP denial and death/replay matrix exists.
+        return Err(denied());
+    }
+    #[cfg(not(feature="fin04w2-split-native"))]
+    {
+    // Preserve the ORIGINAL C2 fixed benign probe unchanged in the
+    // unsplit historical negative/CI acceptance profile.
     let child=job.prepare_fixed_probe(
         &config.fixed_probe.executable,
         &config.fixed_probe.expected_sha256,
@@ -384,6 +453,7 @@ fn review_only(pipe:HANDLE,config:&InstalledAuditConfig)
     // Job was released only after the original ReleasePending was verified.
     deliver_terminal_reply(pipe,b'F')?;
     Ok(())
+    } // original unsplit C2 fixed benign-probe path
 }
 #[cfg(not(feature="fin04w2-c2"))]
 fn review_only(pipe:HANDLE,config:&InstalledAuditConfig)
