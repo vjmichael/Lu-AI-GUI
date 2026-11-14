@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "281da8e3ddd2babcb4f1fbc4e23d84b8b145349a",
+  "sourceCommitBeforeLock": "e66b9f51d94d1c135cb990500c64fe5c86dc0bb2",
   "trackedFileCount": 1017,
   "files": [
     {
@@ -1429,7 +1429,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/lib.rs",
-      "blob": "c5d286e792bfb466a803fb6d73525f696e0db46f"
+      "blob": "8cba4f0c5bb7003662c01c572e07ec632f14696a"
     },
     {
       "path": "lu-desktop/src-tauri/src/load_trace.rs",
@@ -1581,7 +1581,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/prompt_context.rs",
-      "blob": "1cb51235b064a890c78892fec20fce4dd819a380"
+      "blob": "4b51d57d7e67d5b701440136c359734f862f4603"
     },
     {
       "path": "lu-desktop/src-tauri/src/read_proposal.rs",
@@ -1633,7 +1633,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/workspace_desktop.rs",
-      "blob": "aa2d18f3863566406f5718c48842a09ee6e62bae"
+      "blob": "7d55cfc776ab4fae81d74150360b414025e5e967"
     },
     {
       "path": "lu-desktop/src-tauri/src/write_proposal.rs",
@@ -2633,7 +2633,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/ansf.rs",
-      "blob": "96cbf970f6eaaf8a4c2a2a6e118c7edb78cff100"
+      "blob": "df83eac6d3e4210f3c1c005c3da9ad8b3439974b"
     },
     {
       "path": "src-tauri/lu-core/src/ansf_artifact_links.rs",
@@ -2897,7 +2897,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/inference_wire.rs",
-      "blob": "1631866d48f9e22d9c7d53fd88b79edb8af9244a"
+      "blob": "17e67035fb3c5b41e0094a03a1ab309fbc629056"
     },
     {
       "path": "src-tauri/lu-core/src/journal.rs",
@@ -2961,7 +2961,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/multimodal_saved_turn.rs",
-      "blob": "6dc0cea3501ad31ffcfd106b1be423f8b281a446"
+      "blob": "245d59a1ace25c6dc10ccd1dffb16e69c317caeb"
     },
     {
       "path": "src-tauri/lu-core/src/native_app_adapter.rs",
@@ -3529,7 +3529,7 @@
     },
     {
       "path": "src-tauri/lu-core/tests/ansf_revisions.rs",
-      "blob": "dccc6530be817a182cd76a788738edc56ff42550"
+      "blob": "3da6b430da9c54ac993ec5c691bf9383a86c59f1"
     },
     {
       "path": "src-tauri/lu-core/tests/ansf_sync.rs",
