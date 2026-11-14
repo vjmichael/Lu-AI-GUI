@@ -110,3 +110,12 @@ main or admit an installed workflow. When the candidate passes its full
 security gate, update the integration review's exact source SHA, reconcile
 the overlapping paths with the protected main ledger, create a separately
 reviewed new source-lock commit, and rerun all original gates.
+
+
+## CORE-01F-03 — live main protection and historical PR #229 collision
+
+The ledger's independently actionable CORE-01F-03 review now compares the exact Git blob identities of **both** main-owned files: `docs/LU_DEVELOPMENT_LEDGER.md` and `.github/workflows/lu-development-ledger.yml`. The source preflight requires `--expect-main-sha` alongside the explicit CORE-01E candidate SHA in its PR #228 source-only CI job. No stale ledger or scheduled workflow may be automatically preferred over the live main bytes; `requiredIntegrationSource=EXACT_CURRENT_MAIN_BLOB`, and all execution, merge, installation and release authority remain false.
+
+At this review, `main` was `2e31b22a597c8a92aec979d9ff057401c518088c`. Its latest ledger blob was `f340ea1f8e8096e23e984c6cc7ba067cf4d795dd`, while PR #229's earlier reconciliation ledger blob was `627cb6f4a5b464a0631fd7f25cbb267eab0729f8` (STALE). Main's metadata workflow blob was `35c5de7ab6bb4e4b50db76f785064809f342396b` and matched PR #229's preserved workflow at that snapshot. This is a dated exact-object comparison; the CLI refreshes current immutable Git identities for each audit.
+
+An owner-reviewed comparison with the historical reconciliation branch already available locally can also pass `--legacy-reconcile-ref origin/lu/core01e-main-ledger-reconcile-20261112`. The tool records any stale legacy paths in the machine-readable report. It never fetches refs, changes branches, cherry-picks a workflow, writes the active ledger, merges or rebases. The two CORE-01E/CORE-01F overlap files remain `.github/workflows/lu-repo01-full-source.yml` and `source-tree.lock.json`, requiring a separate reviewed integration and new lock after original security acceptance.

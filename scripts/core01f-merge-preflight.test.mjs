@@ -114,6 +114,9 @@ test('PR228 has a separate opt-in exact-head source-only integration job',()=>{
  assert.match(section,/fetch-depth: 0/);
  assert.match(section,/node --test scripts\/core01f-merge-preflight\.test\.mjs/);
  assert.match(section,/--expect-core-sha "\$core_sha"/);
+ assert.match(section,/--expect-main-sha "\$main_sha"/);
+ assert.match(section,/protectedMain\?\.valid!==true/);
+ assert.match(section,/r\.mainSha!==process\.argv\[2\]/);
  assert.match(section,/SOURCE_INTEGRATION_REVIEWABLE_ONLY/);
  assert.match(section,/sec06fAccepted!==false/);
  assert.doesNotMatch(section,/systemd-run|npm install|cargo test|NSIS|dpkg -i|git merge|git rebase/);
