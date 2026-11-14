@@ -860,7 +860,7 @@ impl ReviewedApplicationTurnSession{
     /// The native OS execution/installed-app acceptance gate remains open.
     #[allow(clippy::too_many_arguments)]
     pub fn preflight_scheduled_step(
-        &self,
+        &mut self,
         scheduler:&crate::agent_host_scheduler::AgentHostScheduler,
         ledger:&crate::agent_plan_ledger::AgentPlanLedger,
         revisions:&crate::agent_plan_revisions::AgentPlanRevisionStore,
@@ -879,6 +879,11 @@ impl ReviewedApplicationTurnSession{
         crate::agent_reviewed_broker_bridge::verify_actual_broker_session(
             self,&binding
         ).map_err(|e|format!("Reviewed app registry refused claim: {e:?}"))?;
+        // The reviewed live broker is now bound to the exact planned tool.
+        // A successful Protobuf dispatch with an UNSUPPORTED independent
+        // result may be explained by ordinary chat, but cannot complete a
+        // reviewed plan step or produce a verified scheduled model answer.
+        self.turn.require_verified_independent_outcome();
         Ok(binding)
     }
     pub fn schemas(&self)->Result<Vec<Value>,String>{
