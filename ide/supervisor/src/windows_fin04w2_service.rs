@@ -405,7 +405,7 @@ fn review_only(pipe:HANDLE,config:&InstalledAuditConfig)
     #[cfg(feature="fin04w2-split-native")]
     {
         scm_pair.reobserve()?;
-        let target=crate::windows_fin04w2_target_ipc::prepare_original_target(
+        let mut target=crate::windows_fin04w2_target_ipc::prepare_original_target(
             &scm_pair,&config.original_job_id,&config.review_only_plan,
             &config.expected_target_image_sha256,
             &config.expected_target_pdb_sha256,
@@ -442,10 +442,9 @@ fn review_only(pipe:HANDLE,config:&InstalledAuditConfig)
             &config.original_supervisor_journal,&config.original_job_id,
             &config.review_only_plan,C2JournalGate::Running,
         )?;
-        crate::fin04w2_authority::verify_original_execution_phase(
+        crate::fin04w2_authority::verify_running_same_original_authorization(
             &config.original_supervisor_journal,&config.original_job_id,
-            &config.review_only_plan,&config.review_only_plan_hash,
-            crate::JobPhase::Running,
+            &config.review_only_plan,&config.review_only_plan_hash,&original,
         )?;
         scm_pair.reobserve()?;
         crate::windows_fin04w2_wfp::require_exact_outbound_blocks(

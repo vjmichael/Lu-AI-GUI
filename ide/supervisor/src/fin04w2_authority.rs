@@ -186,6 +186,31 @@ pub(crate) fn verify_original_execution_phase(
     Ok(())
 }
 
+/// The two services must not substitute a different authorized entry after
+/// reserving the original consent. A RUNNING journal is never sufficient
+/// unless the exact approved entry hash and session still match the
+/// irreversible reservation made BEFORE either child was prepared.
+pub(crate) fn verify_running_same_original_authorization(
+    path:&Path,job_id:&str,plan:&JobPlan,sha:&str,
+    original:&FreshOriginalAuthorization,
+)->Result<(),SupervisorError>{
+    verify_original_execution_phase(path,job_id,plan,sha,JobPhase::Running)?;
+    if original.job_id!=job_id||original.plan_sha256!=sha
+        ||original.approved_entry_sha256.len()!=64
+        ||original.session_id.len()!=40{return Err(denied());}
+    let receipts=original_receipts_from_path(path)?;
+    let current:Vec<&Receipt>=receipts.iter()
+        .filter(|r|r.body.job_id==job_id).collect();
+    if current.len()!=4||current[1].body.phase!=JobPhase::Authorized
+        ||current[1].entry_hash!=original.approved_entry_sha256
+        ||current[1].body.session_id!=original.session_id
+        ||current[2].body.session_id!=original.session_id
+        ||current[3].body.session_id!=original.session_id{
+        return Err(denied());
+    }
+    Ok(())
+}
+
 fn original_receipts_from_path(path:&Path)->Result<Vec<Receipt>,SupervisorError>{
     if !path.is_absolute(){return Err(denied());}
     let meta=fs::symlink_metadata(path).map_err(|_|denied())?;

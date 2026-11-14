@@ -20,26 +20,33 @@ struct Pipe(HANDLE);
 impl Drop for Pipe{
  fn drop(&mut self){if !self.0.is_null()&&self.0!=INVALID_HANDLE_VALUE{unsafe{CloseHandle(self.0);}}}
 }
-pub(crate) struct SuspendedTargetLease{pipe:Pipe,os_observed_target_pid:u32}
+#[derive(Clone,Copy,Debug,Eq,PartialEq)]
+enum LeasePhase{Suspended,Running,StoppedObserved}
+pub(crate) struct SuspendedTargetLease{
+    pipe:Pipe,os_observed_target_pid:u32,phase:LeasePhase,
+}
 impl SuspendedTargetLease{
  pub(crate) fn observed_target_pid(&self)->u32{self.os_observed_target_pid}
  /// G only requests the service to independently reobserve the original
  /// consumed one-use host grant and fsynced RUNNING journal before it resumes.
- pub(crate) fn grant_original_running(&self,pair:&IndependentScmPair)
+ pub(crate) fn grant_original_running(&mut self,pair:&IndependentScmPair)
   ->Result<(),SupervisorError>{
+  if self.phase!=LeasePhase::Suspended{return Err(denied());}
   pair.attest_target_server(self.pipe.0)?;
   let byte=[b'G'];let mut n=0u32;
   if unsafe{WriteFile(self.pipe.0,byte.as_ptr().cast(),1,&mut n,ptr::null_mut())}==0
       ||n!=1{return Err(denied());}
   let mut ack=[0u8;1];read_exact(self.pipe.0,&mut ack,Duration::from_secs(20))?;
   if ack!=[b'T']{return Err(denied());}
-  self.reobserve(pair)
+  self.reobserve(pair)?;
+  self.phase=LeasePhase::Running;
+  Ok(())
  }
  /// PC originates in the correlated LLDB-DAP stackTrace, but only the
  /// independent target SCM can compare it to a genuine Job member's RIP.
- pub(crate) fn corroborate_stopped_rip(&self,pair:&IndependentScmPair,rip:u64)
+ pub(crate) fn corroborate_stopped_rip(&mut self,pair:&IndependentScmPair,rip:u64)
   ->Result<u32,SupervisorError>{
-  if rip==0{return Err(denied());}
+  if self.phase!=LeasePhase::Running||rip==0{return Err(denied());}
   pair.attest_target_server(self.pipe.0)?;
   let mut req=[0u8;9];req[0]=b'V';req[1..].copy_from_slice(&rip.to_le_bytes());
   let mut n=0u32;
@@ -52,6 +59,7 @@ impl SuspendedTargetLease{
   let tid=u32::from_le_bytes(proof[1..5].try_into().map_err(|_|denied())?);
   if tid==0{return Err(denied());}
   self.reobserve(pair)?;
+  self.phase=LeasePhase::StoppedObserved;
   Ok(tid)
  }
  pub(crate) fn reobserve(&self,pair:&IndependentScmPair)->Result<(),SupervisorError>{
@@ -143,7 +151,9 @@ pub(crate) fn prepare_original_target(
   &reply,expected_image_sha,expected_pdb_sha,
   expected_approval_sha,expected_session,
  )?;
- let lease=SuspendedTargetLease{pipe,os_observed_target_pid:observed};
+ let lease=SuspendedTargetLease{
+     pipe,os_observed_target_pid:observed,phase:LeasePhase::Suspended,
+ };
  lease.reobserve(pair)?;
  Ok(lease)
 }
@@ -172,6 +182,14 @@ mod tests{
      let mut fake=reply;fake[1..5].fill(0);
      assert!(verify_suspended_receipt(&fake,&image,&pdb,&approval,&session).is_err());
      assert!(verify_suspended_receipt(&reply[..140],&image,&pdb,&approval,&session).is_err());
+ }
+ #[test]
+ fn no_replay_or_stopped_evidence_in_suspended_lease_state(){
+     assert_ne!(LeasePhase::Suspended,LeasePhase::Running);
+     assert_ne!(LeasePhase::Running,LeasePhase::StoppedObserved);
+     // The only permitted lease state progression is monotonic.
+     let stages=[LeasePhase::Suspended,LeasePhase::Running,LeasePhase::StoppedObserved];
+     assert!(stages.windows(2).all(|p|p[0]!=p[1]));
  }
  #[test]
  fn only_one_fixed_target_endpoint_without_client_pid_or_path(){

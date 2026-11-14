@@ -19,7 +19,7 @@ use crate::{
     windows_fin04w2_scm_pair as scm_pair,
     windows_fin04w2_split_launcher,
     windows_service_security as security,
-    JobPhase,JobPlan,SupervisorError,
+    JobPlan,SupervisorError,
 };
 use serde::Deserialize;
 use std::{
@@ -311,9 +311,9 @@ fn prepare_one_target(
         security::verify_original_approval_journal_acl(
             &cfg.original_supervisor_journal,&cfg.approved_host_user_sid,
         )?;
-        fin04w2_authority::verify_original_execution_phase(
+        fin04w2_authority::verify_running_same_original_authorization(
             &cfg.original_supervisor_journal,&cfg.original_job_id,
-            &cfg.sealed_plan,&cfg.sealed_plan_sha256,JobPhase::Running,
+            &cfg.sealed_plan,&cfg.sealed_plan_sha256,&original,
         )?;
     }
     // The effective-socket denial matrix remains a separate native gate;

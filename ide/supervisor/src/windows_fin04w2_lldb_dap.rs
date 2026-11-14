@@ -114,8 +114,10 @@ impl NativeDap{
 }
 fn response_ok(v:&Value,sequence:u64,command:&str)->Result<bool,SupervisorError>{
     if v.get("type").and_then(Value::as_str)!=Some("response"){return Ok(false);}
-    if v.get("request_seq").and_then(Value::as_u64)!=Some(sequence)
-        ||v.get("command").and_then(Value::as_str)!=Some(command)
+    if v.get("request_seq").and_then(Value::as_u64)!=Some(sequence){
+        return Ok(false); // caller rejects unexpected unhandled response
+    }
+    if v.get("command").and_then(Value::as_str)!=Some(command)
         ||v.get("success").and_then(Value::as_bool)!=Some(true){
         return Err(denied());
     }
@@ -216,6 +218,7 @@ pub(crate) fn attach_and_observe_stop(
     loop{
         let v=dap.receive(deadline)?;
         if v.get("type").and_then(Value::as_str)==Some("response"){
+            if response_ok(&v,3,"configurationDone")?{continue;}
             return source_from_stack(&v,tid);
         }
         if v.get("type").and_then(Value::as_str)==Some("event"){
@@ -228,7 +231,7 @@ mod tests{
     use super::*;
     #[test]
     fn strict_fixed_dap_framing_and_no_reverse_request(){
-        let mut bytes=b"Content-Length: 45\r\n\r\n".to_vec();
+        let mut bytes=b"Content-Length: 46\r\n\r\n".to_vec();
         bytes.extend_from_slice(br#"{"type":"event","event":"initialized","seq":1}"#);
         let value=extract_frame(&mut bytes).unwrap().unwrap();
         assert_eq!(value.get("event").and_then(Value::as_str),Some("initialized"));
