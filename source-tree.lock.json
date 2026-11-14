@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "99004c3f5f9ca69c41152dadca4696bf3c09d157",
+  "sourceCommitBeforeLock": "979bd66500039085993aa7f1999d17fbb6c1829b",
   "trackedFileCount": 1006,
   "files": [
     {
@@ -1713,7 +1713,7 @@
     },
     {
       "path": "lu-desktop/tests/browser-ci-candidate.test.mjs",
-      "blob": "2bfd416a9dddf2fb9e47a9925236c6d88842b114"
+      "blob": "0f7ba31c239070c7343bbc73e126eb1324ab696c"
     },
     {
       "path": "lu-desktop/tests/browser-ci-executable.test.mjs",
@@ -1949,7 +1949,7 @@
     },
     {
       "path": "lu-desktop/tests/p0-sec06-consolidated.test.mjs",
-      "blob": "f21acac15459d4ce99dea6395294e7f854258987"
+      "blob": "cd97a256af11bfb560ff22f53bc8f8daeef13e8a"
     },
     {
       "path": "lu-desktop/tests/p03-ai-ops.test.mjs",
@@ -2281,7 +2281,7 @@
     },
     {
       "path": "scripts/lu-sec06c-owned-browser-worker.py",
-      "blob": "ee60c9ba0f42d59f7db82f168f4ec486fe46eeca"
+      "blob": "045ff1e23b4e6ab4e683bb7ae72f44c8fe0c9c45"
     },
     {
       "path": "scripts/lu-sec06c-owned-git-launcher.py",
@@ -3941,7 +3941,7 @@
     },
     {
       "path": "src-tauri/lu-core/workers/lu_browser_worker.mjs",
-      "blob": "7262114cb6c6c9ec2b1e6a0ea76bb928c48a0989"
+      "blob": "592288436da58400434595d0b4c200c983f3bdb2"
     },
     {
       "path": "src-tauri/lu-observe-capture-worker/Cargo.toml",
