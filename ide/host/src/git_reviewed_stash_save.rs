@@ -64,7 +64,6 @@ impl IdeWorkspaceRegistry {
      fresh.initial_stash_oid!=expected.initial_stash_oid {
     return Err("FIN03_STASH_REVIEW_CHANGED");
   }
-  self.require_group6f_no_pending_recovery(&expected.project_id,false)?;
   let mut repo=exact_repo(self,&expected.project_id)?;
   let root=self.registered_git_root(&expected.project_id)
    .map_err(|_|"FIN03_STASH_PROJECT_CLOSED")?;
@@ -79,6 +78,7 @@ impl IdeWorkspaceRegistry {
    use std::os::unix::fs::OpenOptionsExt;
    backup_opts.mode(0o600);
   }
+  self.require_group6f_no_pending_recovery(&expected.project_id,false)?;
   let mut file=backup_opts.open(&backup)
    .map_err(|_|"FIN03_STASH_BACKUP_NOT_CREATED")?;
   file.write_all(&original).and_then(|_|file.sync_all())
