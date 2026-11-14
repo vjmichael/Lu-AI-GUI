@@ -55,7 +55,6 @@ impl IdeWorkspaceRegistry {
      expected.worktree_modified || cancel.load(Ordering::SeqCst)!=0 {
     return Err("FIN03_STASH_AUTHORITY_DENIED");
   }
-  self.require_group6f_no_pending_recovery(&expected.project_id,false)?;
   let fresh=self.review_one_file_stash_save(&expected.project_id)?;
   if fresh.review_sha256!=expected.review_sha256 ||
      fresh.relative_path!=expected.relative_path ||
@@ -65,6 +64,7 @@ impl IdeWorkspaceRegistry {
      fresh.initial_stash_oid!=expected.initial_stash_oid {
     return Err("FIN03_STASH_REVIEW_CHANGED");
   }
+  self.require_group6f_no_pending_recovery(&expected.project_id,false)?;
   let mut repo=exact_repo(self,&expected.project_id)?;
   let root=self.registered_git_root(&expected.project_id)
    .map_err(|_|"FIN03_STASH_PROJECT_CLOSED")?;
