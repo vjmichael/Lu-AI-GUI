@@ -28,6 +28,12 @@ jobs:
           ref: 2fb253ab35bc3b451b9c07b89f5549aec26c32e3
           persist-credentials: false
           clean: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
       - name: Verify one-use runner selection is not a general shared label
         env:
           LU_C4_ONE_TIME_LABEL: ${{ inputs.one_time_label }}
