@@ -43,6 +43,10 @@ mod windows_fin04w2_split;
 // No native resume, DAP attach or production grant in this module.
 #[cfg(all(windows, debug_assertions, feature = "fin04w2-split-native"))]
 mod windows_fin04w2_split_launcher;
+// Original source/PDB copies are staged under a service-only root with
+// explicit package read-execute ACLs, independently reobserved from Windows.
+#[cfg(all(windows, debug_assertions, feature = "fin04w2-split-native"))]
+mod windows_fin04w2_target_seal;
 // Separate SCM-only debugger broker, with no worker launch or IPC until the
 // Windows ACL/WFP/exact-Job and authenticated protocol gates are complete.
 #[cfg(all(windows, debug_assertions, feature = "fin04w2-scm"))]
