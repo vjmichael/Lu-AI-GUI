@@ -737,7 +737,7 @@ test('SEC06C OS-owned original PIDFD stall scenarios require genuine systemd sub
   assert.match(native,/"nativeMainSigkill": scenario in \("worker-main-sigkill","guardian-death"\)/);
   assert.match(native,/if scenario in \("cancel","ancestor-migration"\)/);
   assert.match(native,/SEC06C_ANCESTOR_ESCAPE_SUCCEEDED/);
-  assert.match(sec06,/linux-retired-guardian-admission-denial/);
+  assert.match(gate,/linux-retired-guardian-admission-denial/);
   const retired=path('benchmarks/e1/sec06c_retired_guardian_denial.py');
   assert.match(retired,/SEC06C_BLOCKED_UNSAFE_WRITABLE_ANCESTOR/);
   assert.match(retired,/historical_cases_preserved=4/);
