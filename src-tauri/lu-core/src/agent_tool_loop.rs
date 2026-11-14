@@ -131,6 +131,10 @@ pub struct NativeToolTurn {
     read_only: bool,
     requires_observed_tool_result: bool,
     observed_tool_result: bool,
+    // Host-only plan admission: a successful tool reply does not establish a
+    // verified deliverable when the independent source oracle is UNSUPPORTED.
+    requires_verified_independent_outcome: bool,
+    observed_verified_independent_outcome: bool,
     previous_request_digest:Option<String>,
     previous_result_digest:Option<String>,
     identical_result_count:u8,
@@ -190,6 +194,8 @@ impl NativeToolTurn {
             read_only: false,
             requires_observed_tool_result: false,
             observed_tool_result: false,
+            requires_verified_independent_outcome: false,
+            observed_verified_independent_outcome: false,
             previous_request_digest:None,
             previous_result_digest:None,
             identical_result_count:0,
@@ -249,12 +255,23 @@ impl NativeToolTurn {
         self.requires_observed_tool_result = true;
     }
 
+    /// Applied only after an independently authorized native planned-step
+    /// preflight. Never called by a model or inferred from plan approval.
+    pub fn require_verified_independent_outcome(&mut self) {
+        self.requires_observed_tool_result = true;
+        self.requires_verified_independent_outcome = true;
+    }
+
     pub fn needs_observed_tool_result(&self) -> bool {
         self.requires_observed_tool_result
     }
 
     fn ensure_final_has_required_observation(&self) -> Result<(), ToolTurnError> {
         if self.requires_observed_tool_result && !self.observed_tool_result {
+            return Err(ToolTurnError::ObservationRequiredBeforeFinal);
+        }
+        if self.requires_verified_independent_outcome
+            && !self.observed_verified_independent_outcome {
             return Err(ToolTurnError::ObservationRequiredBeforeFinal);
         }
         Ok(())
@@ -392,6 +409,10 @@ impl NativeToolTurn {
         if self.done {
             return Err(ToolTurnError::AlreadyFinished);
         }
+        // Every model reply, including prose/JSON finalization, must retain
+        // its ORIGINAL advertised grants. An unrelated surviving grant never
+        // makes an old model-tool context safe to continue.
+        self.ensure_continuation_authorized(authority)?;
         if raw.len() > MAX_MODEL_FRAME_BYTES {
             return Err(ToolTurnError::TooLarge);
         }
@@ -597,6 +618,14 @@ impl NativeToolTurn {
             .map_err(ToolTurnError::Catalog)?;
         if data.get("ok").and_then(Value::as_bool) == Some(true) {
             self.observed_tool_result = true;
+            // The reviewed native codec only exposes this field after it has
+            // inspected the independent original worker/oracle receipt.
+            // A successful dispatch, UNSUPPORTED source or model assertion
+            // outside the native decoded result cannot certify a plan step.
+            if data.pointer("/result/independentOutcome/status")
+                .and_then(Value::as_str) == Some("VERIFIED") {
+                self.observed_verified_independent_outcome = true;
+            }
         }
         if matches!(descriptor.effect, ToolEffect::ReadWorkspace | ToolEffect::NetworkRead) {
             if let Some(digest) = substantive_read_digest(&data) {
