@@ -218,9 +218,11 @@ fn verify_private_stage_parent(path:&Path)->Result<(),SupervisorError>{
     if seen!=[true,true]{return Err(denied());}
     Ok(())
 }
-struct IncompleteStage(PathBuf);
+struct IncompleteStage {path:PathBuf,armed:bool}
 impl Drop for IncompleteStage {
-    fn drop(&mut self){let _=fs::remove_dir_all(&self.0);}
+    fn drop(&mut self){
+        if self.armed {let _=fs::remove_dir_all(&self.path);}
+    }
 }
 
 pub(crate) struct SealedDebugTarget {
@@ -262,7 +264,7 @@ pub(crate) fn stage_and_verify(
     let root=parent.join(original_job_id);
     if root.exists(){return Err(denied());}
     fs::create_dir(&root).map_err(|_|denied())?;
-    let mut incomplete=Some(IncompleteStage(root.clone()));
+    let mut incomplete=IncompleteStage{path:root.clone(),armed:true};
     let exe=root.join("debug-target.exe");
     let symbols=root.join("debug-target.pdb");
     fs::copy(image,&exe).map_err(|_|denied())?;
@@ -281,7 +283,7 @@ pub(crate) fn stage_and_verify(
     windows_service_security::hash_executable(&exe,image_sha256)?;
     windows_service_security::hash_executable(&symbols,pdb_sha256)?;
     // Only the successful, independently reobserved stage escapes cleanup.
-    incomplete.take();
+    incomplete.armed=false;
     Ok(SealedDebugTarget{image:exe,pdb:symbols,root})
 }
 
