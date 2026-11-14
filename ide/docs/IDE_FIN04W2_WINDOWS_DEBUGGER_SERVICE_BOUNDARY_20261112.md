@@ -77,6 +77,55 @@ primary token.
    Restart cannot replay an old grant, resume an unknown process or
    invent a completed stop.
 
+## Accepted split-process direction (Nov 13, 2026)
+
+The user selected **different OS execution domains** for debugger and program:
+
+- **Trusted SCM custodian**: separate protected LocalService identity, the
+  one-use original approval/journal, exact sealed project/build/PE/PDB and
+  both independently named Job handles; the service is outside both Jobs.
+- **LLDB-DAP worker**: a separately hash-pinned process with the restricted
+  debugger-service SID, *NOT* AppContainer. Windows debug APIs execute there,
+  rather than being denied by the lowbox named-pipe namespace. Its Job remains
+  separately accounted, network/foreign-file denied, and kill-on-close.
+- **Untrusted debuggee**: the **SCM service creates it FIRST** using
+  PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES with its unique AppContainer
+  package SID and ZERO additional capabilities. It belongs to its OWN service
+  Job at creation, independently attested while suspended. Its sealed image,
+  package SID, TokenIsAppContainer=1, zero capabilities, WFP policy and exact
+  original build/receipt must all agree.
+- **Attach**: only after both kernel handles, both distinct Job memberships,
+  debugger non-AppContainer/restricted service-SID token, target lowbox SID,
+  source/build seal, one-use receipt and WFP are checked, derive the target
+  PID by GetProcessId on the *held kernel handle*. Send LLDB-DAP a fixed
+  attach-by-pid request. Reject any PID from IDE/UI, WebView, script, source,
+  named-pipe client or DAP. NEVER send a DAP launch request from the outside
+  debugger: that would create an unconfined target.
+- **Stop/recovery**: DAP attach acknowledgement is not an actual debugger
+  stop. Require independently observed debug-port/event owner, live stopped
+  thread/RIP, independent PE/PDB line, target lowbox and both Jobs, matching
+  original receipts. On cancel, SCM death, browser death, lost handle, changed
+  PID or mismatch, fail closed and reap BOTH Jobs before durable closure.
+
+**Implemented in source behind disabled features**:
+`fin04w2-split-protocol` adds strict fixed DAP attach grammar and response
+correlation. `fin04w2-split-native` reobserves live Windows process handles
+and requires distinct non-AppContainer debugger + AppContainer target Jobs,
+correct restricting-SID identity, source binary and original Running receipt
+before deriving an attach PID. A Windows compiler/negative test workflow
+validates the shape. None of this currently starts LLDB or the target in
+the production service: the W2-C service still executes its original
+hash-pinned harmless fixture. This separation is the engineering foundation,
+**not** the completed physical Windows debugger or license to change default
+Tauri behavior.
+
+**Unimplemented release gates**: create/stage the sealed target from the SCM
+service in a unique AppContainer and dedicated Job; start exact signed/
+reviewed LLDB-DAP outside lowbox with service-specific restricted token and
+its own Job; independent per-process WFP tests, DLL closure, live DAP attach,
+full original hostile/cancellation/restart matrix and installed approval.
+Do NOT substitute a same-user, unrestricted launcher for these gates.
+
 ## Engineering sequence and executable acceptance gates
 
 - **W2-A, protocol and service identity**: define strict fixed request/receipt
