@@ -16,6 +16,7 @@ use windows_sys::Win32::{
         TokenIsAppContainer,TokenUser,WinLocalServiceSid,TOKEN_QUERY,TOKEN_USER,
     },
     System::{
+        Pipes::{GetNamedPipeClientProcessId,GetNamedPipeServerProcessId},
         Services::{
             CloseServiceHandle,OpenSCManagerW,OpenServiceW,QueryServiceStatusEx,
             SC_MANAGER_CONNECT,SC_STATUS_PROCESS_INFO,SERVICE_QUERY_STATUS,
@@ -167,6 +168,22 @@ pub(crate) struct IndependentScmPair{
     target:LiveService,
 }
 impl IndependentScmPair {
+    /// Target-side proof: client identity is the kernel's named-pipe PID,
+    /// matched against the independently verified debugger SCM process.
+    pub(crate) fn attest_debugger_client(&self,pipe:HANDLE)->Result<(),SupervisorError>{
+        let mut pid=0u32;
+        if unsafe{GetNamedPipeClientProcessId(pipe,&mut pid)}==0
+            ||pid==0||pid!=self.debugger.pid{return Err(denied());}
+        self.reobserve()
+    }
+    /// Debugger-side proof: server identity is the kernel's named-pipe PID,
+    /// matched against the independently verified target SCM process.
+    pub(crate) fn attest_target_server(&self,pipe:HANDLE)->Result<(),SupervisorError>{
+        let mut pid=0u32;
+        if unsafe{GetNamedPipeServerProcessId(pipe,&mut pid)}==0
+            ||pid==0||pid!=self.target.pid{return Err(denied());}
+        self.reobserve()
+    }
     pub(crate) fn reobserve(&self)->Result<(),SupervisorError>{
         if self.debugger.pid==self.target.pid
             ||self.debugger.name==self.target.name{return Err(denied());}
