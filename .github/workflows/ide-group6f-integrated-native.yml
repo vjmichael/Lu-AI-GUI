@@ -126,9 +126,14 @@ jobs:
         with:
           toolchain: '1.99.1'
       - uses: actions/setup-python@v5
-        if: runner.os == 'Windows'
         with:
           python-version: '3.11'
+      - name: IDE-MERGE-02 original P06 candidate-tree hash and hostile-path contracts (source only)
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s ide/packaging -p 'test_p06_shipping_content.py' -v
+          echo 'IDE_MERGE02_P06_SHIPPING_TREE_SOURCE=TEST_PASS_NOT_INSTALLED_ATTESTATION'
       - name: Original pinned LLVM first-party WFP owner overlay source regression
         if: runner.os == 'Windows'
         shell: pwsh
