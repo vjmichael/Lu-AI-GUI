@@ -213,6 +213,23 @@ jobs:
             echo "IDE_MERGE03_SPLIT_NATIVE_SCM_AND_WFP_ACCEPTANCE=NOT_TESTED"
             echo "IDE_MERGE03_C4_WINDOWS_NATIVE_COMPILE_AND_NEGATIVES=PASS"
             echo "IDE_MERGE03_C4_PHYSICAL_APPROVAL=NOT_TESTED"
+            # Parse genuine native-only WFP/service-loss harnesses. Syntax
+            # checks do NOT count as live socket, SCM or replay acceptance.
+            pwsh -NoProfile -Command '
+              $ErrorActionPreference = "Stop"
+              foreach($p in @(
+                "ide/packaging/Test-FIN04W2-EffectiveWfpNative.ps1",
+                "ide/packaging/Test-FIN04W2-ServiceLossNative.ps1"
+              )) {
+                $tokens=$null; $errors=$null
+                [System.Management.Automation.Language.Parser]::ParseFile(
+                  (Resolve-Path -LiteralPath $p).Path,
+                  [ref]$tokens,[ref]$errors
+                ) | Out-Null
+                if ($errors.Count -ne 0) { throw "FIN04W2_NATIVE_SCRIPT_SYNTAX_DENIED:$p" }
+              }
+              Write-Host "FIN04W2_NATIVE_ACCEPTANCE_SCRIPT_PARSE=PASS_NOT_RUNTIME"
+            '
           fi
           echo "G06D_G06E_G06F_REAL_DESKTOP_SOURCE_LINK=PASS"
           echo "G06F_NATIVE_VAULT_CREDENTIAL_USED=NO"

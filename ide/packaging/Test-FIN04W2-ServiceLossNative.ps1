@@ -34,8 +34,8 @@ if(!$p.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)){
   Deny 'independent_elevated_operator_required'
 }
 if($TargetPid -eq $LldbPid){Deny 'shared_target_debugger_pid'}
-function NativeIdentity([int]$pid,[string]$expected,[string]$sha){
-  $proc=Get-CimInstance Win32_Process -Filter ("ProcessId="+$pid)
+function NativeIdentity([int]$observedProcessId,[string]$expected,[string]$sha){
+  $proc=Get-CimInstance Win32_Process -Filter ("ProcessId="+$observedProcessId)
   if(!$proc -or !$proc.ExecutablePath){Deny 'missing_reviewed_child_process'}
   $actual=(Resolve-Path -LiteralPath $proc.ExecutablePath).Path
   $pinned=(Resolve-Path -LiteralPath $expected).Path
@@ -46,7 +46,7 @@ function NativeIdentity([int]$pid,[string]$expected,[string]$sha){
     Deny 'child_binary_SHA_changed'
   }
   return [pscustomobject]@{
-    pid=$pid;path=$actual;creation=[string]$proc.CreationDate
+    pid=$observedProcessId;path=$actual;creation=[string]$proc.CreationDate
   }
 }
 $target=NativeIdentity $TargetPid $TargetImage $TargetImageSha256
@@ -77,6 +77,9 @@ if($LossMode -eq 'HardKill'){
 }else{
   Stop-Service -Name $ServiceToLose -Force -ErrorAction Stop
 }
+# OS-side process exit is only an intermediate observation. Full job-tree
+# kill and durable one-use replay must be independently verified by the
+# original supervisor/SCM kernel witnesses before any release receipt.
 $limit=[DateTime]::UtcNow.AddSeconds(12)
 do{
   $current=Get-CimInstance Win32_Process -Filter (

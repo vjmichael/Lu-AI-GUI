@@ -32,6 +32,9 @@ if(!$principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator))
 if($TargetPid -le 0 -or $LldbPid -le 0 -or $TargetPid -eq $LldbPid){
   Deny 'invalid_distinct_processes'
 }
+# The audit must start after both exact reviewed binaries were launched and
+# after separate service-bound WFP admission. Host reachability alone is not
+# proof: require four original 5157 kernel events (both process images/families).
 if($EndUtc -le $StartUtc -or ($EndUtc-$StartUtc).TotalMinutes -gt 5){
   Deny 'audit_window_invalid'
 }
@@ -39,8 +42,8 @@ if($IPv4Destination.AddressFamily -ne [Net.Sockets.AddressFamily]::InterNetwork 
    $IPv6Destination.AddressFamily -ne [Net.Sockets.AddressFamily]::InterNetworkV6){
   Deny 'both_IP_families_required'
 }
-function Observe([int]$pid,[string]$exe,[string]$sha){
-  $native=Get-CimInstance Win32_Process -Filter ("ProcessId="+$pid)
+function Observe([int]$observedProcessId,[string]$exe,[string]$sha){
+  $native=Get-CimInstance Win32_Process -Filter ("ProcessId="+$observedProcessId)
   if(!$native -or !$native.ExecutablePath){Deny 'native_Process_missing'}
   $actual=(Resolve-Path -LiteralPath $native.ExecutablePath).Path
   $wanted=(Resolve-Path -LiteralPath $exe).Path
@@ -84,9 +87,9 @@ foreach($event in $events){
   }
   $raw=[string]$d['ProcessID']
   if($raw -notmatch '^(0x[0-9a-fA-F]+|[0-9]+)$'){continue}
-  $pid=if($raw.StartsWith('0x')){[Convert]::ToInt64($raw.Substring(2),16)}
+  $observedProcessId=if($raw.StartsWith('0x')){[Convert]::ToInt64($raw.Substring(2),16)}
        else{[int64]$raw}
-  $role=if($pid -eq $TargetPid){'target'}elseif($pid -eq $LldbPid){'lldb'}else{''}
+  $role=if($observedProcessId -eq $TargetPid){'target'}elseif($observedProcessId -eq $LldbPid){'lldb'}else{''}
   if(!$role){continue}
   $name=if($role -eq 'target'){$targetName}else{$lldbName}
   if(!([string]$d['Application']).EndsWith($name,[StringComparison]::OrdinalIgnoreCase) -or
@@ -99,7 +102,7 @@ foreach($event in $events){
           elseif($ip.Equals($IPv6Destination)){'IPv6'}else{''}
   if(!$family){continue}
   $observed+= [pscustomobject]@{
-    role=$role;processId=$pid;family=$family;
+    role=$role;processId=$observedProcessId;family=$family;
     filterRuntimeId=[string]$d['FilterRTID'];
     recordId=$event.RecordId;
     observedUtc=$event.TimeCreated.ToUniversalTime().ToString('o')
