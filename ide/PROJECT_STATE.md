@@ -1,5 +1,17 @@
 # Lu IDE — Current project state (authoritative handoff)
 
+## IDE Group 6F-01 — cross-domain original Git recovery matrix (Nov 13, 2026)
+
+Added native read-only reconciliation of original reviewed commit,
+fast-forward merge, divergent merge, and cherry-pick/rebase recovery
+inspectors at one rechecked registered Git source identity. Foreign locks,
+unresolved journals, dirty worktrees and source drift block NEW operations;
+all automatic retry/rollback/publication flags remain false. Real-Git hostile
+fixtures and original native Windows/Linux batch are included. No approval,
+remote CAS, credential provisioning or physical acceptance is claimed.
+Remaining Group 6F includes full interrupted process/death and remote
+publication integration; Group 6G is separate.
+
 ## FIN-03 / Group 6E-05D — no-repeat remote reconciliation source (Nov 13, 2026)
 
 Added host-only recovery classification on the exact original prepared

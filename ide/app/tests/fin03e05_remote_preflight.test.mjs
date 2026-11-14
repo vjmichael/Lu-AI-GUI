@@ -108,3 +108,28 @@ test('FIN03 6E05C offline intent remains host-only and never remotely executes',
     'foreign_remote_or_dirty_project_never_prepares_intent',
   ]) assert.ok(intent.includes('fn '+testName+'('), testName);
 });
+
+test('Group 6F aggregates four original native recovery inspectors without publishing or retry', () => {
+  const code=read('../../host/src/git_security_recovery_matrix.rs');
+  const production=code.split('#[cfg(test)]')[0];
+  assert.match(host, /pub mod git_security_recovery_matrix;/);
+  for (const method of [
+    'inspect_reviewed_commit_recovery',
+    'inspect_protected_merge_recovery',
+    'inspect_protected_divergent_recovery',
+    'inspect_protected_replay_recovery',
+  ]) assert.ok(production.includes(method),method);
+  for (const marker of [
+    'G06F_SOURCE_DRIFT_DURING_RECONCILIATION',
+    'foreign_git_lock_present:',
+    'remote_publication_authorized:false',
+    'os_human_approval_granted:false',
+    'automatic_retry_authorized:false',
+    'automatic_lock_removal_authorized:false',
+  ]) assert.ok(production.includes(marker),marker);
+  for (const forbidden of [/Command\s*::\s*new\(/,/ureq\s*::/,
+      /\.set_target\s*\(/,/\.push_to\s*\(/,
+      /\.remove_file\s*\(/,/\.remove_dir\s*\(/]) {
+    assert.doesNotMatch(production,forbidden);
+  }
+});

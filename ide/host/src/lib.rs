@@ -51,6 +51,8 @@ pub mod github_remote_live_policy;
 // 6E-05C: native-only offline plan and one-use prepared journal.
 // No Tauri route, credential, OS consent or GitHub mutation.
 mod github_remote_publication_intent;
+// Group 6F native read-only cross-domain recovery veto. No authority route.
+pub mod git_security_recovery_matrix;
 pub mod inbox;
 pub mod inventory;
 pub mod inventory_history;
