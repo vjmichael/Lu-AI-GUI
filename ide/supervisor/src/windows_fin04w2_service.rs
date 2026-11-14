@@ -78,7 +78,8 @@ struct InstalledAuditConfig {
     // CI-only first-party fixture. This cannot be selected or influenced by
     // a named-pipe client; only the preinstalled private service.json pins it.
     #[cfg(feature = "fin04w2-contained-probe")]
-    fixed_probe: FixedProbe,
+    #[serde(default)]
+    fixed_probe: Option<FixedProbe>,
     // Only the independently preinstalled split-mode service config may
     // choose the two reviewed binaries. A pipe client cannot supply these.
     #[cfg(feature="fin04w2-split-native")]
@@ -166,15 +167,21 @@ impl InstalledAuditConfig {
         }
         #[cfg(feature = "fin04w2-contained-probe")]
         {
-            let probe = &result.fixed_probe;
-            if !probe.executable.is_absolute()
-                || !probe.foreign_file.is_absolute()
-                || probe.expected_sha256.len() != 64
-                || !probe.expected_sha256.bytes().all(|b| b.is_ascii_hexdigit())
-            {
+            // Historical fixed W2-B/C accepts its exact first-party fixture;
+            // the split mode rejects one, eliminating ambiguous dispatch.
+            let is_split=cfg!(feature="fin04w2-split-native")
+                && result.schema=="lu.ide.fin04w2.approved-split.v1";
+            if !is_split {
+                let probe=result.fixed_probe.as_ref().ok_or_else(denied)?;
+                if !probe.executable.is_absolute()
+                    || !probe.foreign_file.is_absolute()
+                    || probe.expected_sha256.len() != 64
+                    || !probe.expected_sha256.bytes().all(|b| b.is_ascii_hexdigit())
+                {return Err(denied());}
+                security::hash_executable(&probe.executable,&probe.expected_sha256)?;
+            } else if result.fixed_probe.is_some() {
                 return Err(denied());
             }
-            security::hash_executable(&probe.executable, &probe.expected_sha256)?;
         }
         #[cfg(feature="fin04w2-split-native")]
         {
@@ -378,10 +385,9 @@ fn review_only(pipe: HANDLE, config: &InstalledAuditConfig) -> Result<(), Superv
         // Any pipe loss, early G, failed journal fsync or service death
         // kills the original process handle and the entire owned Job tree.
         let approved_job=windows_fin04w2_kernel::create_bounded_empty_debugger_job()?;
+        let fixed=config.fixed_probe.as_ref().ok_or_else(denied)?;
         let suspended=approved_job.prepare_fixed_probe(
-            &config.fixed_probe.executable,
-            &config.fixed_probe.expected_sha256,
-            &config.fixed_probe.foreign_file,
+            &fixed.executable,&fixed.expected_sha256,&fixed.foreign_file,
         )?;
         send_fixed_signal(pipe,b'S')?;
         require_fixed_signal(pipe,b'G')?;
@@ -454,10 +460,9 @@ fn run_service(handle: windows_sys::Win32::System::Services::SERVICE_STATUS_HAND
     ))]
     {
         STARTUP_STAGE.store(4, Ordering::Relaxed);
+        let fixed=config.fixed_probe.as_ref().ok_or_else(denied)?;
         _empty_audit_job.verify_fixed_probe(
-        &config.fixed_probe.executable,
-        &config.fixed_probe.expected_sha256,
-        &config.fixed_probe.foreign_file,
+            &fixed.executable,&fixed.expected_sha256,&fixed.foreign_file,
         )?;
     }
     STARTUP_STAGE.store(5, Ordering::Relaxed);
