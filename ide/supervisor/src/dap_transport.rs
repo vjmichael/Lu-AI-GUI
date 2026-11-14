@@ -257,6 +257,44 @@ impl DapGateway {
         trace_dap("initialize_request_built");
         self.send(&message)
     }
+    /// Split Windows FIN-04W2: the native SCM service, not LLDB, created
+    /// the sealed untrusted target with the kernel AppContainer attribute.
+    /// The target PID comes ONLY from reobserving the service-held process
+    /// HANDLE and correct Job/SID. It cannot originate in the WebView, a
+    /// project manifest or a DAP reverse request.
+    ///
+    /// This API is intentionally unavailable to release builds. The original
+    /// native service must retain both Jobs/handles through cancellation;
+    /// WFP and creator authorization are mandatory upstream admission gates.
+    #[cfg(all(windows, debug_assertions, feature="fin04w2-split-native"))]
+    pub(crate) fn attach_service_held_appcontainer_target(
+        &mut self,
+        child: windows_sys::Win32::Foundation::HANDLE,
+        service_job: windows_sys::Win32::Foundation::HANDLE,
+        appcontainer_sid: windows_sys::Win32::Security::PSID,
+        sealed_binary: &std::path::Path,
+        binary_sha256: &str,
+        journal: &std::path::Path,
+        job_id: &str,
+        plan: &crate::JobPlan,
+        plan_sha256: &str,
+    ) -> Result<(), SupervisorError> {
+        // Observe OS identity twice, including immediately BEFORE send.
+        // A stale plan, dead service, escaped target or swapped image denies.
+        let get_pid=||crate::windows_fin04w2_split::attest_service_held_appcontainer_target(
+            child,service_job,appcontainer_sid,sealed_binary,binary_sha256,
+            journal,job_id,plan,plan_sha256,
+        );
+        let pid=get_pid()?;
+        if self.job_id!=job_id || self.plan_sha256!=plan_sha256
+            || self.session.phase()!=DapPhase::Ready
+        {return self.quarantine();}
+        let frame=self.session.attach_preverified_native_target(pid)
+            .map_err(protocol_denied)?;
+        if get_pid()?!=pid {return self.quarantine();}
+        self.send(&frame)
+    }
+
     /// The native OS worker provides a single immutable bundled self-test
     /// executable path. The WebView cannot choose or modify this target.
     pub(crate) fn launch_fixed_fixture(&mut self, target: &str) -> Result<(), SupervisorError> {
