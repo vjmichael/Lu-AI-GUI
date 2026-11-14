@@ -250,32 +250,32 @@ fn active_fts_recall_excludes_superseded_originals_and_intermediate_edits() {
     let store = new_store(&path);
     let original = store.append_entry(
         "chat", "policy-msg", EntryRole::User,
-        "Executor policy", "Use unsafe-candidate for the next operation"
+        "Executor policy", "Use unsafecandidate for the next operation"
     ).unwrap();
     let first = store.append_edited_entry(
         "chat", "policy-msg", "Revised policy",
-        "Use temporary-candidate for the next operation",
+        "Use temporarycandidate for the next operation",
         RevisionOrigin::VerifiedUser
     ).unwrap().unwrap();
     let final_edit = store.append_edited_entry(
         "chat", "policy-msg", "Current reviewed policy",
-        "Use reviewed-executor for the next operation",
+        "Use reviewedexecutor for the next operation",
         RevisionOrigin::VerifiedUser
     ).unwrap().unwrap();
     let untouched = store.append_entry(
         "chat", "other-msg", EntryRole::Assistant,
-        "Reviewed executor", "reviewed-executor was approved as a term"
+        "Reviewed executor", "reviewedexecutor was approved as a term"
     ).unwrap();
 
     // The immutable audit search still sees every historical version.
-    assert_eq!(store.search("chat", "unsafe-candidate", 10).unwrap()[0].id, original);
-    assert_eq!(store.search("chat", "temporary-candidate", 10).unwrap()[0].id, first.revised_entry_id);
-    assert_eq!(store.search("chat", "reviewed-executor", 10).unwrap().len(),2);
+    assert_eq!(store.search("chat", "unsafecandidate", 10).unwrap()[0].id, original);
+    assert_eq!(store.search("chat", "temporarycandidate", 10).unwrap()[0].id, first.revised_entry_id);
+    assert_eq!(store.search("chat", "reviewedexecutor", 10).unwrap().len(),2);
 
     // Only current messages may enter default model recall.
-    assert!(store.search_current_messages("chat", "unsafe-candidate", 10).unwrap().is_empty());
-    assert!(store.search_current_messages("chat", "temporary-candidate", 10).unwrap().is_empty());
-    let current = store.search_current_messages("chat", "reviewed-executor", 10).unwrap();
+    assert!(store.search_current_messages("chat", "unsafecandidate", 10).unwrap().is_empty());
+    assert!(store.search_current_messages("chat", "temporarycandidate", 10).unwrap().is_empty());
+    let current = store.search_current_messages("chat", "reviewedexecutor", 10).unwrap();
     assert_eq!(current.len(),2);
     let ids = current.iter().map(|r|r.id).collect::<std::collections::BTreeSet<_>>();
     assert!(ids.contains(&final_edit.revised_entry_id));
@@ -288,8 +288,8 @@ fn active_fts_recall_excludes_superseded_originals_and_intermediate_edits() {
     );
     drop(store);
     let reopened = AnsfStore::open(&path).unwrap();
-    assert!(reopened.search_current_messages("chat","unsafe-candidate",10).unwrap().is_empty());
-    assert_eq!(reopened.search_current_messages("chat","reviewed-executor",10).unwrap().len(),2);
+    assert!(reopened.search_current_messages("chat","unsafecandidate",10).unwrap().is_empty());
+    assert_eq!(reopened.search_current_messages("chat","reviewedexecutor",10).unwrap().len(),2);
     drop(reopened);
     let _=std::fs::remove_file(path);
 }
@@ -302,7 +302,7 @@ fn current_only_recall_applies_revision_filter_before_fts_result_limit() {
         let id=format!("legacy-msg-{i}");
         store.append_entry(
             "chat",&id,EntryRole::User,
-            "Historic obsolete", "This historic archive contains obsolete-target"
+            "Historic obsolete", "This historic archive contains obsoletetarget"
         ).unwrap();
         store.append_edited_entry(
             "chat",&id,"Current correction",
@@ -312,9 +312,9 @@ fn current_only_recall_applies_revision_filter_before_fts_result_limit() {
     }
     let live=store.append_entry(
         "chat","live-msg",EntryRole::User,
-        "Current item","The active request mentions obsolete-target"
+        "Current item","The active request mentions obsoletetarget"
     ).unwrap();
-    let active=store.search_current_messages("chat","obsolete-target",1).unwrap();
+    let active=store.search_current_messages("chat","obsoletetarget",1).unwrap();
     assert_eq!(active.len(),1);
     assert_eq!(active[0].id,live);
     drop(store);
