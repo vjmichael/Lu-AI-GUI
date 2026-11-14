@@ -12,7 +12,8 @@ Usage:
   scripts/lu-c4-create-kvm-vm.sh --ubuntu-qcow2 IMAGE \
     --image-sha256 64_HEX --admin-ed25519-pubkey PUBLIC_KEY_PATH \
     --egress-only-network ADMIN_APPROVED_LIBVIRT_NETWORK \
-    --vm-directory EMPTY_NEW_DIRECTORY
+    --vm-directory EMPTY_NEW_DIRECTORY \
+    --qemu-service-group EXISTING_QEMU_HOST_GROUP
 
 Prerequisites: Ubuntu 24.04 x86_64 cloud qcow2 image with independently
 verified provenance, virt-install/libvirt/KVM/cloud-localds/qemu-img, and a
@@ -20,27 +21,34 @@ dedicated egress-only network whose HOST firewall denies LAN, metadata,
 hypervisor management and other internal addresses. No password or token.
 The host administrator must set LU_C4_EGRESS_BOUNDARY_ATTESTED=YES only after
 checking the firewall outside the guest.
+Provisioning runs as ROOT on the Linux libvirt host, not in the VM runner.
+Use the real QEMU group (normally libvirt-qemu on Ubuntu). The verified
+cloud qcow2 base is copied into private VM storage for libvirt access.
 EOF
   exit 2
 }
 
-[[ "\${LU_C4_EGRESS_BOUNDARY_ATTESTED:-}" == YES ]] ||
+[[ "${LU_C4_EGRESS_BOUNDARY_ATTESTED:-}" == YES ]] ||
   die 'admin must first attest dedicated hypervisor-enforced egress isolation'
-image='' sha='' pubkey='' network='' workdir=''
+[[ "$(id -u)" == 0 ]] || die 'provisioning requires Linux host administrator/root'
+image='' sha='' pubkey='' network='' workdir='' qemu_group=''
 while (($#)); do
   case "$1" in
-    --ubuntu-qcow2) image="\${2:-}"; shift 2;;
-    --image-sha256) sha="\${2:-}"; shift 2;;
-    --admin-ed25519-pubkey) pubkey="\${2:-}"; shift 2;;
-    --egress-only-network) network="\${2:-}"; shift 2;;
-    --vm-directory) workdir="\${2:-}"; shift 2;;
+    --ubuntu-qcow2) image="${2:-}"; shift 2;;
+    --image-sha256) sha="${2:-}"; shift 2;;
+    --admin-ed25519-pubkey) pubkey="${2:-}"; shift 2;;
+    --egress-only-network) network="${2:-}"; shift 2;;
+    --vm-directory) workdir="${2:-}"; shift 2;;
+    --qemu-service-group) qemu_group="${2:-}"; shift 2;;
     *) usage;;
   esac
 done
-[[ -n "$image" && -n "$sha" && -n "$pubkey" && -n "$network" && -n "$workdir" ]] || usage
+[[ -n "$image" && -n "$sha" && -n "$pubkey" && -n "$network" && -n "$workdir" && -n "$qemu_group" ]] || usage
+[[ "$qemu_group" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]] || die 'invalid QEMU service group'
+getent group "$qemu_group" >/dev/null || die 'QEMU service group does not exist'
 [[ "$sha" =~ ^[a-f0-9]{64}$ ]] || die 'invalid full base-image SHA256'
 [[ "$network" =~ ^[a-zA-Z0-9][a-zA-Z0-9_-]{0,47}$ ]] || die 'unsafe network name'
-for tool in python3 virsh virt-install cloud-localds qemu-img sha256sum readlink stat; do
+for tool in python3 virsh virt-install cloud-localds qemu-img sha256sum readlink stat getent; do
   command -v "$tool" >/dev/null || die "host prerequisite missing: $tool"
 done
 [[ -r "$image" && -f "$image" && ! -L "$image" ]] ||
@@ -66,17 +74,29 @@ if virsh dominfo lu-c4-disposable >/dev/null 2>&1; then
   die 'VM name already exists; never reuse a previous GitHub runner VM'
 fi
 [[ ! -e "$workdir" ]] || die 'VM workspace must be a brand-new path'
-mkdir -m 0700 "$workdir"
+# Protect subsequent ephemeral runner credentials from ordinary host accounts.
+# Only root and the QEMU service group can traverse guest disk storage.
+install -d -m 0710 -o root -g "$qemu_group" "$workdir"
 workdir="$(readlink -f "$workdir")"
-mkdir -m 0700 "$workdir/metadata"
+install -d -m 0700 -o root -g root "$workdir/metadata"
 python3 scripts/lu-c4-vm-cloud-init.py \
   --admin-pubkey-file "$pubkey" --output "$workdir/metadata/user-data"
 printf 'instance-id: lu-c4-disposable-%s\nlocal-hostname: lu-c4-disposable\n' \
   "$(date -u +%Y%m%d%H%M%S)" > "$workdir/metadata/meta-data"
 chmod 0600 "$workdir/metadata/"*
 cloud-localds "$workdir/seed.iso" "$workdir/metadata/user-data" "$workdir/metadata/meta-data"
-chmod 0600 "$workdir/seed.iso"
-qemu-img create -f qcow2 -F qcow2 -b "$base" "$workdir/disk.qcow2" 80G >/dev/null
+chown "root:$qemu_group" "$workdir/seed.iso"
+chmod 0640 "$workdir/seed.iso"
+# Copy the hash-verified base into restricted storage; keep QEMU independent
+# from an administrator's private home directory.
+cp --reflink=auto -- "$base" "$workdir/base.qcow2"
+chown "root:$qemu_group" "$workdir/base.qcow2"
+chmod 0640 "$workdir/base.qcow2"
+printf '%s  %s\n' "$sha" "$workdir/base.qcow2" | sha256sum --check --status ||
+  die 'copied base image checksum mismatch'
+qemu-img create -f qcow2 -F qcow2 -b "$workdir/base.qcow2" "$workdir/disk.qcow2" 80G >/dev/null
+chown "root:$qemu_group" "$workdir/disk.qcow2"
+chmod 0660 "$workdir/disk.qcow2"
 
 # KVM is kernel-backed; --import avoids booting a mutable installer from this
 # public repository. Egress network policy is still host-admin responsibility.
