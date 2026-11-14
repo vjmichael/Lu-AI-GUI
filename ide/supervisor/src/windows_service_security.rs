@@ -32,6 +32,7 @@ use windows_sys::Win32::{
         Authorization::{
             ConvertSidToStringSidW, ConvertStringSecurityDescriptorToSecurityDescriptorW,
             ConvertStringSidToSidW, GetNamedSecurityInfoW, GetSecurityInfo, SE_FILE_OBJECT,
+            SE_KERNEL_OBJECT,
         },
         CheckTokenMembership, DuplicateToken, EqualSid, GetAce, GetAclInformation,
         GetSecurityDescriptorControl, GetTokenInformation, IsTokenRestricted, LookupAccountNameW,
@@ -96,7 +97,15 @@ impl Drop for OwnedSid {
     }
 }
 pub fn sid_of_service() -> Result<String, SupervisorError> {
-    let name = ws(&format!("NT SERVICE\\{SERVICE_NAME}"));
+    sid_of_named_service(SERVICE_NAME)
+}
+// Fixed two independently installed service identities, never a request-
+ // supplied name. The recovery service retains its original identity.
+pub(crate) fn sid_of_named_service(service_name: &str) -> Result<String, SupervisorError> {
+    if !matches!(service_name, "LuIdeRecoveryBroker" | "LuIdeDebuggerBroker") {
+        return Err(denied());
+    }
+    let name = ws(&format!("NT SERVICE\\{service_name}"));
     let mut sid_size = 0_u32;
     let mut domain_size = 0_u32;
     let mut use_type = 0_i32;
@@ -293,7 +302,18 @@ pub fn validate_approved_host_user_sid(value: &str) -> Result<(), SupervisorErro
 }
 impl PipeSecurity {
     pub fn new(approved_user_sid: &str) -> Result<Self, SupervisorError> {
+        Self::new_for_service(approved_user_sid, &sid_of_service()?)
+    }
+    pub(crate) fn new_for_service(
+        approved_user_sid: &str,
+        pinned_service_sid: &str,
+    ) -> Result<Self, SupervisorError> {
         validate_approved_host_user_sid(approved_user_sid)?;
+        // An arbitrary SID cannot be introduced from a caller's request.
+        if !pinned_service_sid.starts_with("S-1-5-80-") {
+            return Err(denied());
+        }
+        let _parsed = parse_sid(pinned_service_sid)?;
         // For this exact installer-pinned host SID, allow mapped FILE
         // read/write data, attributes, EAs, READ_CONTROL and SYNCHRONIZE.
         // Exclude bit 4: FILE_APPEND_DATA is FILE_CREATE_PIPE_INSTANCE on
@@ -315,7 +335,7 @@ impl PipeSecurity {
         // Authorization still requires kernel PID/token + pinned image hash.
         let sddl = format!(
             "D:P(A;;GA;;;SY)(A;;GA;;;{})(A;;0x0012019b;;;{})S:(ML;;NW;;;ME)",
-            sid_of_service()?,
+            pinned_service_sid,
             approved_user_sid
         );
         let mut descriptor = ptr::null_mut();
@@ -352,9 +372,19 @@ pub fn verify_created_pipe_security(
     pipe: HANDLE,
     approved_user_sid: &str,
 ) -> Result<(), SupervisorError> {
+    verify_created_pipe_security_for(pipe, approved_user_sid, &sid_of_service()?)
+}
+pub(crate) fn verify_created_pipe_security_for(
+    pipe: HANDLE,
+    approved_user_sid: &str,
+    pinned_service_sid: &str,
+) -> Result<(), SupervisorError> {
     validate_approved_host_user_sid(approved_user_sid)?;
+    if !pinned_service_sid.starts_with("S-1-5-80-") {
+        return Err(denied());
+    }
     let user = parse_sid(approved_user_sid)?;
-    let service = parse_sid(&sid_of_service()?)?;
+    let service = parse_sid(pinned_service_sid)?;
     let system = parse_sid("S-1-5-18")?;
     let mut dacl = ptr::null_mut();
     let mut descriptor = ptr::null_mut();
@@ -513,6 +543,42 @@ impl Drop for Impersonation {
         }
     }
 }
+/// FIN-04W2: an independent service must never trust a claimed PID or
+/// process birth timestamp carried inside its fixed broker packet. Obtain
+/// both directly from Windows' named-pipe kernel association and recheck
+/// against the same original process handle inside authenticate_client.
+pub(crate) fn authenticate_client_from_kernel_pipe(
+    pipe: HANDLE,
+    approved_host_path: &Path,
+    approved_host_sha256: &str,
+    approved_host_user_sid: &str,
+) -> Result<VerifiedClientLease, SupervisorError> {
+    let mut pid = 0u32;
+    if unsafe { GetNamedPipeClientProcessId(pipe, &mut pid) } == 0 || pid == 0 {
+        return Err(denied());
+    }
+    // The restricted service must NOT try to OpenProcess on a foreign
+    // interactive user's process using its own LocalService token. The
+    // original recovery service already impersonates the *kernel-attested*
+    // named-pipe client before this exact operation. Repeat that narrow
+    // query here, reverting BEFORE original client/receipt authentication.
+    // Do not request more token rights or grant the service ambient access.
+    let created = {
+        if unsafe { ImpersonateNamedPipeClient(pipe) } == 0 {
+            return Err(denied());
+        }
+        let _revert = Impersonation;
+        let process = Handle::new(unsafe {
+            OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE, 0, pid)
+        })?;
+        process_creation(process.0)?
+    };
+    authenticate_client(
+        pipe, pid, created, approved_host_path,
+        approved_host_sha256, approved_host_user_sid,
+    )
+}
+
 pub fn authenticate_client(
     pipe: HANDLE,
     asserted_pid: u32,
@@ -664,6 +730,32 @@ pub struct JobSecurity {
     pub attributes: SECURITY_ATTRIBUTES,
 }
 impl JobSecurity {
+    /// FIN-04W2: a NEW named Job is owned by the distinct restricted
+    /// debugger service, never by the desktop host user. Only SYSTEM and
+    /// this original kernel-resolved service SID get any Job rights.
+    /// The actual kernel descriptor must still be independently read back
+    /// before an OS worker is accepted.
+    pub(crate) fn new_debugger_service_owned() -> Result<Self, SupervisorError> {
+        let sid = sid_of_named_service("LuIdeDebuggerBroker")?;
+        let sddl = format!("D:P(A;;GA;;;SY)(A;;GA;;;{})", sid);
+        let mut descriptor = ptr::null_mut();
+        if unsafe {
+            ConvertStringSecurityDescriptorToSecurityDescriptorW(
+                ws(&sddl).as_ptr(), 1, &mut descriptor, ptr::null_mut(),
+            )
+        } == 0 || descriptor.is_null() {
+            return Err(denied());
+        }
+        let owned = OwnedSid(descriptor);
+        Ok(Self {
+            attributes: SECURITY_ATTRIBUTES {
+                nLength: size_of::<SECURITY_ATTRIBUTES>() as u32,
+                lpSecurityDescriptor: owned.0,
+                bInheritHandle: 0,
+            },
+            descriptor: owned,
+        })
+    }
     pub fn new() -> Result<Self, SupervisorError> {
         let sddl = format!(
             "D:P(A;;GA;;;SY)(A;;GA;;;{})(A;;0x0010000C;;;{})",
@@ -693,6 +785,67 @@ impl JobSecurity {
             descriptor: owned,
         })
     }
+}
+
+/// Inspect the actual kernel Job object's DACL, not merely the SDDL
+/// that the independent service asked CreateJobObjectW to apply. Only
+/// SYSTEM and the separate debugger service SID are allowed; no desktop
+/// host, administrators, Users or Everyone ACE is permitted.
+pub(crate) fn verify_debugger_job_kernel_acl(job: HANDLE) -> Result<(), SupervisorError> {
+    let system = parse_sid("S-1-5-18")?;
+    let service = parse_sid(&sid_of_named_service("LuIdeDebuggerBroker")?)?;
+    let mut dacl = ptr::null_mut();
+    let mut descriptor = ptr::null_mut();
+    if unsafe {
+        GetSecurityInfo(
+            job, SE_KERNEL_OBJECT, DACL_SECURITY_INFORMATION,
+            ptr::null_mut(), ptr::null_mut(), &mut dacl,
+            ptr::null_mut(), &mut descriptor,
+        )
+    } != 0 || dacl.is_null() || descriptor.is_null() {
+        return Err(denied());
+    }
+    let _owned = OwnedSid(descriptor);
+    let mut control = 0u16;
+    let mut revision = 0u32;
+    if unsafe { GetSecurityDescriptorControl(descriptor, &mut control, &mut revision) } == 0
+        || control & SE_DACL_PROTECTED == 0 {
+        return Err(denied());
+    }
+    let mut info = ACL_SIZE_INFORMATION::default();
+    if unsafe {
+        GetAclInformation(
+            dacl, (&mut info as *mut ACL_SIZE_INFORMATION).cast(),
+            size_of::<ACL_SIZE_INFORMATION>() as u32, AclSizeInformation,
+        )
+    } == 0 || info.AceCount != 2 {
+        return Err(denied());
+    }
+    let (mut system_seen, mut service_seen) = (false, false);
+    for index in 0..info.AceCount {
+        let mut raw = ptr::null_mut();
+        if unsafe { GetAce(dacl, index, &mut raw) } == 0 || raw.is_null() {
+            return Err(denied());
+        }
+        let ace = unsafe { &*(raw as *const ACCESS_ALLOWED_ACE) };
+        if ace.Header.AceType != 0 || ace.Header.AceFlags != 0
+            || ace.Header.AceSize < size_of::<ACCESS_ALLOWED_ACE>() as u16
+            || ace.Mask == 0 {
+            return Err(denied());
+        }
+        let sid = (&ace.SidStart as *const u32).cast_mut().cast();
+        if unsafe { EqualSid(sid, system.0) } != 0 {
+            if system_seen { return Err(denied()); }
+            system_seen = true;
+        } else if unsafe { EqualSid(sid, service.0) } != 0 {
+            if service_seen { return Err(denied()); }
+            service_seen = true;
+        } else {
+            return Err(denied());
+        }
+    }
+    if !system_seen || !service_seen { return Err(denied()); }
+    Ok(())
 }
 
 /// Client-side server attestation. A spoofed, same-user pipe instance cannot
@@ -767,6 +920,29 @@ pub fn authenticate_service_server(
     approved_service_path: &Path,
     service_sha256: &str,
 ) -> Result<(), SupervisorError> {
+    authenticate_fixed_service_server(
+        pipe,approved_service_path,service_sha256,"LuIdeRecoveryBroker",
+    )
+}
+/// W2-C native host verifies the *new* debugger service's actual SCM PID,
+/// exact image hash and restricting SID before consuming its original
+/// one-use grant. A spoofed same-user named pipe can never mint approval.
+#[cfg(feature="fin04w2-c2")]
+pub(crate) fn authenticate_debugger_service_server(
+    pipe: HANDLE,
+    approved_service_path: &Path,
+    service_sha256: &str,
+) -> Result<(), SupervisorError> {
+    authenticate_fixed_service_server(
+        pipe,approved_service_path,service_sha256,"LuIdeDebuggerBroker",
+    )
+}
+fn authenticate_fixed_service_server(
+    pipe: HANDLE,
+    approved_service_path: &Path,
+    service_sha256: &str,
+    service_name: &str,
+) -> Result<(), SupervisorError> {
     let mut pid = 0u32;
     if unsafe { GetNamedPipeServerProcessId(pipe, &mut pid) } == 0 || pid == 0 {
         ci_service_attestation_stage("service_kernel_pid_denied");
@@ -817,7 +993,7 @@ pub fn authenticate_service_server(
         return Err(denied());
     }
     let token = Handle::new(raw)?;
-    let service = parse_sid(&sid_of_service()?).map_err(|_| {
+    let service = parse_sid(&sid_of_named_service(service_name)?).map_err(|_| {
         ci_service_attestation_stage("service_sid_lookup_denied");
         denied()
     })?;
@@ -842,9 +1018,100 @@ pub fn authenticate_service_server(
     Ok(())
 }
 
+/// FIN-04W2-C independently attests the ORIGINAL host supervisor journal
+/// before the service reads its approval chain. The journal path is pinned
+/// in protected service configuration, never supplied by the client frame.
+/// This rejects broad principals, inherited DACLs, write access for the
+/// debugger service and any reparse point. Host owner/SYSTEM may write
+/// original native receipts; the debugger service can only READ them.
+/// The OS token and exact pinned host binary are checked separately.
+#[cfg(feature="fin04w2-c2")]
+pub(crate) fn verify_original_approval_journal_acl(
+    path: &Path, host_user_sid: &str,
+) -> Result<(), SupervisorError> {
+    validate_approved_host_user_sid(host_user_sid)?;
+    let meta=fs::symlink_metadata(path).map_err(|_|denied())?;
+    if !path.is_absolute() || !meta.is_file()
+        || meta.file_attributes() & 0x400 != 0
+        || meta.len() == 0 || meta.len() > 2 * 1024 * 1024 {
+        return Err(denied());
+    }
+    let system=parse_sid("S-1-5-18")?;
+    let host=parse_sid(host_user_sid)?;
+    let service=parse_sid(&sid_of_named_service("LuIdeDebuggerBroker")?)?;
+    let mut dacl=ptr::null_mut();
+    let mut sd=ptr::null_mut();
+    if unsafe {
+        GetNamedSecurityInfoW(
+            wide(path.as_os_str()).as_ptr() as *mut u16,
+            SE_FILE_OBJECT, DACL_SECURITY_INFORMATION,
+            ptr::null_mut(),ptr::null_mut(),&mut dacl,
+            ptr::null_mut(),&mut sd,
+        )
+    } != 0 || dacl.is_null() || sd.is_null() {
+        return Err(denied());
+    }
+    let _descriptor=OwnedSid(sd);
+    let mut control=0u16;
+    let mut revision=0u32;
+    if unsafe {GetSecurityDescriptorControl(sd,&mut control,&mut revision)}==0
+        || control & SE_DACL_PROTECTED == 0 {
+        return Err(denied());
+    }
+    let mut count=ACL_SIZE_INFORMATION::default();
+    if unsafe {
+        GetAclInformation(
+            dacl,(&mut count as *mut ACL_SIZE_INFORMATION).cast(),
+            size_of::<ACL_SIZE_INFORMATION>() as u32,AclSizeInformation
+        )
+    }==0 || count.AceCount!=3 { return Err(denied()); }
+    let(mut seen_host,mut seen_system,mut seen_service)=(false,false,false);
+    // FILE_WRITE_DATA, APPEND, WRITE_EA, WRITE_ATTRIBUTES, DELETE,
+    // WRITE_DAC, WRITE_OWNER, GENERIC_WRITE and GENERIC_ALL are prohibited.
+    const FORBIDDEN_SERVICE: u32 =
+        0x0000_0002 | 0x0000_0004 | 0x0000_0010 | 0x0000_0100
+        | 0x0001_0000 | 0x0004_0000 | 0x0008_0000
+        | 0x4000_0000 | 0x1000_0000;
+    const SERVICE_READ: u32=0x0012_0089;
+    for i in 0..count.AceCount {
+        let mut entry=ptr::null_mut();
+        if unsafe {GetAce(dacl,i,&mut entry)}==0 || entry.is_null() {
+            return Err(denied());
+        }
+        let ace=unsafe { &*(entry as *const ACCESS_ALLOWED_ACE) };
+        if ace.Header.AceType!=0 || ace.Header.AceFlags!=0
+            || ace.Header.AceSize < size_of::<ACCESS_ALLOWED_ACE>() as u16 {
+            return Err(denied());
+        }
+        let sid=(&ace.SidStart as *const u32).cast_mut().cast();
+        if unsafe {EqualSid(sid,service.0)}!=0 {
+            if seen_service || ace.Mask != SERVICE_READ
+                || ace.Mask & FORBIDDEN_SERVICE != 0 { return Err(denied()); }
+            seen_service=true;
+        } else if unsafe {EqualSid(sid,host.0)}!=0 {
+            if seen_host || ace.Mask==0 {return Err(denied());}
+            seen_host=true;
+        } else if unsafe {EqualSid(sid,system.0)}!=0 {
+            if seen_system || ace.Mask==0 {return Err(denied());}
+            seen_system=true;
+        } else {return Err(denied());}
+    }
+    if !seen_host || !seen_system || !seen_service {return Err(denied());}
+    Ok(())
+}
+
 pub fn verify_private_evidence_root(root: &Path) -> Result<(), SupervisorError> {
+    verify_private_evidence_root_for(root, &sid_of_service()?)
+}
+pub(crate) fn verify_private_evidence_root_for(
+    root: &Path,
+    service_sid: &str,
+) -> Result<(), SupervisorError> {
+    if !service_sid.starts_with("S-1-5-80-") {
+        return Err(denied());
+    }
     let system = parse_sid("S-1-5-18")?;
-    let service = parse_sid(&sid_of_service()?)?;
+    let service = parse_sid(service_sid)?;
     for path in [root.to_path_buf(), root.join("service.json")] {
         let meta = fs::symlink_metadata(&path).map_err(|_| denied())?;
         if meta.file_attributes() & 0x400 != 0 {
