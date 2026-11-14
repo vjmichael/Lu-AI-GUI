@@ -120,6 +120,8 @@ struct SplitPairConfig {
     pdb_sha256: String,
     lldb_dap_executable: PathBuf,
     lldb_dap_sha256: String,
+    liblldb_sha256: String,
+    python310_sha256: String,
 }
 fn nonce(value: &str) -> Result<[u8;16], SupervisorError> {
     if value.len() != 32 || !value.bytes().all(|b| b.is_ascii_hexdigit()) {
@@ -222,6 +224,13 @@ impl InstalledAuditConfig {
             ] {
                 security::hash_executable(path,hash)?;
             }
+            let bundle=approved.lldb_dap_executable.parent().ok_or_else(denied)?;
+            security::hash_executable(
+                &bundle.join("liblldb.dll"),&approved.liblldb_sha256,
+            )?;
+            security::hash_executable(
+                &bundle.join("python310.dll"),&approved.python310_sha256,
+            )?;
         }
         let sid = security::sid_of_named_service(NAME)?;
         security::verify_private_evidence_root_for(&root, &sid)?;
@@ -414,6 +423,7 @@ fn review_only(pipe: HANDLE, config: &InstalledAuditConfig) -> Result<(), Superv
                 &split.target_executable,&split.target_sha256,
                 &split.target_pdb,&split.pdb_sha256,
                 &split.lldb_dap_executable,&split.lldb_dap_sha256,
+                &split.liblldb_sha256,&split.python310_sha256,
             )?;
             // Unlike the old benign W2-C single-worker transaction, the
             // split session needs TWO exact active WFP denials and a native

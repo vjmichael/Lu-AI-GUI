@@ -219,6 +219,7 @@ impl PendingDebugger {
 }
 pub(crate) fn prepare_external_debugger(
     job:&EmptyAuditJob, reviewed_lldb_dap:&Path, expected_sha256:&str,
+    reviewed_liblldb_sha256:&str, reviewed_python310_sha256:&str,
 )->Result<PendingDebugger,SupervisorError>{
     windows_fin04w2_kernel::inspect_current_service_principal()?;
     windows_service_security::hash_executable(reviewed_lldb_dap,expected_sha256)?;
@@ -227,16 +228,15 @@ pub(crate) fn prepare_external_debugger(
     }
     let bundle=reviewed_lldb_dap.parent().ok_or_else(denied)?;
     if !bundle.is_absolute(){return Err(denied());}
-    // The independent bundle preflight must pin the LLVM/Python DLL hashes;
-    // file presence alone is not accepted as loader or release evidence.
-    for dll in ["liblldb.dll","python310.dll"] {
-        let path=bundle.join(dll);
-        let meta=fs::symlink_metadata(&path).map_err(|_|denied())?;
-        if !meta.is_file()
-            || std::os::windows::fs::MetadataExt::file_attributes(&meta)&0x400!=0 {
-            return Err(denied());
-        }
-    }
+    // The reviewed service configuration pins exact native runtime BYTES;
+    // bare file existence is not sufficient. PATH is still bounded to
+    // this exact bundle plus System32; no desktop/system Python fallback.
+    windows_service_security::hash_executable(
+        &bundle.join("liblldb.dll"),reviewed_liblldb_sha256,
+    )?;
+    windows_service_security::hash_executable(
+        &bundle.join("python310.dll"),reviewed_python310_sha256,
+    )?;
     let stdin=pipe()?;
     let stdout=pipe()?;
     let stderr=pipe()?;
@@ -300,6 +300,7 @@ pub(crate) fn prepare_pair(
     target_image:&Path,target_sha256:&str,
     target_pdb:&Path,target_pdb_sha256:&str,
     lldb_dap:&Path,lldb_sha256:&str,
+    liblldb_sha256:&str,python310_sha256:&str,
 )->Result<PendingSplitPair,SupervisorError>{
     // An original approved one-use journal and sealed project binding are
     // mandatory BEFORE either native process is even created suspended.
@@ -320,6 +321,7 @@ pub(crate) fn prepare_pair(
     )?;
     let debugger=prepare_external_debugger(
         debugger_job,lldb_dap,lldb_sha256,
+        liblldb_sha256,python310_sha256,
     )?;
     windows_fin04w2_split::attest_separate_debugger_worker(
         debugger.process(),debugger.job(),target.process(),target.job(),

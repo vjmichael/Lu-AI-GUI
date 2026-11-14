@@ -127,6 +127,16 @@ the W2-C service still executes its original hash-pinned harmless fixture. This 
 **not** the completed physical Windows debugger or license to change default
 Tauri behavior.
 
+**Windows source update:** W2-C authenticated split-mode now reuses the
+original private one-use reservation and prepares both service-held
+suspended processes. It does **not** signal S/consume Running or resume
+until a native, independently reobserved effective WFP block applies to
+both exact images. Each executable, PE/PDB and native `liblldb.dll` /
+`python310.dll` dependency is now installer-pinned by SHA-256; file
+existence is not an approval. The native service intentionally fails
+closed while the live WFP verifier and real DAP attach/OS RIP receipt are
+not integrated. The historical approved-fixed W2-C test is unchanged.
+
 **Unimplemented release gates**: actually wire the service to its two
 native suspended-process preparations; independently verified immutable
 read-only executable/PDB staging (the current candidate target file is
