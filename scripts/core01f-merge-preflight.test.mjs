@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
 import {CHAIN,excludedCorePath,verifyCandidateSourceLock,integrationPlan,decision} from './core01f-merge-preflight.mjs';
 
 const ready={chainValid:true,candidateDescendsFromReviewed:true,
@@ -99,4 +100,20 @@ test('even a restacked candidate provides no merge or release authorization',()=
  assert.equal(x.restackRequired,false);
  assert.equal(x.installedOrMergeAuthority,false);
  assert.equal(x.noAutomaticMergeOrRebase,true);
+});
+
+test('PR228 has a separate opt-in exact-head source-only integration job',()=>{
+ const wf=readFileSync(new URL('../.github/workflows/lu-repo01-full-source.yml',import.meta.url),'utf8');
+ const section=wf.split('  core01f-live-candidate-source-preflight:\n')[1]
+   ?.split('  native-r00-consolidated:')[0];
+ assert.ok(section,'missing isolated source-only CORE01F preflight');
+ assert.match(section,/github\.event\.pull_request\.number == 228/);
+ assert.match(section,/github\.event\.action == 'edited'/);
+ assert.match(section,/CORE01F_BRIDGE_SOURCE_SHA/);
+ assert.match(section,/fetch-depth: 0/);
+ assert.match(section,/node --test scripts\/core01f-merge-preflight\.test\.mjs/);
+ assert.match(section,/--expect-core-sha "\$core_sha"/);
+ assert.match(section,/SOURCE_INTEGRATION_REVIEWABLE_ONLY/);
+ assert.match(section,/sec06fAccepted!==false/);
+ assert.doesNotMatch(section,/systemd-run|npm install|cargo test|NSIS|dpkg -i|git merge|git rebase/);
 });

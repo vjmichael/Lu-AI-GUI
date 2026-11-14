@@ -72,6 +72,60 @@ jobs:
 # This gate proves integrity of the repository checkout relative to its
 # committed manifest. It does not prove an external unpublished local copy.
 
+
+  core01f-live-candidate-source-preflight:
+    name: CORE-01F read-only live CORE-01E candidate and main reconciliation
+    needs: verify-source
+    # PR228-only source preflight, NEVER native/installed admission.
+    if: ${{ github.event_name == 'pull_request' && github.event.action == 'edited' && github.event.pull_request.number == 228 && github.event.pull_request.draft && github.event.pull_request.head.ref == 'lu/core01f-merge-preflight-20261112' && contains(github.event.pull_request.body, format('CORE01F_BRIDGE_SOURCE_SHA={0}', github.event.pull_request.head.sha)) && !contains(github.event.changes.body.from, format('CORE01F_BRIDGE_SOURCE_SHA={0}', github.event.pull_request.head.sha)) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+          fetch-depth: 0 # frozen ancestors and candidate Git objects
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Inspect exact CORE-01F and independent CORE-01E Git source
+        shell: bash
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          node scripts/verify-source-tree.mjs
+          node --test scripts/core01f-merge-preflight.test.mjs
+          git show-ref --verify refs/remotes/origin/main
+          git show-ref --verify refs/remotes/origin/lu/core01-source-convergence-no-ide-no-kobold-20261112
+          core_sha="$(git rev-parse --verify origin/lu/core01-source-convergence-no-ide-no-kobold-20261112^{commit})"
+          mkdir -p core01f-source-review
+          node scripts/core01f-merge-preflight.mjs \
+            --main-ref origin/main \
+            --core-ref origin/lu/core01-source-convergence-no-ide-no-kobold-20261112 \
+            --expect-core-sha "$core_sha" \
+            | tee core01f-source-review/candidate-integration.json
+          node --input-type=module -e '
+            import {readFileSync} from "node:fs";
+            const r=JSON.parse(readFileSync("core01f-source-review/candidate-integration.json","utf8"));
+            if(r.status!=="SOURCE_INTEGRATION_REVIEWABLE_ONLY" ||
+              r.core01eProductionAccepted!==false ||
+              r.sec06fAccepted!==false ||
+              r.mergeAuthorized!==false ||
+              r.releaseAuthorized!==false ||
+              r.coreSha!==process.argv[1])process.exit(1);
+          ' "$core_sha"
+          echo 'CORE01F source topology only; SEC-06C/06F and installed merge gates remain OPEN.' >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lu-core01f-live-candidate-source-${{ github.event.pull_request.head.sha }}
+          path: core01f-source-review/
+          retention-days: 14
+          if-no-files-found: warn
+
   native-r00-consolidated:
     # One opt-in event after a completed task group, not on every PR push.
     # The trigger must be a transition from no exact-head marker to an
