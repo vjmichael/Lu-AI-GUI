@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "e6d4993ff8ac43fea7ddfb9cc8f015b9140bbedd",
-  "trackedFileCount": 1005,
+  "sourceCommitBeforeLock": "70a1ead19643f6a75a9e93b1669957ef2a8d65e5",
+  "trackedFileCount": 1006,
   "files": [
     {
       "path": ".github/pull_request_template.md",
@@ -237,7 +237,7 @@
     },
     {
       "path": ".github/workflows/lu-repo01-full-source.yml",
-      "blob": "93b0acb47aab2034daefed56fa57ef5cf6613675"
+      "blob": "b19ad6f9d8c58a00c11226450f3ccf0115f95349"
     },
     {
       "path": ".github/workflows/lu-tools-01-05-integration.yml",
@@ -1949,7 +1949,7 @@
     },
     {
       "path": "lu-desktop/tests/p0-sec06-consolidated.test.mjs",
-      "blob": "b253e3057daf38015c3c814562cf496a5b56915b"
+      "blob": "590ca7f6721c04370f3e06f1c001397af84c7533"
     },
     {
       "path": "lu-desktop/tests/p03-ai-ops.test.mjs",
@@ -2266,6 +2266,10 @@
     {
       "path": "scripts/lu-ledger.test.mjs",
       "blob": "f7d38ae353d4ca0a98ddb4768fe99675c364087a"
+    },
+    {
+      "path": "scripts/lu-sec06c-browser-userns.apparmor",
+      "blob": "e1a69492142508f3de351a4054de157bce51f720"
     },
     {
       "path": "scripts/lu-sec06c-owned-browser-launcher.py",
