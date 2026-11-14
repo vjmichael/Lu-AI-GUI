@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "0a2221c8cff69cb62efb48314e10069e42242e1e",
-  "trackedFileCount": 1010,
+  "sourceCommitBeforeLock": "d2e49ce1db4d8ee4bc9597c2474a903f5d9caf92",
+  "trackedFileCount": 1014,
   "files": [
     {
       "path": ".github/pull_request_template.md",
@@ -2230,6 +2230,22 @@
     {
       "path": "scripts/core01-verify-scope.test.mjs",
       "blob": "226dc38b4215e8df8297bbc378d580f0ef08637f"
+    },
+    {
+      "path": "scripts/core01f-acceptance-reconcile.mjs",
+      "blob": "401bbf8beb0b06dc83c9bb4cf44ae633e6f2d352"
+    },
+    {
+      "path": "scripts/core01f-acceptance-reconcile.test.mjs",
+      "blob": "37ba97b4c635c1c81d764b4ccf245047887f66e5"
+    },
+    {
+      "path": "scripts/core01f-merge-preflight.mjs",
+      "blob": "220c45633d0c6e01597c8709a7fd7ae6d21b2a0b"
+    },
+    {
+      "path": "scripts/core01f-merge-preflight.test.mjs",
+      "blob": "b1249480fc5cff80f350e687ba417513c296ea28"
     },
     {
       "path": "scripts/linux/org.lu.desktop.observe-learn.policy",
