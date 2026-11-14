@@ -104,14 +104,14 @@ fn apply_protected_dacl(path:&Path, package:&str, service:&str,dir:bool)
 pub(crate) fn verify_readonly_stage_entry(
     path:&Path,package_sid:PSID,is_dir:bool,
 )->Result<(),SupervisorError>{
-    windows_fin04w2_kernel::inspect_current_service_principal()?;
+    windows_fin04w2_kernel::inspect_current_target_service_principal()?;
     let meta=fs::symlink_metadata(path).map_err(|_|denied())?;
     if !path.is_absolute()||meta.file_attributes()&REPARSE!=0
         ||(is_dir&&!meta.is_dir())||(!is_dir&&!meta.is_file()){
         return Err(denied());
     }
     let service=literal_sid(&windows_service_security::sid_of_named_service(
-        "LuIdeDebuggerBroker")?)?;
+        "LuIdeDebugTargetBroker")?)?;
     let system=literal_sid("S-1-5-18")?;
     if package_sid.is_null(){return Err(denied());}
     let mut dacl=ptr::null_mut();
@@ -181,7 +181,7 @@ fn apply_private_parent_sddl(path:&Path,descriptor:&str)
 }
 fn verify_private_stage_parent(path:&Path)->Result<(),SupervisorError>{
     let service=literal_sid(&windows_service_security::sid_of_named_service(
-        "LuIdeDebuggerBroker")?)?;
+        "LuIdeDebugTargetBroker")?)?;
     let system=literal_sid("S-1-5-18")?;
     let mut dacl=ptr::null_mut();
     let mut sd=ptr::null_mut();
@@ -237,8 +237,8 @@ pub(crate) fn stage_and_verify(
     package_sid:PSID,image:&Path,image_sha256:&str,
     pdb:&Path,pdb_sha256:&str,
 )->Result<SealedDebugTarget,SupervisorError>{
-    windows_fin04w2_kernel::inspect_current_service_principal()?;
-    let service=windows_service_security::sid_of_named_service("LuIdeDebuggerBroker")?;
+    windows_fin04w2_kernel::inspect_current_target_service_principal()?;
+    let service=windows_service_security::sid_of_named_service("LuIdeDebugTargetBroker")?;
     windows_service_security::verify_private_evidence_root_for(service_root,&service)?;
     if original_job_id.len()!=36||!original_job_id.starts_with("job-")
         ||!original_job_id[4..].bytes().all(|b|b.is_ascii_hexdigit())
