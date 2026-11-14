@@ -30,6 +30,18 @@ pub mod windows_fin04w2_c2_host;
 mod windows_fin04w2_kernel;
 #[cfg(all(windows,debug_assertions,feature="fin04w2-scm"))]
 pub mod windows_fin04w2_service;
+// FIN-04W2 split source is a separate unaccepted, default-off review profile.
+// No service launch/attach path is registered; old authority needs C2 reconciliation.
+#[cfg(feature="fin04w2-split-native")]
+mod fin04w2_authority;
+#[cfg(all(windows,debug_assertions,feature="fin04w2-split-native"))]
+mod windows_fin04w2_split;
+#[cfg(all(windows,debug_assertions,feature="fin04w2-split-native"))]
+mod windows_fin04w2_split_launcher;
+#[cfg(all(windows,debug_assertions,feature="fin04w2-split-native"))]
+mod windows_fin04w2_target_seal;
+#[cfg(all(windows,debug_assertions,feature="fin04w2-split-native"))]
+mod windows_fin04w2_wfp;
 #[cfg(all(target_os = "linux", feature = "linux-worker"))]
 pub mod linux_worker;
 pub mod live_output;
