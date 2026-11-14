@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "70a1ead19643f6a75a9e93b1669957ef2a8d65e5",
+  "sourceCommitBeforeLock": "3571d3eface6a1559020ca0e1a89575b20f907ec",
   "trackedFileCount": 1006,
   "files": [
     {
@@ -397,7 +397,7 @@
     },
     {
       "path": "benchmarks/e1/sec06c_browser_real_native.py",
-      "blob": "95f1ea74c14062c5ad16086235366cc2a8f5f8bc"
+      "blob": "4382fce5511341e5db0c49b7b53a8d500980677a"
     },
     {
       "path": "benchmarks/e1/sec06c_browser_xauthority_contract.py",
@@ -1949,7 +1949,7 @@
     },
     {
       "path": "lu-desktop/tests/p0-sec06-consolidated.test.mjs",
-      "blob": "590ca7f6721c04370f3e06f1c001397af84c7533"
+      "blob": "e04f3a40dd42fa718de8edd2cb551039282105cf"
     },
     {
       "path": "lu-desktop/tests/p03-ai-ops.test.mjs",
