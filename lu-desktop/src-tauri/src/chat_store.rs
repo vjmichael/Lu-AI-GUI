@@ -55,6 +55,9 @@ impl Default for ChatIndex {
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 enum Event {
     User { text: String },
+    // Host-minted generation ID binds the actual persisted human request
+    // to the ephemeral Reader grant; old chat journals remain compatible.
+    ReaderUser { text: String, generation_id: String },
     AssistantFinal { text: String }, // R14 migration; a complete answer.
     AssistantProgress { generation_id: String, text: String }, // cumulative checkpoint.
     AssistantCompleted { generation_id: String },
@@ -330,6 +333,23 @@ impl ChatStore {
         Ok(())
     }
     pub fn append_user(&self, chat_id: &str, text: &str) -> Result<(), String> {
+        self.append_user_event(chat_id, text, Event::User { text: text.into() })
+    }
+    /// A Reader grant must refer to this exact durable user event. Ordinary
+    /// chat messages do not acquire Reader authority, even if text matches.
+    pub fn append_reader_user(
+        &self, chat_id: &str, generation_id: &str, text: &str,
+    ) -> Result<(), String> {
+        if !valid_id(generation_id, "g-") {
+            return Err("invalid Reader generation identity".into());
+        }
+        self.append_user_event(chat_id, text, Event::ReaderUser {
+            text: text.into(), generation_id: generation_id.into(),
+        })
+    }
+    fn append_user_event(
+        &self, chat_id: &str, text: &str, event: Event,
+    ) -> Result<(), String> {
         if text.is_empty() || text.len() > 16 * 1024 {
             return Err("invalid chat input".into());
         }
@@ -341,7 +361,7 @@ impl ChatStore {
             .find(|c| c.chat_id == chat_id)
             .ok_or("unknown chat")?;
         // Journal is durable first. Failure to write index cannot erase the turn.
-        append_event(&self.chat_path(chat_id), &Event::User { text: text.into() })?;
+        append_event(&self.chat_path(chat_id), &event)?;
         if chat.title == "New chat" {
             chat.title = text.chars().take(65).take_while(|_| true).collect();
             while chat.title.len() > 96 {
@@ -353,6 +373,37 @@ impl ChatStore {
         atomic_index(&self.index_path, &next)?;
         *catalog = next;
         Ok(())
+    }
+    /// Verify a host-saved Reader user event by both immutable identity and
+    /// content, not by matching the last chat message's text. This allows a
+    /// queued Reader request to run after subsequent prompts without granting
+    /// those prompts its document permission. Any journal error fails closed.
+    pub fn reader_user_turn_matches(
+        &self, chat_id: &str, generation_id: &str, expected_text: &str,
+    ) -> Result<bool, String> {
+        if !valid_id(generation_id, "g-") {
+            return Ok(false);
+        }
+        let catalog = self.inner.lock().map_err(|_| "chat lock poisoned")?;
+        if !catalog.chats.iter().any(|c| c.chat_id == chat_id) {
+            return Ok(false);
+        }
+        let file = File::open(self.chat_path(chat_id)).map_err(|e| e.to_string())?;
+        if file.metadata().map_err(|e| e.to_string())?.len() > MAX_LOG {
+            return Err("conversation too large".into());
+        }
+        for line in BufReader::new(file).lines() {
+            let line = line.map_err(|e| e.to_string())?;
+            if line.is_empty() { continue; }
+            let event: Event = serde_json::from_str(&line)
+                .map_err(|e| format!("corrupt chat journal: {e}"))?;
+            if let Event::ReaderUser { text, generation_id: saved_id } = event {
+                if saved_id == generation_id {
+                    return Ok(text == expected_text);
+                }
+            }
+        }
+        Ok(false)
     }
     pub fn append_progress(
         &self,
@@ -415,7 +466,7 @@ impl ChatStore {
             let event: Event =
                 serde_json::from_str(&line).map_err(|e| format!("corrupt chat journal: {e}"))?;
             match event {
-                Event::User { text } => result.push(Some(ChatMessage {
+                Event::User { text } | Event::ReaderUser { text, .. } => result.push(Some(ChatMessage {
                     role: "user".into(),
                     text,
                     interrupted: false,
@@ -543,6 +594,33 @@ mod tests {
         assert!(history[1].interrupted);
         assert_eq!(history[3].text, "second reply");
         assert!(!history[3].interrupted);
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn reader_authorization_is_bound_to_exact_durable_human_turn() {
+        let root = root();
+        let chat_store = ChatStore::open(&root).unwrap();
+        let chat = chat_store.create_chat().unwrap();
+        let second = chat_store.create_chat().unwrap();
+        let a = id("g-");
+        let b = id("g-");
+        // Matching text alone is not an authority record.
+        chat_store.append_user(&chat.chat_id, "Read this").unwrap();
+        assert!(!chat_store.reader_user_turn_matches(&chat.chat_id, &a, "Read this").unwrap());
+        chat_store.append_reader_user(&chat.chat_id, &a, "Read this").unwrap();
+        // An interleaved or identical later prompt does not invalidate the
+        // original queued Reader turn or grant a different generation.
+        chat_store.append_user(&chat.chat_id, "Later prompt").unwrap();
+        chat_store.append_reader_user(&chat.chat_id, &b, "Read this").unwrap();
+        assert!(chat_store.reader_user_turn_matches(&chat.chat_id, &a, "Read this").unwrap());
+        assert!(chat_store.reader_user_turn_matches(&chat.chat_id, &b, "Read this").unwrap());
+        assert!(!chat_store.reader_user_turn_matches(&chat.chat_id, &a, "Other text").unwrap());
+        assert!(!chat_store.reader_user_turn_matches(&second.chat_id, &a, "Read this").unwrap());
+        assert!(!chat_store.reader_user_turn_matches(&chat.chat_id, "g-forged", "Read this").unwrap());
+        drop(chat_store);
+        let reopened = ChatStore::open(&root).unwrap();
+        assert!(reopened.reader_user_turn_matches(&chat.chat_id, &a, "Read this").unwrap());
+        assert_eq!(reopened.history(&chat.chat_id).unwrap().len(), 4);
         fs::remove_dir_all(root).unwrap();
     }
     #[test]

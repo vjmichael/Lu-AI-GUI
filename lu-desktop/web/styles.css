@@ -80,3 +80,49 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .appDropHint{position:fixed;z-index:19;left:50%;top:46%;transform:translate(-50%,-50%);background:#213b55;border:1px solid #85bff0;border-radius:12px;color:#f4faff;padding:16px 22px;box-shadow:0 12px 40px rgba(0,0,0,.38);pointer-events:none}
 .busyHint .spinner{will-change:transform}
 @media(prefers-reduced-motion:reduce){.busyHint .spinner{animation:none;will-change:auto}}
+
+/* TOOLS-11: host-owned background task inspector. All controls are read-only. */
+.backgroundPaneBackdrop{position:fixed;inset:0;background:#030a12a8;z-index:40;display:flex;justify-content:flex-end}
+.backgroundPane{width:min(465px,100vw);height:100%;display:flex;flex-direction:column;background:#182537;color:#dce5ee;border-left:1px solid #49617d;box-shadow:-15px 0 40px #0009}
+.backgroundPaneHeader{display:flex;justify-content:space-between;align-items:center;padding:20px 22px;border-bottom:1px solid #36495f}
+.backgroundPaneHeader h2{margin:0;font-size:20px}
+.backgroundPaneHeader small{color:#9bb0c8;font-size:12px}
+.backgroundPaneToolbar{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:14px 18px;border-bottom:1px solid #30435b}
+.backgroundPaneFilters{display:flex;gap:5px}
+.backgroundPaneFilters button{border:1px solid #435d78;background:#1b3047;border-radius:7px;padding:8px 12px;color:#d6e6fa}
+.backgroundPaneFilters button.selected{background:#375e85;border-color:#87b3dc}
+.backgroundPaneList{overflow-y:auto;flex:1;min-height:0;padding:16px 18px}
+.backgroundTask{border:1px solid #354b63;background:#1c2d41;border-radius:10px;padding:15px;margin-bottom:12px}
+.backgroundTaskHeading{display:flex;align-items:center;gap:10px;justify-content:space-between}
+.backgroundTaskHeading strong{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:13px}
+.backgroundTaskStatus{border-radius:5px;padding:4px 7px;font-size:10px;letter-spacing:.07em;border:1px solid #52718f}
+.backgroundTaskStatus.state-running{color:#8ce7b0;border-color:#407e64}
+.backgroundTaskStatus.state-failed,.backgroundTaskStatus.state-interrupted{color:#f6bf91;border-color:#8b5b4c}
+.backgroundTask small{display:block;color:#9ab2c9;margin-top:7px;font-size:11px}
+.backgroundTask p{color:#c4d4e5;font-size:12px;overflow-wrap:anywhere;margin:12px 0}
+.backgroundTaskProgress{height:9px;border-radius:8px;background:#0d1826;overflow:hidden;border:1px solid #2b4660}
+.backgroundTaskProgress span{display:block;height:100%;border-radius:8px;background:#4b9ac2;transition:width .3s}
+.backgroundTaskFoot{display:flex;justify-content:space-between;gap:8px;color:#92a6bd;font-size:11px;margin-top:9px}
+.backgroundTaskWarning{color:#ffc28b!important}
+.backgroundPaneError{padding:10px 18px;color:#ffd5b2}
+.backgroundPaneEmpty{padding:28px 10px;text-align:center;color:#aabdd0;font-size:13px}
+.backgroundPaneFooter{padding:16px 20px;border-top:1px solid #354b63;color:#90a9c0;font-size:11px;line-height:1.6}
+@media(max-width:620px){.backgroundPane{width:100vw}.backgroundTaskFoot{flex-wrap:wrap}}
+
+.backgroundTaskCancel{margin-top:12px;border:1px solid #ac6f5f;border-radius:7px;background:#482b31;color:#ffd7cf;font-size:12px;padding:9px 12px}
+.backgroundTaskCancel:hover,.backgroundTaskCancel:focus-visible{background:#61353b;border-color:#e59983}
+
+.backgroundScanLaunch{padding:15px 18px;display:flex;align-items:flex-start;gap:9px;flex-direction:column;border-bottom:1px solid #30435b}
+.backgroundScanLaunch small{color:#91a9bf;font-size:11px;line-height:1.5}
+
+.backgroundGlobalNotice{display:flex;align-items:center;justify-content:space-between;gap:12px;text-align:left;padding:10px 17px;border:0;border-bottom:1px solid #68859a;background:#2d4963;color:#edf4fe;width:100%;cursor:pointer}
+.backgroundGlobalNotice:hover,.backgroundGlobalNotice:focus-visible{background:#375874}
+.backgroundGlobalNotice small{font-size:11px;color:#c6d9ec}
+.backgroundTerminalBanner{display:flex;align-items:center;flex-wrap:wrap;gap:9px;padding:12px 16px;background:#293f54;color:#e1effb;border-bottom:1px solid #59748c;font-size:12px}
+.backgroundTerminalBanner span{flex:1;min-width:0;overflow-wrap:anywhere}
+
+.backgroundContinuationPreference{padding:14px 18px;border-bottom:1px solid #30435b;background:#21334a}
+.backgroundContinuationPreference label{display:flex;gap:10px;align-items:flex-start;font-size:12px;color:#e5f0fc;cursor:pointer}
+.backgroundContinuationPreference input{margin:2px 0 0;accent-color:#6daee1;flex:none}
+.backgroundContinuationPreference label:has(input:disabled){opacity:.55;cursor:not-allowed}
+.backgroundContinuationPreference small{display:block;margin:8px 0 0 25px;font-size:11px;line-height:1.6;color:#a9bdd0}
