@@ -65,7 +65,7 @@ fn service_sid() -> Result<Vec<usize>, SupervisorError> {
 // Both membership and the *restricted* SID allowlist are mandatory.
 // A service SID that appears only in enabled groups is not a protected
 // service-SID execution boundary. Bounded token query, read-only.
-fn contains_sid(
+pub(crate) fn contains_sid(
     token: HANDLE, class: windows_sys::Win32::Security::TOKEN_INFORMATION_CLASS,
     expected: windows_sys::Win32::Security::PSID,
 ) -> Result<bool, SupervisorError> {
