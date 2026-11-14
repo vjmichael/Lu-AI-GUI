@@ -69,15 +69,18 @@ fn eligible_file(path:&Path)->Result<(),SupervisorError>{
 }
 /// The stage lives under a service-only directory. Only after both private
 /// copies have been sealed do we permit the EXACT package read/traverse ACE.
-fn apply_protected_dacl(path:&Path, package:&str, service:&str,dir:bool)
+fn apply_protected_dacl(path:&Path,package:&str,service:&str,debugger:&str,dir:bool)
     ->Result<(),SupervisorError>{
-    let inherit=if dir{"(A;OICI;"}else{"(A;;"};
+    // SYSTEM and target service own; exactly named debugger + package are
+    // strictly read-only. No Users/Administrators or generic write grants.
     let sddl=if dir{
         format!("D:P(A;OICI;0x{ALL:08x};;;SY)(A;OICI;0x{ALL:08x};;;{service})\
-            {inherit}0x{READ_EXECUTE:08x};;;{package})")
+            (A;OICI;0x{READ_EXECUTE:08x};;;{debugger})\
+            (A;OICI;0x{READ_EXECUTE:08x};;;{package})")
     }else{
         format!("D:P(A;;0x{ALL:08x};;;SY)(A;;0x{ALL:08x};;;{service})\
-            {inherit}0x{READ_EXECUTE:08x};;;{package})")
+            (A;;0x{READ_EXECUTE:08x};;;{debugger})\
+            (A;;0x{READ_EXECUTE:08x};;;{package})")
     };
     // Parse the descriptor locally, but DO NOT accept it as the proof.
     let mut sd=ptr::null_mut();
@@ -112,6 +115,8 @@ pub(crate) fn verify_readonly_stage_entry(
     }
     let service=literal_sid(&windows_service_security::sid_of_named_service(
         "LuIdeDebugTargetBroker")?)?;
+    let debugger=literal_sid(&windows_service_security::sid_of_named_service(
+        "LuIdeDebuggerBroker")?)?;
     let system=literal_sid("S-1-5-18")?;
     if package_sid.is_null(){return Err(denied());}
     let mut dacl=ptr::null_mut();
@@ -130,9 +135,9 @@ pub(crate) fn verify_readonly_stage_entry(
     if unsafe{GetAclInformation(
         dacl,(&mut info as *mut ACL_SIZE_INFORMATION).cast(),
         size_of::<ACL_SIZE_INFORMATION>() as u32,AclSizeInformation)
-    }==0||info.AceCount!=3{return Err(denied());}
-    let mut seen=[false;3];
-    for i in 0..3 {
+    }==0||info.AceCount!=4{return Err(denied());}
+    let mut seen=[false;4];
+    for i in 0..4 {
         let mut raw=ptr::null_mut();
         if unsafe{GetAce(dacl,i,&mut raw)}==0||raw.is_null(){return Err(denied());}
         let ace=unsafe{&*(raw as *const ACCESS_ALLOWED_ACE)};
@@ -145,10 +150,11 @@ pub(crate) fn verify_readonly_stage_entry(
         let sid=(&ace.SidStart as *const u32).cast_mut().cast();
         let which=if unsafe{EqualSid(sid,system.0)}!=0{0}
             else if unsafe{EqualSid(sid,service.0)}!=0{1}
-            else if unsafe{EqualSid(sid,package_sid)}!=0{2}
+            else if unsafe{EqualSid(sid,debugger.0)}!=0{2}
+            else if unsafe{EqualSid(sid,package_sid)}!=0{3}
             else {return Err(denied());};
         if seen[which]
-            ||ace.Mask!=if which==2{READ_EXECUTE}else{ALL}{
+            ||ace.Mask!=if which>=2{READ_EXECUTE}else{ALL}{
             return Err(denied());
         }
         seen[which]=true;
@@ -182,6 +188,8 @@ fn apply_private_parent_sddl(path:&Path,descriptor:&str)
 fn verify_private_stage_parent(path:&Path)->Result<(),SupervisorError>{
     let service=literal_sid(&windows_service_security::sid_of_named_service(
         "LuIdeDebugTargetBroker")?)?;
+    let debugger=literal_sid(&windows_service_security::sid_of_named_service(
+        "LuIdeDebuggerBroker")?)?;
     let system=literal_sid("S-1-5-18")?;
     let mut dacl=ptr::null_mut();
     let mut sd=ptr::null_mut();
@@ -199,23 +207,27 @@ fn verify_private_stage_parent(path:&Path)->Result<(),SupervisorError>{
     if unsafe{GetAclInformation(
         dacl,(&mut info as *mut ACL_SIZE_INFORMATION).cast(),
         size_of::<ACL_SIZE_INFORMATION>() as u32,AclSizeInformation)
-    }==0||info.AceCount!=2{return Err(denied());}
-    let mut seen=[false;2];
-    for i in 0..2 {
+    }==0||info.AceCount!=3{return Err(denied());}
+    let mut seen=[false;3];
+    for i in 0..3 {
         let mut raw=ptr::null_mut();
         if unsafe{GetAce(dacl,i,&mut raw)}==0||raw.is_null(){return Err(denied());}
         let ace=unsafe{&*(raw as *const ACCESS_ALLOWED_ACE)};
         if ace.Header.AceType!=0||ace.Header.AceFlags!=OICI
-            ||ace.Header.AceSize<size_of::<ACCESS_ALLOWED_ACE>() as u16
-            ||ace.Mask!=ALL{return Err(denied());}
+            ||ace.Header.AceSize<size_of::<ACCESS_ALLOWED_ACE>() as u16{
+            return Err(denied());
+        }
         let sid=(&ace.SidStart as *const u32).cast_mut().cast();
         let k=if unsafe{EqualSid(sid,system.0)}!=0{0}
             else if unsafe{EqualSid(sid,service.0)}!=0{1}
+            else if unsafe{EqualSid(sid,debugger.0)}!=0{2}
             else{return Err(denied());};
-        if seen[k]{return Err(denied());}
+        if seen[k]||ace.Mask!=if k==2{READ_EXECUTE}else{ALL}{
+            return Err(denied());
+        }
         seen[k]=true;
     }
-    if seen!=[true,true]{return Err(denied());}
+    if seen!=[true,true,true]{return Err(denied());}
     Ok(())
 }
 struct IncompleteStage {path:PathBuf,armed:bool}
@@ -239,6 +251,7 @@ pub(crate) fn stage_and_verify(
 )->Result<SealedDebugTarget,SupervisorError>{
     windows_fin04w2_kernel::inspect_current_target_service_principal()?;
     let service=windows_service_security::sid_of_named_service("LuIdeDebugTargetBroker")?;
+    let debugger=windows_service_security::sid_of_named_service("LuIdeDebuggerBroker")?;
     windows_service_security::verify_private_evidence_root_for(service_root,&service)?;
     if original_job_id.len()!=36||!original_job_id.starts_with("job-")
         ||!original_job_id[4..].bytes().all(|b|b.is_ascii_hexdigit())
@@ -247,12 +260,14 @@ pub(crate) fn stage_and_verify(
     eligible_file(pdb)?;
     windows_service_security::hash_executable(pdb,pdb_sha256)?;
     let parent=service_root.join("sealed-debug-targets");
-    // The service root is already independently validated; a NEW parent
-    // inherits no package capability and is immediately locked to two SIDs.
+    // Only fixed debugger SID gets read/traverse of this subtree. The
+    // original private service.json root remains unchanged, and debugger
+    // cannot write/delete/alter target files or open the target kernel Job.
     if !parent.exists(){
         fs::create_dir(&parent).map_err(|_|denied())?;
         let descriptor=format!(
-            "D:P(A;OICI;0x{ALL:08x};;;SY)(A;OICI;0x{ALL:08x};;;{service})"
+            "D:P(A;OICI;0x{ALL:08x};;;SY)(A;OICI;0x{ALL:08x};;;{service})\
+            (A;OICI;0x{READ_EXECUTE:08x};;;{debugger})"
         );
         apply_private_parent_sddl(&parent,&descriptor)?;
     }
@@ -288,11 +303,11 @@ pub(crate) fn stage_and_verify(
     windows_service_security::hash_executable(&symbols,pdb_sha256)?;
     let package=string_sid(package_sid)?;
     // Seal the individual files before making the stage root traversable.
-    apply_protected_dacl(&exe,&package,&service,false)?;
-    apply_protected_dacl(&symbols,&package,&service,false)?;
+    apply_protected_dacl(&exe,&package,&service,&debugger,false)?;
+    apply_protected_dacl(&symbols,&package,&service,&debugger,false)?;
     verify_readonly_stage_entry(&exe,package_sid,false)?;
     verify_readonly_stage_entry(&symbols,package_sid,false)?;
-    apply_protected_dacl(&root,&package,&service,true)?;
+    apply_protected_dacl(&root,&package,&service,&debugger,true)?;
     verify_readonly_stage_entry(&root,package_sid,true)?;
     // Rehash AFTER ACL application with FILE_SHARE_READ-only access.
     windows_service_security::hash_executable(&exe,image_sha256)?;
