@@ -454,7 +454,6 @@ impl IdeWorkspaceRegistry {
         let build = compute_in_sandbox(&repo, &original, id)?;
         let candidate = &build.result;
         candidate_is_authorizable(candidate, digest)?;
-        self.require_group6f_no_pending_recovery(id,false)?;
         let (branch_ref, old_head) = exact_branch(&repo)?;
         if branch_ref != format!("refs/heads/{}", candidate.current_branch)
             || old_head.to_string() != candidate.current_head
@@ -530,6 +529,7 @@ impl IdeWorkspaceRegistry {
         if cancel.load(Ordering::SeqCst) != 0 {
             return Err("G06C04_CANCELLED_BEFORE_JOURNAL");
         }
+        self.require_group6f_no_pending_recovery(id,false)?;
         append(&journal_file, &j)?;
         if cancel
             .compare_exchange(0, 1, Ordering::SeqCst, Ordering::SeqCst)
