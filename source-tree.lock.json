@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "d0f21c5d23a5f165cbee2995578c1ac269e26193",
+  "sourceCommitBeforeLock": "0db2ee4b580660351a75b9d77f9bf3276747500a",
   "trackedFileCount": 1018,
   "files": [
     {
@@ -69,7 +69,7 @@
     },
     {
       "path": ".github/workflows/lu-core-merge-c4-grouped.yml",
-      "blob": "6d6232223ab89e473fa78444589933672a91270c"
+      "blob": "1e5962c11ca131b88daed9f37bf450daedeb914a"
     },
     {
       "path": ".github/workflows/lu-development-ledger.yml",
