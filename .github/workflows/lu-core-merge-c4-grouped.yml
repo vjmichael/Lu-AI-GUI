@@ -106,6 +106,10 @@ jobs:
             lu-desktop/tests/browser-native-authorization.test.mjs \
             lu-desktop/tests/reader-desktop.test.mjs \
             lu-desktop/tests/p06-observe-privacy.test.mjs \
+            lu-desktop/tests/workspace-desktop.test.mjs \
+            lu-desktop/tests/image-edit-intent.test.mjs \
+            lu-desktop/tests/r21-image-ux.test.mjs \
+            lu-desktop/tests/p08-archive-split.test.mjs \
             2>&1 | tee c4-native-evidence/frontend-contracts.log
       - name: Current React desktop bundle
         shell: bash
@@ -130,6 +134,30 @@ jobs:
           cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
             --test host_reviewed_route_durable -- --nocapture \
             2>&1 | tee c4-native-evidence/durable-tool-ipc.log
+          # C1/C2: original G02 host-owned Workspace inference was inherited
+          # byte-exact. Re-run its original authority and lifecycle tests;
+          # source continuity alone cannot establish accepted behavior.
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --lib workspace_inference::tests -- --nocapture \
+            2>&1 | tee c4-native-evidence/g02-host-owned-inference.log
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --lib workspace::tests -- --nocapture \
+            2>&1 | tee c4-native-evidence/g02-workspace-lifecycle.log
+          # Recovered original OPMEM harness compiles the SAME production
+          # module in isolation from the full inference-worker API on both
+          # Windows and Linux. This does not admit a tool or a new workspace.
+          cargo test --manifest-path tests/operational-memory-harness/Cargo.toml \
+            --test operational_memory -- --nocapture \
+            2>&1 | tee c4-native-evidence/opmem-original-independent.log
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --test operational_memory -- --nocapture \
+            2>&1 | tee c4-native-evidence/opmem-original-integrated.log
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --test native_workspace_read_turn -- --nocapture \
+            2>&1 | tee c4-native-evidence/original-workspace-tool-turn.log
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --test native_archive_tree_authority -- --nocapture \
+            2>&1 | tee c4-native-evidence/original-archive-authority.log
       - name: Original compiled desktop command and task completion reconciliation
         # Independent check: still gather native host diagnostics after a
         # separate lu-core test fails. The job remains FAILED on that test.
