@@ -714,3 +714,39 @@ async fn genuinely_new_read_content_resets_cross_call_stall_count() {
     assert_eq!(turn.step_count(),13);
     drop(turn);drop(catalog);drop(registry);remove_workspace(folder);
 }
+
+#[tokio::test]
+async fn planned_turn_cannot_finalize_from_a_successful_unverified_tool_reply() {
+    let (folder, registry, catalog, authority, origin, _) = setup();
+    let advertised = BTreeSet::from(["lu_files_read_text".into()]);
+    let mut turn = NativeToolTurn::new(
+        &catalog, &authority, origin, "thread:conversation-1".into(), &advertised,
+    ).unwrap();
+    // An ordinary valid workspace observation is still not a reviewed
+    // Git/FFprobe original worker + independent source oracle witness.
+    turn.require_verified_independent_outcome();
+    let observed = turn.handle_model_reply(
+        r#"{"kind":"tool","name":"lu_files_read_text","arguments":{"path":"notes.txt"}}"#,
+        &catalog, &registry, &authority, &Permitted,
+    ).await.unwrap();
+    let ToolTurnOutcome::ToolResult { data, .. } = observed else {
+        panic!("expected a real tool result");
+    };
+    assert_eq!(data["ok"], true);
+    assert_eq!(turn.step_count(), 1);
+    let final_attempt = turn.handle_model_reply(
+        r#"{"kind":"final","text":"The task is complete."}"#,
+        &catalog, &registry, &authority, &Permitted,
+    ).await;
+    assert_eq!(final_attempt, Err(ToolTurnError::ObservationRequiredBeforeFinal));
+    // A claim in model prose never changes the independent result state.
+    let plain_attempt = turn.handle_model_reply(
+        "The tool verified everything.",
+        &catalog, &registry, &authority, &Permitted,
+    ).await;
+    assert_eq!(plain_attempt, Err(ToolTurnError::ObservationRequiredBeforeFinal));
+    drop(turn);
+    drop(catalog);
+    drop(registry);
+    remove_workspace(folder);
+}
