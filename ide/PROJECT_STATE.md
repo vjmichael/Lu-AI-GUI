@@ -1,5 +1,30 @@
 # Lu IDE — Current project state (authoritative handoff)
 
+## FIN-04W2-C4 — native desktop consent source (November 13, 2026)
+
+Introduced a default-OFF Windows debug-only Tauri **native menu** with
+Prepare / Approve / Cancel actions, never exposed through WebView,
+invoke_handler, model or Lu tools. Preparation selects exactly one active
+registered native project, requires the newest genuine protected completed
+Cargo build receipt and sealed PE/symbols target, reobserves a clean real
+Git HEAD and copies the entire current project into an independently
+hashed private snapshot. Only then does it record an original fsynced
+Supervisor Prepared receipt and a non-authoritative administrator-review
+manifest. This is NOT consent or an executable capability.
+
+The second operator action requires an independently provisioned
+administrator-pinned service config for the exact Job+plan and a compiled
+fixed service SHA, Tauri-owned main Win32 HWND, real NO-default native
+dialog, fresh original project/build/manifest/HEAD observations before
+and after, then ONLY the accepted C2 first-party harmless Job/SCM/WFP
+worker with the existing one-use journal and service receipts. Denials
+have no fallback. Service config is NOT written or auto-created by
+the desktop. Physical Windows owner approval and installation remain
+unverified; exact-head native desktop compiler and original SCM/WFP
+CI must be reconciled. No LLDB, DAP, W2-D, release or merge authority.
+See ide/docs/IDE_FIN04W2C4_TRUSTED_DESKTOP.md.
+
+
 ## FIN-04W2-C3B — stricter trusted Win32 owner proof (November 13, 2026)
 
 Stacked on C3 source-only draft PR #232 at 59216d75. The default-off

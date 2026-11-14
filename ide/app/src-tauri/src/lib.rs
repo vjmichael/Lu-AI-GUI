@@ -7,6 +7,10 @@
 compile_error!("DEV-04.6D native dialog must not ship in release or signed NSIS builds");
 #[cfg(all(feature = "dev046d-native-dialog", not(windows)))]
 compile_error!("DEV-04.6D native dialog is Windows only");
+#[cfg(all(feature="fin04w2-c4-desktop",not(all(windows,debug_assertions))))]
+compile_error!("FIN-04W2-C4 native menu is Windows debug-only; never release/other OS");
+#[cfg(all(windows,debug_assertions,feature="fin04w2-c4-desktop"))]
+mod fin04w2_c4_desktop;
 
 #[cfg(all(feature = "native-build", any(windows, target_os = "linux")))]
 mod build_backend;
@@ -4129,6 +4133,8 @@ pub fn run() {
                 Err(code) => eprintln!("IDE LSP remains disabled: {code}"),
             }
 
+            #[cfg(all(windows,debug_assertions,feature="fin04w2-c4-desktop"))]
+            fin04w2_c4_desktop::install(app)?;
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

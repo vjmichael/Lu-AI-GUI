@@ -46,6 +46,9 @@ fin04-release-event-observer = ["fin02-protected-alpha", "lu-ide-execution-super
 # D6D native human-dialog bridge for Windows DEV BUILDS ONLY.
 # This intentionally cannot be compiled into a release/signed installer yet.
 dev046d-native-dialog = ["native-project-debug", "lu-ide-execution-supervisor/dev046d-native-dialog"]
+# FIN-04W2-C4: debug-only native IDE menu invoking original harmless C2 SCM worker.
+# Never an installed/release/DAP feature; no JS, model or path-selection route.
+fin04w2-c4-desktop = ["native-build", "lu-ide-execution-supervisor/fin04w2-c2"]
 # FIN03 experimental one-file restore: no release package enables this by default.
 fin03-reviewed-restore = []
 # Source candidate only; no released profile enables destructive stash mutation.
