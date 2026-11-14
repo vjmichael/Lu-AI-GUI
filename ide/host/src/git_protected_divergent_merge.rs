@@ -285,7 +285,6 @@ impl IdeWorkspaceRegistry {
         if cancel.load(Ordering::SeqCst) != 0 { return Err("G06C03B_CANCELLED"); }
         let evidence = self.revalidate_protected_divergent_merge(
             id, selected, plan_digest, result_digest)?;
-        self.require_group6f_no_pending_recovery(id,false)?;
         let repo = exact_repo(self, id)?;
         let root = self.registered_git_root(id).map_err(|_| "G06C03B_PROJECT_NOT_OPEN")?;
         let scratch = ReplaySandbox::open(&repo)?;
@@ -356,6 +355,7 @@ impl IdeWorkspaceRegistry {
             reviewed_result_sha256: result_digest.to_owned(),
             reviewed_plan_sha256: plan_digest.to_owned(),
         };
+        self.require_group6f_no_pending_recovery(id,false)?;
         append(&journal_file, &j)?;
         if cancel.compare_exchange(0, 1, Ordering::SeqCst, Ordering::SeqCst).is_err() {
             j.phase = "cancelled".into();
