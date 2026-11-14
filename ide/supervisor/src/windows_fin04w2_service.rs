@@ -13,6 +13,8 @@ use crate::{
 use serde::Deserialize;
 #[cfg(feature="fin04w2-approved-fixed-exec")]
 use crate::fin04w2_authority;
+#[cfg(feature="fin04w2-split-native")]
+use crate::windows_fin04w2_split_launcher;
 use std::{
     ffi::c_void, fs, io::Read, os::windows::fs::MetadataExt,
     path::{Path, PathBuf}, ptr,
@@ -77,6 +79,11 @@ struct InstalledAuditConfig {
     // a named-pipe client; only the preinstalled private service.json pins it.
     #[cfg(feature = "fin04w2-contained-probe")]
     fixed_probe: FixedProbe,
+    // Only the independently preinstalled split-mode service config may
+    // choose the two reviewed binaries. A pipe client cannot supply these.
+    #[cfg(feature="fin04w2-split-native")]
+    #[serde(default)]
+    split_pair: Option<SplitPairConfig>,
 }
 #[cfg(feature = "fin04w2-contained-probe")]
 #[derive(Deserialize)]
@@ -85,6 +92,17 @@ struct FixedProbe {
     executable: PathBuf,
     expected_sha256: String,
     foreign_file: PathBuf,
+}
+#[cfg(feature="fin04w2-split-native")]
+#[derive(Deserialize)]
+#[serde(rename_all="camelCase",deny_unknown_fields)]
+struct SplitPairConfig {
+    target_executable: PathBuf,
+    target_sha256: String,
+    target_pdb: PathBuf,
+    pdb_sha256: String,
+    lldb_dap_executable: PathBuf,
+    lldb_dap_sha256: String,
 }
 fn nonce(value: &str) -> Result<[u8;16], SupervisorError> {
     if value.len() != 32 || !value.bytes().all(|b| b.is_ascii_hexdigit()) {
@@ -113,7 +131,9 @@ impl InstalledAuditConfig {
         let result: Self = serde_json::from_slice(&bytes).map_err(|_|denied())?;
         if !(result.schema == "lu.ide.fin04w2.audit.v1"
             || (cfg!(feature="fin04w2-approved-fixed-exec")
-                && result.schema == "lu.ide.fin04w2.approved-fixed.v1"))
+                && result.schema == "lu.ide.fin04w2.approved-fixed.v1")
+            || (cfg!(feature="fin04w2-split-native")
+                && result.schema == "lu.ide.fin04w2.approved-split.v1"))
             || result.service_name != NAME || result.endpoint != ENDPOINT
             || !result.approved_host_executable.is_absolute()
             || !crate::validate_plan(&result.review_only_plan)
@@ -130,7 +150,9 @@ impl InstalledAuditConfig {
         }
         #[cfg(feature = "fin04w2-approved-fixed-exec")]
         {
-            if result.schema!="lu.ide.fin04w2.approved-fixed.v1"
+            if !(result.schema=="lu.ide.fin04w2.approved-fixed.v1"
+                || (cfg!(feature="fin04w2-split-native")
+                    && result.schema=="lu.ide.fin04w2.approved-split.v1"))
                 || !result.original_supervisor_journal.is_absolute()
                 || result.original_job_id.len()!=36
                 || !result.original_job_id.starts_with("job-")
@@ -153,6 +175,30 @@ impl InstalledAuditConfig {
                 return Err(denied());
             }
             security::hash_executable(&probe.executable, &probe.expected_sha256)?;
+        }
+        #[cfg(feature="fin04w2-split-native")]
+        {
+            if result.schema!="lu.ide.fin04w2.approved-split.v1" {
+                // Explicit split binary cannot silently run historical W2-C
+                // fixed worker; likewise a fixed binary cannot accept split.
+                return Err(denied());
+            }
+            let approved=result.split_pair.as_ref().ok_or_else(denied)?;
+            if result.review_only_plan.debug_target_binding_sha256.is_none()
+                || approved.target_executable==approved.target_pdb
+                || !approved.target_executable.is_absolute()
+                || !approved.target_pdb.is_absolute()
+                || !approved.lldb_dap_executable.is_absolute()
+                || approved.lldb_dap_executable.file_name()
+                    != Some(std::ffi::OsStr::new("lldb-dap.exe"))
+            {return Err(denied());}
+            for (path,hash) in [
+                (&approved.target_executable,&approved.target_sha256),
+                (&approved.target_pdb,&approved.pdb_sha256),
+                (&approved.lldb_dap_executable,&approved.lldb_dap_sha256),
+            ] {
+                security::hash_executable(path,hash)?;
+            }
         }
         let sid = security::sid_of_named_service(NAME)?;
         security::verify_private_evidence_root_for(&root, &sid)?;
