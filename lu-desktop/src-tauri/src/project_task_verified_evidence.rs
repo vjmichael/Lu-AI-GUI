@@ -330,6 +330,125 @@ pub(super) fn original_review_history_for_memory(
         "executionAuthorized":false
     }))
 }
+/// C3 read-only completion reconciliation. The original PLAN-05 register
+/// can certify a CURRENT native source requirement; an independently reviewed
+/// Git/FFprobe outcome is supporting evidence, not a task-completion event.
+#[derive(Clone,Debug,Serialize)]
+#[serde(rename_all="camelCase")]
+pub(crate) struct TaskCompletionReconciliationView{
+    schema:&'static str,
+    register_id:String,
+    task_id:String,
+    task_version:u64,
+    source_rescanned_this_review:bool,
+    native_requirement_accepted:bool,
+    reopened_human_criterion_witnesses:usize,
+    original_human_review_count:usize,
+    history_fully_inspected:bool,
+    status:&'static str,
+    task_completed:bool,
+    execution_authorized:bool,
+}
+fn completion_status(native:bool,reviewed:bool,full:bool)->&'static str{
+    if !full{return "STOP_REVIEW_HISTORY_RECONCILIATION_REQUIRED"}
+    match (native,reviewed){
+        (true,true)=>"CURRENT_NATIVE_REQUIREMENT_AND_HISTORICAL_WITNESS_SUPPORTED",
+        (true,false)=>"CURRENT_NATIVE_REQUIREMENT_ACCEPTED_NO_MATCHING_WITNESS",
+        (false,true)=>"HISTORICAL_WITNESS_ONLY_NATIVE_REQUIREMENT_UNACCEPTED",
+        (false,false)=>"REQUIRES_NATIVE_REQUIREMENT_AND_CRITERION_REVIEW",
+    }
+}
+fn reconcile_completion(
+    profile:&Path,selected:&Path,register_id:&str,task_id:&str,
+    board_sha:&str,register_sha:&str,version:u64,
+    chats:&chat_store::ChatStore,
+)->Result<TaskCompletionReconciliationView,String>{
+    // This re-enters the existing PLAN-07 ORIGINAL native-source scanner
+    // after an OS-picked folder, not a WebView-supplied path or model claim.
+    let current=project_task_agent_handoff::source_anchor(
+        profile,selected,register_id,task_id,board_sha,register_sha,version
+    )?;
+    let native=current.independently_verified_requirement
+        &&current.observed_status==lu_core::project_status_classifier::Status::Accepted
+        &&!current.needs_human_reconciliation;
+    let original=history(profile,register_id,task_id)?;
+    // An unexpectedly long history cannot be silently truncated to claim
+    // absence or presence of a sufficiently reviewed original witness.
+    const MAX_REOPENED:usize=16;
+    let full=original.len()<=MAX_REOPENED;
+    let mut independently_reopened=0;
+    if full{
+        for decision in &original{
+            if decision.decision!="ACCEPTED_AS_SUPPORTING_EVIDENCE"
+                ||!decision.source_lease_current
+                ||decision.task_version!=version
+                ||decision.acceptance_criterion!=current.acceptance_criteria
+                ||!project_task_agent_handoff::criterion_supports_method(
+                    &current.acceptance_criteria,
+                    &decision.tool_id,&decision.independent_method
+                ){continue}
+            // Reopen the ORIGINAL saved human turn, immutable plan, effect
+            // journal and independent oracle. A serialized review event is
+            // insufficient, and no historical grant may be reused.
+            let worker=project_task_agent_handoff::independently_verified_task_witness(
+                profile,register_id,task_id,&decision.handoff_id,
+                &decision.receipt_sha256,chats
+            )?;
+            if worker.tool_id!=decision.tool_id
+                ||worker.independent_method!=decision.independent_method
+                ||worker.observed_sha256!=decision.observed_sha256
+                ||worker.receipt_sha256!=decision.receipt_sha256{
+                return Err("CORE_C3_ORIGINAL_WORKER_REVIEW_CONFLICT".into())
+            }
+            independently_reopened+=1;
+        }
+    }
+    Ok(TaskCompletionReconciliationView{
+        schema:"lu-core-c3-task-completion-reconciliation-v1",
+        register_id:register_id.into(),task_id:task_id.into(),
+        task_version:version,source_rescanned_this_review:true,
+        native_requirement_accepted:native,
+        reopened_human_criterion_witnesses:independently_reopened,
+        original_human_review_count:original.len(),
+        history_fully_inspected:full,
+        status:completion_status(native,independently_reopened>0,full),
+        // A native requirement and historical supporting receipt do NOT
+        // constitute a separately audited full task-completion decision.
+        task_completed:false,execution_authorized:false,
+    })
+}
+#[tauri::command]
+pub(crate) async fn lu_project_task_reconcile_completion(
+    app:AppHandle,caller:tauri::WebviewWindow,
+    state:State<'_,Arc<DesktopState>>,
+    register_id:String,task_id:String,
+    expected_board_sha256:String,expected_register_sha256:String,
+    expected_task_version:u64,
+)->Result<Option<TaskCompletionReconciliationView>,String>{
+    if caller.label()!="task-list"{
+        return Err("CORE_C3_REQUIRES_NATIVE_TASK_BOARD".into())
+    }
+    if expected_task_version==0
+        ||!valid_hash(&expected_board_sha256)
+        ||!valid_hash(&expected_register_sha256){
+        return Err("CORE_C3_INVALID_EXPECTED_SOURCE_LEASE".into())
+    }
+    let host=Arc::clone(state.inner());
+    let profile=project_register_desktop::profile(&host)?;
+    let chooser=app.clone();
+    let picked=tauri::async_runtime::spawn_blocking(move||
+        chooser.dialog().file().blocking_pick_folder()
+    ).await.map_err(|_|"CORE_C3_NATIVE_FOLDER_PICKER_INTERRUPTED")?;
+    let Some(picked)=picked else{return Ok(None)};
+    let selected=picked.into_path()
+        .map_err(|_|"CORE_C3_NATIVE_PROJECT_NOT_LOCAL")?;
+    tauri::async_runtime::spawn_blocking(move||reconcile_completion(
+        &profile,&selected,&register_id,&task_id,
+        &expected_board_sha256,&expected_register_sha256,
+        expected_task_version,&host.chats
+    ).map(Some)).await.map_err(|_|"CORE_C3_RECONCILIATION_INTERRUPTED")?
+}
+
 #[tauri::command]
 pub(crate) async fn lu_project_task_criterion_evidence_history(
     caller:tauri::WebviewWindow,
@@ -426,6 +545,17 @@ pub(crate) async fn lu_project_task_review_independent_witness(
 #[cfg(test)]
 mod tests{
     use super::*;
+    #[test]
+    fn completion_reconciliation_cannot_turn_prior_receipts_into_task_authority(){
+        assert_eq!(completion_status(true,true,true),
+            "CURRENT_NATIVE_REQUIREMENT_AND_HISTORICAL_WITNESS_SUPPORTED");
+        assert_eq!(completion_status(false,true,true),
+            "HISTORICAL_WITNESS_ONLY_NATIVE_REQUIREMENT_UNACCEPTED");
+        assert_eq!(completion_status(true,false,true),
+            "CURRENT_NATIVE_REQUIREMENT_ACCEPTED_NO_MATCHING_WITNESS");
+        assert_eq!(completion_status(true,true,false),
+            "STOP_REVIEW_HISTORY_RECONCILIATION_REQUIRED");
+    }
     #[test]
     fn journal_record_never_contains_task_completion_or_execution_authority(){
         let e=CriterionDecision{
