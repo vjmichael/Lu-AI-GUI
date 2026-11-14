@@ -1,6 +1,6 @@
 # CORE-01F — Lu Core merge consolidation preflight
 
-**Status: SOURCE TOPOLOGY PREPARED / MERGE BLOCKED.** This draft makes no changes to the CORE-01E source head, production execution, user data, or main. It is not merge authorization. llama.cpp remains the sole production engine; IDE and KoboldCpp/P7L remain excluded.
+**Status: LIVE CORE-01E CANDIDATE SOURCE REVIEW ENABLED / MERGE BLOCKED.** This draft makes no changes to the CORE-01E source head, production execution, user data, or main. It is not merge authorization. llama.cpp remains the sole production engine; IDE and KoboldCpp/P7L remain excluded.
 
 ## Frozen upstream source chain (read-only audit)
 
@@ -66,3 +66,47 @@ CORE-01F branch remains deliberately stacked on its original reviewed
 CORE-01E parent and has NOT been automatically rebased. Before merge,
 refresh the CORE-01E accepted head and restack/reverify CORE-01F with
 an owner-reviewed safe source and main-ledger reconciliation.
+
+
+## CORE-01F-03 modernization: new CORE-01E candidate without a silent security promotion
+
+The original pinned CORE-01E SHA is retained as an **immutable reviewed ancestry
+anchor**. The live branch may advance only by descendant commits. The source
+preflight independently reviews the *current* candidate Git tree and its
+source-tree.lock.json (including 1:1 blob identity and the lock commit's
+immediate code parent). It rejects ancestry changes, excluded source paths,
+unreviewed main changes, forged locks and, when supplied, an exact candidate
+SHA mismatch. The bridge's own current source lock is separately verified.
+
+For a user-reviewed **read-only** audit with all historical Git objects
+available locally (ref acquisition must be independently authorized):
+
+    node --test scripts/core01f-merge-preflight.test.mjs
+    node scripts/core01f-merge-preflight.mjs --main-ref origin/main --core-ref origin/lu/core01-source-convergence-no-ide-no-kobold-20261112 --expect-core-sha f4beaba3f6e77693f9048cd7e67764142d6c41d2
+
+Omit --expect-core-sha to inspect the currently resolved candidate without
+prior endorsement; the report still includes its exact SHA and never grants
+security or merge authority. In CI, pin --expect-core-sha to the independently
+reviewed PR head to reject concurrent branch drift. Never pass a moving ref
+as a substitute for an exact receipt's source identity.
+
+The returned status SOURCE_INTEGRATION_REVIEWABLE_ONLY means *source-review
+preparation*, not native or installed acceptance. The integration plan names
+the changed CORE-01E and CORE-01F paths, including overlap and the source
+lock that must be regenerated only after a separately reviewed integration.
+A conflict or restack requirement is reported but never executed. Main's
+live docs/LU_DEVELOPMENT_LEDGER.md must be preserved; every other new main
+path is an explicit blocker until reviewed.
+
+**Separate promotion gate:** SEC-06C original kernel and browser custody,
+unchanged historical hostile fixtures, SEC-06F matching Windows/Linux/source
+receipts, genuine tool/model and native regressions, installed Windows NSIS
+and Debian lifecycle tests, and independent owner permission remain OPEN
+unless established by original exact-head evidence. Never turn a source-only
+green check into a release, merger, or one-use executor grant.
+
+This authoring does NOT restack PR #228, mutate PR #226, merge anything into
+main or admit an installed workflow. When the candidate passes its full
+security gate, update the integration review's exact source SHA, reconcile
+the overlapping paths with the protected main ledger, create a separately
+reviewed new source-lock commit, and rerun all original gates.
