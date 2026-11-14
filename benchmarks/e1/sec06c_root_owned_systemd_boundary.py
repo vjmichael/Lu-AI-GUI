@@ -91,7 +91,7 @@ def inside(unit, evidence, expected, scenario):
         # Mirror the real Lu-owned service worker's crash/cancel lifetime
         # pipe. An explicitly open stdin keeps it alive; a killed host
         # closes that pipe and must trigger own-child reaping.
-        if scenario=="worker-main-sigkill":
+        if scenario in ("worker-main-sigkill","guardian-death"):
             # This exact destructive case MUST retain a live original manager
             # until the independent verifier sends SIGKILL via its pidfd.
             # systemd-run --pipe may close stdin while the unit is still
@@ -185,7 +185,7 @@ def outer(unit, evidence, expected, scenario):
             migrated = True
         if migrated or proc_group(child_pid) != original:
             fail("SEC06C_ANCESTOR_ESCAPE_SUCCEEDED")
-        if scenario == "cancel":
+        if scenario in ("cancel","ancestor-migration"):
             # The root-owned system manager, not an attacker-chosen PID,
             # stops this exact disposable unit and must reap setsid children.
             cancelled = subprocess.run(
@@ -194,7 +194,7 @@ def outer(unit, evidence, expected, scenario):
                 timeout=20,
             )
             if cancelled.returncode != 0:
-                fail("native OS-managed cancellation rejected")
+                fail("native OS-managed "+scenario+" recovery rejected")
         elif scenario in ("guardian-stall", "worker-stall"):
             # SEC-06C positive replacement of the old same-UID orphan-risk
             # fixture: SIGSTOP exactly the original, PIDFD-identified service
@@ -254,7 +254,7 @@ def outer(unit, evidence, expected, scenario):
             "nonrootEuid": os.geteuid(),
             "rootOwnedUnit": True, "ancestorMigrationDenied": True,
             "exactOriginalPidfds": True,
-            "nativeMainSigkill": scenario=="worker-main-sigkill",
+            "nativeMainSigkill": scenario in ("worker-main-sigkill","guardian-death"),
             "nativeSupervisorActuallyStalled": scenario=="guardian-stall",
             "nativeWorkerActuallyStalled": scenario=="worker-stall",
             "setsidDescendantReaped": True,
@@ -300,7 +300,8 @@ def main():
     parser.add_argument("--unit")
     parser.add_argument("--scenario", choices=["worker-main-sigkill",
                                                 "cancel", "host-crash",
-                                                "guardian-stall", "worker-stall"],
+                                                "guardian-death", "guardian-stall",
+                                                "worker-stall", "ancestor-migration"],
                         default="worker-main-sigkill")
     args = parser.parse_args()
     if len(args.expected_sha) != 40 or any(c not in "0123456789abcdef" for c in args.expected_sha):

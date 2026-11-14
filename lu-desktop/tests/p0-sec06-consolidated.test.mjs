@@ -417,8 +417,10 @@ test('SEC06 verifier rejects changed original native log with correct head and l
       'linux-negative-python-syntax','linux-host-crash-python-syntax','linux-delegated-python-syntax',
       'linux-root-owned-prototype-syntax','linux-root-owned-unit-prototype',
       'linux-root-owned-unit-cancel','linux-root-owned-unit-host-crash',
+      'linux-root-owned-unit-guardian-death',
       'linux-root-owned-unit-guardian-stall',
       'linux-root-owned-unit-worker-stall',
+      'linux-root-owned-unit-ancestor-migration',
       'linux-os-owned-git-syntax','linux-os-owned-probe-syntax',
       'linux-os-owned-kernel-manager-syntax',
       'linux-os-owned-reviewed-native-syntax',
@@ -731,7 +733,9 @@ test('SEC06C OS-owned original PIDFD stall scenarios require genuine systemd sub
   }
   assert.match(native,/signal\.pidfd_send_signal\(victim_fd,signal\.SIGSTOP\)/);
   assert.match(native,/if state in \("T","t"\):break/);
-  assert.match(native,/"nativeMainSigkill": scenario=="worker-main-sigkill"/);
+  assert.match(native,/"nativeMainSigkill": scenario in \("worker-main-sigkill","guardian-death"\)/);
+  assert.match(native,/if scenario in \("cancel","ancestor-migration"\)/);
+  assert.match(native,/SEC06C_ANCESTOR_ESCAPE_SUCCEEDED/);
   assert.match(native,/"nativeSupervisorActuallyStalled": scenario=="guardian-stall"/);
   assert.match(native,/"nativeWorkerActuallyStalled": scenario=="worker-stall"/);
   assert.match(native,/"setsidDescendantReaped": True/);

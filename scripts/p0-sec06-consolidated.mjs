@@ -274,8 +274,10 @@ if(mode==='verify'){
                  'linux-host-crash-python-syntax','linux-delegated-python-syntax',
                  'linux-root-owned-prototype-syntax','linux-root-owned-unit-prototype',
                  'linux-root-owned-unit-cancel','linux-root-owned-unit-host-crash',
+                 'linux-root-owned-unit-guardian-death',
                  'linux-root-owned-unit-guardian-stall',
                  'linux-root-owned-unit-worker-stall',
+                 'linux-root-owned-unit-ancestor-migration',
                  'linux-os-owned-git-syntax','linux-os-owned-probe-syntax',
                  'linux-os-owned-kernel-manager-syntax',
                  'linux-os-owned-reviewed-native-syntax',
@@ -382,8 +384,10 @@ if(mode==='verify'){
             for(const [id,scenario] of [
               ['linux-root-owned-unit-cancel','cancel'],
               ['linux-root-owned-unit-host-crash','host-crash'],
+              ['linux-root-owned-unit-guardian-death','guardian-death'],
               ['linux-root-owned-unit-guardian-stall','guardian-stall'],
-              ['linux-root-owned-unit-worker-stall','worker-stall']
+              ['linux-root-owned-unit-worker-stall','worker-stall'],
+              ['linux-root-owned-unit-ancestor-migration','ancestor-migration']
             ]){
               doCase(id,'python3',[
                 'benchmarks/e1/sec06c_root_owned_systemd_boundary.py',
