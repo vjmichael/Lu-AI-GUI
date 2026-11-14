@@ -113,16 +113,25 @@ correlation. `fin04w2-split-native` reobserves live Windows process handles
 and requires distinct non-AppContainer debugger + AppContainer target Jobs,
 correct restricting-SID identity, source binary and original Running receipt
 before deriving an attach PID. A Windows compiler/negative test workflow
-validates the shape. None of this currently starts LLDB or the target in
-the production service: the W2-C service still executes its original
-hash-pinned harmless fixture. This separation is the engineering foundation,
+validates the shape. A separate default-OFF native preparation module now creates **two actual
+SUSPENDED Windows processes** with distinct service-held Jobs when called by
+the approved service: a sealed target staged to a new zero-capability
+AppContainer profile, and LLDB-DAP under the restricted debugger service
+token outside AppContainer, with exactly three kernel-allowlisted stdio
+handles. Both process handles retain termination-on-drop, independent Job
+custody and fresh token/Job checks. The code cannot resume either process
+or emit a runnable attach without later original authorization/WFP gates.
+
+None of this currently starts LLDB or the target in the production service:
+the W2-C service still executes its original hash-pinned harmless fixture. This separation is the engineering foundation,
 **not** the completed physical Windows debugger or license to change default
 Tauri behavior.
 
-**Unimplemented release gates**: create/stage the sealed target from the SCM
-service in a unique AppContainer and dedicated Job; start exact signed/
-reviewed LLDB-DAP outside lowbox with service-specific restricted token and
-its own Job; independent per-process WFP tests, DLL closure, live DAP attach,
+**Unimplemented release gates**: actually wire the service to its two
+native suspended-process preparations; independently verified immutable
+read-only executable/PDB staging (the current candidate target file is
+staged into writable profile LocalState and therefore MUST NOT resume);
+independent per-process WFP tests, exact LLDB DLL closure, live DAP attach,
 full original hostile/cancellation/restart matrix and installed approval.
 Do NOT substitute a same-user, unrestricted launcher for these gates.
 
