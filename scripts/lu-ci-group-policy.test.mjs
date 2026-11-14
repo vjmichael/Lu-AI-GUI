@@ -55,3 +55,19 @@ test("PLAN-07D exception requires all three exact PR219/branch/SHA guards", () =
     assert.ok(inspectOne("lu-plan07d-installed.yml", unsafe).problems.includes("HEAVY_WORKFLOW_AUTOMATIC_FANOUT"));
   }
 });
+
+test("CORE-MERGE-C4 remains manual/reusable and is admitted only by original exact PR-head marker", () => {
+  const source = fs.readFileSync(".github/workflows/lu-core-merge-c4-grouped.yml", "utf8");
+  const primary = fs.readFileSync(".github/workflows/lu-repo01-full-source.yml", "utf8");
+  assert.deepEqual(inspectOne("lu-core-merge-c4-grouped.yml", source).problems, []);
+  assert.match(source, /^on:\n  workflow_dispatch:\n  workflow_call:/m);
+  assert.doesNotMatch(source, /^  (?:push|pull_request|pull_request_target):/m);
+  const gate = primary.slice(primary.lastIndexOf("\n  core-merge-c4-one-sha:"));
+  assert.match(gate, /needs: verify-source/);
+  assert.match(gate, /number == 235/);
+  assert.match(gate, /head\.ref == 'lu\/p0-next-typed-criterion-review-20261113'/);
+  assert.match(gate, /github\.event\.action == 'edited'/);
+  assert.match(gate, /LU_CORE_C4_GROUP_SHA=\{0\}/);
+  assert.match(gate, /!contains\(github\.event\.changes\.body\.from/);
+  assert.match(gate, /uses: \.\/\.github\/workflows\/lu-core-merge-c4-grouped\.yml/);
+});

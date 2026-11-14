@@ -3,8 +3,20 @@
 //! display-only, never silently promoted to completed context.
 use crate::chat_store::ChatMessage;
 
-const MAX_CONTEXT_BYTES: usize = 15 * 1024;
-const MAX_PRIOR_TURNS: usize = 16;
+const DEFAULT_CONTEXT_BYTES: usize = 15 * 1024;
+const MAX_CONTEXT_BYTES: usize = 64 * 1024;
+const MAX_HISTORY_ENTRY_BYTES: usize = 15 * 1024;
+const MAX_PRIOR_TURNS: usize = 32;
+
+/// Context is a HOST-SELECTED GGUF load profile, not a model instruction.
+/// This is a conservative byte budget, NOT a tokenizer measurement or a
+/// promise that an arbitrary model prompt fits its actual token window.
+fn history_byte_budget(context_tokens:u32,output_tokens:u32)->usize{
+    let spare=context_tokens.saturating_sub(output_tokens)
+        .saturating_sub(1024);
+    (spare as usize).saturating_mul(2)
+        .clamp(DEFAULT_CONTEXT_BYTES,MAX_CONTEXT_BYTES)
+}
 
 /// Build canonical, journal-derived roles for Lu's native Protobuf request.
 /// This never serializes a `User:` / `Assistant:` transcript into one string.
@@ -13,8 +25,22 @@ pub fn typed_history(
     previous: &[ChatMessage],
     current: &str,
 ) -> Vec<lu_core::wire::proto::InferenceChatTurn> {
+    typed_history_for_model(previous,current,4096,512)
+}
+
+/// Use the actual loaded model's host-pinned context/output admission.
+/// Extended contexts can carry more native typed history without ever
+/// flattening untrusted content into privileged system instructions.
+pub fn typed_history_for_model(
+    previous: &[ChatMessage],
+    current: &str,
+    context_tokens:u32,
+    output_tokens:u32,
+) -> Vec<lu_core::wire::proto::InferenceChatTurn> {
+    let limit=history_byte_budget(context_tokens,output_tokens);
     let mut out = Vec::new();
     let mut bytes = current.len();
+    if bytes>=limit { return out; }
     for entry in previous.iter().rev() {
         if !matches!(entry.role.as_str(), "user" | "assistant")
             || (entry.role == "assistant" && entry.interrupted)
@@ -22,10 +48,13 @@ pub fn typed_history(
         {
             continue;
         }
-        // Keep history bounded by the same limits enforced by Lu Core IPC.
-        if out.len() >= MAX_PRIOR_TURNS || bytes + entry.text.len() > MAX_CONTEXT_BYTES {
-            break;
+        // Never send an oversized single source row through Protobuf.
+        // Skip it rather than discard older short and relevant turns.
+        if entry.text.len()>MAX_HISTORY_ENTRY_BYTES
+            || bytes.saturating_add(entry.text.len())>limit {
+            continue;
         }
+        if out.len()>=MAX_PRIOR_TURNS {break}
         bytes += entry.text.len();
         out.push(lu_core::wire::proto::InferenceChatTurn {
             role: entry.role.clone(),
@@ -184,4 +213,38 @@ mod tests {
         let prior = typed_history(&previous, "Tell me about songs");
         assert_eq!(prior[0].role, "user");
     }
+    #[test]
+    fn extended_loaded_context_uses_more_real_typed_history_but_never_unbounded() {
+        let previous=(0..60).map(|i|
+            msg(if i%2==0{"user"}else{"assistant"},&format!("Turn {i}: {}", "x".repeat(1800)),false)
+        ).collect::<Vec<_>>();
+        let baseline=typed_history(&previous,"What changed?");
+        let extended=typed_history_for_model(&previous,"What changed?",32768,1024);
+        assert!(extended.len()>baseline.len());
+        assert!(extended.len()<=MAX_PRIOR_TURNS);
+        assert!(extended.iter().map(|t|t.text.len()).sum::<usize>()<=MAX_CONTEXT_BYTES);
+        assert_eq!(extended.last().unwrap().text,previous.last().unwrap().text);
+        assert_eq!(baseline.last().unwrap().text,previous.last().unwrap().text);
+    }
+    #[test]
+    fn one_oversized_recent_entry_does_not_erase_older_safe_history() {
+        let previous=[
+            msg("user","I approved the checked source",false),
+            msg("assistant",&"Z".repeat(20*1024),false),
+            msg("user","Review the next step",false),
+            msg("assistant","unverified partial",true),
+        ];
+        let history=typed_history_for_model(&previous,"Continue",32768,512);
+        assert_eq!(history.len(),2);
+        assert_eq!(history[0].text,"I approved the checked source");
+        assert_eq!(history[1].text,"Review the next step");
+    }
+    #[test]
+    fn default_model_context_keeps_the_old_budget() {
+        assert_eq!(history_byte_budget(4096,512),DEFAULT_CONTEXT_BYTES);
+        assert_eq!(history_byte_budget(262144,4096),MAX_CONTEXT_BYTES);
+        let prior=[msg("user","source data",false)];
+        assert!(typed_history_for_model(&prior,&"z".repeat(MAX_CONTEXT_BYTES),262144,512).is_empty());
+    }
+
 }

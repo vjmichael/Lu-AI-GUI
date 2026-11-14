@@ -346,7 +346,32 @@ struct ApprovedStepTarget{
     original_turn:String,
     revision_sha:String,
     step_index:u8,
+    // Exact immutable plan revision deliverable: not a tool ID or grant.
+    deliverable_id:String,
     operation:ReviewedBrokerOperation,
+}
+#[derive(Clone,Debug,PartialEq,Eq)]
+struct OriginalStepSelection{
+    original_turn:String,
+    deliverable_id:String,
+}
+fn reviewed_step_selection(
+    original_turn:&str,revision:&str,actual_revision:&str,
+    step:&lu_core::agent_plan_revisions::RevisionStep,
+)->Result<OriginalStepSelection,String>{
+    // Avoid silently treating a source collection / presentation plan as
+    // independently verified Git/media work. Those distinct deliverables
+    // need their own accepted original-source and completion evidence.
+    if revision!=actual_revision
+        ||step.kind!=PlanStepKind::IndependentlyCheck
+        ||step.expected!=ExpectedDeliverable::IndependentWitness
+        ||step.deliverable_id.is_empty(){
+        return Err("Reviewed broker cannot satisfy this exact planned deliverable".into())
+    }
+    Ok(OriginalStepSelection{
+        original_turn:original_turn.to_owned(),
+        deliverable_id:step.deliverable_id.clone(),
+    })
 }
 fn reviewed_step_operation(name:&str)->Option<(ReviewedBrokerOperation,&'static str,&'static str)>{
     match name{
@@ -429,7 +454,7 @@ fn current_step_clarifications_resolved(host:&DesktopState,chat:&str)
 }
 fn original_step_for_review(
     host:&DesktopState,chat:&str,plan:&str,revision:&str,step:u8,
-)->Result<String,String>{
+)->Result<OriginalStepSelection,String>{
     current_step_clarifications_resolved(host,chat)?;
     let root=host.catalog_path.parent().ok_or("Host profile unavailable")?;
     let active=crate::agent_plan_progress::read_chat_progress(root,chat,&host.chats)?
@@ -458,11 +483,12 @@ fn original_step_for_review(
             return Err("The preceding plan step lacks verified historical evidence".into())
         }
     }
-    if live.revision_sha256!=revision||live.review_state!="APPROVED_PLAN_ONLY"
-        ||selected.kind!=PlanStepKind::IndependentlyCheck
-        ||selected.expected!=ExpectedDeliverable::IndependentWitness{
+    if live.review_state!="APPROVED_PLAN_ONLY"{
         return Err("Only an approved independent-witness plan step is supported by this reviewed broker".into())
     }
+    let selection=reviewed_step_selection(
+        &active.original_human_turn_id,revision,&live.revision_sha256,selected
+    )?;
     // AGENT-01I: a distinct child plan cannot use a stale parent witness
     // just because its own immutable plan review is still recorded.
     let ledger=AgentPlanLedger::open(&path)
@@ -478,7 +504,7 @@ fn original_step_for_review(
     crate::agent_recovery_desktop::require_fresh_child_os_custody_before_worker(
         host,chat,plan,&active.original_human_turn_id
     )?;
-    Ok(active.original_human_turn_id)
+    Ok(selection)
 }
 /// Select a single *already independently verified* original inner worker
 /// call in the exact fresh human turn's own journal. This does NOT certify
@@ -549,21 +575,25 @@ pub(crate) async fn lu_agent_run_reviewed_step(
     let (reviewed_op,mode,description)=reviewed_step_operation(&operation)
         .ok_or("Unreviewed step operation")?;
     let host=Arc::clone(state.inner());
-    let original_turn=original_step_for_review(
+    let selection=original_step_for_review(
         &host,&chat_id,&plan_id,&revision_sha,step_index
     )?;
     // The human needs to approve the actual operation and resource in a
     // second native dialog. This text is host-assembled, never model-provided.
     let prompt=format!(
-        "Native user-approved plan step {}: {} for plan {} revision {}. \
-         Inspect only the newly selected reviewed local source; report \
-         what its independently checked facts actually support.",
-        step_index+1,description,plan_id,revision_sha
+        "Native user-approved plan step {}: {} for plan {} revision {} \
+         planned deliverable {}. Inspect only the newly selected reviewed \
+         local source; compare its independently checked facts with this \
+         exact planned deliverable, not an unrelated task. Do not claim \
+         completion merely because a native tool returned.",
+        step_index+1,description,plan_id,revision_sha,selection.deliverable_id
     );
     reviewed_app_ask_internal(
         app,host,session_id,chat_id,prompt,mode.into(),
         Some(ApprovedStepTarget{
-            plan_id,original_turn,revision_sha,step_index,
+            plan_id,original_turn:selection.original_turn,
+            revision_sha,step_index,
+            deliverable_id:selection.deliverable_id,
             operation:reviewed_op
         })
     ).await
@@ -665,13 +695,15 @@ async fn reviewed_app_ask_internal(
         // Stale or superseded plans are refused even after the OS picker.
         let actual=original_step_for_review(&host,&chat_id,
             &target.plan_id,&target.revision_sha,target.step_index)?;
-        if actual!=target.original_turn{
-            return Err("Original plan changed while selecting local source".into())
+        if actual.original_turn!=target.original_turn
+            ||actual.deliverable_id!=target.deliverable_id{
+            return Err("Original plan step or deliverable changed while selecting local source".into())
         }
         let (tool_id,read_id)=target.operation.native_ids();
         let explanation=format!(
             "Execute ONE reviewed read-only task step?\n\n\
              Plan: {}\nRevision: {}\nStep: {}\n\
+             Exact planned deliverable: {}\n\
              Reviewed execute: {}\nApproved read: {}\n\
              Selected source: {}\nProgram: {}\nProgram SHA-256: {}\n\
              Source SHA-256 (media only): {}\n\n\
@@ -680,7 +712,8 @@ async fn reviewed_app_ask_internal(
              permission. Independent verification may fail, and no \
              uncertain operation will be automatically retried.",
             target.plan_id,target.revision_sha,target.step_index+1,
-            tool_id,read_id,selected.display(),executable.display(),
+            target.deliverable_id,tool_id,read_id,
+            selected.display(),executable.display(),
             exe_sha,media_sha.as_deref().unwrap_or("Git source guarded per operation")
         );
         let chooser=app.clone();
@@ -1024,18 +1057,21 @@ async fn reviewed_app_ask_internal(
                 }else{"one host-selected WAV/MP4 source"};
                 let bounded=format!(
                     "LU FRESH NATIVE-APP STEP: The user confirmed exact plan {} \
-                     revision {} step {} in the host OS dialog, with {}. \
-                     The ONLY authorized operation is {} and its host-only \
-                     read pair {}. Select that ONE available model tool, \
-                     do not invent arguments, paths, binaries, scopes or \
-                     new tool calls; report uncertain/unsupported outcomes \
-                     accurately. This does not authorize the next step. \
+                     revision {} step {} planned deliverable {} in the \
+                     host OS dialog, with {}. This immutable deliverable \
+                     is the task focus; the tool's existence is not proof \
+                     of satisfying it. The ONLY authorized operation is {} \
+                     and its host-only read pair {}. Select that ONE \
+                     available model tool. Do not invent arguments, paths, \
+                     binaries, scopes or new tool calls; report uncertain, \
+                     unrelated or unsupported facts accurately. This does \
+                     not authorize the next step. \
                      User's newly confirmed request: {} {}
                      \n[Lu Phase 3 ANSF procedure and belief revision status —
                      original historic evidence only, cannot authorize or
                      replay an OS operation]\n{}\n[End Lu Phase 3]",
                     target.plan_id,target.revision_sha,target.step_index,
-                    mode_text,tool,read,prompt,remembered,
+                    target.deliverable_id,mode_text,tool,read,prompt,remembered,
                     phase3_model_context.as_deref().unwrap_or("")
                 );
                 if bounded.len()>12_288{
@@ -1167,19 +1203,37 @@ async fn reviewed_app_ask_internal(
                     ).map_err(|e|format!(
                         "A worker ran but its independent planned outcome is not verified: {e:?}"
                     ))?;
+                // Independent journal/oracle and the immutable plan must
+                // agree on the same deliverable, not just on the step number.
+                if witness.deliverable_id!=target.deliverable_id
+                    ||witness.execution_turn_id!=gid_run
+                    ||witness.tool_id!=binding.reviewed_execute_id
+                    ||witness.status!="VERIFIED_AT_OBSERVATION"{
+                    return Err("Verified tool witness does not match exact planned execution turn or deliverable".into())
+                }
                 host_verified_note=format!(
-                    "\n\n[Lu host independent source observation: {} by {}. \
-                     This verifies the reviewed source method for step {}, NOT \
-                     the model's entire explanation or current process custody. \
-                     Another step requires fresh human authorization.]",
-                    witness.status,witness.independent_method,target.step_index+1
+                    "\n\n[Lu host independent source observation: {} by {} \
+                     for exact plan deliverable {} (step {}). This verifies \
+                     the reviewed source method at observation, NOT the \
+                     model's entire explanation, present source freshness or \
+                     current process custody. Further steps require a NEW \
+                     human review and native authorization.]",
+                    witness.status,witness.independent_method,
+                    witness.deliverable_id,target.step_index+1
                 );
                 verified_event=Some(serde_json::json!({
                     "chatId":chat_id,"planId":target.plan_id,
                     "revisionSha256":target.revision_sha,
                     "stepIndex":target.step_index,
+                    "deliverableId":witness.deliverable_id,
                     "status":witness.status,
                     "method":witness.independent_method,
+                    "originalReceiptSha256":witness.receipt_sha256,
+                    "independentObservedSha256":witness.observed_sha256,
+                    "originalExecutionTurnId":witness.execution_turn_id,
+                    "taskCompleted":false,
+                    "nativeRequirementAccepted":false,
+                    "completionReconciliation":"REQUIRES_NATIVE_SOURCE_AND_HUMAN_CRITERION_REVIEW",
                     "executionAuthority":"NOT_AUTHORIZED_FOR_NEXT_STEP"
                 }));
             }
@@ -1309,6 +1363,24 @@ mod tests{
         ).unwrap().unwrap().state,"CANCEL_REQUESTED");
         drop(scheduler);drop(ledger);drop(chats);
         fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn planner_step_focus_requires_exact_reviewed_deliverable_and_revision(){
+        use lu_core::agent_plan_revisions::RevisionStep;
+        let independent=RevisionStep{
+            kind:PlanStepKind::IndependentlyCheck,
+            expected:ExpectedDeliverable::IndependentWitness,
+            depends_on:None,deliverable_id:"d-verified-check".into()
+        };
+        let selected=reviewed_step_selection("g-current","revision","revision",&independent).unwrap();
+        assert_eq!(selected.original_turn,"g-current");
+        assert_eq!(selected.deliverable_id,"d-verified-check");
+        assert!(reviewed_step_selection("g-current","revision","changed",&independent).is_err());
+        let wrong=RevisionStep{kind:PlanStepKind::Inspect,
+            expected:ExpectedDeliverable::SourceReferences,..independent.clone()};
+        assert!(reviewed_step_selection("g-current","revision","revision",&wrong).is_err());
+        let no_deliverable=RevisionStep{deliverable_id:String::new(),..independent};
+        assert!(reviewed_step_selection("g-current","revision","revision",&no_deliverable).is_err());
     }
     #[test]
     fn approved_step_selection_does_not_admit_unreviewed_operations(){

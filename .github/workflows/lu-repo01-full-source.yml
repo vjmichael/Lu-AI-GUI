@@ -3733,3 +3733,14 @@ jobs:
           path: p0-real-model-evidence/
           retention-days: 14
           if-no-files-found: warn
+
+  core-merge-c4-one-sha:
+    name: CORE-MERGE-C4 one-time exact-head native security recovery and real Qwen group
+    needs: verify-source
+    # Existing REPO-01 is the sole automatic workflow. One PR-body edit
+    # after C3 source-lock closeout admits the entire C4 group exactly once.
+    # This is not per-push, automatic fanout or a generic dispatch token.
+    if: ${{ github.event_name == 'pull_request' && github.event.action == 'edited' && github.event.pull_request.number == 235 && github.event.pull_request.draft && github.event.pull_request.head.ref == 'lu/p0-next-typed-criterion-review-20261113' && contains(github.event.pull_request.body, format('LU_CORE_C4_GROUP_SHA={0}', github.event.pull_request.head.sha)) && !contains(github.event.changes.body.from, format('LU_CORE_C4_GROUP_SHA={0}', github.event.pull_request.head.sha)) }}
+    uses: ./.github/workflows/lu-core-merge-c4-grouped.yml
+    permissions:
+      contents: read

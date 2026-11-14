@@ -56,6 +56,7 @@ pub(crate) struct TaskAgentEvidenceCandidate{
     observed_sha256:String,
     historical_verdict:String,
     review_eligible:bool,
+    criterion_method_reviewable:bool,
     original_requirement_id:String,
     task_completed:bool,
     execution_authorized:bool,
@@ -340,6 +341,8 @@ fn list(profile:&Path,register_id:&str,task_id:&str,
             for item in original{
                 let eligible=current&&same_revision
                     &&item.status=="VERIFIED_AT_OBSERVATION";
+                let criterion_method_reviewable=criterion_supports_method(
+                    &a.acceptance_criteria,&item.tool_id,&item.independent_method);
                 view.independently_audited_outcomes.push(TaskAgentEvidenceCandidate{
                     step_index:item.step_index,
                     tool_id:item.tool_id,
@@ -348,6 +351,7 @@ fn list(profile:&Path,register_id:&str,task_id:&str,
                     observed_sha256:item.observed_sha256,
                     historical_verdict:item.status.into(),
                     review_eligible:eligible,
+                    criterion_method_reviewable,
                     original_requirement_id:a.requirement_id.clone(),
                     task_completed:false,execution_authorized:false,
                 });
@@ -393,6 +397,30 @@ pub(super) fn compatible_independent_method(tool:&str,method:&str)->bool{
         _=>false
     }
 }
+
+/// P0-NEXT-CM1: classify exact original, human-reviewed criterion METHOD,
+/// not the desired result. Does not establish a satisfied task or authority.
+pub(super) fn criterion_supports_method(
+    criterion:&str,tool:&str,method:&str
+)->bool{
+    if !compatible_independent_method(tool,method)||
+       criterion.len()>300{return false}
+    let Some((line,body))=criterion.split_once('\n') else {
+        return false
+    };
+    let line=line.strip_suffix('\r').unwrap_or(line);
+    if !line.is_ascii()||line.bytes().any(|b|b.is_ascii_control())||
+       body.trim().len()<10||body.trim().len()>240||
+       body.chars().any(|c|c.is_control()&&c!='\n'&&c!='\r'){
+        return false
+    }
+    let Some(spec)=line.strip_prefix("LU_CRITERION_METHOD_V1:") else {
+        return false
+    };
+    let mut parts=spec.split('|');
+    parts.next()==Some(tool)&&parts.next()==Some(method)&&parts.next().is_none()
+}
+
 pub(super) fn independently_verified_task_witness(
     profile:&Path,register_id:&str,task_id:&str,handoff_id:&str,
     receipt_sha256:&str,chats:&chat_store::ChatStore
@@ -600,4 +628,49 @@ mod task_method_tests{
                 "method not originally admitted for independent PLAN step");
         }
     }
+    #[test]
+    fn exact_method_gate_refuses_generic_or_substituted_source_evidence(){
+        let criterion=concat!(
+            "LU_CRITERION_METHOD_V1:lu.reviewed.git.head|GIT_HEAD_DIRECT_V1\n",
+            "Observe the exact original source Git HEAD for later human review."
+        );
+        assert!(criterion_supports_method(criterion,
+            "lu.reviewed.git.head","GIT_HEAD_DIRECT_V1"));
+        for (tool,method) in [
+            ("lu.reviewed.git.status","GIT_STATUS_INDEX_TREE_V1"),
+            ("lu.reviewed.git.head","GIT_HISTORY_OBJECT_DAG_V2"),
+            ("lu.reviewed.pdf.info","PDFINFO_CLASSIC_PAGE_TREE_V1"),
+        ]{
+            assert!(!criterion_supports_method(criterion,tool,method));
+        }
+        for bad in [
+            "Verify the app works",
+            "prefix LU_CRITERION_METHOD_V1:lu.reviewed.git.head|GIT_HEAD_DIRECT_V1\nObserve exact Git HEAD",
+            "LU_CRITERION_METHOD_V1:lu.reviewed.git.head|GIT_HEAD_DIRECT_V1",
+            "LU_CRITERION_METHOD_V1:lu.reviewed.git.head|GIT_HEAD_DIRECT_V1x\nObserve exact source Git HEAD",
+            "LU_CRITERION_METHOD_V1:lu.reviewed.git.head|GIT_HEAD_DIRECT_V1\nshort",
+        ]{
+            assert!(!criterion_supports_method(
+                bad,"lu.reviewed.git.head","GIT_HEAD_DIRECT_V1"));
+        }
+    }
+    #[test]
+    fn original_reviewed_git_media_families_are_individually_typed(){
+        for (tool,method) in [
+            ("lu.reviewed.git.status","GIT_STATUS_INDEX_TREE_V1"),
+            ("lu.reviewed.git.branch","GIT_BRANCH_DIRECT_V1"),
+            ("lu.reviewed.git.history","GIT_HISTORY_OBJECT_DAG_V2"),
+            ("lu.reviewed.media.facts","WAV_PCM_DIRECT_V1"),
+            ("lu.reviewed.media.facts","MP4_BOXES_DIRECT_V1"),
+        ]{
+            let criterion=format!(
+                "LU_CRITERION_METHOD_V1:{tool}|{method}\nObserve an exact original source fact before approval."
+            );
+            assert!(criterion_supports_method(&criterion,tool,method));
+        }
+        assert!(!criterion_supports_method(
+            "LU_CRITERION_METHOD_V1:lu.reviewed.pdf.info|PDFINFO_CLASSIC_PAGE_TREE_V1\nObserve original source PDF metadata.",
+            "lu.reviewed.pdf.info","PDFINFO_CLASSIC_PAGE_TREE_V1"));
+    }
+
 }

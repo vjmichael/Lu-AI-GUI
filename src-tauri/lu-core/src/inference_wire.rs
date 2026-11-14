@@ -9,6 +9,9 @@ pub const INFERENCE_PROTOCOL_VERSION: u32 = 1;
 pub const MAX_INFERENCE_FRAME_BYTES: usize = 4 * 1024 * 1024;
 pub const MAX_INFERENCE_PROMPT_BYTES: usize = 2 * 1024 * 1024;
 pub const MAX_INFERENCE_CHUNK_BYTES: usize = 64 * 1024;
+pub const MAX_INFERENCE_HISTORY_TURNS: usize = 32;
+pub const MAX_INFERENCE_HISTORY_BYTES: usize = 64 * 1024;
+pub const MAX_INFERENCE_HISTORY_ENTRY_BYTES: usize = 15 * 1024;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum InferenceWireError {
@@ -73,18 +76,18 @@ pub fn validate_frame(frame: &proto::InferenceFrame) -> Result<(), InferenceWire
             {
                 return Err(InferenceWireError::InvalidField("generation limits"));
             }
-            if request.history.len() > 16
+            if request.history.len() > MAX_INFERENCE_HISTORY_TURNS
                 || request.history.iter().any(|turn| {
                     !matches!(turn.role.as_str(), "user" | "assistant")
                         || turn.text.trim().is_empty()
-                        || turn.text.len() > 15 * 1024
+                        || turn.text.len() > MAX_INFERENCE_HISTORY_ENTRY_BYTES
                 })
                 || request
                     .history
                     .iter()
                     .map(|turn| turn.text.len())
                     .sum::<usize>()
-                    > 15 * 1024
+                    > MAX_INFERENCE_HISTORY_BYTES
             {
                 return Err(InferenceWireError::InvalidField("chat_history"));
             }
@@ -366,4 +369,27 @@ mod tests {
             Err(InferenceWireError::InvalidField("chat_history"))
         );
     }
+    #[test]
+    fn extended_typed_history_is_bounded_and_schema_typed() {
+        let create=|n:usize,bytes:usize|proto::InferenceFrame{
+            protocol_version:INFERENCE_PROTOCOL_VERSION,
+            request_id:"req-history".into(),
+            body:Some(proto::inference_frame::Body::Generate(
+                proto::InferenceGenerateRequest{
+                    session_id:"session-1".into(),generation_id:"gen-1".into(),
+                    prompt:"What is the latest source?".into(),max_new_tokens:512,
+                    images:vec![],history:(0..n).map(|_|proto::InferenceChatTurn{
+                        role:"user".into(),text:"s".repeat(bytes)
+                    }).collect()
+                }
+            )),
+        };
+        let extended=create(32,2000);
+        assert!(encode_frame(&extended).is_ok());
+        assert_eq!(decode_frame(&encode_frame(&extended).unwrap()).unwrap(),extended);
+        assert_eq!(encode_frame(&create(33,10)),Err(InferenceWireError::InvalidField("chat_history")));
+        assert_eq!(encode_frame(&create(32,3000)),Err(InferenceWireError::InvalidField("chat_history")));
+        assert_eq!(encode_frame(&create(1,15*1024+1)),Err(InferenceWireError::InvalidField("chat_history")));
+    }
+
 }

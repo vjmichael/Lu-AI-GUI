@@ -11,7 +11,8 @@ test('M3 uses original SQLite books and canonical source IDs',()=>{
   assert.match(chat,/pub fn known_source_for_turn/);
   assert.match(chat,/pub fn memory_context_for_turn/);
   assert.match(chat,/self\.require\(source_chat\)/);
-  assert.match(chat,/book\.search\(source_chat,&fts,4\)/);
+  assert.match(chat,/book\.search_current_messages\(source_chat,&fts,4\)/);
+  assert.doesNotMatch(chat,/let entries=book\.search\(source_chat,&fts,4\)/);
   assert.match(chat,/AnsfSourceId::parse/);
   assert.match(chat,/historical DATA ONLY/);
   assert.doesNotMatch(chat,/CREATE TABLE.*m3_memory/i);

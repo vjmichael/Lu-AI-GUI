@@ -43,8 +43,40 @@ pub struct PersistentEngineConfig {
     pub load_observer: Option<Arc<dyn Fn(&'static str, Option<u32>) + Send + Sync>>,
 }
 
+/// Exact host-owned decoding parameters. No generic model-supplied CLI flags.
+#[derive(Debug, Clone, Copy)]
+pub struct SamplingProfile {
+    pub temperature: f32,
+    pub top_p: f32,
+    pub top_k: u32,
+    pub min_p: f32,
+}
+impl Default for SamplingProfile {
+    fn default() -> Self {
+        Self { temperature: 0.0, top_p: 0.95, top_k: 20, min_p: 0.0 }
+    }
+}
+impl SamplingProfile {
+    pub fn validate(self) -> Result<Self, String> {
+        if !self.temperature.is_finite() || !(0.0..=2.0).contains(&self.temperature)
+            || !self.top_p.is_finite() || !(0.01..=1.0).contains(&self.top_p)
+            || !(1..=100).contains(&self.top_k)
+            || !self.min_p.is_finite() || !(0.0..=1.0).contains(&self.min_p)
+        {
+            return Err("invalid host-owned llama.cpp sampling settings".into());
+        }
+        Ok(self)
+    }
+    fn apply(self, request: &mut serde_json::Value) {
+        request["temperature"] = serde_json::json!(self.temperature);
+        request["top_p"] = serde_json::json!(self.top_p);
+        request["top_k"] = serde_json::json!(self.top_k);
+        request["min_p"] = serde_json::json!(self.min_p);
+    }
+}
 pub struct PersistentLlamaBackend {
     config: PersistentEngineConfig,
+    sampling: SamplingProfile,
     canonical_executable: PathBuf,
     pinned_model_file: Option<File>,
     pinned_projector_file: Option<File>,
@@ -134,6 +166,7 @@ impl PersistentLlamaBackend {
             .map_err(|_|"invalid scoped browser JSON")?;
         self.cache_gate.disable_for_other_body(&mut json)
             .map_err(str::to_owned)?;
+        self.sampling.apply(&mut json);
         let body=json.to_string();
         crate::multimodal_http::generate_browser_tool_stream_body(
             port,&self.config.api_key,&body,self.config.request_timeout,
@@ -158,6 +191,7 @@ impl PersistentLlamaBackend {
         let canonical_executable = verify_engine(&config.executable, &config.expected_sha256)?;
         Ok(Self {
             config,
+            sampling: SamplingProfile::default(),
             canonical_executable,
             pinned_model_file: None,
             pinned_projector_file: None,
@@ -168,6 +202,12 @@ impl PersistentLlamaBackend {
             #[cfg(windows)]
             job: None,
         })
+    }
+    /// Called only by the host at load admission. Already loaded engine
+    /// settings cannot silently change during a running conversation.
+    pub fn with_sampling_profile(mut self, profile: SamplingProfile) -> Result<Self, String> {
+        self.sampling = profile.validate()?;
+        Ok(self)
     }
     fn observe(&self, phase: &'static str, pid: Option<u32>) {
         if let Some(observer) = self.config.load_observer.as_ref() {
@@ -441,6 +481,7 @@ impl InferenceBackend for PersistentLlamaBackend {
             .map_err(|_|"invalid structured image JSON")?;
         self.cache_gate.disable_for_other_body(&mut json)
             .map_err(str::to_owned)?;
+        self.sampling.apply(&mut json);
         let body=json.to_string();
         let mut piece = 0u32;
         generate_chat_stream_body(
@@ -479,6 +520,7 @@ impl InferenceBackend for PersistentLlamaBackend {
             .map_err(|_|"invalid structured text JSON")?;
         let attempt=self.cache_gate.begin_text(trusted_scope.as_deref(),&mut json)
             .map_err(str::to_owned)?;
+        self.sampling.apply(&mut json);
         let body=json.to_string();
         let mut piece = 0u32;
         let result=generate_chat_stream_body(
@@ -506,6 +548,23 @@ impl Drop for PersistentLlamaBackend {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn host_sampling_profile_preserves_text_and_image_template_guards(){
+        let mut body=serde_json::json!({
+            "messages":[{"role":"user","content":"hello"}],
+            "temperature":0.0,
+            "chat_template_kwargs":{"enable_thinking":false}
+        });
+        let sample=SamplingProfile{
+            temperature:0.6,top_p:0.9,top_k:30,min_p:0.04
+        }.validate().unwrap();
+        sample.apply(&mut body);
+        assert_eq!(body["temperature"],serde_json::json!(0.6_f32));
+        assert_eq!(body["top_k"],30);
+        assert_eq!(body["chat_template_kwargs"]["enable_thinking"],false);
+        assert!(SamplingProfile{temperature:f32::NAN,..sample}.validate().is_err());
+        assert!(SamplingProfile{top_p:0.0,..sample}.validate().is_err());
+    }
     #[test]
     fn api_key_requires_full_host_entropy() {
         assert!(!valid_api_key("1234"));

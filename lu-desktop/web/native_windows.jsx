@@ -2,6 +2,7 @@ import React,{useEffect,useState} from 'react';
 import {invoke} from '@tauri-apps/api/core';
 import {emit} from '@tauri-apps/api/event';
 import {CHAT_APPEARANCE_PRESETS,safeAppearance} from './message_interactions.mjs';
+import {normalizeProfile,profileField} from './inference_profile.mjs';
 
 // These roots mount INSTEAD of App(), not alongside it. Separate Tauri
 // WebviewWindows must never subscribe to chat-generation listeners, start
@@ -67,6 +68,8 @@ export function SettingsWindow(){
   const [error,setError]=useState('');
   const [notice,setNotice]=useState('');
   const [modelList,setModelList]=useState([]);
+  const [profileModel,setProfileModel]=useState('');
+  const [profileSettings,setProfileSettings]=useState(null);
   const [memorySample,setMemorySample]=useState(null);
   const [capabilityStatus,setCapabilityStatus]=useState([]);
   const [vision,setVision]=useState(null);
@@ -118,6 +121,37 @@ export function SettingsWindow(){
     });
     return ()=>{alive=false};
   },[chatId]);
+  useEffect(()=>{
+    if(!modelList.length){setProfileModel('');return;}
+    if(!modelList.some(model=>model.modelRef===profileModel)){
+      const loaded=runtime?.modelRef;
+      setProfileModel(modelList.some(model=>model.modelRef===loaded)
+        ?loaded:modelList[0].modelRef);
+    }
+  },[modelList,profileModel,runtime?.modelRef]);
+  useEffect(()=>{
+    let live=true;
+    setProfileSettings(null);
+    if(!profileModel)return ()=>{live=false};
+    void invoke('lu_model_inference_profile',{modelRef:profileModel})
+      .then(value=>{if(live)setProfileSettings(value);})
+      .catch(error=>{if(live)setError(errorText(error));});
+    return ()=>{live=false};
+  },[profileModel]);
+  async function saveModelProfile(){
+    if(!profileSettings||!profileModel)return;
+    await act('Model settings saved. Unload and load the model to apply them.',async()=>{
+      const checked=normalizeProfile(profileSettings);
+      const result=await invoke('lu_model_save_inference_profile',{
+        modelRef:profileModel,profile:checked
+      });
+      setProfileSettings(result);
+      return result;
+    });
+  }
+  function changeModelProfile(field,value){
+    setProfileSettings(current=>current?profileField(current,field,value):current);
+  }
   async function act(label,perform){
     if(busy)return;
     setBusy(true);setError('');setNotice('');
@@ -253,6 +287,37 @@ export function SettingsWindow(){
           <p>Model identities and compatibility are verified by Lu's native GGUF/MMProj preflight. Names or metadata alone never attest inference, vision or hardware support.</p>
           <p>Local registered models: {modelList.length}. Active model reference: {runtime?.modelRef||'none'}.</p>
           <button className="primaryButton" type="button" onClick={()=>void openModels()}>Open Model Library</button>
+          <div className="nativeOption" aria-label="Per-model native inference settings">
+            <strong>Local GGUF inference profile</strong>
+            <p>Host-owned settings apply to the next load of the selected model. Context size and CPU threads configure the pinned llama.cpp engine; sampling and normal chat response length apply to native model requests. Larger contexts use more memory and may fail on your GPU.</p>
+            <label className="nativeField">Registered model
+              <select aria-label="Model for inference settings" value={profileModel}
+                onChange={event=>setProfileModel(event.target.value)} disabled={busy||!modelList.length}>
+                {modelList.map(model=><option key={model.modelRef} value={model.modelRef}>{model.filename}</option>)}
+              </select>
+            </label>
+            {profileSettings&&<>
+              <div className="nativeProfileFields">
+                {[
+                  ['contextTokens','Context tokens',4096,262144,1024],
+                  ['maxNewTokens','Normal chat max output tokens',512,4096,128],
+                  ['threads','CPU threads',1,64,1],
+                  ['temperature','Temperature',0,2,0.05],
+                  ['topP','Top P',0.01,1,0.01],
+                  ['topK','Top K',1,100,1],
+                  ['minP','Min P',0,1,0.01]
+                ].map(([key,label,min,max,step])=><label className="nativeField" key={key}>{label}
+                  <input aria-label={label} type="number" min={min} max={max} step={step}
+                    value={profileSettings[key]} disabled={busy||Boolean(runtime?.sessionId)}
+                    onChange={event=>changeModelProfile(key,event.target.value)}/>
+                </label>)}
+              </div>
+              <button type="button" disabled={busy||!profileModel||Boolean(runtime?.sessionId)}
+                onClick={()=>void saveModelProfile()}>Save model inference settings</button>
+            </>}
+            {runtime?.sessionId&&<p>Unload the active model before changing inference settings. The current session stays unchanged.</p>}
+            <small>Native Rust validates each field and the exact registered model identity again. No setting selects a different executable, authorizes tools, or proves model/GPU performance.</small>
+          </div>
           <div className="nativeOption">
             <strong>Actual multimodal inference</strong>
             <p role="status">Vision: {vision?.status||'unverified'} — {vision?.detail||'No native result is available.'}</p>
@@ -269,7 +334,7 @@ export function SettingsWindow(){
             </button>
             <p>Fresh OS approval is required. Lu generates four private randomized-color PNG challenges, runs them through the loaded GGUF/MMProj and checks each actual response. A missing projector, failed model response, or incompatible backend is never reported as verified vision.</p>
           </div>
-          <p>Per-model context and prompt templates will appear here after model-specific runtime adapters are independently accepted. Unsupported settings are not exposed as working controls.</p>
+          <p>Model-specific thinking templates remain disabled pending real llama.cpp/Qwen compatibility acceptance; this profile does not grant a larger ANSF recall window.</p>
         </Section>}
         {section==='runtime'&&<Section title="Lu runtime">
           <p>Choose the locally packaged engine for the next start. Saving a preference never grants GPU access or restarts an active session.</p>

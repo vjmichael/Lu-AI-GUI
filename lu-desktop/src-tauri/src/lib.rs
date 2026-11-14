@@ -67,6 +67,7 @@ mod agent_recovery_desktop;
 mod agent_memory_handoff;
 mod agent_memory_reasoning;
 mod preview_engine_choice;
+mod inference_profile;
 mod agent_verified_feedback;
 mod host_safe_continuation;
 mod agent_recovery_provenance;
@@ -101,7 +102,7 @@ use lu_core::{
     model_admission::ModelAdmissionManager,
     model_import::{import_selected_gguf, import_selected_projector},
     multimodal_saved_turn::{admit_data_url, PinnedImage, MAX_TOTAL_IMAGE_BYTES},
-    persistent_llama_backend::{PersistentEngineConfig, PersistentLlamaBackend},
+    persistent_llama_backend::{PersistentEngineConfig, PersistentLlamaBackend, SamplingProfile},
     projector_identity::projector_filename_for_model,
     wire::proto,
 };
@@ -724,6 +725,9 @@ struct ActiveBrowserGrant {
 struct DesktopState {
     models_dir: PathBuf,
     catalog_path: PathBuf,
+    inference_profiles: Arc<Mutex<HashMap<String,inference_profile::InferenceProfile>>>,
+    // Serialize native profile writes against selection and GGUF model loading.
+    model_profile_admission: Mutex<()>,
     chats: ChatStore,
     perf01: perf01_telemetry::PerfLedger,
     operational_assets: lu_core::operational_asset_ledger::OperationalAssetLedger,
@@ -1121,6 +1125,11 @@ impl DesktopState {
         ).map_err(|e|format!("Browser preference unavailable: {e:?}"))?;
         let models_dir = root.join("lu-models");
         fs::create_dir_all(&models_dir).map_err(|e| e.to_string())?;
+        // Profile bytes are host-owned preferences, never a model tool or
+        // untrusted WebView-supplied engine flag. Invalid stored JSON fails.
+        let inference_profiles = Arc::new(Mutex::new(inference_profile::read(
+            &root.join("inference-profiles.json")
+        )?));
         let engine_dir = app
             .path()
             .resource_dir()
@@ -1185,23 +1194,30 @@ impl DesktopState {
         let engine_trace = Arc::clone(&load_trace);
         let engine_start_events=Arc::new(AtomicU64::new(0));
         let engine_start_observer=Arc::clone(&engine_start_events);
-        let supervisor = TrustedInferenceSupervisor::new(
+        let profiles_for_engine=Arc::clone(&inference_profiles);
+        let supervisor = TrustedInferenceSupervisor::new_with_model_profile(
             // Explicit test-only installed CPU package must not claim AMD
             // Vulkan offload; normal desktop builds retain Vulkan identity.
             backend_label.into(),
             4096,
             admitted_models,
-            move || {
+            move |model_ref| {
+                // The exact registered model reference comes from the host
+                // supervisor. One immutable snapshot governs this load,
+                // never parameters emitted by Qwen.
+                let profile=profiles_for_engine.lock()
+                    .map_err(|_|"Native model profiles unavailable")?
+                    .get(model_ref).copied().unwrap_or_default().validate()?;
                 let mut raw = [0u8; 32];
                 OsRng.fill_bytes(&mut raw);
                 let key = raw.iter().map(|b| format!("{b:02x}")).collect::<String>();
                 let engine_trace_for_load = Arc::clone(&engine_trace);
                 let engine_start_for_load=Arc::clone(&engine_start_observer);
-                PersistentLlamaBackend::new(PersistentEngineConfig {
+                let backend=PersistentLlamaBackend::new(PersistentEngineConfig {
                     executable: executable.clone(),
                     expected_sha256: decode_sha(selected_engine_sha)?,
-                    threads: NonZeroUsize::new(4).unwrap(),
-                    context_tokens: 4096,
+                    threads: NonZeroUsize::new(profile.threads as usize).unwrap(),
+                    context_tokens: profile.context_tokens,
                     startup_timeout: Duration::from_secs(180),
                     request_timeout: Duration::from_secs(180),
                     api_key: key,
@@ -1213,7 +1229,16 @@ impl DesktopState {
                             trace.record_engine(phase, None, pid);
                         }
                     })),
-                })
+                })?.with_sampling_profile(SamplingProfile{
+                    temperature: profile.temperature,
+                    top_p: profile.top_p,
+                    top_k: profile.top_k,
+                    min_p: profile.min_p,
+                })?;
+                // Preserve the existing 4096-token ceiling for separately
+                // supervised planning/tool requests. The saved per-model
+                // maxNewTokens is the normal human Send response budget.
+                Ok((backend,profile.context_tokens,4096))
             },
         )
         .map_err(|e| format!("supervisor init: {e:?}"))?;
@@ -1262,6 +1287,8 @@ impl DesktopState {
             // transfer custody manager later in the same struct literal.
             models_dir:models_dir.clone(),
             catalog_path,
+            inference_profiles,
+            model_profile_admission:Mutex::new(()),
             chats,
             perf01:perf01_telemetry::PerfLedger::default(),
             operational_assets:lu_core::operational_asset_ledger::OperationalAssetLedger::open(
@@ -3914,6 +3941,55 @@ fn lu_load_memory_sample(
         .unwrap_or_else(engine_memory::EngineMemorySample::unavailable))
 }
 
+/// Trusted-only model configuration. This is inert data until the pinned
+/// model is unloaded, re-admitted, and loaded through the native supervisor.
+#[tauri::command]
+fn lu_model_inference_profile(
+    state:State<'_,Arc<DesktopState>>,model_ref:String
+)->Result<inference_profile::InferenceProfile,String>{
+    if !inference_profile::valid_model_ref(&model_ref) {
+        return Err("Invalid registered model identity".into());
+    }
+    let catalog=state.catalog.lock().map_err(|_|"Model catalog unavailable")?;
+    if !catalog.iter().any(|m|m.model_ref==model_ref) {
+        return Err("Unknown registered model".into());
+    }
+    drop(catalog);
+    state.inference_profiles.lock()
+        .map_err(|_|"Model profile store unavailable")?
+        .get(&model_ref).copied().unwrap_or_default().validate()
+}
+#[tauri::command]
+fn lu_model_save_inference_profile(
+    state:State<'_,Arc<DesktopState>>,
+    model_ref:String,profile:inference_profile::InferenceProfile
+)->Result<inference_profile::InferenceProfile,String>{
+    if !inference_profile::valid_model_ref(&model_ref) {
+        return Err("Invalid registered model identity".into());
+    }
+    let approved=profile.validate()?;
+    let _fence=state.model_profile_admission.lock()
+        .map_err(|_|"Model configuration admission unavailable")?;
+    if state.generation_queue.has_jobs() ||
+        state.supervisor.status().map_err(|_|"Model supervisor unavailable")?
+            .session_id.is_some() {
+        return Err("Unload the active model and finish queued generations before saving settings".into());
+    }
+    let catalog=state.catalog.lock().map_err(|_|"Model catalog unavailable")?;
+    if !catalog.iter().any(|m|m.model_ref==model_ref){
+        return Err("Unknown registered model".into());
+    }
+    drop(catalog);
+    let mut profiles=state.inference_profiles.lock()
+        .map_err(|_|"Model profile store unavailable")?;
+    let mut updated=profiles.clone();
+    updated.insert(model_ref,approved);
+    let root=state.catalog_path.parent().ok_or("Lu profile directory unavailable")?;
+    inference_profile::write(&root.join("inference-profiles.json"),&updated)?;
+    *profiles=updated;
+    Ok(approved)
+}
+
 #[tauri::command]
 async fn lu_load_model(
     state: State<'_, Arc<DesktopState>>,
@@ -3929,6 +4005,8 @@ async fn lu_load_model(
     let worker_state = Arc::clone(&state);
     let joined = tauri::async_runtime::spawn_blocking(move || {
         let result = (|| {
+            let _profile_fence=worker_state.model_profile_admission.lock()
+                .map_err(|_|"Model profile admission unavailable")?;
             if worker_state.generation_queue.has_jobs() {
                 return Err("Finish or cancel queued generations before loading a model".into());
             }
@@ -4919,8 +4997,23 @@ async fn lu_generate(
             app,state,session_id,chat_id,prompt,"media".into()
         ).await?.ok_or_else(||"Media file was not selected".into())
     }
+    // The UI's fixed 512-token Send still enables deterministic host
+    // utilities above. Only the real GGUF lane uses the loaded model's
+    // host-saved output budget; an unbound renderer cannot invent one.
+    let model_limit={
+        let runtime=state.supervisor.status()
+            .map_err(|_|"Model runtime unavailable")?;
+        if runtime.session_id.as_deref()!=Some(session_id.as_str()){
+            return Err("Active inference session changed".into());
+        }
+        let model_ref=runtime.model_ref.ok_or("No loaded model")?;
+        state.inference_profiles.lock()
+            .map_err(|_|"Host inference preferences unavailable")?
+            .get(&model_ref).copied().unwrap_or_default().validate()?
+            .max_new_tokens
+    };
     generate_internal(app,Arc::clone(state.inner()),session_id,chat_id,
-        prompt,image_refs,max_new_tokens,GenerationOrigin::Human,false).await
+        prompt,image_refs,model_limit,GenerationOrigin::Human,false).await
 }
 
 /// A coalesced event uses a host-minted contiguous cursor rather than raw
@@ -5075,8 +5168,8 @@ async fn generate_internal(
             if ticket.cancelled() {
                 return Err("Cancelled while queued".into());
             }
-            let events = state.chats.recent_model_history(&chat_id,32)?;
-            // ANSF performs one indexed bounded source read; it does not load
+            let events = state.chats.recent_model_history(&chat_id,64)?;
+            // ANSF performs one indexed bounded CURRENT-REVISION source read; it does not load
             // the complete human-visible conversation into inference context.
             // With at most one turn per chat pending, the last user event is
             // this submission. Read history *after* waiting so later turns
@@ -5087,11 +5180,30 @@ async fn generate_internal(
             {
                 return Err("conversation changed during queued generation".into());
             }
+            // The host's loaded-model identity is rechecked AFTER the
+            // queue slot is acquired. No stale session or a newly imported
+            // GGUF may borrow a previous profile/context budget.
+            let loaded=state.supervisor.status()
+                .map_err(|_|"Model session unavailable for history admission")?;
+            if loaded.session_id.as_deref()!=Some(sid.as_str()){
+                return Err("Model changed while waiting for context admission".into())
+            }
+            let loaded_ref=loaded.model_ref.as_deref()
+                .ok_or("Loaded model identity unavailable")?;
+            let loaded_profile=state.inference_profiles.lock()
+                .map_err(|_|"Model profile unavailable for history admission")?
+                .get(loaded_ref).copied().unwrap_or_default().validate()?;
             let history = if origin==GenerationOrigin::Human{
-                prompt_context::typed_history(&events[..events.len()-1],&prompt)
+                prompt_context::typed_history_for_model(
+                    &events[..events.len()-1],&prompt,
+                    loaded_profile.context_tokens,max_new_tokens
+                )
             }else{
                 // No synthetic human message is added to the chat journal.
-                prompt_context::typed_history(&events,&prompt)
+                prompt_context::typed_history_for_model(
+                    &events,&prompt,
+                    loaded_profile.context_tokens,max_new_tokens
+                )
             };
             // Host-generated terminal events are incorporated into the next
             // eligible turn for this conversation. They are *data*, not
@@ -9118,6 +9230,7 @@ pub fn run() {
             project_task_agent_handoff::lu_project_task_agent_handoffs,
             project_task_agent_handoff::lu_project_task_prepare_agent_plan,
             project_task_verified_evidence::lu_project_task_criterion_evidence_history,
+            project_task_verified_evidence::lu_project_task_reconcile_completion,
             project_task_verified_evidence::lu_project_task_review_independent_witness,
             p0_auth_desktop::lu_p0_authority_posture,
             p0_auth_desktop::lu_p0_cancel_chat_operations,
@@ -9333,7 +9446,9 @@ pub fn run() {
             lu_new_folder,
             lu_favorite_chat,
             lu_move_chat,
-            lu_rescan_models
+            lu_rescan_models,
+            lu_model_inference_profile,
+            lu_model_save_inference_profile
         ])
         .run(tauri::generate_context!())
         .expect("Lu native desktop failed");

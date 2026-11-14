@@ -22,6 +22,7 @@ export function TaskBoardWindow(){
   const [agentMode,setAgentMode]=useState('review_only');
   const [agentLinks,setAgentLinks]=useState([]);
   const [criterionReviews,setCriterionReviews]=useState([]);
+  const [completionReconciliation,setCompletionReconciliation]=useState(null);
   const [criterionReason,setCriterionReason]=useState('');
   const [reviewTaskId,setReviewTaskId]=useState('');
   const [reviewMode,setReviewMode]=useState('native');
@@ -37,6 +38,7 @@ export function TaskBoardWindow(){
   const shown=useMemo(()=>shownTasks(all,filter,search),[all,filter,search]);
   const groups=useMemo(()=>taskGroups(shown),[shown]);
   async function reload(){
+    setCompletionReconciliation(null);
     const result=await invoke('lu_project_board_list');
     if(!Array.isArray(result))throw Error('Unrecognized native board response');
     setBoards(result);
@@ -55,6 +57,7 @@ export function TaskBoardWindow(){
     setModelSuggestion(null);setReviewTaskId('');setReviewMode('native');
     setReviewNote('');setReviewHistory([]);setAgentLinks([]);
     setCriterionReviews([]);setCriterionReason('');
+    setCompletionReconciliation(null);
     if(!registerId)return;
     let live=true;
     void invoke('lu_project_update_review_history',{registerId})
@@ -76,6 +79,7 @@ export function TaskBoardWindow(){
     if(!current)return;
     setTaskId(t.taskId);setEvidence(null);setEdit(null);
     setAgentLinks([]);setCriterionReviews([]);setCriterionReason('');
+    setCompletionReconciliation(null);
     try{
       const [detail,links,reviews]=await Promise.all([
         invoke('lu_project_board_evidence',{
@@ -97,6 +101,21 @@ export function TaskBoardWindow(){
       setAgentLinks(links);return links;
     });
   }
+  async function reconcileTaskCompletion(){
+    if(!current||!active||busy)return;
+    await act('Reopened original native source and independent evidence. No task completion or future tool grant was recorded.',async()=>{
+      // This native command requires its OWN OS folder picker and rescan.
+      // A model prompt, cached path or prior human decision is not accepted.
+      const summary=await invoke('lu_project_task_reconcile_completion',{
+        registerId:current.board.registerId,taskId:active.taskId,
+        expectedBoardSha256:current.board.sha256,
+        expectedRegisterSha256:current.sourceRegisterSha256,
+        expectedTaskVersion:active.version
+      });
+      if(summary)setCompletionReconciliation(summary);
+      return summary;
+    });
+  }
   async function reopenCriterionReviews(){
     if(!current||!active||busy)return;
     await act('Original human criterion-evidence decisions reopened, not task acceptance.',async()=>{
@@ -108,6 +127,8 @@ export function TaskBoardWindow(){
   }
   async function reviewIndependentWitness(link,result,decision){
     if(!current||!active||busy||!result.reviewEligible||
+       (decision==='ACCEPTED_AS_SUPPORTING_EVIDENCE'&&
+        !result.criterionMethodReviewable)||
        criterionReason.trim().length<10||
        !current.reviewCurrent||active.needsHumanReconciliation)return;
     await act('Human decision appended to original ANSF criterion-evidence journal. Task status and tool authority unchanged.',async()=>{
@@ -129,7 +150,7 @@ export function TaskBoardWindow(){
           })
         ]);
         setCriterionReviews(reviews);setAgentLinks(links);
-        setCriterionReason('');
+        setCriterionReason('');setCompletionReconciliation(null);
       }
       return entry;
     });
@@ -569,11 +590,27 @@ export function TaskBoardWindow(){
                     onClick={()=>void reopenAgentLinks()}>
                     Reopen original agent-plan links…
                   </button>
+                  <button type="button" disabled={busy||!current.reviewCurrent||
+                    active.needsHumanReconciliation}
+                    onClick={()=>void reconcileTaskCompletion()}>
+                    Reconcile native requirement and original completion evidence…
+                  </button>
                   <button type="button" disabled={busy}
                     onClick={()=>void refreshEvidence()}>
                     Independently recheck project source for evidence review…
                   </button>
                 </div>
+                {completionReconciliation&&<div role="region"
+                  aria-label="Native source and task completion reconciliation">
+                  <strong>Native source and completion evidence · {completionReconciliation.status.replaceAll('_',' ')}</strong>
+                  <p>Original project rescanned: {completionReconciliation.sourceRescannedThisReview?'yes':'no'} ·
+                    Native requirement accepted: {completionReconciliation.nativeRequirementAccepted?'yes':'no'} ·
+                    Original independently reopened, human-reviewed witnesses: {completionReconciliation.reopenedHumanCriterionWitnesses}.</p>
+                  <small>Original human evidence decisions: {completionReconciliation.originalHumanReviewCount} ·
+                    Entire review history inspected: {completionReconciliation.historyFullyInspected?'yes':'no'} ·
+                    Full task completed: {completionReconciliation.taskCompleted?'yes':'no'} ·
+                    Future execution authorized: {completionReconciliation.executionAuthorized?'yes':'no'}.</small>
+                </div>}
                 {!current.reviewCurrent&&<small>Review the current task-board order and wording first;
                   stale board approval is not usable as a source lease.</small>}
                 {active.needsHumanReconciliation&&<small>Resolve the original source-change
@@ -629,6 +666,9 @@ export function TaskBoardWindow(){
                             <strong>Original step {result.stepIndex+1} · {result.historicalVerdict}</strong>
                             <p>Installed reviewed adapter: {result.toolId} ·
                               Native oracle: {result.independentMethod}</p>
+                            <p>{result.criterionMethodReviewable?
+                              'Original criterion matches this native method family; this does not prove the task is complete.':
+                              'No exact typed criterion-method match: reject relevance or request more evidence.'}</p>
                             <small>Original effect receipt: {result.receiptSha256} ·
                               Independently observed: {result.observedSha256}.</small>
                             <p>{result.reviewEligible?
@@ -639,7 +679,8 @@ export function TaskBoardWindow(){
                             {result.reviewEligible&&<div className="plan06Actions"
                               aria-label="Native human criterion-witness evidence decision">
                               <button type="button"
-                                disabled={busy||criterionReason.trim().length<10||
+                                disabled={busy||!result.criterionMethodReviewable||
+                                  criterionReason.trim().length<10||
                                   !current.reviewCurrent}
                                 onClick={()=>void reviewIndependentWitness(link,result,
                                   'ACCEPTED_AS_SUPPORTING_EVIDENCE')}>

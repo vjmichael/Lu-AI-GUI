@@ -441,21 +441,17 @@ async fn model_cannot_expand_grants_or_inject_a_workspace() {
     // Bad model outputs do not consume a call slot.
     assert_eq!(turn.step_count(), 0);
     authority.revoke_task("task-1").unwrap();
-    let after = turn
-        .handle_model_reply(
+    // C3 continuation revocation is now an admission failure before ANY
+    // native dispatch or error-payload feedback. A revoked prior turn must
+    // never reach the tool runner, even to receive PERMISSION_DENIED.
+    assert_eq!(
+        turn.handle_model_reply(
             r#"{"kind":"tool","name":"lu_files_read_text","arguments":{"path":"notes.txt"}}"#,
-            &catalog,
-            &registry,
-            &authority,
-            &Permitted,
-        )
-        .await
-        .unwrap();
-    let ToolTurnOutcome::ToolResult { data, .. } = after else {
-        panic!("expected error result")
-    };
-    assert_eq!(data["ok"], false);
-    assert_eq!(data["error"]["code"], "PERMISSION_DENIED");
+            &catalog, &registry, &authority, &Permitted,
+        ).await,
+        Err(ToolTurnError::Revoked)
+    );
+    assert_eq!(turn.step_count(), 0, "revoked call may not dispatch");
     assert_eq!(
         turn.handle_model_reply(
             r#"{"kind":"final","text":"done"}"#,
@@ -646,4 +642,127 @@ async fn repaired_syntax_still_requires_schema_validation_and_authority() {
     drop(catalog);
     drop(registry);
     remove_workspace(folder);
+}
+
+#[tokio::test]
+async fn distinct_search_requests_cannot_cycle_on_the_same_empty_observation() {
+    let (folder, registry, catalog, authority, origin, allowed) = setup();
+    let mut turn = NativeToolTurn::new_read_only(
+        &catalog, &registry, &authority, origin,
+        "thread:conversation-1".into(), &allowed,
+    ).unwrap();
+    // The first empty search is an observation. Each *different* query
+    // thereafter returns the same empty hit set, despite a fresh call ID.
+    for index in 0..=lu_core::agent_tool_loop::MAX_STALLED_SEMANTIC_READS {
+        let reply = format!(
+            r#"{{"kind":"tool","name":"lu_files_search_text","arguments":{{"query":"absent-source-{index}"}}}}"#
+        );
+        let result = turn.handle_model_reply(
+            &reply, &catalog, &registry, &authority, &Permitted
+        ).await.unwrap();
+        let ToolTurnOutcome::ToolResult {data,..}=result else {
+            panic!("missing authorized search observation");
+        };
+        assert_eq!(data["ok"],true);
+        assert_eq!(data["result"]["hits"].as_array().unwrap().len(),0);
+    }
+    assert_eq!(turn.step_count(),9);
+    let blocked=turn.handle_model_reply(
+        r#"{"kind":"tool","name":"lu_files_search_text","arguments":{"query":"absent-source-last"}}"#,
+        &catalog,&registry,&authority,&Permitted
+    ).await;
+    assert_eq!(blocked,Err(ToolTurnError::NoProgress));
+    assert_eq!(turn.step_count(),9,"no tenth read may be dispatched");
+    drop(turn);drop(catalog);drop(registry);remove_workspace(folder);
+}
+
+#[tokio::test]
+async fn genuinely_new_read_content_resets_cross_call_stall_count() {
+    let (folder, registry, catalog, authority, origin, allowed) = setup();
+    let mut turn = NativeToolTurn::new_read_only(
+        &catalog,&registry,&authority,origin,
+        "thread:conversation-1".into(),&allowed,
+    ).unwrap();
+    for index in 0..5 {
+        let reply=format!(
+            r#"{{"kind":"tool","name":"lu_files_search_text","arguments":{{"query":"unmatched-{index}"}}}}"#
+        );
+        turn.handle_model_reply(
+            &reply,&catalog,&registry,&authority,&Permitted
+        ).await.unwrap();
+    }
+    let response=turn.handle_model_reply(
+        r#"{"kind":"tool","name":"lu_files_read_text","arguments":{"path":"notes.txt"}}"#,
+        &catalog,&registry,&authority,&Permitted
+    ).await.unwrap();
+    let ToolTurnOutcome::ToolResult{data,..}=response else { panic!("no read"); };
+    assert_eq!(data["ok"],true);
+    assert!(data["result"]["content"].as_str().unwrap().contains("Lu discovery marker"));
+    // The remaining reads have fewer than eight unproductive outcomes.
+    for index in 0..7 {
+        let reply=format!(
+            r#"{{"kind":"tool","name":"lu_files_search_text","arguments":{{"query":"still-unmatched-{index}"}}}}"#
+        );
+        assert!(turn.handle_model_reply(
+            &reply,&catalog,&registry,&authority,&Permitted
+        ).await.is_ok());
+    }
+    assert_eq!(turn.step_count(),13);
+    drop(turn);drop(catalog);drop(registry);remove_workspace(folder);
+}
+
+#[tokio::test]
+async fn planned_turn_cannot_finalize_from_a_successful_unverified_tool_reply() {
+    let (folder, registry, catalog, authority, origin, _) = setup();
+    let advertised = BTreeSet::from(["lu_files_read_text".into()]);
+    let mut turn = NativeToolTurn::new(
+        &catalog, &authority, origin, "thread:conversation-1".into(), &advertised,
+    ).unwrap();
+    // An ordinary valid workspace observation is still not a reviewed
+    // Git/FFprobe original worker + independent source oracle witness.
+    turn.require_verified_independent_outcome();
+    let observed = turn.handle_model_reply(
+        r#"{"kind":"tool","name":"lu_files_read_text","arguments":{"path":"notes.txt"}}"#,
+        &catalog, &registry, &authority, &Permitted,
+    ).await.unwrap();
+    let ToolTurnOutcome::ToolResult { data, .. } = observed else {
+        panic!("expected a real tool result");
+    };
+    assert_eq!(data["ok"], true);
+    assert_eq!(turn.step_count(), 1);
+    let final_attempt = turn.handle_model_reply(
+        r#"{"kind":"final","text":"The task is complete."}"#,
+        &catalog, &registry, &authority, &Permitted,
+    ).await;
+    assert_eq!(final_attempt, Err(ToolTurnError::ObservationRequiredBeforeFinal));
+    // A claim in model prose never changes the independent result state.
+    let plain_attempt = turn.handle_model_reply(
+        "The tool verified everything.",
+        &catalog, &registry, &authority, &Permitted,
+    ).await;
+    assert_eq!(plain_attempt, Err(ToolTurnError::ObservationRequiredBeforeFinal));
+    drop(turn);
+    drop(catalog);
+    drop(registry);
+    remove_workspace(folder);
+}
+
+#[test]
+fn scheduled_model_continuation_requires_original_hidden_read_grant_too() {
+    let (folder, registry, catalog, authority, origin, _) = setup();
+    let visible = BTreeSet::from(["lu_files_read_text".into()]);
+    let mut turn = NativeToolTurn::new(
+        &catalog, &authority, origin, "thread:conversation-1".into(), &visible,
+    ).unwrap();
+    // The host can add only an already-authorized exact native capability.
+    assert_eq!(turn.require_native_continuation_capabilities(
+        &authority, &["lu.reviewed.git.repo-read"]
+    ), Err(ToolTurnError::Revoked));
+    assert!(turn.require_native_continuation_capabilities(
+        &authority, &["lu.files.read_text","lu.inspect.search_text"]
+    ).is_ok());
+    assert!(turn.ensure_continuation_authorized(&authority).is_ok());
+    authority.revoke_task("task-1").unwrap();
+    assert!(turn.ensure_continuation_authorized(&authority).is_err());
+    drop(turn); drop(catalog); drop(registry); remove_workspace(folder);
 }

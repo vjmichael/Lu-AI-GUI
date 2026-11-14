@@ -345,7 +345,7 @@ pub fn build_structured_chat_request(
         || prompt.len() > MAX_PROMPT_BYTES
         || !(1..=32768).contains(&max_new_tokens)
         || images.len() > MAX_IMAGES
-        || history.len() > 16
+        || history.len() > crate::inference_wire::MAX_INFERENCE_HISTORY_TURNS
     {
         return Err(MultimodalError::InvalidGeneration);
     }
@@ -355,7 +355,8 @@ pub fn build_structured_chat_request(
         context_bytes = context_bytes.saturating_add(turn.text.len());
         if !matches!(turn.role.as_str(), "user" | "assistant")
             || turn.text.trim().is_empty()
-            || context_bytes > 15 * 1024
+            || turn.text.len()>crate::inference_wire::MAX_INFERENCE_HISTORY_ENTRY_BYTES
+            || context_bytes > crate::inference_wire::MAX_INFERENCE_HISTORY_BYTES
         {
             return Err(MultimodalError::InvalidGeneration);
         }
@@ -715,4 +716,18 @@ mod tests {
         )
         .is_err());
     }
+    #[test]
+    fn structured_image_and_text_history_accepts_current_ipc_limits_only(){
+        let turns=(0..32).map(|index|crate::inference_host::ChatTurn{
+            role:if index%2==0{"user"}else{"assistant"}.into(),
+            text:"host-persisted conversation evidence".repeat(10),
+        }).collect::<Vec<_>>();
+        assert!(build_structured_chat_request("Continue",&turns,&[],512).is_ok());
+        let mut too_many=turns;
+        too_many.push(crate::inference_host::ChatTurn{
+            role:"user".into(),text:"extra history".into()
+        });
+        assert!(build_structured_chat_request("Continue",&too_many,&[],512).is_err());
+    }
+
 }

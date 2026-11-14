@@ -10,12 +10,13 @@
 
 use crate::{
     agent_tool_loop::{
-        NativeToolTurn, ToolDispatchCheckpoint, ToolTurnError, ToolTurnOutcome, MAX_TOOL_STEPS,
+        NativeToolTurn, ToolDispatchCheckpoint, ToolTurnError, ToolTurnOutcome,
     },
     capability_router::{ReviewedHostRouteRule, ReviewedRouteCandidate},
     contracts::ToolAuthorizer,
     conversation_authority::ConversationAuthority,
     inference_bridge::BridgeError,
+    generation_loop_guard::{StreamLoopGuard, StreamLoopVerdict},
     inference_host::{Cancellation, InferenceBackend},
     inference_supervisor::TrustedInferenceSupervisor,
     inference_wire::decode_frame,
@@ -27,6 +28,7 @@ use crate::{
     wire::proto,
 };
 use serde_json::Value;
+use std::time::{Duration, Instant};
 
 pub const MAX_LU_TURN_PROMPT_BYTES: usize = 128 * 1024;
 pub const MAX_LU_MODEL_REPLY_BYTES: usize = 64 * 1024;
@@ -35,8 +37,10 @@ pub const LU_TURN_GENERATION_TOKENS: u32 = 512;
 /// Original MBRL §4.8: one deterministic syntax normalization, followed by
 /// at most two model regenerations. Never retry an effect.
 pub const MAX_JSON_REGENERATIONS: u32 = 2;
-pub const MAX_TOTAL_MODEL_GENERATIONS: u32 =
-    (MAX_TOOL_STEPS + 1) * (MAX_JSON_REGENERATIONS + 1);
+/// Counter representability sentinel, not a ceiling for productive model turns.
+pub const MAX_TOTAL_MODEL_GENERATIONS: u32 = u32::MAX;
+/// Foreground resource boundary; long tasks need a durable continuation.
+pub const MAX_LU_FOREGROUND_TASK_DURATION: Duration = Duration::from_secs(30 * 60);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum NativeGenerationError {
@@ -46,6 +50,9 @@ pub enum NativeGenerationError {
     MissingCompletion,
     Cancelled,
     InferenceFailed,
+    TokenLoop,
+    TaskDeadline,
+    CounterOverflow,
     InvalidInferenceEvent,
     ModelReply(ToolTurnError),
     ModelReplyStructure(&'static str),
@@ -172,6 +179,9 @@ fn stop_on_policy_denial(
 pub fn native_generation_failure_class(error: &NativeGenerationError) -> &'static str {
     match error {
         NativeGenerationError::InferenceFailed => "inference_failed",
+        NativeGenerationError::TokenLoop => "token_loop",
+        NativeGenerationError::TaskDeadline => "task_deadline",
+        NativeGenerationError::CounterOverflow => "counter_overflow",
         NativeGenerationError::MissingCompletion => "completion_missing",
         NativeGenerationError::InvalidInferenceEvent => "inference_event_invalid",
         NativeGenerationError::JournalFailure => "journal_failed",
@@ -295,7 +305,8 @@ impl<B: InferenceBackend + Send + 'static> ModelStepGenerator for SupervisorMode
         {
             return Err(NativeGenerationError::PromptTooLarge);
         }
-        self.index += 1;
+        self.index = self.index.checked_add(1)
+            .ok_or(NativeGenerationError::CounterOverflow)?;
         let generation_id = format!("g-{}-{}", self.turn_nonce, self.index);
         let request_id = format!("r-{}-{}", self.turn_nonce, self.index);
         if let Some(notify)=&self.step_start{notify(&generation_id);}
@@ -305,6 +316,8 @@ impl<B: InferenceBackend + Send + 'static> ModelStepGenerator for SupervisorMode
         let mut malformed = false;
         let mut oversized = false;
         let mut failed = false;
+        let mut token_loop = false;
+        let mut stream_guard = StreamLoopGuard::default();
         // Inference emits validated Protobuf frames (not WebView or MCP JSON).
         // A real backend must emit Finished; a raw text chunk alone never
         // satisfies model generation acceptance.
@@ -337,6 +350,12 @@ impl<B: InferenceBackend + Send + 'static> ModelStepGenerator for SupervisorMode
                                 return Err(BridgeError::Consumer);
                             }
                             output.push_str(&chunk.text);
+                            if stream_guard.observe_chunk(&chunk.text)
+                                == StreamLoopVerdict::RepeatedOutput
+                            {
+                                token_loop = true;
+                                return Err(BridgeError::Consumer);
+                            }
                         }
                         Some(proto::inference_event::Kind::Finished(done)) => {
                             if done.cancelled || finished {
@@ -359,6 +378,9 @@ impl<B: InferenceBackend + Send + 'static> ModelStepGenerator for SupervisorMode
             // the following generation is never started. During a blocking
             // generation the trusted desktop must ALSO signal supervisor.cancel.
             return Err(NativeGenerationError::Cancelled);
+        }
+        if token_loop {
+            return Err(NativeGenerationError::TokenLoop);
         }
         if oversized {
             return Err(NativeGenerationError::ModelReplyTooLarge);
@@ -765,7 +787,23 @@ async fn run_supervised_native_turn_inner(
     // Original MBRL: one deterministic normalization in the parser, then
     // up to two regenerations for *pre-dispatch* schema/syntax errors.
     let mut json_regenerations = 0u32;
-    for generation in 1..=MAX_TOTAL_MODEL_GENERATIONS {
+    let started = Instant::now();
+    let mut generation = 0u32;
+    loop {
+        // Progress-driven continuation, never a fixed 32-tool-step cutoff.
+        // Native authority, task cancellation and durable effect receipts
+        // are still checked independently on each iteration.
+        if started.elapsed() >= MAX_LU_FOREGROUND_TASK_DURATION {
+            turn.halt();
+            record_audit(
+                journal, &conversation_id, &task_id,
+                ModelAuditKind::GenerationFailure,
+                "foreground task wall-time budget exhausted", None,
+            )?;
+            return Err(NativeGenerationError::TaskDeadline);
+        }
+        generation = generation.checked_add(1)
+            .ok_or(NativeGenerationError::CounterOverflow)?;
         if cancel.is_cancelled() {
             turn.halt();
             return Err(NativeGenerationError::Cancelled);
@@ -1089,7 +1127,6 @@ Rejected model tool envelope (not an executed call): {feedback}
             }
         }
     }
-    Err(NativeGenerationError::ModelReply(ToolTurnError::StepLimit))
 }
 
 impl NativeTurnRecord {

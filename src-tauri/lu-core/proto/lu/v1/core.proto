@@ -161,6 +161,18 @@ message GitDiffResult {
   uint64 observed_bytes = 3;
 }
 
+// TOOLS-06: read-only host-selected program availability, never path selection.
+message EnvironmentCheckRequest {
+  string program_id = 1;
+}
+message EnvironmentCheckResult {
+  string program_id = 1;
+  bool candidate_present = 2;
+  string evidence = 3; // file_present_only or not_found, not execution proof
+  string operating_system = 4;
+  string architecture = 5;
+}
+
 // CE worker IPC is native Protobuf, independent of legacy model-side JSON.
 // Every envelope is still length-delimited by the host (u32 big-endian).
 // Fields here carry data only, NEVER a permission token or host path.
