@@ -41,6 +41,31 @@ jobs:
         with:
           toolchain: '1.99.1'
           components: rustfmt
+      # The source tree currently does not track Cargo.lock for its three
+      # independent IDE crates. Resolve ONCE per exact-head native job,
+      # then keep --locked for every actual compile/test. Publish the resolved
+      # lock bytes so this temporary provisioning can be replaced by
+      # REVIEWED TRACKED lockfiles; runtime resolution is not a release pin.
+      - name: Resolve missing IDE Cargo locks (not yet tracked release pins)
+        shell: bash
+        run: |
+          set -euo pipefail
+          for dir in ide/host ide/supervisor; do
+            if [ ! -s "$dir/Cargo.lock" ]; then
+              cargo generate-lockfile --manifest-path "$dir/Cargo.toml"
+            fi
+            test -s "$dir/Cargo.lock"
+          done
+          echo "IDE_CARGO_LOCK_PROVISIONED=UNTRACKED_NOT_RELEASE_PINNED"
+      - name: Archive generated exact-head native dependency locks
+        uses: actions/upload-artifact@v4
+        with:
+          name: ide-lock-original-${{ matrix.os }}-${{ env.INTEGRATION_SOURCE_SHA }}
+          path: |
+            ide/host/Cargo.lock
+            ide/supervisor/Cargo.lock
+          if-no-files-found: error
+          retention-days: 14
       - name: Native original Git and remote recovery fixture groups
         shell: bash
         run: |
@@ -109,6 +134,27 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             pkg-config libdbus-1-dev libssl-dev libwebkit2gtk-4.1-dev \
             libayatana-appindicator3-dev librsvg2-dev libgtk-3-dev patchelf
+      - name: Resolve missing native IDE Cargo locks before strict --locked compile
+        shell: bash
+        run: |
+          set -euo pipefail
+          for dir in ide/host ide/supervisor ide/app/src-tauri; do
+            if [ ! -s "$dir/Cargo.lock" ]; then
+              cargo generate-lockfile --manifest-path "$dir/Cargo.toml"
+            fi
+            test -s "$dir/Cargo.lock"
+          done
+          echo "IDE_CARGO_LOCK_PROVISIONED=UNTRACKED_NOT_RELEASE_PINNED"
+      - name: Archive exact-head desktop and debugger dependency locks
+        uses: actions/upload-artifact@v4
+        with:
+          name: ide-lock-desktop-${{ matrix.os }}-${{ env.INTEGRATION_SOURCE_SHA }}
+          path: |
+            ide/host/Cargo.lock
+            ide/supervisor/Cargo.lock
+            ide/app/src-tauri/Cargo.lock
+          if-no-files-found: error
+          retention-days: 14
       - name: Native host OS-vault type and desktop compile
         shell: bash
         run: |
