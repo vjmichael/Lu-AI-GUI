@@ -1,0 +1,906 @@
+name: Lu REPO-01 frozen source verification
+on:
+  push:
+    branches:
+      - 'lu/win-load-01-host-trace-*'
+      - main
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: repo01-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  verify-source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # PR merge refs change whenever main's metadata-only ledger advances.
+          # Verify the immutable reviewed branch head, not a moving merge.
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Assert exact reviewed source commit
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify exact tracked-source snapshot
+        run: node scripts/verify-source-tree.mjs
+      - name: Audit grouped-CI trigger policy and queue cleanup safety
+        if: hashFiles('scripts/lu-ci-group-policy.mjs') != ''
+        run: |
+          node --test scripts/lu-ci-group-policy.test.mjs scripts/lu-ci-superseded-queue.test.mjs
+          node scripts/lu-ci-group-policy.mjs
+      - name: Audit Core branch convergence and retained canonical ledger
+        if: hashFiles('scripts/lu-core-stack-graph.test.mjs') != ''
+        run: |
+          node --test scripts/lu-core-stack-graph.test.mjs scripts/lu-core-convergence-22.test.mjs scripts/lu-ledger.test.mjs
+          node scripts/lu-core-stack-graph.mjs --check --fixture docs/LU_CORE_OPEN_PR_STACK_20261109.json --relations docs/LU_CORE_SIDE_BRANCH_COMPARISONS_20261109.json
+      - name: Run REPO-01 malicious-edit fixtures
+        run: node --test tests/source-identity.test.mjs
+      - name: Record immutable build identity
+        run: |
+          git rev-parse HEAD
+          git status --porcelain
+# This gate proves integrity of the repository checkout relative to its
+# committed manifest. It does not prove an external unpublished local copy.
+
+  native-r00-consolidated:
+    # One opt-in event after a completed task group, not on every PR push.
+    # The trigger must be a transition from no exact-head marker to an
+    # exact-head marker in the user-reviewable draft PR #200 description.
+    needs: verify-source
+    if: ${{ github.event_name == 'pull_request' && github.event.action == 'edited' && github.event.pull_request.number == 200 && github.event.pull_request.head.ref == 'lu/r00-core-convergence-20261109' && contains(github.event.pull_request.body, format('LU_R00_NATIVE_GATE_SHA={0}', github.event.pull_request.head.sha)) && !contains(github.event.changes.body.from, format('LU_R00_NATIVE_GATE_SHA={0}', github.event.pull_request.head.sha)) }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    steps:
+      - name: Authenticate one-time PR200 head handoff for this grouped gate
+        shell: bash
+        env:
+          EXACT_SHA: ${{ github.event.pull_request.head.sha }}
+          REQUEST_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          python3 - <<'PY'
+          import os,re
+          body=os.environ["REQUEST_BODY"]
+          matches=re.findall(r"(?m)^LU_R00_NATIVE_GATE_SHA=([0-9a-f]{40})$",body)
+          if matches != [os.environ["EXACT_SHA"]]:
+              raise SystemExit("R00_GATE_REFUSED: no exact one-time source SHA")
+          print("R00_GROUPED_NATIVE_ADMITTED_SOURCE="+matches[0])
+          PY
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Exact head and frozen full Git source
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          mkdir -p memory-loop03b-evidence
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          node scripts/verify-source-tree.mjs 2>&1 | tee memory-loop03b-evidence/source-lock.log
+          printf 'SOURCE_SHA=%s\nOS=%s\n' "$EXPECTED_SHA" "$RUNNER_OS" > memory-loop03b-evidence/source.txt
+      - name: Pure standalone host state classification (not Tauri acceptance)
+        shell: bash
+        run: |
+          set -euo pipefail
+          bin="$RUNNER_TEMP/lu-memory-loop03b-host"
+          if test "$RUNNER_OS" = "Windows"; then bin="$bin.exe"; fi
+          rustc --edition=2021 --test lu-desktop/src-tauri/src/memory_loop03b_policy.rs -o "$bin" 2>&1 | tee memory-loop03b-evidence/policy-compile.log
+          "$bin" --nocapture 2>&1 | tee memory-loop03b-evidence/policy-tests.log
+          grep -Fq 'test result: ok. 7 passed; 0 failed;' memory-loop03b-evidence/policy-tests.log
+      - name: Historical-source contracts (not installed proof)
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --test lu-desktop/tests/memory-loop03e-crash-recovery.test.mjs 2>&1 | tee memory-loop03b-evidence/memory03e-source-contracts.log
+          node --test lu-desktop/tests/memory-loop03b-source.test.mjs 2>&1 | tee memory-loop03b-evidence/source-contracts.log
+          grep -Fq '# pass 11' memory-loop03b-evidence/source-contracts.log
+          grep -Fq '# fail 0' memory-loop03b-evidence/source-contracts.log
+      - name: Real Linux Tauri dependency libraries
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libgtk-3-dev libssl-dev patchelf ffmpeg
+      - name: Windows test-only nonengine runtime fixture
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $root='lu-desktop/src-tauri/resources/lu-inference'
+          New-Item -ItemType Directory -Force -Path $root | Out-Null
+          foreach($name in @('llama-server.exe','msvcp140.dll','vcruntime140.dll','vcruntime140_1.dll')){
+            Set-Content -LiteralPath (Join-Path $root $name) -Value 'NOT_AN_ENGINE_CI_PLACEHOLDER' -NoNewline
+          }
+      - name: Linux real reviewed Git and FFprobe OS binary admission
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          git_bin="$(command -v git)"
+          probe_bin="$(command -v ffprobe)"
+          test -x "$git_bin" && test -x "$probe_bin"
+          printf 'LU_MEMORY_LOOP03C_GIT=%s\nLU_MEMORY_LOOP03C_FFPROBE=%s\n' "$git_bin" "$probe_bin" >> "$GITHUB_ENV"
+          git --version
+          ffprobe -version | sed -n '1p'
+      - name: Windows real reviewed Git and FFprobe OS binary admission
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $git=(Get-Command git.exe -ErrorAction Stop).Source
+          $ff=(Get-Command ffprobe.exe -ErrorAction SilentlyContinue)
+          if (-not $ff) {
+            choco install ffmpeg --yes --no-progress
+            $pathCandidate=Join-Path $env:ChocolateyInstall 'bin\ffprobe.exe'
+            if (Test-Path -LiteralPath $pathCandidate) { $ff=Get-Item $pathCandidate }
+          }
+          if (-not $ff) { throw 'Real FFprobe executable unavailable' }
+          $probe=$ff.FullName
+          if (-not $probe) { $probe=$ff.Source }
+          if (-not (Test-Path -LiteralPath $git) -or -not (Test-Path -LiteralPath $probe)) {
+            throw 'Real OS executable missing'
+          }
+          "LU_MEMORY_LOOP03C_GIT=$git" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "LU_MEMORY_LOOP03C_FFPROBE=$probe" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          & $git --version
+          & $probe -version | Select-Object -First 1
+      - name: Real React bundle and static interaction checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          pushd lu-desktop
+          npm ci --no-audit --no-fund
+          npm run build
+          npm run check
+          popd
+      - name: Genuine lu-core independent receipt tampering tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib journal::independent_outcome_tests -- --nocapture 2>&1 | tee memory-loop03b-evidence/core-oracle-tests.log
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib ansf_verified_procedures::tests -- --nocapture 2>&1 | tee memory-loop03b-evidence/core-procedures.log
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib ansf_belief_revision::tests -- --nocapture 2>&1 | tee memory-loop03b-evidence/core-beliefs.log
+      - name: Real Tauri source-bound GGUF ingress, beliefs and CCM integration
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib memory_loop03b_policy::tests -- --nocapture 2>&1 | tee memory-loop03b-evidence/desktop-policy.log
+          cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib memory_loop03b_context::tests -- --nocapture 2>&1 | tee memory-loop03b-evidence/desktop-context.log
+          grep -Fq 'test result: ok. 7 passed; 0 failed;' memory-loop03b-evidence/desktop-context.log
+          cargo check --locked --manifest-path lu-desktop/src-tauri/Cargo.toml 2>&1 | tee memory-loop03b-evidence/desktop-compile.log
+      - name: MEMORY-LOOP-03C actual native ANSF fixture and grader regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          export LU_MEMORY_LOOP03C_NATIVE_FIXTURE_PATH="$GITHUB_WORKSPACE/memory-loop03b-evidence/memory03c-native-corpus.json"
+          cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib memory_loop03c_actual_original_ansf_host_capsule_corpus -- --nocapture \
+            2>&1 | tee memory-loop03b-evidence/memory03c-native-corpus-test.log
+          test -s memory-loop03b-evidence/memory03c-native-corpus.json
+          # G4: Native Git observation is a test-only OS subprocess, not a Lu
+          # approved worker; the actual ANSF, continuity and journal paths run.
+          export LU_MEMORY_LOOP03C_POSITIVE_FIXTURE_PATH="$GITHUB_WORKSPACE/memory-loop03b-evidence/memory03c-positive-git-corpus.json"
+          cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib \
+            memory_loop03c_positive_direct_git_ansf_journal_and_correction_corpus -- --nocapture \
+            2>&1 | tee memory-loop03b-evidence/memory03c-positive-native-git-test.log
+          test -s memory-loop03b-evidence/memory03c-positive-git-corpus.json
+          # 03D: historical worker index and normal Send lookup are tested
+          # from real ChatStore/ANSF, SQLite and journal records. These unit
+          # fixtures do not independently attest OS child execution; G5 below
+          # does that on the same exact revision.
+          cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib \
+            reviewed_memory_evidence::tests -- --nocapture \
+            2>&1 | tee memory-loop03b-evidence/memory03d-index-source-recovery.log
+          export LU_MEMORY_LOOP03C_REVIEWED_FIXTURE_PATH="$GITHUB_WORKSPACE/memory-loop03b-evidence/memory03c-reviewed-worker-corpus.json"
+          # G5: the EXISTING protected reviewed-app model->native registry
+          # launches real OS Git+FFprobe, independently checks source bytes,
+          # enforces fresh human consent on changed HEAD and reconciles SQLite.
+          cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib \
+            memory_loop03c_reviewed_git_ffprobe_changed_source_and_exclusive_restart \
+            -- --ignored --nocapture \
+            2>&1 | tee memory-loop03b-evidence/memory03c-reviewed-worker-native.log
+          test -s memory-loop03b-evidence/memory03c-reviewed-worker-corpus.json
+          python3 -m unittest discover -s benchmarks/e1 -p test_memory_loop03c_reviewed_workers.py -v \
+            2>&1 | tee memory-loop03b-evidence/memory03c-reviewed-worker-parser-tests.log
+          python3 -m unittest discover -s benchmarks/e1 -p test_memory_loop03c_real_qwen_comprehension.py -v \
+            2>&1 | tee memory-loop03b-evidence/memory03c-grader-tests.log
+          python3 -m unittest discover -s benchmarks/e1 -p test_memory_loop03c_positive_git.py -v \
+            2>&1 | tee memory-loop03b-evidence/memory03c-positive-grader-tests.log
+          python3 benchmarks/e1/memory_loop03c_real_qwen_comprehension.py \
+            --fixture memory-loop03b-evidence/memory03c-native-corpus.json \
+            --positive-fixture memory-loop03b-evidence/memory03c-positive-git-corpus.json \
+            --reviewed-fixture memory-loop03b-evidence/memory03c-reviewed-worker-corpus.json \
+            --output memory-loop03b-evidence/memory03c-fixture-validation-only.json \
+            --validate-fixture-only
+          echo '03C G5 uses real protected reviewed native Git/FFprobe workers, new human authority, changed-source CCM and journal recovery; the test-generated model calls are SCRIPTED, not GGUF, and escape-capable kernel custody remains unproven.' >> "$GITHUB_STEP_SUMMARY"
+      - name: MEMORY-LOOP-03C optional pinned real Qwen source-only vs host-classified benchmark
+        if: runner.os == 'Linux' && inputs.run_real_qwen
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --depth 1 --branch b12143 https://github.com/ggml-org/llama.cpp.git "$RUNNER_TEMP/memory03c-llama-cpp"
+          actual="$(git -C "$RUNNER_TEMP/memory03c-llama-cpp" rev-parse HEAD)"
+          test "$actual" = 2bc46baa9207d098d03741ac394e7faaf1a955b6
+          cmake -S "$RUNNER_TEMP/memory03c-llama-cpp" -B "$RUNNER_TEMP/memory03c-llama-build" \
+            -DCMAKE_BUILD_TYPE=Release -DGGML_NATIVE=OFF -DGGML_VULKAN=OFF \
+            -DLLAMA_CURL=OFF -DLLAMA_BUILD_SERVER=ON -DLLAMA_BUILD_TESTS=OFF
+          cmake --build "$RUNNER_TEMP/memory03c-llama-build" --target llama-server --parallel 3
+          curl -fL --retry 4 --retry-delay 5 --connect-timeout 30 \
+            https://huggingface.co/QuantFactory/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B.Q4_K_M.gguf \
+            -o "$RUNNER_TEMP/memory03c-qwen.gguf"
+          printf '%s  %s\n' 7af3fdf842f87b24672f8a7f1dd50404043f0bfb71093ff91c31d2b49df4631d "$RUNNER_TEMP/memory03c-qwen.gguf" | sha256sum -c -
+          python3 benchmarks/e1/memory_loop03c_real_qwen_comprehension.py \
+            --engine "$RUNNER_TEMP/memory03c-llama-build/bin/llama-server" \
+            --model "$RUNNER_TEMP/memory03c-qwen.gguf" \
+            --fixture memory-loop03b-evidence/memory03c-native-corpus.json \
+            --positive-fixture memory-loop03b-evidence/memory03c-positive-git-corpus.json \
+            --reviewed-fixture memory-loop03b-evidence/memory03c-reviewed-worker-corpus.json \
+            --output memory-loop03b-evidence/memory03c-real-qwen-comparison.json \
+            --repetitions 2 \
+            2>&1 | tee memory-loop03b-evidence/memory03c-real-qwen-comparison.log
+          echo '03C Qwen comparison uses a genuine pinned sub-1B GGUF, not target Qwen3.8 27B, and includes native reviewed Lu Git/FFprobe source observations; installed Lu and escape-capable kernel custody remain OPEN.' >> "$GITHUB_STEP_SUMMARY"
+      - name: R00 consolidated full native Core and desktop regression suites
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib \
+            2>&1 | tee memory-loop03b-evidence/r00-core-full-native.log
+          cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib \
+            2>&1 | tee memory-loop03b-evidence/r00-desktop-full-native.log
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test desktop_owner_recovery \
+            2>&1 | tee memory-loop03b-evidence/r00-owner-native.log
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test continuity \
+            2>&1 | tee memory-loop03b-evidence/r00-continuity-native.log
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test continuity_conversation_scope \
+            2>&1 | tee memory-loop03b-evidence/r00-continuity-scope-native.log
+      - name: R00 Windows fixture and exact-check contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --test scripts/lu-core-convergence-22.test.mjs \
+            2>&1 | tee memory-loop03b-evidence/r00-divergent-tip-decisions.log
+          node --test lu-desktop/tests/browser-ci-candidate.test.mjs lu-desktop/tests/browser-ci-executable.test.mjs \
+            2>&1 | tee memory-loop03b-evidence/r00-browser-candidate-availability.log
+          node --test lu-desktop/tests/agent01l-linux-cgroup-v2.test.mjs \
+            2>&1 | tee memory-loop03b-evidence/r00-cgroup-source-contracts.log
+      - name: Linux nested cgroup host and custodian native compilation
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo build --locked --manifest-path src-tauri/lu-win-worker-job/Cargo.toml \
+            --features e1-p08-crash-fixture \
+            --bin lu-linux-cgroup-guard --bin lu-e1-p08-linux-cgroup-crash-parent \
+            2>&1 | tee memory-loop03b-evidence/r00-cgroup-native-build.log
+          python3 -m py_compile benchmarks/e1/agent01l_cgroup_escape_crash_acceptance.py
+          echo 'Delegated positive escaped-descendant and migration-proof gates remain independently OPEN unless real kernel evidence is produced.' >> "$GITHUB_STEP_SUMMARY"
+      - name: Unaccepted operational requirements
+        if: always()
+        shell: bash
+        run: |
+          echo '03B source and native checks do NOT demonstrate installed Lu, real loaded Qwen3.8 27B behavior, current Git/media source freshness, positive Win32 Job/Linux cgroup-v2 custody, automated replay or per-step effect authorization. Those are separate OPEN gates.' >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lu-r00-consolidated-native-${{ matrix.os }}
+          path: memory-loop03b-evidence/
+          if-no-files-found: warn
+          retention-days: 14
+
+
+  native-r00-custody:
+    needs: verify-source
+    # One manual, SHA-bound transition on PR #200 only. Not a push/sync build.
+    if: ${{ github.event_name == 'pull_request' && github.event.action == 'edited' && github.event.pull_request.number == 200 && github.event.pull_request.draft && github.event.pull_request.head.ref == 'lu/r00-core-convergence-20261109' && contains(github.event.pull_request.body, format('LU_R00_CUSTODY_GATE_SHA={0}', github.event.pull_request.head.sha)) && !contains(github.event.changes.body.from, format('LU_R00_CUSTODY_GATE_SHA={0}', github.event.pull_request.head.sha)) }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Exact head and single custody gate admission
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha }}
+          REQUEST_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          set -euo pipefail
+          mkdir -p custody-evidence
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          python3 - <<'PY'
+          import os,re
+          matches=re.findall(r"(?m)^LU_R00_CUSTODY_GATE_SHA=([0-9a-f]{40})$",os.environ["REQUEST_BODY"])
+          if matches!=[os.environ["EXPECTED_SHA"]]: raise SystemExit("CUSTODY_GATE_REFUSED")
+          PY
+          node scripts/verify-source-tree.mjs | tee custody-evidence/source-lock.log
+          printf 'HEAD=%s\nOS=%s\n' "$EXPECTED_SHA" "$RUNNER_OS" > custody-evidence/source.txt
+      - name: First-party custody source security contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --test lu-desktop/tests/agent01l-os-custody.test.mjs lu-desktop/tests/agent01l-linux-cgroup-v2.test.mjs 2>&1 | tee custody-evidence/source-contracts.log
+          grep -Fq '# fail 0' custody-evidence/source-contracts.log
+      - name: Linux native helper and real delegated-kernel crash plus Git restart
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(id -u)" -ne 0
+          test -d /run/systemd/system
+          cargo build --locked --manifest-path src-tauri/lu-win-worker-job/Cargo.toml --features e1-p08-crash-fixture --bin lu-linux-cgroup-guard --bin lu-e1-p08-linux-cgroup-crash-parent 2>&1 | tee custody-evidence/linux-helper-build.log
+          python3 benchmarks/e1/e1_p08_setsid_escape_probe.py 2>&1 | tee custody-evidence/linux-negative.log
+          grep -Fq 'E1_P08_GROUP_ESCAPE_PROVEN=1' custody-evidence/linux-negative.log
+          # sudo provisions a CI-only delegated unit. All test processes run as the ordinary runner UID.
+          sudo systemd-run --wait --pipe --collect \
+            --unit="lu-r00-custody-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" \
+            --property=Type=exec --property=Delegate=yes \
+            --property="User=$(id -un)" \
+            --property="WorkingDirectory=$GITHUB_WORKSPACE" \
+            --setenv="LU_AGENT01L_TEST_CGROUP_GUARD=$GITHUB_WORKSPACE/src-tauri/lu-win-worker-job/target/debug/lu-linux-cgroup-guard" \
+            --setenv="PATH=$PATH" \
+            --setenv="CARGO_HOME=$CARGO_HOME" \
+            /bin/bash -c '
+              set -euo pipefail
+              python3 benchmarks/e1/agent01l_cgroup_escape_crash_acceptance.py \
+                --guard "$LU_AGENT01L_TEST_CGROUP_GUARD" \
+                --parent "$PWD/src-tauri/lu-win-worker-job/target/debug/lu-e1-p08-linux-cgroup-crash-parent"
+              cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+                --lib native_background_process::tests::agent01l_linux_real_git_cgroup_custody_after_restart -- --ignored --nocapture
+            ' 2>&1 | tee custody-evidence/linux-delegated-kernel-git.log
+          grep -Fq 'AGENT01L_NATIVE_CGROUP_ESCAPED_DESCENDANT_PASS=1' custody-evidence/linux-delegated-kernel-git.log
+          grep -Fq 'agent01l_linux_real_git_cgroup_custody_after_restart ... ok' custody-evidence/linux-delegated-kernel-git.log
+          ! grep -Fq 'AGENT01L_CGROUP_DELEGATION_NOT_AVAILABLE=1' custody-evidence/linux-delegated-kernel-git.log
+      - name: Windows genuine Job object nested-process and reviewed Git restart
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked --manifest-path src-tauri/lu-win-worker-job/Cargo.toml --lib agent01l_kernel_job_tests -- --nocapture 2>&1 | tee custody-evidence/windows-job.log
+          grep -Fq 'native_job_terminates_descendant_cmd_tree_and_queries_kernel_empty ... ok' custody-evidence/windows-job.log
+          grep -Fq 'test result: ok. 2 passed; 0 failed;' custody-evidence/windows-job.log
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_background_process::tests::agent01l_real_git_job_attests_original_turn_and_reopens_without_replay -- --nocapture 2>&1 | tee custody-evidence/windows-reviewed-git-restart.log
+          grep -Fq 'agent01l_real_git_job_attests_original_turn_and_reopens_without_replay ... ok' custody-evidence/windows-reviewed-git-restart.log
+          grep -Fq 'test result: ok. 1 passed; 0 failed;' custody-evidence/windows-reviewed-git-restart.log
+      - name: Preserve explicit independent exclusions
+        if: always()
+        shell: bash
+        run: |
+          echo 'This is AGENT-01L native OS custody only: no installed GGUF/model, physical GPU, hostile ancestor migration, or rollback acceptance is implied.' >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lu-r00-agent01l-custody-${{ matrix.os }}
+          path: custody-evidence/
+          if-no-files-found: warn
+          retention-days: 14
+
+
+  native-r00-capability:
+    # Opt-in once after the entire task group; never a push/PR-sync fanout.
+    needs: verify-source
+    if: ${{ github.event_name == 'pull_request' && github.event.action == 'edited' && github.event.pull_request.number == 200 && github.event.pull_request.draft && github.event.pull_request.head.ref == 'lu/r00-core-convergence-20261109' && contains(github.event.pull_request.body, format('LU_R00_CAPABILITY_GATE_SHA={0}', github.event.pull_request.head.sha)) && !contains(github.event.changes.body.from, format('LU_R00_CAPABILITY_GATE_SHA={0}', github.event.pull_request.head.sha)) }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Authenticate one exact-head capability task-group marker and source lock
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha }}
+          REQUEST_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          set -euo pipefail
+          mkdir -p r00-capability-evidence
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          python3 - <<'PY'
+          import os,re
+          markers=re.findall(r"(?m)^LU_R00_CAPABILITY_GATE_SHA=([0-9a-f]{40})$",os.environ["REQUEST_BODY"])
+          if markers!=[os.environ["EXPECTED_SHA"]]:
+              raise SystemExit("CAPABILITY_GATE_REFUSED: wrong exact-head task group")
+          PY
+          node scripts/verify-source-tree.mjs | tee r00-capability-evidence/source-lock.log
+          printf 'SOURCE_SHA=%s\nOS=%s\n' "$EXPECTED_SHA" "$RUNNER_OS" > r00-capability-evidence/provenance.txt
+      - name: Edited-message follow-up, agent authority, NSIS and genuine-model source contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --test lu-desktop/tests/ux-chat02-revision-reply-provenance.test.mjs \
+            lu-desktop/tests/agent01g-physical-installer-contract.test.mjs \
+            lu-desktop/tests/agent01g-approved-step-integration.test.mjs \
+            lu-desktop/tests/agent01g-real-model-chain-contract.test.mjs \
+            2>&1 | tee r00-capability-evidence/source-contracts.log
+          grep -Fq '# fail 0' r00-capability-evidence/source-contracts.log
+          python3 -m unittest discover -s benchmarks/e1 -p test_memory_loop03c_real_qwen_comprehension.py -v \
+            2>&1 | tee r00-capability-evidence/kiaf-protocol-unit-tests.log
+          grep -Fq 'OK' r00-capability-evidence/kiaf-protocol-unit-tests.log
+          python3 -m unittest discover -s benchmarks/e1 -p test_r00_genuine_kiaf_comparison.py -v \
+            2>&1 | tee r00-capability-evidence/r00-paired-identity-negative-tests.log
+          grep -Fq 'OK' r00-capability-evidence/r00-paired-identity-negative-tests.log
+      - name: Install real Linux desktop and FFprobe dependencies before native Tauri tests
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libgtk-3-dev libssl-dev patchelf ffmpeg
+          test -x "$(command -v git)"
+          test -x "$(command -v ffprobe)"
+      - name: Windows test-only runtime resources for native desktop Rust tests
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $root='lu-desktop/src-tauri/resources/lu-inference'
+          New-Item -ItemType Directory -Force -Path $root | Out-Null
+          foreach($name in @('llama-server.exe','msvcp140.dll','vcruntime140.dll','vcruntime140_1.dll')){
+            Set-Content -LiteralPath (Join-Path $root $name) -Value 'NOT_AN_ENGINE_CI_PLACEHOLDER' -NoNewline
+          }
+      - name: Build real React frontend before production Tauri macro/native tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          pushd lu-desktop
+          npm ci --no-audit --no-fund
+          npm run build
+          npm run check
+          popd
+          test -f lu-desktop/dist/index.html
+      - name: Native production Tauri ANSF original-message revision, linked reply and crash recovery
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Portable native-chat fixture is not a current production crate:
+          # it no longer includes Lu's real reviewed worker, ancestry or Tauri.
+          cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml \
+            --lib chat_message_revisions::tests -- --nocapture \
+            2>&1 | tee r00-capability-evidence/native-ux-revisions.log
+          grep -Fq 'test result: ok. 5 passed; 0 failed;' r00-capability-evidence/native-ux-revisions.log
+          cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml \
+            --lib chat_message_interactions::tests -- --nocapture \
+            2>&1 | tee r00-capability-evidence/native-ux-interactions.log
+          ! grep -Fq 'test result: FAILED.' r00-capability-evidence/native-ux-interactions.log
+      - name: Real loaded Qwen, two fresh reviewed Git approvals, ANSF/CCM memory and KIAF
+        if: runner.os == 'Linux'
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha }}
+        run: bash scripts/r00-capability-linux.sh 2>&1 | tee r00-capability-evidence/linux-real-model-group.log
+      - name: Real Windows source-pinned CPU engine, NSIS install/uninstall and profile retention
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          $ErrorActionPreference='Stop'
+          & scripts/r00-capability-windows.ps1 -SourceSha $env:EXPECTED_SHA
+          if($LASTEXITCODE -ne 0){throw 'Native Windows installer/recovery gate failed'}
+      - name: Declare unproven physical and two-version rollback separately
+        if: always()
+        shell: bash
+        run: |
+          echo 'This one grouped native task gate does not prove 7B+/Qwen27B AMD Vulkan physical operation, installed GGUF turn, actual Windows human picker, or two-distinct-version rollback. Real small-model classifications may fail while benchmark measurement is valid.' >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lu-r00-capability-native-${{ matrix.os }}
+          path: r00-capability-evidence/
+          if-no-files-found: warn
+          retention-days: 14
+      - uses: actions/upload-artifact@v4
+        if: runner.os == 'Windows' && success()
+        with:
+          name: lu-r00-source-pinned-windows-cpu-nsis-${{ github.event.pull_request.head.sha }}
+          path: ${{ runner.temp }}/lu-r00-capability-nsis/
+          retention-days: 14
+          if-no-files-found: error
+
+
+  native-r00-phase1:
+    # ONE manual SHA-bound group for the Phase 1 implementation handoff.
+    # No automatic heavyweight PR or per-edit CI fanout.
+    needs: verify-source
+    if: ${{ github.event_name == 'pull_request' && github.event.action == 'edited' && github.event.pull_request.number == 200 && github.event.pull_request.draft && github.event.pull_request.head.ref == 'lu/r00-core-convergence-20261109' && contains(github.event.pull_request.body, format('LU_R00_PHASE1_GATE_SHA={0}', github.event.pull_request.head.sha)) && !contains(github.event.changes.body.from, format('LU_R00_PHASE1_GATE_SHA={0}', github.event.pull_request.head.sha)) }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check single exact SHA and frozen source
+        shell: bash
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          set -euo pipefail
+          mkdir -p phase1-evidence
+          test "$(git rev-parse HEAD)" = "$HEAD_SHA"
+          python3 - <<'PY'
+          import os,re
+          pins=re.findall(r"(?m)^LU_R00_PHASE1_GATE_SHA=([0-9a-f]{40})$",os.environ['PR_BODY'])
+          if pins!=[os.environ['HEAD_SHA']]: raise SystemExit('Wrong or repeated phase-1 gate marker')
+          PY
+          node scripts/verify-source-tree.mjs 2>&1 | tee phase1-evidence/source-lock.log
+          echo "SOURCE_SHA=$HEAD_SHA" > phase1-evidence/identity.txt
+      - name: Test real-model generic grammar and source-only review boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s benchmarks/e1 -p 'test_e1_p07_llama_completion.py' -v \
+            2>&1 | tee phase1-evidence/python-model-decoder.log
+          node --test lu-desktop/tests/agent01g-real-model-chain-contract.test.mjs \
+            2>&1 | tee phase1-evidence/source-review-boundary.log
+          grep -Fq '# fail 0' phase1-evidence/source-review-boundary.log
+      - name: Native model strict JSON and protected tool discovery/feedback
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --test model_json_boundary -- --nocapture \
+            2>&1 | tee phase1-evidence/model-json-boundary.log
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --lib supervised_tool_generation::failure_class_tests -- --nocapture \
+            2>&1 | tee phase1-evidence/native-model-feedback.log
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --test e1_reviewed_model_tools per_turn_live_tool_discovery -- --nocapture \
+            2>&1 | tee phase1-evidence/live-tool-discovery.log
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --test e1_reviewed_model_tools reviewed_observation_denies_a_fabricated_final -- --nocapture \
+            2>&1 | tee phase1-evidence/host-observation-required.log
+      - name: DEFERRED original 0.6B model diagnostic (manual repository opt-in only)
+        if: ${{ runner.os == 'Linux' && vars.LU_ENABLE_OLD_0_6B_DIAGNOSTIC == 'true' }}
+        shell: bash
+        timeout-minutes: 65
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg cmake build-essential
+          git clone --depth 1 --branch b12143 https://github.com/ggml-org/llama.cpp.git "$RUNNER_TEMP/phase1-llama"
+          test "$(git -C "$RUNNER_TEMP/phase1-llama" rev-parse HEAD)" = 2bc46baa9207d098d03741ac394e7faaf1a955b6
+          cmake -S "$RUNNER_TEMP/phase1-llama" -B "$RUNNER_TEMP/phase1-build" -DCMAKE_BUILD_TYPE=Release -DGGML_NATIVE=OFF -DGGML_VULKAN=OFF -DLLAMA_CURL=OFF -DLLAMA_BUILD_SERVER=ON -DLLAMA_BUILD_TESTS=OFF
+          cmake --build "$RUNNER_TEMP/phase1-build" --target llama-server --parallel 3
+          curl -fL --retry 4 --retry-delay 4 --connect-timeout 30 \
+            https://huggingface.co/QuantFactory/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B.Q4_K_M.gguf -o "$RUNNER_TEMP/phase1-qwen.gguf"
+          printf '%s  %s\n' 7af3fdf842f87b24672f8a7f1dd50404043f0bfb71093ff91c31d2b49df4631d "$RUNNER_TEMP/phase1-qwen.gguf" | sha256sum -c -
+          sha256sum "$RUNNER_TEMP/phase1-build/bin/llama-server" "$RUNNER_TEMP/phase1-qwen.gguf" > phase1-evidence/engine-model-sha256.txt
+          export LU_E1_P07_LLAMA_PORT=18972
+          export LU_E1_P07_RESPONSE_PROTOCOL=json_schema
+          export LU_E1_P07_GIT="$(command -v git)"
+          export LU_E1_P07_FFPROBE="$(command -v ffprobe)"
+          "$RUNNER_TEMP/phase1-build/bin/llama-server" -m "$RUNNER_TEMP/phase1-qwen.gguf" \
+            --host 127.0.0.1 --port "$LU_E1_P07_LLAMA_PORT" -c 8192 -ngl 0 \
+            > phase1-evidence/llama-server.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+          ready=0
+          for i in $(seq 1 120); do
+            kill -0 "$server_pid" || exit 1
+            if curl -fsS --max-time 2 "http://127.0.0.1:$LU_E1_P07_LLAMA_PORT/health" > phase1-evidence/llama-health.json; then ready=1; break; fi
+            sleep 2
+          done
+          test "$ready" -eq 1
+          failures=0
+          for case in agent01g_genuine_gguf_requires_fresh_ansf_review_native_git_oracle_and_restart agent01i_genuine_qwen_two_fresh_approvals_independent_git_and_restart genuine_gguf_independently_selects_git_and_media_tools_and_survives_journal_restart; do
+            cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+              --test e1_reviewed_model_tools "$case" -- --ignored --nocapture \
+              2>&1 | tee "phase1-evidence/$case.log" || failures=$((failures+1))
+          done
+          echo "GENUINE_QWEN_TOOL_TEST_FAILURES=$failures" > phase1-evidence/genuine-model-outcome.txt
+          cat phase1-evidence/genuine-model-outcome.txt >> "$GITHUB_STEP_SUMMARY"
+          # Weak-model errors are genuine failures, never forged model selection.
+          test "$failures" -eq 0
+      - name: Preserve detailed per-platform evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lu-core-phase1-${{ matrix.os }}
+          path: phase1-evidence/
+          retention-days: 14
+          if-no-files-found: warn
+
+  native-r00-phase2:
+    # A single exact-head Windows/Linux Phase 2 implementation group.
+    # The normal source workflow never starts it on synchronize/push.
+    needs: verify-source
+    if: ${{ github.event_name == 'pull_request' && github.event.action == 'edited' && github.event.pull_request.number == 200 && github.event.pull_request.draft && github.event.pull_request.head.ref == 'lu/r00-core-convergence-20261109' && contains(github.event.pull_request.body, format('LU_R00_PHASE2_GATE_SHA={0}', github.event.pull_request.head.sha)) && !contains(github.event.changes.body.from, format('LU_R00_PHASE2_GATE_SHA={0}', github.event.pull_request.head.sha)) }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Exact source and one-time task-group admission
+        shell: bash
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BODY: ${{ github.event.pull_request.body }}
+        run: |
+          set -euo pipefail
+          mkdir -p phase2-evidence
+          test "$(git rev-parse HEAD)" = "$HEAD_SHA"
+          python3 - <<'PY'
+          import os,re
+          markers=re.findall(r"(?m)^LU_R00_PHASE2_GATE_SHA=([0-9a-f]{40})$",os.environ["BODY"])
+          if markers != [os.environ["HEAD_SHA"]]: raise SystemExit("Unverified phase2 group marker")
+          PY
+          node scripts/verify-source-tree.mjs 2>&1 | tee phase2-evidence/source-lock.log
+          echo "SOURCE_SHA=$HEAD_SHA" > phase2-evidence/identity.txt
+      - name: Human-directed replan frontend semantics
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --test lu-desktop/tests/phase2-agent-replan.test.mjs \
+            2>&1 | tee phase2-evidence/frontend-replan.log
+      - name: Production Core chain, immutable replan, independent source and journal tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --lib agent_replan_lineage::tests -- --nocapture \
+            2>&1 | tee phase2-evidence/replan-lineage.log
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --lib agent_continuation_intent::tests -- --nocapture \
+            2>&1 | tee phase2-evidence/continuation-intent.log
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --lib agent_recovery_decision::tests -- --nocapture \
+            2>&1 | tee phase2-evidence/independent-recovery.log
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --test e1_reviewed_model_tools \
+            -- --nocapture 2>&1 | tee phase2-evidence/reviewed-native-registry.log
+      - name: Native desktop prerequisites (real WebView/Tauri code)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev librsvg2-dev libgtk-3-dev \
+            libssl-dev patchelf ffmpeg
+      - name: Windows compile-only fixed runtime assets (not GGUF proof)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $root='lu-desktop/src-tauri/resources/lu-inference'
+          New-Item -ItemType Directory -Force -Path $root | Out-Null
+          foreach($name in @('llama-server.exe','msvcp140.dll','vcruntime140.dll','vcruntime140_1.dll')){
+            Set-Content -LiteralPath (Join-Path $root $name) -Value 'NOT_AN_ENGINE_CI_PLACEHOLDER' -NoNewline
+          }
+      - name: Build real frontend, native desktop continuation and replan commands
+        shell: bash
+        run: |
+          set -euo pipefail
+          pushd lu-desktop
+          npm ci --no-audit --no-fund
+          npm run build
+          npm run check
+          popd
+          test -f lu-desktop/dist/index.html
+          cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml \
+            --lib agent_plan_continuation_desktop::phase2_multistep_tests -- --nocapture \
+            2>&1 | tee phase2-evidence/multistep-desktop.log
+          cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml \
+            --lib agent_plan_replan_desktop::tests -- --nocapture \
+            2>&1 | tee phase2-evidence/replan-desktop.log
+      - name: Genuine native Git/FFprobe reviewed operations and independent outcomes
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          export LU_E1_P07_GIT="$(command -v git)"
+          export LU_E1_P07_FFPROBE="$(command -v ffprobe)"
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --test e1_reviewed_model_tools \
+            actual_model_selected_reviewed_git_and_media_tools_return_verified_receipts \
+            -- --ignored --nocapture \
+            2>&1 | tee phase2-evidence/genuine-os-worker-oracle.log
+      - name: Document scope separately from physical installation
+        if: always()
+        shell: bash
+        run: |
+          echo 'Phase 2 tested real native source/worker checks but this is NOT automatic unapproved multi-step execution, a passing model-comprehension score, a physical GGUF/Vulkan installer, or an OS-pinned approval acceptance.' >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lu-core-phase2-${{ matrix.os }}
+          path: phase2-evidence/
+          retention-days: 14
+          if-no-files-found: warn
+
+
+  native-r00-phase3:
+    needs: verify-source
+    # One exact-HEAD grouped development and installer run. No automatic heavy PR fanout.
+    if: ${{ github.event_name == 'pull_request' && github.event.action == 'edited' && github.event.pull_request.number == 200 && github.event.pull_request.draft && github.event.pull_request.head.ref == 'lu/r00-core-convergence-20261109' && contains(github.event.pull_request.body, format('LU_R00_PHASE3_NSIS_SHA={0}', github.event.pull_request.head.sha)) && !contains(github.event.changes.body.from, format('LU_R00_PHASE3_NSIS_SHA={0}', github.event.pull_request.head.sha)) }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 185
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate exact source and deferral policy
+        shell: bash
+        env:
+          SOURCE: ${{ github.event.pull_request.head.sha }}
+          BODY: ${{ github.event.pull_request.body }}
+        run: |
+          set -euo pipefail
+          mkdir -p phase3-evidence
+          test "$(git rev-parse HEAD)" = "$SOURCE"
+          python3 - <<'PY'
+          import os,re
+          pins=re.findall(r"(?m)^LU_R00_PHASE3_NSIS_SHA=([0-9a-f]{40})$",os.environ["BODY"])
+          if pins != [os.environ["SOURCE"]]: raise SystemExit("Wrong phase3/NSIS source marker")
+          PY
+          node scripts/verify-source-tree.mjs 2>&1 | tee phase3-evidence/source-lock.log
+          printf 'SOURCE_SHA=%s\n' "$SOURCE" > phase3-evidence/identity.txt
+      - name: Memory/reasoning, dual-engine and strict PE resource contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --test lu-desktop/tests/phase3-agent-memory.test.mjs lu-desktop/tests/preview-dual-backend.test.mjs 2>&1 | tee phase3-evidence/source-contract.log
+          python3 -m unittest discover -s lu-desktop/scripts -p 'test_verify_win_v6_manifest.py' -v 2>&1 | tee phase3-evidence/pe-manifest-decode.log
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib ansf_belief_revision::tests -- --nocapture 2>&1 | tee phase3-evidence/ansf-belief.log
+      - name: Install Linux Tauri dependencies
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libgtk-3-dev libssl-dev patchelf ffmpeg
+      - name: Compile production frontend and Phase3 Rust desktop
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd lu-desktop
+          npm ci --no-audit --no-fund
+          npm run build
+          npm run check
+          cd ..
+          if test "${{ runner.os }}" = Windows; then
+            mkdir -p lu-desktop/src-tauri/resources/lu-inference
+            for name in llama-server.exe msvcp140.dll vcruntime140.dll vcruntime140_1.dll; do
+              printf 'CI_COMPILER_PLACEHOLDER_NOT_MODEL' > "lu-desktop/src-tauri/resources/lu-inference/$name"
+            done
+          fi
+          cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib agent_memory_reasoning::tests -- --nocapture 2>&1 | tee phase3-evidence/agent-memory.log
+      - name: Provision real Windows NSIS 3.11
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $exe=Join-Path ([Environment]::GetFolderPath('ProgramFilesX86')) 'NSIS\makensis.exe'
+          if(-not(Test-Path $exe)){choco install nsis --version=3.11.0 --yes --no-progress --limit-output; if($LASTEXITCODE -ne 0){throw 'NSIS install failed'}}
+          & $exe /VERSION
+          if($LASTEXITCODE -ne 0){throw 'NSIS unusable'}
+      - name: Pin native Windows Vulkan SDK for dual llama.cpp backend compilation
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          choco install vulkan-sdk --version=1.4.350 --yes --no-progress --limit-output
+          if($LASTEXITCODE -ne 0){throw 'Pinned Vulkan SDK 1.4.350 install failed'}
+          $candidates=@(Get-ChildItem 'C:\VulkanSDK' -Directory -ErrorAction Stop |
+            Where-Object { Test-Path (Join-Path $_.FullName 'Bin\glslc.exe') })
+          if($candidates.Count -ne 1){throw 'Ambiguous or missing pinned Vulkan shader compiler'}
+          $sdk=$candidates[0].FullName
+          "VULKAN_SDK=$sdk" >> $env:GITHUB_ENV
+          (Join-Path $sdk 'Bin') >> $env:GITHUB_PATH
+          & (Join-Path $sdk 'Bin\glslc.exe') --version
+          if($LASTEXITCODE -ne 0){throw 'Pinned glslc unavailable'}
+      - name: Build CURRENT Lu Preview with source-pinned CPU AND Vulkan llama.cpp backends
+        if: runner.os == 'Windows'
+        shell: pwsh
+        timeout-minutes: 145
+        env:
+          SOURCE: ${{ github.event.pull_request.head.sha }}
+        run: |
+          $ErrorActionPreference='Stop'
+          $out=Join-Path $env:RUNNER_TEMP 'lu-current-preview-nsis'
+          & scripts/build-current-windows-nsis.ps1 -SourceSha $env:SOURCE -OutputDirectory $out
+          if($LASTEXITCODE -ne 0){throw 'Native NSIS builder failed'}
+          $f=Get-Content (Join-Path $out 'installer-checksums.json') -Raw|ConvertFrom-Json
+          $exe=Join-Path $out $f.installerName
+          if(-not(Test-Path $exe)){throw 'Real installer absent'}
+          $sha=(Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          if($sha -cne $f.installerSha256 -or $f.sourceSha -cne $env:SOURCE){throw 'Installer/source hash mismatch'}
+          "CURRENT_LU_PREVIEW_SHA=$env:SOURCE" >> $env:GITHUB_STEP_SUMMARY
+          "CURRENT_LU_PREVIEW_INSTALLER_SHA256=$sha" >> $env:GITHUB_STEP_SUMMARY
+          "CPU and Vulkan engines built from e0f142d5ddc1461ce721644d92af33db23545105; actual AMD offload/GGUF NOT TESTED." >> $env:GITHUB_STEP_SUMMARY
+      - name: Windows installed NSIS lifecycle
+        if: runner.os == 'Windows'
+        shell: pwsh
+        timeout-minutes: 14
+        run: |
+          $ErrorActionPreference='Stop'
+          $out=Join-Path $env:RUNNER_TEMP 'lu-current-preview-nsis'
+          $f=Get-Content (Join-Path $out 'installer-checksums.json') -Raw|ConvertFrom-Json
+          & scripts/m3-windows-nsis-cycle.ps1 -InstallerPath (Join-Path $out $f.installerName) -InstallerSha256 $f.installerSha256 -ExpectedLuSha256 $f.appSha256 -ExpectedEngineSha256 $f.engineSha256 -ExpectedVulkanSha256 $f.vulkanEngineSha256 -ProfileIdentifier 'org.lu.current.devpreview' -UninstallerName 'UninstallLuCurrentPreview.exe' -DisposableWindowsConfirmed -EvidenceDir (Join-Path $out 'native-nsis-cycle-evidence')
+          if($LASTEXITCODE -ne 0){throw 'Native installed-preview cycle failed'}
+      - name: Preserve exact-current-source artifact and evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Lu-Current-Phase3-Preview-${{ matrix.os }}-${{ github.event.pull_request.head.sha }}
+          path: |
+            phase3-evidence/
+            ${{ runner.temp }}/lu-current-preview-nsis/
+          if-no-files-found: warn
+          retention-days: 14

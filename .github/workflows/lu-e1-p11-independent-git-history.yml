@@ -1,0 +1,172 @@
+name: Lu E1-P11 Independent Git Commit History
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: lu-e1-p11-${{ github.event.pull_request.head.ref || github.ref_name }}
+  cancel-in-progress: true
+jobs:
+  native-commit-dag:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 95
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Exact source and frozen manifest
+        shell: bash
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          node scripts/verify-source-tree.mjs
+          mkdir -p e1-p11-native-evidence
+          echo "HEAD=$EXPECTED_HEAD" > e1-p11-native-evidence/source.txt
+      - name: Independent SHA-1 digest, loose commit graph and unsupported negative controls
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --lib independent_git_history::tests -- --nocapture \
+            2>&1 | tee e1-p11-native-evidence/direct-graph-tests.log
+          grep -Eq 'test result: ok\. 3 passed; 0 failed;' \
+            e1-p11-native-evidence/direct-graph-tests.log
+      - name: Reviewed operation refuses false historical claims and missing loose objects
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --lib reviewed_outcome_oracle::tests::history_requires_actual_loose_objects \
+            -- --nocapture 2>&1 | tee e1-p11-native-evidence/reviewed-oracle.log
+          grep -Eq 'test result: ok\. 1 passed; 0 failed;' \
+            e1-p11-native-evidence/reviewed-oracle.log
+      - name: Bind native Git binary on Linux
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "LU_E1_P07_GIT=$(readlink -f "$(command -v git)")" >> "$GITHUB_ENV"
+      - name: Bind native Git binary on Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $git=(Get-Command git.exe -ErrorAction Stop).Source
+          if (-not (Test-Path -LiteralPath $git)) { throw 'Actual Git executable unavailable' }
+          Add-Content -Path $env:GITHUB_ENV -Value "LU_E1_P07_GIT=$git"
+      - name: Actual native Git merge graph and packed-objects negative control
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --test e1_reviewed_model_tools \
+            real_git_loose_merge_graph_is_verified_without_invoking_git_by_oracle \
+            -- --ignored --nocapture \
+            2>&1 | tee e1-p11-native-evidence/actual-git-merge.log
+          grep -Eq 'test result: ok\. 1 passed; 0 failed;' \
+            e1-p11-native-evidence/actual-git-merge.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lu-e1-p11-independent-history-${{ matrix.os }}
+          path: e1-p11-native-evidence/
+          retention-days: 14
+          if-no-files-found: warn
+  real-model-tool-integration:
+    needs: native-commit-dag
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 95
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Exact source before real native worker tests
+        shell: bash
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          node scripts/verify-source-tree.mjs
+          mkdir -p e1-p11-real-apps
+      - name: Stage real Git, FFprobe and existing Linux group guardian
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          command -v git
+          if ! command -v ffprobe >/dev/null 2>&1; then
+            sudo apt-get update -qq
+            sudo apt-get install -y ffmpeg
+          fi
+          echo "LU_E1_P07_GIT=$(readlink -f "$(command -v git)")" >> "$GITHUB_ENV"
+          echo "LU_E1_P07_FFPROBE=$(readlink -f "$(command -v ffprobe)")" >> "$GITHUB_ENV"
+          cargo build --manifest-path src-tauri/lu-win-worker-job/Cargo.toml \
+            --bin lu-linux-group-guard
+          guardian="$GITHUB_WORKSPACE/src-tauri/lu-win-worker-job/target/debug/lu-linux-group-guard"
+          test -x "$guardian"
+          echo "LU_E1_P08_TEST_GUARD_BINARY=$guardian" >> "$GITHUB_ENV"
+      - name: Stage real Git and FFprobe on Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $git=(Get-Command git.exe -ErrorAction Stop).Source
+          $probe=Get-Command ffprobe.exe -ErrorAction SilentlyContinue
+          if (-not $probe) {
+            choco install ffmpeg -y --no-progress
+            $candidate='C:\ProgramData\chocolatey\bin\ffprobe.exe'
+            if (Test-Path -LiteralPath $candidate) {
+              $probe=Get-Command $candidate -ErrorAction Stop
+            } else {
+              $probe=Get-Command ffprobe.exe -ErrorAction Stop
+            }
+          }
+          if (-not (Test-Path -LiteralPath $git) -or
+              -not (Test-Path -LiteralPath $probe.Source)) {
+            throw 'Reviewed native Git or FFprobe absent'
+          }
+          Add-Content -Path $env:GITHUB_ENV -Value "LU_E1_P07_GIT=$git"
+          Add-Content -Path $env:GITHUB_ENV -Value "LU_E1_P07_FFPROBE=$($probe.Source)"
+      - name: Require four independent verified facts and one explicitly unsupported tool
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --test e1_reviewed_model_tools \
+            actual_model_selected_reviewed_git_and_media_tools_return_verified_receipts \
+            -- --ignored --nocapture \
+            2>&1 | tee e1-p11-real-apps/five-real-tool-outcomes.log
+          grep -Eq 'test result: ok\. 1 passed; 0 failed;' \
+            e1-p11-real-apps/five-real-tool-outcomes.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lu-e1-p11-real-apps-${{ matrix.os }}
+          path: e1-p11-real-apps/
+          retention-days: 14
+          if-no-files-found: warn

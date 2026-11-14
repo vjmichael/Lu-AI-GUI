@@ -1,3 +1,13 @@
+> **Lu cross-conversation decision register — 2026-11-07:** Read the [recovered decision memory register](../../docs/LU_DECISION_MEMORY_REGISTER_20261107.md) before changing ANSF. It preserves the original exact-message/page/library, separate search-pane, staged virtual scrolling, source-linked edits, CCM, ContinuityStore and operational build-asset reuse commitments, and distinguishes them from unapproved proposals. The register is metadata, never the primary evidence or an authority grant.
+
+> **M2 canonical book migration submitted — 2026-11-07.** See [ANSF-first desktop cutover](../../docs/LU_M2_ANSF_CONVERSATION_CUTOVER_20261107.md). New desktop chat events, native goal records and chat/folder metadata have direct SQLite sources; exact per-chat originals live in ANSF books and the global Library remains reference-only. Old JSONL is imported non-destructively, including R14 flat history; no live new JSONL writes. The newer code is **pending exact-head Windows/Linux/installed-app evidence**, not yet proof of stable migration. Cross-chat semantic retrieval, object memory and verified procedure learning remain later M3/M4 phases.
+
+> **Known-source IDs and external artifact reference primitives — 2026-11-07.** See [ANSF direct IDs and artifact link scaling](../../docs/LU_ANSF_DIRECT_IDS_EXTERNAL_ARTIFACTS_20261107.md). Original books/chapters/pages and Library support human audit/navigation and arbitrarily long source history; models should resolve a known source ID directly in one host/API operation, not repeat three search hops. The Core now contains a versioned exact source ID resolver and conversation-only artifact **reference metadata**, never image/video/audio bytes. External file checking takes a host-authorized open file handle; full hashing is bounded. **No installed model-facing direct lookup, production external artifact broker or complete JSONL→ANSF migration is claimed.** Reuse existing selective loading, avoid arbitrary forced book rollover.
+
+> **M2 source work — November 7, 2026:** [Current M2 goal/clarification ANSF integration](../../docs/LU_M2_ANSF_GOAL_CLARIFICATION_CONTINUITY_20261107.md) connects the trusted desktop `ChatStore` journal to the profile ANSF SQLite goal-events table, exposes a persistent conversation-goal UI and bounded model-context recall, and preserves independent task/effect journals. This does **not** make old messages a new authority and does **not** establish general ANSF library retrieval, semantic/procedural learning, automatic model-generated clarification cards or installed-app acceptance. Existing native Protobuf IPC remains transport; JSONL remains the canonical human chat journal.
+
+> **M1 source audit completed — 2026-11-07.** See [M1 live-binding and authority map](../../docs/LU_M1_MEMORY_EVIDENCE_AND_AUTHORITY_AUDIT_20261107.md). The current desktop's real chat journal is `ChatStore` (JSONL), and prompt construction takes bounded same-chat history. ANSF books, ANSF library, revisions and import/sync are present in Core, but **not proved connected to live desktop prompt retrieval**. The ANSF importer targets Jan message JSONL, not necessarily Lu's live event format. M2 must preserve the host-authenticated `ChatStore` turn as authority, add stable source mapping and clarification/goal continuity, and avoid a parallel memory DB. Documentation only; no new UI/model or executor integration completed.
+
 # Lu Core milestones — memory, conversation UX, and optional A/V
 
 **Status:** Owner design clarification / staged implementation (2026-10-25).
@@ -16,6 +26,14 @@
   Lu must work without them. Camera/microphone permissions and data retention
   must be explicit, visible and revocable.
 - Workspace DLCs: *post-core-release* extensions, not implementation blockers.
+
+## November 7, 2026 — human-centered, memory-first Lu operating philosophy
+
+**New owner priority:** Before expanding general model-directed application/process execution, establish operationally usable, source-grounded memory, a persistent user-goal/clarification loop and verified reusable procedures. See the canonical [human-centered AI/memory philosophy](../../docs/LU_HUMAN_CENTERED_AI_MEMORY_FIRST_20261107.md) and [execution framework](../../docs/LU_AI_EXECUTION_LAYER_PHILOSOPHY_20261107.md).
+
+The user is not merely a prompt source. Lu must help users of differing expertise articulate and refine goals, ask material clarifying questions without repeatedly interrogating them, preserve answers and changes of intent, and adapt technical explanations to the need—not infer users' intelligence. User intent, model knowledge, real interfaces, task-scoped host authority, independent feedback and selectively retrieved memory form the working loop.
+
+**M1–M5 proposed acceptance order:** (M1) map existing ANSF, journals and host authentication; (M2) persist goals, assumptions, clarifications, pending questions, and changed intent; (M3) source-linked bounded retrieval into the actual model prompt; (M4) versioned, verified reusable procedural memory with contradiction/staleness handling; (M5) independent installed-Lu end-to-end tests of restart, model swap, memory recall, stale procedure, permission revocation and uncertainty. These are **not completed** merely because storage structures exist. No new execution permissions or source implementation authorized by this roadmap.
 
 ## ANSF (AI-Native Session Format)
 

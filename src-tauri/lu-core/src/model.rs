@@ -15,6 +15,7 @@ use serde_json::{Map, Value};
 use crate::{
     contracts::{ProtoPayload, ToolEffect, ToolInvocation},
     registry::{DispatchError, NativeToolRegistry, ToolResponse},
+    model_json_boundary::parse_exact_boundary_object,
 };
 
 pub const MAX_MODEL_TOOL_ARGS_BYTES: usize = 64 * 1024;
@@ -109,6 +110,41 @@ impl ModelToolCatalog {
         Ok(())
     }
 
+    /// Compose independently registered Lu native domains into one host-owned
+    /// model catalog. Composition is atomic, does not widen the turn's allowed
+    /// names, and does not create an authorization grant. Callers must still
+    /// use the trusted per-turn allowlist and ConversationAuthority.
+    ///
+    /// All schemas were checked on initial registration, but their native
+    /// implementations may have been unloaded since then. Revalidate against
+    /// the *current* registry before accepting even one merged name.
+    pub fn absorb_registered(
+        &mut self,
+        registry: &NativeToolRegistry,
+        other: ModelToolCatalog,
+    ) -> Result<(), ModelToolError> {
+        let installed = registry.tools()
+            .map_err(|_| ModelToolError::RegistryUnavailable)?;
+        for (name, definition) in &other.definitions {
+            if self.definitions.contains_key(name) {
+                return Err(ModelToolError::DuplicateToolName(name.clone()));
+            }
+            let descriptor = installed.iter()
+                .find(|item| item.id == definition.native_tool_id)
+                .ok_or_else(|| ModelToolError::NoNativeImplementation(
+                    definition.native_tool_id.clone()
+                ))?;
+            if descriptor.input_type_url != definition.codec.input_type_url()
+                || descriptor.output_type_url != definition.codec.output_type_url() {
+                return Err(ModelToolError::TypeMismatch(
+                    definition.native_tool_id.clone()
+                ));
+            }
+        }
+        self.definitions.extend(other.definitions);
+        Ok(())
+    }
+
     /// A host-owned route descriptor is inert until its full native
     /// implementation, effect and advertised per-turn schema all agree.
     /// Never accept a manifest/model-supplied descriptor as authorization.
@@ -169,6 +205,33 @@ impl ModelToolCatalog {
             .filter(|(_, definition)| native_ids.contains(&definition.native_tool_id))
             .map(|(name, _)| name.clone())
             .collect()
+    }
+
+    /// Discover tools for this exact turn only after rechecking the live
+    /// native registry and its Protobuf type identities. Model-facing schemas
+    /// remain a projection of host grants; they cannot authorize execution.
+    pub fn live_schemas(
+        &self,
+        allowed: &BTreeSet<String>,
+        registry: &NativeToolRegistry,
+    ) -> Result<Vec<Value>, ModelToolError> {
+        let schemas = self.schemas(allowed)?;
+        let installed = registry.tools()
+            .map_err(|_| ModelToolError::RegistryUnavailable)?;
+        for name in allowed {
+            let definition = self.definitions.get(name)
+                .ok_or_else(|| ModelToolError::UnknownTool(name.clone()))?;
+            let descriptor = installed.iter()
+                .find(|d| d.id == definition.native_tool_id)
+                .ok_or_else(|| ModelToolError::NoNativeImplementation(
+                    definition.native_tool_id.clone()))?;
+            if descriptor.input_type_url != definition.codec.input_type_url()
+                || descriptor.output_type_url != definition.codec.output_type_url()
+            {
+                return Err(ModelToolError::TypeMismatch(definition.native_tool_id.clone()));
+            }
+        }
+        Ok(schemas)
     }
 
     /// Only publish an explicit allow-list, e.g. the current chat context,
@@ -304,12 +367,14 @@ impl ModelToolCatalog {
             .definitions
             .get(public_name)
             .ok_or_else(|| ModelToolError::UnknownTool(public_name.to_string()))?;
-        let value: Value = serde_json::from_str(raw_json)
-            .map_err(|e| ModelToolError::InvalidArguments(format!("malformed JSON: {e}")))?;
-        let arguments = value
-            .as_object()
-            .ok_or_else(|| ModelToolError::InvalidArguments("expected JSON object".into()))?;
-        let input = definition.codec.encode(arguments)?;
+        // This direct codec entry point is a real model/native boundary too,
+        // not only the outer NativeToolTurn. serde_json::Value would silently
+        // accept duplicate object keys (including nested keys). Refuse them
+        // before a codec can choose a path, operation or Protobuf argument.
+        // No syntax repair is permitted at this second-stage boundary.
+        let arguments = parse_exact_boundary_object(raw_json, MAX_MODEL_TOOL_ARGS_BYTES)
+            .map_err(|e| ModelToolError::InvalidArguments(format!("JSON boundary rejected: {e:?}")))?;
+        let input = definition.codec.encode(&arguments)?;
         if input.type_url != definition.codec.input_type_url() {
             return Err(ModelToolError::TypeMismatch(
                 definition.native_tool_id.clone(),

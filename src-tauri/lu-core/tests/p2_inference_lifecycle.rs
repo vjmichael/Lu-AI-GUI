@@ -72,6 +72,7 @@ fn callback_cancellation_fails_closed_and_host_can_unload() {
         GenerationRequest {
             prompt: "say hello".into(),
             max_new_tokens: 8,
+            history: Vec::new(),
         },
         cancelled,
         |_chunk| {

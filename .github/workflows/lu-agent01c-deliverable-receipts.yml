@@ -1,0 +1,76 @@
+name: Lu AGENT-01C Independent Deliverable Receipt Native Candidate
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: lu-agent01c-${{ github.event.pull_request.head.ref || github.ref_name }}
+  cancel-in-progress: true
+jobs:
+  native-exact-head-sqlite:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Confirm exact head and frozen source
+        shell: bash
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          node scripts/verify-source-tree.mjs
+          mkdir -p agent01c-evidence
+          printf 'COMMIT=%s\nOS=%s\n' "$EXPECTED_HEAD" "$RUNNER_OS" \
+            > agent01c-evidence/provenance.txt
+      - name: Compile and execute actual independent witness SQLite tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --lib agent_deliverable_receipts::tests -- --nocapture \
+            2>&1 | tee agent01c-evidence/native-receipt-witness.log
+          for name in \
+            matching_real_sqlite_receipt_and_independent_source_is_historical_not_execution \
+            absent_independent_check_or_wrong_method_cannot_verify_deliverable \
+            changed_independent_witness_requires_reconciliation_after_restart \
+            cancellation_intent_blocks_new_receipt_and_does_not_claim_os_cleanup \
+            stale_goal_reference_cannot_certify_or_display_current_deliverable \
+            distinct_fresh_step_turn_can_prove_original_plan_from_real_sqlite \
+            older_deliverable_schema_migrates_without_inventing_worker_identity; do
+            grep -Fq "test agent_deliverable_receipts::tests::$name ... ok" \
+              agent01c-evidence/native-receipt-witness.log
+          done
+          if [[ "$RUNNER_OS" == Linux ]]; then
+            grep -Fq 'test agent_deliverable_receipts::tests::symlinked_effect_journal_is_not_trusted_as_verification ... ok' \
+              agent01c-evidence/native-receipt-witness.log
+            expected=8
+          else
+            expected=7
+          fi
+          grep -Fq "test result: ok. $expected passed; 0 failed;" \
+            agent01c-evidence/native-receipt-witness.log
+      - name: Write non-acceptance disclosure
+        shell: bash
+        run: |
+          echo 'This candidate tests genuine Rust/SQLite evidence JOIN logic with FIXTURE worker receipts. It DOES NOT execute Git/FFprobe, run GGUF, verify Windows Job Object reaping, establish cgroup-v2 custody or install Lu. Those native E1 and physical acceptance gates remain OPEN.' >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lu-agent01c-native-${{ matrix.os }}
+          path: agent01c-evidence/
+          if-no-files-found: warn
+          retention-days: 14

@@ -49,7 +49,7 @@ test('Ctrl/Cmd K search and Ctrl/Cmd Shift N new chat are distinct',()=>{
 });
 
 test('scrolling a transcript up suppresses forced jumping until user opts in',()=>{
-  assert.ok(source.includes('if (!el || !followOutput.current) return;'));
+  assert.ok(source.includes('if (!el || !followOutput.current || pendingPrepend.current) return;'));
   assert.ok(source.includes('scrollByChat.current.set(currentChat.current'));
   assert.ok(source.includes('restoredScrollTop(stored, el.scrollHeight, el.clientHeight)'));
   assert.ok(!source.includes('scrollIntoView'));

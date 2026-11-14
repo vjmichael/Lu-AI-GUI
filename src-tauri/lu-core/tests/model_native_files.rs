@@ -9,7 +9,7 @@ use std::{
 use lu_core::{
     contracts::{AuthorizationError, ProtoPayload, ToolAuthorizer, ToolDescriptor, ToolInvocation},
     model::{ModelToolError, MAX_MODEL_TOOL_ARGS_BYTES},
-    native_files::register_bundled_file_tools,
+    native_files::{register_bundled_file_tools, register_bundled_file_tools_pinned},
     registry::{DispatchError, NativeToolRegistry},
     wire::{self, proto},
 };
@@ -177,6 +177,9 @@ fn malformed_oversized_and_unadvertised_calls_are_rejected_without_dispatch() {
     let catalog = register_bundled_file_tools(&registry, &root).unwrap();
     let read = BTreeSet::from(["lu_files_read_text".to_string()]);
     for input in [
+        r#"{"path":"hello.txt","path":"../secrets.txt"}"#,
+        r#"{"path":"hello.txt","max_bytes":10,"max_bytes":1000}"#,
+        r#"{"path":"hello.txt","metadata":{"grant":0,"grant":1}}"#,
         r#"{"path":"hello.txt","extra":true}"#,
         r#"{"path":42}"#,
         r#"{"path":"../secrets.txt"}"#,
@@ -344,4 +347,44 @@ async fn windows_model_file_tool_cannot_read_sibling_or_parent_workspace() {
     drop(catalog);
     drop(registry);
     fs::remove_dir_all(container).unwrap();
+}
+
+#[tokio::test]
+async fn selected_handle_pins_native_read_identity_and_rejects_other_targets() {
+    let root = fixture();
+    let selected = root.join("hello.txt");
+    let file = fs::File::open(&selected).unwrap();
+    let registry = NativeToolRegistry::new();
+    let catalog = register_bundled_file_tools_pinned(
+        &registry, &root, "hello.txt", file,
+    ).unwrap();
+    let allowed = BTreeSet::from(["lu_files_read_text".to_string()]);
+    let other = catalog.encode_call(
+        &allowed, "lu_files_read_text", "mismatch", None,
+        r#"{"path":"subdir/missing.txt","max_bytes":100}"#,
+    ).unwrap();
+    assert!(matches!(
+        registry.dispatch(other, &Authorized).await,
+        Err(DispatchError::Execution(_))
+    ));
+
+    #[cfg(unix)]
+    {
+        // Replacing the path after the host pins the selected handle cannot
+        // retarget the read to the replacement file.
+        fs::rename(&selected, root.join("original.txt")).unwrap();
+        fs::write(&selected, "ATTACKER REPLACEMENT").unwrap();
+    }
+    let call = catalog.encode_call(
+        &allowed, "lu_files_read_text", "approved-handle", None,
+        r#"{"path":"hello.txt","max_bytes":100}"#,
+    ).unwrap();
+    let output = registry.dispatch(call, &Authorized).await.unwrap();
+    let reply = proto::ReadTextFileResult::decode(output.payload.bytes.as_slice()).unwrap();
+    assert_eq!(reply.content, "Hello Lu from a native tool");
+    #[cfg(unix)]
+    assert_eq!(fs::read_to_string(&selected).unwrap(), "ATTACKER REPLACEMENT");
+    drop(catalog);
+    drop(registry);
+    fs::remove_dir_all(root).unwrap();
 }

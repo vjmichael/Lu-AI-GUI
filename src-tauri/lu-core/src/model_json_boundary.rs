@@ -1,5 +1,8 @@
-//! JSON-to-Protobuf trust boundary for Lu's model-generated tool calls.
-//! Repair syntax only; never infer names, paths, missing values or permissions.
+//! Internal JSON validation at Lu's model/native-tool trust boundary.
+//! No user-facing JSON file inspection or model-advertised validator tool.
+//! Inbound model envelopes may receive bounded punctuation-only repair,
+//! but argument payloads and outbound host feedback never receive repair.
+//! A successful parse validates JSON syntax, not capabilities or execution.
 
 use serde::{
     de::{self, DeserializeSeed, MapAccess, SeqAccess, Visitor},
@@ -16,6 +19,8 @@ pub enum JsonRepairStatus {
     RemovedFence,
     RemovedTrailingCommas,
     RemovedFenceAndTrailingCommas,
+    RemovedThinkingPrefix,
+    RemovedThinkingPrefixAndTrailingCommas,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -25,6 +30,7 @@ pub enum JsonBoundaryError {
     DuplicateKey,
     NonObject,
     Serialization,
+    InvalidEnvelope,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -127,6 +133,36 @@ fn strip_exact_json_fence(raw: &str) -> Option<&str> {
     content.strip_suffix("\n```")
 }
 
+/// Strip only one completely closed, bounded model-owned reasoning prefix.
+/// Original bytes remain in Lu's raw model audit; the result still needs
+/// a strict complete JSON envelope, codec, task grant and host policy.
+fn strip_closed_thinking_prefix(raw: &str) -> Result<Option<&str>, JsonBoundaryError> {
+    let leading = raw.trim_start();
+    let Some(reasoning) = leading.strip_prefix("<think>") else {
+        return Ok(None);
+    };
+    let (private, rest) = reasoning.split_once("</think>")
+        .ok_or(JsonBoundaryError::Malformed)?;
+    if private.len() > 16 * 1024
+        || private.contains("<think>")
+        || private.contains("<|")
+        || private.contains("</think")
+    {
+        return Err(JsonBoundaryError::Malformed);
+    }
+    let response = rest.trim();
+    if response.is_empty()
+        || response.starts_with("~~~")
+        || response.contains("<|im_start|>")
+        || response.contains("<|im_end|>")
+        || response.contains("<think>")
+        || response.contains("</think>")
+    {
+        return Err(JsonBoundaryError::Malformed);
+    }
+    Ok(Some(response))
+}
+
 /// Remove a comma only when followed by optional whitespace and a closing
 /// object/array delimiter; string literals (including escapes) are untouched.
 fn strip_trailing_commas(raw: &str) -> (String, bool) {
@@ -174,23 +210,36 @@ pub fn parse_model_boundary(raw: &str) -> Result<ParsedModelJson, JsonBoundaryEr
     if raw.len() > MAX_BOUNDARY_JSON_BYTES {
         return Err(JsonBoundaryError::TooLarge);
     }
-    match strict_parse(raw) {
+    let (normalized, had_reasoning) = match strip_closed_thinking_prefix(raw)? {
+        Some(value) => (value, true),
+        None => (raw, false),
+    };
+    match strict_parse(normalized) {
         Ok(Value::Object(object)) => {
             return Ok(ParsedModelJson {
                 object,
-                repair: JsonRepairStatus::Unchanged,
+                repair: if had_reasoning {
+                    JsonRepairStatus::RemovedThinkingPrefix
+                } else {
+                    JsonRepairStatus::Unchanged
+                },
             })
         }
         Ok(_) => return Err(JsonBoundaryError::NonObject),
         Err(JsonBoundaryError::DuplicateKey) => return Err(JsonBoundaryError::DuplicateKey),
         Err(_) => {}
     }
-    let (candidate, had_fence) = match strip_exact_json_fence(raw) {
+    // Do not combine a reasoning prefix and a Markdown fence into a
+    // multi-stage speculative repair.
+    if had_reasoning && strip_exact_json_fence(normalized).is_some() {
+        return Err(JsonBoundaryError::Malformed);
+    }
+    let (candidate, had_fence) = match strip_exact_json_fence(normalized) {
         Some(value) => (value, true),
-        None => (raw, false),
+        None => (normalized, false),
     };
     let (repaired, had_comma) = strip_trailing_commas(candidate);
-    if !had_fence && !had_comma {
+    if !had_fence && !had_comma && !had_reasoning {
         return Err(JsonBoundaryError::Malformed);
     }
     if repaired.len() > MAX_BOUNDARY_JSON_BYTES {
@@ -200,13 +249,114 @@ pub fn parse_model_boundary(raw: &str) -> Result<ParsedModelJson, JsonBoundaryEr
         Value::Object(object) => object,
         _ => return Err(JsonBoundaryError::NonObject),
     };
-    let repair = match (had_fence, had_comma) {
-        (true, true) => JsonRepairStatus::RemovedFenceAndTrailingCommas,
-        (true, false) => JsonRepairStatus::RemovedFence,
-        (false, true) => JsonRepairStatus::RemovedTrailingCommas,
-        (false, false) => JsonRepairStatus::Unchanged,
+    let repair = match (had_reasoning, had_fence, had_comma) {
+        (true, false, true) => JsonRepairStatus::RemovedThinkingPrefixAndTrailingCommas,
+        (true, false, false) => JsonRepairStatus::RemovedThinkingPrefix,
+        (false, true, true) => JsonRepairStatus::RemovedFenceAndTrailingCommas,
+        (false, true, false) => JsonRepairStatus::RemovedFence,
+        (false, false, true) => JsonRepairStatus::RemovedTrailingCommas,
+        (false, false, false) => JsonRepairStatus::Unchanged,
+        (true, true, _) => return Err(JsonBoundaryError::Malformed),
     };
     Ok(ParsedModelJson { object, repair })
+}
+
+
+/**
+ * Validate an inbound JSON object whose bytes are already committed to a
+ * schema-specific operation (for example a model tool's argument object).
+ *
+ * Unlike parse_model_boundary, this function never repairs syntax. The
+ * strict parser rejects duplicate field names at every depth, invalid
+ * escapes, unfinished input and any trailing tokens, before a Protobuf
+ * codec or host dispatcher can receive the object.
+ */
+pub fn parse_exact_boundary_object(
+    raw: &str,
+    limit: usize,
+) -> Result<Map<String, Value>, JsonBoundaryError> {
+    if raw.len() > MAX_BOUNDARY_JSON_BYTES || raw.len() > limit {
+        return Err(JsonBoundaryError::TooLarge);
+    }
+    match strict_parse(raw)? {
+        Value::Object(value) => Ok(value),
+        _ => Err(JsonBoundaryError::NonObject),
+    }
+}
+
+/// Validate a complete tool result about to leave Lu Core toward the model.
+/// The shape, tool identity and success/error alternative are host protocol
+/// fields, not model-supplied claims. A valid result here does not grant
+/// another tool call or approve any filesystem/network effect.
+pub fn parse_host_tool_feedback_boundary(
+    raw: &str,
+    limit: usize,
+) -> Result<Map<String, Value>, JsonBoundaryError> {
+    let root = parse_exact_boundary_object(raw, limit)?;
+    if root.len() != 4
+        || root.get("kind").and_then(Value::as_str) != Some("tool_result")
+    {
+        return Err(JsonBoundaryError::InvalidEnvelope);
+    }
+    let call_id = root.get("call_id").and_then(Value::as_str)
+        .ok_or(JsonBoundaryError::InvalidEnvelope)?;
+    let tool_name = root.get("name").and_then(Value::as_str)
+        .ok_or(JsonBoundaryError::InvalidEnvelope)?;
+    if call_id.trim().is_empty() || call_id.len() > 128
+        || tool_name.is_empty() || tool_name.len() > 64
+        || !tool_name.bytes().enumerate().all(|(i,c)| {
+            c.is_ascii_alphabetic() || (i > 0 && (c.is_ascii_digit() || c == b'_'))
+        })
+    {
+        return Err(JsonBoundaryError::InvalidEnvelope);
+    }
+    let response = root.get("response").and_then(Value::as_object)
+        .ok_or(JsonBoundaryError::InvalidEnvelope)?;
+    if response.len() != 3
+        || response.get("tool").and_then(Value::as_str) != Some(tool_name)
+    {
+        return Err(JsonBoundaryError::InvalidEnvelope);
+    }
+    match response.get("ok").and_then(Value::as_bool) {
+        Some(true) if response.contains_key("result") && !response.contains_key("error") => {}
+        Some(false) if response.contains_key("error") && !response.contains_key("result") => {
+            let error = response.get("error").and_then(Value::as_object)
+                .ok_or(JsonBoundaryError::InvalidEnvelope)?;
+            if error.len() != 3
+                || error.get("code").and_then(Value::as_str)
+                    .is_none_or(|code| code.is_empty() || code.len() > 128)
+                || error.get("message").and_then(Value::as_str)
+                    .is_none_or(|msg| msg.len() > 4096)
+                || error.get("retryable").and_then(Value::as_bool).is_none()
+            {
+                return Err(JsonBoundaryError::InvalidEnvelope);
+            }
+        }
+        _ => return Err(JsonBoundaryError::InvalidEnvelope),
+    }
+    Ok(root)
+}
+
+/// Host-generated tool feedback has a fixed, mutually exclusive success or
+/// failure envelope. Serialize and validate it BEFORE any prompt emission,
+/// audit handoff or further model generation. No auto-repair is performed.
+pub fn serialize_host_tool_feedback_boundary(
+    call_id: &str,
+    tool_name: &str,
+    response: &Value,
+    limit: usize,
+) -> Result<String, JsonBoundaryError> {
+    let raw = serialize_host_boundary(
+        &serde_json::json!({
+            "kind": "tool_result",
+            "call_id": call_id,
+            "name": tool_name,
+            "response": response,
+        }),
+        limit,
+    )?;
+    parse_host_tool_feedback_boundary(&raw, limit)?;
+    Ok(raw)
 }
 
 /// Host-to-model results use serialization, bounds and strict validation.

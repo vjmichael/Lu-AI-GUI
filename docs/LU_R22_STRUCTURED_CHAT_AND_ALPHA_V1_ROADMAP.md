@@ -50,6 +50,7 @@ No individual unit-test result is an automatic alpha PASS for its end-to-end gat
 | Documents | Native PDF/DOCX/text parsing, filename + provenance, extraction limits, chunk/citation controls, restart-safe attachments, and negative/security tests |
 | Native tools | Secure read/write/search/move/trash/restore/archive/git/code/JSON validation/OCR tools staged by capability; atomic effects and exact authorization; do not bypass the OS broker |
 | Agent and tasks | Durable task identities, live progress, background worker supervision, pause/stop/retry, replay-safe effect journal and actionable failure classification |
+| Observe & Learn (v1.0 release gate) | Explicit per-app desktop observation and GUI test evidence; default OFF, visible user controls, session leases, short-lived redacted snapshots, event-driven brief/deep inference, approved ANSF learning, separate training consent, crash recovery and installed Windows acceptance. See docs/LU_OBSERVE_LEARN_V1.md. |
 | Model manager | Explicit multi-model catalog, MMProj capability checks, Vulkan/CPU settings, safe unload/reload, stable resource usage and no automatic weight loading |
 | GUI foundation | Rename/delete/restore chats and folders, attachments, accessible keyboard controls, virtualized large transcripts, response actions, theme preferences; reference Jan/LM Studio behavior without importing Jan runtime |
 | Runtime security | Cross-platform IPC, OS containment for worker classes, scoped filesystem/network permissions, hostile-input tests and operational audit |
@@ -68,3 +69,7 @@ No individual unit-test result is an automatic alpha PASS for its end-to-end gat
 3. Ask a second question about the **same image without reattaching**. For now, mark expected behavior **not supported**: image blobs are not yet durable chat context. This is a tracked v1 feature, not a successful answer.
 4. Start a fresh text-only chat: ask about Arkansas, then a follow-up, and verify there are no artificial `User:`/`Assistant:` loops. Repeat with different conversations queued.
 5. Confirm cancellation preserves interrupted text; run shutdown/reinstall/restore and native-tool denial tests before alpha gate sign-off.
+
+## Owner supersession (2026-11-04): JSON boundary reliability
+
+The earlier **JSON-repair deferred** wording referred to a future broad repair feature, not a prohibition on the *original design's* bounded internal Model Boundary Reliability Layer. The owner explicitly requested completion of the original bounded MBRL now: strict syntax/schema checks; one deterministic punctuation normalization; up to two model regenerations before any effect; typed errors and transcript evidence; Protobuf and host authorization remain mandatory. Semantic repair, invented parameters and permission escalation are still forbidden. See `LU_CENTRAL_DESIGN.md` and `TOOLS_02_INTERNAL_JSON_BOUNDARY_20261103.md`.

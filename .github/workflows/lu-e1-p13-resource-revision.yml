@@ -1,0 +1,176 @@
+name: Lu E1-P13 Approved Source Revision Custody
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: e1p13-${{ github.event.pull_request.head.ref || github.ref_name }}
+  cancel-in-progress: true
+jobs:
+  native-revision-guard:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Require exact source-locked commit
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          node scripts/verify-source-tree.mjs
+          mkdir -p e1-p13-evidence
+          printf 'EXACT_HEAD_SHA=%s\n' "$EXPECTED_SHA" > e1-p13-evidence/provenance.txt
+      - name: Run production-source media-handle and Git-revision native regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --lib reviewed_source_guard::tests -- --nocapture \
+            2>&1 | tee e1-p13-evidence/resource-guard.log
+          grep -Eq 'test result: ok\. [4-9] passed; 0 failed;' \
+            e1-p13-evidence/resource-guard.log
+      - name: Independently verify Git packed refs from actual multiline source
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --lib reviewed_outcome_oracle::tests::direct_git_head_ref_and_packed_ref \
+            -- --nocapture 2>&1 | tee e1-p13-evidence/packed-ref-regression.log
+          grep -Eq 'test result: ok\. 1 passed; 0 failed;' \
+            e1-p13-evidence/packed-ref-regression.log
+      - name: Stage genuine Git for semantic same-dirty-count source test on Linux
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          git="$(readlink -f "$(command -v git)")"
+          test -f "$git"
+          echo "LU_E1_P07_GIT=$git" >> "$GITHUB_ENV"
+          sha256sum "$git" > e1-p13-evidence/git-binary-identity.txt
+      - name: Stage genuine Git for semantic same-dirty-count source test on Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $git=(Get-Command git.exe -ErrorAction Stop).Source
+          if (-not (Test-Path -LiteralPath $git)) { throw 'Native Git unavailable' }
+          Add-Content -Path $env:GITHUB_ENV -Value "LU_E1_P07_GIT=$git"
+          Get-FileHash -Algorithm SHA256 -LiteralPath $git |
+            Out-String | Set-Content e1-p13-evidence/git-binary-identity.txt
+      - name: Real Git dirty count stays same but changed bytes invalidate revision
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --test e1_reviewed_model_tools \
+            real_git_status_clean_dirty_deleted_and_staged_changes_are_bounded \
+            -- --ignored --nocapture \
+            2>&1 | tee e1-p13-evidence/real-git-revision.log
+          grep -Eq 'test result: ok\. 1 passed; 0 failed;' \
+            e1-p13-evidence/real-git-revision.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lu-e1-p13-guard-${{ matrix.os }}
+          path: e1-p13-evidence/
+          retention-days: 14
+          if-no-files-found: warn
+  actual-supervised-worker:
+    needs: native-revision-guard
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 105
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Require unchanged exact head
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          node scripts/verify-source-tree.mjs
+          mkdir -p e1-p13-real-worker
+          echo "HEAD=$EXPECTED_SHA" > e1-p13-real-worker/provenance.txt
+      - name: Native Git/FFprobe/guardian on Linux
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! command -v ffprobe >/dev/null 2>&1; then
+            sudo apt-get update -qq
+            sudo apt-get install -y ffmpeg
+          fi
+          echo "LU_E1_P07_GIT=$(readlink -f "$(command -v git)")" >> "$GITHUB_ENV"
+          echo "LU_E1_P07_FFPROBE=$(readlink -f "$(command -v ffprobe)")" >> "$GITHUB_ENV"
+          cargo build --manifest-path src-tauri/lu-win-worker-job/Cargo.toml \
+            --bin lu-linux-group-guard
+          guard="$GITHUB_WORKSPACE/src-tauri/lu-win-worker-job/target/debug/lu-linux-group-guard"
+          test -x "$guard"
+          echo "LU_E1_P08_TEST_GUARD_BINARY=$guard" >> "$GITHUB_ENV"
+          sha256sum "$(command -v git)" "$(command -v ffprobe)" "$guard" \
+            > e1-p13-real-worker/bin-identities.txt
+      - name: Native Git/FFprobe on Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $git=(Get-Command git.exe -ErrorAction Stop).Source
+          $probe=Get-Command ffprobe.exe -ErrorAction SilentlyContinue
+          if (-not $probe) {
+            choco install ffmpeg -y --no-progress
+            $probe=Get-Command 'C:\ProgramData\chocolatey\bin\ffprobe.exe' -ErrorAction Stop
+          }
+          if (-not (Test-Path $git) -or -not (Test-Path $probe.Source)) {
+            throw 'Real reviewed executable unavailable'
+          }
+          Add-Content -Path $env:GITHUB_ENV -Value "LU_E1_P07_GIT=$git"
+          Add-Content -Path $env:GITHUB_ENV -Value "LU_E1_P07_FFPROBE=$($probe.Source)"
+          Get-FileHash -Algorithm SHA256 -LiteralPath $git,$probe.Source |
+            Format-Table -AutoSize | Out-String |
+            Set-Content e1-p13-real-worker/bin-identities.txt
+      - name: Run actual reviewed Git + FFprobe through native supervised worker and revision guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --test e1_reviewed_model_tools \
+            actual_model_selected_reviewed_git_and_media_tools_return_verified_receipts \
+            -- --ignored --nocapture \
+            2>&1 | tee e1-p13-real-worker/actual-reviewed-apps.log
+          grep -Eq 'test result: ok\. 1 passed; 0 failed;' \
+            e1-p13-real-worker/actual-reviewed-apps.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lu-e1-p13-workers-${{ matrix.os }}
+          path: e1-p13-real-worker/
+          retention-days: 14
+          if-no-files-found: warn

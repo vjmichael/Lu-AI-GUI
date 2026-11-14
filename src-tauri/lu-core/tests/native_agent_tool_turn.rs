@@ -499,7 +499,8 @@ async fn model_step_budget_is_bounded_and_authorized_names_are_selected_by_host(
             "lu_files_read_text".into()
         )))
     );
-    for _ in 0..MAX_TOOL_STEPS {
+    assert!(MAX_TOOL_STEPS>8,"tool loops should not stop at eight useful steps");
+    for _ in 0..lu_core::agent_tool_loop::MAX_IDENTICAL_RESULTS {
         let out = turn
             .handle_model_reply(
                 r#"{"kind":"tool","name":"lu_files_stat","arguments":{"path":"notes.txt"}}"#,
@@ -512,6 +513,8 @@ async fn model_step_budget_is_bounded_and_authorized_names_are_selected_by_host(
             .unwrap();
         assert!(matches!(out, ToolTurnOutcome::ToolResult { .. }));
     }
+    // A fourth *identical* native request does not execute or get another
+    // permission grant merely because the model emits a new call envelope.
     assert_eq!(
         turn.handle_model_reply(
             r#"{"kind":"tool","name":"lu_files_stat","arguments":{"path":"notes.txt"}}"#,
@@ -521,7 +524,7 @@ async fn model_step_budget_is_bounded_and_authorized_names_are_selected_by_host(
             &Permitted,
         )
         .await,
-        Err(ToolTurnError::StepLimit)
+        Err(ToolTurnError::NoProgress)
     );
     // Keep compile-time reference to the full catalog needed for larger lists.
     assert_eq!(allowed.len(), 4);
@@ -534,7 +537,10 @@ async fn model_step_budget_is_bounded_and_authorized_names_are_selected_by_host(
 #[tokio::test]
 async fn text_search_caps_directory_entries_even_when_all_are_directories() {
     let (folder, registry, catalog, authority, origin, _) = setup();
-    for i in 0..300 {
+    // The native search budget was increased to 512 directory entries;
+    // create more than that budget so this tests actual truncation, not
+    // whether a smaller historical threshold was retained.
+    for i in 0..600 {
         fs::create_dir(folder.join(format!("folder-{i:03}"))).unwrap();
     }
     let allowed = BTreeSet::from(["lu_files_search_text".into()]);

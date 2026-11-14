@@ -8,3 +8,18 @@ license = "Apache-2.0"
 publish = false
 
 [dependencies]
+
+# The destructive SIGKILL test host is deliberately excluded from normal
+# builds and all release packaging unless CI opts in explicitly.
+[features]
+e1-p08-crash-fixture = []
+
+[[bin]]
+name = "lu-e1-p08-linux-crash-parent"
+path = "src/bin/lu-e1-p08-linux-crash-parent.rs"
+required-features = ["e1-p08-crash-fixture"]
+
+[[bin]]
+name = "lu-e1-p08-linux-cgroup-crash-parent"
+path = "src/bin/lu-e1-p08-linux-cgroup-crash-parent.rs"
+required-features = ["e1-p08-crash-fixture"]

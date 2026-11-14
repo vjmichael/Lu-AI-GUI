@@ -432,7 +432,13 @@ pub fn parse_chat_sse_frame(frame: &[u8]) -> Result<ChatEvent, MultimodalError> 
     if data == "[DONE]" {
         return Ok(ChatEvent::Done);
     }
-    let json: Value = serde_json::from_str(data).map_err(|_| MultimodalError::InvalidChatEvent)?;
+    // Engine SSE is external JSON, not trusted internal Protobuf. The
+    // bounded event must be one unambiguous object (no duplicate fields at
+    // ANY depth), otherwise refuse it before emitting model text.
+    let json = Value::Object(
+        crate::model_json_boundary::parse_exact_boundary_object(data, 64 * 1024)
+            .map_err(|_| MultimodalError::InvalidChatEvent)?,
+    );
     if json.get("error").is_some() {
         return Err(MultimodalError::InvalidChatEvent);
     }
@@ -616,6 +622,22 @@ mod tests {
             parse_chat_sse_frame(b"data: {\"content\":\"pretend image text\"}\n\n"),
             Err(MultimodalError::InvalidChatEvent)
         );
+    }
+    #[test]
+    fn external_engine_sse_refuses_ambiguous_duplicate_and_partial_json() {
+        for frame in [
+            br#"data: {"choices":[{"delta":{"content":"safe","content":"unsafe"},"finish_reason":null}]}
+
+"#.as_slice(),
+            br#"data: {"choices":[{"delta":{"content":"safe"},"finish_reason":null}],"choices":[]}
+
+"#.as_slice(),
+            br#"data: {"choices":[{"delta":{"content":"partial"},"finish_reason":null}] 
+
+"#.as_slice(),
+        ] {
+            assert_eq!(parse_chat_sse_frame(frame), Err(MultimodalError::InvalidChatEvent));
+        }
     }
     #[test]
     fn image_only_turn_is_supported_but_no_prompt_is_forbidden() {

@@ -1,72 +1,30 @@
-name: Lu development ledger refresh
+name: Lu development ledger review (manual only)
 
-# Metadata-only maintenance. Never builds or merges untrusted PR source.
+# Preserve main's canonical ledger verification without automatic branch
+# fanout or scheduled write access. Refresh must be reviewed by a human.
 on:
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/lu-development-ledger.yml'
-      - 'scripts/lu-ledger.mjs'
-      - 'scripts/lu-ledger.test.mjs'
   workflow_dispatch:
-  schedule:
-    - cron: '17 13 * * *'
 
 permissions:
-  contents: write
-
+  contents: read
 concurrency:
-  group: lu-main-development-ledger
+  group: lu-development-ledger-manual-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-  verify-on-source-change:
-    if: github.event_name == 'push'
+  audit-ledger:
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    permissions:
-      contents: read
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Verify snapshot generator tests
-        run: node --test scripts/lu-ledger.test.mjs
-      - name: Confirm current ledger matches open GitHub PRs
+      - name: Validate canonical ledger generator and Core graph
+        run: node --test scripts/lu-ledger.test.mjs scripts/lu-core-stack-graph.test.mjs
+      - name: Report stale historical PR metadata without writing to main
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ github.token }}
         run: node scripts/lu-ledger.mjs --check
-
-  refresh:
-    if: github.repository == 'vjmichael/Lu-AI-GUI' && github.event_name != 'push'
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - name: Checkout authoritative main ledger
-        uses: actions/checkout@v4
-        with:
-          ref: main
-          persist-credentials: true
-      - name: Configure Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-      - name: Test snapshot integrity and drift detection
-        run: node --test scripts/lu-ledger.test.mjs
-      - name: Refresh only active-PR metadata block
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: node scripts/lu-ledger.mjs --update
-      - name: Commit metadata-only refresh if needed
-        shell: bash
-        run: |
-          if git diff --quiet -- docs/LU_DEVELOPMENT_LEDGER.md; then
-            echo "No change in open Lu PR metadata."
-            exit 0
-          fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -- docs/LU_DEVELOPMENT_LEDGER.md
-          git commit -m "docs(ledger): refresh open PR snapshot [skip ci]"
-          git push origin HEAD:main

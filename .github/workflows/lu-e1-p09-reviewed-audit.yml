@@ -1,0 +1,125 @@
+name: Lu E1-P09 Reviewed App Evidence UI
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: lu-e1-p09-${{ github.event.pull_request.head.ref || github.ref_name }}
+  cancel-in-progress: true
+jobs:
+  native-journal-audit:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 55
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Require frozen exact PR-head source
+        shell: bash
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          node scripts/verify-source-tree.mjs
+          mkdir -p e1-p09-evidence
+          echo "SOURCE_COMMIT=$EXPECTED_HEAD" > e1-p09-evidence/source.txt
+      - name: Native SQLite EffectJournal read-only evidence and fail-closed classifier
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --manifest-path lu-desktop/tests/native-reviewed-recovery/Cargo.toml \
+            --lib reviewed_app_audit::tests -- --nocapture \
+            2>&1 | tee e1-p09-evidence/native-journal-audit.log
+          # The symlink-denial regression is Unix-only; all three portable
+          # audit tests must pass on either OS, plus the fourth on Linux.
+          # Require each test by name and an exact clean result, not merely
+          # a count that can mask omitted or unexpectedly filtered tests.
+          expected=3
+          if [[ "$RUNNER_OS" == "Linux" ]]; then
+            expected=4
+          elif [[ "$RUNNER_OS" != "Windows" ]]; then
+            echo "Unexpected E1-P09 native runner: $RUNNER_OS" >&2
+            exit 1
+          fi
+          for case_name in \
+            actual_sqlite_effect_states_are_counted_but_payloads_never_returned \
+            model_answer_never_overrides_failed_uncertain_or_missing_native_receipt \
+            rejects_non_host_ids_and_never_looks_at_arbitrary_paths; do
+            grep -Fq "test reviewed_app_audit::tests::${case_name} ... ok" \
+              e1-p09-evidence/native-journal-audit.log
+          done
+          if [[ "$RUNNER_OS" == "Linux" ]]; then
+            grep -Fq 'test reviewed_app_audit::tests::linked_journal_is_rejected_even_when_target_is_real ... ok' \
+              e1-p09-evidence/native-journal-audit.log
+          fi
+          grep -Fq "test result: ok. ${expected} passed; 0 failed; 0 ignored;" \
+            e1-p09-evidence/native-journal-audit.log
+      - name: Host UI integration and no fake authority contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --test lu-desktop/tests/reviewed-app-desktop.test.mjs \
+            2>&1 | tee e1-p09-evidence/reviewed-ui-contract.log
+          grep -Eq '# pass [5-9]' e1-p09-evidence/reviewed-ui-contract.log
+          node --test lu-desktop/tests/reviewed-tool-feedback.test.mjs \
+            2>&1 | tee e1-p09-evidence/reviewed-feedback-contract.log
+          grep -Fq '# pass 5' e1-p09-evidence/reviewed-feedback-contract.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lu-e1-p09-native-${{ matrix.os }}
+          path: e1-p09-evidence/
+          retention-days: 14
+          if-no-files-found: warn
+  windows-tauri-and-react:
+    needs: native-journal-audit
+    runs-on: windows-2025
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify frozen exact production source
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/verify-source-tree.mjs
+      - name: CI-only dummy inference resources, never release artifacts
+        shell: pwsh
+        run: |
+          $root='lu-desktop/src-tauri/resources/lu-inference'
+          New-Item -ItemType Directory -Force -Path $root | Out-Null
+          foreach ($name in @('llama-server.exe','msvcp140.dll','vcruntime140.dll','vcruntime140_1.dll')) {
+            Set-Content -LiteralPath (Join-Path $root $name) -Value 'NOT_AN_ENGINE_CI_PLACEHOLDER' -NoNewline
+          }
+      - name: Build React GUI and verify existing app checks
+        working-directory: lu-desktop
+        shell: pwsh
+        run: |
+          if (Test-Path package-lock.json) { npm ci } else { npm install --no-audit --no-fund }
+          npm run build
+          npm run check
+      - name: Compile real Tauri command and run production E1-P09 tests
+        shell: pwsh
+        run: |
+          cargo check --locked --manifest-path lu-desktop/src-tauri/Cargo.toml
+          cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib reviewed_app_audit::tests -- --nocapture

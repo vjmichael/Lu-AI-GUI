@@ -1,0 +1,176 @@
+name: Lu E1-P07 Genuine GGUF Tool-Choice Acceptance
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: lu-e1-p07-real-gguf-${{ github.event.pull_request.head.ref || github.ref_name }}
+  cancel-in-progress: true
+jobs:
+  genuine-model-native-turn:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 100
+    env:
+      LU_E1_P07_LLAMA_PORT: '18972'
+      MODEL_SHA256: 7af3fdf842f87b24672f8a7f1dd50404043f0bfb71093ff91c31d2b49df4631d
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - name: Install real FFprobe for the independent GGUF model/tool run
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends ffmpeg
+          command -v ffprobe
+      - name: Verify exact frozen source and installed Git/FFprobe binaries
+        shell: bash
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          node scripts/verify-source-tree.mjs
+          mkdir -p e1-p07-gguf-evidence
+          command -v git
+          command -v ffprobe
+          echo "LU_E1_P07_GIT=$(command -v git)" >> "$GITHUB_ENV"
+          echo "LU_E1_P07_FFPROBE=$(command -v ffprobe)" >> "$GITHUB_ENV"
+          python3 -m py_compile benchmarks/e1/e1_p07_llama_completion.py benchmarks/e1/agent01g_qwen_plan_probe.py
+          python3 -m unittest discover -s benchmarks/e1 -p test_agent01g_qwen_plan_probe.py -v \
+            2>&1 | tee e1-p07-gguf-evidence/agent01g-plan-boundary-tests.log
+          grep -Fq 'Ran 8 tests' e1-p07-gguf-evidence/agent01g-plan-boundary-tests.log
+          grep -Fq 'OK' e1-p07-gguf-evidence/agent01g-plan-boundary-tests.log
+          git --version | tee e1-p07-gguf-evidence/native-app-versions.log
+          ffprobe -version | sed -n '1p' | tee -a e1-p07-gguf-evidence/native-app-versions.log
+          printf 'SOURCE_SHA=%s\n' "$EXPECTED_HEAD" | tee e1-p07-gguf-evidence/source.txt
+      - name: Build SHA-pinned actual llama.cpp CPU server
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --depth 1 --branch b12143 https://github.com/ggml-org/llama.cpp.git "$RUNNER_TEMP/e1-p07-llama-cpp"
+          actual="$(git -C "$RUNNER_TEMP/e1-p07-llama-cpp" rev-parse HEAD)"
+          test "$actual" = 2bc46baa9207d098d03741ac394e7faaf1a955b6
+          cmake -S "$RUNNER_TEMP/e1-p07-llama-cpp" -B "$RUNNER_TEMP/e1-p07-llama-build" \
+            -DCMAKE_BUILD_TYPE=Release -DGGML_NATIVE=OFF -DGGML_VULKAN=OFF \
+            -DLLAMA_CURL=OFF -DLLAMA_BUILD_SERVER=ON -DLLAMA_BUILD_TESTS=OFF
+          cmake --build "$RUNNER_TEMP/e1-p07-llama-build" \
+            --target llama-server --parallel 3
+          sha256sum "$RUNNER_TEMP/e1-p07-llama-build/bin/llama-server" \
+            | tee e1-p07-gguf-evidence/llama-engine-sha256.txt
+          echo "ENGINE_SOURCE_SHA=$actual" >> e1-p07-gguf-evidence/source.txt
+      - name: Download checksum-pinned genuine Qwen3-0.6B GGUF
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fL --retry 4 --retry-delay 5 --connect-timeout 30 \
+            https://huggingface.co/QuantFactory/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B.Q4_K_M.gguf \
+            -o "$RUNNER_TEMP/e1-p07-qwen.gguf"
+          printf '%s  %s\n' "$MODEL_SHA256" "$RUNNER_TEMP/e1-p07-qwen.gguf" \
+            | sha256sum -c -
+          printf 'MODEL_SHA256=%s\n' "$MODEL_SHA256" \
+            >> e1-p07-gguf-evidence/source.txt
+      - name: Load actual local GGUF and verify server readiness
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$RUNNER_TEMP/e1-p07-llama-build/bin/llama-server" \
+            -m "$RUNNER_TEMP/e1-p07-qwen.gguf" \
+            --host 127.0.0.1 --port "$LU_E1_P07_LLAMA_PORT" \
+            -c 8192 -ngl 0 \
+            > e1-p07-gguf-evidence/llama-server.log 2>&1 &
+          echo "$!" > "$RUNNER_TEMP/e1-p07-llama.pid"
+          ready=0
+          for i in $(seq 1 180); do
+            if ! kill -0 "$(cat "$RUNNER_TEMP/e1-p07-llama.pid")" 2>/dev/null; then
+              echo "llama-server died before model readiness"; exit 1
+            fi
+            if curl -fsS --max-time 2 "http://127.0.0.1:$LU_E1_P07_LLAMA_PORT/health" \
+              > e1-p07-gguf-evidence/health.json; then
+              ready=1; break
+            fi
+            sleep 2
+          done
+          test "$ready" = 1
+          grep -q 'status' e1-p07-gguf-evidence/health.json
+      - name: Record genuine Qwen3 plan-format reliability without granting tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 benchmarks/e1/agent01g_qwen_plan_probe.py \
+            --port "$LU_E1_P07_LLAMA_PORT" \
+            --output e1-p07-gguf-evidence/agent01g-qwen3-plan-probe.json \
+            2>&1 | tee e1-p07-gguf-evidence/agent01g-qwen3-plan-probe.log
+          python3 - <<'PY'
+          import json
+          p="e1-p07-gguf-evidence/agent01g-qwen3-plan-probe.json"
+          r=json.load(open(p))
+          assert r["schema"]=="lu-agent01g-qwen3-review-only-plan-diagnostic-v1"
+          assert len(r["samples"])==3
+          assert r["never_authorizes_workers"] is True
+          print("Qwen3 plan-quality sample completed; counts are observational, not an execution grant")
+          PY
+          echo 'Qwen3 AGENT-01G planning-quality probe records actual bounded model responses, but never approves a plan, calls Git/FFprobe, or certifies Lu host execution.' >> "$GITHUB_STEP_SUMMARY"
+      - name: AGENT-01G genuine Qwen3 - original ANSF, fresh step, reviewed Git, oracle, restart
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --test e1_reviewed_model_tools \
+            agent01g_genuine_gguf_requires_fresh_ansf_review_native_git_oracle_and_restart \
+            -- --ignored --nocapture \
+            2>&1 | tee e1-p07-gguf-evidence/agent01g-real-host-native-e2e.log
+          grep -Fq 'test agent01g_genuine_gguf_requires_fresh_ansf_review_native_git_oracle_and_restart ... ok' \
+            e1-p07-gguf-evidence/agent01g-real-host-native-e2e.log
+          grep -Fq 'test result: ok. 1 passed; 0 failed;' \
+            e1-p07-gguf-evidence/agent01g-real-host-native-e2e.log
+          echo 'AGENT-01G real loaded-GGUF host-native ANSF plan/fresh consent, reviewed Git OS effect, independent oracle, restart passed. Installed UI native picker remains separate.' >> "$GITHUB_STEP_SUMMARY"
+      - name: AGENT-01I two genuine Qwen turns with separate plan grants, native Git, oracle and restart
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --test e1_reviewed_model_tools \
+            agent01i_genuine_qwen_two_fresh_approvals_independent_git_and_restart \
+            -- --ignored --nocapture \
+            2>&1 | tee e1-p07-gguf-evidence/agent01i-two-step-real-qwen-native.log
+          grep -Fq 'test agent01i_genuine_qwen_two_fresh_approvals_independent_git_and_restart ... ok' \
+            e1-p07-gguf-evidence/agent01i-two-step-real-qwen-native.log
+          grep -Fq 'AGENT01I_TWO_STEP_REAL_QWEN_AND_NATIVE_ORACLE_PASS' \
+            e1-p07-gguf-evidence/agent01i-two-step-real-qwen-native.log
+          grep -Fq 'test result: ok. 1 passed; 0 failed;' \
+            e1-p07-gguf-evidence/agent01i-two-step-real-qwen-native.log
+          echo 'Two distinct loaded-Qwen model tool choices, separately scoped parent and child native Git runs, individual oracle receipts and restart replay denial passed. Native OS dialog and physical installed Windows acceptance remain separate.' >> "$GITHUB_STEP_SUMMARY"
+      - name: GGUF independently selects Git and FFprobe in production Lu tool loop
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --test e1_reviewed_model_tools \
+            genuine_gguf_independently_selects_git_and_media_tools_and_survives_journal_restart \
+            -- --ignored --nocapture 2>&1 | tee e1-p07-gguf-evidence/genuine-model-selection.log
+          grep -Eq 'test result: ok\. 1 passed; 0 failed;' \
+            e1-p07-gguf-evidence/genuine-model-selection.log
+          echo 'Real GGUF-selected Git/FFprobe and durable journal reopen passed' >> "$GITHUB_STEP_SUMMARY"
+      - name: Disclose incomplete GGUF tests and stop local engine
+        if: always()
+        shell: bash
+        run: |
+          if test -e "$RUNNER_TEMP/e1-p07-llama.pid"; then
+            kill "$(cat "$RUNNER_TEMP/e1-p07-llama.pid")" 2>/dev/null || true
+          fi
+          if ! test -f e1-p07-gguf-evidence/genuine-model-selection.log; then
+            echo 'No GGUF-selected Lu tool test ran. Genuine-model gate OPEN.' >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lu-e1-p07-genuine-qwen-git-ffprobe
+          path: e1-p07-gguf-evidence/
+          retention-days: 14
+          if-no-files-found: warn

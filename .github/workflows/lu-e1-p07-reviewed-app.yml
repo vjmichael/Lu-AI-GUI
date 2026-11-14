@@ -1,0 +1,158 @@
+name: Lu E1-P07 Reviewed App Model Tool and Desktop
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: lu-e1-p07-reviewed-${{ github.event.pull_request.head.ref || github.ref_name }}
+  cancel-in-progress: true
+jobs:
+  source-ui:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Assert checked-out exact head and frozen manifest
+        shell: bash
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          node scripts/verify-source-tree.mjs
+      - name: Verify WebView can only select mode, never paths or grants
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p e1-p07-evidence
+          node --test lu-desktop/tests/reviewed-app-desktop.test.mjs 2>&1 \
+            | tee e1-p07-evidence/native-opt-in-ui.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lu-e1-p07-source-ui
+          path: e1-p07-evidence/
+          retention-days: 14
+          if-no-files-found: warn
+  native-model-execution:
+    needs: source-ui
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 75
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Provision real CI-only FFprobe executable on both native runners
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            choco install ffmpeg --yes --no-progress
+          elif [[ "$RUNNER_OS" == "Linux" ]]; then
+            sudo apt-get update -qq
+            sudo apt-get install -y --no-install-recommends ffmpeg
+          else
+            echo "Unsupported native FFprobe runner: $RUNNER_OS" >&2
+            exit 1
+          fi
+          command -v ffprobe
+      - name: Assert true commit SHA and find installed OS application binaries
+        shell: bash
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          python - <<'PY'
+          import os,shutil,hashlib
+          for key,exe in [('LU_E1_P07_GIT','git'),('LU_E1_P07_FFPROBE','ffprobe')]:
+              found=shutil.which(exe)
+              if not found: raise RuntimeError('Missing installed native executable: '+exe)
+              real=os.path.realpath(found)
+              if not os.path.isabs(real) or not os.path.isfile(real):
+                  raise RuntimeError('Not a reviewed executable path: '+exe)
+              h=hashlib.sha256()
+              with open(real,'rb') as inp:
+                  for block in iter(lambda:inp.read(65536),b''):h.update(block)
+              print('E1_P07_NATIVE_IMAGE',exe,h.hexdigest())
+              with open(os.environ['GITHUB_ENV'],'a',encoding='utf-8') as out:
+                  out.write(key+'='+real+'\n')
+          PY
+      - name: Execute real native tool catalogue and denial contract tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p e1-p07-evidence
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --test e1_reviewed_model_tools -- --nocapture \
+            2>&1 | tee e1-p07-evidence/model-tool-contract.log
+          grep -Eq 'test result: ok\. 4 passed; 0 failed;' e1-p07-evidence/model-tool-contract.log
+      - name: Five real OS tools plus scripted supervised-model session and durable journal proof
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --test e1_reviewed_model_tools -- --ignored \
+            --skip genuine_gguf_independently_selects_git_and_media_tools_and_survives_journal_restart \
+            --nocapture \
+            2>&1 | tee e1-p07-evidence/actual-model-to-app.log
+          grep -Eq 'test result: ok\. 2 passed; 0 failed;' e1-p07-evidence/actual-model-to-app.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lu-e1-p07-native-${{ matrix.os }}
+          path: e1-p07-evidence/
+          retention-days: 14
+          if-no-files-found: warn
+  windows-desktop:
+    needs: source-ui
+    runs-on: windows-2025
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Prepare nonfunctional CI-only inference resource placeholders
+        shell: pwsh
+        run: |
+          $root='lu-desktop/src-tauri/resources/lu-inference'
+          New-Item -ItemType Directory -Force -Path $root | Out-Null
+          foreach ($name in @('llama-server.exe','msvcp140.dll','vcruntime140.dll','vcruntime140_1.dll')) {
+            Set-Content -LiteralPath (Join-Path $root $name) -Value 'NOT_AN_ENGINE_CI_PLACEHOLDER' -NoNewline
+          }
+      - name: Build frontend and check Tauri macro integration
+        working-directory: lu-desktop
+        shell: pwsh
+        run: |
+          if (Test-Path package-lock.json) { npm ci } else { npm install --no-audit --no-fund }
+          npm run build
+          npm run check
+      - name: Compile and execute Windows desktop reviewed picker tests
+        shell: pwsh
+        run: |
+          cargo check --locked --manifest-path lu-desktop/src-tauri/Cargo.toml
+          cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib reviewed_app_desktop::tests -- --nocapture

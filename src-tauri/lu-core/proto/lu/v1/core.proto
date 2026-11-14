@@ -83,6 +83,8 @@ message SearchTextRequest {
   string query = 2; // Literal, case-sensitive UTF-8 substring.
   optional uint32 max_files = 3;
   optional uint32 max_matches = 4;
+  optional bool recursive = 5;
+  optional string file_suffix = 6;
 }
 message SearchTextHit {
   string path = 1;
@@ -93,6 +95,63 @@ message SearchTextResult {
   repeated SearchTextHit hits = 1;
   uint32 scanned_files = 2;
   bool truncated = 3;
+  uint32 scanned_directories = 4;
+}
+
+// TOOLS-04: host-scoped, read-only ZIP manifest inspection. Never extracts.
+message ArchiveListRequest {
+  string path = 1;            // approved-root-relative ZIP filename
+  optional uint32 max_entries = 2;
+}
+message ArchiveEntry {
+  string path = 1;
+  string kind = 2;            // "file" or "directory"
+  uint64 compressed_bytes = 3;
+  uint64 declared_uncompressed_bytes = 4;
+  uint32 crc32 = 5;
+}
+message ArchiveListResult {
+  repeated ArchiveEntry entries = 1;
+  bool truncated = 2;
+  uint64 total_entries = 3;
+  uint64 total_declared_uncompressed_bytes = 4;
+  uint64 archive_bytes = 5;
+}
+
+// TOOLS-03: host-authorized native Git inspection. The model supplies only
+// read limits and (for diff) a workspace-relative path. It never supplies a
+// Git command, Git executable, repository root, ref or permission token.
+message GitStatusRequest {
+  optional uint32 max_entries = 1;
+}
+message GitStatusEntry {
+  string path = 1;
+  string state = 2;
+}
+message GitStatusResult {
+  repeated GitStatusEntry entries = 1;
+  bool truncated = 2;
+}
+message GitLogRequest {
+  optional uint32 limit = 1;
+}
+message GitCommitSummary {
+  string commit = 1;
+  uint64 unix_time = 2;
+  string subject = 3;
+}
+message GitLogResult {
+  repeated GitCommitSummary commits = 1;
+  bool truncated = 2;
+}
+message GitDiffRequest {
+  string path = 1; // Optional, host-scoped workspace-relative file
+  optional uint32 max_bytes = 2;
+}
+message GitDiffResult {
+  string diff = 1;
+  bool truncated = 2;
+  uint64 observed_bytes = 3;
 }
 
 // CE worker IPC is native Protobuf, independent of legacy model-side JSON.
@@ -155,6 +214,34 @@ message CeWriteResult {
   uint64 bytes_written = 1;
   bool committed = 2;
 }
+// WRITE-01E: host-reviewed existing-file edits. These are data only;
+// human approval and exact target fencing are separate Rust host state.
+message EditExistingRequest {
+  string relative_path = 1;
+  string expected_original_sha256 = 2;
+  bytes replacement = 3;
+  string reviewed_approval_sha256 = 4;
+}
+message EditExistingResult {
+  string backup_id = 1; // Host journal call ID; not an authority token.
+  uint64 bytes_written = 2;
+  string original_sha256 = 3;
+  string replacement_sha256 = 4;
+  bool committed = 5;
+}
+message EditRollbackRequest {
+  string relative_path = 1;
+  string original_edit_id = 2;
+  string expected_current_sha256 = 3;
+  string expected_restored_sha256 = 4;
+}
+message EditRollbackResult {
+  string original_edit_id = 1;
+  uint64 restored_bytes = 2;
+  string restored_sha256 = 3;
+  bool committed = 4;
+}
+
 message CeExecuteArgument {
   string name = 1;
   string value = 2;
@@ -370,4 +457,240 @@ message DiagnosticTrace {
   string trace_ref = 2;       // Host-minted transient 32-char lowercase hex.
   uint32 dropped_events = 3; // Recorded loss: a missing stage is not proof.
   repeated DiagnosticEvent events = 4;
+}
+
+// Structured Lu-native spreadsheet Write. A model proposal is not a grant:
+// the trusted host must verify exact target, rendered bytes and effect scope.
+message SpreadsheetCreateCell {
+  uint32 row = 1;
+  uint32 column = 2;
+  oneof value {
+    string text = 3;
+    double number = 4;
+    bool boolean = 5;
+    string formula = 6;
+  }
+}
+message SpreadsheetCreateRequest {
+  string file_name = 1;
+  string sheet_name = 2;
+  repeated SpreadsheetCreateCell cells = 3;
+}
+message SpreadsheetCreateResult {
+  string file_name = 1;
+  uint64 bytes_written = 2;
+  string sha256 = 3;
+}
+
+// One ISO-9660 regular file to a new, host-approved destination.
+// The member digest is a preview integrity condition, never authorization.
+message IsoExtractRequest {
+  string source_name = 1;
+  string member_path = 2;
+  string target_name = 3;
+  string expected_sha256 = 4;
+}
+message IsoExtractResult {
+  string target_name = 1;
+  uint64 bytes_written = 2;
+  string sha256 = 3;
+}
+
+// Linux TAR / compression exact approval. Input strings are never grants.
+// Host must pin approved source/target/content digest against saved human turn.
+message LinuxArchiveExtractRequest {
+  string archive_name = 1;
+  string member_path = 2;
+  string target_name = 3;
+  string expected_sha256 = 4;
+}
+message LinuxArchiveCreateRequest {
+  string archive_name = 1;
+  repeated string input_names = 2;
+  string expected_sha256 = 3;
+}
+message LinuxArchiveWriteResult {
+  string target_name = 1;
+  uint64 bytes_written = 2;
+  string sha256 = 3;
+  uint32 member_count = 4;
+}
+
+// Wave 2: exact-authorized, selected ZIP member extraction into a NEW target.
+message ZipExtractRequest {
+  string archive_name = 1;
+  string member_path = 2;
+  string target_name = 3;
+  string expected_sha256 = 4;
+}
+message ZipExtractResult {
+  string target_name = 1;
+  string member_path = 2;
+  uint64 bytes_written = 3;
+  string sha256 = 4;
+}
+
+// Native structured Word creation. Model text is not an approval.
+message DocxCreateBlock {
+  string kind = 1;  // title, heading1, heading2, paragraph
+  string text = 2;
+}
+message DocxCreateRequest {
+  string file_name = 1;
+  repeated DocxCreateBlock blocks = 2;
+}
+message DocxCreateResult {
+  string file_name = 1;
+  uint64 bytes_written = 2;
+  string sha256 = 3;
+}
+
+// Same-directory, host-pinned file transfer. Copy and move require separate
+// WRITE grants even if they share a typed Protobuf payload.
+message FileTransferRequest {
+  string source_name = 1;
+  string target_name = 2;
+  string expected_source_sha256 = 3;
+}
+message FileTransferResult {
+  string source_name = 1;
+  string target_name = 2;
+  uint64 bytes_written = 3;
+  string sha256 = 4;
+  bool source_removed = 5;
+}
+
+// Native PowerPoint creation; user grants and verified bytes are host owned.
+message PptxCreateSlide {
+  string title = 1;
+  repeated string bullet_points = 2;
+}
+message PptxCreateRequest {
+  string file_name = 1;
+  repeated PptxCreateSlide slides = 2;
+}
+message PptxCreateResult {
+  string file_name = 1;
+  uint64 bytes_written = 2;
+  string sha256 = 3;
+}
+
+// Extract a validated ZIP or TAR-family tree into one NEW directory.
+// The manifest digest and path are approval inputs, not permissions.
+message ArchiveTreeExtractRequest {
+  string source_name = 1;
+  string target_folder = 2;
+  string approved_manifest_sha256 = 3;
+}
+message ArchiveTreeExtractResult {
+  string target_folder = 1;
+  uint32 files_extracted = 2;
+  uint64 bytes_extracted = 3;
+  string manifest_sha256 = 4;
+}
+
+// Reversible same-volume trash/restore. Restore receipt is host-persisted.
+// A model-provided trash identifier is never sufficient authorization.
+message FileTrashRequest {
+  string source_name = 1;
+  string expected_sha256 = 2;
+}
+message FileTrashResult {
+  string original_name = 1;
+  string trash_entry = 2;
+  uint64 bytes = 3;
+  string sha256 = 4;
+}
+message FileRestoreRequest {
+  string trusted_receipt_id = 1;
+}
+message FileRestoreResult {
+  string restored_name = 1;
+  uint64 bytes = 2;
+  string sha256 = 3;
+}
+
+// Existing OOXML document revisions are published to a NEW version, not an
+// in-place overwrite. Host compares baseline/package digest and full diff.
+message OfficeTextPatch {
+  uint32 text_index = 1;
+  uint32 slide_number = 2;
+  string expected_old = 3;
+  string new_text = 4;
+}
+message OfficeNumberPatch {
+  uint32 sheet_number = 1;
+  string address = 2;
+  double expected_old = 3;
+  double new_number = 4;
+}
+message OfficeBooleanPatch {
+  uint32 sheet_number = 1;
+  string address = 2;
+  bool expected_old = 3;
+  bool new_boolean = 4;
+}
+message OfficeStringPatch {
+  uint32 sheet_number = 1;
+  string address = 2;
+  string expected_old = 3;
+  string new_text = 4;
+}
+message OfficeRevisionRequest {
+  string source_name = 1;
+  string target_new_name = 2;
+  string original_sha256 = 3;
+  string approved_revised_sha256 = 4;
+  oneof change {
+    OfficeTextPatch word_text = 5;
+    OfficeTextPatch slide_text = 6;
+    OfficeNumberPatch cell_number = 7;
+    OfficeBooleanPatch cell_boolean = 8;
+    OfficeStringPatch cell_text = 9;
+  }
+}
+message OfficeRevisionResult {
+  string target_new_name = 1;
+  uint64 bytes_written = 2;
+  string revised_sha256 = 3;
+}
+
+
+// WAVE2: bounded multi-part versioned Office revisions. One authenticated
+// human grant approves the exact original and entire revised package digest;
+// all individual edits must have exact expected prior content.
+message OfficeBatchPatch {
+  oneof change {
+    OfficeTextPatch word_text = 1;
+    OfficeTextPatch slide_text = 2;
+    OfficeNumberPatch cell_number = 3;
+    OfficeBooleanPatch cell_boolean = 4;
+    OfficeStringPatch cell_text = 5;
+  }
+}
+message OfficeBatchRevisionRequest {
+  string source_name = 1;
+  string target_new_name = 2;
+  string original_sha256 = 3;
+  string approved_revised_sha256 = 4;
+  repeated OfficeBatchPatch patches = 5;
+}
+
+// TOOLS-10 typed Browser and Research wire contracts; network grants remain host-owned.
+message BrowserOperationRequest { string operation = 1; bytes arguments_json = 2; }
+message BrowserOperationResult { bytes result_json = 1; }
+message WebFetchRequest { string url = 1; }
+message WebFetchResult { string source_url = 1; uint32 http_status = 2; string content = 3; string content_sha256 = 4; bool truncated = 5; }
+message WebAcademicSearchRequest { string query = 1; uint32 page = 2; }
+message WebAcademicSearchLead { string provider = 1; string provider_id = 2; string doi = 3; string title = 4; string authors = 5; string catalog_url = 6; }
+message WebAcademicSearchResult { repeated WebAcademicSearchLead leads = 1; uint32 page = 2; optional uint32 next_page = 3; string observed_sha256 = 4; bool leads_verified = 5; }
+
+// TOOLS-C-BATCH: the host alone constructs and authorizes this receipt.
+// A batch is not APPLIED until every archived subtree is independently rehashed.
+message ArchiveBatchExtractReceipt {
+  string group_name = 1;
+  uint32 archive_count = 2;
+  uint64 file_count = 3;
+  uint64 expanded_bytes = 4;
+  string manifest_sha256 = 5;
 }

@@ -80,3 +80,380 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .appDropHint{position:fixed;z-index:19;left:50%;top:46%;transform:translate(-50%,-50%);background:#213b55;border:1px solid #85bff0;border-radius:12px;color:#f4faff;padding:16px 22px;box-shadow:0 12px 40px rgba(0,0,0,.38);pointer-events:none}
 .busyHint .spinner{will-change:transform}
 @media(prefers-reduced-motion:reduce){.busyHint .spinner{animation:none;will-change:auto}}
+
+/* TOOLS-11: host-owned background task inspector. All controls are read-only. */
+.backgroundPaneBackdrop{position:fixed;inset:0;background:#030a12a8;z-index:40;display:flex;justify-content:flex-end}
+.backgroundPane{width:min(465px,100vw);height:100%;display:flex;flex-direction:column;background:#182537;color:#dce5ee;border-left:1px solid #49617d;box-shadow:-15px 0 40px #0009}
+.backgroundPaneHeader{display:flex;justify-content:space-between;align-items:center;padding:20px 22px;border-bottom:1px solid #36495f}
+.backgroundPaneHeader h2{margin:0;font-size:20px}
+.backgroundPaneHeader small{color:#9bb0c8;font-size:12px}
+.backgroundPaneToolbar{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:14px 18px;border-bottom:1px solid #30435b}
+.backgroundPaneFilters{display:flex;gap:5px}
+.backgroundPaneFilters button{border:1px solid #435d78;background:#1b3047;border-radius:7px;padding:8px 12px;color:#d6e6fa}
+.backgroundPaneFilters button.selected{background:#375e85;border-color:#87b3dc}
+.backgroundPaneList{overflow-y:auto;flex:1;min-height:0;padding:16px 18px}
+.backgroundTask{border:1px solid #354b63;background:#1c2d41;border-radius:10px;padding:15px;margin-bottom:12px}
+.backgroundTaskHeading{display:flex;align-items:center;gap:10px;justify-content:space-between}
+.backgroundTaskHeading strong{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:13px}
+.backgroundTaskStatus{border-radius:5px;padding:4px 7px;font-size:10px;letter-spacing:.07em;border:1px solid #52718f}
+.backgroundTaskStatus.state-running{color:#8ce7b0;border-color:#407e64}
+.backgroundTaskStatus.state-failed,.backgroundTaskStatus.state-interrupted{color:#f6bf91;border-color:#8b5b4c}
+.backgroundTask small{display:block;color:#9ab2c9;margin-top:7px;font-size:11px}
+.backgroundTask p{color:#c4d4e5;font-size:12px;overflow-wrap:anywhere;margin:12px 0}
+.backgroundTaskProgress{height:9px;border-radius:8px;background:#0d1826;overflow:hidden;border:1px solid #2b4660}
+.backgroundTaskProgress span{display:block;height:100%;border-radius:8px;background:#4b9ac2;transition:width .3s}
+.backgroundTaskFoot{display:flex;justify-content:space-between;gap:8px;color:#92a6bd;font-size:11px;margin-top:9px}
+.backgroundTaskWarning{color:#ffc28b!important}
+.backgroundPaneError{padding:10px 18px;color:#ffd5b2}
+.backgroundPaneEmpty{padding:28px 10px;text-align:center;color:#aabdd0;font-size:13px}
+.backgroundPaneFooter{padding:16px 20px;border-top:1px solid #354b63;color:#90a9c0;font-size:11px;line-height:1.6}
+@media(max-width:620px){.backgroundPane{width:100vw}.backgroundTaskFoot{flex-wrap:wrap}}
+
+.backgroundTaskCancel{margin-top:12px;border:1px solid #ac6f5f;border-radius:7px;background:#482b31;color:#ffd7cf;font-size:12px;padding:9px 12px}
+.backgroundTaskCancel:hover,.backgroundTaskCancel:focus-visible{background:#61353b;border-color:#e59983}
+
+.backgroundScanLaunch{padding:15px 18px;display:flex;align-items:flex-start;gap:9px;flex-direction:column;border-bottom:1px solid #30435b}
+.backgroundScanLaunch small{color:#91a9bf;font-size:11px;line-height:1.5}
+
+.backgroundGlobalNotice{display:flex;align-items:center;justify-content:space-between;gap:12px;text-align:left;padding:10px 17px;border:0;border-bottom:1px solid #68859a;background:#2d4963;color:#edf4fe;width:100%;cursor:pointer}
+.backgroundGlobalNotice:hover,.backgroundGlobalNotice:focus-visible{background:#375874}
+.backgroundGlobalNotice small{font-size:11px;color:#c6d9ec}
+.backgroundTerminalBanner{display:flex;align-items:center;flex-wrap:wrap;gap:9px;padding:12px 16px;background:#293f54;color:#e1effb;border-bottom:1px solid #59748c;font-size:12px}
+.backgroundTerminalBanner span{flex:1;min-width:0;overflow-wrap:anywhere}
+
+.backgroundContinuationPreference{padding:14px 18px;border-bottom:1px solid #30435b;background:#21334a}
+.backgroundContinuationPreference label{display:flex;gap:10px;align-items:flex-start;font-size:12px;color:#e5f0fc;cursor:pointer}
+.backgroundContinuationPreference input{margin:2px 0 0;accent-color:#6daee1;flex:none}
+.backgroundContinuationPreference label:has(input:disabled){opacity:.55;cursor:not-allowed}
+.backgroundContinuationPreference small{display:block;margin:8px 0 0 25px;font-size:11px;line-height:1.6;color:#a9bdd0}
+
+/* AUTH-02: human-controlled, inert model-proposed file read. */
+.readProposalCard {
+  margin: 8px 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--border, #57616d);
+  border-radius: 10px;
+  background: var(--panel, rgba(120, 130, 150, 0.09));
+  display: grid;
+  gap: 8px;
+}
+.readProposalCard p { margin: 0; overflow-wrap: anywhere; }
+.readProposalCard small { opacity: .85; overflow-wrap: anywhere; }
+.readProposalCard .settingsActions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* WRITE-01C: bounded review of all proposed bytes and explicit destination. */
+.writeProposalCard .writePreview {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  overflow: auto;
+  max-height: 320px;
+  padding: 12px;
+  margin: 0;
+  border-radius: 6px;
+  border: 1px solid var(--border, #57616d);
+  user-select: text;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 12px;
+}
+.writeProposalCard .writeTarget,
+.writeRecoveryRow .writeTarget {
+  display: block;
+  overflow-wrap: anywhere;
+  white-space: normal;
+  font-size: 12px;
+}
+.writeRecoveryRow {
+  border-top: 1px solid var(--border, #57616d);
+  padding: 8px 0;
+  display: grid;
+  gap: 4px;
+}
+
+/* DOCS-01: advanced preferences and OS-owned containing-folder action. */
+.advancedDocumentSettings {
+  margin: 12px 0 18px;
+  border: 1px solid #526b83;
+  border-radius: 10px;
+  padding: 13px;
+  background: rgba(76, 115, 150, .08);
+  display: grid;
+  gap: 9px;
+}
+.advancedDocumentSettings h3,.advancedDocumentSettings p { margin: 0; }
+.advancedDocumentSettings small,.advancedDocumentSettings code { overflow-wrap: anywhere; }
+.advancedDocumentSettings .writeTarget {
+  display: block;
+  font: 12px ui-monospace,Consolas,monospace;
+  padding: 8px;
+  border-radius: 5px;
+  background: rgba(0,0,0,.18);
+  user-select: text;
+}
+.folderLink {
+  width: fit-content;
+  border: none;
+  padding: 2px 0;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  color: #9ad5ff;
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+}
+.folderLink:hover { color: #d0edff; }
+.folderLink:focus-visible { outline: 2px solid #96ceff; outline-offset: 3px; }
+
+
+.editProposalCard .editFullText {
+  display: block;
+  width: 100%;
+  max-height: 300px;
+  overflow: auto;
+  white-space: pre;
+  tab-size: 4;
+  overflow-wrap: normal;
+  padding: 10px 12px;
+  border: 1px solid #334c65;
+  border-radius: 7px;
+  background: #101b2a;
+  color: #dbeaf8;
+  font: 12px/1.5 ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+.editProposalCard .editDiff { border-color: #587898; }
+.editProposalCard .editReviewAck { display: flex; align-items: flex-start; gap: 9px; line-height: 1.4; }
+.editProposalCard .editReviewAck input { margin-top: 4px; flex-shrink: 0; }
+
+.editUndoPreview { margin-top: 10px; padding: 10px; border: 1px solid #415a71; border-radius: 8px; }
+.editUndoPreview summary { cursor: pointer; font-weight: 600; padding: 5px 0; }
+.editUndoPreview .editFullText { display: block; width: 100%; max-height: 300px; overflow: auto;
+  white-space: pre; overflow-wrap: normal; padding: 10px 12px; border: 1px solid #334c65;
+  border-radius: 7px; background: #101b2a; color: #dbeaf8;
+  font: 12px/1.5 ui-monospace, SFMono-Regular, Consolas, monospace; }
+
+
+/* WAVE4-IMAGE-WS-01: read-only original attachment viewer, no file operations. */
+.imageViewerBackdrop { position:fixed;inset:0;z-index:4000;background:rgba(0,0,0,.78);
+  display:grid;place-items:center;padding:20px; }
+.imageViewerDialog { display:flex;flex-direction:column;gap:12px; width:min(960px,96vw);
+  max-height:92vh; padding:18px;border:1px solid var(--border,#53677c);
+  border-radius:12px;background:var(--panel,#152437);color:var(--text,#edf4ff); }
+.imageViewerDialog header,.imageViewerDialog footer {display:flex;gap:10px;
+  align-items:center;flex-wrap:wrap;justify-content:space-between;}
+.imageViewerDialog .imageViewerViewport {display:grid;place-items:center;overflow:auto;
+  min-height:220px;max-height:65vh;padding:16px;border-radius:8px;
+  background:repeating-conic-gradient(#17283c 0 25%,#25374c 0 50%) 50%/24px 24px;}
+.imageViewerDialog .imageViewerViewport img {display:block;max-width:100%;height:auto;
+  max-height:58vh;object-fit:contain;transform-origin:center center;}
+.imageViewerDialog button {cursor:pointer;} .imageViewerDialog button:disabled {opacity:.5;cursor:default;}
+.imageViewerDialog small {overflow-wrap:anywhere;}
+
+
+/* Observe & Learn pilot: persistent visible indication while consent is active. */
+.observePilot{display:grid;gap:6px;padding:10px 12px;margin:6px 0;
+  border:1px solid var(--border,#567);border-radius:9px;}
+.observePilotTop{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;}
+.observePilot small{overflow-wrap:anywhere;opacity:.83;}
+.observePilot .settingsActions{display:flex;flex-wrap:wrap;gap:8px;}
+.observePilot .observeIndicator{font-weight:600;font-size:12px;}
+.observePilot .observeIndicator.mode-active{color:#ffd566;}
+.observePilot .observeIndicator.mode-paused{color:#a6b6c7;}
+
+/* Native-first Observe awareness notations: no screenshots or hidden workers. */
+.observeNotations{display:grid;gap:7px;margin-top:8px;padding:9px 10px;
+ border:1px solid var(--border,#516275);border-radius:8px;}
+.observeNotations ul{margin:0;padding-left:19px;max-height:130px;overflow-y:auto;
+ font-size:12px;line-height:1.5;}
+.observeNotations li{overflow-wrap:anywhere;}
+.observeNotations button{justify-self:start;}
+.observeHandoff{display:grid;gap:4px;padding:8px;border-radius:6px;
+ background:var(--panel,#202b35);}
+
+/* WAVE4 Research: display unverified catalog leads, not citation receipts. */
+.researchResults{display:grid;gap:6px;margin-top:8px;border:1px solid var(--border,#546);
+ border-radius:8px;padding:10px;}
+.researchResults ul{max-height:260px;overflow:auto;margin:0;padding-left:20px;}
+.researchResults li{margin:8px 0;display:grid;gap:4px;}
+.researchResults small{overflow-wrap:anywhere;}
+
+/* WAVE4 Image Workspace — optional native immutable crop/resize export. */
+.imageRevisionForm{display:grid;gap:8px;padding:10px;border:1px solid var(--border,#546);
+ border-radius:8px;max-height:30vh;overflow:auto;}
+.imageRevisionForm label{display:grid;gap:3px;font-size:12px;}
+.imageRevisionDimensions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;}
+.imageRevisionForm input{max-width:100%;min-width:0;}
+.imageRevisionForm button{justify-self:start;}
+
+/* P02: host-owned task scheduling, not a model-driven dashboard. */
+.backgroundScheduleOptions{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;
+ padding:12px 18px;border-bottom:1px solid #30435b}
+.backgroundScheduleOptions label{display:grid;gap:5px;min-width:0;font-size:11px;color:#c8dcee}
+.backgroundScheduleOptions select{min-width:0;width:100%;background:#1b2b3e;color:#eef5fc;
+ border:1px solid #56708a;border-radius:6px;padding:7px 5px;font-size:11px}
+.backgroundGuardianStatus{display:grid;gap:5px;padding:10px 18px;border-bottom:1px solid #30435b;
+ background:#1d3345;color:#e1edf8;font-size:12px}
+.backgroundGuardianStatus small{color:#adbed0;line-height:1.5}
+@media(max-width:650px){.backgroundScheduleOptions{grid-template-columns:1fr}}
+
+/* M2 ANSF memory controls: optional lightweight task context, never consent. */
+.m2MemoryPane{margin:5px 16px 0;border:1px solid var(--border,#3b4050);border-radius:9px;
+  background:var(--surface,#1d202a);max-height:36vh;overflow:auto;flex-shrink:0;}
+.m2MemoryHeader{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:9px 12px;}
+.m2MemoryHeader strong{font-size:.83rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:68ch;}
+.m2MemoryBody{padding:2px 12px 12px;display:grid;gap:10px;}
+.m2MemoryBody form,.m2QuestionCard{display:grid;gap:8px;border-top:1px solid var(--border,#3b4050);padding-top:9px;}
+.m2MemoryBody label{display:grid;gap:4px;font-size:.85rem;}
+.m2MemoryBody input,.m2MemoryBody textarea{width:100%;box-sizing:border-box;resize:vertical;min-height:32px;}
+.m2MemoryBody small,.m2QuestionCard small{opacity:.82;line-height:1.4;}
+.m2MemoryBody form>button{justify-self:start;}
+.m2QuestionChoices{display:flex;gap:8px;flex-wrap:wrap;}
+@media(max-width:680px){.m2MemoryHeader{align-items:flex-start;flex-direction:column;}
+  .m2MemoryPane{max-height:40vh;}}
+
+
+/* M3 historical memory pane is independently scrollable/navigation-scoped.
+   It overlays instead of replacing the active chat, composer or transcript. */
+.ansfHistoryPane{
+  position:fixed;top:0;right:0;bottom:0;z-index:1500;
+  display:flex;flex-direction:column;gap:10px;
+  width:min(490px,95vw);max-height:100dvh;
+  padding:16px;overflow:hidden;
+  background:var(--surface, #161a22);color:var(--text, #f0f2f7);
+  border-left:1px solid var(--border, #444);
+  box-shadow:-10px 0 35px #0007;
+}
+.ansfHistoryHeader{display:flex;align-items:center;justify-content:space-between;gap:14px}
+.ansfHistoryHeader div{display:flex;flex-direction:column;gap:3px}
+.ansfHistoryHeader small,.ansfHistoryPane small{opacity:.83;overflow-wrap:anywhere}
+.ansfHistoryPicker{display:flex;flex-direction:column;gap:5px}
+.ansfHistoryPicker select,.ansfHistorySearch input{
+  min-width:0;width:100%;padding:8px;border-radius:6px;
+}
+.ansfHistorySearch{display:flex;gap:8px}
+.ansfHistorySearch input{flex:1}
+.ansfHistoryScroll{min-height:100px;flex:1;overflow-y:auto;overscroll-behavior:contain}
+.ansfHistoryEntry{padding:10px 4px;border-bottom:1px solid var(--border,#444)}
+.ansfHistoryEntry p{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.4}
+.ansfHistoryEntry code{display:block;overflow-wrap:anywhere;font-size:10px;opacity:.75}
+.ansfOriginalReader{
+  flex:0 1 36%;min-height:110px;overflow:auto;
+  padding:10px;border:1px solid var(--border,#444);border-radius:8px;
+}
+.ansfOriginalReader header{display:flex;align-items:center;justify-content:space-between}
+.ansfOriginalReader pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:40vh;overflow:auto}
+.ansfHistoryError{color:#ff9a9a}
+
+
+/* M3 source-linked operational asset evidence, scoped to the history pane. */
+.ansfAssetsMemory{border:1px solid var(--border,#555);border-radius:8px;
+  padding:8px;max-height:33vh;overflow:auto}
+.ansfAssetsMemory summary{cursor:pointer;font-weight:600}
+.ansfAssetForm{display:flex;flex-direction:column;gap:7px;margin:8px 0}
+.ansfAssetForm label{display:flex;flex-direction:column;gap:3px}
+.ansfAssetForm input{width:100%;min-width:0;padding:7px}
+.ansfAssetRows{max-height:20vh;overflow:auto}
+.ansfAssetRows article{border-bottom:1px solid var(--border,#555);padding:5px 0;
+  display:flex;flex-direction:column;gap:3px}
+.ansfAssetRows code{overflow-wrap:anywhere}
+
+
+/* UX-CHAT01: interactive, bounded ANSF original-message actions. */
+.messageActions{display:flex;flex-wrap:wrap;align-items:center;gap:5px;margin-top:12px;
+  padding-top:9px;border-top:1px solid currentColor;font-size:11px}
+.messageActions>button,.messageReactions button{font-size:11px;color:inherit;
+  background:transparent;border:1px solid currentColor;border-radius:7px;
+  padding:5px 8px;opacity:.74}
+.messageActions>button:hover,.messageReactions button:hover{opacity:1}
+.messageReactions{display:inline-flex;flex-wrap:wrap;gap:3px;
+  align-items:center;margin-left:auto}
+.messageReactions button{font-size:16px;min-width:33px;padding:3px 5px}
+.messageReactions button[aria-pressed="true"]{opacity:1;outline:2px solid currentColor;
+  outline-offset:1px;background:#ffffff22}
+.messageActions button:focus-visible,.messageReactions button:focus-visible{
+  outline:2px solid currentColor;outline-offset:2px}
+.message .messageRole{color:inherit;opacity:.72}
+.chatAppearanceSettings{margin:18px 0;padding:12px;border:1px solid #3d5069;
+  border-radius:10px}
+.chatAppearanceSettings h3{margin:0 0 7px}
+.appearancePresetRow{display:flex;gap:6px;flex-wrap:wrap;margin-top:13px}
+.appearancePresetRow button{padding:6px 9px;font-size:12px;color:#dce5ee;
+  border:1px solid #536b86;background:#243a51;border-radius:7px}
+.chatColorInputs{margin-top:15px;display:grid;gap:8px}
+.chatColorInputs label{display:flex;justify-content:space-between;gap:15px;
+  align-items:center;font-size:12px;color:#c2d3e7}
+.chatColorInputs input[type="color"]{width:64px;height:31px;cursor:pointer;
+  padding:2px;background:#172538;border:1px solid #728da8;border-radius:6px}
+.messageReplayBackdrop{position:fixed;inset:0;background:#081321c9;z-index:43;
+  display:grid;place-items:center;padding:20px}
+.messageReplayDialog{max-width:720px;width:100%;max-height:85vh;overflow-y:auto;
+  padding:20px;background:#1b2b3e;color:#dce5ee;border:1px solid #7294b6;
+  border-radius:14px;box-shadow:0 17px 55px #0009}
+.messageReplayDialog header{display:flex;align-items:center;justify-content:space-between;
+  gap:12px;margin-bottom:10px}
+.messageReplayDialog header button{color:#dce5ee;background:#2e4967;
+  padding:6px 9px;border:1px solid #607f9c;border-radius:7px}
+.messageReplayDialog small{display:block;color:#b5cadd;font-size:12px;line-height:1.6}
+.messageReplayDialog .messageContent{max-height:55vh;overflow-y:auto}
+.messageReplayDialog .settingsActions button{padding:7px 12px;border-radius:8px;
+  color:#eff6ff;background:#2b4865;border:1px solid #5d7894}
+@media(max-width:600px){
+  .messageActions{gap:5px}
+  .messageReactions{margin-left:0;width:100%}
+  .messageReactions button{min-width:35px}
+  .messageReplayBackdrop{padding:10px}
+}
+
+/* User-selectable light/dark bubbles: preserve readable markdown contrast. */
+.message .markdownBody h2,.message .markdownBody h3,.message .markdownBody h4,
+.message .markdownBody h5,.message .markdownBody a{color:inherit}
+.message .markdownBody a{text-decoration:underline;text-underline-offset:3px}
+.message .markdownBody :not(pre)>code{color:#edf5ff}
+
+/* Background-specific foreground color also applies to empty-chat guidance. */
+.messages .welcome p{color:inherit;opacity:.77}
+
+
+/* UX-CHAT02: original/revision provenance and pinned human reply links. */
+.messageEditedNotice{display:block;margin-top:9px;padding:5px 8px;
+  border-left:3px solid currentColor;font-size:11px;opacity:.85}
+.messageReplyReference{display:block;max-width:100%;margin-top:10px;
+  padding:7px 10px;background:transparent;color:inherit;opacity:.88;
+  border:1px dashed currentColor;border-radius:7px;text-align:left;
+  font-size:11px;overflow-wrap:anywhere}
+.messageReplyReference:hover{opacity:1}
+.messageRevisionEditor{display:grid;gap:9px;margin:18px 0 12px;font-size:12px}
+.messageRevisionEditor textarea{width:100%;min-height:125px;resize:vertical;
+  padding:11px 12px;background:#112137;color:#f4faff;
+  border:1px solid #6a89aa;border-radius:9px;line-height:1.55}
+.originalMessageDetails{margin:9px 0;border:1px solid #3e566f;
+  border-radius:8px;padding:8px}
+.originalMessageDetails summary{cursor:pointer;color:#d1e0ef}
+.originalMessageDetails pre,.messageProvenanceVersions pre{white-space:pre-wrap;
+  word-break:break-word;font:12px/1.55 Consolas,monospace;color:inherit;
+  max-height:200px;overflow-y:auto;margin:9px 0}
+.messageProvenanceVersions{max-height:65vh;overflow:auto;margin:15px 0}
+.messageProvenanceVersions section{margin:10px 0;padding:11px 13px;
+  border:1px solid #49627d;border-radius:9px;background:#18283b}
+.messageProvenanceVersions strong{display:block}
+.messageProvenanceVersions small{color:#a7c5e3}
+.messagePinnedQuote{margin:12px 0;padding:10px 13px;border-left:3px solid #7bb1e7;
+  white-space:pre-wrap;overflow-wrap:anywhere;background:#1a324a}
+.replyRecoveryNotice{margin:14px 0;padding:12px;border:1px solid #ae8a53;
+  border-radius:8px;background:#3b3025;color:#ffe2ba;font-size:12px}
+.replyRecoveryNotice button{display:block;margin-top:9px;
+  padding:7px 11px;border:1px solid #c0a16e;border-radius:7px;
+  color:inherit;background:#55422d}
+.messageRevisionEditor textarea:focus-visible,
+.messageReplyReference:focus-visible{outline:2px solid #a4d0ff;outline-offset:2px}
+
+/* MEMORY-LOOP-02C: neutral, read-only original evidence (never a success badge). */
+.recoveryProvenance{margin-top:12px;display:grid;gap:7px;padding:12px;border:1px solid #52667c;border-radius:9px;background:#1a2939;overflow-wrap:anywhere}
+.recoveryProvenance>strong{font-size:13px}
+.recoveryProvenance small{display:block;color:#b7c9da;line-height:1.55}
+.recoveryProvenanceTurn{display:grid;gap:5px;margin:6px 0;padding:11px;border:1px solid #41576e;border-radius:8px;background:#172536;min-width:0}
+.recoveryProvenanceTurn>strong{font-size:12px;overflow-wrap:anywhere}
+.recoveryProvenanceOperation{display:grid;gap:4px;padding:10px;border-left:2px solid #66839c;background:#192c40;border-radius:4px}
+.recoveryProvenanceOperation strong{font-size:12px}
+.recoveryProvenance .recoveryProvenanceWarning{color:#ffd0a3}
+.recoveryProvenance .recoveryProvenanceDigest{font:11px/1.5 Consolas,"Cascadia Code",monospace;overflow-wrap:anywhere;color:#b2cce3}

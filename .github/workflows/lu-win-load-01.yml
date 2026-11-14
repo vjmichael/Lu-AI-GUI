@@ -1,0 +1,56 @@
+name: Lu WIN-LOAD-01 host trace tests
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: win-load-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  portable-load-trace:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - name: Test real load diagnostics module without Tauri dependencies
+        run: cargo test --manifest-path lu-desktop/tests/native-dx/Cargo.toml
+  rust-load-trace:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Record source identity
+        shell: pwsh
+        run: |
+          git rev-parse HEAD
+          Write-Host "CI_COMMIT=$env:GITHUB_SHA"
+      - name: Stage CI-only nonfunctional build resource placeholders
+        shell: pwsh
+        run: |
+          $root='lu-desktop/src-tauri/resources/lu-inference'
+          New-Item -ItemType Directory -Force -Path $root | Out-Null
+          foreach ($name in @('llama-server.exe','msvcp140.dll','vcruntime140.dll','vcruntime140_1.dll')) {
+            Set-Content -LiteralPath (Join-Path $root $name) -Value 'NOT_AN_ENGINE_CI_PLACEHOLDER' -NoNewline
+          }
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Build frontend before compiling native host tests
+        working-directory: lu-desktop
+        shell: pwsh
+        run: |
+          if (Test-Path package-lock.json) { npm ci } else { npm install --no-audit --no-fund }
+          npm run build
+      - name: Run host lifecycle regression tests
+        working-directory: lu-desktop/src-tauri
+        shell: pwsh
+        run: cargo test --locked load_trace::tests -- --nocapture
+      - name: Run typed real engine lifecycle observer tests
+        working-directory: src-tauri/lu-core
+        shell: pwsh
+        run: cargo test --locked persistent_llama_backend::tests -- --nocapture
+# This is *not* full Lu integration acceptance. REPO-01 must verify the
+# complete development source manifest and exact Git commit before global CI.

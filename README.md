@@ -4,7 +4,13 @@ Lu is a standalone, locally hosted AI desktop application built with Tauri 2, Re
 
 **Status (2026-11-03):** Lu `0.1.0-alpha.2` accepted by the project owner as the **functional Windows alpha development baseline**, following physical GGUF/MMProj, streaming, chat history, image/doc persistence, FIFO cancellation and Retry tests. It is **not** a production-stable or fully secured v1.0 release. Windows model-load `Not Responding`, missing taskbar icon, import feedback, signing and thumbnail timing remain tracked defects.
 
-**Development status: start here.** [Central development ledger](docs/LU_DEVELOPMENT_LEDGER.md) (what exists on main versus draft PRs, exact source/CI evidence, next gates) · [CHANGELOG](CHANGELOG.md) (accepted milestones only) · [Alpha baseline and observed defects](docs/LU_ALPHA_01_ACCEPTED_BASELINE_20261103.md) · [v1.0 design requirements](docs/LU_V1_0_DESIGN_RECONCILIATION_20261103.md). Do not infer that draft code is installed or accepted. The historical Jan-mod design is subordinate to later Lu architecture and security decisions.
+**Development and release status:** [Canonical development ledger](docs/LU_DEVELOPMENT_LEDGER.md) and [accepted release changelog](CHANGELOG.md) are preserved from `main` as historical source evidence; [Core convergence and outstanding branch differences](docs/LU_CORE_CONVERGENCE_PLAN_20261109.md) is the current draft source checkpoint. Draft PR code is **not** necessarily integrated, installed or accepted.
+
+**Central Lu design:** [Lu — Central Product and Technical Design](docs/LU_CENTRAL_DESIGN.md) is the authoritative product and architecture entrypoint.
+
+**Cross-conversation decision memory (read BEFORE re-planning):** [Lu Decision Memory Register — original design, supersessions, source evidence and status](docs/LU_DECISION_MEMORY_REGISTER_20261107.md). This is a searchable decision map, NOT a substitute for exact original chat/source text. Future assistants must consult it alongside Central Design and current owner instructions. The [recovered Conversations 01–21 handoff](docs/LU_CANONICAL_HANDOFF_CONVOS_01_21_20261103.md) supplies supporting provenance.
+
+**Supporting documents:** [Alpha baseline and observed defects](docs/LU_ALPHA_01_ACCEPTED_BASELINE_20261103.md) · [v1.0 gates](docs/LU_V1_0_DESIGN_RECONCILIATION_20261103.md) · [Task board](docs/LU_V1_0_TASKS.md). Older Jan and sandbox-first designs are historical when they conflict.
 
 ## Code map
 
@@ -26,3 +32,15 @@ This is a **clean working tree** branch, not a new Git repository. Its Git commi
 ## Third-party provenance
 
 The project retains appropriate Apache-2.0 licensing and notices for any code or documentation derived from the Jan fork. See `LICENSE` and `NOTICE`. Clean source layout does not erase upstream attribution.
+
+## v1.0 development workflow (2026-11-03)
+
+Lu `0.1.0-alpha.2` remains the functional baseline; routine physical Windows tests are deferred until nearer v1.0. New changes use task IDs, Git commit provenance, CI results and deferred acceptance scenarios.
+
+- [Master task board](docs/LU_V1_0_TASKS.md)
+- [Deferred Windows acceptance](docs/LU_V1_0_DEFERRED_WINDOWS_ACCEPTANCE.md)
+- [V1 design gates](docs/LU_V1_0_DESIGN_RECONCILIATION_20261103.md)
+- [Windows CI](.github/workflows/lu-ci.yml)
+- [REPO-01 full-tree lock](source-tree.lock.json) and [verifier](scripts/verify-source-tree.mjs)
+
+The REPO-01 lock verifies the **published, tracked Git checkout** in CI. It cannot independently prove equality with an unpublished local development directory. That external source equality requires a separate local manifest comparison; it is not inferred from a GitHub self-check.

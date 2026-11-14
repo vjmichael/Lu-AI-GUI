@@ -7,7 +7,7 @@
 //! GGUF streaming engine or persist a transcript; adapters integrate later.
 //! There is no dependency on Jan Cowork or MCP.
 
-use serde_json::{json, Value};
+use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::collections::BTreeSet;
 
@@ -17,12 +17,15 @@ use crate::{
     journal::EffectJournal,
     model::{ModelToolCatalog, ModelToolError, MAX_ADVERTISED_TOOLS},
     model_json_boundary::{
-        parse_model_boundary, serialize_host_boundary, JsonBoundaryError, JsonRepairStatus,
+        parse_model_boundary, serialize_host_tool_feedback_boundary, JsonBoundaryError, JsonRepairStatus,
     },
     registry::NativeToolRegistry,
 };
 
-pub const MAX_TOOL_STEPS: u32 = 8;
+/// Large absolute emergency limit, not a small fixed reasoning loop cap.
+/// Repeated identical tool results stop after MAX_IDENTICAL_RESULTS.
+pub const MAX_TOOL_STEPS:u32=32;
+pub const MAX_IDENTICAL_RESULTS:u8=3;
 pub const MAX_MODEL_FRAME_BYTES: usize = 64 * 1024;
 
 // Compiled-in host observation with no model-supplied identifiers or text.
@@ -54,7 +57,10 @@ pub enum ToolTurnError {
     UnexpectedFields,
     TooLarge,
     NoAuthorizedTools,
+    /// A host-reviewed factual task requires an actual native observation.
+    ObservationRequiredBeforeFinal,
     StepLimit,
+    NoProgress,
     AlreadyFinished,
     Revoked,
     ReadOnlyTurnViolation,
@@ -71,6 +77,11 @@ pub struct NativeToolTurn {
     done: bool,
     last_repair: JsonRepairStatus,
     read_only: bool,
+    requires_observed_tool_result: bool,
+    observed_tool_result: bool,
+    previous_request_digest:Option<String>,
+    previous_result_digest:Option<String>,
+    identical_result_count:u8,
 }
 
 impl NativeToolTurn {
@@ -112,6 +123,11 @@ impl NativeToolTurn {
             done: false,
             last_repair: JsonRepairStatus::Unchanged,
             read_only: false,
+            requires_observed_tool_result: false,
+            observed_tool_result: false,
+            previous_request_digest:None,
+            previous_result_digest:None,
+            identical_result_count:0,
         })
     }
 
@@ -157,6 +173,34 @@ impl NativeToolTurn {
     pub fn schemas(&self, catalog: &ModelToolCatalog) -> Result<Vec<Value>, ToolTurnError> {
         catalog
             .schemas(&self.advertised)
+            .map_err(ToolTurnError::Catalog)
+    }
+
+    /// Host-only admission for a reviewed observation task. This never
+    /// selects a native tool, changes a grant or trusts historical memory.
+    pub fn require_observed_tool_result(&mut self) {
+        self.requires_observed_tool_result = true;
+    }
+
+    pub fn needs_observed_tool_result(&self) -> bool {
+        self.requires_observed_tool_result
+    }
+
+    fn ensure_final_has_required_observation(&self) -> Result<(), ToolTurnError> {
+        if self.requires_observed_tool_result && !self.observed_tool_result {
+            return Err(ToolTurnError::ObservationRequiredBeforeFinal);
+        }
+        Ok(())
+    }
+
+    /// Read-only model discovery from an already authenticated user task.
+    /// Never expose an uninstalled native codec or widen the advertised set.
+    pub fn live_schemas(
+        &self,
+        catalog: &ModelToolCatalog,
+        registry: &NativeToolRegistry,
+    ) -> Result<Vec<Value>, ToolTurnError> {
+        catalog.live_schemas(&self.advertised, registry)
             .map_err(ToolTurnError::Catalog)
     }
 
@@ -298,6 +342,9 @@ impl NativeToolTurn {
                 let plain_final = !text.is_empty()
                     && !matches!(text.as_bytes()[0], b'{' | b'[' | b'"' | b'`')
                     && !text.contains("<|")
+                    && !text.contains("<think>")
+                    && !text.contains("</think>")
+                    && !text.contains("```")
                     && !text.contains("\"kind\"")
                     && !text
                         .chars()
@@ -314,6 +361,7 @@ impl NativeToolTurn {
                     if current.is_empty() {
                         return Err(ToolTurnError::Revoked);
                     }
+                    self.ensure_final_has_required_observation()?;
                     self.done = true;
                     return Ok(ToolTurnOutcome::FinalText(text.to_owned()));
                 }
@@ -341,6 +389,7 @@ impl NativeToolTurn {
                 if current.is_empty() {
                     return Err(ToolTurnError::Revoked);
                 }
+                self.ensure_final_has_required_observation()?;
                 self.done = true;
                 return Ok(ToolTurnOutcome::FinalText(text.to_owned()));
             }
@@ -367,6 +416,7 @@ impl NativeToolTurn {
             if current.is_empty() {
                 return Err(ToolTurnError::Revoked);
             }
+            self.ensure_final_has_required_observation()?;
             self.done = true;
             return Ok(ToolTurnOutcome::FinalText(text.to_owned()));
         }
@@ -395,6 +445,17 @@ impl NativeToolTurn {
             .ok_or(ToolTurnError::MalformedModelReply)?;
         let encoded =
             serde_json::to_string(args).map_err(|_| ToolTurnError::MalformedModelReply)?;
+        // Stable semantic request witness excludes Lu's generated call ID.
+        let mut request_hasher=Sha256::new();
+        request_hasher.update(name.as_bytes());
+        request_hasher.update([0]);
+        request_hasher.update(encoded.as_bytes());
+        let request_digest=format!("{:x}",request_hasher.finalize());
+        if self.previous_request_digest.as_deref()==Some(&request_digest) &&
+            self.identical_result_count>=MAX_IDENTICAL_RESULTS{
+            self.halt();
+            return Err(ToolTurnError::NoProgress)
+        }
         let digest = Sha256::digest(self.origin.task_id.as_bytes());
         let prefix = digest
             .iter()
@@ -412,16 +473,19 @@ impl NativeToolTurn {
             )
             .map_err(ToolTurnError::Catalog)?;
 
-        if self.read_only {
-            let descriptors = registry
-                .tools()
-                .map_err(|_| ToolTurnError::ReadOnlyTurnViolation)?;
-            if !descriptors.iter().any(|descriptor| {
-                descriptor.id == invocation.tool_id
-                    && descriptor.effect == ToolEffect::ReadWorkspace
-            }) {
-                return Err(ToolTurnError::ReadOnlyTurnViolation);
-            }
+        let descriptors=registry.tools()
+            .map_err(|_|ToolTurnError::ReadOnlyTurnViolation)?;
+        let descriptor=descriptors.iter().find(|d|d.id==invocation.tool_id)
+            .ok_or(ToolTurnError::ReadOnlyTurnViolation)?;
+        if self.read_only && descriptor.effect!=ToolEffect::ReadWorkspace{
+            return Err(ToolTurnError::ReadOnlyTurnViolation)
+        }
+        // Do not re-execute the same write effect, even if the first
+        // result differs. A fresh model call is not fresh human approval.
+        if descriptor.effect!=ToolEffect::ReadWorkspace &&
+            self.previous_request_digest.as_deref()==Some(&request_digest){
+            self.halt();
+            return Err(ToolTurnError::NoProgress)
         }
 
         // A tool can be advertised earlier, then revoked. Host checks exact
@@ -454,6 +518,20 @@ impl NativeToolTurn {
         let data = catalog
             .decode_result(&self.advertised, name, &response)
             .map_err(ToolTurnError::Catalog)?;
+        if data.get("ok").and_then(Value::as_bool) == Some(true) {
+            self.observed_tool_result = true;
+        }
+        let encoded_result=serde_json::to_vec(&data)
+            .map_err(|_|ToolTurnError::MalformedModelReply)?;
+        let result_digest=format!("{:x}",Sha256::digest(&encoded_result));
+        if self.previous_request_digest.as_deref()==Some(&request_digest) &&
+            self.previous_result_digest.as_deref()==Some(&result_digest){
+            self.identical_result_count=self.identical_result_count.saturating_add(1);
+        }else{
+            self.identical_result_count=1;
+        }
+        self.previous_request_digest=Some(request_digest);
+        self.previous_result_digest=Some(result_digest);
         Ok(ToolTurnOutcome::ToolResult {
             call_id,
             tool_name: name.into(),
@@ -467,14 +545,9 @@ impl NativeToolTurn {
                 call_id,
                 tool_name,
                 data,
-            } => serialize_host_boundary(
-                &json!({
-                    "kind": "tool_result", "call_id": call_id,
-                    "name": tool_name, "response": data,
-                }),
-                MAX_MODEL_FRAME_BYTES,
-            )
-            .ok(),
+            } => serialize_host_tool_feedback_boundary(
+                call_id, tool_name, data, MAX_MODEL_FRAME_BYTES,
+            ).ok(),
             ToolTurnOutcome::FinalText(_) => None,
         }
     }

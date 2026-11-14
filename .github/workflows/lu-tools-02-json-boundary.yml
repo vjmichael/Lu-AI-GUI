@@ -1,0 +1,57 @@
+name: Lu TOOLS-02 internal JSON trust boundary
+
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    name: Linux structured JSON model/tool boundary
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify exact frozen source
+        run: node scripts/verify-source-tree.mjs
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - name: Inbound strict parse, bounded syntax repair, outbound result schema
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test model_json_boundary -- --nocapture
+      - name: Direct model JSON to Protobuf native args
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test model_native_files -- --nocapture
+      - name: Native model/tool authority and feedback
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test native_agent_tool_turn -- --nocapture
+      - name: Supervisor JSON/feedback generation boundary
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test supervised_native_turn -- --nocapture
+      - name: External engine SSE strict JSON and duplicate rejection
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib external_engine_sse_refuses_ambiguous_duplicate_and_partial_json -- --nocapture
+
+  windows:
+    name: Windows structured JSON model/tool boundary
+    runs-on: windows-2025
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify exact frozen source
+        run: node scripts/verify-source-tree.mjs
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - name: Inbound strict parse, bounded syntax repair, outbound result schema
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test model_json_boundary -- --nocapture
+      - name: Direct model JSON to Protobuf native args
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test model_native_files -- --nocapture
+      - name: Native model/tool authority and feedback
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test native_agent_tool_turn -- --nocapture
+      - name: Supervisor JSON/feedback generation boundary
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test supervised_native_turn -- --nocapture
+      - name: External engine SSE strict JSON and duplicate rejection
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib external_engine_sse_refuses_ambiguous_duplicate_and_partial_json -- --nocapture
