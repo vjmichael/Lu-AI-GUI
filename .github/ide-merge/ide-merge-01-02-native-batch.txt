@@ -1,0 +1,6 @@
+IDE-MERGE-01/02 grouped native acceptance trigger
+Review source parent: bb52e99c3cb5c1083e7589e5399f9c197fbfca65
+Use GitHub Actions exact event SHA as the only candidate.
+One reviewed Windows/Linux group, not per-file CI.
+No physical human approval, native SCM/kernel acceptance, license clearance,
+release authorization or main merge is implied by this marker.

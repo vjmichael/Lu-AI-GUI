@@ -3,6 +3,14 @@
 # or interpreting hosted CI approvals as physical OS-human consent.
 name: IDE 6D-6E-6F integrated native and desktop source
 on:
+  # Source-convergence runs are deliberately batched: ordinary source pushes
+  # do NOT match this narrow push trigger. Change only this marker when the
+  # complete IDE integration group is ready for same-SHA native acceptance.
+  push:
+    branches:
+      - ide/integration-git-6c6d6e6f-to-main-20261113
+    paths:
+      - '.github/ide-merge/ide-merge-01-02-native-batch.txt'
   pull_request:
     branches: [main]
     paths:
