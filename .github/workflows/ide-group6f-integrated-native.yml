@@ -122,6 +122,10 @@ jobs:
           if [ "$RUNNER_OS" = Windows ]; then
             cargo test --locked --manifest-path ide/app/src-tauri/Cargo.toml \
               --features fin04w2-c4-desktop --lib fin04w2_c4_desktop::tests -- --nocapture
+            cargo check --locked --manifest-path ide/supervisor/Cargo.toml \
+              --features fin04w2-split-native --lib
+            echo "IDE_MERGE03_SPLIT_SOURCE_COMPILE=PASS"
+            echo "IDE_MERGE03_SPLIT_NATIVE_SCM_AND_WFP_ACCEPTANCE=NOT_TESTED"
             echo "IDE_MERGE03_C4_WINDOWS_NATIVE_COMPILE_AND_NEGATIVES=PASS"
             echo "IDE_MERGE03_C4_PHYSICAL_APPROVAL=NOT_TESTED"
           fi
