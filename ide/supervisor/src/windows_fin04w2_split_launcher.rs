@@ -21,13 +21,13 @@ use std::{
     path::{Path,PathBuf},ptr,
 };
 use windows_sys::Win32::{
-    Foundation::{CloseHandle,HANDLE,WAIT_OBJECT_0},
+    Foundation::{CloseHandle,HANDLE},
     Security::{SECURITY_ATTRIBUTES,SECURITY_CAPABILITIES},
     System::{
         JobObjects::IsProcessInJob,
         Pipes::CreatePipe,
         Threading::{
-            CreateProcessW,GetProcessId,SetHandleInformation,
+            CreateProcessW,SetHandleInformation,
             TerminateProcess,UpdateProcThreadAttribute,WaitForSingleObject,
             CREATE_NO_WINDOW,CREATE_SUSPENDED,CREATE_UNICODE_ENVIRONMENT,
             EXTENDED_STARTUPINFO_PRESENT,PROCESS_INFORMATION,
@@ -90,7 +90,15 @@ struct Pending {
 impl Pending {
     fn from_information(pi:PROCESS_INFORMATION)->Result<Self,SupervisorError>{
         let process=Owned::new(pi.hProcess)?;
-        let thread=Owned::new(pi.hThread)?;
+        let thread=match Owned::new(pi.hThread){
+            Ok(handle)=>handle,
+            Err(err)=>{
+                // No suspended orphan if OS returned a partial handle set.
+                unsafe{TerminateProcess(process.0,77);}
+                let _=unsafe{WaitForSingleObject(process.0,5000)};
+                return Err(err);
+            }
+        };
         Ok(Self{process,thread})
     }
 }
