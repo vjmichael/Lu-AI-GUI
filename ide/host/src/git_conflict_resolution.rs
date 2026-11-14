@@ -343,12 +343,12 @@ impl IdeWorkspaceRegistry {
         if cancel.load(Ordering::SeqCst) != 0 {
             return Err("G06D04_CANCELLED_BEFORE_REVIEW");
         }
-        self.require_group6f_no_pending_recovery(id,true)?;
         let reviewed = self.review_native_conflict_resolution(
             id, relative, inventory_sha, index_sha_claim, candidate)?;
         if reviewed.review_sha256 != review_sha {
             return Err("G06D04_REVIEW_DIGEST_STALE");
         }
+        self.require_group6f_no_pending_recovery(id,true)?;
         let repo = exact_repo(self, id)?;
         let root = self.registered_git_root(id).map_err(|_| "G06D04_PROJECT_CLOSED")?;
         let journal = journal_path(self, id)?;
