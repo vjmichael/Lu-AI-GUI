@@ -271,6 +271,32 @@ impl DapSession {
         Ok(frame)
     }
 
+    /// FIN-04W2 split-trust DAP: LLDB-DAP is a separately supervised native
+    /// process OUTSIDE the target's AppContainer. The independent SCM service
+    /// must first create the sealed debuggee INSIDE a zero-capability
+    /// AppContainer and reobserve its live process HANDLE, exact Job,
+    /// lowbox SID, build hash, original one-use plan and WFP policy.
+    ///
+    /// There is deliberately no UI/IPC accessor for the pid: this encodes
+    /// a protocol frame only. The native gateway must obtain it from the
+    /// attested kernel handle, never from user/project data. A successful DAP
+    /// response is not containment or a debugger stop.
+    #[cfg(all(windows, feature = "fin04w2-split-protocol"))]
+    pub fn attach_preverified_native_target(&mut self, kernel_pid: u32) -> Result<Vec<u8>, DapError> {
+        if self.phase != DapPhase::Ready {
+            return Err(DapError::InvalidPhase);
+        }
+        if kernel_pid == 0 || kernel_pid == u32::MAX {
+            return Err(DapError::InvalidMessage);
+        }
+        // LLDB-DAP's documented attach-by-pid form. No executable path,
+        // args, shell, evaluate, PID selection via protocol or runInTerminal.
+        let frame = self.request("attach", json!({"pid":kernel_pid}))?;
+        self.launch_sent = true;
+        self.phase = DapPhase::Launching;
+        Ok(frame)
+    }
+
     /// DEV-04.4: accept ONLY a native staged, OS-owned debug target.
     /// A caller cannot select any other path, process, arguments or env.
     /// This builds DAP bytes ONLY; actual authority resides in the D3 plan
@@ -719,6 +745,7 @@ impl DapSession {
                             "PROTECTED_DAP_FAILED_REQUEST={}",
                             match expected {
                                 "launch" => "sealed_target_launch",
+                                "attach" => "kernel_bound_target_attach",
                                 "configurationDone" => "fixed_configuration",
                                 "initialize" => "fixed_initialize",
                                 "threads" | "stackTrace" => "read_only_stack",
@@ -774,6 +801,15 @@ impl DapSession {
                     "initialize" if self.phase == DapPhase::Initializing => {
                         self.phase = DapPhase::Ready;
                         Ok(Some(DapEvent::Initialized))
+                    }
+                    #[cfg(all(windows, feature = "fin04w2-split-protocol"))]
+                    "attach" if matches!(self.phase, DapPhase::Launching | DapPhase::Stopped) => {
+                        if self.phase == DapPhase::Launching {
+                            self.phase = DapPhase::Ready;
+                        }
+                        // The adapter ACK is not a kernel debug owner, RIP,
+                        // process Job attestation, or permission for stepping.
+                        Ok(Some(DapEvent::LaunchAcknowledged))
                     }
                     "launch" if matches!(self.phase, DapPhase::Launching | DapPhase::Stopped) => {
                         if self.phase == DapPhase::Launching {
@@ -1458,6 +1494,53 @@ mod tests {
         );
         assert_eq!(stack.phase(), DapPhase::Quarantined);
     }
+    #[cfg(all(windows, feature = "fin04w2-split-protocol"))]
+    #[test]
+    fn split_debugger_uses_attach_without_spawning_an_unrestricted_program() {
+        let mut session = DapSession::new();
+        assert_eq!(session.attach_preverified_native_target(100).unwrap_err(), DapError::InvalidPhase);
+        session.initialize().unwrap();
+        session.receive(&framed(json!({
+            "seq":2,"type":"response","request_seq":1,
+            "command":"initialize","success":true
+        }))).unwrap();
+        for bad in [0, u32::MAX] {
+            assert_eq!(session.attach_preverified_native_target(bad).unwrap_err(), DapError::InvalidMessage);
+        }
+        let wire=session.attach_preverified_native_target(317).unwrap();
+        let frame: serde_json::Value = serde_json::from_slice(
+            wire.split(|b| *b == b'\n').last().unwrap(),
+        ).unwrap();
+        assert_eq!(frame["command"], "attach");
+        assert_eq!(frame["arguments"], json!({"pid":317}));
+        assert!(frame["arguments"].get("program").is_none());
+        assert!(frame["arguments"].get("runInTerminal").is_none());
+        assert_eq!(session.attach_preverified_native_target(318).unwrap_err(), DapError::InvalidPhase);
+        assert_eq!(session.phase(), DapPhase::Launching);
+        session.receive(&framed(json!({
+            "seq":3,"type":"response","request_seq":2,
+            "command":"attach","success":true
+        }))).unwrap();
+        assert_eq!(session.phase(), DapPhase::Ready);
+    }
+
+    #[cfg(all(windows, feature = "fin04w2-split-protocol"))]
+    #[test]
+    fn split_attach_wrong_response_quarantines_without_any_target_launch() {
+        let mut session = DapSession::new();
+        session.initialize().unwrap();
+        session.receive(&framed(json!({
+            "seq":2,"type":"response","request_seq":1,
+            "command":"initialize","success":true
+        }))).unwrap();
+        let _=session.attach_preverified_native_target(317).unwrap();
+        assert_eq!(session.receive(&framed(json!({
+            "seq":3,"type":"response","request_seq":2,
+            "command":"launch","success":true
+        }))).unwrap_err(),DapError::AdapterFailed);
+        assert_eq!(session.phase(),DapPhase::Quarantined);
+    }
+
     #[test]
     fn only_native_sealed_project_path_can_form_project_launch_without_arguments() {
         let mut session = DapSession::new();
