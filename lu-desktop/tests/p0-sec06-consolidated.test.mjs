@@ -696,3 +696,16 @@ test('SEC06C Chromium userns is granted to a single root-owned installed path, n
   assert.doesNotMatch(workflow,/echo 0 \| sudo tee \/proc\/sys\/kernel\/apparmor_restrict_unprivileged_userns/);
   assert.doesNotMatch(mediator,/--no-sandbox|--disable-setuid-sandbox/);
 });
+
+test('SEC06C genuine headed Chrome checks a live renderer user namespace AND seccomp',()=>{
+  const native=readFileSync(join(root,'benchmarks/e1/sec06c_browser_real_native.py'),'utf8');
+  assert.match(native,/def genuine_renderer_userns_sandbox\(chrome_pid,group,leaf\)/);
+  assert.match(native,/\(leaf\/"cgroup\.procs"\)\.read_text\(\)/);
+  assert.match(native,/b"--type=renderer"/);
+  assert.match(native,/status_lines\.get\("Seccomp",""\)/);
+  assert.match(native,/chrome_userns==new_userns/);
+  assert.match(native,/membership\(pid\)!=group/);
+  assert.match(native,/SEC06C_CHROMIUM_REAL_USERNS_SECCOMP_PASS=1/);
+  assert.match(native,/genuine_renderer_userns_sandbox\(chrome_pid,group,leaf\)/);
+  assert.match(native,/if b"--no-sandbox" in cmd or b"--disable-setuid-sandbox" in cmd/);
+});

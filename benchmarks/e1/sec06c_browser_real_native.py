@@ -102,6 +102,48 @@ def browser_call(proc,chrome_pid,operation):
             reject("original browser process denied "+operation+": "+str(frame.get("error")))
         return frame.get("result",{})
     reject("original browser operation did not answer")
+def genuine_renderer_userns_sandbox(chrome_pid,group,leaf):
+    """Independent kernel audit of a real Chromium renderer.
+
+    The original headed Chrome must NOT merely run without --no-sandbox.
+    A live renderer must be in Chrome's original root-owned cgroup while
+    owning a DIFFERENT user namespace and active seccomp-BPF (mode 2).
+    This never accepts a Playwright configuration field or self-reported
+    browser flag as security evidence.
+    """
+    chrome_userns=pathlib.Path(f"/proc/{chrome_pid}/ns/user").readlink()
+    deadline=time.monotonic()+8
+    while time.monotonic()<deadline:
+        try:
+            candidates=(leaf/"cgroup.procs").read_text().split()
+        except OSError:
+            reject("kernel browser group vanished during sandbox observation")
+        for raw in candidates:
+            if not raw.isdecimal():continue
+            pid=int(raw)
+            if pid==chrome_pid or pid<=1:continue
+            try:
+                cmd=pathlib.Path(f"/proc/{pid}/cmdline").read_bytes()
+                if b"--type=renderer" not in cmd.split(b"\0"):continue
+                if b"--no-sandbox" in cmd or b"--disable-setuid-sandbox" in cmd:
+                    reject("renderer disabled original Chromium sandbox")
+                status=pathlib.Path(f"/proc/{pid}/status").read_text()
+                status_lines=dict(line.split(":",1) for line in status.splitlines()
+                                  if ":" in line)
+                mode=status_lines.get("Seccomp","").strip()
+                new_userns=pathlib.Path(f"/proc/{pid}/ns/user").readlink()
+                if membership(pid)!=group:reject("renderer escaped SEC06C root kernel leaf")
+                if mode!="2" or chrome_userns==new_userns:
+                    reject("genuine Chromium user namespace/seccomp not observed")
+                print("SEC06C_CHROMIUM_REAL_USERNS_SECCOMP_PASS=1 "
+                      "renderer_in_original_kernel_leaf=1 "
+                      "renderer_userns_distinct=1 seccomp_bpf=1",flush=True)
+                return
+            except (FileNotFoundError,ProcessLookupError):
+                continue
+        time.sleep(.05)
+    reject("no genuinely sandboxed Chromium renderer in original SEC06C leaf")
+
 def main():
     if sys.platform!="linux" or UID==0:reject("requires actual unprivileged Linux host")
     ap=argparse.ArgumentParser()
@@ -158,6 +200,7 @@ def main():
             pidfds=[os.pidfd_open(pid) for pid in browser_pids]
             try:
                 report=browser_call(proc,chrome_pid,"status")
+                genuine_renderer_userns_sandbox(chrome_pid,group,leaf)
                 if report.get("windowVisibility")!="HIDDEN":
                     reject("automatic-hide original Chromium not verified")
                 result=browser_call(proc,chrome_pid,"show_browser")
