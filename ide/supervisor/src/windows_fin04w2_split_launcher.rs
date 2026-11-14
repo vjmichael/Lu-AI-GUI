@@ -21,13 +21,13 @@ use std::{
     path::{Path,PathBuf},ptr,
 };
 use windows_sys::Win32::{
-    Foundation::{CloseHandle,HANDLE},
+    Foundation::{CloseHandle,HANDLE,SetHandleInformation},
     Security::{SECURITY_ATTRIBUTES,SECURITY_CAPABILITIES},
     System::{
         JobObjects::IsProcessInJob,
         Pipes::CreatePipe,
         Threading::{
-            CreateProcessW,SetHandleInformation,
+            CreateProcessW,
             TerminateProcess,UpdateProcThreadAttribute,WaitForSingleObject,
             CREATE_NO_WINDOW,CREATE_SUSPENDED,CREATE_UNICODE_ENVIRONMENT,
             EXTENDED_STARTUPINFO_PRESENT,PROCESS_INFORMATION,
