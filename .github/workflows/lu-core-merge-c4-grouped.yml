@@ -1,13 +1,14 @@
 name: Lu CORE-MERGE-C4 one-SHA native security recovery and real Qwen
 
 on:
-  pull_request:
-    types: [edited]
+  workflow_dispatch:
+  workflow_call:
 
 permissions:
   contents: read
 
-# Only one deliberate SHA-admitted batch, never on every intermediate code push.
+# Manual/reusable only. The existing REPO-01 workflow holds the one-time
+# exact PR #235 SHA admission marker; no independent heavy PR trigger.
 concurrency:
   group: lu-core-merge-c4-${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.sha }}
   cancel-in-progress: false
