@@ -429,6 +429,28 @@ jobs:
             sleep 2
           done
           test "$ready" = 1
+      - name: Provision fixed root-owned reviewed Git and FFprobe admission for actual GGUF tool execution
+        shell: bash
+        run: |
+          set -euo pipefail
+          # The real model's request MUST reach the same production SEC-06C
+          # custody boundary as a human-reviewed native desktop request.
+          # Never fall back to an unmanaged same-UID Git/FFprobe subprocess.
+          python3 -m py_compile             scripts/lu-sec06c-owned-git-launcher.py             scripts/lu-sec06c-owned-git-worker.py             scripts/lu-sec06c-owned-probe-launcher.py             scripts/lu-sec06c-owned-probe-worker.py             scripts/lu-sec06c-owned-kernel-manager.py
+          sudo install -d -o root -g root -m 0755 /usr/libexec/lu
+          sudo install -o root -g root -m 0755 scripts/lu-sec06c-owned-git-launcher.py /usr/libexec/lu/lu-sec06c-launch-git
+          sudo install -o root -g root -m 0755 scripts/lu-sec06c-owned-git-worker.py /usr/libexec/lu/lu-sec06c-owned-git-worker
+          sudo install -o root -g root -m 0755 scripts/lu-sec06c-owned-probe-launcher.py /usr/libexec/lu/lu-sec06c-launch-probe
+          sudo install -o root -g root -m 0755 scripts/lu-sec06c-owned-probe-worker.py /usr/libexec/lu/lu-sec06c-owned-probe-worker
+          sudo install -o root -g root -m 0755 scripts/lu-sec06c-owned-kernel-manager.py /usr/libexec/lu/lu-sec06c-owned-kernel-manager
+          printf '%s ALL=(root) NOPASSWD: /usr/libexec/lu/lu-sec06c-launch-git *\n' "$USER" | sudo tee /etc/sudoers.d/lu-c4-gguf-git >/dev/null
+          printf '%s ALL=(root) NOPASSWD: /usr/libexec/lu/lu-sec06c-launch-probe *\n' "$USER" | sudo tee /etc/sudoers.d/lu-c4-gguf-probe >/dev/null
+          sudo chmod 0440 /etc/sudoers.d/lu-c4-gguf-git /etc/sudoers.d/lu-c4-gguf-probe
+          sudo visudo -cf /etc/sudoers.d/lu-c4-gguf-git
+          sudo visudo -cf /etc/sudoers.d/lu-c4-gguf-probe
+          test "$(id -u)" -ne 0
+          test "$(stat -c %u /usr/libexec/lu/lu-sec06c-launch-git)" = 0
+          test "$(stat -c %u /usr/libexec/lu/lu-sec06c-launch-probe)" = 0
       - name: Prove local b12143 llama.cpp enforces actual model grammar before native tool acceptance
         shell: bash
         run: |
