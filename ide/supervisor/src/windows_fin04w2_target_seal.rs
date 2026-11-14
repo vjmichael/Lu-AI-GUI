@@ -284,3 +284,21 @@ pub(crate) fn stage_and_verify(
     incomplete.take();
     Ok(SealedDebugTarget{image:exe,pdb:symbols,root})
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn unapproved_local_runner_cannot_stage_a_mutable_debuggee(){
+        // An ordinary user or elevated CI runner is NOT the service SID.
+        // This prevents a "use writable LocalState and hash it" fallback.
+        let result=stage_and_verify(
+            Path::new(r"C:\ProgramData\LuIDEDebuggerBroker"),
+            "job-00000000000000000000000000000000",
+            ptr::null_mut(),
+            Path::new(r"C:\Temp\untrusted-debuggee.exe"),&"a".repeat(64),
+            Path::new(r"C:\Temp\untrusted-debuggee.pdb"),&"b".repeat(64),
+        );
+        assert!(result.is_err());
+    }
+}
