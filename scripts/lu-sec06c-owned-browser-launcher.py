@@ -146,7 +146,12 @@ def run(a):
     for x in a.origin:cmd.append("--origin="+x)
     # Forward only the original stdin/stdout stream. The privileged launcher
     # never parses page JSON or browser replies.
-    return subprocess.call(cmd,cwd="/",timeout=3960)
+    status=subprocess.call(cmd,cwd="/",timeout=3960)
+    if status!=0:
+        # Fixed numeric exit status only: never report browser content,
+        # privileged arguments, or grant an independent kernel receipt.
+        print("SEC06C_BROWSER_SYSTEMD_RUN_EXIT="+str(status),file=sys.stderr,flush=True)
+    return status
 def main():
     p=argparse.ArgumentParser(allow_abbrev=False)
     for name in ("nonce","chat","turn","call","chromium","chromium_sha",

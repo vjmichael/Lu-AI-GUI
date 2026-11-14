@@ -417,6 +417,8 @@ test('SEC06 verifier rejects changed original native log with correct head and l
       'linux-negative-python-syntax','linux-host-crash-python-syntax','linux-delegated-python-syntax',
       'linux-root-owned-prototype-syntax','linux-root-owned-unit-prototype',
       'linux-root-owned-unit-cancel','linux-root-owned-unit-host-crash',
+      'linux-root-owned-unit-guardian-stall',
+      'linux-root-owned-unit-worker-stall',
       'linux-os-owned-git-syntax','linux-os-owned-probe-syntax',
       'linux-os-owned-kernel-manager-syntax',
       'linux-os-owned-reviewed-native-syntax',

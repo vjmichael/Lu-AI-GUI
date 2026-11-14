@@ -43,8 +43,12 @@ def exact_line(proc,timeout=40,limit=3_000_000):
             continue
         data=os.read(fd,1)
         if not data:
-            result=proc.stderr.read(4096).decode(errors="replace")
-            reject("root manager EOF before original frame: "+result[-1600:])
+            try:proc.wait(timeout=3)
+            except subprocess.TimeoutExpired:pass
+            result=proc.stderr.read(4096).decode(errors="replace") if proc.poll() is not None else "<still-running>"
+            # Original service exit without browser admission is diagnostic,
+            # never a valid root-owned completion or browser receipt.
+            reject("root manager EOF before original frame exit="+str(proc.poll())+": "+result[-1600:])
         value.extend(data)
         if len(value)>limit:reject("unbounded mediator frame")
         if data==b"\n":
