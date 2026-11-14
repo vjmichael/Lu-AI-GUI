@@ -189,7 +189,7 @@ fn read_fixed(pipe:HANDLE,out:&mut [u8])->Result<(),SupervisorError>{
     Ok(())
 }
 fn write_all(pipe:HANDLE,bytes:&[u8])->Result<(),SupervisorError>{
-    if bytes.len()!=17&&bytes.len()!=69{return Err(denied());}
+    if bytes.len()!=17&&bytes.len()!=141{return Err(denied());}
     let mut written=0u32;
     if unsafe{WriteFile(
         pipe,bytes.as_ptr().cast(),bytes.len() as u32,&mut written,ptr::null_mut(),
@@ -266,19 +266,28 @@ fn prepare_one_target(
     // The target-side original sealed PE/PDB hashes accompany the OS PID.
     // The debugger's separate administrator-pinned config must match BOTH.
     // No caller may supply a path, target PID, executable or attach command.
-    let mut response=[0u8;69];
+    // Fixed 141-byte sealed preparation receipt:
+    // S(1) + kernel PID(4) + image(32) + PDB(32) + exact ORIGINAL human
+    // Authorized entry SHA(32) + original supervisor session ID(40).
+    // A different protected journal or restarted session cannot be swapped.
+    let mut response=[0u8;141];
     response[0]=b'S';
     response[1..5].copy_from_slice(&pid.to_le_bytes());
-    let (first,second)=response.split_at_mut(37);
-    for (hex,dest) in [
-        (&cfg.expected_target_image_sha256,&mut first[5..37]),
-        (&cfg.expected_target_pdb_sha256,&mut second[..32]),
+    for (hex,offset) in [
+        (&cfg.expected_target_image_sha256,5usize),
+        (&cfg.expected_target_pdb_sha256,37usize),
+        (&original.approved_entry_sha256,69usize),
     ]{
-        for (i,b) in dest.iter_mut().enumerate(){
-            *b=u8::from_str_radix(&hex[i*2..i*2+2],16)
+        if hex.len()!=64||!hex.bytes().all(|b|b.is_ascii_hexdigit()){
+            return Err(denied());
+        }
+        for i in 0..32{
+            response[offset+i]=u8::from_str_radix(&hex[i*2..i*2+2],16)
                 .map_err(|_|denied())?;
         }
     }
+    if original.session_id.len()!=40{return Err(denied());}
+    response[101..141].copy_from_slice(original.session_id.as_bytes());
     write_all(pipe,&response)?;
     let deadline=Instant::now()+Duration::from_secs(45);
     let mut next_recheck=Instant::now();
