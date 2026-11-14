@@ -58,6 +58,9 @@ jobs:
           cargo test --manifest-path ide/supervisor/Cargo.toml --features fin04w2-split-native caller_without_installed_service_identity_cannot_prepare_split_target -- --nocapture
           if ($LASTEXITCODE -ne 0) { throw 'DENIED: native target preparation must require service identity' }
           cargo test --manifest-path ide/supervisor/Cargo.toml --features fin04w2-split-native unapproved_local_runner_cannot_stage_a_mutable_debuggee -- --nocapture
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: unapproved stage test failed' }
+          cargo test --manifest-path ide/supervisor/Cargo.toml --features fin04w2-split-native ordinary_ci_user_cannot_certify_restricted_service_wfp -- --nocapture
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: BFE/WFP local-runner attestation bypassed service' }
           if ($LASTEXITCODE -ne 0) { throw 'DENIED: native split launcher bypassed restricted service identity' }
       - name: Preserve independent production security gates
         shell: pwsh

@@ -94,7 +94,14 @@ pub(crate) fn require_exact_outbound_blocks(debugger:&Path,target:&Path)
             engine.0,en.handle,64,&mut page,&mut count)
         };
         if status!=0{return Err(denied());}
-        if count>64||total+count as usize>8192{return Err(denied());}
+        if count>64||total+count as usize>8192{
+            if !page.is_null(){
+                unsafe{FwpmFreeMemory0(
+                    (&mut page as *mut *mut *mut FWPM_FILTER0).cast()
+                );}
+            }
+            return Err(denied());
+        }
         if count>0&&page.is_null(){return Err(denied());}
         for i in 0..count as usize {
             let pointer=unsafe{*page.add(i)};
