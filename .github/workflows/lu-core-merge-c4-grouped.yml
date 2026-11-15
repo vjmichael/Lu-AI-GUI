@@ -534,6 +534,14 @@ jobs:
             genuine_gguf_independently_selects_git_and_media_tools_and_survives_journal_restart \
             -- --ignored --nocapture \
             2>&1 | tee c4-qwen-evidence/real-model-choice.log
+          # Original TOOLS-05/06: real pinned GGUF must choose the exact
+          # authorized catalog name/arguments, receive typed native feedback,
+          # and only then finalize. No scripted tool reply or host-selected call.
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --test e1_reviewed_model_tools \
+            genuine_qwen_selects_original_schema_and_environment_native_tools \
+            -- --ignored --nocapture \
+            2>&1 | tee c4-qwen-evidence/original-schema-env-real-qwen.log
       - name: Stop local GGUF and disclose excluded physical 27B Radeon gate
         if: always()
         shell: bash
