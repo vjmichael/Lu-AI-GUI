@@ -15,6 +15,9 @@ use serde::{Serialize,Deserialize};
 
 const SCHEMA:&str="lu-project-task-criterion-witness-v1";
 const MAX_REVIEW_EVENTS:usize=256;
+// Fail closed if the ORIGINAL immutable human criterion history exceeds the
+// bounded number we can reopen during whole-task completion reconciliation.
+const MAX_REOPENED_CRITERION_REVIEWS:usize=16;
 
 #[derive(Clone,Serialize,Deserialize,Debug)]
 #[serde(rename_all="camelCase",deny_unknown_fields)]
@@ -676,6 +679,15 @@ fn completion_append(
     let tx=conn.transaction_with_behavior(TransactionBehavior::Immediate)
         .map_err(|_|"CORE_C3_COMPLETION_LEDGER_BUSY")?;
     let (r,board,latest)=current_revision(&tx,reg,task)?;
+    // A positive decision cannot be saved if subsequent reconciliation
+    // would omit any original human criterion review from its audit.
+    // Recheck under the same write transaction: concurrent review additions
+    // must never turn a stale positive into a purported complete task.
+    if completed&&!all_human_criterion_history_inspected(
+        history_rows(&tx,reg,task)?.len()
+    ){
+        return Err("CORE_C3_COMPLETION_REVIEW_HISTORY_NOT_FULLY_INSPECTABLE".into())
+    }
     if board.sha256!=expected_board||r.latest_sha256!=expected_register||
         latest.version!=version||latest.execution_authorized||
         (completed&&(board.review_state!="human_approved"||
@@ -907,6 +919,9 @@ pub(crate) struct TaskCompletionReconciliationView{
     task_completed:bool,
     execution_authorized:bool,
 }
+fn all_human_criterion_history_inspected(count:usize)->bool{
+    count<=MAX_REOPENED_CRITERION_REVIEWS
+}
 fn completion_status(native:bool,reviewed:bool,full:bool)->&'static str{
     if !full{return "STOP_REVIEW_HISTORY_RECONCILIATION_REQUIRED"}
     match (native,reviewed){
@@ -932,8 +947,7 @@ fn reconcile_completion(
     let original=history(profile,register_id,task_id)?;
     // An unexpectedly long history cannot be silently truncated to claim
     // absence or presence of a sufficiently reviewed original witness.
-    const MAX_REOPENED:usize=16;
-    let full=original.len()<=MAX_REOPENED;
+    let full=all_human_criterion_history_inspected(original.len());
     let mut independently_reopened=0;
     if full{
         for decision in &original{
@@ -973,7 +987,10 @@ fn reconcile_completion(
             profile,&conn,&r,&board.sha256,&latest,chats
         )?
     }else{None};
-    let complete=native&&completed_for_current_source(
+    // A current old completion decision is never sufficient when one or
+    // more original human review events could not be reopened. In particular,
+    // native-source-only tasks must not bypass the same history bound.
+    let complete=full&&native&&completed_for_current_source(
         &conn,&r,&board.sha256,&latest,
         reviewed_head.as_ref().map(|e|e.receipt_sha256.as_str())
     )?;
@@ -1458,6 +1475,13 @@ mod tests{
     }
     #[test]
     fn completion_reconciliation_cannot_turn_prior_receipts_into_task_authority(){
+        assert!(all_human_criterion_history_inspected(0));
+        assert!(all_human_criterion_history_inspected(
+            MAX_REOPENED_CRITERION_REVIEWS
+        ));
+        assert!(!all_human_criterion_history_inspected(
+            MAX_REOPENED_CRITERION_REVIEWS+1
+        ),"an omitted original human review invalidates a completion claim");
         assert_eq!(completion_status(true,true,true),
             "CURRENT_NATIVE_REQUIREMENT_AND_HISTORICAL_WITNESS_SUPPORTED");
         assert_eq!(completion_status(false,true,true),
