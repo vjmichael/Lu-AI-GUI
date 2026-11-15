@@ -51,7 +51,14 @@ class PinnedChronoOverlayTests(TestCase):
             text = progress.read_text(encoding="utf-8")
             self.assertEqual(text.count("#include <chrono>"), 1)
             self.assertEqual(text.count("std::chrono::system_clock::now()"), 1)
-            self.assertIn('#include "LuIdeOwnerEvent.h"', cpp.read_text())
+            source = cpp.read_text(encoding="utf-8")
+            self.assertIn(
+                '#ifndef NOMINMAX\n#define NOMINMAX 1\n#endif\n'
+                '#include <winsock2.h>\n#include "DebuggerThread.h"',
+                source,
+            )
+            self.assertEqual(source.count("#define NOMINMAX 1"), 1)
+            self.assertIn('#include "LuIdeOwnerEvent.h"', source)
             self.assertIn("lu_ide_owner::OnReceived(dbe);", cpp.read_text())
             self.assertIn("lu_ide_owner::OnContinued(dbe, continued);", cpp.read_text())
             self.assertEqual((root / overlay.HEADER).read_bytes(),

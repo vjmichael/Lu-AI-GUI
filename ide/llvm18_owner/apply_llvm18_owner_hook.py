@@ -42,6 +42,11 @@ def apply(root: Path) -> None:
     content = replace_one(
         content,
         '#include "DebuggerThread.h"\n',
+        # On pinned MSVC, injecting WinSock2 before LLVM includes also
+        # exposes windows.h's legacy min/max macros. The original native
+        # LLVM18 build fails in StringRef.h/bit.h with C2589/C4003.
+        # Define NOMINMAX before ANY Windows header, not after the fact.
+        '#ifndef NOMINMAX\n#define NOMINMAX 1\n#endif\n'
         '#include <winsock2.h>\n#include "DebuggerThread.h"\n'
         '#include "LuIdeOwnerEvent.h"\n',
     )

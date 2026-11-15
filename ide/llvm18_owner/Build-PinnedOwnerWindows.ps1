@@ -6,6 +6,15 @@ if ($LASTEXITCODE -ne 0) { throw 'DENIED: LLVM source checkout failed' }
 if ((& git -C $root rev-parse HEAD).Trim() -ne $expected) { throw 'DENIED: LLVM source commit mismatch' }
 python ide/llvm18_owner/apply_llvm18_owner_hook.py $root
 if ($LASTEXITCODE -ne 0) { throw 'DENIED: LLVM owner hook overlay failed' }
+# Before compiling the unmodified pinned LLVM internals, prove the only
+# WinSock-first source translation unit also suppresses Windows min/max
+# macros. This does not change the upstream pin, security boundaries,
+# LLDB execution authority or original native acceptance obligations.
+$sourceBeforeBuild=Join-Path $root 'lldb/source/Plugins/Process/Windows/Common/DebuggerThread.cpp'
+$overlaySource=(Get-Content -LiteralPath $sourceBeforeBuild -Raw).Replace("`r",'')
+if (!$overlaySource.Contains("#ifndef NOMINMAX`n#define NOMINMAX 1`n#endif`n#include <winsock2.h>`n#include `"DebuggerThread.h`"")) {
+  throw 'DENIED: pinned LLVM WinSock-first NOMINMAX include invariant absent'
+}
 $out=Join-Path $env:RUNNER_TEMP 'lu-llvm18-owner-native'
 $flags=@('-S',(Join-Path $root 'llvm'),'-B',$out,'-G','Visual Studio 17 2022','-A','x64','-DLLVM_ENABLE_PROJECTS=clang;lldb','-DLLVM_TARGETS_TO_BUILD=X86','-DLLDB_ENABLE_PYTHON=OFF','-DLLDB_ENABLE_CURSES=OFF','-DLLVM_ENABLE_ZLIB=OFF','-DLLVM_ENABLE_LIBXML2=OFF','-DLLVM_INCLUDE_TESTS=OFF','-DLLDB_INCLUDE_TESTS=OFF')
 & cmake @flags
