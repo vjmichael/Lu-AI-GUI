@@ -141,6 +141,12 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+      - name: IDE-MERGE-02B original P06 live Actions observer hostile source regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s ide/packaging -p 'test_p06_live_native_jobs.py' -v
+          echo 'IDE_MERGE02_P06_LIVE_EVIDENCE=SOURCE_ONLY_NONAUTHORIZING'
       - name: IDE-MERGE-02 original P06 candidate-tree hash and hostile-path contracts (source only)
         shell: bash
         run: |
