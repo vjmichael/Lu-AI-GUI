@@ -2,6 +2,7 @@
 //! Not a model-selected shell, installer, environment variable dump or
 //! claim that an inferred GPU backend is actually operational.
 use lu_core::{
+    native_environment_discovery::{HostProgramInventory, HostProgramSpec},
     compute_inventory::collect_compute_inventory,
     platform_compute::PlatformGpuHints,
 };
@@ -25,6 +26,61 @@ pub(crate) fn explicit_environment_status_request(prompt:&str)->bool{
         "list ","summarize ","tell me "];
     scope.iter().any(|word|lower.contains(word))&&
         ask.iter().any(|word|lower.contains(word))
+}
+
+/// Fixed host-selected executable locations. This is NOT a PATH search, a
+/// launcher or a claim that these files are installed or functional.
+/// Further candidate sites require a reviewed host source change.
+fn fixed_ambient_program_candidates() -> Vec<HostProgramSpec> {
+    let entries: Vec<(&str, &str)> = if cfg!(windows) {
+        vec![
+            ("git", r"C:\Program Files\Git\cmd\git.exe"),
+            ("node", r"C:\Program Files\nodejs\node.exe"),
+            ("ffmpeg", r"C:\Program Files\ffmpeg\bin\ffmpeg.exe"),
+            ("python", r"C:\Program Files\Python313\python.exe"),
+            ("tesseract", r"C:\Program Files\Tesseract-OCR\tesseract.exe"),
+            ("7zip", r"C:\Program Files\7-Zip\7z.exe"),
+        ]
+    } else if cfg!(target_os = "linux") {
+        vec![
+            ("git", "/usr/bin/git"),
+            ("node", "/usr/bin/node"),
+            ("ffmpeg", "/usr/bin/ffmpeg"),
+            ("python", "/usr/bin/python3"),
+            ("tesseract", "/usr/bin/tesseract"),
+            ("cargo", "/usr/bin/cargo"),
+        ]
+    } else {
+        Vec::new()
+    };
+    entries.into_iter().map(|(id, path)| HostProgramSpec {
+        id: id.to_owned(), candidate_files: vec![std::path::PathBuf::from(path)],
+    }).collect()
+}
+
+/// Original TOOLS-06 §6A handoff: OS-owned fixed-candidate observations for
+/// a CURRENT human turn, before local model generation. Generic chat never
+/// advertises lu_check_env as callable: that independent native operation
+/// requires a separate one-use ConversationAuthority grant.
+/// Neither a symlink nor an unapproved path proves program availability.
+pub(crate) fn fresh_ambient_program_context() -> String {
+    let mut result = String::from(
+        "\n[Lu trusted host program availability; CURRENT TURN, READ-ONLY DATA. \
+         Neither a tool grant nor permission to execute, install, download or inspect paths. \
+         A candidate file does not verify installation, version, compatibility or execution.]\n"
+    );
+    if let Ok(inventory) = HostProgramInventory::new(fixed_ambient_program_candidates()) {
+        for observation in inventory.ambient_snapshot().programs {
+            result.push_str(&format!(
+                "{}={}; ", observation.program_id, observation.evidence,
+            ));
+        }
+    } else {
+        result.push_str("fixed_host_candidate_inventory=UNAVAILABLE");
+    }
+    result.push_str("\n[End read-only host program availability]\n");
+    // Never export paths, environment values, versions, credentials or args.
+    result
 }
 
 /// No arbitrary OS process, filesystem path or environment-value access.
@@ -94,6 +150,19 @@ pub(crate) fn runtime_view(
 #[cfg(test)]
 mod tests{
     use super::*;
+    #[test]
+    fn ambient_handoff_is_bounded_host_data_without_paths_or_grants() {
+        let context = fresh_ambient_program_context();
+        assert!(context.len() < 2048);
+        assert!(context.contains("CURRENT TURN, READ-ONLY DATA"));
+        assert!(context.contains("does not verify installation"));
+        assert!(context.contains("Neither a tool grant"));
+        assert!(!context.contains("C:"));
+        assert!(!context.contains("/usr/bin/"));
+        assert!(!context.contains("PATH="));
+        assert!(!context.contains("password="));
+        assert!(!context.contains("lu.exec.check_env"));
+    }
     #[test]
     fn status_intent_is_read_only_and_user_explicit(){
         assert!(explicit_environment_status_request("Show my system specs"));

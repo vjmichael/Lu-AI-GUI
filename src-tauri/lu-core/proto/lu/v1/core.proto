@@ -173,6 +173,21 @@ message EnvironmentCheckResult {
   string architecture = 5;
 }
 
+// TOOLS-05: bounded, effect-free Draft 2020-12 JSON Schema validation.
+message SchemaValidateRequest {
+  bytes schema_json = 1;
+  bytes instance_json = 2;
+}
+message SchemaValidationIssue {
+  string instance_path = 1;
+  string message = 2;
+}
+message SchemaValidateResult {
+  bool valid = 1;
+  repeated SchemaValidationIssue issues = 2;
+  bool truncated = 3;
+}
+
 // CE worker IPC is native Protobuf, independent of legacy model-side JSON.
 // Every envelope is still length-delimited by the host (u32 big-endian).
 // Fields here carry data only, NEVER a permission token or host path.

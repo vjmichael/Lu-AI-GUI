@@ -7,7 +7,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 use lu_core::{
-    agent_tool_loop::{NativeToolTurn, ToolTurnOutcome},
+    agent_tool_loop::{NativeToolTurn, ToolTurnError, ToolTurnOutcome},
     contracts::{AuthorizationError, ToolAuthorizer, ToolDescriptor, ToolEffect, ToolInvocation},
     conversation_authority::{
         AuthorizedCapability, BoundCallOrigin, ConversationAuthority, TaskAuthority,
@@ -166,14 +166,14 @@ async fn revocation_returns_typed_denial_not_a_fake_program_availability_claim()
         &catalog,&reg,&auth,origin,"env-scope".into(),&allowed,
     ).unwrap();
     auth.revoke_task("env-task").unwrap();
+    // Newer C1/C2 authority denies BEFORE dispatch; never manufacture an
+    // approval or revert to the original weaker post-entry denial.
     let reply=turn.handle_model_reply(
         r#"{"kind":"tool","name":"lu_check_env","arguments":{"program":"git"}}"#,
         &catalog,&reg,&auth,&Allow,
-    ).await.unwrap();
-    let ToolTurnOutcome::ToolResult{data,..}=reply else {panic!("missing denied receipt")};
-    assert_eq!(data["ok"],false);
-    assert_eq!(data["error"]["code"],"PERMISSION_DENIED");
-    assert_eq!(turn.step_count(),1);
+    ).await;
+    assert!(matches!(reply,Err(ToolTurnError::Unauthorized(_) | ToolTurnError::Revoked)));
+    assert_eq!(turn.step_count(),0,"revoked task must not dispatch native check_env");
     drop(turn);drop(auth);drop(catalog);drop(reg);
     fs::remove_dir_all(root).unwrap();
 }

@@ -5651,13 +5651,24 @@ async fn generate_internal(
                     &environment_context::fresh_environment_snapshot()
                 );
             }
-            // Host clock is observed anew on every ordinary human turn.
-            // It is read-only context, NEVER permission to invoke a shell or other tools.
+            // Original TOOLS-06 host observations are injected automatically,
+            // without requiring a model tool call or granting new authority.
+            // The clock remains separately observed for each human turn.
             let mut cache_only_clock_suffix=None;
             if origin==GenerationOrigin::Human {
                 let clock=host_clock::fresh_local_clock_context();
+                let mut host_suffix=String::new();
+                let ambient=environment_context::fresh_ambient_program_context();
+                if model_prompt.len().saturating_add(ambient.len())
+                    .saturating_add(clock.len()) <= 16*1024 {
+                    model_prompt.push_str(&ambient);
+                    host_suffix.push_str(&ambient);
+                }
                 model_prompt.push_str(&clock);
-                cache_only_clock_suffix=Some(clock);
+                host_suffix.push_str(&clock);
+                // Preserve the existing plain-chat cached prefix; only fresh
+                // observations are part of the separate trailing suffix.
+                cache_only_clock_suffix=Some(host_suffix);
             }
             // Only a plain human text request with no added retrieval,
             // procedural memory, proposed tool contract, or changed grant
