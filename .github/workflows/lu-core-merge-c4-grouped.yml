@@ -104,6 +104,12 @@ jobs:
             scripts/core01f-bridge-review.test.mjs \
             scripts/core-merge-c1-family-contracts.test.mjs \
             lu-desktop/tests/browser-native-authorization.test.mjs \
+            lu-desktop/tests/browser-model-read.test.mjs \
+            lu-desktop/tests/browser-research-evidence.test.mjs \
+            lu-desktop/tests/browser-visibility-settings.test.mjs \
+            lu-desktop/tests/research-citation-enforcement.test.mjs \
+            lu-desktop/tests/research-roadmap-acceptance.test.mjs \
+            tests/lu-browser-worker.test.mjs \
             lu-desktop/tests/reader-desktop.test.mjs \
             lu-desktop/tests/p06-observe-privacy.test.mjs \
             lu-desktop/tests/workspace-desktop.test.mjs \
@@ -191,6 +197,80 @@ jobs:
           cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml \
             --lib core_utility_desktop::tests -- --nocapture \
             2>&1 | tee c4-native-evidence/c2-desktop-utility-routing.log
+      - name: C1 exact-source Browser Reader Observe original native behavior
+        # Keep independent results even if a different family fails. Each
+        # original test runs, is logged and contributes to a failed job status.
+        # This is NOT headed Chromium, scanned-PDF OCR, or installed WGC proof.
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p c4-native-evidence
+          failures=0
+          run_case() {
+            local name="$1"
+            shift
+            if "$@" 2>&1 | tee "c4-native-evidence/c1-${name}.log"; then
+              echo "C1_NATIVE_${name}=PASS" >> "$GITHUB_STEP_SUMMARY"
+            else
+              failures=$((failures+1))
+              echo "C1_NATIVE_${name}=FAIL" >> "$GITHUB_STEP_SUMMARY"
+            fi
+          }
+          core=(cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml)
+          # Original Browser model codec, supervision, native origin/firewall,
+          # citation evidence, restart and bounded web research behaviors.
+          run_case browser-units "${core[@]}" --lib browser_ -- --nocapture
+          for suite in web_research_acceptance web_research_citation_acceptance web_research_roadmap_acceptance; do
+            run_case "browser-${suite}" "${core[@]}" --test "$suite" -- --nocapture
+          done
+          run_case browser-evidence "${core[@]}" --lib web_research_ -- --nocapture
+          # Original Reader text/Office/PDF parser, immutable page/source,
+          # format, authorizer, and source identity tests. Actual scanned
+          # PDF OCR fixture requires separately admitted real local binaries.
+          run_case reader-units "${core[@]}" --lib native_reader_ -- --nocapture
+          run_case reader-ocr "${core[@]}" --lib native_ocr::tests -- --nocapture
+          # Preserve original P06 consent, forgetting, egress, source purity,
+          # process-loss handling and local-only image admission checks.
+          run_case observe-units "${core[@]}" --lib native_observe_ -- --nocapture
+          run_case observe-awareness "${core[@]}" --lib native_awareness_lane::tests -- --nocapture
+          run_case observe-gui-identity "${core[@]}" --lib native_gui_verification::tests -- --nocapture
+          run_case observe-p06 "${core[@]}" --lib p06_ -- --nocapture
+          run_case observe-durable-provenance "${core[@]}" --lib observe_session_provenance_is_durable_after_stop_and_note_forget -- --nocapture
+          run_case observe-private-frame "${core[@]}" --lib native_local_observe_image_pipe_is_private_one_shot_bounded_and_not_in_sqlite -- --nocapture
+          run_case observe-host-image "${core[@]}" --lib os_owned_image_pipe_enters_real_png_admission_and_remains_off_network -- --nocapture
+          run_case observe-reject-truncated "${core[@]}" --lib malformed_or_truncated_observed_pixels_never_produce_image_proof -- --nocapture
+          exit "$failures"
+      - name: C1 original desktop Reader and Observe source authority
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p c4-native-evidence
+          failures=0
+          for family in reader_desktop observe_desktop; do
+            if cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml \
+              --lib "${family}::tests" -- --nocapture \
+              2>&1 | tee "c4-native-evidence/c1-${family}.log"; then
+              echo "C1_DESKTOP_${family}=PASS" >> "$GITHUB_STEP_SUMMARY"
+            else
+              failures=$((failures+1))
+              echo "C1_DESKTOP_${family}=FAIL" >> "$GITHUB_STEP_SUMMARY"
+            fi
+          done
+          exit "$failures"
+      - name: C1 original Windows WGC frame redaction and OS identity worker tests
+        if: always() && runner.os == 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p c4-native-evidence
+          # This historical standalone worker has no committed Cargo.lock.
+          # Do not pretend its dependency graph is pinned by the Core lock.
+          cargo test --manifest-path src-tauri/lu-observe-capture-worker/Cargo.toml \
+            --bin lu-observe-capture-worker frame_geometry_tests -- --nocapture \
+            2>&1 | tee c4-native-evidence/c1-original-windows-wgc-worker.log
+          echo 'C1_WGC_UNIT=SOURCE_TEST_ONLY_NOT_PHYSICAL_CAPTURE' >> "$GITHUB_STEP_SUMMARY"
       - name: Current UI source and typed-Protobuf history check after native compilation
         # Keep collecting the original frontend receipt even if Rust fails;
         # never suppress the failed status in final grouped reconciliation.
