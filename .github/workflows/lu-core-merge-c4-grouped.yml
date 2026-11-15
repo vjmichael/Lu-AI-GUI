@@ -132,6 +132,11 @@ jobs:
               --test "$suite" -- --nocapture \
               2>&1 | tee "c4-native-evidence/${suite}.log"
           done
+          # C2: original human schema/data and one fixed program are the
+          # entire read-only utility authority. The model is never the grant.
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --lib native_core_utility_turn::tests -- --nocapture \
+            2>&1 | tee c4-native-evidence/c2-core-utility-turn.log
           cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
             --lib agent_reviewed_broker_bridge::tests -- --nocapture \
             2>&1 | tee c4-native-evidence/plan-native-broker.log
@@ -183,6 +188,9 @@ jobs:
           cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml \
             --lib environment_context::tests -- --nocapture \
             2>&1 | tee c4-native-evidence/ambient-host-runtime-context.log
+          cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml \
+            --lib core_utility_desktop::tests -- --nocapture \
+            2>&1 | tee c4-native-evidence/c2-desktop-utility-routing.log
       - name: Current UI source and typed-Protobuf history check after native compilation
         # Keep collecting the original frontend receipt even if Rust fails;
         # never suppress the failed status in final grouped reconciliation.
