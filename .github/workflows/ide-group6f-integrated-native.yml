@@ -151,6 +151,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          python -m unittest discover -s ide/packaging -p 'test_p05_reviewed_workflow_successor.py' -v
+          python ide/packaging/audit_p05_reviewed_workflow_successor.py --repo-root .
           python -m unittest discover -s ide/packaging -p 'test_p06_live_native_jobs.py' -v
           python -m unittest discover -s ide/packaging -p 'test_p06_wo8_lock_wiring.py' -v
           echo 'IDE_MERGE02_P06_LIVE_EVIDENCE=SOURCE_ONLY_NONAUTHORIZING'

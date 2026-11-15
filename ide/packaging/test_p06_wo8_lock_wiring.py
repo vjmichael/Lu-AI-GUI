@@ -20,6 +20,8 @@ def check(text: str):
     for line in calls:
         if (line != CALL + " --repo-root . --platform windows-2022 --ide-merge02-successor"):
             raise ValueError("wo8_p06_unreviewed_original_or_loosened_successor")
+    if text.count("cargo fetch --locked --manifest-path ide/app/src-tauri/Cargo.toml") != 2:
+        raise ValueError("wo8_p06_missing_existing_security_or_installation_gate:two_cargo_fetch")
     for required in (
         "cargo fetch --locked --manifest-path ide/app/src-tauri/Cargo.toml",
         "npm ci --prefix ide/app --ignore-scripts --no-audit --no-fund",
