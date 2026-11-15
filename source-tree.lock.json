@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "760987acc584b20af8c0b136d1f2ea784412c3b8",
+  "sourceCommitBeforeLock": "866d5193fc2a022cc1b71f26fee985d0146bd839",
   "trackedFileCount": 1039,
   "files": [
     {
@@ -1725,7 +1725,7 @@
     },
     {
       "path": "lu-desktop/tests/agent01l-linux-cgroup-v2.test.mjs",
-      "blob": "acda28b785b7596453377661508162a7a1d224c7"
+      "blob": "826ba4d855cd18dacdadc9e9597b40e5f385137a"
     },
     {
       "path": "lu-desktop/tests/agent01l-os-custody.test.mjs",
@@ -2345,11 +2345,11 @@
     },
     {
       "path": "scripts/lu-sec06c-agent01l-fixture-launcher.py",
-      "blob": "1dd9a9245d91419e80f193baf14dd95a037a31be"
+      "blob": "1ba3ad01e9943af5d7d7b36d3d66f96f746bbb33"
     },
     {
       "path": "scripts/lu-sec06c-agent01l-fixture-manager.py",
-      "blob": "3ea2659fd11ac347664c5d18afdc93e633aca443"
+      "blob": "1b6e9a494fe088555dc753d67bf317a7d52eb23c"
     },
     {
       "path": "scripts/lu-sec06c-browser-userns.apparmor",
