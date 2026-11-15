@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "abe5b5096db39944228481cbaed65f988e01ff6b",
+  "sourceCommitBeforeLock": "2c0653d2254a3f2f6a4b7ed915699b420bbf74eb",
   "trackedFileCount": 1034,
   "files": [
     {
@@ -69,7 +69,7 @@
     },
     {
       "path": ".github/workflows/lu-core-merge-c4-grouped.yml",
-      "blob": "d0f8c80c76d96134333e767de0368a1f13465c1c"
+      "blob": "f74031b73c86c818758c6019b1543a5c392c67bd"
     },
     {
       "path": ".github/workflows/lu-development-ledger.yml",
@@ -2621,7 +2621,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/agent_deliverable_receipts.rs",
-      "blob": "b7e5721ba74fdeab5504a3fe0053871531a3d287"
+      "blob": "aa1b25678ee7fa9163ed6e3d2991e90f8c2a2d86"
     },
     {
       "path": "src-tauri/lu-core/src/agent_host_scheduler.rs",
@@ -3717,7 +3717,7 @@
     },
     {
       "path": "src-tauri/lu-core/tests/e1_reviewed_model_tools.rs",
-      "blob": "8f3abe34abc916e9290700907ca387a1c5888663"
+      "blob": "dc164b4b6aea6842f00b1cf95dc0de854e1d70dd"
     },
     {
       "path": "src-tauri/lu-core/tests/edit_safety.rs",
