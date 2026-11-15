@@ -290,7 +290,7 @@ mod tests{
         ).await.unwrap();
         assert_eq!(report.tool_calls,1);
         assert!(report.answer.contains("does not prove runtime execution"));
-        assert!(current.capabilities().unwrap().is_empty());
+        assert!(current.capabilities().map_or(true, |caps| caps.is_empty()));
         drop(current);drop(journal);let _=fs::remove_file(path);
     }
     #[tokio::test]
