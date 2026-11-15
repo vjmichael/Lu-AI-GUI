@@ -102,6 +102,16 @@ jobs:
           echo "G06D_G06E_G06F_ORIGINAL_NATIVE_CROSS_DOMAIN=PASS"
           echo "G06F_OS_HUMAN_APPROVAL=NOT_TESTED"
           echo "G06F_REMOTE_CAS_AND_PUBLICATION=NOT_TESTED"
+      - name: IDE-MERGE-02C original editor, DAP and durable recovery native tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          for domain in editor workspace_layout dap_session dap_source_lines debug_target_review source_span; do
+            cargo test --locked --manifest-path ide/host/Cargo.toml --lib "$domain" -- --nocapture
+          done
+          cargo test --locked --manifest-path ide/supervisor/Cargo.toml --lib             protected_recovery_preflight_survives_restart_and_blocks_new_work -- --nocapture
+          cargo test --locked --manifest-path ide/supervisor/Cargo.toml --lib             crash_recovery_never_retries_and_requires_os_cleanup_receipt -- --nocapture
+          echo 'IDE_MERGE02C_NATIVE_EDITOR_DAP_RECOVERY=SOURCE_TESTS_PASS_NOT_OS_ACCEPTANCE'
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -244,12 +254,30 @@ jobs:
           test -s dist/index.html
           test -s dist/assets/app.js
           echo "IDE_MERGE03_FRONTEND_BUILT_FROM_NPM_LOCK=PASS"
+      - name: IDE-MERGE-02C complete original editor, debugger and recovery frontend suite
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd ide/app
+          # Do not filter, skip or rewrite failing original assertions.
+          # Installed DEV-01 tests separately exercise OS UI and hard restart.
+          npm test
+          echo 'IDE_MERGE02C_ALL_FRONTEND_CONTRACTS=TEST_PASS_NOT_INSTALLED_ACCEPTANCE'
       - name: Native host OS-vault type and desktop compile
         shell: bash
         run: |
           set -euo pipefail
           cargo check --locked --manifest-path ide/host/Cargo.toml \
             --features fin03-native-vault --example fin03_live_vault_probe
+          if [ "$RUNNER_OS" = Linux ]; then
+            # FIN-05: compile the genuinely gated Linux vcpkg command path,
+            # not just the default-OFF build or a regex over source text.
+            # This is compiler evidence only, NOT delegated cgroup or
+            # binary-cache install acceptance.
+            cargo check --locked --manifest-path ide/supervisor/Cargo.toml \
+              --features package-vcpkg-worker --lib
+            echo 'IDE_MERGE02C_FIN05_VCPKG_LINUX_FEATURE=COMPILES_NOT_OS_EXECUTED'
+          fi
           if [ "$RUNNER_OS" = Windows ]; then
             # Inspect actual FIN-04 compiler errors independently of Tauri.
             # The split code remains default-OFF and needs no GUI permission.
@@ -281,6 +309,17 @@ jobs:
               --features fin04w2-split-native --lib debug_symbol_verification::tests -- --nocapture
             cargo test --locked --manifest-path ide/supervisor/Cargo.toml \
               --features fin04w2-split-native --lib windows_service_security::tests -- --nocapture
+            cargo test --locked --manifest-path ide/supervisor/Cargo.toml \
+              --features fin04w2-split-native --lib windows_fin04w2_wfp::tests -- --nocapture
+            cargo test --locked --manifest-path ide/supervisor/Cargo.toml \
+              --features fin04w2-split-native --lib windows_fin04w2_kernel::tests -- --nocapture
+            cargo test --locked --manifest-path ide/supervisor/Cargo.toml \
+              --features fin04w2-split-native --lib windows_event_owner::tests -- --nocapture
+            cargo test --locked --manifest-path ide/supervisor/Cargo.toml \
+              --features fin04w2-split-native --lib windows_worker::tests -- --nocapture
+            cargo test --locked --manifest-path ide/supervisor/Cargo.toml \
+              --features fin04w2-split-native --lib debug_action_receipts::tests -- --nocapture
+            echo 'IDE_MERGE02C_WINDOWS_KERNEL_WFP_OWNER_RECOVERY=SOURCE_NEGATIVES_NOT_PHYSICAL'
             echo "IDE_MERGE03_TARGET_IPC_FORGED_RECEIPT_NEGATIVES=PASS"
             echo "IDE_MERGE03_TWO_SERVICES_NATIVE_IPC_AND_SUSPENDED_JOBS=NOT_TESTED"
             echo "IDE_MERGE03_TARGET_SCM_SOURCE_COMPILE=PASS"

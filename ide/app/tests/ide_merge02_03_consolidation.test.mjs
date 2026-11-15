@@ -97,3 +97,32 @@ test('IDE-MERGE-03 split source never grants LLDB or attach from the WebView', (
   assert.match(supervisor,/feature\s*=\s*"fin04w2-split-native"/);
   assert.match(cargo,/fin04w2-split-native = \["fin04w2-c2", "protected-recovery-service"\]/);
 });
+
+test('IDE-MERGE-02C same-head acceptance compiles offline vcpkg and retains original frontend, DAP, recovery and OS negative gates', () => {
+  const workflow=source('../../../.github/workflows/ide-group6f-integrated-native.yml');
+  const compiler=source('../../supervisor/src/linux_worker.rs');
+  const front=source('../web/debugger_integration.js');
+  for(const marker of [
+    'INTEGRATION_SOURCE_SHA:',
+    'npm test',
+    '--features package-vcpkg-worker --lib',
+    'IDE_MERGE02C_FIN05_VCPKG_LINUX_FEATURE=COMPILES_NOT_OS_EXECUTED',
+    'IDE_MERGE02C_ALL_FRONTEND_CONTRACTS=TEST_PASS_NOT_INSTALLED_ACCEPTANCE',
+    'workspace_layout dap_session dap_source_lines debug_target_review source_span',
+    'protected_recovery_preflight_survives_restart_and_blocks_new_work',
+    'crash_recovery_never_retries_and_requires_os_cleanup_receipt',
+    'windows_fin04w2_wfp::tests',
+    'windows_fin04w2_kernel::tests',
+    'windows_event_owner::tests',
+    'windows_worker::tests',
+    'debug_action_receipts::tests',
+    'Test-DEV01ModernInstalledDeb.sh',
+    'Test-DEV01ModernInstalledNsis.ps1',
+    'IDE_MERGE03_SPLIT_NATIVE_SCM_AND_WFP_ACCEPTANCE=NOT_TESTED',
+  ]) assert.ok(workflow.includes(marker),marker);
+  assert.match(workflow,/npm ci --ignore-scripts/);
+  assert.doesNotMatch(workflow,/continue-on-error:\s*true/);
+  assert.match(front,/response\.navigationAutomatic!==false/);
+  assert.match(front,/response\.debuggerExecutionAuthorized!==false/);
+  assert.match(compiler,/RuntimeProfile::VcpkgInstallOffline/);
+});
