@@ -900,9 +900,9 @@ async fn genuine_qwen_selects_original_schema_and_environment_native_tools(){
         fs::create_dir_all(&dir).unwrap();
         let bound=origin();
         let prompt=if mode=="schema" {
-            "Use the authorized lu_validate_schema native tool to check schema \\"type=integer\\" (JSON schema object {\\"type\\":\\"integer\\"}) against the JSON number 42. Then explain the observed validity from Lu's actual tool reply, not your guess."
+            r#"Use the authorized lu_validate_schema native tool to check schema {"type":"integer"} against the JSON number 42. Then explain the observed validity from Lu's actual tool reply, not your guess."#
         } else {
-            "Use the authorized lu_check_env native tool with program \\"python\\" to inspect the host-approved candidate presence. This is file-presence only, not proof of runnable Python; explain the observed value after the actual tool reply."
+            r#"Use the authorized lu_check_env native tool with program "python" to inspect the host-approved candidate presence. This is file-presence only, not proof of runnable Python; explain the observed value after the actual tool reply."#
         };
         let book=AnsfStore::open(&dir.join("ansf.sqlite")).unwrap();
         book.create_session(&bound.conversation_id,&bound.user_turn_id,prompt).unwrap();
