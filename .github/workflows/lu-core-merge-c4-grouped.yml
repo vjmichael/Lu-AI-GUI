@@ -104,6 +104,7 @@ jobs:
             lu-desktop/tests/agent01h-next-step-preview.test.mjs \
             lu-desktop/tests/agent01k-independent-recovery.test.mjs \
             lu-desktop/tests/reviewed-tool-feedback.test.mjs \
+            lu-desktop/tests/task-board.test.mjs \
             scripts/core01f-bridge-review.test.mjs \
             scripts/core-merge-c1-family-contracts.test.mjs \
             lu-desktop/tests/browser-native-authorization.test.mjs \
