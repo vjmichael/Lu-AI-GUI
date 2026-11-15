@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "b34ef370268a45a6f3f8b05c70143b62350a2f92",
+  "sourceCommitBeforeLock": "c0f916beea251c6e2a1c7e2e3bf1a7608be0712b",
   "trackedFileCount": 1040,
   "files": [
     {
@@ -2309,7 +2309,7 @@
     },
     {
       "path": "scripts/lu-c1-scanned-pdf-fixture.py",
-      "blob": "dcab0d66c0065f418c1ab6c8f6070dcc16ddd637"
+      "blob": "835d17915fc56ed24937d584a8336fae1d972de7"
     },
     {
       "path": "scripts/lu-ci-group-policy.mjs",
