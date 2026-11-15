@@ -270,19 +270,18 @@ impl DapSession {
         let safe_stem = |file: &str| {
             !file.is_empty()
                 && file.len() <= 200
-                && file.bytes().all(|b| {
-                    b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_')
-                })
+                && file
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_'))
         };
         #[cfg(target_os = "linux")]
-        let linux = program.strip_prefix("/debug-target/debug/")
+        let linux = program
+            .strip_prefix("/debug-target/debug/")
             .or_else(|| program.strip_prefix("/debug-target/target/debug/"))
             .is_some_and(safe_stem);
         #[cfg(not(target_os = "linux"))]
         let linux = false;
-        let windows = if program.len() <= 1024
-            && std::path::Path::new(program).is_absolute()
-        {
+        let windows = if program.len() <= 1024 && std::path::Path::new(program).is_absolute() {
             let normalized = program.replace('/', "\\");
             let pieces: Vec<_> = normalized.split('\\').collect();
             let name = pieces.last().copied().unwrap_or("");
@@ -1415,13 +1414,19 @@ mod tests {
         linux.phase = DapPhase::Ready;
         #[cfg(target_os = "linux")]
         {
-            let message = linux.launch_verified_project("/debug-target/debug/fixture").unwrap();
-            assert!(String::from_utf8(message).unwrap().contains("/debug-target/debug/fixture"));
+            let message = linux
+                .launch_verified_project("/debug-target/debug/fixture")
+                .unwrap();
+            assert!(String::from_utf8(message)
+                .unwrap()
+                .contains("/debug-target/debug/fixture"));
         }
         #[cfg(not(target_os = "linux"))]
         {
             // The Linux path is not an absolute Windows executable.
-            assert!(linux.launch_verified_project("/debug-target/debug/fixture").is_err());
+            assert!(linux
+                .launch_verified_project("/debug-target/debug/fixture")
+                .is_err());
         }
         for forbidden in [
             "/debug-target/debug/deps/fixture",
@@ -1432,7 +1437,10 @@ mod tests {
         ] {
             let mut session = DapSession::new();
             session.phase = DapPhase::Ready;
-            assert_eq!(session.launch_verified_project(forbidden).unwrap_err(), DapError::InvalidMessage);
+            assert_eq!(
+                session.launch_verified_project(forbidden).unwrap_err(),
+                DapError::InvalidMessage
+            );
         }
     }
     #[cfg(windows)]
@@ -1440,9 +1448,13 @@ mod tests {
     fn native_appcontainer_sealed_cargo_debug_path_is_accepted_without_foreign_paths() {
         let mut session = DapSession::new();
         session.phase = DapPhase::Ready;
-        let program = r"C:\Users\runner\AppData\Local\Packages\abc\LocalState\debug-target\debug\fixture.exe";
-        assert!(String::from_utf8(session.launch_verified_project(program).unwrap())
-            .unwrap().contains("stopOnEntry"));
+        let program =
+            r"C:\Users\runner\AppData\Local\Packages\abc\LocalState\debug-target\debug\fixture.exe";
+        assert!(
+            String::from_utf8(session.launch_verified_project(program).unwrap())
+                .unwrap()
+                .contains("stopOnEntry")
+        );
         for forbidden in [
             r"C:\Windows\System32\cmd.exe",
             r"C:\Temp\debug-target\debug\deps\fixture.exe",
@@ -1451,7 +1463,10 @@ mod tests {
         ] {
             let mut isolated = DapSession::new();
             isolated.phase = DapPhase::Ready;
-            assert_eq!(isolated.launch_verified_project(forbidden).unwrap_err(), DapError::InvalidMessage);
+            assert_eq!(
+                isolated.launch_verified_project(forbidden).unwrap_err(),
+                DapError::InvalidMessage
+            );
         }
     }
     #[cfg(windows)]

@@ -1,7 +1,10 @@
 //! INT01-E: bounded, nonexecuting project filename search and sorted directory pages.
 //! A native registered cap-std root remains authoritative. No filesystem writes,
 //! symlink traversal, shell, network, source text indexing or ambient path access.
-use std::{collections::{BTreeSet, VecDeque}, time::{Duration, Instant}};
+use std::{
+    collections::{BTreeSet, VecDeque},
+    time::{Duration, Instant},
+};
 
 use serde::Serialize;
 
@@ -27,9 +30,22 @@ pub(crate) fn generated(name: &str) -> bool {
     lower.starts_with(".lu-ide-")
         || matches!(
             lower.as_str(),
-            ".git" | ".hg" | ".svn" | "node_modules" | "target" | "dist" | "build"
-                | ".venv" | "venv" | "__pycache__" | ".next" | ".cache"
-                | "site-packages" | "vendor" | ".idea" | ".turbo"
+            ".git"
+                | ".hg"
+                | ".svn"
+                | "node_modules"
+                | "target"
+                | "dist"
+                | "build"
+                | ".venv"
+                | "venv"
+                | "__pycache__"
+                | ".next"
+                | ".cache"
+                | "site-packages"
+                | "vendor"
+                | ".idea"
+                | ".turbo"
         )
 }
 
@@ -180,9 +196,7 @@ impl IdeWorkspaceRegistry {
                     if let Some(score) = rank(&path, &query) {
                         candidates.push((score, path, meta.len()));
                         if candidates.len() > MAX_RESULTS * 2 {
-                            candidates.sort_by(|a, b| {
-                                (a.0, &a.1).cmp(&(b.0, &b.1))
-                            });
+                            candidates.sort_by(|a, b| (a.0, &a.1).cmp(&(b.0, &b.1)));
                             candidates.truncate(MAX_RESULTS);
                             limited = true;
                         }
@@ -325,8 +339,15 @@ mod tests {
 
     #[test]
     fn historical_index_private_and_casefolded_ignored_names_stay_hidden() {
-        for name in [".lu-ide-trash", ".Lu-IDE-Recovery", ".GIT", "NODE_MODULES",
-                     "Target", "vendor", ".VENV"] {
+        for name in [
+            ".lu-ide-trash",
+            ".Lu-IDE-Recovery",
+            ".GIT",
+            "NODE_MODULES",
+            "Target",
+            "vendor",
+            ".VENV",
+        ] {
             assert!(generated(name), "{name}");
         }
         assert!(!generated("source.rs"));

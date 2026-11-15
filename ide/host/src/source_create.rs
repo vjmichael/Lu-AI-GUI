@@ -28,9 +28,14 @@ fn source_component_allowed(component: &str) -> bool {
     // Refuse Git internals and IDE's private temporary names even if a folder
     // is user-controlled. Protect Windows portablility and DOS device aliases.
     let lower = component.to_ascii_lowercase();
-    if lower == ".git" || lower == ".lu-ide" || lower.starts_with(".lu-ide-")
-        || component.ends_with(' ') || component.ends_with('.')
-        || component.chars().any(|c| matches!(c, '<' | '>' | '"' | '|' | '?' | '*'))
+    if lower == ".git"
+        || lower == ".lu-ide"
+        || lower.starts_with(".lu-ide-")
+        || component.ends_with(' ')
+        || component.ends_with('.')
+        || component
+            .chars()
+            .any(|c| matches!(c, '<' | '>' | '"' | '|' | '?' | '*'))
     {
         return false;
     }
@@ -38,7 +43,8 @@ fn source_component_allowed(component: &str) -> bool {
     if matches!(stem, "con" | "prn" | "aux" | "nul") {
         return false;
     }
-    if stem.len() == 4 && (stem.starts_with("com") || stem.starts_with("lpt"))
+    if stem.len() == 4
+        && (stem.starts_with("com") || stem.starts_with("lpt"))
         && matches!(stem.as_bytes()[3], b'1'..=b'9')
     {
         return false;
@@ -86,7 +92,10 @@ impl IdeWorkspaceRegistry {
         validate_relative(&relative_path, false)?;
 
         // Serialize IDE-origin filesystem mutations just like explicit Save.
-        let _guard = self.save_lock.lock().map_err(|_| BrowserError::HostUnavailable)?;
+        let _guard = self
+            .save_lock
+            .lock()
+            .map_err(|_| BrowserError::HostUnavailable)?;
         let base = self.source_capability(project_id)?;
         let parent = descend(base, &parent_parts)?;
 
@@ -112,18 +121,22 @@ impl IdeWorkspaceRegistry {
         if kind == "file" {
             let mut options = OpenOptions::new();
             options.write(true).create_new(true);
-            let mut file = parent.open_with(name, &options)
+            let mut file =
+                parent
+                    .open_with(name, &options)
+                    .map_err(|error| match error.kind() {
+                        io::ErrorKind::AlreadyExists => BrowserError::AlreadyExists,
+                        _ => BrowserError::Io(error),
+                    })?;
+            file.flush()?;
+            file.sync_all()?;
+        } else {
+            parent
+                .create_dir(name)
                 .map_err(|error| match error.kind() {
                     io::ErrorKind::AlreadyExists => BrowserError::AlreadyExists,
                     _ => BrowserError::Io(error),
                 })?;
-            file.flush()?;
-            file.sync_all()?;
-        } else {
-            parent.create_dir(name).map_err(|error| match error.kind() {
-                io::ErrorKind::AlreadyExists => BrowserError::AlreadyExists,
-                _ => BrowserError::Io(error),
-            })?;
         }
         #[cfg(unix)]
         durable_parent.sync_all()?;
@@ -143,8 +156,20 @@ mod tests {
 
     #[test]
     fn disallows_private_and_windows_alias_names() {
-        for name in [".git", ".GIT", ".lu-ide-trash", "con", "CON.txt", "NUL",
-                     "com1.rs", "LPT9", "space ", "dot.", "star*", "pipe|"] {
+        for name in [
+            ".git",
+            ".GIT",
+            ".lu-ide-trash",
+            "con",
+            "CON.txt",
+            "NUL",
+            "com1.rs",
+            "LPT9",
+            "space ",
+            "dot.",
+            "star*",
+            "pipe|",
+        ] {
             assert!(!source_component_allowed(name), "{name:?}");
         }
         for name in ["main.rs", ".gitignore", "src", "foo bar", "hello-世界.py"] {

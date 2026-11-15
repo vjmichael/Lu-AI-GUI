@@ -102,7 +102,10 @@ pub struct Definition {
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 pub enum LspEvent {
     Diagnostics(Vec<Diagnostic>),
-    ScopedDiagnostics { source: DiagnosticSource, diagnostics: Vec<Diagnostic> },
+    ScopedDiagnostics {
+        source: DiagnosticSource,
+        diagnostics: Vec<Diagnostic>,
+    },
     Completions(Vec<Completion>),
     Hover(String),
     Definition(Option<Definition>),
@@ -228,10 +231,16 @@ impl LspSession {
             || text.len() > MAX_TEXT_BYTES
             || self.docs.contains_key(native_uri)
             || self.docs.len() >= MAX_OPEN_DOCUMENTS
-            || self.docs.values().any(|doc| doc.source.file_id == source.file_id ||
-                doc.source.project_id != source.project_id)
-            || self.docs.values().map(|doc| doc.text.len()).sum::<usize>()
-                .saturating_add(text.len()) > MAX_SESSION_TEXT_BYTES
+            || self.docs.values().any(|doc| {
+                doc.source.file_id == source.file_id || doc.source.project_id != source.project_id
+            })
+            || self
+                .docs
+                .values()
+                .map(|doc| doc.text.len())
+                .sum::<usize>()
+                .saturating_add(text.len())
+                > MAX_SESSION_TEXT_BYTES
         {
             return Err(LspError::UntrustedUri);
         }
@@ -258,7 +267,10 @@ impl LspSession {
         if self.phase != LspPhase::Ready {
             return Err(LspError::NotReady);
         }
-        let doc = self.docs.values().find(|doc| doc.source.file_id == expected.file_id)
+        let doc = self
+            .docs
+            .values()
+            .find(|doc| doc.source.file_id == expected.file_id)
             .ok_or(LspError::NotReady)?;
         if !doc.source.same_revision(expected)
             || !next.valid()
@@ -269,9 +281,16 @@ impl LspSession {
         {
             return Err(LspError::StaleRevision);
         }
-        if text.len() > MAX_TEXT_BYTES ||
-            self.docs.values().map(|item| item.text.len()).sum::<usize>()
-                .saturating_sub(doc.text.len()).saturating_add(text.len()) > MAX_SESSION_TEXT_BYTES {
+        if text.len() > MAX_TEXT_BYTES
+            || self
+                .docs
+                .values()
+                .map(|item| item.text.len())
+                .sum::<usize>()
+                .saturating_sub(doc.text.len())
+                .saturating_add(text.len())
+                > MAX_SESSION_TEXT_BYTES
+        {
             return Err(LspError::Capacity);
         }
         let version = doc.version.checked_add(1).ok_or(LspError::Capacity)?;
@@ -296,7 +315,10 @@ impl LspSession {
         if self.phase != LspPhase::Ready {
             return Err(LspError::NotReady);
         }
-        let doc = self.docs.values().find(|doc| doc.source.file_id == expected.file_id)
+        let doc = self
+            .docs
+            .values()
+            .find(|doc| doc.source.file_id == expected.file_id)
             .ok_or(LspError::NotReady)?;
         if !doc.source.same_revision(expected) {
             return Err(LspError::StaleRevision);
@@ -330,7 +352,10 @@ impl LspSession {
         Ok(frame)
     }
     pub fn close_document(&mut self, expected: &DiagnosticSource) -> Result<Vec<u8>, LspError> {
-        let doc = self.docs.values().find(|doc| doc.source.file_id == expected.file_id)
+        let doc = self
+            .docs
+            .values()
+            .find(|doc| doc.source.file_id == expected.file_id)
             .ok_or(LspError::NotReady)?;
         if !doc.source.same_revision(expected) {
             return Err(LspError::StaleRevision);
@@ -404,11 +429,15 @@ impl LspSession {
                 } else if method == "textDocument/publishDiagnostics"
                     && self.phase == LspPhase::Ready
                 {
-                    if let Some((source, diagnostics)) = self.parse_diagnostics(&message["params"]) {
+                    if let Some((source, diagnostics)) = self.parse_diagnostics(&message["params"])
+                    {
                         if self.docs.len() == 1 {
                             events.push(LspEvent::Diagnostics(diagnostics));
                         } else {
-                            events.push(LspEvent::ScopedDiagnostics { source, diagnostics });
+                            events.push(LspEvent::ScopedDiagnostics {
+                                source,
+                                diagnostics,
+                            });
                         }
                     }
                 }
@@ -672,8 +701,7 @@ fn parse_definition(value: &Value, current_uri: &str, text: &str) -> Option<Opti
     } else {
         (item["uri"].as_str()?, &item["range"])
     };
-    if !uri.starts_with("file:///") || uri.len() > 2048 ||
-        uri.chars().any(char::is_control) {
+    if !uri.starts_with("file:///") || uri.len() > 2048 || uri.chars().any(char::is_control) {
         return Some(None);
     }
     let span: Span = serde_json::from_value(range.clone()).ok()?;
@@ -683,10 +711,12 @@ fn parse_definition(value: &Value, current_uri: &str, text: &str) -> Option<Opti
     let (from_utf16, to_utf16) = if uri == current_uri {
         span_utf16(text, &span)?
     } else {
-        if span.start.line > 250_000 || span.end.line > 250_000 ||
-            span.start.character > 250_000 || span.end.character > 250_000 ||
-            (span.end.line, span.end.character) <
-                (span.start.line, span.start.character) {
+        if span.start.line > 250_000
+            || span.end.line > 250_000
+            || span.start.character > 250_000
+            || span.end.character > 250_000
+            || (span.end.line, span.end.character) < (span.start.line, span.start.character)
+        {
             return Some(None);
         }
         (0, 0)

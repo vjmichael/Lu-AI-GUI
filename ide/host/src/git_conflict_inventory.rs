@@ -3,7 +3,10 @@
 //! This is not a conflict-resolution executor. Source selection, stage OIDs,
 //! blob previews and the exact index bytes are bound to one observation digest.
 //! It never calls index.write, checkout, merge_trees, commit, or Git CLI.
-use crate::{git_branch_operations::exact_repo, git_protected_merge::changed_path_is_plain_safe, IdeWorkspaceRegistry};
+use crate::{
+    git_branch_operations::exact_repo, git_protected_merge::changed_path_is_plain_safe,
+    IdeWorkspaceRegistry,
+};
 use git2::{IndexEntry, Repository};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
@@ -57,7 +60,9 @@ pub struct NativeConflictInventory {
     pub git_process_started: bool,
 }
 
-fn hash(data: &[u8]) -> String { format!("{:x}", Sha256::digest(data)) }
+fn hash(data: &[u8]) -> String {
+    format!("{:x}", Sha256::digest(data))
+}
 
 fn raw_index(gitdir: &Path) -> Result<String, &'static str> {
     let file = gitdir.join("index");
@@ -66,32 +71,51 @@ fn raw_index(gitdir: &Path) -> Result<String, &'static str> {
         return Err("G06D01_INDEX_UNTRUSTED");
     }
     let data = fs::read(file).map_err(|_| "G06D01_INDEX_READ_DENIED")?;
-    if data.len() as u64 != meta.len() { return Err("G06D01_INDEX_RACED"); }
+    if data.len() as u64 != meta.len() {
+        return Err("G06D01_INDEX_RACED");
+    }
     Ok(hash(&data))
 }
 
 fn path_of(entry: &IndexEntry) -> Result<&str, &'static str> {
     std::str::from_utf8(&entry.path).map_err(|_| "G06D01_PATH_NOT_UTF8")
 }
-fn stage(repo: &Repository, entry: Option<&IndexEntry>)
-    -> Result<Option<ConflictStageEvidence>, &'static str> {
-    let Some(entry) = entry else { return Ok(None); };
+fn stage(
+    repo: &Repository,
+    entry: Option<&IndexEntry>,
+) -> Result<Option<ConflictStageEvidence>, &'static str> {
+    let Some(entry) = entry else {
+        return Ok(None);
+    };
     if !matches!(entry.mode, 0o100644 | 0o100755) {
         return Err("G06D01_UNSUPPORTED_CONFLICT_MODE");
     }
-    let blob = repo.find_blob(entry.id).map_err(|_| "G06D01_BLOB_UNAVAILABLE")?;
-    if blob.size() > MAX_BLOB { return Err("G06D01_BLOB_TOO_LARGE"); }
+    let blob = repo
+        .find_blob(entry.id)
+        .map_err(|_| "G06D01_BLOB_UNAVAILABLE")?;
+    if blob.size() > MAX_BLOB {
+        return Err("G06D01_BLOB_TOO_LARGE");
+    }
     let bytes = blob.content();
     let clean = !bytes.contains(&0) && std::str::from_utf8(bytes).is_ok();
     let view = if clean {
         let chars = std::str::from_utf8(bytes).map_err(|_| "G06D01_BLOB_ENCODING")?;
         Some(chars.chars().take(MAX_PREVIEW).collect())
-    } else { None };
-    let truncated = clean && std::str::from_utf8(bytes)
-        .map_err(|_| "G06D01_BLOB_ENCODING")?.chars().count() > MAX_PREVIEW;
+    } else {
+        None
+    };
+    let truncated = clean
+        && std::str::from_utf8(bytes)
+            .map_err(|_| "G06D01_BLOB_ENCODING")?
+            .chars()
+            .count()
+            > MAX_PREVIEW;
     Ok(Some(ConflictStageEvidence {
-        oid: entry.id.to_string(), mode: entry.mode,
-        object_size: bytes.len(), preview: view, preview_truncated: truncated,
+        oid: entry.id.to_string(),
+        mode: entry.mode,
+        object_size: bytes.len(),
+        preview: view,
+        preview_truncated: truncated,
         binary_or_non_utf8: !clean,
     }))
 }
@@ -105,32 +129,50 @@ fn fence(repo: &Repository) -> Result<(String, String, String), &'static str> {
         return Err("G06D01_UNSAFE_REPOSITORY");
     }
     let head = repo.head().map_err(|_| "G06D01_HEAD_UNAVAILABLE")?;
-    let branch = head.name().and_then(|x| x.strip_prefix("refs/heads/"))
+    let branch = head
+        .name()
+        .and_then(|x| x.strip_prefix("refs/heads/"))
         .ok_or("G06D01_NOT_LOCAL_HEAD")?;
     let oid = head.target().ok_or("G06D01_NOT_DIRECT_HEAD")?;
     repo.find_commit(oid).map_err(|_| "G06D01_INVALID_HEAD")?;
-    Ok((branch.to_owned(), oid.to_string(), format!("{:?}", repo.state())))
+    Ok((
+        branch.to_owned(),
+        oid.to_string(),
+        format!("{:?}", repo.state()),
+    ))
 }
 
 impl IdeWorkspaceRegistry {
     /// Read actual stage 1/2/3 index entries, not speculative 6C02 path overlap.
-    pub fn inspect_native_git_conflicts(&self, project_id: &str)
-        -> Result<NativeConflictInventory, &'static str> {
+    pub fn inspect_native_git_conflicts(
+        &self,
+        project_id: &str,
+    ) -> Result<NativeConflictInventory, &'static str> {
         let repo = exact_repo(self, project_id)?;
-        let root = self.registered_git_root(project_id).map_err(|_| "G06D01_PROJECT_CLOSED")?;
+        let root = self
+            .registered_git_root(project_id)
+            .map_err(|_| "G06D01_PROJECT_CLOSED")?;
         let initial = fence(&repo)?;
         let before_index = raw_index(repo.path())?;
         let index = repo.index().map_err(|_| "G06D01_INDEX_OPEN_DENIED")?;
         let mut entries = Vec::new();
         let mut count = 0usize;
         if index.has_conflicts() {
-            for record in index.conflicts().map_err(|_| "G06D01_CONFLICT_SCAN_FAILED")? {
+            for record in index
+                .conflicts()
+                .map_err(|_| "G06D01_CONFLICT_SCAN_FAILED")?
+            {
                 let c = record.map_err(|_| "G06D01_CONFLICT_CORRUPTED")?;
                 count += 1;
-                if count > MAX_CONFLICTS { return Err("G06D01_CONFLICT_LIMIT"); }
+                if count > MAX_CONFLICTS {
+                    return Err("G06D01_CONFLICT_LIMIT");
+                }
                 let paths = [c.ancestor.as_ref(), c.our.as_ref(), c.their.as_ref()];
-                let names: Vec<&str> = paths.iter().flatten().map(|e| path_of(e))
-                    .collect::<Result<_,_>>()?;
+                let names: Vec<&str> = paths
+                    .iter()
+                    .flatten()
+                    .map(|e| path_of(e))
+                    .collect::<Result<_, _>>()?;
                 let first = names.first().ok_or("G06D01_CONFLICT_WITHOUT_PATH")?;
                 if names.iter().any(|s| s != first) {
                     // Renames require their own manual planning; avoid falsely
@@ -146,12 +188,21 @@ impl IdeWorkspaceRegistry {
                 } else if ours.is_none() || theirs.is_none() {
                     "modify_delete_or_missing_side"
                 } else if [ancestor.as_ref(), ours.as_ref(), theirs.as_ref()]
-                    .iter().flatten().any(|s| s.binary_or_non_utf8) {
+                    .iter()
+                    .flatten()
+                    .any(|s| s.binary_or_non_utf8)
+                {
                     "binary_or_non_utf8"
-                } else { "three_way_text_conflict" };
+                } else {
+                    "three_way_text_conflict"
+                };
                 entries.push(NativeConflictEntry {
-                    relative_path: (*first).to_owned(), ancestor, ours, theirs,
-                    classification, human_resolution_required: true,
+                    relative_path: (*first).to_owned(),
+                    ancestor,
+                    ours,
+                    theirs,
+                    classification,
+                    human_resolution_required: true,
                 });
             }
         }
@@ -160,8 +211,15 @@ impl IdeWorkspaceRegistry {
         }
         let mut sha = Sha256::new();
         sha.update(b"lu-ide-g06d01-readonly-conflict-inventory-v1\n");
-        for s in [project_id, &initial.0, &initial.1, &initial.2, &before_index] {
-            sha.update((s.len() as u64).to_le_bytes()); sha.update(s.as_bytes());
+        for s in [
+            project_id,
+            &initial.0,
+            &initial.1,
+            &initial.2,
+            &before_index,
+        ] {
+            sha.update((s.len() as u64).to_le_bytes());
+            sha.update(s.as_bytes());
         }
         for e in &entries {
             sha.update((e.relative_path.len() as u64).to_le_bytes());
@@ -177,13 +235,22 @@ impl IdeWorkspaceRegistry {
             }
         }
         Ok(NativeConflictInventory {
-            schema_version: 1, project_id: project_id.to_owned(),
-            current_branch: initial.0, current_head: initial.1, git_state: initial.2,
-            index_sha256: before_index, conflict_count: count, conflicts: entries,
+            schema_version: 1,
+            project_id: project_id.to_owned(),
+            current_branch: initial.0,
+            current_head: initial.1,
+            git_state: initial.2,
+            index_sha256: before_index,
+            conflict_count: count,
+            conflicts: entries,
             evidence_sha256: format!("{:x}", sha.finalize()),
-            source_rechecked: true, authority_granted: false, resolution_written: false,
-            index_or_worktree_modified: false, branch_ref_modified: false,
-            remote_contacted: false, git_process_started: false,
+            source_rechecked: true,
+            authority_granted: false,
+            resolution_written: false,
+            index_or_worktree_modified: false,
+            branch_ref_modified: false,
+            remote_contacted: false,
+            git_process_started: false,
         })
     }
 }
@@ -196,8 +263,7 @@ mod tests {
 
     #[test]
     fn content_preview_is_bounded_and_blob_identity_is_original() {
-        let root = std::env::temp_dir().join(
-            format!("ide-g06d01-{:032x}", rand::random::<u128>()));
+        let root = std::env::temp_dir().join(format!("ide-g06d01-{:032x}", rand::random::<u128>()));
         fs::create_dir_all(&root).unwrap();
         let repo = Repository::init(&root).unwrap();
         fs::write(root.join("a.txt"), b"source line\n").unwrap();
@@ -219,8 +285,7 @@ mod tests {
 
     #[test]
     fn binary_stage_is_not_exposed_as_utf8_text() {
-        let root = std::env::temp_dir().join(
-            format!("ide-g06d01-{:032x}", rand::random::<u128>()));
+        let root = std::env::temp_dir().join(format!("ide-g06d01-{:032x}", rand::random::<u128>()));
         fs::create_dir_all(&root).unwrap();
         let repo = Repository::init(&root).unwrap();
         fs::write(root.join("binary.bin"), [0, 159, 255, 0]).unwrap();
@@ -243,8 +308,7 @@ mod tests {
 
     #[test]
     fn real_unresolved_stage_one_two_three_is_inspected_without_mutation() {
-        let base = std::env::temp_dir().join(
-            format!("ide-g06d01-{:032x}", rand::random::<u128>()));
+        let base = std::env::temp_dir().join(format!("ide-g06d01-{:032x}", rand::random::<u128>()));
         let root = base.join("repo");
         fs::create_dir_all(&root).unwrap();
         fs::write(root.join("conflict.txt"), b"original\n").unwrap();
@@ -255,7 +319,8 @@ mod tests {
         index.write().unwrap();
         let ancestor = index.get_path(Path::new("conflict.txt"), 0).unwrap();
         let tree = repo.find_tree(index.write_tree().unwrap()).unwrap();
-        repo.commit(Some("HEAD"), &sig, &sig, "baseline", &tree, &[]).unwrap();
+        repo.commit(Some("HEAD"), &sig, &sig, "baseline", &tree, &[])
+            .unwrap();
         drop(tree);
         index.clear().unwrap();
         for (stage, bytes) in [
@@ -266,11 +331,17 @@ mod tests {
             // git2::IndexEntry is not Clone; copy the owned fixture entry
             // explicitly, including the path bytes and original file mode.
             let mut entry = git2::IndexEntry {
-                ctime: ancestor.ctime, mtime: ancestor.mtime,
-                dev: ancestor.dev, ino: ancestor.ino, mode: ancestor.mode,
-                uid: ancestor.uid, gid: ancestor.gid,
-                file_size: ancestor.file_size, id: ancestor.id,
-                flags: ancestor.flags, flags_extended: ancestor.flags_extended,
+                ctime: ancestor.ctime,
+                mtime: ancestor.mtime,
+                dev: ancestor.dev,
+                ino: ancestor.ino,
+                mode: ancestor.mode,
+                uid: ancestor.uid,
+                gid: ancestor.gid,
+                file_size: ancestor.file_size,
+                id: ancestor.id,
+                flags: ancestor.flags,
+                flags_extended: ancestor.flags_extended,
                 path: ancestor.path.clone(),
             };
             entry.id = repo.blob(bytes).unwrap();
@@ -283,30 +354,62 @@ mod tests {
         drop(index);
         drop(repo);
         let registry = IdeWorkspaceRegistry::open(base.join("catalog.json")).unwrap();
-        let id = registry.register_from_native_picker(&mut Picker(root.clone()))
-            .unwrap().unwrap().project_id;
+        let id = registry
+            .register_from_native_picker(&mut Picker(root.clone()))
+            .unwrap()
+            .unwrap()
+            .project_id;
         let original_index = fs::read(root.join(".git/index")).unwrap();
         let original_worktree = fs::read(root.join("conflict.txt")).unwrap();
         let inspection = registry.inspect_native_git_conflicts(&id).unwrap();
         assert_eq!(inspection.conflict_count, 1);
         assert_eq!(inspection.conflicts[0].relative_path, "conflict.txt");
-        assert_eq!(inspection.conflicts[0].classification, "three_way_text_conflict");
-        assert_eq!(inspection.conflicts[0].ancestor.as_ref().unwrap().preview.as_deref(),
-            Some("original\n"));
-        assert_eq!(inspection.conflicts[0].ours.as_ref().unwrap().preview.as_deref(),
-            Some("ours\n"));
-        assert_eq!(inspection.conflicts[0].theirs.as_ref().unwrap().preview.as_deref(),
-            Some("theirs\n"));
+        assert_eq!(
+            inspection.conflicts[0].classification,
+            "three_way_text_conflict"
+        );
+        assert_eq!(
+            inspection.conflicts[0]
+                .ancestor
+                .as_ref()
+                .unwrap()
+                .preview
+                .as_deref(),
+            Some("original\n")
+        );
+        assert_eq!(
+            inspection.conflicts[0]
+                .ours
+                .as_ref()
+                .unwrap()
+                .preview
+                .as_deref(),
+            Some("ours\n")
+        );
+        assert_eq!(
+            inspection.conflicts[0]
+                .theirs
+                .as_ref()
+                .unwrap()
+                .preview
+                .as_deref(),
+            Some("theirs\n")
+        );
         assert!(inspection.source_rechecked);
         assert!(!inspection.authority_granted && !inspection.resolution_written);
         assert_eq!(fs::read(root.join(".git/index")).unwrap(), original_index);
-        assert_eq!(fs::read(root.join("conflict.txt")).unwrap(), original_worktree);
         assert_eq!(
-            registry.inspect_native_git_conflicts(&id).unwrap().evidence_sha256,
+            fs::read(root.join("conflict.txt")).unwrap(),
+            original_worktree
+        );
+        assert_eq!(
+            registry
+                .inspect_native_git_conflicts(&id)
+                .unwrap()
+                .evidence_sha256,
             inspection.evidence_sha256
         );
         drop(registry);
         fs::remove_dir_all(base).unwrap();
     }
-
 }

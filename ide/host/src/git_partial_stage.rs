@@ -688,9 +688,7 @@ impl IdeWorkspaceRegistry {
         }
         let projected = selected_index_bytes(&pinned.index_bytes, &fresh)?;
         let staged_sha = sha(&projected);
-        self.require_group6f_no_pending_recovery(
-            &reviewed.plan.project_id,false,
-        )?;
+        self.require_group6f_no_pending_recovery(&reviewed.plan.project_id, false)?;
         let oid = repo
             .blob(&projected)
             .map_err(|_| "G06B_STAGE_BLOB_WRITE_FAILED")?;

@@ -59,7 +59,7 @@ IDE_MERGE02_SUCCESSOR = {
     "newCargoBlob": "ec7461e0a64a8fa121cffda7ecb74333c6f6686c",
     "newCargoSha256": "b3b8c5bf056163c2747c28473b583b996b520917eb63e9a1b4eeb05437abca5a",
     "newDesktopBlockSha256": "a5e4a1867eeb99c821b9e0a144aae01fe2895c49717b37756f7519f5b72594e3c",
-    "unchangedOutsideDesktopSha256": "73afb4fa1fcfc63f2e30b15ecdb06570c55804088dcfa4bfbac78e9f41240cb4c",
+    "unchangedOutsideDesktopSha256": "73afb4fa1fcfc63f2e30b15ecdb06570c55804088dcfa4bfbac78e9f41240cb4",
     "changedLocalPackage": "lu-ide-desktop@0.1.0-alpha.1",
     "addedExistingDependencies": [
         "rand"

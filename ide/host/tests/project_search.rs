@@ -78,27 +78,48 @@ fn huge_or_binary_or_generated_inputs_are_never_searched_as_source() {
 fn saved_text_search_never_reads_private_trash_or_case_variant_generated_folders() {
     let (root, registry, id) = fixture();
     let project = root.join("project");
-    for hidden in [".lu-ide-trash", ".Lu-IDE-Checkpoint", ".GIT", "NODE_MODULES"] {
+    for hidden in [
+        ".lu-ide-trash",
+        ".Lu-IDE-Checkpoint",
+        ".GIT",
+        "NODE_MODULES",
+    ] {
         let folder = project.join(hidden);
         fs::create_dir_all(&folder).unwrap();
-        fs::write(folder.join("secret.rs"), b"needle: original private draft text").unwrap();
+        fs::write(
+            folder.join("secret.rs"),
+            b"needle: original private draft text",
+        )
+        .unwrap();
     }
     fs::create_dir_all(project.join("src")).unwrap();
     let public = b"public needle remains searchable";
     fs::write(project.join("src/visible.rs"), public).unwrap();
 
     let found = registry.find_in_project(&id, "needle", false).unwrap();
-    assert_eq!(found.matches.len(), 1, "private or generated text became searchable");
+    assert_eq!(
+        found.matches.len(),
+        1,
+        "private or generated text became searchable"
+    );
     assert_eq!(found.matches[0].relative_path, "src/visible.rs");
     assert_eq!(found.files_scanned, 1);
     assert_eq!(found.bytes_scanned, public.len() as u64);
     assert!(!found.truncated);
-    assert_eq!(found.scope, "saved_utf8_text_excluding_generated_directories");
+    assert_eq!(
+        found.scope,
+        "saved_utf8_text_excluding_generated_directories"
+    );
     assert!(!found.matches[0].preview.contains("private draft text"));
 
-    let private_only = registry.find_in_project(&id, "original private draft", true).unwrap();
+    let private_only = registry
+        .find_in_project(&id, "original private draft", true)
+        .unwrap();
     assert!(private_only.matches.is_empty());
-    assert_eq!(private_only.files_scanned, 1, "hidden files must not be opened");
+    assert_eq!(
+        private_only.files_scanned, 1,
+        "hidden files must not be opened"
+    );
     assert_eq!(private_only.bytes_scanned, public.len() as u64);
     fs::remove_dir_all(root).unwrap();
 }
