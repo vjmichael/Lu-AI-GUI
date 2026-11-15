@@ -484,6 +484,15 @@ fn dependency_completion_current(
     }
     Ok(true)
 }
+fn native_completion_decision_button(decision:&str)->&'static str{
+    match decision{
+        "COMPLETED_AT_REVIEW"=>"Mark whole task complete",
+        "BLOCKED"=>"Record blocked task",
+        "UNCERTAIN"=>"Record uncertain task",
+        "REPLAN_REQUIRED"=>"Require reviewed task replan",
+        _=>"Cancel unsupported task decision",
+    }
+}
 fn completion_native_eligible(
     task:&register::TaskRevision,deps:bool
 )->bool{
@@ -537,10 +546,10 @@ fn completion_append(
         .map_err(|_|"CORE_C3_COMPLETION_LEDGER_BUSY")?;
     let (r,board,latest)=current_revision(&tx,reg,task)?;
     if board.sha256!=expected_board||r.latest_sha256!=expected_register||
-        board.review_state!="human_approved"||
-        board.source_register_sha256!=r.latest_sha256||
-        latest.version!=version||latest.needs_human_reconciliation||
-        latest.execution_authorized{
+        latest.version!=version||latest.execution_authorized||
+        (completed&&(board.review_state!="human_approved"||
+            board.source_register_sha256!=r.latest_sha256||
+            latest.needs_human_reconciliation)){
         return Err("CORE_C3_COMPLETION_CURRENT_TASK_LEASE_DRIFTED".into())
     }
     let deps=if completed{
@@ -642,10 +651,11 @@ pub(crate) async fn lu_project_task_decide_completion(
         let (r,board,task)=current_revision(&conn,&register_id,&task_id)?;
         if board.sha256!=expected_board_sha256||
             r.latest_sha256!=expected_register_sha256||
-            board.review_state!="human_approved"||
-            board.source_register_sha256!=r.latest_sha256||
-            task.version!=expected_task_version||
-            task.needs_human_reconciliation{
+            task.version!=expected_task_version||task.execution_authorized||
+            (decision=="COMPLETED_AT_REVIEW"&&
+                (board.review_state!="human_approved"||
+                 board.source_register_sha256!=r.latest_sha256||
+                 task.needs_human_reconciliation)){
             return Err("CORE_C3_COMPLETION_UNREVIEWED_OR_CHANGED_TASK".into())
         }
         (task,r,board)
@@ -698,9 +708,20 @@ pub(crate) async fn lu_project_task_decide_completion(
              not certify any completion and overrides the earlier status."
         }
     );
-    if !project_register_desktop::confirm(
-        &app,"Lu — Explicit whole-task human decision",message
-    ).await?{return Ok(None)}
+    // Do NOT reuse the review-only native dialog label to authorize
+    // completion. A click on "Confirm review only" could not be treated as
+    // a separate explicit whole-task completion decision. The OS-owned
+    // button describes the exact status being committed.
+    let button=native_completion_decision_button(&decision).to_string();
+    let native=app.clone();
+    let confirmed=tauri::async_runtime::spawn_blocking(move||
+        native.dialog().message(message)
+            .title("Lu — Explicit whole-task human decision")
+            .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom(
+                button,"Cancel".into()
+            )).blocking_show()
+    ).await.map_err(|_|"CORE_C3_COMPLETION_NATIVE_APPROVAL_INTERRUPTED")?;
+    if !confirmed{return Ok(None)}
     tauri::async_runtime::spawn_blocking(move||
         completion_append(
             &profile,picked.as_deref(),&register_id,&task_id,
@@ -991,6 +1012,20 @@ mod tests{
         }
     }
 
+    #[test]
+    fn distinct_native_confirmation_makes_completion_and_safe_replan_explicit(){
+        assert_eq!(native_completion_decision_button("COMPLETED_AT_REVIEW"),
+            "Mark whole task complete");
+        assert_eq!(native_completion_decision_button("REPLAN_REQUIRED"),
+            "Require reviewed task replan");
+        for state in ["BLOCKED","UNCERTAIN","REPLAN_REQUIRED"]{
+            assert!(!native_completion_decision_button(state)
+                .to_ascii_lowercase().contains("complete"),
+                "a conservative state cannot look like task completion");
+        }
+        assert_eq!(native_completion_decision_button("UNTRUSTED"),
+            "Cancel unsupported task decision");
+    }
     #[test]
     fn source_only_completion_policy_rejects_unchecked_dependencies_and_blockers(){
         let valid=register::TaskRevision{

@@ -18,6 +18,16 @@ export function taskStatus(t){
   return String(t?.observedStatus||'UNKNOWN').replaceAll('_',' ').toLowerCase()+
     ' · not independently accepted';
 }
+export function reconciledTaskStatus(task,decision){
+  if(task&&decision&&decision.taskId===task.taskId&&
+     decision.taskVersion===task.version&&
+     decision.taskCompleted===true&&
+     decision.sourceRescannedThisReview===true&&
+     decision.status==='WHOLE_TASK_HUMAN_DECISION_CURRENT_SOURCE_REVERIFIED'&&
+     decision.executionAuthorized===false)
+    return 'Whole task completed · original human decision and current native source independently reverified';
+  return taskStatus(task);
+}
 export function shownTasks(tasks,filter='All',search=''){
   const needle=String(search).trim().toLowerCase();
   return tasks.filter(t=>(filter==='All'||taskKind(t)===filter)&&

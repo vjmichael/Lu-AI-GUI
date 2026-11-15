@@ -1,7 +1,7 @@
 import React,{useEffect,useMemo,useState} from 'react';
 import {invoke} from '@tauri-apps/api/core';
 import {NativeWindowFrame} from './native_windows.jsx';
-import {FILTERS,taskKind,taskStatus,shownTasks,taskGroups,movedOrder} from './task_board_model.mjs';
+import {FILTERS,taskKind,taskStatus,reconciledTaskStatus,shownTasks,taskGroups,movedOrder} from './task_board_model.mjs';
 
 const errorText=e=>String(e?.message||e||'Native task list unavailable');
 const correction=t=>({
@@ -123,8 +123,9 @@ export function TaskBoardWindow(){
     });
   }
   async function decideWholeTask(){
-    if(!current||!active||busy||!current.reviewCurrent||
-       wholeReason.trim().length<10)return;
+    if(!current||!active||busy||wholeReason.trim().length<10||
+       (wholeDecision==='COMPLETED_AT_REVIEW'&&
+        (!current.reviewCurrent||active.needsHumanReconciliation)))return;
     await act('Original whole-task decision written and independently journaled. No future tool execution authorized.',async()=>{
       const result=await invoke('lu_project_task_decide_completion',{
         registerId:current.board.registerId,taskId:active.taskId,
@@ -593,7 +594,7 @@ export function TaskBoardWindow(){
               <h2>{active.summary}</h2>
               <small>{active.taskId} · v{active.version}</small>
               <p>{active.description}</p>
-              <p><strong>Classification:</strong> {taskStatus(active)}</p>
+              <p><strong>Classification:</strong> {reconciledTaskStatus(active,completionReconciliation)}</p>
               <p><strong>Acceptance criterion:</strong> {active.acceptanceCriteria}</p>
               <p><strong>Blocker:</strong> {active.blockedBy}</p>
               <section className="plan06AgentHandoff" aria-label="Selected task agent planning handoff">
@@ -647,6 +648,9 @@ export function TaskBoardWindow(){
                     criterion is machine-verifiable as a complete task in this version.
                     Other acceptance criteria, unresolved blockers and dependent tasks
                     without current completed decisions cannot be marked complete.
+                    Blocked, uncertain and replan-required statuses can still be
+                    recorded after source drift or an unapproved plan; they grant
+                    no execution or completion authority.
                     An original tool witness alone remains supporting evidence.</p>
                   <label>Human whole-task decision
                     <select aria-label="Whole task completion disposition"
@@ -664,8 +668,9 @@ export function TaskBoardWindow(){
                       onChange={e=>setWholeReason(e.target.value)}
                       placeholder="State how the current original task criterion is or is not satisfied…" />
                   </label>
-                  <button type="button" disabled={busy||!current.reviewCurrent||
-                    active.needsHumanReconciliation||wholeReason.trim().length<10}
+                  <button type="button" disabled={busy||wholeReason.trim().length<10||
+                    (wholeDecision==='COMPLETED_AT_REVIEW'&&
+                      (!current.reviewCurrent||active.needsHumanReconciliation))}
                     onClick={()=>void decideWholeTask()}>
                     Open native human whole-task decision…
                   </button>

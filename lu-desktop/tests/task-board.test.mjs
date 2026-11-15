@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {FILTERS,taskKind,taskStatus,shownTasks,taskGroups,movedOrder}
+import {FILTERS,taskKind,taskStatus,reconciledTaskStatus,shownTasks,taskGroups,movedOrder}
   from '../web/task_board_model.mjs';
 
 const tasks=[
@@ -34,6 +34,18 @@ test('task list filters do not reinterpret claimed or stale ACCEPTED as completi
   assert.deepEqual(shownTasks(tasks,'Completed',''),[],
     'the board must never infer independently audited whole-task completion');
   assert.deepEqual(shownTasks(tasks,'All','source').map(x=>x.taskId),['a','c','e']);
+});
+test('only same-version independently reconciled source and human decision changes task status',()=>{
+  const t={...tasks[3],version:4};
+  const current={taskId:t.taskId,taskVersion:4,taskCompleted:true,
+    sourceRescannedThisReview:true,executionAuthorized:false,
+    status:'WHOLE_TASK_HUMAN_DECISION_CURRENT_SOURCE_REVERIFIED'};
+  assert.match(reconciledTaskStatus(t,current),/Whole task completed/);
+  assert.match(reconciledTaskStatus(t,{...current,taskVersion:3}),/whole task still requires/);
+  assert.match(reconciledTaskStatus(t,{...current,sourceRescannedThisReview:false}),/whole task still requires/);
+  assert.match(reconciledTaskStatus(t,{...current,executionAuthorized:true}),/whole task still requires/);
+  assert.match(reconciledTaskStatus(t,{...current,status:'MODEL_FINAL_ANSWER'}),/whole task still requires/);
+  assert.match(reconciledTaskStatus(t,{...current,taskCompleted:false}),/whole task still requires/);
 });
 test('task group rendering preserves human ordered list and respects original group',()=>{
   const groups=taskGroups(tasks);
