@@ -16,6 +16,68 @@ fn main(){
     let chat=format!("c-{}","1".repeat(32));
     let turn=format!("g-{}","2".repeat(32));
     let call="agent01l-cgroup-escaped-gh";
+    // This original crash-parent executable remains CI-only. On a trusted
+    // native Linux runner, the fixed first-party SEC-06C test launcher asks
+    // an independently root-owned systemd service to create the killable
+    // leaf and migrate the trusted test leader BEFORE dropping worker UID.
+    // No user child writes the protected ancestor cgroup.procs; the systemd
+    // supervisor stays outside that subtree and survives this host SIGKILL.
+    const FIXED:&str="/usr/libexec/lu/lu-sec06c-launch-agent01l-fixture";
+    if std::path::Path::new(FIXED).is_file(){
+        use std::time::{Duration,Instant};
+        let mut cmd=Command::new("/usr/bin/sudo");
+        cmd.args(["-n",FIXED,"--host-pid",&std::process::id().to_string(),
+                  "--profile"])
+            .arg(&profile).env_clear().env("PATH","/usr/bin:/bin")
+            .stdin(Stdio::null()).stdout(Stdio::null())
+            .stderr(Stdio::null());
+        let mut privileged=match cmd.spawn(){
+            Ok(child)=>child,
+            Err(e)=>{
+                fs::write(&output,format!("ERROR ROOT_BROKER_LAUNCH {e}\n"))
+                    .expect("original fixture error evidence");
+                std::process::exit(93)
+            }
+        };
+        let deadline=Instant::now()+Duration::from_secs(11);
+        while Instant::now()<deadline{
+            if output.is_file(){
+                let data=fs::read_to_string(&output)
+                    .expect("first-party root fixture evidence unreadable");
+                // This source contract is NOT a standalone OS receipt:
+                // the unchanged Python acceptance independently reopens
+                // /proc, pidfd, nested cgroup and root-owned kernel receipt.
+                if data.starts_with(&format!("READY\nHOST={}\n",
+                    std::process::id()))
+                    &&data.lines().count()==6
+                    &&data.contains("CGROUP=/sys/fs/cgroup/")
+                    &&data.contains("RECEIPT=/var/lib/lu-sec06c/fixture-receipts/"){
+                    loop{std::thread::park()}
+                }
+                fs::write(&output,"ERROR MALFORMED_ROOT_OWNED_EVIDENCE\n")
+                    .expect("original fixture error evidence");
+                std::process::exit(93)
+            }
+            if privileged.try_wait().expect("original first-party broker status")
+                .is_some(){
+                fs::write(&output,"NOT_AVAILABLE\n")
+                    .expect("original root broker unavailable evidence");
+                std::process::exit(77)
+            }
+            std::thread::sleep(Duration::from_millis(25));
+        }
+        fs::write(&output,"NOT_AVAILABLE\n")
+            .expect("original protected root broker timeout evidence");
+        std::process::exit(77)
+    }
+    // Never treat the legacy nonroot child migration as a positive path on
+    // a dedicated native runner: its protected ancestor may be nonwritable,
+    // but cgroup-v2 migration also needs common-ancestor write permission.
+    if env::var_os("LU_AGENT01L_REQUIRE_OS_OWNED_FIXTURE").is_some(){
+        fs::write(&output,"NOT_AVAILABLE\n")
+            .expect("native root-owned fixture is required");
+        std::process::exit(77)
+    }
     let mut custodian=match lu_win_worker_job::unix_owned::
         LinuxCgroupCustodian::spawn_if_delegated(&profile,&chat,&turn,call){
         Ok(Some(g))=>g,

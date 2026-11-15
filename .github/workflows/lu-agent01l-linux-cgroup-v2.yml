@@ -129,8 +129,36 @@ jobs:
           sha256sum src-tauri/lu-win-worker-job/target/debug/lu-linux-cgroup-guard \
             src-tauri/lu-win-worker-job/target/debug/lu-e1-p08-linux-cgroup-crash-parent \
             > agent01l-real-kernel-evidence/binaries-sha256.txt
+      - name: Verify pinned native root-owned SEC-06C original test fixture installation
+        shell: bash
+        run: |
+          set -euo pipefail
+          for pair in \
+            'lu-sec06c-owned-kernel-manager.py:lu-sec06c-owned-kernel-manager' \
+            'lu-sec06c-owned-git-launcher.py:lu-sec06c-launch-git' \
+            'lu-sec06c-owned-git-worker.py:lu-sec06c-owned-git-worker' \
+            'lu-sec06c-agent01l-fixture-launcher.py:lu-sec06c-launch-agent01l-fixture' \
+            'lu-sec06c-agent01l-fixture-manager.py:lu-sec06c-agent01l-fixture-manager'; do
+            source="scripts/$(printf '%s' "$pair" | cut -d : -f 1)"
+            installed="/usr/libexec/lu/$(printf '%s' "$pair" | cut -d : -f 2)"
+            test -f "$installed" && test ! -L "$installed"
+            test "$(stat -c '%u' "$installed")" = 0
+            test $(( 8#$(stat -c '%a' "$installed") & 0022 )) = 0
+            cmp -s "$source" "$installed"
+          done
+          sudo -n -l /usr/libexec/lu/lu-sec06c-launch-agent01l-fixture --host-pid 123 --profile /tmp/lu-agent01l-cgroup-finite
+          sudo -n -l /usr/libexec/lu/lu-sec06c-launch-git --nonce aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+          manifest=/usr/libexec/lu/lu-agent01l-fixture-host.sha256
+          test -f "$manifest" && test ! -L "$manifest"
+          test "$(stat -c '%u' "$manifest")" = 0
+          test $(( 8#$(stat -c '%a' "$manifest") & 0022 )) = 0
+          expected="$(cat "$manifest")"
+          actual="$(sha256sum src-tauri/lu-win-worker-job/target/debug/lu-e1-p08-linux-cgroup-crash-parent | cut -d ' ' -f 1)"
+          test "$expected" = "$actual"
       - name: KILL Lu parent, prove out-of-process cgroup kill and escaped setsid child death
         shell: bash
+        env:
+          LU_AGENT01L_REQUIRE_OS_OWNED_FIXTURE: '1'
         run: |
           set -euo pipefail
           python3 -m py_compile benchmarks/e1/agent01l_cgroup_escape_crash_acceptance.py

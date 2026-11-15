@@ -45,6 +45,14 @@ jobs:
       - name: CORE-01D normal-chat and ANSF status source contracts
         if: hashFiles('lu-desktop/tests/core01d-normal-chat-boundary.test.mjs') != ''
         run: node --test lu-desktop/tests/core01d-normal-chat-boundary.test.mjs
+      - name: AGENT-01L protected native fixture syntax and source-only contracts
+        run: |
+          set -euo pipefail
+          python3 -m py_compile \
+            scripts/lu-sec06c-agent01l-fixture-launcher.py \
+            scripts/lu-sec06c-agent01l-fixture-manager.py
+          bash -n scripts/install-lu-agent01l-native-fixture.sh
+          node --test lu-desktop/tests/agent01l-linux-cgroup-v2.test.mjs
       - name: Audit grouped-CI trigger policy and queue cleanup safety
         if: hashFiles('scripts/lu-ci-group-policy.mjs') != ''
         run: |

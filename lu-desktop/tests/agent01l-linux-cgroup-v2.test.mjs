@@ -136,3 +136,66 @@ test('native cgroup preflight reads only original kernel facts and blocks unsafe
   assert.match(helper,/fn protected_ancestor\(root:&Path\)/);
   assert.match(helper,/OpenOptions::new\(\)\.write\(true\)\.open\(&procs\)/);
 });
+
+const rootFixture=read('../../scripts/lu-sec06c-agent01l-fixture-manager.py');
+const fixedLauncher=read('../../scripts/lu-sec06c-agent01l-fixture-launcher.py');
+const adminInstaller=read('../../scripts/install-lu-agent01l-native-fixture.sh');
+
+test('AGENT-01L positive native fixture uses only fixed SEC-06C root-owned systemd service',()=>{
+  assert.match(fixture,/lu-sec06c-launch-agent01l-fixture/);
+  assert.match(fixture,/LU_AGENT01L_REQUIRE_OS_OWNED_FIXTURE/);
+  assert.match(fixture,/Command::new\("\/usr\/bin\/sudo"\)/);
+  assert.match(fixedLauncher,/SUDO_UID/);
+  assert.match(fixedLauncher,/HOST_MANIFEST/);
+  assert.match(fixedLauncher,/lu-agent01l-fixture-host\.sha256/);
+  assert.match(fixedLauncher,/\/proc\/\{pid\}\/exe/);
+  assert.match(fixedLauncher,/h\.hexdigest\(\)!=pinned\[:-1\]/);
+  assert.match(fixedLauncher,/lu-e1-p08-linux-cgroup-crash-parent/);
+  assert.match(fixedLauncher,/lu-sec06c-fixture-/);
+  for(const required of ['--property=User=root','--property=Delegate=yes',
+      '--property=PrivateNetwork=yes','--property=KillMode=control-group']){
+    assert.ok(fixedLauncher.includes(required),required);
+  }
+  assert.match(fixedLauncher,/str\(FIXTURE_MANAGER\)/);
+  assert.doesNotMatch(fixedLauncher,/shell=True|os\.system\(|eval\(/);
+  assert.match(adminInstaller,/git hash-object/);
+  assert.match(adminInstaller,/visudo -cf/);
+  assert.match(adminInstaller,/AGENT01L_POSITIVE_KERNEL_ACCEPTANCE=OPEN/);
+});
+
+test('root manager migrates known original leader BEFORE relying on nonroot cgroup custody',()=>{
+  assert.match(rootFixture,/shared\.first_party_unit\(args\.nonce,"fixture"\)/);
+  assert.match(rootFixture,/shared\.preexec_leaf\(nested,args\.uid,user\.pw_gid\)/);
+  assert.match(rootFixture,/--attack-leaf/);
+  assert.match(rootFixture,/SEC06C_ORIGINAL_SAME_UID_ANCESTOR_ATTACK_BLOCKED/);
+  assert.match(rootFixture,/parent_of\(child\)!=leader\.pid/);
+  const attack=rootFixture.indexOf('attacker=subprocess.Popen');
+  const child=rootFixture.indexOf('leader=subprocess.Popen');
+  const moved=rootFixture.indexOf('(leaf/"cgroup.procs").write_text(str(leader.pid)');
+  const proof=rootFixture.indexOf('result="\\n".join([');
+  assert.ok(attack>=0&&attack<child&&child<moved&&moved<proof,
+    'root first proves hostile-ancestor denial, creates descendant and migrates only its leader before READY');
+  assert.match(rootFixture,/os\.pidfd_open\(pid\)/);
+  assert.match(rootFixture,/hostpoll\.register\(hostfd,select\.POLLIN\)/);
+  assert.match(rootFixture,/\(leaf\/"cgroup\.kill"\)\.write_text\("1",encoding="ascii"\)/);
+  assert.match(rootFixture,/shared\.wait_kernel_zero\(events,8\)/);
+  assert.match(rootFixture,/nested\.rmdir\(\)/);
+  assert.match(rootFixture,/leaf\.rmdir\(\)/);
+  assert.match(rootFixture,/shared\.original_root_file\(receipt,/);
+  assert.match(rootFixture,/\/var\/lib\/lu-sec06c\/fixture-receipts/);
+  assert.doesNotMatch(rootFixture,/shell=True|os\.system\(|eval\(/);
+});
+
+test('old original destructive acceptance and native Git/restart fixtures remain unmodified contracts',()=>{
+  assert.match(acceptance,/AGENT01L_NATIVE_CGROUP_ESCAPED_DESCENDANT_PASS=1/);
+  assert.match(acceptance,/os\.kill\(host\.pid,signal\.SIGKILL\)/);
+  assert.match(acceptance,/os\.pidfd_open\(escaped_pid\)/);
+  assert.match(acceptance,/recursive_populated_zero=1/);
+  assert.match(host,/fn agent01l_linux_real_git_cgroup_custody_after_restart\(\)/);
+  assert.match(host,/HostOriginalJobCustody::from_host_profile\(&root\)/);
+  // Original legacy fixture source remains available for historical
+  // comparisons, but a native positive requires the root-owned service.
+  assert.match(fixture,/LinuxCgroupCustodian::spawn_if_delegated\(/);
+  assert.match(fixture,/bind_worker_to_cgroup_before_exec\(/);
+  assert.match(fixture,/fs::write\(&output,"NOT_AVAILABLE\\n"\)/);
+});

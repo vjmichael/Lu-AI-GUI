@@ -121,6 +121,21 @@ jobs:
             lu-desktop/tests/r21-image-ux.test.mjs \
             lu-desktop/tests/p08-archive-split.test.mjs \
             2>&1 | tee c4-native-evidence/frontend-contracts.log
+      - name: Linux first-party root-owned fixture code compilation (not a kernel positive)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile \
+            scripts/lu-sec06c-agent01l-fixture-launcher.py \
+            scripts/lu-sec06c-agent01l-fixture-manager.py
+          bash -n scripts/install-lu-agent01l-native-fixture.sh
+          node --test lu-desktop/tests/agent01l-linux-cgroup-v2.test.mjs \
+            2>&1 | tee c4-native-evidence/agent01l-os-source.log
+          cargo build --locked --manifest-path src-tauri/lu-win-worker-job/Cargo.toml \
+            --features e1-p08-crash-fixture \
+            --bin lu-linux-cgroup-guard --bin lu-e1-p08-linux-cgroup-crash-parent \
+            2>&1 | tee c4-native-evidence/agent01l-native-fixture-build.log
       - name: Current React desktop bundle
         shell: bash
         run: |
@@ -492,14 +507,46 @@ jobs:
             scripts/lu-sec06c-owned-git-launcher.py \
             scripts/lu-sec06c-owned-git-worker.py \
             scripts/lu-sec06c-owned-kernel-manager.py \
+            scripts/lu-sec06c-agent01l-fixture-launcher.py \
+            scripts/lu-sec06c-agent01l-fixture-manager.py \
             benchmarks/e1/agent01l_cgroup_escape_crash_acceptance.py
           cargo build --locked --manifest-path src-tauri/lu-win-worker-job/Cargo.toml \
             --features e1-p08-crash-fixture \
             --bin lu-linux-cgroup-guard --bin lu-e1-p08-linux-cgroup-crash-parent
           cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
             --lib sec06c --no-run
+      - name: Verify exact installed original root-owned SEC-06C Git and fixed crash-fixture adapters
+        shell: bash
+        run: |
+          set -euo pipefail
+          for pair in \
+            'lu-sec06c-owned-kernel-manager.py:lu-sec06c-owned-kernel-manager' \
+            'lu-sec06c-owned-git-launcher.py:lu-sec06c-launch-git' \
+            'lu-sec06c-owned-git-worker.py:lu-sec06c-owned-git-worker' \
+            'lu-sec06c-agent01l-fixture-launcher.py:lu-sec06c-launch-agent01l-fixture' \
+            'lu-sec06c-agent01l-fixture-manager.py:lu-sec06c-agent01l-fixture-manager'; do
+            source="scripts/$(printf '%s' "$pair" | cut -d : -f 1)"
+            installed="/usr/libexec/lu/$(printf '%s' "$pair" | cut -d : -f 2)"
+            test -f "$installed" && test ! -L "$installed"
+            test "$(stat -c '%u' "$installed")" = 0
+            test $(( 8#$(stat -c '%a' "$installed") & 0022 )) = 0
+            cmp -s "$source" "$installed"
+          done
+          test "$(stat -c '%u' /usr/libexec/lu)" = 0
+          test -f /sys/fs/cgroup/cgroup.controllers
+          sudo -n -l /usr/libexec/lu/lu-sec06c-launch-agent01l-fixture --host-pid 123 --profile /tmp/lu-agent01l-cgroup-finite
+          sudo -n -l /usr/libexec/lu/lu-sec06c-launch-git --nonce aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+          manifest=/usr/libexec/lu/lu-agent01l-fixture-host.sha256
+          test -f "$manifest" && test ! -L "$manifest"
+          test "$(stat -c '%u' "$manifest")" = 0
+          test $(( 8#$(stat -c '%a' "$manifest") & 0022 )) = 0
+          expected="$(cat "$manifest")"
+          actual="$(sha256sum src-tauri/lu-win-worker-job/target/debug/lu-e1-p08-linux-cgroup-crash-parent | cut -d ' ' -f 1)"
+          test "$expected" = "$actual"
       - name: Real delegated kernel cgroup survives host kill and reaps escaped descendant
         shell: bash
+        env:
+          LU_AGENT01L_REQUIRE_OS_OWNED_FIXTURE: '1'
         run: |
           set -euo pipefail
           python3 benchmarks/e1/agent01l_cgroup_escape_crash_acceptance.py \

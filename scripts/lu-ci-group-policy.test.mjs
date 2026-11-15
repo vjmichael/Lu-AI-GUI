@@ -96,3 +96,18 @@ test("original AGENT-01L positive proof is routed only to configured native Linu
   assert.match(original,/os\.kill\(host\.pid,signal\.SIGKILL\)/);
   assert.match(original,/os\.pidfd_open\(escaped_pid\)/);
 });
+
+test("native SEC06C fixture adapter in exact-host gate cannot downgrade positive Linux result",()=>{
+  const native=fs.readFileSync(".github/workflows/lu-core-merge-c4-grouped.yml","utf8");
+  const original=fs.readFileSync(".github/workflows/lu-agent01l-linux-cgroup-v2.yml","utf8");
+  for(const src of [native,original]){
+    assert.match(src,/lu-sec06c-agent01l-fixture-launcher\.py/);
+    assert.match(src,/lu-sec06c-agent01l-fixture-manager\.py/);
+    assert.match(src,/LU_AGENT01L_REQUIRE_OS_OWNED_FIXTURE: '1'/);
+    assert.match(src,/sudo -n -l \/usr\/libexec\/lu\/lu-sec06c-launch-agent01l-fixture/);
+    assert.match(src,/AGENT01L_NATIVE_CGROUP_ESCAPED_DESCENDANT_PASS=1/);
+    assert.doesNotMatch(src,/continue-on-error: true/);
+  }
+  assert.match(native,/test "\$LINUX" = success/);
+  assert.match(native,/runs-on: \[self-hosted, linux, x64, lu-cgroup-v2-delegated\]/);
+});
