@@ -71,6 +71,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
       - name: Linux Tauri 2 native build dependencies
         if: runner.os == 'Linux'
         run: |
@@ -258,6 +261,46 @@ jobs:
               echo "C1_DESKTOP_${family}=FAIL" >> "$GITHUB_STEP_SUMMARY"
             fi
           done
+          exit "$failures"
+      - name: C1 original P06A-D installed Git and Python, watchdog and verified-stop contracts
+        # Preserve original independent process tests, not merely Cargo's
+        # zero-ignored default. A failed earlier family cannot hide this gap.
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p c4-native-evidence
+          python - <<'PY'
+          import os,shutil,sys
+          git=shutil.which("git")
+          if not git: raise RuntimeError("Actual installed Git is required")
+          for key,path in {
+            "LU_E1_P06_GIT":os.path.realpath(git),
+            "LU_E1_P06_PYTHON":os.path.realpath(sys.executable),
+          }.items():
+            if not os.path.isabs(path) or not os.path.isfile(path):
+              raise RuntimeError("Genuine native reviewed executable missing: "+key)
+            with open(os.environ["GITHUB_ENV"],"a",encoding="utf-8") as output:
+              output.write(key+"="+path+"\n")
+          PY
+          failures=0
+          run_original() {
+            local name="$1"
+            local count="$2"
+            shift 2
+            if "$@" 2>&1 | tee "c4-native-evidence/c1-${name}.log" &&
+              grep -Eq "test result: ok\\. ${count} passed; 0 failed;" "c4-native-evidence/c1-${name}.log"; then
+              echo "C1_ORIGINAL_${name}=PASS" >> "$GITHUB_STEP_SUMMARY"
+            else
+              failures=$((failures+1))
+              echo "C1_ORIGINAL_${name}=FAIL" >> "$GITHUB_STEP_SUMMARY"
+            fi
+          }
+          core=(cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml)
+          run_original p06b-real-version 6 "${core[@]}" --lib native_app_version_execution::tests -- --ignored --nocapture
+          run_original p06d-real-git 5 "${core[@]}" --lib native_app_typed_git::tests -- --ignored --nocapture
+          run_original llama-watchdog 1 "${core[@]}" --lib persistent_llama_backend::tests::original_watchdog_kills_exact_owned_child_even_when_decoder_blocks -- --nocapture
+          run_original llama-slots 1 "${core[@]}" --lib persistent_llama_backend::tests::original_slot_verification_rejects_busy_multiple_and_forged_idleness -- --nocapture
           exit "$failures"
       - name: C1 original Windows WGC frame redaction and OS identity worker tests
         if: always() && runner.os == 'Windows'
