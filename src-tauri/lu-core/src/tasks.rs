@@ -311,7 +311,8 @@ impl TaskStore {
                nonce TEXT NOT NULL UNIQUE CHECK(length(nonce)=32),
                kind TEXT NOT NULL CHECK(kind IN(
                  'scan-file','archive-preview','archive-extract',
-                 'fixed-version','fixed-artifact','app-version')),
+                 'fixed-version','fixed-artifact','app-version',
+                  'p06-acceptance-version')),
                binary_sha256 TEXT NOT NULL CHECK(length(binary_sha256)=64),
                argv_sha256 TEXT NOT NULL CHECK(length(argv_sha256)=64),
                recorded_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -502,10 +503,20 @@ impl TaskStore {
             b.is_ascii_digit()||(b'a'..=b'f').contains(&b));
         let identity=|v:&str,p:&str|v.len()==p.len()+32&&v.starts_with(p)
             &&hex(&v[p.len()..],32);
+        // An immutable journal may describe the test-only operation, but
+        // recognition is never execution authority. Release Rust rejects it;
+        // protected SEC-06C still demands the separate root-owned marker,
+        // exact Python executable, finite argv and kernel custody proof.
+        let production_kind=matches!(kind,
+            "scan-file"|"archive-preview"|"archive-extract"
+                |"fixed-version"|"fixed-artifact"|"app-version");
+        #[cfg(feature="p06-protected-acceptance")]
+        let admitted_kind=production_kind||kind=="p06-acceptance-version";
+        #[cfg(not(feature="p06-protected-acceptance"))]
+        let admitted_kind=production_kind;
         if !identity(chat,"c-")||!identity(turn,"g-")||!hex(nonce,32)
             ||!hex(binary_sha,64)||!hex(argv_sha,64)
-            ||!matches!(kind,"scan-file"|"archive-preview"|"archive-extract"
-                |"fixed-version"|"fixed-artifact"|"app-version")
+            ||!admitted_kind
             ||task_id.is_empty()||task_id.len()>128{
             return Err(TaskStoreError::InvalidTaskId)
         }
@@ -1772,6 +1783,62 @@ mod p0_sec05_task_adversarial_tests;
 #[cfg(all(test,target_os="linux"))]
 mod sec06c_os_owned_git_admission_tests{
     use super::*;
+    #[test]
+    fn native_python_acceptance_kind_is_feature_gated_and_durable(){
+        let store=TaskStore::open(Path::new(":memory:")).unwrap();
+        let chat=format!("c-{}","a".repeat(32));
+        let turn=format!("g-{}","b".repeat(32));
+        let nonce="c".repeat(32);
+        let binary="d".repeat(64);
+        let argv="e".repeat(64);
+        store.bind_reviewed_human_turn(&chat,&turn).unwrap();
+        store.create("p06-python-test",Some(&turn),None).unwrap();
+        // SQL permits recording original root-owned receipts; it never grants
+        // ExecuteCode, and the nondefault feature must explicitly admit P06.
+        #[cfg(not(feature="p06-protected-acceptance"))]
+        assert_eq!(store.bind_linux_os_owned_native_admission(
+            "p06-python-test",&chat,&turn,&nonce,
+            "p06-acceptance-version",&binary,&argv),
+            Err(TaskStoreError::InvalidTaskId));
+        #[cfg(feature="p06-protected-acceptance")]
+        {
+            assert!(store.bind_linux_os_owned_native_admission(
+                "p06-python-test",&chat,&turn,&nonce,
+                "p06-acceptance-version",&binary,&argv).is_ok());
+            let db=store.connection.lock().unwrap();
+            let kind:String=db.query_row(
+                "SELECT kind FROM lu_task_linux_os_owned_native_admission
+                 WHERE task_id='p06-python-test'",
+                [],|r|r.get(0)
+            ).unwrap();
+            assert_eq!(kind,"p06-acceptance-version");
+            assert!(db.execute(
+                "UPDATE lu_task_linux_os_owned_native_admission
+                 SET kind='app-version' WHERE task_id='p06-python-test'",
+                []
+            ).is_err());
+            assert!(db.execute(
+                "DELETE FROM lu_task_linux_os_owned_native_admission
+                 WHERE task_id='p06-python-test'",[]
+            ).is_err());
+            drop(db);
+            store.create("p06-second",Some(&turn),None).unwrap();
+            assert!(store.bind_linux_os_owned_native_admission(
+                "p06-second",&chat,&turn,&nonce,
+                "p06-acceptance-version",&binary,&argv).is_err(),
+                "same root-owned nonce must not be reused");
+        }
+        store.create("p06-denied",Some(&turn),None).unwrap();
+        for (kind,source_chat) in [
+            ("python-c",&chat[..]),
+            ("p06-acceptance-version","c-00000000000000000000000000000000"),
+        ]{
+            assert!(store.bind_linux_os_owned_native_admission(
+                "p06-denied",source_chat,&turn,&"f".repeat(32),
+                kind,&binary,&argv).is_err(),
+                "original human identity and finite-kind boundaries remain");
+        }
+    }
     #[test]
     fn fixed_os_owned_git_nonce_is_immutable_one_use_and_original_turn_bound(){
         let root=std::env::temp_dir().join(format!(

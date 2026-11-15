@@ -52,6 +52,11 @@ class RealQwenJsonInterface(unittest.TestCase):
         self.assertIn('"\\"type\\""',grammar)
         self.assertIn('"\\"data\\""',grammar)
         self.assertIn('"\\"program\\""',grammar)
+        # Restrict only the numeric DATA SHAPE, without inserting its value.
+        # Qwen still chooses the actual number, schema type and tool name.
+        schema_rule=grammar.split('typed-schema-arguments ::=',1)[1].splitlines()[0]
+        self.assertIn('ws number "}" ws',schema_rule)
+        self.assertNotIn('ws value "}" ws',schema_rule)
         # Host decoder cannot choose the original model's tool or input.
         for forbidden in ('lu_validate_schema','lu_check_env','integer','42','python',
                           'lu_reviewed_git_head','lu_reviewed_media_facts'):

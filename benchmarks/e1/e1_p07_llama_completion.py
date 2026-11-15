@@ -31,12 +31,13 @@ tool ::= "{" ws "\"kind\"" ws ":" ws "\"tool\"" ws "," ws "\"name\"" ws ":" ws s
 # the model's tool-name selection. The host still verifies its real catalog.
 # Prevent the earlier Qwen malformed object/prose tail before any OS effect.
 # Original TOOLS-05/06 require either a Draft 2020-12 schema/data pair
-# or one reviewed environment program. The GBNF constrains TYPE SHAPE,
-# never selects the model's tool name, schema type, data value or program.
+# or one reviewed environment program. The GBNF constrains TYPE SHAPE:
+# schema data must be a model-selected JSON number, never a forced answer.
+# Tool name, schema type, numeric value and environment program remain free.
 # In particular, a string such as {"schema":"{"} is not a valid tool arg.
 typed-tool ::= "{" ws "\"kind\"" ws ":" ws "\"tool\"" ws "," ws "\"name\"" ws ":" ws string "," ws "\"arguments\"" ws ":" ws typed-arguments "}" ws
 typed-arguments ::= typed-schema-arguments | typed-environment-arguments
-typed-schema-arguments ::= "{" ws "\"schema\"" ws ":" ws "{" ws "\"type\"" ws ":" ws string "}" ws "," ws "\"data\"" ws ":" ws value "}" ws
+typed-schema-arguments ::= "{" ws "\"schema\"" ws ":" ws "{" ws "\"type\"" ws ":" ws string "}" ws "," ws "\"data\"" ws ":" ws number "}" ws
 typed-environment-arguments ::= "{" ws "\"program\"" ws ":" ws string "}" ws
 observed-tool ::= "{" ws "\"kind\"" ws ":" ws "\"tool\"" ws "," ws "\"name\"" ws ":" ws string "," ws "\"arguments\"" ws ":" ws "{" ws "}" ws "}" ws
 final ::= "{" ws "\"kind\"" ws ":" ws "\"final\"" ws "," ws "\"text\"" ws ":" ws string "}" ws
