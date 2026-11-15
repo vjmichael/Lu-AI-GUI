@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "dc6d71d37ebc433531336a3a72aa23b878667354",
+  "sourceCommitBeforeLock": "65248dbb4e4eb1086b0a6d55511f7494aa956ccf",
   "trackedFileCount": 1034,
   "files": [
     {
@@ -69,7 +69,7 @@
     },
     {
       "path": ".github/workflows/lu-core-merge-c4-grouped.yml",
-      "blob": "61d1acba27b146c253dcfb2a16a3df6e2bf80e06"
+      "blob": "d0f8c80c76d96134333e767de0368a1f13465c1c"
     },
     {
       "path": ".github/workflows/lu-development-ledger.yml",
@@ -241,7 +241,7 @@
     },
     {
       "path": ".github/workflows/lu-repo01-full-source.yml",
-      "blob": "13a9a28d0fcf2693c4f74c99eb0611a5ad1edaca"
+      "blob": "002867da34338ed3db1e202c10790e02b7beab6a"
     },
     {
       "path": ".github/workflows/lu-tools-01-05-integration.yml",
@@ -3377,7 +3377,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/persistent_llama_backend.rs",
-      "blob": "e39f98983b79e68bd6ad2f01cb3c9cc4507d913c"
+      "blob": "f79a0aae4d8107d63a478d452aef4d7d060cffbe"
     },
     {
       "path": "src-tauri/lu-core/src/platform_compute.rs",
