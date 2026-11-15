@@ -152,6 +152,9 @@ test('AGENT-01L positive native fixture uses only fixed SEC-06C root-owned syste
   assert.match(fixedLauncher,/h\.hexdigest\(\)!=pinned\[:-1\]/);
   assert.match(fixedLauncher,/lu-e1-p08-linux-cgroup-crash-parent/);
   assert.match(fixedLauncher,/lu-sec06c-fixture-/);
+  assert.match(fixedLauncher,/AGENT01L_ROOT_SERVICE_DIAGNOSTIC_V1/);
+  assert.match(fixedLauncher,/MAX_SERVICE_STDERR=4096/);
+  assert.match(fixedLauncher,/os.O_EXCL\|os.O_NOFOLLOW/);
   for(const required of ['--property=User=root','--property=Delegate=yes',
       '--property=PrivateNetwork=yes','--property=KillMode=control-group']){
     assert.ok(fixedLauncher.includes(required),required);

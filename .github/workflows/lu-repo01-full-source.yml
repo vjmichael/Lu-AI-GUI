@@ -3843,6 +3843,22 @@ jobs:
             2>&1 | tee agent01l-hosted-original-evidence/unchanged-destructive-positive.log
           grep -Fq 'AGENT01L_NATIVE_CGROUP_ESCAPED_DESCENDANT_PASS=1' \
             agent01l-hosted-original-evidence/unchanged-destructive-positive.log
+      - name: Capture bounded exact root-owned AGENT-01L service diagnostic
+        if: ${{ failure() && !cancelled() }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          found=0
+          for record in /var/lib/lu-sec06c/fixture-receipts/*.diagnostic; do
+            name="${record##*/}"
+            [[ "$name" =~ ^[0-9a-f]{32}\.diagnostic$ ]] || exit 92
+            meta="$(sudo -n stat -c '%u:%g:%a:%h:%F' -- "$record")"
+            [[ "$meta" == '0:0:600:1:regular file' ]] || exit 92
+            sudo -n head -c 4608 -- "$record" | tee -a agent01l-hosted-original-evidence/root-owned-unit-diagnostics.log
+            found=$((found+1))
+          done
+          echo "ROOT_OWNED_EXACT_SERVICE_DIAGNOSTIC_RECORDS=$found" | tee -a agent01l-hosted-original-evidence/root-owned-unit-diagnostics.log
       - name: Original UNCHANGED Linux native Git/restart positive on hosted Linux
         if: ${{ !cancelled() }}
         shell: bash

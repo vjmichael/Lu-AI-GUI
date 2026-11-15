@@ -16,6 +16,8 @@ import stat
 import subprocess
 import sys
 import secrets
+import select
+import time
 
 RUN=pathlib.Path("/usr/bin/systemd-run")
 PYTHON=pathlib.Path("/usr/bin/python3").resolve(strict=True)
@@ -41,6 +43,78 @@ def root_file(path):
         if m.st_uid!=0 or m.st_mode&0o022:
             deny("original executable directory writable by nonroot")
     return path
+
+
+
+# Bounded provenance from the exact nonce-named ROOT service. This diagnostic
+# cannot grant custody: only the original untouched kernel tests can pass it.
+MAX_SERVICE_STDERR=4096
+DIAGNOSTIC_DIR=pathlib.Path("/var/lib/lu-sec06c/fixture-receipts")
+
+
+def root_diagnostic(nonce,unit,returncode,raw,truncated,timed_out):
+    if DIAGNOSTIC_DIR.is_symlink():
+        deny("root-owned diagnostic directory is a symlink")
+    meta=DIAGNOSTIC_DIR.stat()
+    if (not stat.S_ISDIR(meta.st_mode) or meta.st_uid!=0
+            or meta.st_mode&0o022):
+        deny("root-owned diagnostic directory not trusted")
+    safe="".join(chr(c) if c in (9,10,13) or 32<=c<=126 else "?"
+                 for c in raw[:MAX_SERVICE_STDERR])
+    body=("AGENT01L_ROOT_SERVICE_DIAGNOSTIC_V1\n"
+          f"UNIT={unit}\nEXIT={returncode}\n"
+          f"STDERR_TRUNCATED={int(truncated)}\n"
+          f"TIMED_OUT={int(timed_out)}\n"
+          "STDERR_BEGIN\n"+safe+"\nSTDERR_END\n")
+    path=DIAGNOSTIC_DIR/(nonce+".diagnostic")
+    fd=os.open(path,os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o600)
+    with os.fdopen(fd,"w",encoding="ascii") as out:
+        out.write(body)
+        out.flush()
+        os.fsync(out.fileno())
+    folder=os.open(DIAGNOSTIC_DIR,os.O_RDONLY|os.O_DIRECTORY)
+    try:
+        os.fsync(folder)
+    finally:
+        os.close(folder)
+
+
+def bounded_service_result(cmd):
+    # Always drain the ROOT service stderr to avoid deadlock, but keep at most
+    # 4096 bytes in memory; never forward arbitrary service output to a user.
+    proc=subprocess.Popen(cmd,stdin=subprocess.DEVNULL,
+                          stdout=subprocess.DEVNULL,stderr=subprocess.PIPE,
+                          cwd="/",env={"PATH":"/usr/bin:/bin","LC_ALL":"C"})
+    observed=bytearray()
+    truncated=False
+    timed_out=False
+    poller=select.poll()
+    poller.register(proc.stderr.fileno(),select.POLLIN|select.POLLHUP|select.POLLERR)
+    deadline=time.monotonic()+75
+    while True:
+        left=deadline-time.monotonic()
+        if left<=0:
+            timed_out=True
+            proc.kill()
+            break
+        ready=poller.poll(min(250,max(1,int(left*1000))))
+        if not ready:
+            continue
+        chunk=os.read(proc.stderr.fileno(),4096)
+        if not chunk:
+            break
+        room=MAX_SERVICE_STDERR-len(observed)
+        observed.extend(chunk[:room])
+        if len(chunk)>room:
+            truncated=True
+    try:
+        returncode=proc.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        returncode=proc.wait(timeout=5)
+        timed_out=True
+    proc.stderr.close()
+    return (124 if timed_out else returncode),bytes(observed),truncated,timed_out
 
 
 def main():
@@ -105,11 +179,11 @@ def main():
         "--nonce",nonce,"--uid",str(uid),"--host-pid",str(pid),
         "--profile",str(profile),
     ]
-    proc=subprocess.run(cmd,stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,
-                        stderr=subprocess.DEVNULL,cwd="/",timeout=75,
-                        check=False,env={"PATH":"/usr/bin:/bin","LC_ALL":"C"})
-    if proc.returncode!=0:
-        deny("original protected root-owned systemd fixture failed")
+    returncode,stderr,truncated,timed_out=bounded_service_result(cmd)
+    if returncode!=0:
+        root_diagnostic(nonce,unit,returncode,stderr,truncated,timed_out)
+        deny("original protected root-owned systemd fixture failed; "
+             "root-owned diagnostic is sealed to exact unit "+unit)
     return 0
 
 
