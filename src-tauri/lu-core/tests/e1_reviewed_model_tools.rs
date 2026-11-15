@@ -840,6 +840,10 @@ async fn scripted_model_enters_real_reviewed_turn_session_and_receives_os_feedba
 /// TrustedInferenceSupervisor and Protobuf, not a Python or HTTP worker.
 struct GenuineGgufStep{
     raw_replies:Vec<String>,
+    // TEST transport grammar shape, not a selected tool name/arguments.
+    // Original reviewed Git/media requires {}, while schema/check_env need
+    // model-chosen typed argument objects. Host codecs enforce actual values.
+    first_tool_mode:&'static str,
 }
 impl ModelStepGenerator for GenuineGgufStep{
     fn generate_step(
@@ -859,7 +863,7 @@ impl ModelStepGenerator for GenuineGgufStep{
         // Constrain only the first envelope kind; the model still chooses
         // the actual catalog tool name/arguments. Host grant and effect
         // verification are unchanged; never substitute a scripted call.
-        let tool_mode=if self.raw_replies.is_empty(){"required"}else{"auto"};
+        let tool_mode=if self.raw_replies.is_empty(){self.first_tool_mode}else{"auto"};
         let payload=serde_json::json!({
             "prompt":prompt,"max_tokens":max_tokens,"tool_mode":tool_mode
         }).to_string();
@@ -949,7 +953,7 @@ async fn genuine_qwen_selects_original_schema_and_environment_native_tools(){
         turn.require_observed_tool_result();
         let audit_path=dir.join("original-model-audit.sqlite");
         let journal=ModelTurnJournal::open(&audit_path).unwrap();
-        let mut real_model=GenuineGgufStep{raw_replies:vec![]};
+        let mut real_model=GenuineGgufStep{raw_replies:vec![],first_tool_mode:"required_args"};
         let report=run_supervised_native_turn_journaled(
             prompt,&mut turn,&mut real_model,
             &NativeTurnServices{
@@ -1052,7 +1056,7 @@ async fn genuine_gguf_independently_selects_git_and_media_tools_and_survives_jou
         ).unwrap();
         let permitted=session.schemas().unwrap();
         assert_eq!(permitted.len(),1);
-        let mut model=GenuineGgufStep{raw_replies:vec![]};
+        let mut model=GenuineGgufStep{raw_replies:vec![],first_tool_mode:"required"};
         let report=session.run_journaled_observed(
             prompt,&mut model,&Cancellation::default(),&audit,&|_|{}
         ).await.unwrap();
@@ -1374,7 +1378,7 @@ async fn agent01g_genuine_gguf_requires_fresh_ansf_review_native_git_oracle_and_
          SHA from its actual feedback; do not guess or supply a path.",
         original_context.goal
     );
-    let mut model=GenuineGgufStep{raw_replies:vec![]};
+    let mut model=GenuineGgufStep{raw_replies:vec![],first_tool_mode:"required"};
     let report=session.run_journaled_observed(
         &model_prompt,&mut model,&Cancellation::default(),&audit,&|_|{}
     ).await.unwrap();
@@ -1670,7 +1674,7 @@ async fn agent01i_genuine_qwen_two_fresh_approvals_independent_git_and_restart()
          SHA from its actual feedback; do not guess or supply a path.",
         original_context.goal
     );
-    let mut model=GenuineGgufStep{raw_replies:vec![]};
+    let mut model=GenuineGgufStep{raw_replies:vec![],first_tool_mode:"required"};
     let report=session.run_journaled_observed(
         &model_prompt,&mut model,&Cancellation::default(),&audit,&|_|{}
     ).await.unwrap();
@@ -1854,7 +1858,7 @@ async fn agent01i_genuine_qwen_two_fresh_approvals_independent_git_and_restart()
     assert_eq!(child_session.schemas().unwrap().len(),1);
     let child_audit_path=root.join("gguf-child-audit.sqlite");
     let child_audit=ModelTurnJournal::open(&child_audit_path).unwrap();
-    let mut child_model=GenuineGgufStep{raw_replies:vec![]};
+    let mut child_model=GenuineGgufStep{raw_replies:vec![],first_tool_mode:"required"};
     let child_report=child_session.run_journaled_observed(
         &format!(
             "The user made a NEW separately approved plan for the same current ANSF goal: {}. \
