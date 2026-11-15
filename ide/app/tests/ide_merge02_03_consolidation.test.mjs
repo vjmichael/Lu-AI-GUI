@@ -76,8 +76,8 @@ test('IDE-MERGE-03 never accepts two Jobs from one SCM service as independent cu
   // Cross-SCM PDB resolution needs ONLY the fixed debugger service's
   // read/traverse file ACE, never target Job custody or filesystem writes.
   assert.match(targetSeal,/sid_of_named_service\(\s*"LuIdeDebuggerBroker"/);
-  assert.match(targetSeal,/which>=2\{READ_EXECUTE\}else\{ALL\}/);
-  assert.match(targetSeal,/seen!=\[true,true,true\]/);
+  assert.match(targetSeal,/which\s*>=\s*2\s*\{\s*READ_EXECUTE\s*\}\s*else\s*\{\s*ALL\s*\}/);
+  assert.match(targetSeal,/seen\s*!=\s*\[\s*true\s*,\s*true\s*,\s*true\s*\]/);
   assert.doesNotMatch(launcher,/create_bounded_empty_debugger_job\(/);
   assert.match(pair,/OpenSCManagerW/);
   assert.match(pair,/QueryServiceStatusEx/);
@@ -94,6 +94,6 @@ test('IDE-MERGE-03 split source never grants LLDB or attach from the WebView', (
   const cargo=source('../../supervisor/Cargo.toml');
   assert.doesNotMatch(web,/invoke\('ide_fin04w2_split/);
   assert.doesNotMatch(desktop,/async fn ide_fin04w2_split/);
-  assert.match(supervisor,/feature="fin04w2-split-native"/);
+  assert.match(supervisor,/feature\s*=\s*"fin04w2-split-native"/);
   assert.match(cargo,/fin04w2-split-native = \["fin04w2-c2", "protected-recovery-service"\]/);
 });

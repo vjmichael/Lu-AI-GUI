@@ -49,6 +49,29 @@ IDE05_SUPERVISOR_DEPS = [
     "sha2", "toml 0.8.2", "windows-sys 0.61.2",
 ]
 
+# Independently pinned IDE-MERGE-02 source-only delta after the original
+# P06 and IDE05 review. This does not change either historical baseline.
+IDE_MERGE02_SUCCESSOR = {
+    "schema": "lu.ide.p06.ide-merge02-cargo-successor.v1",
+    "purpose": "unsigned-integrated-native-source-only",
+    "previousCargoBlob": "69bc41f0cf739c3d77989531b14b28a472b16e4a",
+    "previousCargoSha256": "c7995fb9957bee2fb0f8247e232c5f7f9db3b3ef5d77d3afcbdc09f1ed9b36aa",
+    "newCargoBlob": "ec7461e0a64a8fa121cffda7ecb74333c6f6686c",
+    "newCargoSha256": "b3b8c5bf056163c2747c28473b583b996b520917eb63e9a1b4eeb05437abca5ac",
+    "newDesktopBlockSha256": "a5e4a1867eeb99c821b9e0a144aae01fe2895c49717b37756f7519f5b72594e3c",
+    "unchangedOutsideDesktopSha256": "73afb4fa1fcfc63f2e30b15ecdb06570c55804088dcfa4bfbac78e9f41240cb4c",
+    "changedLocalPackage": "lu-ide-desktop@0.1.0-alpha.1",
+    "addedExistingDependencies": [
+        "rand"
+    ],
+    "cargoPackages": 500,
+    "externalDependencyChanges": 0,
+    "sourceAuditHead": "38dc57d9a779879e9b4c361418352ff10e240fee",
+    "releaseApproved": False,
+    "licenseLegalReviewApproved": False,
+    "independentlyAuthorizedMainMerge": False
+}
+
 def reviewed_ide05_successor(root, current_cargo, original_review, successor):
     if successor != IDE05_SUCCESSOR:
         raise LockDenied("ide05_successor_not_independently_pinned")
@@ -93,7 +116,62 @@ def reviewed_ide05_successor(root, current_cargo, original_review, successor):
         raise LockDenied("ide05_successor_local_dependencies_unreviewed")
     return successor["newCargoSha256"]
 
-def check(root,platform,review=None,ide05_successor=None):
+def reviewed_merge02_successor(root, current_cargo, original_review, successor):
+    """Verify a single local-desktop dependency delta on top of reviewed IDE05."""
+    if successor != IDE_MERGE02_SUCCESSOR:
+        raise LockDenied("merge02_successor_not_independently_pinned")
+    if (successor["previousCargoSha256"] != IDE05_SUCCESSOR["newCargoSha256"]
+            or successor["previousCargoBlob"] != IDE05_SUCCESSOR["newCargoBlob"]
+            or sha(current_cargo) != successor["newCargoSha256"]):
+        raise LockDenied("merge02_source_lock_bytes_unreviewed")
+    pattern = re.compile(
+        rb'\n\[\[package\]\]\nname = "lu-ide-desktop"\n.*?(?=\n\[\[package\]\]|\Z)',
+        re.DOTALL,
+    )
+    blocks = list(pattern.finditer(current_cargo))
+    if len(blocks) != 1:
+        raise LockDenied("merge02_desktop_package_not_unique")
+    match = blocks[0]
+    block = match.group(0)
+    other = current_cargo[:match.start()] + current_cargo[match.end():]
+    if (sha(block) != successor["newDesktopBlockSha256"]
+            or sha(other) != successor["unchangedOutsideDesktopSha256"]
+            or block.count(b'\n "rand",') != 1):
+        raise LockDenied("merge02_desktop_delta_unreviewed")
+    # Removing precisely the one added local dependency must reproduce the
+    # complete, byte-identical independently reviewed IDE05 Cargo graph.
+    earlier = (current_cargo[:match.start()]
+               + block.replace(b'\n "rand",', b'', 1)
+               + current_cargo[match.end():])
+    if sha(earlier) != successor["previousCargoSha256"]:
+        raise LockDenied("merge02_external_dependency_or_other_delta")
+    try:
+        prior = json.loads((root / "ide/packaging/ide05-reviewed-lock-successor.json")
+                           .read_text(encoding="utf-8"))
+        reviewed_ide05_successor(root, earlier, original_review, prior)
+        graph = tomllib.loads(current_cargo.decode("utf-8"))
+        manifest = tomllib.loads(
+            (root / "ide/app/src-tauri/Cargo.toml").read_text(encoding="utf-8")
+        )
+        desktop = [row for row in graph["package"]
+                   if row.get("name") == "lu-ide-desktop"]
+        rand = [row for row in graph["package"] if row.get("name") == "rand"]
+    except (UnicodeError, ValueError, TypeError, KeyError, OSError) as exc:
+        raise LockDenied("merge02_source_graph_or_manifest_unreadable") from exc
+    expected = [
+        "lu-ide-execution-supervisor", "lu-ide-workspace", "rand",
+        "serde", "serde_json", "sha2", "tauri", "tauri-build",
+        "tauri-plugin-dialog",
+    ]
+    if (len(graph["package"]) != successor["cargoPackages"]
+            or len(desktop) != 1 or len(rand) != 1
+            or desktop[0].get("version") != "0.1.0-alpha.1"
+            or desktop[0].get("dependencies") != expected
+            or manifest["dependencies"].get("rand") != "0.8"):
+        raise LockDenied("merge02_local_desktop_dependency_unreviewed")
+    return successor["newCargoSha256"]
+
+def check(root,platform,review=None,ide05_successor=None,ide_merge02_successor=None):
     root=Path(root)
     if platform not in ("windows-2022","ubuntu-24.04"):
         raise LockDenied("unsupported_reviewed_os")
@@ -116,8 +194,15 @@ def check(root,platform,review=None,ide05_successor=None):
         if path.is_symlink() or not path.is_file() or not 100<=path.stat().st_size<=12_000_000:
             raise LockDenied("required_resolved_lockfile_missing_or_unsafe:"+k)
         raw[k]=path.read_bytes()
-    expected_cargo = (reviewed_ide05_successor(root, raw["cargo"], review, ide05_successor)
-                      if ide05_successor is not None else review["cargoRawSha256"])
+    if ide05_successor is not None and ide_merge02_successor is not None:
+        raise LockDenied("conflicting_scoped_reviews")
+    if ide_merge02_successor is not None:
+        expected_cargo = reviewed_merge02_successor(
+            root, raw["cargo"], review, ide_merge02_successor)
+    elif ide05_successor is not None:
+        expected_cargo = reviewed_ide05_successor(root, raw["cargo"], review, ide05_successor)
+    else:
+        expected_cargo = review["cargoRawSha256"]
     if sha(raw["cargo"])!=expected_cargo:
         raise LockDenied("candidate_cargo_lock_not_reviewed")
     if sha(raw["npm"])!=review["npmPlatformRawSha256"][platform]:
@@ -139,7 +224,8 @@ def check(root,platform,review=None,ide05_successor=None):
         if len(versions)!=1 or not isinstance(versions[0],str) or not versions[0].startswith("2.12."):
             raise LockDenied("candidate_transitive_tauri_minor_drift:"+name)
     return {"platform":platform,"cargoLockSha256":sha(raw["cargo"]),
-            "ide05ScopedSuccessorAccepted":ide05_successor is not None,
+            "ide05ScopedSuccessorAccepted":ide05_successor is not None or ide_merge02_successor is not None,
+            "ideMerge02ScopedSuccessorAccepted":ide_merge02_successor is not None,
             "independentHumanApproval":False,
             "npmLockSha256":sha(raw["npm"]),
             "npmSemanticSha256":sha(canonical),
@@ -154,11 +240,16 @@ def main():
     p.add_argument("--platform",choices=("windows-2022","ubuntu-24.04"),required=True)
     p.add_argument("--ide05-successor",action="store_true",
                    help="explicit pinned IDE-05 successor; original P06 review stays unchanged")
+    p.add_argument("--ide-merge02-successor",action="store_true",
+                   help="additional pinned local-desktop delta, no legal/release approval")
     a=p.parse_args()
     try:
         successor=(json.loads((a.repo_root/"ide/packaging/ide05-reviewed-lock-successor.json")
                    .read_text(encoding="utf-8")) if a.ide05_successor else None)
-        result=check(a.repo_root,a.platform,ide05_successor=successor)
+        merge02=(json.loads((a.repo_root/"ide/packaging/ide-merge02-reviewed-lock-successor.json")
+                  .read_text(encoding="utf-8")) if a.ide_merge02_successor else None)
+        result=check(a.repo_root,a.platform,ide05_successor=successor,
+                     ide_merge02_successor=merge02)
     except (ValueError,TypeError,KeyError,OSError) as e:
         print("DENIED: "+str(e),file=sys.stderr);return 2
     print(json.dumps(result,sort_keys=True))

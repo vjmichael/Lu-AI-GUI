@@ -47,4 +47,66 @@ class CandidateLockTests(unittest.TestCase):
         self.r["releaseApproved"]=True
         with self.assertRaisesRegex(LockDenied,"unreviewed_candidate_graph_manifest"):
             check(self.root,"windows-2022",self.r)
+
+
+class Merge02ScopedCargoTests(unittest.TestCase):
+    """Original P06 pins stay immutable; only the exact reviewed local delta passes."""
+
+    def setUp(self):
+        self.source_root = Path(__file__).resolve().parents[2]
+        self.review = json.loads(BASE.read_text(encoding="utf-8"))
+        self.successor = json.loads(
+            Path(__file__).with_name("ide-merge02-reviewed-lock-successor.json")
+            .read_text(encoding="utf-8")
+        )
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        for rel in ("ide/app/src-tauri/Cargo.lock", "ide/app/package-lock.json",
+                    "ide/app/src-tauri/Cargo.toml", "ide/supervisor/Cargo.toml",
+                    "ide/packaging/ide05-reviewed-lock-successor.json"):
+            dest = self.root / rel
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_bytes((self.source_root / rel).read_bytes())
+
+    def test_original_baseline_remains_denied_and_scoped_successor_has_no_release(self):
+        with self.assertRaisesRegex(LockDenied, "candidate_cargo_lock_not_reviewed"):
+            check(self.root, "windows-2022", self.review)
+        for os_name in ("windows-2022", "ubuntu-24.04"):
+            result = check(self.root, os_name, self.review,
+                           ide_merge02_successor=self.successor)
+            self.assertTrue(result["ideMerge02ScopedSuccessorAccepted"])
+            self.assertFalse(result["releaseApproved"])
+            self.assertFalse(result["signedOrLegallyApproved"])
+
+    def test_approval_flip_and_other_source_bytes_remain_denied(self):
+        altered = copy.deepcopy(self.successor)
+        altered["releaseApproved"] = True
+        with self.assertRaisesRegex(LockDenied, "not_independently_pinned"):
+            check(self.root, "windows-2022", self.review,
+                  ide_merge02_successor=altered)
+        target = self.root / "ide/app/src-tauri/Cargo.lock"
+        current = target.read_bytes()
+        self.assertIn(b'\n "rand",', current)
+        target.write_bytes(current.replace(b'\n "rand",', b'', 1))
+        with self.assertRaises(LockDenied):
+            check(self.root, "windows-2022", self.review,
+                  ide_merge02_successor=self.successor)
+
+    def test_manifest_or_npm_mutation_denied(self):
+        manifest = self.root / "ide/app/src-tauri/Cargo.toml"
+        manifest.write_text(
+            manifest.read_text(encoding="utf-8").replace('rand = "0.8"',
+                                                           'rand = "1.0"', 1),
+            encoding="utf-8")
+        with self.assertRaisesRegex(LockDenied, "dependency_unreviewed"):
+            check(self.root, "ubuntu-24.04", self.review,
+                  ide_merge02_successor=self.successor)
+        manifest.write_bytes((self.source_root / "ide/app/src-tauri/Cargo.toml").read_bytes())
+        npm = self.root / "ide/app/package-lock.json"
+        npm.write_bytes(npm.read_bytes() + b'\n')
+        with self.assertRaisesRegex(LockDenied, "candidate_os_npm_lock_not_reviewed"):
+            check(self.root, "ubuntu-24.04", self.review,
+                  ide_merge02_successor=self.successor)
+
 if __name__=="__main__":unittest.main()
