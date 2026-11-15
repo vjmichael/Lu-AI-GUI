@@ -23,6 +23,9 @@ export function TaskBoardWindow(){
   const [agentLinks,setAgentLinks]=useState([]);
   const [criterionReviews,setCriterionReviews]=useState([]);
   const [completionReconciliation,setCompletionReconciliation]=useState(null);
+  const [completionHistory,setCompletionHistory]=useState([]);
+  const [wholeDecision,setWholeDecision]=useState('BLOCKED');
+  const [wholeReason,setWholeReason]=useState('');
   const [criterionReason,setCriterionReason]=useState('');
   const [reviewTaskId,setReviewTaskId]=useState('');
   const [reviewMode,setReviewMode]=useState('native');
@@ -57,7 +60,7 @@ export function TaskBoardWindow(){
     setModelSuggestion(null);setReviewTaskId('');setReviewMode('native');
     setReviewNote('');setReviewHistory([]);setAgentLinks([]);
     setCriterionReviews([]);setCriterionReason('');
-    setCompletionReconciliation(null);
+    setCompletionReconciliation(null);setCompletionHistory([]);
     if(!registerId)return;
     let live=true;
     void invoke('lu_project_update_review_history',{registerId})
@@ -79,17 +82,20 @@ export function TaskBoardWindow(){
     if(!current)return;
     setTaskId(t.taskId);setEvidence(null);setEdit(null);
     setAgentLinks([]);setCriterionReviews([]);setCriterionReason('');
-    setCompletionReconciliation(null);
+    setCompletionReconciliation(null);setCompletionHistory([]);
     try{
-      const [detail,links,reviews]=await Promise.all([
+      const [detail,links,reviews,completions]=await Promise.all([
         invoke('lu_project_board_evidence',{
           registerId:current.board.registerId,taskId:t.taskId}),
         invoke('lu_project_task_agent_handoffs',{
           registerId:current.board.registerId,taskId:t.taskId}),
         invoke('lu_project_task_criterion_evidence_history',{
+          registerId:current.board.registerId,taskId:t.taskId}),
+        invoke('lu_project_task_completion_history',{
           registerId:current.board.registerId,taskId:t.taskId})
       ]);
       setEvidence(detail);setAgentLinks(links);setCriterionReviews(reviews);
+      setCompletionHistory(completions);
     }catch(e){setError(errorText(e))}
   }
   async function reopenAgentLinks(){
@@ -114,6 +120,28 @@ export function TaskBoardWindow(){
       });
       if(summary)setCompletionReconciliation(summary);
       return summary;
+    });
+  }
+  async function decideWholeTask(){
+    if(!current||!active||busy||!current.reviewCurrent||
+       wholeReason.trim().length<10)return;
+    await act('Original whole-task decision written and independently journaled. No future tool execution authorized.',async()=>{
+      const result=await invoke('lu_project_task_decide_completion',{
+        registerId:current.board.registerId,taskId:active.taskId,
+        expectedBoardSha256:current.board.sha256,
+        expectedRegisterSha256:current.sourceRegisterSha256,
+        expectedTaskVersion:active.version,
+        decision:wholeDecision,operatorReason:wholeReason.trim()
+      });
+      if(result){
+        const rows=await invoke('lu_project_task_completion_history',{
+          registerId:current.board.registerId,taskId:active.taskId
+        });
+        setCompletionHistory(rows);
+        setCompletionReconciliation(null);
+        setWholeReason('');
+      }
+      return result;
     });
   }
   async function reopenCriterionReviews(){
@@ -608,9 +636,52 @@ export function TaskBoardWindow(){
                     Original independently reopened, human-reviewed witnesses: {completionReconciliation.reopenedHumanCriterionWitnesses}.</p>
                   <small>Original human evidence decisions: {completionReconciliation.originalHumanReviewCount} ·
                     Entire review history inspected: {completionReconciliation.historyFullyInspected?'yes':'no'} ·
-                    Full task completed: {completionReconciliation.taskCompleted?'yes':'no'} ·
+                    Whole-task decision events: {completionReconciliation.completionDecisionCount} ·
+                    Full task completed after fresh independent source recheck: {completionReconciliation.taskCompleted?'yes':'no'} ·
                     Future execution authorized: {completionReconciliation.executionAuthorized?'yes':'no'}.</small>
                 </div>}
+
+                <section className="plan06CompletionDecision" aria-label="Separately authorized whole-task completion decision">
+                  <h3>Whole-task completion · independent source audit</h3>
+                  <p>Only the exact <code>LU_COMPLETE_V1:CURRENT_NATIVE_REQUIREMENT</code>
+                    criterion is machine-verifiable as a complete task in this version.
+                    Other acceptance criteria, unresolved blockers and dependent tasks
+                    without current completed decisions cannot be marked complete.
+                    An original tool witness alone remains supporting evidence.</p>
+                  <label>Human whole-task decision
+                    <select aria-label="Whole task completion disposition"
+                      disabled={busy} value={wholeDecision}
+                      onChange={e=>setWholeDecision(e.target.value)}>
+                      <option value="BLOCKED">Blocked — incomplete independent proof</option>
+                      <option value="UNCERTAIN">Uncertain — reconcile after interruption or source drift</option>
+                      <option value="REPLAN_REQUIRED">Reviewed replan required — original criteria not satisfied</option>
+                      <option value="COMPLETED_AT_REVIEW">Complete — only if every exact machine criterion and dependency verifies</option>
+                    </select>
+                  </label>
+                  <label>Operator reason for exact task decision
+                    <textarea aria-label="Whole task human decision reason"
+                      rows={3} maxLength={500} value={wholeReason}
+                      onChange={e=>setWholeReason(e.target.value)}
+                      placeholder="State how the current original task criterion is or is not satisfied…" />
+                  </label>
+                  <button type="button" disabled={busy||!current.reviewCurrent||
+                    active.needsHumanReconciliation||wholeReason.trim().length<10}
+                    onClick={()=>void decideWholeTask()}>
+                    Open native human whole-task decision…
+                  </button>
+                  <p><small>Positive completion reselects the source with the OS picker,
+                    verifies native evidence and dependencies twice, and commits an
+                    immutable human-approved record. Historical completion must be
+                    reopened against current source; it grants no execution.</small></p>
+                  {completionHistory.length>0&&<div role="region" aria-label="Original whole-task completion decision history">
+                    {completionHistory.map(row=><p key={row.eventId}>
+                      <strong>{row.decision.replaceAll('_',' ')} · task v{row.taskVersion}</strong>
+                      {' · '}{row.operatorReason}
+                      {' · '}Historical completion at observation: {row.taskCompletedAtObservation?'yes':'no'}.
+                      {' '}Current source rechecked by history view: no.
+                    </p>)}
+                  </div>}
+                </section>
                 {!current.reviewCurrent&&<small>Review the current task-board order and wording first;
                   stale board approval is not usable as a source lease.</small>}
                 {active.needsHumanReconciliation&&<small>Resolve the original source-change
