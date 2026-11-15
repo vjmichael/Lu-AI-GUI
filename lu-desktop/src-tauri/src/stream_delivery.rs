@@ -3,6 +3,7 @@
 //! This is volatile transport only. Original text is checkpointed in ANSF
 //! separately. No model action, authority or persistent replay is inferred.
 use std::time::{Duration, Instant};
+use lu_core::generation_loop_guard::{StreamLoopGuard, StreamLoopVerdict};
 
 pub const MAX_STREAM_BYTES:usize=1024*1024;
 pub const MAX_EVENT_BYTES:usize=64*1024;
@@ -18,11 +19,15 @@ pub struct BoundedStreamDelivery {
     total_bytes:usize,
     first_forwarded:bool,
     last_flush:Instant,
+    // Reuse the existing Core streamed-generation safeguard for ordinary
+    // desktop GGUF chat, not only the supervised model/tool bridge.
+    loop_guard:StreamLoopGuard,
 }
 impl Default for BoundedStreamDelivery {
     fn default()->Self{
         Self{pending:String::new(),next_index:0,total_bytes:0,
-            first_forwarded:false,last_flush:Instant::now()}
+            first_forwarded:false,last_flush:Instant::now(),
+            loop_guard:StreamLoopGuard::default()}
     }
 }
 impl BoundedStreamDelivery {
@@ -30,13 +35,19 @@ impl BoundedStreamDelivery {
     /// coalesce subsequent small tokens up to a byte/time threshold, and
     /// refuse unbounded backend frames before any user-visible publication.
     pub fn accept(&mut self,text:&str)->Result<Vec<DeliveryChunk>,&'static str>{
-        if text.is_empty(){return Ok(Vec::new())}
         if text.len()>MAX_EVENT_BYTES||text.contains('\0'){
             return Err("untrusted oversized or invalid model text frame")
         }
         let next_total=self.total_bytes.checked_add(text.len())
             .ok_or("stream byte counter overflow")?;
         if next_total>MAX_STREAM_BYTES{return Err("stream exceeded 1 MiB cap")}
+        // Observe raw backend chunks (including empty chunks) before accepting
+        // them into the answer or publishing text to the WebView. A repeated
+        // stream causes the existing supervisor callback to abort generation.
+        if self.loop_guard.observe_chunk(text)==StreamLoopVerdict::RepeatedOutput {
+            return Err("model streamed a repeated no-progress text cycle")
+        }
+        if text.is_empty(){return Ok(Vec::new())}
         let mut ready=Vec::with_capacity(2);
         if self.pending.len().saturating_add(text.len())>MAX_EVENT_BYTES {
             if let Some(chunk)=self.flush(){ready.push(chunk);}
@@ -98,6 +109,31 @@ mod tests{
         assert!(stream.accept(&"x".repeat(MAX_STREAM_BYTES)).is_err());
         assert_eq!(stream.accept("safe").unwrap().len(),0);
         assert_eq!(stream.flush().unwrap().text,"safe");
+    }
+    #[test]
+    fn streamed_repetition_stops_normal_chat_without_completion(){
+        let mut stream=BoundedStreamDelivery::default();
+        let mut rejected=false;
+        for _ in 0..150{
+            if stream.accept("The same answer repeats without new information. ").is_err(){
+                rejected=true;
+                break
+            }
+        }
+        assert!(rejected,"normal desktop chat must stop the same periodic token cycle as Core");
+        // A previous accepted partial is volatile delivery, never an
+        // authenticated completed answer after a blocked generation.
+        assert!(stream.flush().is_some());
+    }
+    #[test]
+    fn empty_stream_cycles_stop_but_diverse_text_does_not(){
+        let mut empties=BoundedStreamDelivery::default();
+        for _ in 0..63{assert!(empties.accept("").unwrap().is_empty());}
+        assert!(empties.accept("").is_err(),"64 consecutive empty chunks are a loop");
+        let mut diverse=BoundedStreamDelivery::default();
+        for i in 0usize..120{
+            assert!(diverse.accept(&format!("Unique observation {i}: {}. ",i*i+17)).is_ok());
+        }
     }
     #[test]
     fn buffered_tail_is_split_before_a_large_incoming_frame(){
