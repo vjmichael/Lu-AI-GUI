@@ -80,7 +80,9 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends \
             libwebkit2gtk-4.1-dev libayatana-appindicator3-dev \
-            librsvg2-dev libgtk-3-dev libssl-dev patchelf cmake
+            librsvg2-dev libgtk-3-dev libssl-dev patchelf cmake \
+            poppler-utils tesseract-ocr tesseract-ocr-eng \
+            python3-pil python3-reportlab fonts-dejavu-core
       - name: Windows CI-only nonfunctional engine resource placeholders
         if: runner.os == 'Windows'
         shell: pwsh
@@ -274,6 +276,48 @@ jobs:
           run_case observe-host-image "${core[@]}" --lib os_owned_image_pipe_enters_real_png_admission_and_remains_off_network -- --nocapture
           run_case observe-reject-truncated "${core[@]}" --lib malformed_or_truncated_observed_pixels_never_produce_image_proof -- --nocapture
           exit "$failures"
+      - name: C1 original image-only scanned PDF with real Poppler/Tesseract
+        # Original previously ignored native_reader_ocr_acceptance is
+        # genuinely executed with pinned host binaries/data. The PDF is
+        # generated as two RASTER image objects, never a text layer.
+        # A real recognition failure is a FAILED native job, not a skip.
+        if: always() && runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p c4-native-evidence
+          /usr/bin/python3 -m py_compile scripts/lu-c1-scanned-pdf-fixture.py
+          test -f /usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf
+          test -f /usr/share/tesseract-ocr/5/tessdata/eng.traineddata
+          export LU_READER_PDFTOPPM="$(readlink -f "$(command -v pdftoppm)")"
+          export LU_READER_TESSERACT="$(readlink -f "$(command -v tesseract)")"
+          export LU_READER_TESSDATA=/usr/share/tesseract-ocr/5/tessdata
+          test -x "$LU_READER_PDFTOPPM" && test -x "$LU_READER_TESSERACT"
+          tmp="$(mktemp -d "$RUNNER_TEMP/lu-c1-scanned-pdf.XXXXXX")"
+          trap 'rm -rf "$tmp"' EXIT
+          export LU_READER_SCANNED_PDF="$tmp/original-image-only.pdf"
+          /usr/bin/python3 scripts/lu-c1-scanned-pdf-fixture.py "$LU_READER_SCANNED_PDF" \
+            2>&1 | tee c4-native-evidence/c1-scanned-pdf-source.log
+          test "$(pdfinfo "$LU_READER_SCANNED_PDF" | awk '/^Pages:/{print $2}')" = 2
+          pdfimages -list "$LU_READER_SCANNED_PDF" \
+            | tee c4-native-evidence/c1-scanned-pdf-image-only.log
+          test "$(pdfimages -list "$LU_READER_SCANNED_PDF" | awk 'NR>2{n++}END{print n+0}')" = 2
+          # A source with a selectable PDF text layer is NOT scanned OCR.
+          if pdftotext "$LU_READER_SCANNED_PDF" - | tr -d '\f\r\n\t ' | grep -q .; then
+            echo 'C1_SCANNED_PDF_REFUSED_TEXT_LAYER' >&2
+            exit 1
+          fi
+          sha256sum "$LU_READER_SCANNED_PDF" "$LU_READER_PDFTOPPM" \
+            "$LU_READER_TESSERACT" "$LU_READER_TESSDATA/eng.traineddata" \
+            > c4-native-evidence/c1-scanned-pdf-original-sha256.txt
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --test native_reader_ocr_acceptance \
+            scanned_pdf_preserves_original_source_and_per_page_ocr_identity \
+            -- --ignored --exact --nocapture \
+            2>&1 | tee c4-native-evidence/c1-scanned-pdf-original-native.log
+          grep -Eq 'test result: ok\. 1 passed; 0 failed;' \
+            c4-native-evidence/c1-scanned-pdf-original-native.log
+          echo 'C1_ORIGINAL_SCANNED_PDF_POPPLER_TESSERACT=PASS_REAL_NATIVE' >> "$GITHUB_STEP_SUMMARY"
       - name: C1 original desktop Reader and Observe source authority
         if: always()
         shell: bash
