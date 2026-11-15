@@ -283,9 +283,9 @@ jobs:
             cargo check --locked --manifest-path ide/supervisor/Cargo.toml \
               --features fin04w2-split-native --bin windows_fin04w2_debugger_service
           fi
-          if [ "$RUNNER_OS" = Windows ] && [ ! -f ide/app/src-tauri/icons/icon.ico ]; then
-            python ide/app/fixtures/make_g04d_ci_icon.py
-          fi
+          # Both native OS source compiles need the same tracked first-party
+          # Tauri assets. A CI-only synthetic G04D icon is not installable art.
+          python ide/app/fixtures/verify_reviewed_ide_icons.py --repo-root .
           cargo check --locked --manifest-path ide/app/src-tauri/Cargo.toml --all-targets
           if [ "$RUNNER_OS" = Windows ]; then
             cargo test --locked --manifest-path ide/app/src-tauri/Cargo.toml \
@@ -429,10 +429,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'DEV01_WINDOWS_TRACKED_CARGO_LOCK_DENIED' }
           python ide/packaging/verify_p06_candidate_lock.py --repo-root . --platform windows-2022 --ide-merge02-successor
           if ($LASTEXITCODE -ne 0) { throw 'DEV01_WINDOWS_P06_SOURCE_GRAPH_DENIED' }
-          if (!(Test-Path ide/app/src-tauri/icons/icon.ico)) {
-            python ide/app/fixtures/make_g04d_ci_icon.py
-            if ($LASTEXITCODE -ne 0) { throw 'DEV01_WINDOWS_TAURI_ICON_DENIED' }
-          }
+          python ide/app/fixtures/verify_reviewed_ide_icons.py --repo-root .
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: reviewed real Windows Tauri icon unavailable' }
       - name: Build real unsigned NSIS desktop from current source
         shell: pwsh
         run: |

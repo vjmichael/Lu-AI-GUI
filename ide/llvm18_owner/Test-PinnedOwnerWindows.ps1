@@ -18,8 +18,13 @@ if ($LASTEXITCODE -ne 0) { throw 'DENIED: consolidated host DAP rustfmt contract
 # The real human modal cannot be simulated in CI: this phase only
 # checks that the Windows developer-build bridge compiles and that the
 # browser has no arbitrary debugger authority.
-node --test ide/app/tests/dev046d_installed_debugger_boundary.test.mjs ide/app/tests/dev046d_native_operator_dialog.test.mjs
+node --test ide/app/tests/dev046d_installed_debugger_boundary.test.mjs ide/app/tests/dev046d_native_operator_dialog.test.mjs ide/app/tests/ide_icon_source_contract.test.mjs
 if ($LASTEXITCODE -ne 0) { throw 'DENIED: native debugger action security contract tests failed' }
+# Developer-only Tauri check still builds the real Windows resource. Fail
+# closed on missing/untracked/altered first-party art; never substitute
+# G04D's source-only CI fixture for an actual installed icon.
+python ide/app/fixtures/verify_reviewed_ide_icons.py --repo-root .
+if ($LASTEXITCODE -ne 0) { throw 'DENIED: first-party native Windows Tauri icon missing or changed' }
 cargo check --manifest-path ide/app/src-tauri/Cargo.toml --features dev046d-native-dialog
 if ($LASTEXITCODE -ne 0) { throw 'DENIED: developer-only Windows Tauri native-dialog bridge compile failed' }
 cargo check --manifest-path ide/supervisor/Cargo.toml --features $features --example dev046d_restart_receipt_audit
