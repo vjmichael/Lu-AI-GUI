@@ -171,6 +171,7 @@ pub mod native_archive_split;
 pub mod native_reader;
 pub mod native_ocr;
 pub mod native_schema_validation;
+pub mod native_core_utility_turn;
 pub mod native_reader_docx;
 pub mod native_reader_pdf;
 pub mod native_reader_openxml;
