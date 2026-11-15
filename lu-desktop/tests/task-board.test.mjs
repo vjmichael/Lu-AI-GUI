@@ -21,16 +21,18 @@ const tasks=[
    independentlyVerifiedRequirement:true,needsHumanReconciliation:true}
 ];
 test('task list filters do not reinterpret claimed or stale ACCEPTED as completion',()=>{
-  assert.deepEqual(FILTERS,['All','Broken','Not integrated','Unverified','Completed']);
+  assert.deepEqual(FILTERS,['All','Broken','Not integrated','Unverified','Requirement verified']);
   assert.equal(taskKind(tasks[2]),'Unverified');
-  assert.equal(taskKind(tasks[3]),'Completed');
-  assert.match(taskStatus(tasks[3]),/full task still unproven/);
+  assert.equal(taskKind(tasks[3]),'Requirement verified');
+  assert.match(taskStatus(tasks[3]),/whole task still requires independent completion decision/);
   assert.match(taskStatus(tasks[4]),/Needs human/);
   assert.deepEqual(shownTasks(tasks,'Broken','').map(x=>x.taskId),['a']);
   assert.deepEqual(shownTasks(tasks,'Not integrated','').map(x=>x.taskId),['b']);
   assert.deepEqual(shownTasks(tasks,'Unverified','').map(x=>x.taskId),['c','e']);
   assert.equal(taskKind(tasks[4]),'Unverified');
-  assert.deepEqual(shownTasks(tasks,'Completed','').map(x=>x.taskId),['d']);
+  assert.deepEqual(shownTasks(tasks,'Requirement verified','').map(x=>x.taskId),['d']);
+  assert.deepEqual(shownTasks(tasks,'Completed',''),[],
+    'the board must never infer independently audited whole-task completion');
   assert.deepEqual(shownTasks(tasks,'All','source').map(x=>x.taskId),['a','c','e']);
 });
 test('task group rendering preserves human ordered list and respects original group',()=>{

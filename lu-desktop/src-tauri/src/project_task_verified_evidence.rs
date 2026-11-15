@@ -990,6 +990,38 @@ mod tests{
             assert!(!completion_decision_valid(&forged));
         }
     }
+
+    #[test]
+    fn source_only_completion_policy_rejects_unchecked_dependencies_and_blockers(){
+        let valid=register::TaskRevision{
+            task_id:"lu-task-test".into(),version:1,
+            source_requirement_id:"R-1".into(),summary:"Native original source".into(),
+            description:"Recheck exactly one current native source fact".into(),
+            group:"Source proofs".into(),priority:"P1".into(),
+            blocked_by:"none".into(),
+            acceptance_criteria:NATIVE_SOURCE_ONLY_CONTRACT.into(),
+            depends_on:vec![],evidence_ids:vec!["R-1".into()],
+            original_model_proposal_sha256:"a".repeat(64),
+            graph_sha256:"b".repeat(64),status_sha256:"c".repeat(64),
+            selected_head:None,
+            observed_status:lu_core::project_status_classifier::Status::Accepted,
+            observed_at_unix:0,needs_human_reconciliation:false,
+            independently_verified_requirement:true,execution_authorized:false
+        };
+        assert!(completion_native_eligible(&valid,true));
+        assert!(!completion_native_eligible(&valid,false));
+        let mut v=valid.clone();v.blocked_by="Awaiting code changes".into();
+        assert!(!completion_native_eligible(&v,true));
+        let mut v=valid.clone();v.acceptance_criteria=
+            "Implement feature, test on Windows and deploy".into();
+        assert!(!completion_native_eligible(&v,true));
+        let mut v=valid.clone();v.needs_human_reconciliation=true;
+        assert!(!completion_native_eligible(&v,true));
+        let mut v=valid.clone();v.independently_verified_requirement=false;
+        assert!(!completion_native_eligible(&v,true));
+        let mut v=valid;v.execution_authorized=true;
+        assert!(!completion_native_eligible(&v,true));
+    }
     #[test]
     fn original_completion_decision_hash_chain_rejects_forged_completion_after_restart(){
         let folder=std::env::temp_dir().join(format!(

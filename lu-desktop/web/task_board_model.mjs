@@ -1,8 +1,12 @@
 // PLAN-06 presentation only. Native host owns original evidence, status,
 // versioning, human review, execution authority and persisted ordering.
-export const FILTERS=Object.freeze(['All','Broken','Not integrated','Unverified','Completed']);
+export const FILTERS=Object.freeze(['All','Broken','Not integrated','Unverified','Requirement verified']);
 export function taskKind(t){
-  if(t?.independentlyVerifiedRequirement===true&&!t?.needsHumanReconciliation)return 'Completed';
+  // Source requirement verification is NOT whole-task completion. A current
+  // native folder scan and independent human completion decision live in the
+  // separate C3C authority journal, never in a model/board classification.
+  if(t?.independentlyVerifiedRequirement===true&&!t?.needsHumanReconciliation)
+    return 'Requirement verified';
   if(t?.observedStatus==='BROKEN')return 'Broken';
   if(t?.observedStatus==='NOT_INTEGRATED')return 'Not integrated';
   return 'Unverified';
@@ -10,7 +14,7 @@ export function taskKind(t){
 export function taskStatus(t){
   if(t?.needsHumanReconciliation)return 'Needs human source/wording review';
   if(t?.independentlyVerifiedRequirement===true)
-    return 'Exact requirement verified · full task still unproven';
+    return 'Exact native requirement verified · whole task still requires independent completion decision';
   return String(t?.observedStatus||'UNKNOWN').replaceAll('_',' ').toLowerCase()+
     ' · not independently accepted';
 }
