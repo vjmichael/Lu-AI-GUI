@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "308029dec07279e4b8c2f3b18f0db0044beaaaa5",
+  "sourceCommitBeforeLock": "20d9a49c903cca82d4e5c007ab976ea81f93aa5c",
   "trackedFileCount": 1034,
   "files": [
     {
@@ -1449,7 +1449,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/lib.rs",
-      "blob": "4e776e610f8f3c82de41d96bf8f4f187f1c995f9"
+      "blob": "747b733fdf3d0fccb19b9df022a522163e39f156"
     },
     {
       "path": "lu-desktop/src-tauri/src/load_trace.rs",
@@ -1589,7 +1589,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/project_task_verified_evidence.rs",
-      "blob": "4453134c58d860a6b7540ea7168b1132236078b5"
+      "blob": "97a30b65cacfc82752d44e6204fb360be7769c8c"
     },
     {
       "path": "lu-desktop/src-tauri/src/project_update_model_desktop.rs",
@@ -2241,7 +2241,7 @@
     },
     {
       "path": "lu-desktop/web/task_board.jsx",
-      "blob": "947d46dac00d007b58cb4f4c74a52c929e65593b"
+      "blob": "bdfb67b0985e5fa99eea371ba041a9baf57574b6"
     },
     {
       "path": "lu-desktop/web/task_board_model.mjs",
