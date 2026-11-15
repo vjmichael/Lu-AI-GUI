@@ -3752,3 +3752,119 @@ jobs:
     uses: ./.github/workflows/lu-core-merge-c4-grouped.yml
     permissions:
       contents: read
+
+  linux-agent01l-hosted-positive:
+    # One explicit PR235 marker transition, never a general PR/push fanout.
+    # Try the original Linux kernel tests on a genuine hosted ubuntu-24.04
+    # systemd host; fail closed if its real root-owned custody is unavailable.
+    needs: verify-source
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.action == 'edited' &&
+      github.event.pull_request.number == 235 &&
+      github.event.pull_request.draft &&
+      github.event.pull_request.head.ref == 'lu/p0-next-typed-criterion-review-20261113' &&
+      contains(github.event.pull_request.body, format('LU_AGENT01L_HOSTED_CGROUP_SHA={0}', github.event.pull_request.head.sha)) &&
+      !contains(github.event.changes.body.from, format('LU_AGENT01L_HOSTED_CGROUP_SHA={0}', github.event.pull_request.head.sha))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 110
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Prove exact unchanged source and real Linux kernel surface
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          mkdir -p agent01l-hosted-original-evidence
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          node scripts/verify-source-tree.mjs
+          test "$(uname -s)" = Linux
+          test -e /run/systemd/system
+          test -f /sys/fs/cgroup/cgroup.controllers
+          cat /proc/self/cgroup | tee agent01l-hosted-original-evidence/cgroup.txt
+          grep ' - cgroup2 ' /proc/self/mountinfo | tee agent01l-hosted-original-evidence/mountinfo.txt
+          cat /proc/self/status | grep -E '^Cap(Eff|Prm|Bnd):' > agent01l-hosted-original-evidence/host-capabilities.txt
+      - name: Build original pinned Rust fixtures and install fixed root-owned SEC-06C admission
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          cargo build --locked --manifest-path src-tauri/lu-win-worker-job/Cargo.toml \
+            --features e1-p08-crash-fixture \
+            --bin lu-linux-cgroup-guard \
+            --bin lu-e1-p08-linux-cgroup-crash-parent \
+            2>&1 | tee agent01l-hosted-original-evidence/original-fixture-build.log
+          sha256sum src-tauri/lu-win-worker-job/target/debug/lu-linux-cgroup-guard \
+            src-tauri/lu-win-worker-job/target/debug/lu-e1-p08-linux-cgroup-crash-parent \
+            > agent01l-hosted-original-evidence/native-bin-sha256.txt
+          sudo -n bash scripts/install-lu-agent01l-native-fixture.sh "$EXPECTED_SHA" "$USER" \
+            2>&1 | tee agent01l-hosted-original-evidence/SEC06C-native-root-install.log
+          test -f /usr/libexec/lu/lu-agent01l-fixture-host.sha256
+          test "$(cat /usr/libexec/lu/lu-agent01l-fixture-host.sha256)" = \
+            "$(sha256sum src-tauri/lu-win-worker-job/target/debug/lu-e1-p08-linux-cgroup-crash-parent | cut -d ' ' -f 1)"
+          sudo -n -l /usr/libexec/lu/lu-sec06c-launch-agent01l-fixture --host-pid 123 --profile /tmp/lu-agent01l-cgroup-finite
+      - name: Original SEC-06C root-owned Git and host-SIGKILL recovery tests on Linux
+        shell: bash
+        env:
+          LU_SEC06C_BROKER_DEBUG: '1'
+        run: |
+          set -euo pipefail
+          for test_name in \
+            sec06c_root_owned_reviewed_git_worker_original_journal \
+            sec06c_root_owned_git_cancel_original_journal \
+            sec06c_owned_git_host_sigkill_recovery_original_journal; do
+            cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+              --lib "$test_name" -- --ignored --nocapture \
+              2>&1 | tee "agent01l-hosted-original-evidence/$test_name.log"
+            grep -Fq 'test result: ok. 1 passed; 0 failed;' \
+              "agent01l-hosted-original-evidence/$test_name.log"
+          done
+      - name: Original UNCHANGED destructive escaped-descendant SIGKILL positive on hosted Linux
+        if: ${{ !cancelled() }}
+        shell: bash
+        env:
+          LU_AGENT01L_REQUIRE_OS_OWNED_FIXTURE: '1'
+        run: |
+          set -euo pipefail
+          python3 benchmarks/e1/agent01l_cgroup_escape_crash_acceptance.py \
+            --guard "$GITHUB_WORKSPACE/src-tauri/lu-win-worker-job/target/debug/lu-linux-cgroup-guard" \
+            --parent "$GITHUB_WORKSPACE/src-tauri/lu-win-worker-job/target/debug/lu-e1-p08-linux-cgroup-crash-parent" \
+            2>&1 | tee agent01l-hosted-original-evidence/unchanged-destructive-positive.log
+          grep -Fq 'AGENT01L_NATIVE_CGROUP_ESCAPED_DESCENDANT_PASS=1' \
+            agent01l-hosted-original-evidence/unchanged-destructive-positive.log
+      - name: Original UNCHANGED Linux native Git/restart positive on hosted Linux
+        if: ${{ !cancelled() }}
+        shell: bash
+        env:
+          LU_AGENT01L_TEST_CGROUP_GUARD: ${{ github.workspace }}/src-tauri/lu-win-worker-job/target/debug/lu-linux-cgroup-guard
+        run: |
+          set -euo pipefail
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --lib native_background_process::tests::agent01l_linux_real_git_cgroup_custody_after_restart \
+            -- --ignored --nocapture \
+            2>&1 | tee agent01l-hosted-original-evidence/unchanged-native-git-restart.log
+          grep -Fq 'test result: ok. 1 passed; 0 failed;' \
+            agent01l-hosted-original-evidence/unchanged-native-git-restart.log
+      - name: Original-hosted kernel test is never allowed to pass through a skip
+        if: ${{ failure() }}
+        shell: bash
+        run: |
+          echo 'One or more original real Linux kernel tests FAILED or were unavailable. Host OS/receipt evidence is diagnostic only; positive SEC-06C / AGENT-01L remains OPEN.' >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lu-agent01l-hosted-real-original-kernel
+          path: agent01l-hosted-original-evidence/
+          if-no-files-found: warn
+          retention-days: 14

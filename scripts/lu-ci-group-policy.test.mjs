@@ -126,3 +126,24 @@ test("AGENT-01L original native workflow asserts all current source cases before
   assert.match(workflow,/AGENT01L_NATIVE_CGROUP_ESCAPED_DESCENDANT_PASS=1/);
   assert.match(workflow,/agent01l_linux_real_git_cgroup_custody_after_restart/);
 });
+
+test("hosted-positive never softens original SEC-06C and AGENT-01L kernel tests",()=>{
+  const src=fs.readFileSync(".github/workflows/lu-repo01-full-source.yml","utf8");
+  const marker="LU_AGENT01L_HOSTED_CGROUP_SHA={0}";
+  assert.match(src,/  linux-agent01l-hosted-positive:/);
+  assert.match(src,/runs-on: ubuntu-24\.04/);
+  assert.match(src,/github\.event\.pull_request\.number == 235/);
+  assert.match(src,/github\.event\.action == 'edited'/);
+  assert.ok(src.split(marker).length >= 3);
+  assert.match(src,/install-lu-agent01l-native-fixture\.sh/);
+  assert.match(src,/LU_AGENT01L_REQUIRE_OS_OWNED_FIXTURE: '1'/);
+  assert.match(src,/benchmarks\/e1\/agent01l_cgroup_escape_crash_acceptance\.py/);
+  assert.match(src,/agent01l_linux_real_git_cgroup_custody_after_restart/);
+  assert.match(src,/AGENT01L_NATIVE_CGROUP_ESCAPED_DESCENDANT_PASS=1/);
+  assert.match(src,/sec06c_owned_git_host_sigkill_recovery_original_journal/);
+  const positive=src.split("  linux-agent01l-hosted-positive:")[1];
+  assert.doesNotMatch(positive,/continue-on-error: true/);
+  assert.doesNotMatch(positive,/\|\| true/);
+  assert.doesNotMatch(positive,/set \+e/);
+  assert.match(positive,/if: \$\{\{ !cancelled\(\) \}\}/);
+});
