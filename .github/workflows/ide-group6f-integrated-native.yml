@@ -152,6 +152,7 @@ jobs:
         run: |
           set -euo pipefail
           python -m unittest discover -s ide/packaging -p 'test_p06_live_native_jobs.py' -v
+          python -m unittest discover -s ide/packaging -p 'test_p06_wo8_lock_wiring.py' -v
           echo 'IDE_MERGE02_P06_LIVE_EVIDENCE=SOURCE_ONLY_NONAUTHORIZING'
       - name: IDE-MERGE-02 original P06 candidate-tree hash and hostile-path contracts (source only)
         shell: bash
