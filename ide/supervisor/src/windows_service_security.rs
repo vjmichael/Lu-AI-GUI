@@ -36,11 +36,10 @@ use windows_sys::Win32::{
         },
         CheckTokenMembership, DuplicateToken, EqualSid, GetAce, GetAclInformation,
         GetSecurityDescriptorControl, GetSecurityDescriptorDacl, GetTokenInformation,
-        IsTokenRestricted, LookupAccountNameW,
-        RevertToSelf, SecurityImpersonation, TokenGroups, TokenIsAppContainer, TokenRestrictedSids,
-        TokenUser, ACCESS_ALLOWED_ACE, ACL_SIZE_INFORMATION, DACL_SECURITY_INFORMATION,
-        SECURITY_ATTRIBUTES, SE_DACL_PROTECTED, PROTECTED_DACL_SECURITY_INFORMATION,
-        SID_AND_ATTRIBUTES, TOKEN_DUPLICATE, TOKEN_GROUPS,
+        IsTokenRestricted, LookupAccountNameW, RevertToSelf, SecurityImpersonation, TokenGroups,
+        TokenIsAppContainer, TokenRestrictedSids, TokenUser, ACCESS_ALLOWED_ACE,
+        ACL_SIZE_INFORMATION, DACL_SECURITY_INFORMATION, PROTECTED_DACL_SECURITY_INFORMATION,
+        SECURITY_ATTRIBUTES, SE_DACL_PROTECTED, SID_AND_ATTRIBUTES, TOKEN_DUPLICATE, TOKEN_GROUPS,
         TOKEN_QUERY, TOKEN_USER,
     },
     System::{
@@ -105,78 +104,142 @@ impl Drop for OwnedSid {
 /// exclusive Job ACL. No interactive users, lowbox package, administrators,
 /// generic service account or WebView receive attach rights. Native kernel
 /// DACL readback rejects any injected/extra process security principal.
-#[cfg(feature="fin04w2-split-native")]
-pub(crate) fn seal_exact_target_process_debug_acl(
-    process:HANDLE,
-)->Result<(),SupervisorError>{
-    if process.is_null(){return Err(denied());}
-    let target=sid_of_named_service("LuIdeDebugTargetBroker")?;
-    let debugger=sid_of_named_service("LuIdeDebuggerBroker")?;
-    if target==debugger{return Err(denied());}
+#[cfg(feature = "fin04w2-split-native")]
+pub(crate) fn seal_exact_target_process_debug_acl(process: HANDLE) -> Result<(), SupervisorError> {
+    if process.is_null() {
+        return Err(denied());
+    }
+    let target = sid_of_named_service("LuIdeDebugTargetBroker")?;
+    let debugger = sid_of_named_service("LuIdeDebuggerBroker")?;
+    if target == debugger {
+        return Err(denied());
+    }
     // Explicit masks avoid GENERIC_ALL mapping ambiguity on processes;
     // 0x001fffff is Win32 PROCESS_ALL_ACCESS (this is DEBUGGER authority
     // over ONLY the exact target, not filesystem/Job/service access).
-    const PROCESS_ALL:u32=0x001F_FFFF;
-    let sddl=format!(
+    const PROCESS_ALL: u32 = 0x001F_FFFF;
+    let sddl = format!(
         "D:P(A;;0x{PROCESS_ALL:08x};;;SY)(A;;0x{PROCESS_ALL:08x};;;{target})\
          (A;;0x{PROCESS_ALL:08x};;;{debugger})",
     );
-    let mut sd=ptr::null_mut();
-    if unsafe{ConvertStringSecurityDescriptorToSecurityDescriptorW(
-        ws(&sddl).as_ptr(),1,&mut sd,ptr::null_mut(),
-    )}==0||sd.is_null(){return Err(denied());}
-    let _owned=OwnedSid(sd);
-    let mut present=0i32;
-    let mut defaulted=0i32;
-    let mut dacl=ptr::null_mut();
-    if unsafe{GetSecurityDescriptorDacl(
-        sd,&mut present,&mut dacl,&mut defaulted,
-    )}==0||present!=1||dacl.is_null(){return Err(denied());}
-    if unsafe{SetSecurityInfo(process,SE_KERNEL_OBJECT,
-        DACL_SECURITY_INFORMATION|PROTECTED_DACL_SECURITY_INFORMATION,
-        ptr::null_mut(),ptr::null_mut(),dacl,ptr::null_mut(),
-    )}!=0{return Err(denied());}
+    let mut sd = ptr::null_mut();
+    if unsafe {
+        ConvertStringSecurityDescriptorToSecurityDescriptorW(
+            ws(&sddl).as_ptr(),
+            1,
+            &mut sd,
+            ptr::null_mut(),
+        )
+    } == 0
+        || sd.is_null()
+    {
+        return Err(denied());
+    }
+    let _owned = OwnedSid(sd);
+    let mut present = 0i32;
+    let mut defaulted = 0i32;
+    let mut dacl = ptr::null_mut();
+    if unsafe { GetSecurityDescriptorDacl(sd, &mut present, &mut dacl, &mut defaulted) } == 0
+        || present != 1
+        || dacl.is_null()
+    {
+        return Err(denied());
+    }
+    if unsafe {
+        SetSecurityInfo(
+            process,
+            SE_KERNEL_OBJECT,
+            DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION,
+            ptr::null_mut(),
+            ptr::null_mut(),
+            dacl,
+            ptr::null_mut(),
+        )
+    } != 0
+    {
+        return Err(denied());
+    }
     verify_exact_target_process_debug_acl(process)
 }
-#[cfg(feature="fin04w2-split-native")]
+#[cfg(feature = "fin04w2-split-native")]
 pub(crate) fn verify_exact_target_process_debug_acl(
-    process:HANDLE,
-)->Result<(),SupervisorError>{
-    if process.is_null(){return Err(denied());}
-    let ids=[
+    process: HANDLE,
+) -> Result<(), SupervisorError> {
+    if process.is_null() {
+        return Err(denied());
+    }
+    let ids = [
         parse_sid("S-1-5-18")?,
         parse_sid(&sid_of_named_service("LuIdeDebugTargetBroker")?)?,
         parse_sid(&sid_of_named_service("LuIdeDebuggerBroker")?)?,
     ];
-    let mut sd=ptr::null_mut();
-    let mut dacl=ptr::null_mut();
-    if unsafe{GetSecurityInfo(process,SE_KERNEL_OBJECT,DACL_SECURITY_INFORMATION,
-        ptr::null_mut(),ptr::null_mut(),&mut dacl,ptr::null_mut(),&mut sd,
-    )}!=0||dacl.is_null()||sd.is_null(){return Err(denied());}
-    let _sd=OwnedSid(sd);
-    let mut control=0u16;let mut revision=0u32;
-    if unsafe{GetSecurityDescriptorControl(sd,&mut control,&mut revision)}==0
-        ||control&SE_DACL_PROTECTED==0{return Err(denied());}
-    let mut info=ACL_SIZE_INFORMATION::default();
-    if unsafe{GetAclInformation(dacl,
-        (&mut info as *mut ACL_SIZE_INFORMATION).cast(),
-        size_of::<ACL_SIZE_INFORMATION>() as u32,AclSizeInformation,
-    )}==0||info.AceCount!=3{return Err(denied());}
-    let mut seen=[false;3];
-    for idx in 0..3{
-        let mut raw=ptr::null_mut();
-        if unsafe{GetAce(dacl,idx,&mut raw)}==0||raw.is_null(){return Err(denied());}
-        let ace=unsafe{&*(raw as *const ACCESS_ALLOWED_ACE)};
-        if ace.Header.AceType!=0||ace.Header.AceFlags!=0
-            ||ace.Header.AceSize<size_of::<ACCESS_ALLOWED_ACE>() as u16
-            ||ace.Mask!=0x001F_FFFF{return Err(denied());}
-        let sid=(&ace.SidStart as *const u32).cast_mut().cast();
-        let which=ids.iter().position(|id|unsafe{EqualSid(sid,id.0)}!=0)
-            .ok_or_else(denied)?;
-        if seen[which]{return Err(denied());}
-        seen[which]=true;
+    let mut sd = ptr::null_mut();
+    let mut dacl = ptr::null_mut();
+    if unsafe {
+        GetSecurityInfo(
+            process,
+            SE_KERNEL_OBJECT,
+            DACL_SECURITY_INFORMATION,
+            ptr::null_mut(),
+            ptr::null_mut(),
+            &mut dacl,
+            ptr::null_mut(),
+            &mut sd,
+        )
+    } != 0
+        || dacl.is_null()
+        || sd.is_null()
+    {
+        return Err(denied());
     }
-    if seen!=[true,true,true]{return Err(denied());}
+    let _sd = OwnedSid(sd);
+    let mut control = 0u16;
+    let mut revision = 0u32;
+    if unsafe { GetSecurityDescriptorControl(sd, &mut control, &mut revision) } == 0
+        || control & SE_DACL_PROTECTED == 0
+    {
+        return Err(denied());
+    }
+    let mut info = ACL_SIZE_INFORMATION::default();
+    if unsafe {
+        GetAclInformation(
+            dacl,
+            (&mut info as *mut ACL_SIZE_INFORMATION).cast(),
+            size_of::<ACL_SIZE_INFORMATION>() as u32,
+            AclSizeInformation,
+        )
+    } == 0
+        || info.AceCount != 3
+    {
+        return Err(denied());
+    }
+    let mut seen = [false; 3];
+    for idx in 0..3 {
+        let mut raw = ptr::null_mut();
+        if unsafe { GetAce(dacl, idx, &mut raw) } == 0 || raw.is_null() {
+            return Err(denied());
+        }
+        let ace = unsafe { &*(raw as *const ACCESS_ALLOWED_ACE) };
+        if ace.Header.AceType != 0
+            || ace.Header.AceFlags != 0
+            || ace.Header.AceSize < size_of::<ACCESS_ALLOWED_ACE>() as u16
+            || ace.Mask != 0x001F_FFFF
+        {
+            return Err(denied());
+        }
+        let sid = (&ace.SidStart as *const u32).cast_mut().cast();
+        let which = ids
+            .iter()
+            .position(|id| unsafe { EqualSid(sid, id.0) } != 0)
+            .ok_or_else(denied)?;
+        if seen[which] {
+            return Err(denied());
+        }
+        seen[which] = true;
+    }
+    if seen != [true, true, true] {
+        return Err(denied());
+    }
     Ok(())
 }
 
@@ -188,8 +251,7 @@ pub fn sid_of_service() -> Result<String, SupervisorError> {
 // no untrusted packet may nominate a service or Windows SID.
 fn allowed_scm_service_name(service_name: &str) -> bool {
     matches!(service_name, "LuIdeRecoveryBroker" | "LuIdeDebuggerBroker")
-        || (cfg!(feature = "fin04w2-split-native")
-            && service_name == "LuIdeDebugTargetBroker")
+        || (cfg!(feature = "fin04w2-split-native") && service_name == "LuIdeDebugTargetBroker")
 }
 pub(crate) fn sid_of_named_service(service_name: &str) -> Result<String, SupervisorError> {
     if !allowed_scm_service_name(service_name) {
@@ -395,34 +457,46 @@ pub fn validate_approved_host_user_sid(value: &str) -> Result<(), SupervisorErro
 // never FILE_CREATE_PIPE_INSTANCE, owner/DACL change, or admin/user fallback.
 // This differs from the interactive host C2 pipe and is never constructed
 // from a caller-supplied service name or identity.
-#[cfg(feature="fin04w2-split-native")]
+#[cfg(feature = "fin04w2-split-native")]
 pub(crate) fn split_target_pipe_security() -> Result<PipeSecurity, SupervisorError> {
-    let target=sid_of_named_service("LuIdeDebugTargetBroker")?;
-    let debugger=sid_of_named_service("LuIdeDebuggerBroker")?;
-    if target==debugger {return Err(denied());}
-    let sddl=format!(
+    let target = sid_of_named_service("LuIdeDebugTargetBroker")?;
+    let debugger = sid_of_named_service("LuIdeDebuggerBroker")?;
+    if target == debugger {
+        return Err(denied());
+    }
+    let sddl = format!(
         "D:P(A;;GA;;;SY)(A;;GA;;;{})(A;;0x0012019b;;;{})",
-        target,debugger,
+        target, debugger,
     );
-    let mut descriptor=ptr::null_mut();
-    if unsafe{ConvertStringSecurityDescriptorToSecurityDescriptorW(
-        ws(&sddl).as_ptr(),1,&mut descriptor,ptr::null_mut(),
-    )}==0||descriptor.is_null(){return Err(denied());}
-    let mut result=PipeSecurity{
-        descriptor:OwnedSid(descriptor),
-        attributes:SECURITY_ATTRIBUTES{
-            nLength:size_of::<SECURITY_ATTRIBUTES>() as u32,
-            lpSecurityDescriptor:descriptor,bInheritHandle:0,
+    let mut descriptor = ptr::null_mut();
+    if unsafe {
+        ConvertStringSecurityDescriptorToSecurityDescriptorW(
+            ws(&sddl).as_ptr(),
+            1,
+            &mut descriptor,
+            ptr::null_mut(),
+        )
+    } == 0
+        || descriptor.is_null()
+    {
+        return Err(denied());
+    }
+    let mut result = PipeSecurity {
+        descriptor: OwnedSid(descriptor),
+        attributes: SECURITY_ATTRIBUTES {
+            nLength: size_of::<SECURITY_ATTRIBUTES>() as u32,
+            lpSecurityDescriptor: descriptor,
+            bInheritHandle: 0,
         },
     };
-    result.attributes.lpSecurityDescriptor=result.descriptor.0;
+    result.attributes.lpSecurityDescriptor = result.descriptor.0;
     Ok(result)
 }
-#[cfg(feature="fin04w2-split-native")]
-pub(crate) fn verify_split_target_pipe_security(pipe:HANDLE)
-    ->Result<(),SupervisorError>{
+#[cfg(feature = "fin04w2-split-native")]
+pub(crate) fn verify_split_target_pipe_security(pipe: HANDLE) -> Result<(), SupervisorError> {
     verify_created_pipe_security_for_exact_sid(
-        pipe,&sid_of_named_service("LuIdeDebuggerBroker")?,
+        pipe,
+        &sid_of_named_service("LuIdeDebuggerBroker")?,
         &sid_of_named_service("LuIdeDebugTargetBroker")?,
     )
 }
@@ -461,8 +535,7 @@ impl PipeSecurity {
         // Authorization still requires kernel PID/token + pinned image hash.
         let sddl = format!(
             "D:P(A;;GA;;;SY)(A;;GA;;;{})(A;;0x0012019b;;;{})S:(ML;;NW;;;ME)",
-            pinned_service_sid,
-            approved_user_sid
+            pinned_service_sid, approved_user_sid
         );
         let mut descriptor = ptr::null_mut();
         if unsafe {
@@ -506,11 +579,13 @@ pub(crate) fn verify_created_pipe_security_for(
     pinned_service_sid: &str,
 ) -> Result<(), SupervisorError> {
     validate_approved_host_user_sid(approved_user_sid)?;
-    verify_created_pipe_security_for_exact_sid(pipe,approved_user_sid,pinned_service_sid)
+    verify_created_pipe_security_for_exact_sid(pipe, approved_user_sid, pinned_service_sid)
 }
 fn verify_created_pipe_security_for_exact_sid(
-    pipe:HANDLE,client_sid:&str,pinned_service_sid:&str,
-)->Result<(),SupervisorError>{
+    pipe: HANDLE,
+    client_sid: &str,
+    pinned_service_sid: &str,
+) -> Result<(), SupervisorError> {
     if !pinned_service_sid.starts_with("S-1-5-80-") {
         return Err(denied());
     }
@@ -705,8 +780,12 @@ pub(crate) fn authenticate_client_from_kernel_pipe(
         process_creation(process.0)?
     };
     authenticate_client(
-        pipe, pid, created, approved_host_path,
-        approved_host_sha256, approved_host_user_sid,
+        pipe,
+        pid,
+        created,
+        approved_host_path,
+        approved_host_sha256,
+        approved_host_user_sid,
     )
 }
 
@@ -869,13 +948,12 @@ impl JobSecurity {
     pub(crate) fn new_debugger_service_owned() -> Result<Self, SupervisorError> {
         Self::new_split_service_owned("LuIdeDebuggerBroker")
     }
-    #[cfg(feature="fin04w2-split-native")]
+    #[cfg(feature = "fin04w2-split-native")]
     pub(crate) fn new_target_service_owned() -> Result<Self, SupervisorError> {
         Self::new_split_service_owned("LuIdeDebugTargetBroker")
     }
     pub(crate) fn new_split_service_owned(service_name: &str) -> Result<Self, SupervisorError> {
-        if service_name != "LuIdeDebuggerBroker"
-            && service_name != "LuIdeDebugTargetBroker" {
+        if service_name != "LuIdeDebuggerBroker" && service_name != "LuIdeDebugTargetBroker" {
             return Err(denied());
         }
         let sid = sid_of_named_service(service_name)?;
@@ -883,9 +961,14 @@ impl JobSecurity {
         let mut descriptor = ptr::null_mut();
         if unsafe {
             ConvertStringSecurityDescriptorToSecurityDescriptorW(
-                ws(&sddl).as_ptr(), 1, &mut descriptor, ptr::null_mut(),
+                ws(&sddl).as_ptr(),
+                1,
+                &mut descriptor,
+                ptr::null_mut(),
             )
-        } == 0 || descriptor.is_null() {
+        } == 0
+            || descriptor.is_null()
+        {
             return Err(denied());
         }
         let owned = OwnedSid(descriptor);
@@ -936,13 +1019,15 @@ impl JobSecurity {
 pub(crate) fn verify_debugger_job_kernel_acl(job: HANDLE) -> Result<(), SupervisorError> {
     verify_split_job_kernel_acl(job, "LuIdeDebuggerBroker")
 }
-#[cfg(feature="fin04w2-split-native")]
+#[cfg(feature = "fin04w2-split-native")]
 pub(crate) fn verify_target_job_kernel_acl(job: HANDLE) -> Result<(), SupervisorError> {
     verify_split_job_kernel_acl(job, "LuIdeDebugTargetBroker")
 }
-pub(crate) fn verify_split_job_kernel_acl(job: HANDLE, service_name: &str) -> Result<(), SupervisorError> {
-    if service_name != "LuIdeDebuggerBroker"
-        && service_name != "LuIdeDebugTargetBroker" {
+pub(crate) fn verify_split_job_kernel_acl(
+    job: HANDLE,
+    service_name: &str,
+) -> Result<(), SupervisorError> {
+    if service_name != "LuIdeDebuggerBroker" && service_name != "LuIdeDebugTargetBroker" {
         return Err(denied());
     }
     let system = parse_sid("S-1-5-18")?;
@@ -951,27 +1036,40 @@ pub(crate) fn verify_split_job_kernel_acl(job: HANDLE, service_name: &str) -> Re
     let mut descriptor = ptr::null_mut();
     if unsafe {
         GetSecurityInfo(
-            job, SE_KERNEL_OBJECT, DACL_SECURITY_INFORMATION,
-            ptr::null_mut(), ptr::null_mut(), &mut dacl,
-            ptr::null_mut(), &mut descriptor,
+            job,
+            SE_KERNEL_OBJECT,
+            DACL_SECURITY_INFORMATION,
+            ptr::null_mut(),
+            ptr::null_mut(),
+            &mut dacl,
+            ptr::null_mut(),
+            &mut descriptor,
         )
-    } != 0 || dacl.is_null() || descriptor.is_null() {
+    } != 0
+        || dacl.is_null()
+        || descriptor.is_null()
+    {
         return Err(denied());
     }
     let _owned = OwnedSid(descriptor);
     let mut control = 0u16;
     let mut revision = 0u32;
     if unsafe { GetSecurityDescriptorControl(descriptor, &mut control, &mut revision) } == 0
-        || control & SE_DACL_PROTECTED == 0 {
+        || control & SE_DACL_PROTECTED == 0
+    {
         return Err(denied());
     }
     let mut info = ACL_SIZE_INFORMATION::default();
     if unsafe {
         GetAclInformation(
-            dacl, (&mut info as *mut ACL_SIZE_INFORMATION).cast(),
-            size_of::<ACL_SIZE_INFORMATION>() as u32, AclSizeInformation,
+            dacl,
+            (&mut info as *mut ACL_SIZE_INFORMATION).cast(),
+            size_of::<ACL_SIZE_INFORMATION>() as u32,
+            AclSizeInformation,
         )
-    } == 0 || info.AceCount != 2 {
+    } == 0
+        || info.AceCount != 2
+    {
         return Err(denied());
     }
     let (mut system_seen, mut service_seen) = (false, false);
@@ -981,23 +1079,31 @@ pub(crate) fn verify_split_job_kernel_acl(job: HANDLE, service_name: &str) -> Re
             return Err(denied());
         }
         let ace = unsafe { &*(raw as *const ACCESS_ALLOWED_ACE) };
-        if ace.Header.AceType != 0 || ace.Header.AceFlags != 0
+        if ace.Header.AceType != 0
+            || ace.Header.AceFlags != 0
             || ace.Header.AceSize < size_of::<ACCESS_ALLOWED_ACE>() as u16
-            || ace.Mask == 0 {
+            || ace.Mask == 0
+        {
             return Err(denied());
         }
         let sid = (&ace.SidStart as *const u32).cast_mut().cast();
         if unsafe { EqualSid(sid, system.0) } != 0 {
-            if system_seen { return Err(denied()); }
+            if system_seen {
+                return Err(denied());
+            }
             system_seen = true;
         } else if unsafe { EqualSid(sid, service.0) } != 0 {
-            if service_seen { return Err(denied()); }
+            if service_seen {
+                return Err(denied());
+            }
             service_seen = true;
         } else {
             return Err(denied());
         }
     }
-    if !system_seen || !service_seen { return Err(denied()); }
+    if !system_seen || !service_seen {
+        return Err(denied());
+    }
     Ok(())
 }
 
@@ -1010,25 +1116,26 @@ pub(crate) fn verify_split_job_kernel_acl(job: HANDLE, service_name: &str) -> Re
 // prerequisite and may be denied by the service token's own ACL.
 // Check the enabled normal group AND the restricting SID list. This
 // preserves the two-list restricted-token access-check semantics.
-#[cfg(feature="fin04w2-split-native")]
-pub(crate) fn verify_restricted_debugger_service_sid(token:HANDLE)
-    ->Result<(),SupervisorError>{
-    verify_restricted_split_service_sid(token,"LuIdeDebuggerBroker")
+#[cfg(feature = "fin04w2-split-native")]
+pub(crate) fn verify_restricted_debugger_service_sid(token: HANDLE) -> Result<(), SupervisorError> {
+    verify_restricted_split_service_sid(token, "LuIdeDebuggerBroker")
 }
-#[cfg(feature="fin04w2-split-native")]
-pub(crate) fn verify_restricted_target_service_sid(token:HANDLE)
-    ->Result<(),SupervisorError>{
-    verify_restricted_split_service_sid(token,"LuIdeDebugTargetBroker")
+#[cfg(feature = "fin04w2-split-native")]
+pub(crate) fn verify_restricted_target_service_sid(token: HANDLE) -> Result<(), SupervisorError> {
+    verify_restricted_split_service_sid(token, "LuIdeDebugTargetBroker")
 }
-#[cfg(feature="fin04w2-split-native")]
-fn verify_restricted_split_service_sid(token:HANDLE,service_name:&str)
-    ->Result<(),SupervisorError>{
-    if service_name!="LuIdeDebuggerBroker"
-        &&service_name!="LuIdeDebugTargetBroker" {return Err(denied());}
-    let sid=parse_sid(&sid_of_named_service(service_name)?)?;
-    if !query_token_sid_list(
-        token,TokenRestrictedSids,sid.0,true,
-    )? {return Err(denied());}
+#[cfg(feature = "fin04w2-split-native")]
+fn verify_restricted_split_service_sid(
+    token: HANDLE,
+    service_name: &str,
+) -> Result<(), SupervisorError> {
+    if service_name != "LuIdeDebuggerBroker" && service_name != "LuIdeDebugTargetBroker" {
+        return Err(denied());
+    }
+    let sid = parse_sid(&sid_of_named_service(service_name)?)?;
+    if !query_token_sid_list(token, TokenRestrictedSids, sid.0, true)? {
+        return Err(denied());
+    }
     Ok(())
 }
 fn query_token_sid_list(
@@ -1095,20 +1202,26 @@ pub fn authenticate_service_server(
     service_sha256: &str,
 ) -> Result<(), SupervisorError> {
     authenticate_fixed_service_server(
-        pipe,approved_service_path,service_sha256,"LuIdeRecoveryBroker",
+        pipe,
+        approved_service_path,
+        service_sha256,
+        "LuIdeRecoveryBroker",
     )
 }
 /// W2-C native host verifies the *new* debugger service's actual SCM PID,
 /// exact image hash and restricting SID before consuming its original
 /// one-use grant. A spoofed same-user named pipe can never mint approval.
-#[cfg(feature="fin04w2-c2")]
+#[cfg(feature = "fin04w2-c2")]
 pub(crate) fn authenticate_debugger_service_server(
     pipe: HANDLE,
     approved_service_path: &Path,
     service_sha256: &str,
 ) -> Result<(), SupervisorError> {
     authenticate_fixed_service_server(
-        pipe,approved_service_path,service_sha256,"LuIdeDebuggerBroker",
+        pipe,
+        approved_service_path,
+        service_sha256,
+        "LuIdeDebuggerBroker",
     )
 }
 fn authenticate_fixed_service_server(
@@ -1199,78 +1312,112 @@ fn authenticate_fixed_service_server(
 /// debugger service and any reparse point. Host owner/SYSTEM may write
 /// original native receipts; the debugger service can only READ them.
 /// The OS token and exact pinned host binary are checked separately.
-#[cfg(feature="fin04w2-c2")]
+#[cfg(feature = "fin04w2-c2")]
 pub(crate) fn verify_original_approval_journal_acl(
-    path: &Path, host_user_sid: &str,
+    path: &Path,
+    host_user_sid: &str,
 ) -> Result<(), SupervisorError> {
     validate_approved_host_user_sid(host_user_sid)?;
-    let meta=fs::symlink_metadata(path).map_err(|_|denied())?;
-    if !path.is_absolute() || !meta.is_file()
+    let meta = fs::symlink_metadata(path).map_err(|_| denied())?;
+    if !path.is_absolute()
+        || !meta.is_file()
         || meta.file_attributes() & 0x400 != 0
-        || meta.len() == 0 || meta.len() > 2 * 1024 * 1024 {
+        || meta.len() == 0
+        || meta.len() > 2 * 1024 * 1024
+    {
         return Err(denied());
     }
-    let system=parse_sid("S-1-5-18")?;
-    let host=parse_sid(host_user_sid)?;
-    let service=parse_sid(&sid_of_named_service("LuIdeDebuggerBroker")?)?;
-    let mut dacl=ptr::null_mut();
-    let mut sd=ptr::null_mut();
+    let system = parse_sid("S-1-5-18")?;
+    let host = parse_sid(host_user_sid)?;
+    let service = parse_sid(&sid_of_named_service("LuIdeDebuggerBroker")?)?;
+    let mut dacl = ptr::null_mut();
+    let mut sd = ptr::null_mut();
     if unsafe {
         GetNamedSecurityInfoW(
             wide(path.as_os_str()).as_ptr() as *mut u16,
-            SE_FILE_OBJECT, DACL_SECURITY_INFORMATION,
-            ptr::null_mut(),ptr::null_mut(),&mut dacl,
-            ptr::null_mut(),&mut sd,
+            SE_FILE_OBJECT,
+            DACL_SECURITY_INFORMATION,
+            ptr::null_mut(),
+            ptr::null_mut(),
+            &mut dacl,
+            ptr::null_mut(),
+            &mut sd,
         )
-    } != 0 || dacl.is_null() || sd.is_null() {
+    } != 0
+        || dacl.is_null()
+        || sd.is_null()
+    {
         return Err(denied());
     }
-    let _descriptor=OwnedSid(sd);
-    let mut control=0u16;
-    let mut revision=0u32;
-    if unsafe {GetSecurityDescriptorControl(sd,&mut control,&mut revision)}==0
-        || control & SE_DACL_PROTECTED == 0 {
+    let _descriptor = OwnedSid(sd);
+    let mut control = 0u16;
+    let mut revision = 0u32;
+    if unsafe { GetSecurityDescriptorControl(sd, &mut control, &mut revision) } == 0
+        || control & SE_DACL_PROTECTED == 0
+    {
         return Err(denied());
     }
-    let mut count=ACL_SIZE_INFORMATION::default();
+    let mut count = ACL_SIZE_INFORMATION::default();
     if unsafe {
         GetAclInformation(
-            dacl,(&mut count as *mut ACL_SIZE_INFORMATION).cast(),
-            size_of::<ACL_SIZE_INFORMATION>() as u32,AclSizeInformation
+            dacl,
+            (&mut count as *mut ACL_SIZE_INFORMATION).cast(),
+            size_of::<ACL_SIZE_INFORMATION>() as u32,
+            AclSizeInformation,
         )
-    }==0 || count.AceCount!=3 { return Err(denied()); }
-    let(mut seen_host,mut seen_system,mut seen_service)=(false,false,false);
+    } == 0
+        || count.AceCount != 3
+    {
+        return Err(denied());
+    }
+    let (mut seen_host, mut seen_system, mut seen_service) = (false, false, false);
     // FILE_WRITE_DATA, APPEND, WRITE_EA, WRITE_ATTRIBUTES, DELETE,
     // WRITE_DAC, WRITE_OWNER, GENERIC_WRITE and GENERIC_ALL are prohibited.
-    const FORBIDDEN_SERVICE: u32 =
-        0x0000_0002 | 0x0000_0004 | 0x0000_0010 | 0x0000_0100
-        | 0x0001_0000 | 0x0004_0000 | 0x0008_0000
-        | 0x4000_0000 | 0x1000_0000;
-    const SERVICE_READ: u32=0x0012_0089;
+    const FORBIDDEN_SERVICE: u32 = 0x0000_0002
+        | 0x0000_0004
+        | 0x0000_0010
+        | 0x0000_0100
+        | 0x0001_0000
+        | 0x0004_0000
+        | 0x0008_0000
+        | 0x4000_0000
+        | 0x1000_0000;
+    const SERVICE_READ: u32 = 0x0012_0089;
     for i in 0..count.AceCount {
-        let mut entry=ptr::null_mut();
-        if unsafe {GetAce(dacl,i,&mut entry)}==0 || entry.is_null() {
+        let mut entry = ptr::null_mut();
+        if unsafe { GetAce(dacl, i, &mut entry) } == 0 || entry.is_null() {
             return Err(denied());
         }
-        let ace=unsafe { &*(entry as *const ACCESS_ALLOWED_ACE) };
-        if ace.Header.AceType!=0 || ace.Header.AceFlags!=0
-            || ace.Header.AceSize < size_of::<ACCESS_ALLOWED_ACE>() as u16 {
+        let ace = unsafe { &*(entry as *const ACCESS_ALLOWED_ACE) };
+        if ace.Header.AceType != 0
+            || ace.Header.AceFlags != 0
+            || ace.Header.AceSize < size_of::<ACCESS_ALLOWED_ACE>() as u16
+        {
             return Err(denied());
         }
-        let sid=(&ace.SidStart as *const u32).cast_mut().cast();
-        if unsafe {EqualSid(sid,service.0)}!=0 {
-            if seen_service || ace.Mask != SERVICE_READ
-                || ace.Mask & FORBIDDEN_SERVICE != 0 { return Err(denied()); }
-            seen_service=true;
-        } else if unsafe {EqualSid(sid,host.0)}!=0 {
-            if seen_host || ace.Mask==0 {return Err(denied());}
-            seen_host=true;
-        } else if unsafe {EqualSid(sid,system.0)}!=0 {
-            if seen_system || ace.Mask==0 {return Err(denied());}
-            seen_system=true;
-        } else {return Err(denied());}
+        let sid = (&ace.SidStart as *const u32).cast_mut().cast();
+        if unsafe { EqualSid(sid, service.0) } != 0 {
+            if seen_service || ace.Mask != SERVICE_READ || ace.Mask & FORBIDDEN_SERVICE != 0 {
+                return Err(denied());
+            }
+            seen_service = true;
+        } else if unsafe { EqualSid(sid, host.0) } != 0 {
+            if seen_host || ace.Mask == 0 {
+                return Err(denied());
+            }
+            seen_host = true;
+        } else if unsafe { EqualSid(sid, system.0) } != 0 {
+            if seen_system || ace.Mask == 0 {
+                return Err(denied());
+            }
+            seen_system = true;
+        } else {
+            return Err(denied());
+        }
     }
-    if !seen_host || !seen_system || !seen_service {return Err(denied());}
+    if !seen_host || !seen_system || !seen_service {
+        return Err(denied());
+    }
     Ok(())
 }
 
@@ -1367,8 +1514,10 @@ mod tests {
     fn split_target_sid_uses_only_the_feature_gated_fixed_scm_identity() {
         assert!(allowed_scm_service_name("LuIdeRecoveryBroker"));
         assert!(allowed_scm_service_name("LuIdeDebuggerBroker"));
-        assert_eq!(allowed_scm_service_name("LuIdeDebugTargetBroker"),
-            cfg!(feature = "fin04w2-split-native"));
+        assert_eq!(
+            allowed_scm_service_name("LuIdeDebugTargetBroker"),
+            cfg!(feature = "fin04w2-split-native")
+        );
         assert!(!allowed_scm_service_name("LuIdeDebugTargetBroker.v1"));
         assert!(!allowed_scm_service_name("LuIdeDebugTargetBroker\\\\evil"));
         assert!(!allowed_scm_service_name("LuIdeDebuggerBrokerExtra"));
@@ -1376,13 +1525,16 @@ mod tests {
     }
     #[test]
     fn scm_pair_pipe_has_only_fixed_non_creating_debugger_client() {
-        #[cfg(feature="fin04w2-split-native")]{
+        #[cfg(feature = "fin04w2-split-native")]
+        {
             assert!(allowed_scm_service_name("LuIdeDebugTargetBroker"));
             // The client mask is deliberately distinct from GA and excludes
             // FILE_CREATE_PIPE_INSTANCE (0x4) and WRITE_DAC (0x40000).
-            assert_eq!(0x0012_019b_u32 & (0x4|0x40000|0x80000),0);
-            assert!(split_target_pipe_security().is_err()
-                || allowed_scm_service_name("LuIdeDebuggerBroker"));
+            assert_eq!(0x0012_019b_u32 & (0x4 | 0x40000 | 0x80000), 0);
+            assert!(
+                split_target_pipe_security().is_err()
+                    || allowed_scm_service_name("LuIdeDebuggerBroker")
+            );
         }
     }
     #[test]

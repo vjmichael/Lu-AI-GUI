@@ -89,26 +89,49 @@ impl DapGateway {
     /// and the current first-party event owner are rechecked.
     #[cfg(all(windows, feature = "fin04-release-owner-evidence"))]
     pub(crate) fn read_pe_pdb_inside_owned_job(
-        &mut self, binary:&std::path::Path, pdb:&std::path::Path,
-        binary_sha256:&str, pdb_sha256:&str, bundle_sha256:&str,
-        slide:u64, rip:u64,
-    )->Result<serde_json::Value,SupervisorError>{
-        if self.session.phase()!=DapPhase::Stopped ||
-           self.session.source_candidate()
-             .and_then(|f|f.instruction_address)!=Some(rip) ||
-           self.supervisor.inspect()?.iter().all(|job|
-             job.job_id!=self.job_id ||
-             job.plan_sha256!=self.plan_sha256 ||
-             job.phase!=JobPhase::Running || job.requires_reconciliation)
+        &mut self,
+        binary: &std::path::Path,
+        pdb: &std::path::Path,
+        binary_sha256: &str,
+        pdb_sha256: &str,
+        bundle_sha256: &str,
+        slide: u64,
+        rip: u64,
+    ) -> Result<serde_json::Value, SupervisorError> {
+        if self.session.phase() != DapPhase::Stopped
+            || self
+                .session
+                .source_candidate()
+                .and_then(|f| f.instruction_address)
+                != Some(rip)
+            || self.supervisor.inspect()?.iter().all(|job| {
+                job.job_id != self.job_id
+                    || job.plan_sha256 != self.plan_sha256
+                    || job.phase != JobPhase::Running
+                    || job.requires_reconciliation
+            })
         {
             return Err(SupervisorError::NoContainment);
         }
-        let result=self.process.as_mut().ok_or(SupervisorError::NoContainment)?
-            .read_protected_pe_pdb(binary,pdb,binary_sha256,pdb_sha256,
-                bundle_sha256,slide,rip)?;
-        if self.session.phase()!=DapPhase::Stopped ||
-           self.session.source_candidate()
-               .and_then(|f|f.instruction_address)!=Some(rip)
+        let result = self
+            .process
+            .as_mut()
+            .ok_or(SupervisorError::NoContainment)?
+            .read_protected_pe_pdb(
+                binary,
+                pdb,
+                binary_sha256,
+                pdb_sha256,
+                bundle_sha256,
+                slide,
+                rip,
+            )?;
+        if self.session.phase() != DapPhase::Stopped
+            || self
+                .session
+                .source_candidate()
+                .and_then(|f| f.instruction_address)
+                != Some(rip)
         {
             return Err(SupervisorError::NoContainment);
         }
@@ -141,7 +164,13 @@ impl DapGateway {
     /// The only permitted test-only continue is the existing fixed DAP
     /// disconnect, never arbitrary step/continue. The original LLDB
     /// event-owner thread must emit CONTINUED before terminal success.
-    #[cfg(all(windows, any(all(feature = "dev045d5-ci-event-owner", debug_assertions), feature="fin04-release-owner-evidence")))]
+    #[cfg(all(
+        windows,
+        any(
+            all(feature = "dev045d5-ci-event-owner", debug_assertions),
+            feature = "fin04-release-owner-evidence"
+        )
+    ))]
     pub(crate) fn close_with_actual_owner_continue_for_ci(
         mut self,
         seq: u64,
@@ -171,7 +200,13 @@ impl DapGateway {
     }
     /// Exact kernel DebuggerThread sideband from a separately allowlisted
     /// pipe, not DAP stdout; this has no public Tauri/WebView action.
-    #[cfg(all(windows, any(all(debug_assertions, feature = "dev045d5-ci-event-owner"), feature = "fin04-release-owner-evidence")))]
+    #[cfg(all(
+        windows,
+        any(
+            all(debug_assertions, feature = "dev045d5-ci-event-owner"),
+            feature = "fin04-release-owner-evidence"
+        )
+    ))]
     pub(crate) fn verify_lldb_kernel_event_owner(
         &mut self,
         pid: u32,
@@ -443,9 +478,14 @@ impl DapGateway {
         {
             return self.quarantine();
         }
-        self.supervisor.native_mark_release_pending(&self.job_id)
+        self.supervisor
+            .native_mark_release_pending(&self.job_id)
             .map_err(|e| {
-                #[cfg(test)] eprintln!("FIN01D_RELEASE_FAILURE stage=mark_release_pending error={}", e.code());
+                #[cfg(test)]
+                eprintln!(
+                    "FIN01D_RELEASE_FAILURE stage=mark_release_pending error={}",
+                    e.code()
+                );
                 e
             })?;
         self.process
@@ -453,13 +493,21 @@ impl DapGateway {
             .ok_or(SupervisorError::Quarantined)?
             .release_after_verified_terminal()
             .map_err(|e| {
-                #[cfg(test)] eprintln!("FIN01D_RELEASE_FAILURE stage=service_release error={}", e.code());
+                #[cfg(test)]
+                eprintln!(
+                    "FIN01D_RELEASE_FAILURE stage=service_release error={}",
+                    e.code()
+                );
                 e
             })?;
         self.supervisor
             .native_finish(&self.job_id, true, true, true)
             .map_err(|e| {
-                #[cfg(test)] eprintln!("FIN01D_RELEASE_FAILURE stage=terminal_receipt error={}", e.code());
+                #[cfg(test)]
+                eprintln!(
+                    "FIN01D_RELEASE_FAILURE stage=terminal_receipt error={}",
+                    e.code()
+                );
                 e
             })?;
         self.finished = true;
@@ -499,12 +547,14 @@ impl Drop for DapGateway {
             };
             // Record CancelRequested BEFORE OS termination; a failed
             // descendant kill leaves Uncertain and blocks later admissions.
-            match self.supervisor
+            match self
+                .supervisor
                 .cancel_running_with_service_release_pending(&self.job_id, &mut broker)
             {
                 Ok(summary) if summary.phase == JobPhase::ReleasePending => {
                     if process.release_after_verified_terminal().is_ok() {
-                        if self.supervisor
+                        if self
+                            .supervisor
                             .native_finish_cancelled_after_service_release(&self.job_id)
                             .is_err()
                         {
@@ -626,18 +676,17 @@ mod tests {
     }
     #[test]
     fn dropped_dap_requires_original_scm_release_ack_or_recovery_quarantine() {
-        let journal = std::env::temp_dir().join(format!(
-            "wo6-dap-release-fail-{}", rand::random::<u128>()
-        ));
+        let journal =
+            std::env::temp_dir().join(format!("wo6-dap-release-fail-{}", rand::random::<u128>()));
         let supervisor = Arc::new(Supervisor::open(journal.clone()).unwrap());
         let plan = plan();
         let job = supervisor.prepare(plan.clone()).unwrap();
-        supervisor.record_human_approval(
-            &job.job_id, &job.plan_sha256, &plan.source_head, true
-        ).unwrap();
-        supervisor.consume_grant_after_attestation(
-            &job.job_id, &plan, &proof()
-        ).unwrap();
+        supervisor
+            .record_human_approval(&job.job_id, &job.plan_sha256, &plan.source_head, true)
+            .unwrap();
+        supervisor
+            .consume_grant_after_attestation(&job.job_id, &plan, &proof())
+            .unwrap();
         supervisor.native_mark_running(&job.job_id).unwrap();
         let shared = Arc::new(Fixture::default());
         *shared.fail_release.lock().unwrap() = true;
@@ -646,8 +695,11 @@ mod tests {
             &job.job_id,
             &job.plan_sha256,
             &proof(),
-            Box::new(Mock { shared: Arc::clone(&shared) }),
-        ).unwrap();
+            Box::new(Mock {
+                shared: Arc::clone(&shared),
+            }),
+        )
+        .unwrap();
         drop(gateway);
         assert_eq!(*shared.terminated.lock().unwrap(), 1);
         assert_eq!(*shared.released.lock().unwrap(), 0);
@@ -657,7 +709,10 @@ mod tests {
         assert_eq!(jobs.len(), 1);
         assert_eq!(jobs[0].phase, JobPhase::RecoveryRequired);
         assert!(jobs[0].requires_reconciliation);
-        assert_eq!(reopened.prepare(plan).unwrap_err(), SupervisorError::Quarantined);
+        assert_eq!(
+            reopened.prepare(plan).unwrap_err(),
+            SupervisorError::Quarantined
+        );
         drop(reopened);
         let _ = std::fs::remove_file(journal);
     }
@@ -702,10 +757,20 @@ mod tests {
         assert_eq!(gateway.poll().unwrap(), vec![DapEvent::ThreadsReceived]);
         // Preserve the original failure before Drop can make a second recovery transition.
         // Never classify an uncertain close as successful.
-        gateway.close().map_err(|e| {
-            eprintln!("FIN01D_DAP_CLOSE_FAILURE error={} jobs={:?}", e.code(), supervisor.inspect().map(|jobs| jobs.into_iter().map(|j| (j.phase, j.requires_reconciliation)).collect::<Vec<_>>()));
-            e
-        }).unwrap();
+        gateway
+            .close()
+            .map_err(|e| {
+                eprintln!(
+                    "FIN01D_DAP_CLOSE_FAILURE error={} jobs={:?}",
+                    e.code(),
+                    supervisor.inspect().map(|jobs| jobs
+                        .into_iter()
+                        .map(|j| (j.phase, j.requires_reconciliation))
+                        .collect::<Vec<_>>())
+                );
+                e
+            })
+            .unwrap();
         let last = supervisor.inspect().unwrap().pop().unwrap();
         assert_eq!(last.phase, JobPhase::Completed);
         assert!(!last.requires_reconciliation);

@@ -14,7 +14,10 @@ use crate::{
     live_output::LiveOutput,
     snapshot::{verify_input, PublishedInput},
     windows_broker::TrustedBroker,
-    windows_cap_tree::{audit_tree, digest_tree, live_output_quota, publish_into_native_parent, publish_closed_compiler_output},
+    windows_cap_tree::{
+        audit_tree, digest_tree, live_output_quota, publish_closed_compiler_output,
+        publish_into_native_parent,
+    },
     JobPhase, JobPlan, JobSummary, NativeTreeTerminator, OsContainmentProof, Supervisor,
     SupervisorError,
 };
@@ -39,8 +42,7 @@ use std::{
 use windows_sys::Win32::{
     Foundation::{
         CloseHandle, GetLastError, LocalFree, ERROR_ALREADY_EXISTS, ERROR_FILE_NOT_FOUND,
-        ERROR_INVALID_PARAMETER, HANDLE, INVALID_HANDLE_VALUE,
-        WAIT_OBJECT_0, WAIT_TIMEOUT,
+        ERROR_INVALID_PARAMETER, HANDLE, INVALID_HANDLE_VALUE, WAIT_OBJECT_0, WAIT_TIMEOUT,
     },
     Security::{
         Authorization::ConvertSidToStringSidW,
@@ -64,10 +66,10 @@ use windows_sys::Win32::{
         },
         Threading::{
             CreateProcessW, DeleteProcThreadAttributeList, GetExitCodeProcess,
-            InitializeProcThreadAttributeList, OpenProcess, OpenProcessToken, ResumeThread, TerminateProcess,
-            PROCESS_QUERY_LIMITED_INFORMATION,
-            UpdateProcThreadAttribute, WaitForSingleObject, CREATE_NO_WINDOW, CREATE_SUSPENDED,
-            CREATE_UNICODE_ENVIRONMENT, EXTENDED_STARTUPINFO_PRESENT, PROCESS_INFORMATION,
+            InitializeProcThreadAttributeList, OpenProcess, OpenProcessToken, ResumeThread,
+            TerminateProcess, UpdateProcThreadAttribute, WaitForSingleObject, CREATE_NO_WINDOW,
+            CREATE_SUSPENDED, CREATE_UNICODE_ENVIRONMENT, EXTENDED_STARTUPINFO_PRESENT,
+            PROCESS_INFORMATION, PROCESS_QUERY_LIMITED_INFORMATION,
             PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES, STARTF_USESTDHANDLES, STARTUPINFOEXW,
         },
     },
@@ -297,14 +299,22 @@ fn publish_output(
     // toolchains/source input retain the original strict nNumberOfLinks=1 rule.
     let (published_bytes, published_hash) = if compiler_build {
         publish_closed_compiler_output(
-            child_output, &parent, OsStr::new(id),
-            MAX_OUTPUT_FILES, MAX_OUTPUT_BYTES, MAX_OUTPUT_FILE_BYTES,
+            child_output,
+            &parent,
+            OsStr::new(id),
+            MAX_OUTPUT_FILES,
+            MAX_OUTPUT_BYTES,
+            MAX_OUTPUT_FILE_BYTES,
         )?
     } else {
         let (bytes, original_hash) = output_seal(child_output)?;
         let (published_bytes, published_hash) = publish_into_native_parent(
-            child_output, &parent, OsStr::new(id),
-            MAX_OUTPUT_FILES, MAX_OUTPUT_BYTES, MAX_OUTPUT_FILE_BYTES,
+            child_output,
+            &parent,
+            OsStr::new(id),
+            MAX_OUTPUT_FILES,
+            MAX_OUTPUT_BYTES,
+            MAX_OUTPUT_FILE_BYTES,
         )?;
         if original_hash != published_hash || bytes != published_bytes {
             return Err(denied());
@@ -841,7 +851,7 @@ fn command_for(
         "rust_check" => ("check", "Cargo.toml"),
         "rust_build" => ("build", "Cargo.toml"),
         "rust_tests" => ("test", "Cargo.toml"),
-        id if crate::rust_exact_case_name(id).is_some()=>("test","Cargo.toml"),
+        id if crate::rust_exact_case_name(id).is_some() => ("test", "Cargo.toml"),
         "lu_ide_host_tests" => ("test", "ide/host/Cargo.toml"),
         _ => return Err(SupervisorError::InvalidPlan),
     };
@@ -853,13 +863,20 @@ fn command_for(
     if !clean_meta(&file)?.is_file() {
         return Err(denied());
     }
-    let exact_case=crate::rust_exact_case_name(&plan.recipe_id);
-    let command=if let Some(name)=exact_case{
-        format!("\"{}\" test --offline --locked --manifest-path \"{}\" {} -- --exact",
-            exe.display(),file.display(),name)
-    }else{
-        format!("\"{}\" {subcommand} --offline --locked --manifest-path \"{}\"",
-            exe.display(),file.display())
+    let exact_case = crate::rust_exact_case_name(&plan.recipe_id);
+    let command = if let Some(name) = exact_case {
+        format!(
+            "\"{}\" test --offline --locked --manifest-path \"{}\" {} -- --exact",
+            exe.display(),
+            file.display(),
+            name
+        )
+    } else {
+        format!(
+            "\"{}\" {subcommand} --offline --locked --manifest-path \"{}\"",
+            exe.display(),
+            file.display()
+        )
     };
     // All components are host-determined fixed paths; no project string is
     // inserted into process command, environment or executable selection.
@@ -1413,7 +1430,11 @@ where
                 let _ = supervisor.native_quarantine_after_error(job_id);
                 return Err(denied());
             }
-            acceptance_trace(if code == 0 { "runtime_parent_exited_zero" } else { "runtime_parent_exited_nonzero" });
+            acceptance_trace(if code == 0 {
+                "runtime_parent_exited_zero"
+            } else {
+                "runtime_parent_exited_nonzero"
+            });
             break Some(code);
         }
         if waited != WAIT_TIMEOUT {
@@ -1506,7 +1527,11 @@ where
     // All descendants must exit or be killed, including after the Cargo
     // parent process exits. Job Object handle remains open through receipt.
     let naturally_empty = job.await_empty(REAP_LIMIT);
-    acceptance_trace(if naturally_empty { "terminal_kernel_job_naturally_empty" } else { "terminal_kernel_job_requires_reap" });
+    acceptance_trace(if naturally_empty {
+        "terminal_kernel_job_naturally_empty"
+    } else {
+        "terminal_kernel_job_requires_reap"
+    });
     let reaped = if naturally_empty {
         true
     } else {
@@ -1541,7 +1566,12 @@ where
     let publication = if stopped {
         None
     } else {
-        match publish_output(&output, &private_parent, job_id, plan.recipe_id == "rust_build") {
+        match publish_output(
+            &output,
+            &private_parent,
+            job_id,
+            plan.recipe_id == "rust_build",
+        ) {
             Ok(published) => {
                 acceptance_trace("terminal_output_published_and_resealed");
                 Some(published)
@@ -1588,10 +1618,12 @@ where
             let _ = supervisor.native_quarantine_after_error(job_id);
             return Err(SupervisorError::Quarantined);
         }
-        supervisor.native_mark_release_pending(job_id).map_err(|reason| {
-            acceptance_trace("terminal_release_pending_fsync_failed");
-            reason
-        })?;
+        supervisor
+            .native_mark_release_pending(job_id)
+            .map_err(|reason| {
+                acceptance_trace("terminal_release_pending_fsync_failed");
+                reason
+            })?;
         acceptance_trace("terminal_release_pending_fsynced");
         if let Err(error) = broker.release_empty() {
             acceptance_trace("terminal_scm_release_ack_failed");
@@ -1688,79 +1720,91 @@ pub fn reconcile_windows_interrupted(
 /// were independently established by native acceptance.
 #[cfg(feature = "protected-recovery-service")]
 pub fn verify_global_worker_quiescence(
-    owner_pid:u32, jobs:&[JobSummary]
-)->Result<crate::KernelQuiescenceWitness,SupervisorError>{
-    if owner_pid==0 || jobs.len()>4096 || owner_pid==std::process::id(){
+    owner_pid: u32,
+    jobs: &[JobSummary],
+) -> Result<crate::KernelQuiescenceWitness, SupervisorError> {
+    if owner_pid == 0 || jobs.len() > 4096 || owner_pid == std::process::id() {
         return Err(SupervisorError::Quarantined);
     }
-    let owner=unsafe{OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION,0,owner_pid)};
-    if !owner.is_null(){
-        let handle=Handle::new(owner)?;
+    let owner = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, owner_pid) };
+    if !owner.is_null() {
+        let handle = Handle::new(owner)?;
         // Signaled kernel process object means exited, not merely an absent
         // user-mode heartbeat. Access errors remain quarantine.
-        if unsafe{WaitForSingleObject(handle.0,0)}!=WAIT_OBJECT_0{
+        if unsafe { WaitForSingleObject(handle.0, 0) } != WAIT_OBJECT_0 {
             return Err(SupervisorError::Quarantined);
         }
-    } else if unsafe{GetLastError()}!=ERROR_INVALID_PARAMETER {
+    } else if unsafe { GetLastError() } != ERROR_INVALID_PARAMETER {
         return Err(SupervisorError::Quarantined);
     }
-    let mut identities=std::collections::BTreeSet::new();
-    let mut absent=0usize;
-    let mut empty=0usize;
+    let mut identities = std::collections::BTreeSet::new();
+    let mut absent = 0usize;
+    let mut empty = 0usize;
     for row in jobs {
-        if row.requires_reconciliation ||
-            !matches!(row.phase,JobPhase::Completed|JobPhase::Cancelled|JobPhase::Failed|JobPhase::Denied) ||
-            !valid_job_id(&row.job_id) ||
-            !row.job_id.bytes().all(|b|!b.is_ascii_uppercase()) ||
-            row.plan_sha256.len()!=64 ||
-            !row.plan_sha256.bytes().all(|b|b.is_ascii_hexdigit() && !b.is_ascii_uppercase()) ||
-            !identities.insert(row.job_id.as_str()) {
+        if row.requires_reconciliation
+            || !matches!(
+                row.phase,
+                JobPhase::Completed | JobPhase::Cancelled | JobPhase::Failed | JobPhase::Denied
+            )
+            || !valid_job_id(&row.job_id)
+            || !row.job_id.bytes().all(|b| !b.is_ascii_uppercase())
+            || row.plan_sha256.len() != 64
+            || !row
+                .plan_sha256
+                .bytes()
+                .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
+            || !identities.insert(row.job_id.as_str())
+        {
             return Err(SupervisorError::Quarantined);
         }
-        let name=job_name(&row.job_id,&row.plan_sha256)?;
-        let raw=unsafe{OpenJobObjectW(JOB_OBJECT_QUERY_ACCESS,0,name.as_ptr())};
-        if raw.is_null(){
-            if unsafe{GetLastError()}!=ERROR_FILE_NOT_FOUND {
+        let name = job_name(&row.job_id, &row.plan_sha256)?;
+        let raw = unsafe { OpenJobObjectW(JOB_OBJECT_QUERY_ACCESS, 0, name.as_ptr()) };
+        if raw.is_null() {
+            if unsafe { GetLastError() } != ERROR_FILE_NOT_FOUND {
                 return Err(SupervisorError::Quarantined);
             }
-            absent+=1;
+            absent += 1;
             continue;
         }
-        let job=Job{handle:Handle::new(raw)?};
+        let job = Job {
+            handle: Handle::new(raw)?,
+        };
         // An empty but foreign lookalike Job is not an accepted containment
         // witness. Query the actual kernel-enforced kill-on-close property
         // used by the first-party protected launcher.
-        let mut limits=JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
-        if unsafe{
+        let mut limits = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
+        if unsafe {
             QueryInformationJobObject(
-                job.handle.0,JobObjectExtendedLimitInformation,
+                job.handle.0,
+                JobObjectExtendedLimitInformation,
                 (&mut limits as *mut JOBOBJECT_EXTENDED_LIMIT_INFORMATION).cast(),
                 size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
                 ptr::null_mut(),
             )
-        }==0 || limits.BasicLimitInformation.LimitFlags &
-            JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE==0 ||
-            !matches!(job.empty(),Ok(true)){
+        } == 0
+            || limits.BasicLimitInformation.LimitFlags & JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE == 0
+            || !matches!(job.empty(), Ok(true))
+        {
             return Err(SupervisorError::Quarantined);
         }
-        empty+=1;
+        empty += 1;
     }
     // Repeat owner-exit check to avoid relying on a stale one-time read.
-    let owner_again=unsafe{OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION,0,owner_pid)};
-    if !owner_again.is_null(){
-        let handle=Handle::new(owner_again)?;
-        if unsafe{WaitForSingleObject(handle.0,0)}!=WAIT_OBJECT_0{
+    let owner_again = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, owner_pid) };
+    if !owner_again.is_null() {
+        let handle = Handle::new(owner_again)?;
+        if unsafe { WaitForSingleObject(handle.0, 0) } != WAIT_OBJECT_0 {
             return Err(SupervisorError::Quarantined);
         }
-    } else if unsafe{GetLastError()}!=ERROR_INVALID_PARAMETER {
+    } else if unsafe { GetLastError() } != ERROR_INVALID_PARAMETER {
         return Err(SupervisorError::Quarantined);
     }
-    Ok(crate::KernelQuiescenceWitness{
-        platform:"windows_job_object",
-        examined_job_identities:jobs.len(),
-        kernel_objects_empty:empty,
-        kernel_objects_absent:absent,
-        marker_owner_exited:true,
+    Ok(crate::KernelQuiescenceWitness {
+        platform: "windows_job_object",
+        examined_job_identities: jobs.len(),
+        kernel_objects_empty: empty,
+        kernel_objects_absent: absent,
+        marker_owner_exited: true,
     })
 }
 
@@ -1820,8 +1864,8 @@ mod tests {
     use super::*;
     #[cfg(feature = "protected-recovery-service")]
     #[test]
-    fn fin01d_kernel_attestation_never_accepts_the_live_recovery_owner(){
-        assert!(verify_global_worker_quiescence(std::process::id(),&[]).is_err());
+    fn fin01d_kernel_attestation_never_accepts_the_live_recovery_owner() {
+        assert!(verify_global_worker_quiescence(std::process::id(), &[]).is_err());
     }
     #[test]
     fn two_windows_streams_preserve_identity_and_offsets() {

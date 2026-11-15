@@ -8,7 +8,14 @@
 //! LLVM decodes the actual compiler PDB independently of LLDB-DAP.
 //! The parent WindowsDapSession must verify original durable approvals,
 //! source snapshots, receipt hashes and unchanged stopped DAP state again.
-#![cfg(all(windows, any(all(debug_assertions, feature = "dev045d4c-ci-oracle"), feature = "fin04-release-owner-evidence", all(debug_assertions,feature="fin04w2-split-native"))))]
+#![cfg(all(
+    windows,
+    any(
+        all(debug_assertions, feature = "dev045d4c-ci-oracle"),
+        feature = "fin04-release-owner-evidence",
+        all(debug_assertions, feature = "fin04w2-split-native")
+    )
+))]
 use crate::{
     project_debug_target::SealedProjectDebugTarget,
     windows_kernel_pc::{WindowsLoadedModuleWitness, WindowsThreadRipSample},
@@ -24,7 +31,11 @@ use std::{
     path::{Component, Path},
 };
 #[cfg(all(debug_assertions, feature = "dev045d4c-ci-oracle"))]
-use std::{process::{Command,Stdio},thread,time::{Duration,Instant}};
+use std::{
+    process::{Command, Stdio},
+    thread,
+    time::{Duration, Instant},
+};
 
 const MAX_SOURCE_BYTES: u64 = 2 * 1024 * 1024;
 #[cfg(all(debug_assertions, feature = "dev045d4c-ci-oracle"))]
@@ -276,7 +287,8 @@ pub(crate) fn independently_verify_pdb_line_with_reader<F>(
     candidate: &SourceLineCandidate,
     protected_read: F,
 ) -> Result<IndependentPdbLine, SupervisorError>
-where F: FnOnce(&Path, u64, u64) -> Result<Value, SupervisorError>
+where
+    F: FnOnce(&Path, u64, u64) -> Result<Value, SupervisorError>,
 {
     if !thread.two_matching_samples
         || !thread.job_membership_rechecked
@@ -361,12 +373,13 @@ where F: FnOnce(&Path, u64, u64) -> Result<Value, SupervisorError>
         staged_dap_bundle,
         "dap_lldb_project",
     )?;
-    if tree_sha != original_bundle_sha256 ||
-        bounded_sha(&tool, 64 * 1024 * 1024)?.len() != 64 {
+    if tree_sha != original_bundle_sha256 || bounded_sha(&tool, 64 * 1024 * 1024)?.len() != 64 {
         return Err(denied());
     }
     let json = protected_read(
-        &pe, module.loaded_base - module.preferred_base, thread.observed_rip,
+        &pe,
+        module.loaded_base - module.preferred_base,
+        thread.observed_rip,
     )?;
     equal_mapped_line(
         &json,
@@ -406,65 +419,88 @@ where F: FnOnce(&Path, u64, u64) -> Result<Value, SupervisorError>
 /// pair of SCM services. Native LLVM executes through the first-party
 /// debugger-owned capped Job, never std::process::Command or untrusted DAP.
 /// The build-to-source lineage and installed acceptance remain separate.
-#[cfg(all(debug_assertions,feature="fin04w2-split-native"))]
-#[derive(Clone,Debug)]
+#[cfg(all(debug_assertions, feature = "fin04w2-split-native"))]
+#[derive(Clone, Debug)]
 pub(crate) struct SplitSourceLineWitness {
-    pub(crate) original_source_sha256:String,
-    pub(crate) verified_line:u32,
-    pub(crate) verified_rip:u64,
-    pub(crate) sealed_pe_sha256:String,
-    pub(crate) sealed_pdb_sha256:String,
-    pub(crate) os_relocation_bias:u64,
-    pub(crate) independent_llvm_pdb_source_line_verified:bool,
+    pub(crate) original_source_sha256: String,
+    pub(crate) verified_line: u32,
+    pub(crate) verified_rip: u64,
+    pub(crate) sealed_pe_sha256: String,
+    pub(crate) sealed_pdb_sha256: String,
+    pub(crate) os_relocation_bias: u64,
+    pub(crate) independent_llvm_pdb_source_line_verified: bool,
 }
-#[cfg(all(debug_assertions,feature="fin04w2-split-native"))]
+#[cfg(all(debug_assertions, feature = "fin04w2-split-native"))]
 pub(crate) fn verify_split_native_stopped_source_with_reader<F>(
-    sealed_exe:&Path,sealed_pdb:&Path,
-    approved_exe_sha:&str,approved_pdb_sha:&str,
-    approved_source:&Path,expected_source_sha:&str,
-    compiled_dap_path:&str,expected_line:u32,
-    verified_native_rip:u64,os_load_bias:u64,
-    reader:F,
-)->Result<SplitSourceLineWitness,SupervisorError>
-where F:FnOnce(&Path,u64,u64)->Result<Value,SupervisorError>{
-    if verified_native_rip==0||expected_line==0||expected_line>10_000_000
-        ||expected_source_sha.len()!=64
-        ||!expected_source_sha.bytes().all(|b|b.is_ascii_hexdigit())
-        ||os_load_bias>verified_native_rip
-        ||approved_source.file_name().and_then(|x|x.to_str())!=Some("main.rs"){
+    sealed_exe: &Path,
+    sealed_pdb: &Path,
+    approved_exe_sha: &str,
+    approved_pdb_sha: &str,
+    approved_source: &Path,
+    expected_source_sha: &str,
+    compiled_dap_path: &str,
+    expected_line: u32,
+    verified_native_rip: u64,
+    os_load_bias: u64,
+    reader: F,
+) -> Result<SplitSourceLineWitness, SupervisorError>
+where
+    F: FnOnce(&Path, u64, u64) -> Result<Value, SupervisorError>,
+{
+    if verified_native_rip == 0
+        || expected_line == 0
+        || expected_line > 10_000_000
+        || expected_source_sha.len() != 64
+        || !expected_source_sha.bytes().all(|b| b.is_ascii_hexdigit())
+        || os_load_bias > verified_native_rip
+        || approved_source.file_name().and_then(|x| x.to_str()) != Some("main.rs")
+    {
         return Err(denied());
     }
-    let parent=approved_source.parent().ok_or_else(denied)?;
-    if parent.file_name().and_then(|x|x.to_str())!=Some("src"){
+    let parent = approved_source.parent().ok_or_else(denied)?;
+    if parent.file_name().and_then(|x| x.to_str()) != Some("src") {
         return Err(denied());
     }
     // Preserve the original compiler-path ↔ immutable src/main.rs
     // identity; basename equality never authenticates DAP/PDB source.
-    compiled_source_identity(compiled_dap_path,approved_source)?;
+    compiled_source_identity(compiled_dap_path, approved_source)?;
     crate::debug_symbol_verification::verify_exact_sealed_windows_pe_pdb(
-        sealed_exe,sealed_pdb,approved_exe_sha,approved_pdb_sha,
+        sealed_exe,
+        sealed_pdb,
+        approved_exe_sha,
+        approved_pdb_sha,
     )?;
-    if bounded_sha(approved_source,MAX_SOURCE_BYTES)?
-        !=expected_source_sha.to_ascii_lowercase(){return Err(denied());}
-    let result=reader(sealed_exe,os_load_bias,verified_native_rip)?;
+    if bounded_sha(approved_source, MAX_SOURCE_BYTES)? != expected_source_sha.to_ascii_lowercase() {
+        return Err(denied());
+    }
+    let result = reader(sealed_exe, os_load_bias, verified_native_rip)?;
     // This is the SAME original independent compiler/PDB path+line
     // comparison, not a new "DAP says stopped therefore accepted" rule.
     equal_mapped_line(
-        &result,verified_native_rip,approved_source,
-        compiled_dap_path,sealed_exe,expected_line,
+        &result,
+        verified_native_rip,
+        approved_source,
+        compiled_dap_path,
+        sealed_exe,
+        expected_line,
     )?;
     crate::debug_symbol_verification::verify_exact_sealed_windows_pe_pdb(
-        sealed_exe,sealed_pdb,approved_exe_sha,approved_pdb_sha,
+        sealed_exe,
+        sealed_pdb,
+        approved_exe_sha,
+        approved_pdb_sha,
     )?;
-    if bounded_sha(approved_source,MAX_SOURCE_BYTES)?
-        !=expected_source_sha.to_ascii_lowercase(){return Err(denied());}
-    Ok(SplitSourceLineWitness{
-        original_source_sha256:expected_source_sha.to_ascii_lowercase(),
-        verified_line:expected_line,verified_rip:verified_native_rip,
-        sealed_pe_sha256:approved_exe_sha.to_ascii_lowercase(),
-        sealed_pdb_sha256:approved_pdb_sha.to_ascii_lowercase(),
-        os_relocation_bias:os_load_bias,
-        independent_llvm_pdb_source_line_verified:true,
+    if bounded_sha(approved_source, MAX_SOURCE_BYTES)? != expected_source_sha.to_ascii_lowercase() {
+        return Err(denied());
+    }
+    Ok(SplitSourceLineWitness {
+        original_source_sha256: expected_source_sha.to_ascii_lowercase(),
+        verified_line: expected_line,
+        verified_rip: verified_native_rip,
+        sealed_pe_sha256: approved_exe_sha.to_ascii_lowercase(),
+        sealed_pdb_sha256: approved_pdb_sha.to_ascii_lowercase(),
+        os_relocation_bias: os_load_bias,
+        independent_llvm_pdb_source_line_verified: true,
     })
 }
 
@@ -481,12 +517,22 @@ pub(crate) fn independently_verify_pdb_line_for_ci(
     candidate: &SourceLineCandidate,
 ) -> Result<IndependentPdbLine, SupervisorError> {
     independently_verify_pdb_line_with_reader(
-        staged_dap_bundle, original_bundle_sha256, target,
-        native_source_root, module, thread, candidate,
-        |pe, slide, rip| run_measured_reader(
-            &staged_dap_bundle.join("bin/llvm-symbolizer.exe"),
-            pe, slide, rip, staged_dap_bundle,
-        ),
+        staged_dap_bundle,
+        original_bundle_sha256,
+        target,
+        native_source_root,
+        module,
+        thread,
+        candidate,
+        |pe, slide, rip| {
+            run_measured_reader(
+                &staged_dap_bundle.join("bin/llvm-symbolizer.exe"),
+                pe,
+                slide,
+                rip,
+                staged_dap_bundle,
+            )
+        },
     )
 }
 

@@ -238,16 +238,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // empty-Job / NUL-lease release ACK before the terminal Cancelled.
         // The historical adjacent pair wrongly rejected this safer protocol.
         if !phases.windows(3).any(|triple| {
-            triple == [
-                JobPhase::CancelRequested,
-                JobPhase::ReleasePending,
-                JobPhase::Cancelled,
-            ]
+            triple
+                == [
+                    JobPhase::CancelRequested,
+                    JobPhase::ReleasePending,
+                    JobPhase::Cancelled,
+                ]
         }) || history.last().is_none_or(|entry| {
             entry.body.phase != JobPhase::Cancelled
                 || entry.body.outcome_code != "native_cancel_service_release_verified"
         }) {
-            return Err("DENIED: protected cancellation missing distinct fsynced SCM release boundary".into());
+            return Err(
+                "DENIED: protected cancellation missing distinct fsynced SCM release boundary"
+                    .into(),
+            );
         }
         drop(supervisor);
         let reopened = Supervisor::open(root.join("supervisor-receipts.jsonl"))

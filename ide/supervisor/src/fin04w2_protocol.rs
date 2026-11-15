@@ -74,9 +74,12 @@ pub(crate) fn inspect_shape_only(
             != digest_bytes(expected_plan_hash).ok_or(SupervisorError::InvalidPlan)?
         || bytes[TARGET_START..NONCE_START]
             != digest_bytes(
-                sealed_plan.debug_target_binding_sha256.as_deref()
+                sealed_plan
+                    .debug_target_binding_sha256
+                    .as_deref()
                     .ok_or(SupervisorError::InvalidPlan)?,
-            ).ok_or(SupervisorError::InvalidPlan)?
+            )
+            .ok_or(SupervisorError::InvalidPlan)?
         || bytes[NONCE_START..WIRE_SIZE] != expected_nonce[..]
     {
         return Err(SupervisorError::InvalidPlan);
@@ -118,38 +121,42 @@ mod tests {
     #[test]
     fn exact_fixed_verbs_but_no_execution_authority() {
         for verb in 1..=6 {
-            assert!(inspect_shape_only(&packet(verb), &plan(), &"aa".repeat(32), &[0x42;16]).is_ok());
+            assert!(
+                inspect_shape_only(&packet(verb), &plan(), &"aa".repeat(32), &[0x42; 16]).is_ok()
+            );
         }
         for verb in [0, 7, 32, 255] {
-            assert!(inspect_shape_only(&packet(verb), &plan(), &"aa".repeat(32), &[0x42;16]).is_err());
+            assert!(
+                inspect_shape_only(&packet(verb), &plan(), &"aa".repeat(32), &[0x42; 16]).is_err()
+            );
         }
     }
     #[test]
     fn reject_wrong_plan_stale_nonce_extra_bytes_and_unsealed_target() {
         let original = packet(2);
-        assert!(inspect_shape_only(&original, &plan(), &"bb".repeat(32), &[0x42;16]).is_err());
-        assert!(inspect_shape_only(&original, &plan(), &"aa".repeat(32), &[0x41;16]).is_err());
+        assert!(inspect_shape_only(&original, &plan(), &"bb".repeat(32), &[0x42; 16]).is_err());
+        assert!(inspect_shape_only(&original, &plan(), &"aa".repeat(32), &[0x41; 16]).is_err());
         let mut extra = original.to_vec();
         extra.push(0);
-        assert!(inspect_shape_only(&extra, &plan(), &"aa".repeat(32), &[0x42;16]).is_err());
+        assert!(inspect_shape_only(&extra, &plan(), &"aa".repeat(32), &[0x42; 16]).is_err());
         let mut changed = original;
         changed[10] = 1;
-        assert!(inspect_shape_only(&changed, &plan(), &"aa".repeat(32), &[0x42;16]).is_err());
+        assert!(inspect_shape_only(&changed, &plan(), &"aa".repeat(32), &[0x42; 16]).is_err());
         changed = original;
         changed[0] ^= 1; // fixed magic
-        assert!(inspect_shape_only(&changed, &plan(), &"aa".repeat(32), &[0x42;16]).is_err());
+        assert!(inspect_shape_only(&changed, &plan(), &"aa".repeat(32), &[0x42; 16]).is_err());
         changed = original;
         changed[8] = 2; // wrong version
-        assert!(inspect_shape_only(&changed, &plan(), &"aa".repeat(32), &[0x42;16]).is_err());
+        assert!(inspect_shape_only(&changed, &plan(), &"aa".repeat(32), &[0x42; 16]).is_err());
         changed = original;
         changed[TARGET_START] ^= 1; // target changed
-        assert!(inspect_shape_only(&changed, &plan(), &"aa".repeat(32), &[0x42;16]).is_err());
+        assert!(inspect_shape_only(&changed, &plan(), &"aa".repeat(32), &[0x42; 16]).is_err());
         let mut wrong = plan();
         wrong.debug_target_binding_sha256 = None;
-        assert!(inspect_shape_only(&original, &wrong, &"aa".repeat(32), &[0x42;16]).is_err());
+        assert!(inspect_shape_only(&original, &wrong, &"aa".repeat(32), &[0x42; 16]).is_err());
         wrong = plan();
         wrong.process_limit = 48;
         #[cfg(windows)]
-        assert!(inspect_shape_only(&original, &wrong, &"aa".repeat(32), &[0x42;16]).is_err());
+        assert!(inspect_shape_only(&original, &wrong, &"aa".repeat(32), &[0x42; 16]).is_err());
     }
 }

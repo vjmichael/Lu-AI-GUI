@@ -39,8 +39,10 @@ fn candidate(entry: &ArtifactEntry) -> bool {
     // root, yielding debug/<bin>.exe rather than target/debug/<bin>.exe.
     // Only these exact two fixed Cargo layouts are accepted; nested deps
     // binaries are still excluded, and multiple root candidates deny.
-    let Some(base) = p.strip_prefix("target/debug/")
-        .or_else(|| p.strip_prefix("debug/")) else {
+    let Some(base) = p
+        .strip_prefix("target/debug/")
+        .or_else(|| p.strip_prefix("debug/"))
+    else {
         return false;
     };
     if base.is_empty()
@@ -281,7 +283,9 @@ mod tests {
     #[test]
     fn sealed_windows_cargo_target_dir_uses_exact_debug_root() {
         let candidate_at = |name: &str| ArtifactEntry {
-            relative_path: name.into(), bytes: 16, sha256: "a".repeat(64)
+            relative_path: name.into(),
+            bytes: 16,
+            sha256: "a".repeat(64),
         };
         assert!(candidate(&candidate_at("debug/fixture.exe")));
         assert!(candidate(&candidate_at("target/debug/fixture.exe")));

@@ -28,15 +28,20 @@ impl RuntimeProfile {
         match id {
             "python_pytest" => Some(Self::PythonPytest),
             "js_tests" => Some(Self::NodeTests),
-            id if crate::exact_framework_case(id).is_some() =>
+            id if crate::exact_framework_case(id).is_some() => {
                 match crate::exact_framework_case(id)?.0 {
                     "python_pytest" => Some(Self::PythonPytest),
                     "js_tests" => Some(Self::NodeTests),
                     _ => None,
-                },
+                }
+            }
             "cpp_cmake_build" => Some(Self::CmakeCTest),
             "uv_sync_offline" if cfg!(feature = "package-uv-worker") => Some(Self::UvSyncOffline),
-            "vcpkg_install_offline" if cfg!(all(feature = "package-vcpkg-worker", target_os = "linux")) => Some(Self::VcpkgInstallOffline),
+            "vcpkg_install_offline"
+                if cfg!(all(feature = "package-vcpkg-worker", target_os = "linux")) =>
+            {
+                Some(Self::VcpkgInstallOffline)
+            }
             _ => None,
         }
     }
@@ -53,8 +58,16 @@ impl RuntimeProfile {
     /// prerequisites is denied even when its hash is syntactically valid.
     pub fn required(self, windows: bool) -> &'static [&'static str] {
         match (self, windows) {
-            (Self::VcpkgInstallOffline, true) => &["bin/vcpkg.exe", "LICENSES/vcpkg.txt", "binary-cache/manifest.txt"],
-            (Self::VcpkgInstallOffline, false) => &["bin/vcpkg", "LICENSES/vcpkg.txt", "binary-cache/manifest.txt"],
+            (Self::VcpkgInstallOffline, true) => &[
+                "bin/vcpkg.exe",
+                "LICENSES/vcpkg.txt",
+                "binary-cache/manifest.txt",
+            ],
+            (Self::VcpkgInstallOffline, false) => &[
+                "bin/vcpkg",
+                "LICENSES/vcpkg.txt",
+                "binary-cache/manifest.txt",
+            ],
             (Self::UvSyncOffline, true) => &[
                 "bin/uv.exe",
                 "bin/python.exe",

@@ -11,45 +11,39 @@
 // The portable supervisor state machine itself performs no unsafe operations.
 #[cfg(feature = "dap-transport")]
 mod dap_transport;
-#[cfg(any(test, any(all(windows, debug_assertions, feature = "dev045d5-ci-event-owner"), all(windows, feature = "fin04-release-owner-evidence"))))]
+#[cfg(any(
+    test,
+    any(
+        all(windows, debug_assertions, feature = "dev045d5-ci-event-owner"),
+        all(windows, feature = "fin04-release-owner-evidence")
+    )
+))]
 mod debug_action_receipts;
 pub mod debug_binary_witness;
 pub mod debug_command_review;
-pub mod debug_control_evidence;
-#[cfg(any(test, all(windows, debug_assertions, feature = "dev046c-ci-control"), all(windows, feature = "fin04-release-owner-evidence")))]
+#[cfg(any(
+    test,
+    all(windows, debug_assertions, feature = "dev046c-ci-control"),
+    all(windows, feature = "fin04-release-owner-evidence")
+))]
 mod debug_control_dispatch;
+pub mod debug_control_evidence;
 pub mod debug_symbol_verification;
 // FIN-04W2 is default OFF and is never a WebView/model execution route.
-#[cfg(feature="fin04w2-protocol")]
-mod fin04w2_protocol;
-#[cfg(feature="fin04w2-c2")]
+#[cfg(feature = "fin04w2-c2")]
 mod fin04w2_c2;
-#[cfg(all(windows,debug_assertions,feature="fin04w2-c2"))]
+#[cfg(feature = "fin04w2-protocol")]
+mod fin04w2_protocol;
+#[cfg(all(windows, debug_assertions, feature = "fin04w2-c2"))]
 pub mod windows_fin04w2_c2_host;
-#[cfg(all(windows,debug_assertions,feature="fin04w2-scm"))]
+#[cfg(all(windows, debug_assertions, feature = "fin04w2-scm"))]
 mod windows_fin04w2_kernel;
-#[cfg(all(windows,debug_assertions,feature="fin04w2-scm"))]
+#[cfg(all(windows, debug_assertions, feature = "fin04w2-scm"))]
 pub mod windows_fin04w2_service;
 // FIN-04W2 split source is a separate unaccepted, default-off review profile.
 // No service launch/attach path is registered; old authority needs C2 reconciliation.
-#[cfg(feature="fin04w2-split-native")]
+#[cfg(feature = "fin04w2-split-native")]
 mod fin04w2_authority;
-#[cfg(all(windows,debug_assertions,feature="fin04w2-split-native"))]
-mod windows_fin04w2_split;
-#[cfg(all(windows,debug_assertions,feature="fin04w2-split-native"))]
-mod windows_fin04w2_split_launcher;
-#[cfg(all(windows,debug_assertions,feature="fin04w2-split-native"))]
-mod windows_fin04w2_target_seal;
-#[cfg(all(windows,debug_assertions,feature="fin04w2-split-native"))]
-mod windows_fin04w2_wfp;
-#[cfg(all(windows,debug_assertions,feature="fin04w2-split-native"))]
-mod windows_fin04w2_scm_pair;
-#[cfg(all(windows,debug_assertions,feature="fin04w2-split-native"))]
-mod windows_fin04w2_target_ipc;
-#[cfg(all(windows,debug_assertions,feature="fin04w2-split-native"))]
-mod windows_fin04w2_lldb_dap;
-#[cfg(all(windows,debug_assertions,feature="fin04w2-split-native"))]
-pub mod windows_fin04w2_target_service;
 #[cfg(all(target_os = "linux", feature = "linux-worker"))]
 pub mod linux_worker;
 pub mod live_output;
@@ -68,8 +62,31 @@ pub mod snapshot;
 pub mod windows_broker;
 #[cfg(all(target_os = "windows", feature = "windows-worker"))]
 mod windows_cap_tree;
-#[cfg(all(windows, any(all(debug_assertions, feature = "dev045d5-ci-event-owner"), feature = "fin04-release-owner-evidence", all(debug_assertions, feature="fin04w2-split-native"))))]
+#[cfg(all(
+    windows,
+    any(
+        all(debug_assertions, feature = "dev045d5-ci-event-owner"),
+        feature = "fin04-release-owner-evidence",
+        all(debug_assertions, feature = "fin04w2-split-native")
+    )
+))]
 mod windows_event_owner;
+#[cfg(all(windows, debug_assertions, feature = "fin04w2-split-native"))]
+mod windows_fin04w2_lldb_dap;
+#[cfg(all(windows, debug_assertions, feature = "fin04w2-split-native"))]
+mod windows_fin04w2_scm_pair;
+#[cfg(all(windows, debug_assertions, feature = "fin04w2-split-native"))]
+mod windows_fin04w2_split;
+#[cfg(all(windows, debug_assertions, feature = "fin04w2-split-native"))]
+mod windows_fin04w2_split_launcher;
+#[cfg(all(windows, debug_assertions, feature = "fin04w2-split-native"))]
+mod windows_fin04w2_target_ipc;
+#[cfg(all(windows, debug_assertions, feature = "fin04w2-split-native"))]
+mod windows_fin04w2_target_seal;
+#[cfg(all(windows, debug_assertions, feature = "fin04w2-split-native"))]
+pub mod windows_fin04w2_target_service;
+#[cfg(all(windows, debug_assertions, feature = "fin04w2-split-native"))]
+mod windows_fin04w2_wfp;
 #[cfg(all(windows, feature = "dap-transport"))]
 pub mod windows_kernel_pc;
 #[cfg(all(target_os = "windows", feature = "windows-worker"))]
@@ -78,7 +95,14 @@ mod windows_null_device;
 mod windows_package_acl;
 #[cfg(all(target_os = "windows", feature = "ide056-ci-acl-positive"))]
 pub use windows_package_acl::inspect_staged_readonly_tree as inspect_ide056_readonly_tree;
-#[cfg(all(windows, any(all(debug_assertions, feature = "dev045d4c-ci-oracle"), feature = "fin04-release-owner-evidence", all(debug_assertions,feature="fin04w2-split-native"))))]
+#[cfg(all(
+    windows,
+    any(
+        all(debug_assertions, feature = "dev045d4c-ci-oracle"),
+        feature = "fin04-release-owner-evidence",
+        all(debug_assertions, feature = "fin04w2-split-native")
+    )
+))]
 mod windows_stopped_line_oracle;
 pub mod wo6_build_test_evidence;
 pub mod wo6_output_evidence;
@@ -175,12 +199,16 @@ pub struct JobPlan {
 /// Native-only test-name token. This is an immutable subrecipe identity,
 /// never a shell fragment or caller-selected binary/argument vector.
 pub fn rust_exact_case_name(recipe_id: &str) -> Option<&str> {
-    let name=recipe_id.strip_prefix("rust_exact_case:")?;
-    let bytes=name.as_bytes();
-    if bytes.is_empty() || bytes.len()>64 ||
-       !(bytes[0].is_ascii_alphabetic() || bytes[0]==b'_') ||
-       !bytes.iter().all(|x|x.is_ascii_alphanumeric() || *x==b'_'){
-       return None;
+    let name = recipe_id.strip_prefix("rust_exact_case:")?;
+    let bytes = name.as_bytes();
+    if bytes.is_empty()
+        || bytes.len() > 64
+        || !(bytes[0].is_ascii_alphabetic() || bytes[0] == b'_')
+        || !bytes
+            .iter()
+            .all(|x| x.is_ascii_alphanumeric() || *x == b'_')
+    {
+        return None;
     }
     Some(name)
 }
@@ -206,28 +234,40 @@ pub fn exact_framework_case(recipe: &str) -> Option<(&'static str, &str, &str)> 
         || path.is_empty()
         || name.is_empty()
         || name.len() > 64
-        || !name.bytes().next()?.is_ascii_alphabetic()
-            && !name.starts_with('_')
+        || !name.bytes().next()?.is_ascii_alphabetic() && !name.starts_with('_')
         || !name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_')
-        || !path.bytes().all(|b| b.is_ascii_alphanumeric()
-            || matches!(b, b'_' | b'-' | b'.' | b'/'))
-        || path.split('/').any(|part| part.is_empty() || part == "." || part == "..")
+        || !path
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'-' | b'.' | b'/'))
+        || path
+            .split('/')
+            .any(|part| part.is_empty() || part == "." || part == "..")
     {
         return None;
     }
     let (dir, file) = path.rsplit_once('/')?;
-    if !matches!(dir, "tests" | "test" | "__tests__" | "src/tests" | "src/test") {
+    if !matches!(
+        dir,
+        "tests" | "test" | "__tests__" | "src/tests" | "src/test"
+    ) {
         return None;
     }
     let allowed = match framework {
         "python_pytest" => {
-            file.ends_with(".py") && (file.starts_with("test_") || file.ends_with("_test.py"))
+            file.ends_with(".py")
+                && (file.starts_with("test_") || file.ends_with("_test.py"))
                 && name.starts_with("test_")
         }
-        "js_tests" => {
-            [".test.js", ".spec.js", ".test.mjs", ".spec.mjs",
-             ".test.cjs", ".spec.cjs"].iter().any(|suffix| file.ends_with(suffix))
-        }
+        "js_tests" => [
+            ".test.js",
+            ".spec.js",
+            ".test.mjs",
+            ".spec.mjs",
+            ".test.cjs",
+            ".spec.cjs",
+        ]
+        .iter()
+        .any(|suffix| file.ends_with(suffix)),
         _ => false,
     };
     allowed.then_some((framework, path, name))
@@ -244,9 +284,11 @@ fn validate_plan(value: &JobPlan) -> bool {
             value.recipe_id.as_str(),
             "rust_check" | "rust_build" | "rust_tests" | "lu_ide_host_tests"
         ) || rust_exact_case_name(&value.recipe_id).is_some()
-            || (cfg!(feature = "multilang-worker") && exact_framework_case(&value.recipe_id).is_some())
+            || (cfg!(feature = "multilang-worker")
+                && exact_framework_case(&value.recipe_id).is_some())
             || (cfg!(feature = "package-uv-worker") && value.recipe_id == "uv_sync_offline")
-            || (cfg!(all(feature = "package-vcpkg-worker", target_os = "linux")) && value.recipe_id == "vcpkg_install_offline")
+            || (cfg!(all(feature = "package-vcpkg-worker", target_os = "linux"))
+                && value.recipe_id == "vcpkg_install_offline")
             || (cfg!(feature = "multilang-worker")
                 && matches!(
                     value.recipe_id.as_str(),
@@ -307,8 +349,12 @@ fn validate_plan(value: &JobPlan) -> bool {
                 && value.log_limit_bytes <= 64 * 1024
         } else if value.recipe_id == "vcpkg_install_offline" {
             cfg!(all(feature = "package-vcpkg-worker", target_os = "linux"))
-                && value.effect_class.strip_prefix("package_vcpkg_install_offline:")
-                    .is_some_and(|hash| hex_sha(hash,64) && hash.bytes().all(|b|!b.is_ascii_uppercase()))
+                && value
+                    .effect_class
+                    .strip_prefix("package_vcpkg_install_offline:")
+                    .is_some_and(|hash| {
+                        hex_sha(hash, 64) && hash.bytes().all(|b| !b.is_ascii_uppercase())
+                    })
                 && value.runtime_limit_ms <= 10 * 60_000
                 && value.process_limit <= 12
                 && value.log_limit_bytes <= 128 * 1024
@@ -332,10 +378,14 @@ mod fin04h_exact_framework_tests {
     use super::*;
     #[test]
     fn native_recipe_parser_rejects_paths_flags_globs_and_regex() {
-        assert_eq!(exact_framework_case("pytest_exact_case:tests/test_math.py::test_add"),
-            Some(("python_pytest", "tests/test_math.py", "test_add")));
-        assert_eq!(exact_framework_case("node_exact_case:__tests__/sum.test.mjs::sum"),
-            Some(("js_tests", "__tests__/sum.test.mjs", "sum")));
+        assert_eq!(
+            exact_framework_case("pytest_exact_case:tests/test_math.py::test_add"),
+            Some(("python_pytest", "tests/test_math.py", "test_add"))
+        );
+        assert_eq!(
+            exact_framework_case("node_exact_case:__tests__/sum.test.mjs::sum"),
+            Some(("js_tests", "__tests__/sum.test.mjs", "sum"))
+        );
         for bad in [
             "pytest_exact_case:../tests/test_x.py::test_x",
             "pytest_exact_case:tests/test_x.py::test_x;rm",
@@ -347,7 +397,9 @@ mod fin04h_exact_framework_tests {
             "node_exact_case:tests/sub/file.test.js::name",
             "pytest_exact_case:tests/test_x.py::-k",
             "node_exact_case:/etc/file.test.js::name",
-        ] {assert!(exact_framework_case(bad).is_none(), "{bad}");}
+        ] {
+            assert!(exact_framework_case(bad).is_none(), "{bad}");
+        }
     }
 }
 
@@ -583,8 +635,8 @@ pub struct GrantSummary {
 /// represented as idle simply because a desktop process lost its live handle.
 /// This is advisory only; the original protected OS worker still authorizes.
 /// FIN-01D OS-native readback, produced only by the trusted worker host.
- /// Counts are kernel queries against named Windows Job Objects or the
- /// delegated Linux cgroup hierarchy, not frontend or journal assertions.
+/// Counts are kernel queries against named Windows Job Objects or the
+/// delegated Linux cgroup hierarchy, not frontend or journal assertions.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct KernelQuiescenceWitness {
     pub platform: &'static str,
@@ -600,21 +652,24 @@ pub struct GlobalCustodyObservation {
     pub worker_busy_or_unreconciled: bool,
     pub active_in_another_project: bool,
 }
-pub fn observe_global_custody(rows: &[JobSummary], project_id: &str)
-    -> GlobalCustodyObservation {
-    let mut recovery_required=false;
-    let mut worker_busy_or_unreconciled=false;
-    let mut active_in_another_project=false;
+pub fn observe_global_custody(rows: &[JobSummary], project_id: &str) -> GlobalCustodyObservation {
+    let mut recovery_required = false;
+    let mut worker_busy_or_unreconciled = false;
+    let mut active_in_another_project = false;
     for job in rows {
-        let nonterminal=!matches!(job.phase,
-            JobPhase::Completed|JobPhase::Cancelled|JobPhase::Failed|JobPhase::Denied);
-        let custody=nonterminal || job.requires_reconciliation;
+        let nonterminal = !matches!(
+            job.phase,
+            JobPhase::Completed | JobPhase::Cancelled | JobPhase::Failed | JobPhase::Denied
+        );
+        let custody = nonterminal || job.requires_reconciliation;
         recovery_required |= job.requires_reconciliation;
         worker_busy_or_unreconciled |= custody;
-        active_in_another_project |= custody && job.project_id!=project_id;
+        active_in_another_project |= custody && job.project_id != project_id;
     }
     GlobalCustodyObservation {
-        recovery_required,worker_busy_or_unreconciled,active_in_another_project,
+        recovery_required,
+        worker_busy_or_unreconciled,
+        active_in_another_project,
     }
 }
 
@@ -627,7 +682,13 @@ impl Supervisor {
     /// The only permitted owner-event receipt destination is the already
     /// approved native journal's private parent. Never a workspace, model
     /// path or WebView-supplied folder. CI only.
-    #[cfg(all(windows, any(all(debug_assertions, feature = "dev045d5-ci-event-owner"), feature = "fin04-release-owner-evidence")))]
+    #[cfg(all(
+        windows,
+        any(
+            all(debug_assertions, feature = "dev045d5-ci-event-owner"),
+            feature = "fin04-release-owner-evidence"
+        )
+    ))]
     pub(crate) fn native_owner_receipt_root(&self) -> Result<PathBuf, SupervisorError> {
         use std::os::windows::fs::MetadataExt;
         let root = self
@@ -648,7 +709,13 @@ impl Supervisor {
     /// Prove the separate fsynced owner-event receipt survived supervisor
     /// close/reopen. The path is derived solely from the original private
     /// journal directory and native job ID; callers never choose a folder.
-    #[cfg(all(windows, any(all(debug_assertions, feature = "dev045d5-ci-event-owner"), feature = "fin04-release-owner-evidence")))]
+    #[cfg(all(
+        windows,
+        any(
+            all(debug_assertions, feature = "dev045d5-ci-event-owner"),
+            feature = "fin04-release-owner-evidence"
+        )
+    ))]
     pub fn verify_native_owner_receipt_after_restart(
         &self,
         job_id: &str,
@@ -694,7 +761,10 @@ impl Supervisor {
     /// completes/crashes. Only validates its fsynced hash-chain and terminal
     /// denial/consumed/uncertain phase: NEVER recreates a consent or dispatch
     /// token. Accepts opaque hash coordinates, not a user-controlled path.
-    #[cfg(any(all(windows, debug_assertions, feature = "dev045d5-ci-event-owner"), all(windows, feature = "fin04-release-owner-evidence")))]
+    #[cfg(any(
+        all(windows, debug_assertions, feature = "dev045d5-ci-event-owner"),
+        all(windows, feature = "fin04-release-owner-evidence")
+    ))]
     pub fn verify_native_debug_action_after_restart(
         &self,
         action_id_sha256: &str,
@@ -717,7 +787,10 @@ impl Supervisor {
 
     /// D6D: joined, read-only action inventory. Never recreates consumed
     /// approval. In-flight actions require separate verified native OS cleanup.
-    #[cfg(any(all(windows, debug_assertions, feature = "dev045d5-ci-event-owner"), all(windows, feature = "fin04-release-owner-evidence")))]
+    #[cfg(any(
+        all(windows, debug_assertions, feature = "dev045d5-ci-event-owner"),
+        all(windows, feature = "fin04-release-owner-evidence")
+    ))]
     pub fn native_debug_action_cleanup_jobs_after_restart(
         &self,
     ) -> Result<Vec<String>, SupervisorError> {
@@ -939,20 +1012,24 @@ impl Supervisor {
     // from CI environment flags. A typed admission witness is minted only
     // by the exact authenticated Windows SCM peer, after the fixed service
     // confirms the first-party worker is already suspended IN its OS Job.
-    #[cfg(all(windows, debug_assertions, feature="fin04w2-c2"))]
+    #[cfg(all(windows, debug_assertions, feature = "fin04w2-c2"))]
     fn consume_grant_after_c2_service_admission(
-        &self, job_id:&str, refreshed_plan:&JobPlan,
-        witness:&windows_fin04w2_c2_host::TrustedC2Admission,
-    )->Result<(),SupervisorError>{
-        if !witness.matches(job_id,refreshed_plan)?{
+        &self,
+        job_id: &str,
+        refreshed_plan: &JobPlan,
+        witness: &windows_fin04w2_c2_host::TrustedC2Admission,
+    ) -> Result<(), SupervisorError> {
+        if !witness.matches(job_id, refreshed_plan)? {
             return Err(SupervisorError::NoContainment);
         }
-        self.consume_grant_after_verified_os_custody(job_id,refreshed_plan)
+        self.consume_grant_after_verified_os_custody(job_id, refreshed_plan)
     }
 
     fn consume_grant_after_verified_os_custody(
-        &self,job_id:&str,refreshed_plan:&JobPlan,
-    )->Result<(),SupervisorError>{
+        &self,
+        job_id: &str,
+        refreshed_plan: &JobPlan,
+    ) -> Result<(), SupervisorError> {
         if !validate_plan(refreshed_plan) {
             return Err(SupervisorError::WrongProjectOrSource);
         }
@@ -1181,10 +1258,10 @@ impl Supervisor {
         // A cancellation has its own verified terminal after SCM ACK. It may
         // never be mislabeled Completed/Failed through the output path.
         if job.phase == JobPhase::ReleasePending
-            && state.receipts.last().is_some_and(|receipt|
+            && state.receipts.last().is_some_and(|receipt| {
                 receipt.body.job_id == job_id
                     && receipt.body.outcome_code == "os_cancel_tree_reaped_service_release_pending"
-            )
+            })
         {
             return Err(SupervisorError::InvalidTransition);
         }
@@ -1338,25 +1415,41 @@ impl Supervisor {
             .state
             .lock()
             .map_err(|_| SupervisorError::JournalUnavailable)?;
-        let job = state.jobs.get(job_id).ok_or(SupervisorError::NoSuchJob)?.clone();
+        let job = state
+            .jobs
+            .get(job_id)
+            .ok_or(SupervisorError::NoSuchJob)?
+            .clone();
         if job.phase != JobPhase::Running {
             return Err(SupervisorError::InvalidTransition);
         }
         self.append(
-            &mut state, job_id, &job.plan.project_id, &job.plan_hash,
-            JobPhase::CancelRequested, "cancel_requested_before_os_kill",
+            &mut state,
+            job_id,
+            &job.plan.project_id,
+            &job.plan_hash,
+            JobPhase::CancelRequested,
+            "cancel_requested_before_os_kill",
             "tree_termination_pending",
         )?;
         state.jobs.get_mut(job_id).unwrap().phase = JobPhase::CancelRequested;
         let killed = broker.terminate_and_verify_tree(job_id, &job.plan_hash);
         let (phase, code) = if matches!(killed, Ok(true)) {
-            (JobPhase::ReleasePending, "os_cancel_tree_reaped_service_release_pending")
+            (
+                JobPhase::ReleasePending,
+                "os_cancel_tree_reaped_service_release_pending",
+            )
         } else {
             (JobPhase::Uncertain, "os_termination_not_verified")
         };
         self.append(
-            &mut state, job_id, &job.plan.project_id, &job.plan_hash,
-            phase, code, "native_supervisor_tree_kill_evidence",
+            &mut state,
+            job_id,
+            &job.plan.project_id,
+            &job.plan_hash,
+            phase,
+            code,
+            "native_supervisor_tree_kill_evidence",
         )?;
         state.jobs.get_mut(job_id).unwrap().phase = phase;
         if phase == JobPhase::Uncertain {
@@ -1382,18 +1475,26 @@ impl Supervisor {
             .state
             .lock()
             .map_err(|_| SupervisorError::JournalUnavailable)?;
-        let job = state.jobs.get(job_id).ok_or(SupervisorError::NoSuchJob)?.clone();
-        let exact_cancel_intent = state.receipts.last().is_some_and(|last|
+        let job = state
+            .jobs
+            .get(job_id)
+            .ok_or(SupervisorError::NoSuchJob)?
+            .clone();
+        let exact_cancel_intent = state.receipts.last().is_some_and(|last| {
             last.body.job_id == job_id
                 && last.body.phase == JobPhase::ReleasePending
                 && last.body.outcome_code == "os_cancel_tree_reaped_service_release_pending"
-        );
+        });
         if job.phase != JobPhase::ReleasePending || !exact_cancel_intent {
             return Err(SupervisorError::InvalidTransition);
         }
         self.append(
-            &mut state, job_id, &job.plan.project_id, &job.plan_hash,
-            JobPhase::Cancelled, "native_cancel_service_release_verified",
+            &mut state,
+            job_id,
+            &job.plan.project_id,
+            &job.plan_hash,
+            JobPhase::Cancelled,
+            "native_cancel_service_release_verified",
             "tree_empty_and_independent_service_ack",
         )?;
         state.jobs.get_mut(job_id).unwrap().phase = JobPhase::Cancelled;
@@ -1429,8 +1530,10 @@ impl Supervisor {
         }
         if !matches!(
             job.phase,
-            JobPhase::AdmissionPending | JobPhase::Running
-                | JobPhase::ReleasePending | JobPhase::CancelRequested
+            JobPhase::AdmissionPending
+                | JobPhase::Running
+                | JobPhase::ReleasePending
+                | JobPhase::CancelRequested
         ) {
             return Err(SupervisorError::InvalidTransition);
         }
@@ -1469,8 +1572,10 @@ impl Supervisor {
         }
         if matches!(
             job.phase,
-            JobPhase::AdmissionPending | JobPhase::Running
-                | JobPhase::ReleasePending | JobPhase::CancelRequested
+            JobPhase::AdmissionPending
+                | JobPhase::Running
+                | JobPhase::ReleasePending
+                | JobPhase::CancelRequested
         ) {
             self.append(
                 &mut state,
@@ -1712,25 +1817,28 @@ mod tests {
     }
     #[test]
     fn fin01_journal_occupied_across_projects_even_without_active_desktop_handle() {
-        let current="ide-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-        let foreign="ide-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
-        let job=|project:&str,phase:JobPhase,recovery:bool| JobSummary{
-            job_id:"job-cccccccccccccccccccccccccccccccc".into(),
-            project_id:project.into(),plan_sha256:"d".repeat(64),
-            phase,requires_reconciliation:recovery,execution_verified:false,
+        let current = "ide-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let foreign = "ide-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+        let job = |project: &str, phase: JobPhase, recovery: bool| JobSummary {
+            job_id: "job-cccccccccccccccccccccccccccccccc".into(),
+            project_id: project.into(),
+            plan_sha256: "d".repeat(64),
+            phase,
+            requires_reconciliation: recovery,
+            execution_verified: false,
         };
-        let idle=observe_global_custody(&[job(foreign,JobPhase::Completed,false)],current);
+        let idle = observe_global_custody(&[job(foreign, JobPhase::Completed, false)], current);
         assert!(!idle.worker_busy_or_unreconciled);
         assert!(!idle.active_in_another_project);
-        let waiting=observe_global_custody(&[job(foreign,JobPhase::Prepared,false)],current);
+        let waiting = observe_global_custody(&[job(foreign, JobPhase::Prepared, false)], current);
         assert!(waiting.worker_busy_or_unreconciled);
         assert!(waiting.active_in_another_project);
         assert!(!waiting.recovery_required);
-        let quarantined=observe_global_custody(&[job(foreign,JobPhase::Failed,true)],current);
+        let quarantined = observe_global_custody(&[job(foreign, JobPhase::Failed, true)], current);
         assert!(quarantined.worker_busy_or_unreconciled);
         assert!(quarantined.active_in_another_project);
         assert!(quarantined.recovery_required);
-        let own=observe_global_custody(&[job(current,JobPhase::Running,false)],current);
+        let own = observe_global_custody(&[job(current, JobPhase::Running, false)], current);
         assert!(own.worker_busy_or_unreconciled);
         assert!(!own.active_in_another_project);
     }
@@ -1766,27 +1874,27 @@ mod tests {
     #[cfg(feature = "package-vcpkg-worker")]
     #[test]
     fn fin05_vcpkg_requires_distinct_exact_review_and_bounded_worker() {
-        let mut plan=plan();
-        plan.recipe_id="vcpkg_install_offline".into();
-        plan.effect_class=format!("package_vcpkg_install_offline:{}", "a".repeat(64));
-        plan.runtime_limit_ms=600_000;
-        plan.process_limit=12;
-        plan.log_limit_bytes=128*1024;
-        if cfg!(target_os="linux") {
+        let mut plan = plan();
+        plan.recipe_id = "vcpkg_install_offline".into();
+        plan.effect_class = format!("package_vcpkg_install_offline:{}", "a".repeat(64));
+        plan.runtime_limit_ms = 600_000;
+        plan.process_limit = 12;
+        plan.log_limit_bytes = 128 * 1024;
+        if cfg!(target_os = "linux") {
             assert!(validate_plan(&plan));
         } else {
             assert!(!validate_plan(&plan));
         }
-        let original=fingerprint(&plan).unwrap();
-        plan.effect_class=format!("package_vcpkg_install_offline:{}", "b".repeat(64));
-        assert_ne!(original,fingerprint(&plan).unwrap());
-        plan.effect_class="test_build_isolated".into();
+        let original = fingerprint(&plan).unwrap();
+        plan.effect_class = format!("package_vcpkg_install_offline:{}", "b".repeat(64));
+        assert_ne!(original, fingerprint(&plan).unwrap());
+        plan.effect_class = "test_build_isolated".into();
         assert!(!validate_plan(&plan));
-        plan.effect_class=format!("package_vcpkg_install_offline:{}", "a".repeat(64));
-        plan.process_limit=13;
+        plan.effect_class = format!("package_vcpkg_install_offline:{}", "a".repeat(64));
+        plan.process_limit = 13;
         assert!(!validate_plan(&plan));
-        plan.process_limit=12;
-        plan.runtime_limit_ms=600_001;
+        plan.process_limit = 12;
+        plan.runtime_limit_ms = 600_001;
         assert!(!validate_plan(&plan));
     }
     #[test]
@@ -1957,22 +2065,30 @@ mod tests {
         let filename = path();
         let supervisor = Supervisor::open(filename.clone()).unwrap();
         let job = supervisor.prepare(plan()).unwrap();
-        supervisor.record_human_approval(
-            &job.job_id, &job.plan_sha256, &"b".repeat(40), true
-        ).unwrap();
+        supervisor
+            .record_human_approval(&job.job_id, &job.plan_sha256, &"b".repeat(40), true)
+            .unwrap();
         inject_running(&supervisor, &job);
         supervisor.native_mark_release_pending(&job.job_id).unwrap();
         drop(supervisor);
         let interrupted = Supervisor::open(filename.clone()).unwrap();
         assert!(interrupted.inspect().unwrap()[0].requires_reconciliation);
-        interrupted.mark_protected_recovery_pending(&job.job_id).unwrap();
+        interrupted
+            .mark_protected_recovery_pending(&job.job_id)
+            .unwrap();
         let rows = interrupted.inspect().unwrap();
         assert_eq!(rows[0].phase, JobPhase::RecoveryRequired);
         assert!(rows[0].requires_reconciliation);
-        assert_eq!(interrupted.prepare(plan()).unwrap_err(), SupervisorError::Quarantined);
+        assert_eq!(
+            interrupted.prepare(plan()).unwrap_err(),
+            SupervisorError::Quarantined
+        );
         drop(interrupted);
         let restarted = Supervisor::open(filename.clone()).unwrap();
-        assert_eq!(restarted.inspect().unwrap()[0].phase, JobPhase::RecoveryRequired);
+        assert_eq!(
+            restarted.inspect().unwrap()[0].phase,
+            JobPhase::RecoveryRequired
+        );
         assert!(restarted.inspect().unwrap()[0].requires_reconciliation);
         drop(restarted);
         fs::remove_file(filename).unwrap();
@@ -2065,24 +2181,32 @@ mod tests {
         let filename = path();
         let supervisor = Supervisor::open(filename.clone()).unwrap();
         let job = supervisor.prepare(plan()).unwrap();
-        supervisor.record_human_approval(
-            &job.job_id, &job.plan_sha256, &"b".repeat(40), true
-        ).unwrap();
+        supervisor
+            .record_human_approval(&job.job_id, &job.plan_sha256, &"b".repeat(40), true)
+            .unwrap();
         inject_running(&supervisor, &job);
-        let mut killer = TestTerminator { verified: true, requests: 0 };
+        let mut killer = TestTerminator {
+            verified: true,
+            requests: 0,
+        };
         let pending = supervisor
             .cancel_running_with_service_release_pending(&job.job_id, &mut killer)
             .unwrap();
         assert_eq!(killer.requests, 1);
         assert_eq!(pending.phase, JobPhase::ReleasePending);
         assert_eq!(
-            supervisor.native_finish(&job.job_id, true, true, true).unwrap_err(),
+            supervisor
+                .native_finish(&job.job_id, true, true, true)
+                .unwrap_err(),
             SupervisorError::InvalidTransition
         );
         drop(supervisor);
         let interrupted = Supervisor::open(filename.clone()).unwrap();
         assert!(interrupted.inspect().unwrap()[0].requires_reconciliation);
-        assert_eq!(interrupted.prepare(plan()).unwrap_err(), SupervisorError::Quarantined);
+        assert_eq!(
+            interrupted.prepare(plan()).unwrap_err(),
+            SupervisorError::Quarantined
+        );
         drop(interrupted);
         fs::remove_file(filename).unwrap();
     }
@@ -2092,11 +2216,14 @@ mod tests {
         let filename = path();
         let supervisor = Supervisor::open(filename.clone()).unwrap();
         let job = supervisor.prepare(plan()).unwrap();
-        supervisor.record_human_approval(
-            &job.job_id, &job.plan_sha256, &"b".repeat(40), true
-        ).unwrap();
+        supervisor
+            .record_human_approval(&job.job_id, &job.plan_sha256, &"b".repeat(40), true)
+            .unwrap();
         inject_running(&supervisor, &job);
-        let mut killer = TestTerminator { verified: true, requests: 0 };
+        let mut killer = TestTerminator {
+            verified: true,
+            requests: 0,
+        };
         supervisor
             .cancel_running_with_service_release_pending(&job.job_id, &mut killer)
             .unwrap();
@@ -2120,26 +2247,37 @@ mod tests {
         let filename = path();
         let supervisor = Supervisor::open(filename.clone()).unwrap();
         let job = supervisor.prepare(plan()).unwrap();
-        supervisor.record_human_approval(
-            &job.job_id, &job.plan_sha256, &"b".repeat(40), true
-        ).unwrap();
+        supervisor
+            .record_human_approval(&job.job_id, &job.plan_sha256, &"b".repeat(40), true)
+            .unwrap();
         inject_running(&supervisor, &job);
         supervisor.native_mark_release_pending(&job.job_id).unwrap();
         drop(supervisor);
         let restarted = Supervisor::open(filename.clone()).unwrap();
-        assert_eq!(restarted.prepare(plan()).unwrap_err(), SupervisorError::Quarantined);
-        let mut verified = TestTerminator { verified: true, requests: 0 };
-        let result = restarted.reconcile_interrupted_with(&job.job_id, &mut verified).unwrap();
+        assert_eq!(
+            restarted.prepare(plan()).unwrap_err(),
+            SupervisorError::Quarantined
+        );
+        let mut verified = TestTerminator {
+            verified: true,
+            requests: 0,
+        };
+        let result = restarted
+            .reconcile_interrupted_with(&job.job_id, &mut verified)
+            .unwrap();
         assert_eq!(verified.requests, 1);
         assert_eq!(result.phase, JobPhase::Cancelled);
         assert!(!result.requires_reconciliation);
         let history = restarted.receipt_history(&job.job_id).unwrap();
-        assert_eq!(history[history.len() - 2].body.phase, JobPhase::RecoveryRequired);
+        assert_eq!(
+            history[history.len() - 2].body.phase,
+            JobPhase::RecoveryRequired
+        );
         assert_eq!(history.last().unwrap().body.phase, JobPhase::Cancelled);
         assert_eq!(
-            restarted.record_human_approval(
-                &job.job_id, &job.plan_sha256, &"b".repeat(40), true
-            ).unwrap_err(),
+            restarted
+                .record_human_approval(&job.job_id, &job.plan_sha256, &"b".repeat(40), true)
+                .unwrap_err(),
             SupervisorError::InvalidTransition
         );
         assert!(restarted.prepare(plan()).is_ok());
@@ -2152,19 +2290,27 @@ mod tests {
         let filename = path();
         let supervisor = Supervisor::open(filename.clone()).unwrap();
         let job = supervisor.prepare(plan()).unwrap();
-        supervisor.record_human_approval(
-            &job.job_id, &job.plan_sha256, &"b".repeat(40), true
-        ).unwrap();
+        supervisor
+            .record_human_approval(&job.job_id, &job.plan_sha256, &"b".repeat(40), true)
+            .unwrap();
         inject_running(&supervisor, &job);
         supervisor.native_mark_release_pending(&job.job_id).unwrap();
         drop(supervisor);
         let restarted = Supervisor::open(filename.clone()).unwrap();
-        let mut unverified = TestTerminator { verified: false, requests: 0 };
-        let result = restarted.reconcile_interrupted_with(&job.job_id, &mut unverified).unwrap();
+        let mut unverified = TestTerminator {
+            verified: false,
+            requests: 0,
+        };
+        let result = restarted
+            .reconcile_interrupted_with(&job.job_id, &mut unverified)
+            .unwrap();
         assert_eq!(unverified.requests, 1);
         assert_eq!(result.phase, JobPhase::Uncertain);
         assert!(result.requires_reconciliation);
-        assert_eq!(restarted.prepare(plan()).unwrap_err(), SupervisorError::Quarantined);
+        assert_eq!(
+            restarted.prepare(plan()).unwrap_err(),
+            SupervisorError::Quarantined
+        );
         drop(restarted);
         let replay = Supervisor::open(filename.clone()).unwrap();
         assert_eq!(replay.inspect().unwrap()[0].phase, JobPhase::Uncertain);
@@ -2180,15 +2326,18 @@ mod tests {
         let filename = path();
         let supervisor = Supervisor::open(filename.clone()).unwrap();
         let job = supervisor.prepare(plan()).unwrap();
-        supervisor.record_human_approval(
-            &job.job_id, &job.plan_sha256, &"b".repeat(40), true
-        ).unwrap();
+        supervisor
+            .record_human_approval(&job.job_id, &job.plan_sha256, &"b".repeat(40), true)
+            .unwrap();
         inject_running(&supervisor, &job);
         supervisor.native_mark_release_pending(&job.job_id).unwrap();
         let live = supervisor.inspect().unwrap();
         assert_eq!(live[0].phase, JobPhase::ReleasePending);
         let receipts = supervisor.receipt_history(&job.job_id).unwrap();
-        assert_eq!(receipts.last().unwrap().body.phase, JobPhase::ReleasePending);
+        assert_eq!(
+            receipts.last().unwrap().body.phase,
+            JobPhase::ReleasePending
+        );
         drop(supervisor);
 
         let restarted = Supervisor::open(filename.clone()).unwrap();
@@ -2196,11 +2345,14 @@ mod tests {
         assert_eq!(jobs.len(), 1);
         assert_eq!(jobs[0].phase, JobPhase::ReleasePending);
         assert!(jobs[0].requires_reconciliation);
-        assert_eq!(restarted.prepare(plan()).unwrap_err(), SupervisorError::Quarantined);
         assert_eq!(
-            restarted.record_human_approval(
-                &job.job_id, &job.plan_sha256, &"b".repeat(40), true
-            ).unwrap_err(),
+            restarted.prepare(plan()).unwrap_err(),
+            SupervisorError::Quarantined
+        );
+        assert_eq!(
+            restarted
+                .record_human_approval(&job.job_id, &job.plan_sha256, &"b".repeat(40), true)
+                .unwrap_err(),
             SupervisorError::Quarantined
         );
         drop(restarted);
@@ -2213,18 +2365,25 @@ mod tests {
         let filename = path();
         let supervisor = Supervisor::open(filename.clone()).unwrap();
         let job = supervisor.prepare(plan()).unwrap();
-        supervisor.record_human_approval(
-            &job.job_id, &job.plan_sha256, &"b".repeat(40), true
-        ).unwrap();
+        supervisor
+            .record_human_approval(&job.job_id, &job.plan_sha256, &"b".repeat(40), true)
+            .unwrap();
         inject_running(&supervisor, &job);
         supervisor.native_mark_release_pending(&job.job_id).unwrap();
         assert_eq!(
-            supervisor.native_finish(&job.job_id, true, true, true).unwrap().phase,
+            supervisor
+                .native_finish(&job.job_id, true, true, true)
+                .unwrap()
+                .phase,
             JobPhase::Completed
         );
         let history = supervisor.receipt_history(&job.job_id).unwrap();
-        let phases: Vec<_> = history.iter().rev().take(2)
-            .map(|receipt| receipt.body.phase).collect();
+        let phases: Vec<_> = history
+            .iter()
+            .rev()
+            .take(2)
+            .map(|receipt| receipt.body.phase)
+            .collect();
         assert_eq!(phases, vec![JobPhase::Completed, JobPhase::ReleasePending]);
         drop(supervisor);
         let reopened = Supervisor::open(filename.clone()).unwrap();

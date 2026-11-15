@@ -68,11 +68,23 @@ pub(crate) trait RestrictedLspProcess: Send {
     fn crash_owned_lldb_for_ci(&mut self) -> Result<(), SupervisorError> {
         Err(SupervisorError::NoContainment)
     }
-    #[cfg(all(windows, any(all(feature = "dev045d5-ci-event-owner", debug_assertions), feature="fin04-release-owner-evidence")))]
+    #[cfg(all(
+        windows,
+        any(
+            all(feature = "dev045d5-ci-event-owner", debug_assertions),
+            feature = "fin04-release-owner-evidence"
+        )
+    ))]
     fn wait_owner_continued_for_ci(&mut self, _seq: u64) -> Result<(), SupervisorError> {
         Err(SupervisorError::NoContainment)
     }
-    #[cfg(all(windows, any(all(debug_assertions, feature = "dev045d5-ci-event-owner"), feature = "fin04-release-owner-evidence")))]
+    #[cfg(all(
+        windows,
+        any(
+            all(debug_assertions, feature = "dev045d5-ci-event-owner"),
+            feature = "fin04-release-owner-evidence"
+        )
+    ))]
     fn verify_lldb_kernel_event_owner(
         &mut self,
         _pid: u32,
@@ -113,9 +125,14 @@ pub(crate) trait RestrictedLspProcess: Send {
     /// Other platform workers and mock processes fail closed.
     #[cfg(all(windows, feature = "fin04-release-owner-evidence"))]
     fn read_protected_pe_pdb(
-        &mut self, _binary:&Path, _pdb:&Path,
-        _binary_sha256:&str, _pdb_sha256:&str,
-        _bundle_sha256:&str, _slide:u64, _rip:u64,
+        &mut self,
+        _binary: &Path,
+        _pdb: &Path,
+        _binary_sha256: &str,
+        _pdb_sha256: &str,
+        _bundle_sha256: &str,
+        _slide: u64,
+        _rip: u64,
     ) -> Result<serde_json::Value, SupervisorError> {
         Err(SupervisorError::NoContainment)
     }
@@ -229,8 +246,14 @@ impl LspGateway {
             .map_err(protocol_denied)?;
         self.send(&data)
     }
-    pub(crate) fn close_document(&mut self, source: &DiagnosticSource) -> Result<(), SupervisorError> {
-        let frame = self.session.close_document(source).map_err(protocol_denied)?;
+    pub(crate) fn close_document(
+        &mut self,
+        source: &DiagnosticSource,
+    ) -> Result<(), SupervisorError> {
+        let frame = self
+            .session
+            .close_document(source)
+            .map_err(protocol_denied)?;
         self.send(&frame)
     }
     pub(crate) fn query(
@@ -355,12 +378,14 @@ impl Drop for LspGateway {
                 job_id: &self.job_id,
                 plan_sha256: &self.plan_sha256,
             };
-            match self.supervisor
+            match self
+                .supervisor
                 .cancel_running_with_service_release_pending(&self.job_id, &mut killer)
             {
                 Ok(summary) if summary.phase == JobPhase::ReleasePending => {
                     if process.release_after_verified_terminal().is_ok() {
-                        if self.supervisor
+                        if self
+                            .supervisor
                             .native_finish_cancelled_after_service_release(&self.job_id)
                             .is_err()
                         {
@@ -605,29 +630,38 @@ mod tests {
                 fail_release: true,
             }),
             "clangd",
-        ).unwrap();
+        )
+        .unwrap();
         drop(gateway);
         assert!(evidence.killed.load(std::sync::atomic::Ordering::SeqCst) >= 1);
-        assert_eq!(evidence.released.load(std::sync::atomic::Ordering::SeqCst), 0);
+        assert_eq!(
+            evidence.released.load(std::sync::atomic::Ordering::SeqCst),
+            0
+        );
         drop(supervisor);
         let restarted = Supervisor::open(journal.clone()).unwrap();
         let rows = restarted.inspect().unwrap();
         assert_eq!(rows[0].phase, JobPhase::RecoveryRequired);
         assert!(rows[0].requires_reconciliation);
-        assert_eq!(restarted.prepare(crate::JobPlan {
-            project_id: format!("ide-{}", "a".repeat(32)),
-            recipe_id: "lsp_clangd".into(),
-            source_head: "b".repeat(40),
-            input_snapshot_sha256: "c".repeat(64),
-            manifest_sha256: "d".repeat(64),
-            toolchain_sha256: "e".repeat(64),
-            debug_target_binding_sha256: None,
-            runtime_limit_ms: 60_000,
-            memory_limit_bytes: 128 * 1024 * 1024,
-            process_limit: 2,
-            log_limit_bytes: 32 * 1024,
-            effect_class: "language_analysis_isolated".into(),
-        }).unwrap_err(), SupervisorError::Quarantined);
+        assert_eq!(
+            restarted
+                .prepare(crate::JobPlan {
+                    project_id: format!("ide-{}", "a".repeat(32)),
+                    recipe_id: "lsp_clangd".into(),
+                    source_head: "b".repeat(40),
+                    input_snapshot_sha256: "c".repeat(64),
+                    manifest_sha256: "d".repeat(64),
+                    toolchain_sha256: "e".repeat(64),
+                    debug_target_binding_sha256: None,
+                    runtime_limit_ms: 60_000,
+                    memory_limit_bytes: 128 * 1024 * 1024,
+                    process_limit: 2,
+                    log_limit_bytes: 32 * 1024,
+                    effect_class: "language_analysis_isolated".into(),
+                })
+                .unwrap_err(),
+            SupervisorError::Quarantined
+        );
         drop(restarted);
         let _ = std::fs::remove_file(journal);
     }

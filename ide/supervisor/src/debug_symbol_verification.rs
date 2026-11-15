@@ -330,31 +330,49 @@ fn unit(bytes: &[u8], compile: bool, abbrev_size: usize) -> bool {
 /// verify OS Job/ACL/source-line and the effective WFP socket matrix.
 #[cfg(windows)]
 pub(crate) fn verify_exact_sealed_windows_pe_pdb(
-    pe:&Path,pdb:&Path,pe_sha:&str,pdb_sha:&str,
-)->Result<(),SupervisorError>{
+    pe: &Path,
+    pdb: &Path,
+    pe_sha: &str,
+    pdb_sha: &str,
+) -> Result<(), SupervisorError> {
     use std::os::windows::fs::MetadataExt;
-    if !pe.is_absolute()||!pdb.is_absolute()||pe==pdb{return Err(denied());}
-    for (path,limit,expected) in [(pe,64*1024*1024_u64,pe_sha),
-        (pdb,512*1024*1024_u64,pdb_sha)]{
-        let m=fs::symlink_metadata(path).map_err(|_|denied())?;
-        if !m.is_file()||m.file_attributes()&0x400!=0
-            ||m.len()==0||m.len()>limit||expected.len()!=64
-            ||!expected.bytes().all(|b|b.is_ascii_hexdigit()){
+    if !pe.is_absolute() || !pdb.is_absolute() || pe == pdb {
+        return Err(denied());
+    }
+    for (path, limit, expected) in [
+        (pe, 64 * 1024 * 1024_u64, pe_sha),
+        (pdb, 512 * 1024 * 1024_u64, pdb_sha),
+    ] {
+        let m = fs::symlink_metadata(path).map_err(|_| denied())?;
+        if !m.is_file()
+            || m.file_attributes() & 0x400 != 0
+            || m.len() == 0
+            || m.len() > limit
+            || expected.len() != 64
+            || !expected.bytes().all(|b| b.is_ascii_hexdigit())
+        {
             return Err(denied());
         }
     }
-    let executable=fs::read(pe).map_err(|_|denied())?;
-    let symbols=fs::read(pdb).map_err(|_|denied())?;
-    if format!("{:x}",Sha256::digest(&executable))!=pe_sha.to_ascii_lowercase()
-        ||format!("{:x}",Sha256::digest(&symbols))!=pdb_sha.to_ascii_lowercase(){
+    let executable = fs::read(pe).map_err(|_| denied())?;
+    let symbols = fs::read(pdb).map_err(|_| denied())?;
+    if format!("{:x}", Sha256::digest(&executable)) != pe_sha.to_ascii_lowercase()
+        || format!("{:x}", Sha256::digest(&symbols)) != pdb_sha.to_ascii_lowercase()
+    {
         return Err(denied());
     }
-    let rsds=pe32plus_rsds(&executable).ok_or_else(denied)?;
-    let filename=pdb.file_name().and_then(|v|v.to_str()).ok_or_else(denied)?;
-    let stem=pe.file_stem().and_then(|v|v.to_str()).ok_or_else(denied)?;
+    let rsds = pe32plus_rsds(&executable).ok_or_else(denied)?;
+    let filename = pdb
+        .file_name()
+        .and_then(|v| v.to_str())
+        .ok_or_else(denied)?;
+    let stem = pe.file_stem().and_then(|v| v.to_str()).ok_or_else(denied)?;
     if !filename.eq_ignore_ascii_case(&format!("{stem}.pdb"))
-        ||!rsds.name.eq_ignore_ascii_case(filename)
-        ||!pdb_info_dbi(&symbols,&rsds){return Err(denied());}
+        || !rsds.name.eq_ignore_ascii_case(filename)
+        || !pdb_info_dbi(&symbols, &rsds)
+    {
+        return Err(denied());
+    }
     Ok(())
 }
 #[cfg(windows)]
@@ -652,7 +670,9 @@ pub fn verify_build_debug_symbols(
         } else {
             return Ok(None);
         };
-        let leaf = binary.relative_path.strip_prefix(prefix)
+        let leaf = binary
+            .relative_path
+            .strip_prefix(prefix)
             .and_then(|n| n.strip_suffix(".exe"));
         let Some(stem) = leaf else {
             return Ok(None);
@@ -924,18 +944,25 @@ mod tests {
             wo6_output_evidence::audit_published_output,
         };
         let root = std::env::temp_dir().join(format!(
-            "fin01d-native-cargo-debug-{:032x}", rand::random::<u128>()
+            "fin01d-native-cargo-debug-{:032x}",
+            rand::random::<u128>()
         ));
         fs::create_dir_all(root.join("debug")).unwrap();
         fs::write(root.join("debug/fixture.exe"), minimal_pe()).unwrap();
         fs::write(root.join("debug/fixture.pdb"), minimal_matching_pdb()).unwrap();
         let manifest = audit_published_output(&root).unwrap();
-        let binary = audit_debug_binary_candidate(&root, &manifest).unwrap().unwrap();
+        let binary = audit_debug_binary_candidate(&root, &manifest)
+            .unwrap()
+            .unwrap();
         assert_eq!(binary.relative_path, "debug/fixture.exe");
         let symbols = verify_build_debug_symbols(&root, &manifest, &binary)
-            .unwrap().unwrap();
+            .unwrap()
+            .unwrap();
         assert_eq!(symbols.symbols_kind, "external_pdb_guid_age_dbi_match");
-        assert_eq!(symbols.symbols_relative_path.as_deref(), Some("debug/fixture.pdb"));
+        assert_eq!(
+            symbols.symbols_relative_path.as_deref(),
+            Some("debug/fixture.pdb")
+        );
         fs::write(root.join("debug/fixture.pdb"), b"forged PDB").unwrap();
         assert!(verify_build_debug_symbols(&root, &manifest, &binary).is_err());
         fs::remove_dir_all(root).unwrap();

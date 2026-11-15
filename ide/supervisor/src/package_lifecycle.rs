@@ -554,7 +554,9 @@ mod tests {
         assert_eq!(pending.state, "private_output_cleanup_pending");
         assert!(pending.requires_explicit_private_cleanup);
         assert!(!pending.may_execute_or_retry_worker);
-        reopened.verify_discard(&pending, &temp.0.join("missing-private-output")).unwrap();
+        reopened
+            .verify_discard(&pending, &temp.0.join("missing-private-output"))
+            .unwrap();
         let final_reopen = PackageLifecycleLedger::open(temp.0.clone()).unwrap();
         let done = final_reopen.statuses().unwrap().pop().unwrap();
         assert_eq!(done.state, "private_output_destroyed");
@@ -587,7 +589,9 @@ mod tests {
         let (temp, ledger) = fixture();
         let (project, job, plan, terminal, tree, audit) = ids();
         ledger.record_prepared(&project, &job, &plan).unwrap();
-        ledger.record_audit(&project, &job, &plan, &terminal, &tree, Some(&audit)).unwrap();
+        ledger
+            .record_audit(&project, &job, &plan, &terminal, &tree, Some(&audit))
+            .unwrap();
         let original = ledger.statuses().unwrap().pop().unwrap();
         ledger.prepare_discard(&original).unwrap();
         let pending = ledger.statuses().unwrap().pop().unwrap();
@@ -595,10 +599,16 @@ mod tests {
         fs::create_dir(&output).unwrap();
         fs::write(output.join("installed-package"), b"still present").unwrap();
         assert!(ledger.verify_discard(&pending, &output).is_err());
-        assert_eq!(ledger.statuses().unwrap()[0].state, "private_output_cleanup_pending");
+        assert_eq!(
+            ledger.statuses().unwrap()[0].state,
+            "private_output_cleanup_pending"
+        );
         fs::remove_dir_all(&output).unwrap();
         ledger.verify_discard(&pending, &output).unwrap();
-        assert_eq!(ledger.statuses().unwrap()[0].state, "private_output_destroyed");
+        assert_eq!(
+            ledger.statuses().unwrap()[0].state,
+            "private_output_destroyed"
+        );
     }
     #[test]
     fn tampered_or_partial_journal_refuses_replay() {
@@ -638,7 +648,9 @@ mod tests {
         assert!(pending.requires_explicit_private_cleanup);
         assert!(!pending.may_execute_or_retry_worker);
         assert!(reopened.prepare_discard(&pending).is_err());
-        assert!(reopened.verify_discard(&pending, &temp.0.join("missing-private-output")).is_err());
+        assert!(reopened
+            .verify_discard(&pending, &temp.0.join("missing-private-output"))
+            .is_err());
     }
     #[test]
     fn same_job_cannot_claim_new_plan_or_replay_audit() {
@@ -681,7 +693,9 @@ mod tests {
         assert_eq!(discard.terminal_receipt_sha256, terminal);
         assert_eq!(discard.output_tree_sha256, tree);
         assert!(discard.audit_sha256.is_none());
-        reopened.verify_discard(&discard, &temp.0.join("missing-private-output")).unwrap();
+        reopened
+            .verify_discard(&discard, &temp.0.join("missing-private-output"))
+            .unwrap();
         assert_eq!(
             reopened.statuses().unwrap().pop().unwrap().state,
             "private_output_destroyed"
@@ -698,7 +712,9 @@ mod tests {
         let blocked = ledger.statuses().unwrap().pop().unwrap();
         assert_eq!(blocked.state, "private_output_audit_blocked");
         assert!(ledger.prepare_discard(&blocked).is_err());
-        assert!(ledger.verify_discard(&blocked, &_temp.0.join("missing-private-output")).is_err());
+        assert!(ledger
+            .verify_discard(&blocked, &_temp.0.join("missing-private-output"))
+            .is_err());
         assert!(!blocked.may_execute_or_retry_worker);
     }
     #[cfg(unix)]
