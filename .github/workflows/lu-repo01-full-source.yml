@@ -3783,6 +3783,16 @@ jobs:
           cp src-tauri/lu-core/Cargo.lock c1-lock-evidence/src-tauri/lu-core/Cargo.lock
           cp lu-desktop/src-tauri/Cargo.lock c1-lock-evidence/lu-desktop/src-tauri/Cargo.lock
           sha256sum c1-lock-evidence/src-tauri/lu-core/Cargo.lock c1-lock-evidence/lu-desktop/src-tauri/Cargo.lock > c1-lock-evidence/resolution-sha256.txt
+          # Emit exact generated text as base64 in the original job log, so
+          # a reviewed consumer can bind SHA and commit without trusting
+          # a synthetic hand-edited dependency graph. No tokens or secrets
+          # are included; these two public manifests are the only payloads.
+          echo LU_CARGO_LOCK_CORE_BASE64_BEGIN
+          base64 -w 76 src-tauri/lu-core/Cargo.lock
+          echo LU_CARGO_LOCK_CORE_BASE64_END
+          echo LU_CARGO_LOCK_DESKTOP_BASE64_BEGIN
+          base64 -w 76 lu-desktop/src-tauri/Cargo.lock
+          echo LU_CARGO_LOCK_DESKTOP_BASE64_END
           printf 'SOURCE_SHA=%s\nLOCK_PREPARATION_ONLY=1\n' "$EXPECTED_SHA" > c1-lock-evidence/identity.txt
           printf 'Original Git source checkout: %s\nPreparatory lock graph resolved, not native acceptance\n' "$EXPECTED_SHA" >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
