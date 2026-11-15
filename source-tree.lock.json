@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "cbdb2e0cf3dc6f3a7be3b1e2f84eafee5d91e856",
-  "trackedFileCount": 1039,
+  "sourceCommitBeforeLock": "b34ef370268a45a6f3f8b05c70143b62350a2f92",
+  "trackedFileCount": 1040,
   "files": [
     {
       "path": ".github/pull_request_template.md",
@@ -69,7 +69,7 @@
     },
     {
       "path": ".github/workflows/lu-core-merge-c4-grouped.yml",
-      "blob": "8ed6a6c29eb5ee89a2c7dc070c6dffd05f40915f"
+      "blob": "e5c5795b8d99ccf5d199428e58bab744c8a87702"
     },
     {
       "path": ".github/workflows/lu-development-ledger.yml",
@@ -2306,6 +2306,10 @@
     {
       "path": "scripts/lu-agent01l-native-cgroup-preflight.py",
       "blob": "8aedd0bb806a63ae1e484cab4df419990922377c"
+    },
+    {
+      "path": "scripts/lu-c1-scanned-pdf-fixture.py",
+      "blob": "dcab0d66c0065f418c1ab6c8f6070dcc16ddd637"
     },
     {
       "path": "scripts/lu-ci-group-policy.mjs",
