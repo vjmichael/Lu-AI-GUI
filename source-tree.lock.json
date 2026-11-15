@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "20d9a49c903cca82d4e5c007ab976ea81f93aa5c",
+  "sourceCommitBeforeLock": "a20b4753bce044388a46ee3da9dfbc4bba3cbd7f",
   "trackedFileCount": 1034,
   "files": [
     {
@@ -1589,7 +1589,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/project_task_verified_evidence.rs",
-      "blob": "97a30b65cacfc82752d44e6204fb360be7769c8c"
+      "blob": "b7a7efc3fb1486993fcc5d462115f272687017b4"
     },
     {
       "path": "lu-desktop/src-tauri/src/project_update_model_desktop.rs",
@@ -2093,7 +2093,7 @@
     },
     {
       "path": "lu-desktop/tests/task-board.test.mjs",
-      "blob": "7097b98da26145221ca4c2b136fcec87ada498d1"
+      "blob": "9e419e59f4eb8bb2fc1ab57bc5641842db0a0dcb"
     },
     {
       "path": "lu-desktop/tests/tools09-bounded-search.test.mjs",
@@ -2245,7 +2245,7 @@
     },
     {
       "path": "lu-desktop/web/task_board_model.mjs",
-      "blob": "55585d88f7a69602b223af99946bd361797b1e26"
+      "blob": "a74e4e56dbe80273fbbd963c4bee04806d750402"
     },
     {
       "path": "scripts/build-agent01g-physical-windows-nsis.ps1",
