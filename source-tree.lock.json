@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "a74fd853de04b06052c955eb4ca7e47fd739e0ce",
+  "sourceCommitBeforeLock": "092f41b1461d60ae3f7d8fcb2a2ba20efd9f0743",
   "trackedFileCount": 1034,
   "files": [
     {
@@ -337,7 +337,7 @@
     },
     {
       "path": "benchmarks/e1/e1_p07_llama_completion.py",
-      "blob": "c3c67f154db426571b0e228bebcf8fc7badb7efa"
+      "blob": "d3b0e168ad490368735dc0a32b73e2a45c954ec3"
     },
     {
       "path": "benchmarks/e1/e1_p08_linux_group_guard.py",
@@ -433,7 +433,7 @@
     },
     {
       "path": "benchmarks/e1/test_e1_p07_llama_completion.py",
-      "blob": "312f20bdf7e1c1b709ad49ae7c50ff870478be5e"
+      "blob": "2448b45d9233a7a6ab3ee84bf6d3cf4a0fa31ad3"
     },
     {
       "path": "benchmarks/e1/test_memory_loop02_qwen_feedback.py",
@@ -3461,7 +3461,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/tasks.rs",
-      "blob": "90a1b9f982d18160ef869a7b555da6cc48c54a85"
+      "blob": "c2ebf7a5eb616364433ccc023c0a549ebc359e87"
     },
     {
       "path": "src-tauri/lu-core/src/tools09_search_adversarial_tests.rs",
