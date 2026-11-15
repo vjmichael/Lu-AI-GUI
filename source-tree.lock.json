@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "018d478367b5cabd40e2655cef3a07ec8745203a",
-  "trackedFileCount": 1034,
+  "sourceCommitBeforeLock": "1f8a22b02128677d08861342085edee951c6f379",
+  "trackedFileCount": 1035,
   "files": [
     {
       "path": ".github/pull_request_template.md",
@@ -45,7 +45,7 @@
     },
     {
       "path": ".github/workflows/lu-agent01l-linux-cgroup-v2.yml",
-      "blob": "a496a9875d9749550272dde64918480705411ee7"
+      "blob": "8e7ed6549114386d5a5e6651ceca26e94d29f05c"
     },
     {
       "path": ".github/workflows/lu-agent01l-os-custody.yml",
@@ -69,7 +69,7 @@
     },
     {
       "path": ".github/workflows/lu-core-merge-c4-grouped.yml",
-      "blob": "4734f292909c59cca2544d320e84cb82bdefcb96"
+      "blob": "cc11b711482e47cfeaae6ece68698bbb3887f7f2"
     },
     {
       "path": ".github/workflows/lu-development-ledger.yml",
@@ -762,6 +762,10 @@
     {
       "path": "docs/LU_KIAF_EXECUTION_P01_P12_IMPLEMENTATION_20261107.md",
       "blob": "0bbad7e0b1da86dcc9467541b3496036e60e7522"
+    },
+    {
+      "path": "docs/LU_LINUX_CGROUP_POSITIVE_RUNNER.md",
+      "blob": "8fbf0302dee5f8a9d7fea7039c04b1bd7444f1a6"
     },
     {
       "path": "docs/LU_M1_MEMORY_EVIDENCE_AND_AUTHORITY_AUDIT_20261107.md",
@@ -2301,7 +2305,7 @@
     },
     {
       "path": "scripts/lu-ci-group-policy.test.mjs",
-      "blob": "90ac8752b2d29f55e824ea259ab6314e49ab2a76"
+      "blob": "250a6d82b12eb8066aeaaeed87ec8bfa07848a10"
     },
     {
       "path": "scripts/lu-ci-superseded-queue.mjs",
