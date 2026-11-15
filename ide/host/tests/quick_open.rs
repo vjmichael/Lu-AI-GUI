@@ -191,3 +191,68 @@ fn project_quick_open_skips_generated_folders_and_external_symlinks() {
     assert!(result.read_only && !result.source_files_read && !result.process_started);
     fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn dev01_original_864_nested_files_are_all_observed_and_refresh_after_mutation() {
+    // Original DEV-01 recorded 24 * 36 files and 25 visited directories.
+    // Current Quick Open is filename-query based, not a leaked full index.
+    let (root, registry, id) = fixture();
+    let project = root.join("project");
+    for dir in 0..24 {
+        let folder = project.join(format!("src-{dir:02}"));
+        fs::create_dir(&folder).unwrap();
+        for file in 0..36 {
+            fs::write(folder.join(format!("file-{file:03}.rs")), b"original bytes unread")
+                .unwrap();
+        }
+    }
+    let result = registry
+        .quick_open_source_paths(&id, "src-23/file-035")
+        .unwrap();
+    assert_eq!(result.matches.len(), 1);
+    assert_eq!(result.matches[0].relative_path, "src-23/file-035.rs");
+    assert_eq!(result.directories_examined, 25);
+    assert!(result.entries_examined >= 888);
+    assert!(!result.truncated);
+    assert!(result.read_only && !result.source_files_read && !result.worktree_modified);
+    assert!(!result.process_started);
+    fs::write(project.join("new-after-search.rs"), b"not available in prior query")
+        .unwrap();
+    let fresh = registry
+        .quick_open_source_paths(&id, "new-after-search")
+        .unwrap();
+    assert_eq!(fresh.matches.len(), 1);
+    assert_eq!(fresh.matches[0].relative_path, "new-after-search.rs");
+    registry.close(&id).unwrap();
+    assert_eq!(
+        registry
+            .quick_open_source_paths(&id, "new-after-search")
+            .unwrap_err()
+            .code(),
+        "PROJECT_NOT_OPEN"
+    );
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn dev01_original_1005_entry_single_directory_is_never_presented_as_complete() {
+    // The retired full index stopped at 1000 entries in one folder.
+    // Modern Quick Open may enumerate further, but returning only the
+    // first 60 relevant hits must explicitly report the missing results.
+    let (root, registry, id) = fixture();
+    let project = root.join("project");
+    for file in 0..1005 {
+        fs::write(
+            project.join(format!("legacy-cap-{file:04}.rs")),
+            b"filename only; no source reads",
+        )
+        .unwrap();
+    }
+    let result = registry.quick_open_source_paths(&id, "legacy-cap-").unwrap();
+    assert_eq!(result.matches.len(), 60);
+    assert!(result.truncated, "original excess entries must not appear complete");
+    assert!(result.entries_examined <= 30_000);
+    assert!(result.read_only && !result.source_files_read && !result.worktree_modified);
+    assert!(!result.process_started);
+    fs::remove_dir_all(root).unwrap();
+}

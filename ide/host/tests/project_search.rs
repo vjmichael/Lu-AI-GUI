@@ -197,3 +197,31 @@ fn fixed_hit_budget_never_silently_claims_complete_results() {
     assert!(result.truncated);
     fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn original_p05_b3_unicode_casefold_keeps_exact_saved_source_offsets() {
+    // Historical project_search_port.rs tested two Éclair spellings.
+    // Do not copy its retired UTF-8 fold mapping or accept invented offsets.
+    let (root, registry, id) = fixture();
+    let text = "αÉclair 🦊 ÉCLAIR";
+    fs::write(root.join("project/unicode.rs"), text.as_bytes()).unwrap();
+    let found = registry.find_in_project(&id, "éclair", false).unwrap();
+    assert_eq!(found.matches.len(), 2);
+    assert_eq!(
+        found.matches[0].from_byte as usize,
+        text.find("Éclair").unwrap()
+    );
+    assert_eq!(
+        found.matches[1].from_byte as usize,
+        text.find("ÉCLAIR").unwrap()
+    );
+    assert_eq!(found.matches[0].to_byte, found.matches[0].from_byte + 7);
+    assert_eq!(found.matches[1].to_byte, found.matches[1].from_byte + 7);
+    assert_eq!(found.matches[0].revision, found.matches[1].revision);
+    assert_eq!(found.files_scanned, 1);
+    assert!(!found.truncated);
+    let exact = registry.find_in_project(&id, "Éclair", true).unwrap();
+    assert_eq!(exact.matches.len(), 1);
+    assert!(exact.matches[0].preview.contains("Éclair"));
+    fs::remove_dir_all(root).unwrap();
+}
