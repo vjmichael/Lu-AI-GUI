@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "8d32d257928f0cdf7c1c04a7c765e024601dc25f",
+  "sourceCommitBeforeLock": "cbdb2e0cf3dc6f3a7be3b1e2f84eafee5d91e856",
   "trackedFileCount": 1039,
   "files": [
     {
@@ -69,7 +69,7 @@
     },
     {
       "path": ".github/workflows/lu-core-merge-c4-grouped.yml",
-      "blob": "7c33b86c0e3ac5a601829d604a519019371fc9f2"
+      "blob": "8ed6a6c29eb5ee89a2c7dc070c6dffd05f40915f"
     },
     {
       "path": ".github/workflows/lu-development-ledger.yml",
@@ -1593,7 +1593,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/project_task_verified_evidence.rs",
-      "blob": "91e3c1056cd16508a5fb7b6b8409f836f9be0487"
+      "blob": "51e8ec8fabc3ac745ed1c5063a0bbc42f795ac97"
     },
     {
       "path": "lu-desktop/src-tauri/src/project_update_model_desktop.rs",
