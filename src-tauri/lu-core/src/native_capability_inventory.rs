@@ -57,7 +57,8 @@ fn reviewed_meta_class(id:&str)->Option<&'static str>{
         "lu.git.diff"|
         "lu.reviewed.git.head"|"lu.reviewed.git.status"|
         "lu.reviewed.git.branch"|"lu.reviewed.git.history"|
-        "lu.reviewed.media.facts"=>Some("utility"),
+        "lu.reviewed.media.facts"|
+        "lu.validate.schema"|"lu.exec.check_env"=>Some("utility"),
         // An unreviewed tool remains unclassified rather than being promoted
         // by merely choosing a familiar module prefix.
         _=>None
