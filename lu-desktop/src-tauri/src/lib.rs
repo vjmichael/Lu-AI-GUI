@@ -9130,6 +9130,18 @@ fn lu_native_route_catalog()->Vec<LuNativeRouteView>{
             authorization:"No privileged device access or executable worker."
         },
         LuNativeRouteView{
+            id:"core.schema",name:"Validate supplied JSON",
+            status:"Conditional: one complete schema/data object in original human Send",
+            description:"Model-selected Draft 2020-12 validation of exact user-supplied JSON values only; no file, repair, or remote references.",
+            authorization:"Fresh authenticated human turn with exact schema/data, one read-only tool and no workspace grant."
+        },
+        LuNativeRouteView{
+            id:"core.environment",name:"Local program availability",
+            status:"Conditional: one explicitly named installed-runtime presence request",
+            description:"Model-selected local file-presence check for one original human-named program from fixed reviewed host candidates. No PATH search, execution, version or installation claim.",
+            authorization:"Fresh authenticated human turn; only fixed OS-owned candidate files, one read-only tool and no command grant."
+        },
+        LuNativeRouteView{
             id:"workspace.read",name:"Workspace search and reading",
             status:"Conditional: native directory picker and read-only turn",
             description:"Host-scoped file discovery, directory listing and text inspection offered to the loaded model after approval.",
