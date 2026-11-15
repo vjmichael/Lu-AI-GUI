@@ -121,3 +121,18 @@ test('SEC06C refuses writable same-UID ancestor before first worker admission an
   assert.match(native,/meta\.uid\(\)==uid/);
   assert.match(native,/if !securely_owned_cgroup_parent\(&group\)?/);
 });
+
+test('native cgroup preflight reads only original kernel facts and blocks unsafe same-UID migration',()=>{
+  const preflight=read('../../scripts/lu-agent01l-native-cgroup-preflight.py');
+  assert.match(preflight,/\/proc\/self\/cgroup/);
+  assert.match(preflight,/\/proc\/self\/mountinfo/);
+  assert.match(preflight,/SOURCE_REQUIRES_ROOT_MEDIATED_ADMISSION/);
+  assert.match(preflight,/UNSAFE_WRITABLE_ANCESTOR/);
+  assert.match(preflight,/parent_procs_write_open_succeeded/);
+  assert.match(preflight,/changed_kernel_state": False/);
+  assert.match(preflight,/positive_cgroup_custody_accepted": False/);
+  assert.doesNotMatch(preflight,/os\.kill\(|subprocess\.|os\.setuid\(|os\.mkdir\(|os\.chown\(|os\.chmod\(/);
+  assert.match(native,/fn bind_worker_to_cgroup_before_exec\(/);
+  assert.match(helper,/fn protected_ancestor\(root:&Path\)/);
+  assert.match(helper,/OpenOptions::new\(\)\.write\(true\)\.open\(&procs\)/);
+});
