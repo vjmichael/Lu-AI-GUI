@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "1f8a22b02128677d08861342085edee951c6f379",
-  "trackedFileCount": 1035,
+  "sourceCommitBeforeLock": "24f73eb8900dbfec2fff13451992a1a909cd5fe3",
+  "trackedFileCount": 1036,
   "files": [
     {
       "path": ".github/pull_request_template.md",
@@ -765,7 +765,7 @@
     },
     {
       "path": "docs/LU_LINUX_CGROUP_POSITIVE_RUNNER.md",
-      "blob": "8fbf0302dee5f8a9d7fea7039c04b1bd7444f1a6"
+      "blob": "a8b02dbc499e91a07c2c0401401893f3d7db68be"
     },
     {
       "path": "docs/LU_M1_MEMORY_EVIDENCE_AND_AUTHORITY_AUDIT_20261107.md",
@@ -1725,7 +1725,7 @@
     },
     {
       "path": "lu-desktop/tests/agent01l-linux-cgroup-v2.test.mjs",
-      "blob": "cc0eed2ff0b3d95444511b8c0473b3210ee0af15"
+      "blob": "8099e07757727eb6d5acf8267523302e9cc776e3"
     },
     {
       "path": "lu-desktop/tests/agent01l-os-custody.test.mjs",
@@ -2298,6 +2298,10 @@
     {
       "path": "scripts/linux/org.lu.desktop.observe-learn.policy",
       "blob": "48bc8661a6f547471ac3c9899eca258e5ad4c5fa"
+    },
+    {
+      "path": "scripts/lu-agent01l-native-cgroup-preflight.py",
+      "blob": "8aedd0bb806a63ae1e484cab4df419990922377c"
     },
     {
       "path": "scripts/lu-ci-group-policy.mjs",
