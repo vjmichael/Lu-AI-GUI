@@ -31,7 +31,7 @@ pub const MAX_MODEL_FRAME_BYTES: usize = 64 * 1024;
 /// Original TOOLS-08 semantic-progress witness recovered inside the existing
 /// native turn. A different model-selected search string is not new evidence
 /// if the typed decoder returns the same substantive read result. This guard
-/// neither authorizes tools nor changes the 32-step emergency ceiling.
+/// neither authorizes tools nor introduces a fixed productive-step ceiling.
 pub const MAX_STALLED_SEMANTIC_READS: u8 = 8;
 
 fn stable_read_evidence(value: &Value) -> Value {
@@ -164,6 +164,10 @@ pub struct NativeToolTurn {
     // Host-decoded observations only, never model-asserted progress.
     seen_read_evidence:BTreeSet<String>,
     stalled_semantic_reads:u8,
+    // A new model call ID is never new human authority for an already
+    // attempted effect. Keep exact normalized proposals across interleaving
+    // observations and distinct work, not only the immediately previous call.
+    seen_effectful_requests:BTreeSet<String>,
 }
 
 impl NativeToolTurn {
@@ -224,6 +228,7 @@ impl NativeToolTurn {
             identical_result_count:0,
             seen_read_evidence:BTreeSet::new(),
             stalled_semantic_reads:0,
+            seen_effectful_requests:BTreeSet::new(),
         })
     }
 
@@ -625,10 +630,21 @@ impl NativeToolTurn {
             self.halt();
             return Err(ToolTurnError::NoProgress);
         }
-        // Do not re-execute the same write effect, even if the first
-        // result differs. A fresh model call is not fresh human approval.
+        // Preserve the existing immediate NetworkRead repeat denial. For
+        // effectful proposals, also deny A -> B -> A across an intervening
+        // observation or a different effect. A per-call journal key is not
+        // a new human grant, and a different return payload is not evidence
+        // authorizing re-execution of the same proposed effect.
         if descriptor.effect!=ToolEffect::ReadWorkspace &&
             self.previous_request_digest.as_deref()==Some(&request_digest){
+            self.halt();
+            return Err(ToolTurnError::NoProgress)
+        }
+        if matches!(descriptor.effect,
+            ToolEffect::WriteWorkspace | ToolEffect::ExecuteCode |
+            ToolEffect::NetworkWrite | ToolEffect::DeviceControl |
+            ToolEffect::Elevated
+        ) && !self.seen_effectful_requests.insert(request_digest.clone()){
             self.halt();
             return Err(ToolTurnError::NoProgress)
         }
