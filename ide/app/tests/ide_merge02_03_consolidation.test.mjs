@@ -82,7 +82,7 @@ test('IDE-MERGE-03 never accepts two Jobs from one SCM service as independent cu
   assert.match(pair,/OpenSCManagerW/);
   assert.match(pair,/QueryServiceStatusEx/);
   assert.match(pair,/restricted_service_token/);
-  assert.match(pair,/self\.debugger\.pid==self\.target\.pid/);
+  assert.match(pair,/self\.debugger\.pid\s*==\s*self\.target\.pid/);
   assert.match(split,/attest_external_debugger_worker/);
   assert.match(split,/attest_service_held_appcontainer_target/);
   assert.doesNotMatch(split,/attest_split_pair\(/);

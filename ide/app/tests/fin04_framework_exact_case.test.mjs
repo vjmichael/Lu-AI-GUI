@@ -25,7 +25,7 @@ test('FIN04H restricted selectors never become arbitrary executable recipes',()=
   assert.match(supervisor,/pub fn exact_framework_case\(/);
   assert.match(supervisor,/pytest_exact_case:/);
   assert.match(supervisor,/node_exact_case:/);
-  assert.match(supervisor,/cfg!\(feature = "multilang-worker"\) && exact_framework_case/);
+  assert.match(supervisor,/cfg!\(feature = "multilang-worker"\)\s*&&\s*exact_framework_case/);
 });
 test('FIN04H exact-case UI checks native output and never asserts test pass',()=>{
   assert.match(web,/function executeProtectedSavedFrameworkCase\(/);

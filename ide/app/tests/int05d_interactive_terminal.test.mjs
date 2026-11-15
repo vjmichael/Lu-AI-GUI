@@ -22,11 +22,11 @@ test('terminal replies refuse replay and fake job success',()=>{
   assert.equal(checkedTerminalReply({...r,kind:'native_job_result'},s,1),null);
 });
 test('native broker exposes no PTY, shell spawn, or arbitrary process',()=>{
-  const code=readFileSync(new URL('../../src-tauri/src/terminal_broker.rs',import.meta.url),'utf8');
+  const code=readFileSync(new URL('../src-tauri/src/terminal_broker.rs',import.meta.url),'utf8');
   assert.match(code,/INT05D_NO_ARBITRARY_SHELL_OR_COMMANDS/);
   assert.match(code,/STALE_OR_REPLAYED_COMMAND/);
   assert.doesNotMatch(code,/std::process::Command|CreateProcess|openpty|powershell.exe/);
-  const native=readFileSync(new URL('../../src-tauri/src/lib.rs',import.meta.url),'utf8');
+  const native=readFileSync(new URL('../src-tauri/src/lib.rs',import.meta.url),'utf8');
   assert.match(native,/native\.run_profile\(&app_copy,&registry,&project,recipe,&sha\)/);
   assert.match(native,/terminal_broker::TerminalSessions/);
   assert.match(native,/ide_terminal_submit,/);

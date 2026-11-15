@@ -146,7 +146,7 @@ test('INT05-E release pin and installed byte mismatch never claims availability'
   assert.equal(checkedToolchainInventory(s3,project).kind,'unavailable');
 });
 test('INT05-E pure host provenance binds observed bytes and release pins',()=>{
-  const native=readFileSync(new URL('../../src-tauri/src/build_backend.rs',import.meta.url),'utf8');
+  const native=readFileSync(new URL('../src-tauri/src/build_backend.rs',import.meta.url),'utf8');
   assert.match(native,/installed_bytes_match_compile_time_release_pin/);
   assert.match(native,/runtime_provenance\("rust_cargo"/);
   assert.match(native,/provenance: RuntimeProvenance/);

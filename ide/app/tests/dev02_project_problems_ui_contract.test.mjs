@@ -14,7 +14,8 @@ test('real editor integrates read-only Problems with accessible severity/query a
     'const problemsForProject = useMemo(() => projectProblems(',
     'stillCurrentProblem(tab, lspNativeDiagnostics[tab.key], item)',
     "setProjectProblemsOpen(false)",
-    'aria-label="Open-project verified language-server problems"',
+    'onClick={()=>showProjectProblems()',
+    'Problems ·',
     'aria-controls="projectProblemsPanel"',
     'aria-expanded={projectProblemsOpen}',
     'onClick={() => navigateProjectProblem(item)}',
@@ -33,7 +34,7 @@ test('cross-tab jump stays inside existing project tab, matches saved/buffer rev
   const navigation=ui.slice(begin,end);
   for(const marker of [
     'candidate.projectId === activeProjectIdRef.current',
-    'setActiveTabKey(tab.key)',
+    'selectPrimaryEditorTab(tab.key)',
     "setSection('explorer')",
     'tabIdentity: tab.key +',
     'nonce: ++problemJumpNonce.current'
@@ -51,8 +52,8 @@ test('cross-tab jump stays inside existing project tab, matches saved/buffer rev
 });
 
 test('Problems display is not a hidden trigger for LSP session creation',()=>{
-  const begin=ui.indexOf('aria-label="Open-project verified language-server problems"');
-  const end=ui.indexOf('aria-label="Language server problems"',begin);
+  const begin=ui.indexOf('function showProjectProblems()');
+  const end=ui.indexOf('useEffect(()=>',begin);
   assert.ok(begin>0&&end>begin);
   const section=ui.slice(begin,end);
   for(const disallowed of ["startLspSession(", "invoke('ide_lsp_", "requestLspFeature(",
