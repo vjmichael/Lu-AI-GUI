@@ -271,5 +271,54 @@ mod tests{
         assert!(turn.run_journaled_observed("Check Python on this computer",
             &mut replies,&Cancellation::default(),&journal,&|_|{}).await.is_err());
         drop(turn);drop(journal);let _=fs::remove_file(path);
+        let spec=HostProgramSpec{id:"python".into(),candidate_files:vec![
+            if cfg!(windows){PathBuf::from(r"C:\Program Files\Python313\python.exe")}
+            else{PathBuf::from("/usr/bin/python3")}
+        ]};
+        let mut current=CoreUtilityTurn::new(&Original,"c-original","g-original",
+            "g-original",CoreUtilityRequest::CheckProgram{
+                program:"python".into(),spec,
+            }).unwrap();
+        let (path,journal)=audit();
+        let mut chosen=Replies(VecDeque::from(vec![
+            r#"{"kind":"tool","name":"lu_check_env","arguments":{"program":"python"}}"#.into(),
+            r#"{"kind":"final","text":"The approved candidate presence was checked; this does not prove runtime execution."}"#.into()
+        ]));
+        let report=current.run_journaled_observed(
+            "Check if Python is installed on my computer",
+            &mut chosen,&Cancellation::default(),&journal,&|_|{}
+        ).await.unwrap();
+        assert_eq!(report.tool_calls,1);
+        assert!(report.answer.contains("does not prove runtime execution"));
+        assert!(current.capabilities().unwrap().is_empty());
+        drop(current);drop(journal);let _=fs::remove_file(path);
+    }
+    #[tokio::test]
+    async fn revoked_or_cancelled_original_turn_never_dispatches(){
+        let request=||CoreUtilityRequest::Validate{
+            schema:json!({"type":"integer"}),data:json!(42),
+        };
+        let mut revoked=CoreUtilityTurn::new(&Original,"c-original","g-original",
+            "g-original",request()).unwrap();
+        revoked.authority.revoke_task("g-original").unwrap();
+        let (path,journal)=audit();
+        let mut model=Replies(VecDeque::from(vec![
+            r#"{"kind":"tool","name":"lu_validate_schema","arguments":{"schema":{"type":"integer"},"data":42}}"#.into()
+        ]));
+        assert!(revoked.run_journaled_observed("Validate original JSON",
+            &mut model,&Cancellation::default(),&journal,&|_|{}).await.is_err());
+        assert_eq!(model.0.len(),1,"revocation must refuse before model generation");
+        drop(revoked);drop(journal);let _=fs::remove_file(path);
+        let mut cancelled=CoreUtilityTurn::new(&Original,"c-original","g-original",
+            "g-original",request()).unwrap();
+        let cancel=Cancellation::default();cancel.cancel();
+        let (path,journal)=audit();
+        let mut model=Replies(VecDeque::from(vec![
+            r#"{"kind":"tool","name":"lu_validate_schema","arguments":{"schema":{"type":"integer"},"data":42}}"#.into()
+        ]));
+        assert!(cancelled.run_journaled_observed("Validate original JSON",
+            &mut model,&cancel,&journal,&|_|{}).await.is_err());
+        assert_eq!(model.0.len(),1,"cancelled task may not call model or tool");
+        drop(cancelled);drop(journal);let _=fs::remove_file(path);
     }
 }
