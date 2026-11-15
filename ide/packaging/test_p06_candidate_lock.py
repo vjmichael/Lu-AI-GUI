@@ -79,6 +79,28 @@ class Merge02ScopedCargoTests(unittest.TestCase):
             self.assertFalse(result["releaseApproved"])
             self.assertFalse(result["signedOrLegallyApproved"])
 
+    def test_recomputed_desktop_block_digest_and_65_digit_typo_denial(self):
+        import hashlib
+        import re
+        data = (self.source_root / "ide/app/src-tauri/Cargo.lock").read_bytes()
+        blocks = list(re.finditer(
+            rb'\n\[\[package\]\]\nname = "lu-ide-desktop"\n.*?(?=\n\[\[package\]\]|\Z)',
+            data, re.DOTALL))
+        self.assertEqual(len(blocks), 1)
+        match = blocks[0]
+        desktop = match.group()
+        outside = data[:match.start()] + data[match.end():]
+        self.assertEqual(len(self.successor["newDesktopBlockSha256"]), 64)
+        self.assertEqual(hashlib.sha256(desktop).hexdigest(),
+                         self.successor["newDesktopBlockSha256"])
+        self.assertEqual(hashlib.sha256(outside).hexdigest(),
+                         self.successor["unchangedOutsideDesktopSha256"])
+        poisoned = copy.deepcopy(self.successor)
+        poisoned["newDesktopBlockSha256"] += "c"
+        with self.assertRaisesRegex(LockDenied, "not_independently_pinned"):
+            check(self.root, "windows-2022", self.review,
+                  ide_merge02_successor=poisoned)
+
     def test_approval_flip_and_other_source_bytes_remain_denied(self):
         altered = copy.deepcopy(self.successor)
         altered["releaseApproved"] = True
