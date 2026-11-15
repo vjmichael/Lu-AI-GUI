@@ -283,6 +283,13 @@ jobs:
             with open(os.environ["GITHUB_ENV"],"a",encoding="utf-8") as output:
               output.write(key+"="+path+"\n")
           PY
+          # GitHub's GITHUB_ENV takes effect only in subsequent steps.
+          # These original real-binary assertions run in this SAME step.
+          # Re-resolve the two verified, host-installed binaries into this
+          # shell's environment; never supply a test-side fake executable.
+          export LU_E1_P06_GIT="$(python -c 'import os,shutil; p=shutil.which("git"); print(os.path.realpath(p) if p else "")')"
+          export LU_E1_P06_PYTHON="$(python -c 'import os,sys; print(os.path.realpath(sys.executable))')"
+          test -f "$LU_E1_P06_GIT" && test -f "$LU_E1_P06_PYTHON"
           failures=0
           run_original() {
             local name="$1"

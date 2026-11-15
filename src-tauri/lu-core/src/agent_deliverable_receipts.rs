@@ -494,6 +494,10 @@ mod tests{
         conversation_authority::TrustedUserTurnVerifier,
     };
     use std::time::{SystemTime,UNIX_EPOCH};
+    use std::sync::atomic::{AtomicU64, Ordering};
+    // Windows timestamps can coincide for parallel native fixtures.
+    // The host test PID and an atomic sequence prevent shared SQLite files.
+    static FIXTURE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
     struct Human;
     impl TrustedUserTurnVerifier for Human{
         fn verify_user_turn(&self,_chat:&str,_turn:&str)->bool{true}
@@ -513,8 +517,9 @@ mod tests{
     fn id(p:&str,n:u64)->String{format!("{p}{n:032x}")}
     fn location()->PathBuf{
         let root=std::env::temp_dir().join(format!(
-            "lu-agent01c-{}-{}",std::process::id(),
-            SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos()
+            "lu-agent01c-{}-{}-{}",std::process::id(),
+            SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos(),
+            FIXTURE_SEQUENCE.fetch_add(1, Ordering::Relaxed)
         ));
         fs::create_dir_all(&root).unwrap();
         root

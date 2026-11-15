@@ -910,6 +910,9 @@ async fn genuine_qwen_selects_original_schema_and_environment_native_tools(){
         };
         let book=AnsfStore::open(&dir.join("ansf.sqlite")).unwrap();
         book.create_session(&bound.conversation_id,&bound.user_turn_id,prompt).unwrap();
+        // The original user turn is not valid ANSF content until the
+        // session owns an active chapter. Do not bypass ANSF admission.
+        book.start_chapter(&bound.conversation_id,"Genuine Qwen tool observation").unwrap();
         book.append_entry(
             &bound.conversation_id,&bound.user_turn_id,EntryRole::User,
             "Original approved observation",prompt
