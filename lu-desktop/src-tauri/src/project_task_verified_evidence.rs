@@ -1144,15 +1144,8 @@ mod tests{
         assert!(dependency_completion_current(
             &db,&register,&"a".repeat(64),&tasks[2]
         ).unwrap(),"two-layer dependencies must reopen original decisions");
-        let mut uncertain=completion_fixture("UNCERTAIN");
-        uncertain.task_id=base.into();
-        uncertain.previous_event_sha256=Some(sha(
-            &serde_json::to_vec(&original_base).unwrap()
-        ));
-        signed(&db,&uncertain,2);
-        assert!(!dependency_completion_current(
-            &db,&register,&"a".repeat(64),&tasks[2]
-        ).unwrap(),"uncertain grandparent invalidates descendant completion");
+        // Test a cycle while all original positive receipts still exist.
+        // Otherwise an earlier conservative negative might mask the bug.
         // A cyclic dependency cannot be legitimized by an old signed row.
         let cyc=task(root,vec![mid.into()]);
         let mut new_mid=task(mid,vec![root.into()]);
@@ -1166,6 +1159,15 @@ mod tests{
         assert!(!dependency_completion_current(
             &db,&cyclic,&"a".repeat(64),&cyc
         ).unwrap());
+        let mut uncertain=completion_fixture("UNCERTAIN");
+        uncertain.task_id=base.into();
+        uncertain.previous_event_sha256=Some(sha(
+            &serde_json::to_vec(&original_base).unwrap()
+        ));
+        signed(&db,&uncertain,2);
+        assert!(!dependency_completion_current(
+            &db,&register,&"a".repeat(64),&tasks[2]
+        ).unwrap(),"uncertain grandparent invalidates descendant completion");
     }
     #[test]
     fn original_completion_decision_hash_chain_rejects_forged_completion_after_restart(){
