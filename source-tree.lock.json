@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "462b66e1f11f56da6f1a696a442ee858a9738150",
+  "sourceCommitBeforeLock": "760987acc584b20af8c0b136d1f2ea784412c3b8",
   "trackedFileCount": 1039,
   "files": [
     {
@@ -241,7 +241,7 @@
     },
     {
       "path": ".github/workflows/lu-repo01-full-source.yml",
-      "blob": "fe656488f4c5b249d85e8e2e908f77f675bc2278"
+      "blob": "5b3dadce97aaf4d90b3e3ba7cb53223eda30412f"
     },
     {
       "path": ".github/workflows/lu-tools-01-05-integration.yml",
@@ -1725,7 +1725,7 @@
     },
     {
       "path": "lu-desktop/tests/agent01l-linux-cgroup-v2.test.mjs",
-      "blob": "34075b05718a4fd9872bf78f2058ad1d3ed5c875"
+      "blob": "acda28b785b7596453377661508162a7a1d224c7"
     },
     {
       "path": "lu-desktop/tests/agent01l-os-custody.test.mjs",
@@ -2345,7 +2345,7 @@
     },
     {
       "path": "scripts/lu-sec06c-agent01l-fixture-launcher.py",
-      "blob": "b946e8d445cde1a0f3f5341cfa37baab8c0ff5cf"
+      "blob": "1dd9a9245d91419e80f193baf14dd95a037a31be"
     },
     {
       "path": "scripts/lu-sec06c-agent01l-fixture-manager.py",
