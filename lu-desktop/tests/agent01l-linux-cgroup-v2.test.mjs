@@ -154,6 +154,10 @@ test('AGENT-01L positive native fixture uses only fixed SEC-06C root-owned syste
   assert.match(fixedLauncher,/lu-sec06c-fixture-/);
   assert.match(fixedLauncher,/AGENT01L_ROOT_SERVICE_DIAGNOSTIC_V1/);
   assert.match(fixedLauncher,/MAX_SERVICE_STDERR=4096/);
+  assert.match(fixedLauncher,/root_admission\(nonce,pid,uid,initial_start,pinned\[:-1\]\)/);
+  assert.match(fixedLauncher,/kernel_starttime\(pid\)!=initial_start/);
+  assert.match(fixedLauncher,/AGENT01L_ROOT_VERIFIED_HOST_V1/);
+  assert.match(fixedLauncher,/CapabilityBoundingSet=CAP_SYS_ADMIN CAP_SETUID CAP_SETGID CAP_KILL/);
   assert.match(fixedLauncher,/os.O_EXCL\|os.O_NOFOLLOW/);
   for(const required of ['--property=User=root','--property=Delegate=yes',
       '--property=PrivateNetwork=yes','--property=KillMode=control-group']){
@@ -179,6 +183,9 @@ test('root manager migrates known original leader BEFORE relying on nonroot cgro
   assert.ok(attack>=0&&attack<child&&child<moved&&moved<proof,
     'root first proves hostile-ancestor denial, creates descendant and migrates only its leader before READY');
   assert.match(rootFixture,/os\.pidfd_open\(pid\)/);
+  assert.match(rootFixture,/checked_admission\(nonce,pid,uid,kernel_starttime\(pid\)\)/);
+  assert.match(rootFixture,/O_NOFOLLOW\|os.O_CLOEXEC/);
+  assert.match(rootFixture,/AGENT01L_ROOT_VERIFIED_HOST_V1/);
   assert.match(rootFixture,/hostpoll\.register\(hostfd,select\.POLLIN\)/);
   assert.match(rootFixture,/\(leaf\/"cgroup\.kill"\)\.write_text\("1",encoding="ascii"\)/);
   assert.match(rootFixture,/shared\.wait_kernel_zero\(events,8\)/);

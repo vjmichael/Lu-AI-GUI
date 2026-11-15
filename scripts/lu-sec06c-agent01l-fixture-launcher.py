@@ -117,6 +117,45 @@ def bounded_service_result(cmd):
     return (124 if timed_out else returncode),bytes(observed),truncated,timed_out
 
 
+
+def kernel_starttime(pid):
+    # /proc/PID/stat field 22; unlike /proc/PID/exe this does not require
+    # cross-user ptrace privileges. Recheck before root service admission.
+    raw=pathlib.Path(f"/proc/{pid}/stat").read_text(encoding="ascii")
+    if ") " not in raw:
+        deny("original kernel process stat invalid")
+    fields=raw.rsplit(")",1)[1].split()
+    if len(fields)<20 or not re.fullmatch(r"[0-9]{1,30}",fields[19]):
+        deny("original kernel PID starttime unavailable")
+    return fields[19]
+
+
+def root_admission(nonce,pid,uid,starttime,digest):
+    # The privileged launcher verified live /proc/PID/exe against a
+    # ROOT-owned manifest. Seal only that exact PID + starttime + digest
+    # so the restricted service need not receive CAP_SYS_PTRACE.
+    if DIAGNOSTIC_DIR.is_symlink():
+        deny("root-owned admission directory is a symlink")
+    info=DIAGNOSTIC_DIR.stat()
+    if (not stat.S_ISDIR(info.st_mode) or info.st_uid!=0
+            or info.st_mode&0o022):
+        deny("original admission directory must be root-owned and immutable")
+    body=("AGENT01L_ROOT_VERIFIED_HOST_V1\n"
+          f"NONCE={nonce}\nHOST_PID={pid}\nUID={uid}\n"
+          f"STARTTIME={starttime}\nEXEC_SHA256={digest}\n")
+    target=DIAGNOSTIC_DIR/(nonce+".admission")
+    fd=os.open(target,os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o600)
+    with os.fdopen(fd,"w",encoding="ascii") as out:
+        out.write(body)
+        out.flush()
+        os.fsync(out.fileno())
+    fd=os.open(DIAGNOSTIC_DIR,os.O_RDONLY|os.O_DIRECTORY)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
 def main():
     ap=argparse.ArgumentParser(allow_abbrev=False)
     ap.add_argument("--host-pid",required=True)
@@ -144,12 +183,15 @@ def main():
         deny("root-owned original fixture host digest invalid")
     # Read the kernel's LIVE /proc/<pid>/exe inode, not a mutable path
     # the runner could replace between process launch and a pathname hash.
+    initial_start=kernel_starttime(pid)
     h=hashlib.sha256()
     with pathlib.Path(f"/proc/{pid}/exe").open("rb") as live:
         for chunk in iter(lambda:live.read(65536),b""):
             h.update(chunk)
     if h.hexdigest()!=pinned[:-1]:
         deny("original executable does not match reviewed root-owned host SHA")
+    if kernel_starttime(pid)!=initial_start:
+        deny("original kernel PID identity changed across executable verification")
     profile=pathlib.Path(args.profile)
     if not profile.is_absolute() or profile.is_symlink() or profile.resolve(strict=True)!=profile:
         deny("untrusted original fixture profile")
@@ -162,6 +204,7 @@ def main():
     for file in (pathlib.Path(__file__).resolve(),RUN,PYTHON,MANAGER,FIXTURE_MANAGER):
         root_file(file)
     nonce=secrets.token_hex(16)
+    root_admission(nonce,pid,uid,initial_start,pinned[:-1])
     unit="lu-sec06c-fixture-"+nonce+".service"
     cmd=[
         str(RUN),"--system","--quiet","--wait","--pipe",

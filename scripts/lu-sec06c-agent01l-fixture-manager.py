@@ -38,17 +38,69 @@ def fail(message):
     raise RuntimeError("AGENT01L_SEC06C_ROOT_FIXTURE_DENIED: "+message)
 
 
-def original_host(pid,uid):
+
+HOST_MANIFEST=pathlib.Path("/usr/libexec/lu/lu-agent01l-fixture-host.sha256")
+
+
+def kernel_starttime(pid):
+    raw=pathlib.Path(f"/proc/{pid}/stat").read_text(encoding="ascii")
+    if ") " not in raw:
+        fail("untrusted original kernel process stat")
+    fields=raw.rsplit(")",1)[1].split()
+    if len(fields)<20 or not re.fullmatch(r"[0-9]{1,30}",fields[19]):
+        fail("original kernel PID starttime absent")
+    return fields[19]
+
+
+def checked_admission(nonce,pid,uid,starttime):
+    # Fixed one-use ROOT voucher was written only after the trusted launcher
+    # hashed the live original binary against the installed ROOT manifest.
+    # This does NOT relax systemd's restricted service capability bounding set.
+    manifest=os.open(HOST_MANIFEST,os.O_RDONLY|os.O_NOFOLLOW|os.O_CLOEXEC)
+    try:
+        info=os.fstat(manifest)
+        if (not stat.S_ISREG(info.st_mode) or info.st_uid!=0
+                or info.st_mode&0o022 or info.st_nlink!=1):
+            fail("original root-owned binary manifest invalid")
+        pinned=os.read(manifest,66)
+        if (len(pinned)!=65 or pinned[-1:]!=bytes([10])
+                or not re.fullmatch(b"[0-9a-f]{64}",pinned[:64])):
+            fail("original root-owned binary digest malformed")
+    finally:
+        os.close(manifest)
+    target=RECEIPTS/(nonce+".admission")
+    fd=os.open(target,os.O_RDONLY|os.O_NOFOLLOW|os.O_CLOEXEC)
+    try:
+        info=os.fstat(fd)
+        if (not stat.S_ISREG(info.st_mode) or info.st_uid!=0
+                or info.st_mode&0o077 or info.st_nlink!=1):
+            fail("one-use root-owned admission identity invalid")
+        body=os.read(fd,256)
+        if os.read(fd,1):
+            fail("root-owned admission record exceeded bounded size")
+    finally:
+        os.close(fd)
+    expected=("AGENT01L_ROOT_VERIFIED_HOST_V1\n"
+              f"NONCE={nonce}\nHOST_PID={pid}\nUID={uid}\n"
+              f"STARTTIME={starttime}\nEXEC_SHA256={pinned[:64].decode('ascii')}\n")
+    if body!=expected.encode("ascii"):
+        fail("root-verified executable or original PID starttime mismatch")
+
+
+def original_host(pid,uid,nonce):
     if pid<=1 or uid<=0:
         fail("invalid reviewed original PID/UID")
     status=pathlib.Path(f"/proc/{pid}/status").read_text(encoding="ascii")
     rows=[x.split() for x in status.splitlines() if x.startswith("Uid:")]
     if len(rows)!=1 or len(rows[0])!=5 or int(rows[0][1])!=uid:
         fail("original test host not owned by invoking nonroot UID")
-    exe=pathlib.Path(f"/proc/{pid}/exe").resolve(strict=True)
-    if exe.name!="lu-e1-p08-linux-cgroup-crash-parent":
-        fail("original process is not the built first-party crash fixture")
-    return os.pidfd_open(pid)
+    fd=os.pidfd_open(pid)
+    try:
+        checked_admission(nonce,pid,uid,kernel_starttime(pid))
+        return fd
+    except BaseException:
+        os.close(fd)
+        raise
 
 
 def original_profile(raw,uid):
@@ -126,8 +178,8 @@ def main():
             fail("root-owned fixture service missing effective UID/GID drop capability")
     user=pwd.getpwuid(args.uid)
     profile=original_profile(args.profile,args.uid)
-    hostfd=original_host(args.host_pid,args.uid)
     shared.checked_root_dir(RECEIPTS)
+    hostfd=original_host(args.host_pid,args.uid,args.nonce)
     receipt=RECEIPTS/(args.nonce+".receipt")
     if receipt.exists() or receipt.is_symlink():
         fail("one-use fixture receipt already exists")
