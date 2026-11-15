@@ -274,6 +274,50 @@ impl ModelTurnJournal {
         }
         Ok(events)
     }
+
+    /// C3 historical model evidence must not create/migrate a database,
+    /// change journal_mode, or append an event while a real turn is active.
+    /// No source text, model reply, or renderer-supplied path chooses this
+    /// file; the trusted desktop validates its original profile-owned path.
+    pub fn read_events_read_only(
+        path:&Path,conversation_id:&str,task_id:&str,max_events:usize
+    )->Result<Vec<ModelAuditRecord>,ModelAuditError>{
+        Self::validate_origin(conversation_id,task_id)?;
+        if max_events==0||max_events>128 {
+            return Err(ModelAuditError::OversizedEvent)
+        }
+        let connection=Connection::open_with_flags(
+            path,rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY
+                |rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX
+        )?;
+        let mut stmt=connection.prepare(
+            "SELECT sequence,kind,payload,repair
+               FROM lu_model_boundary_audit
+              WHERE conversation_id=?1 AND task_id=?2
+              ORDER BY sequence ASC LIMIT ?3"
+        )?;
+        let rows=stmt.query_map(
+            params![conversation_id,task_id,(max_events+1) as i64],
+            |row| Ok((
+                row.get::<_,i64>(0)?,row.get::<_,String>(1)?,
+                row.get::<_,String>(2)?,row.get::<_,Option<String>>(3)?,
+            ))
+        )?;
+        let mut events=Vec::new();
+        for row in rows{
+            let (sequence,kind,payload,repair)=row?;
+            if events.len()>=max_events || payload.len()>MAX_BOUNDARY_JSON_BYTES {
+                return Err(ModelAuditError::OversizedEvent)
+            }
+            events.push(ModelAuditRecord{
+                sequence,
+                kind:ModelAuditKind::parse(&kind)
+                    .ok_or(ModelAuditError::InvalidStoredKind)?,
+                payload,repair
+            });
+        }
+        Ok(events)
+    }
 }
 
 #[cfg(test)]

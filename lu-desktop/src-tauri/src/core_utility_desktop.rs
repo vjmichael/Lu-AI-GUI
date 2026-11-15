@@ -8,7 +8,7 @@ use lu_core::{
     agent_tool_loop::ToolDispatchCheckpoint,
     conversation_authority::TrustedUserTurnVerifier,
     inference_host::Cancellation,
-    model_json_boundary::parse_exact_boundary_object,
+    model_json_boundary::{parse_exact_boundary_object,parse_host_tool_feedback_boundary,MAX_BOUNDARY_JSON_BYTES},
     model_turn_journal::{ModelAuditKind,ModelTurnJournal},
     native_core_utility_turn::{CoreUtilityRequest,CoreUtilityTurn},
     supervised_tool_generation::SupervisorModelStep,
@@ -265,8 +265,6 @@ pub(crate) fn prior_utility_observation_for_human(
     }
     // The trusted host chooses the existing profile-private journal, never
     // a path, task or claimed effect supplied by a model or retrieved text.
-    let journal=ModelTurnJournal::open(&file)
-        .map_err(|_|"Original utility journal could not be reopened")?;
     let mut rows=Vec::new();
     for past in chats.prior_authenticated_turn_ids(chat,turn,12)?{
         let original=chats.trusted_user_turn_text(chat,&past)
@@ -280,31 +278,40 @@ pub(crate) fn prior_utility_observation_for_human(
                 "lu_check_env",serde_json::json!({"program":program})
             ),
         };
-        let events=journal.events_for(chat,&past)
+        let events=ModelTurnJournal::read_events_read_only(&file,chat,&past,64)
             .map_err(|_|"Historical native utility audit cannot be reopened")?;
-        if events.len()>64{return Err("Historical utility event count out of bounds".into())}
         let mut tool_reply=None;
         let mut tool_request=None;
         let mut final_count=0usize;
+        let mut human_request_count=0usize;
+        let mut human_request_seq=0i64;
         let mut suspicious=false;
         let mut request_seq=0i64;
         let mut feedback_seq=0i64;
         let mut final_seq=0i64;
         for event in &events{
             match event.kind{
+                ModelAuditKind::UserRequest=>{
+                    human_request_count+=1;
+                    human_request_seq=event.sequence;
+                }
                 ModelAuditKind::ModelOutput=>{
-                    if let Ok(value)=serde_json::from_str::<serde_json::Value>(&event.payload){
-                        if value["kind"]=="tool"{
+                    match serde_json::from_str::<serde_json::Value>(&event.payload){
+                        Ok(value) if value["kind"]=="tool"=>{
                             if tool_request.is_some(){suspicious=true}
                             request_seq=event.sequence;
                             tool_request=Some(value);
                         }
+                        Ok(value) if value["kind"]=="final"=>{},
+                        _=>suspicious=true,
                     }
                 }
                 ModelAuditKind::ToolFeedback=>{
                     if tool_reply.is_some(){suspicious=true}
                     feedback_seq=event.sequence;
-                    tool_reply=serde_json::from_str::<serde_json::Value>(&event.payload).ok();
+                    tool_reply=parse_host_tool_feedback_boundary(
+                        &event.payload,MAX_BOUNDARY_JSON_BYTES
+                    ).ok().map(serde_json::Value::Object);
                     if tool_reply.is_none(){suspicious=true}
                 }
                 ModelAuditKind::FinalAnswer=>{
@@ -322,10 +329,16 @@ pub(crate) fn prior_utility_observation_for_human(
             value.as_object().is_some_and(|o|o.len()==3)
         );
         let observed=tool_reply.as_ref().and_then(|value|{
-            if value["name"]!=name || value["response"]["ok"]!=true{return None}
+            if value["name"]!=name || value["kind"]!="tool_result"
+                ||value["response"]["tool"]!=name
+                ||value["response"]["ok"]!=true{return None}
             let result=&value["response"]["result"];
             if name=="lu_validate_schema"{
-                if result["draft"]!="2020-12" || !result["valid"].is_boolean(){
+                if result["draft"]!="2020-12" || !result["valid"].is_boolean()
+                    ||!result["issues"].is_array()
+                    ||!result["truncated"].is_boolean()
+                    ||(result["valid"]==true && result["issues"]
+                        .as_array().is_some_and(|a|!a.is_empty())){
                     return None
                 }
                 Some(serde_json::json!({
@@ -333,21 +346,30 @@ pub(crate) fn prior_utility_observation_for_human(
                     "draft":"2020-12"
                 }))
             }else{
-                if result["evidence"]!="file_present_only"
-                    || result["execution_verified"]!=false
-                    || !result["candidate_present"].is_boolean()
-                    || !result["version"].is_null(){
+                if result["program"]!=expected_args["program"]
+                    ||result["execution_verified"]!=false
+                    ||!result["candidate_present"].is_boolean()
+                    ||!result["version"].is_null()
+                    ||!result["os"].is_string()
+                    ||!result["arch"].is_string()
+                    ||!matches!(result["evidence"].as_str(),
+                        Some("file_present_only"|"not_found"))
+                    ||(result["candidate_present"]==true
+                        &&result["evidence"]!="file_present_only")
+                    ||(result["candidate_present"]==false
+                        &&result["evidence"]!="not_found"){
                     return None
                 }
                 Some(serde_json::json!({
                     "candidatePresentAtObservation":result["candidate_present"],
-                    "evidence":"file_present_only",
+                    "evidence":result["evidence"],
                     "executionVerified":false
                 }))
             }
         });
         let accepted=!suspicious && matching && observed.is_some()
-            && final_count==1 && request_seq>0
+            && human_request_count==1 && final_count==1
+            && human_request_seq>0 && request_seq>human_request_seq
             && feedback_seq>request_seq && final_seq>feedback_seq;
         rows.push(serde_json::json!({
             "originalHumanTurnId":past,
@@ -405,8 +427,14 @@ mod tests{
         journal.append(&chat,&old,ModelAuditKind::UserRequest,original,None).unwrap();
         journal.append(&chat,&old,ModelAuditKind::ModelOutput,
             r#"{"kind":"tool","name":"lu_validate_schema","arguments":{"schema":{"type":"integer"},"data":42}}"#,None).unwrap();
+        let native_feedback=lu_core::model_json_boundary::serialize_host_tool_feedback_boundary(
+            "call-real-source","lu_validate_schema",
+            &serde_json::json!({"tool":"lu_validate_schema","ok":true,
+                "result":{"draft":"2020-12","valid":true,"issues":[],"truncated":false}}),
+            MAX_BOUNDARY_JSON_BYTES
+        ).unwrap();
         journal.append(&chat,&old,ModelAuditKind::ToolFeedback,
-            r#"{"name":"lu_validate_schema","response":{"ok":true,"result":{"draft":"2020-12","valid":true}}}"#,None).unwrap();
+            &native_feedback,None).unwrap();
         journal.append(&chat,&old,ModelAuditKind::FinalAnswer,
             "The model reports success",None).unwrap();
         let followup="What did the native schema check observe?";
@@ -443,6 +471,55 @@ mod tests{
         assert!(!damaged.contains("validAtObservation"));
         drop(reopened);
         std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn original_negative_program_observation_is_historical_not_installed_proof(){
+        if !(cfg!(windows)||cfg!(target_os="linux")){return}
+        let root=std::env::temp_dir().join(format!(
+            "lu-c3-negative-env-{}-{}",
+            std::process::id(),std::time::SystemTime::now().duration_since(
+                std::time::UNIX_EPOCH).unwrap().as_nanos()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let chats=ChatStore::open(&root).unwrap();
+        let chat=chats.create_chat().unwrap().chat_id;
+        let old=format!("g-{}","3".repeat(32));
+        let now=format!("g-{}","4".repeat(32));
+        let original="Check if python is installed on my computer";
+        assert!(explicit_core_utility_request(original).is_some());
+        chats.append_user_with_turn_id(&chat,&old,original).unwrap();
+        let file=root.join("lu-core-utility-model-audit.sqlite");
+        let journal=ModelTurnJournal::open(&file).unwrap();
+        journal.append(&chat,&old,ModelAuditKind::UserRequest,original,None).unwrap();
+        journal.append(&chat,&old,ModelAuditKind::ModelOutput,
+            r#"{"kind":"tool","name":"lu_check_env","arguments":{"program":"python"}}"#,None).unwrap();
+        let response=lu_core::model_json_boundary::serialize_host_tool_feedback_boundary(
+            "call-local","lu_check_env",
+            &serde_json::json!({
+                "tool":"lu_check_env","ok":true,
+                "result":{"program":"python","candidate_present":false,
+                    "evidence":"not_found","os":std::env::consts::OS,
+                    "arch":std::env::consts::ARCH,"version":null,
+                    "execution_verified":false}
+            }),MAX_BOUNDARY_JSON_BYTES
+        ).unwrap();
+        journal.append(&chat,&old,ModelAuditKind::ToolFeedback,&response,None).unwrap();
+        journal.append(&chat,&old,ModelAuditKind::FinalAnswer,
+            "The model says Python was installed",None).unwrap();
+        let prompt="What happened to the native environment check?";
+        chats.append_user_with_turn_id(&chat,&now,prompt).unwrap();
+        let text=prior_utility_observation_for_human(&chats,&root,&chat,&now,prompt)
+            .unwrap().unwrap();
+        let value:serde_json::Value=serde_json::from_str(&text).unwrap();
+        let row=&value["observationsMostRecentFirst"][0];
+        assert_eq!(row["status"],"HISTORICAL_NATIVE_READ_ONLY_TOOL_FEEDBACK_RECORDED");
+        assert_eq!(row["observation"]["candidatePresentAtObservation"],false);
+        assert_eq!(row["observation"]["evidence"],"not_found");
+        assert_eq!(row["taskCompleted"],false);
+        assert!(!text.contains("says Python was installed"));
+        drop(journal);drop(chats);
+        std::fs::remove_dir_all(&root).unwrap();
     }
     #[test]
     fn only_exact_supplied_schema_data_enters_model_utility(){
