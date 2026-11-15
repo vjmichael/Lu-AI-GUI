@@ -111,3 +111,18 @@ test("native SEC06C fixture adapter in exact-host gate cannot downgrade positive
   assert.match(native,/test "\$LINUX" = success/);
   assert.match(native,/runs-on: \[self-hosted, linux, x64, lu-cgroup-v2-delegated\]/);
 });
+
+test("AGENT-01L original native workflow asserts all current source cases before physical test",()=>{
+  const workflow=fs.readFileSync(".github/workflows/lu-agent01l-linux-cgroup-v2.yml","utf8");
+  const modern=fs.readFileSync("lu-desktop/tests/agent01l-linux-cgroup-v2.test.mjs","utf8");
+  const legacy=fs.readFileSync("lu-desktop/tests/agent01l-os-custody.test.mjs","utf8");
+  const casesModern=(modern.match(/^\s*test\(/gm)||[]).length;
+  const casesLegacy=(legacy.match(/^\s*test\(/gm)||[]).length;
+  assert.ok(casesModern>=14 && casesLegacy>=10,"current mandatory native source contracts");
+  assert.match(workflow,new RegExp("# pass "+casesModern+"(?=' agent01l-cgroup-evidence/linux-cgroup-contract\\.log)"));
+  assert.match(workflow,new RegExp("# pass "+casesLegacy+"(?=' agent01l-cgroup-evidence/agent01l-os-source\\.log)"));
+  assert.doesNotMatch(workflow,/continue-on-error: true/);
+  assert.match(workflow,/LU_AGENT01L_REQUIRE_OS_OWNED_FIXTURE: '1'/);
+  assert.match(workflow,/AGENT01L_NATIVE_CGROUP_ESCAPED_DESCENDANT_PASS=1/);
+  assert.match(workflow,/agent01l_linux_real_git_cgroup_custody_after_restart/);
+});

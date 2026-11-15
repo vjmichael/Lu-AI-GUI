@@ -45,7 +45,7 @@ jobs:
           grep -Fq '# fail 0' agent01l-cgroup-evidence/agent01l-os-source.log
           node --test lu-desktop/tests/agent01l-linux-cgroup-v2.test.mjs \
             2>&1 | tee agent01l-cgroup-evidence/linux-cgroup-contract.log
-          grep -Fq '# pass 9' agent01l-cgroup-evidence/linux-cgroup-contract.log
+          grep -Fq '# pass 14' agent01l-cgroup-evidence/linux-cgroup-contract.log
           grep -Fq '# fail 0' agent01l-cgroup-evidence/linux-cgroup-contract.log
       - name: Compile native host / independently verified reader and test missing OS custody
         shell: bash
