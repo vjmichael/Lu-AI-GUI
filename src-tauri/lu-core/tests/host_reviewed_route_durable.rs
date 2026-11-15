@@ -96,7 +96,7 @@ impl ModelToolCodec for Codec {
             .get("expression")
             .and_then(Value::as_str)
             .ok_or_else(|| ModelToolError::InvalidArguments("expression".into()))?;
-        if expr != "9/14 + 5/21" {
+        if !matches!(expr, "9/14 + 5/21" | "9/14 + 5/21 + 0") {
             return Err(ModelToolError::InvalidArguments(
                 "unexpected test input".into(),
             ));
@@ -128,7 +128,8 @@ impl NativeTool for TestTool {
         let hits = Arc::clone(&self.hits);
         let cancel = self.cancel_on_call.clone();
         Box::pin(async move {
-            if invocation.input.bytes != b"9/14 + 5/21" {
+            if invocation.input.bytes != b"9/14 + 5/21"
+                && invocation.input.bytes != b"9/14 + 5/21 + 0" {
                 return Err(ToolFailure::new("INVALID_TEST_INPUT", "unexpected", false));
             }
             hits.fetch_add(1, Ordering::SeqCst);
@@ -268,6 +269,42 @@ fn expected_call_id() -> String {
         .map(|b| format!("{b:02x}"))
         .collect::<String>();
     format!("lu-{prefix}-1")
+}
+
+#[tokio::test]
+async fn interleaved_effectful_proposal_cannot_reexecute_first_operation() {
+    let dir = root("nonconsecutive-effect-replay");
+    let effects = EffectJournal::open(&dir.join("effects.sqlite")).unwrap();
+    let (registry, catalog, authority, origin, hits) = fixture(None);
+    let mut model_turn = turn(&catalog, &authority, origin);
+    let request = |expression: &str| json!({
+        "kind": "tool", "name": PUBLIC_NAME,
+        "arguments": {"expression": expression},
+    }).to_string();
+
+    // Two different authorized operations are not prohibited merely because
+    // they share a target/tool. Neither is a re-execution of the other's
+    // exact model-proposed operation.
+    for expression in ["9/14 + 5/21", "9/14 + 5/21 + 0"] {
+        let reply = model_turn.handle_model_reply_observed_durable(
+            &request(expression), &catalog, &registry, &authority,
+            &Policy, &|_| {}, &effects,
+        ).await.unwrap();
+        assert!(matches!(reply, lu_core::agent_tool_loop::ToolTurnOutcome::ToolResult { .. }));
+    }
+    assert_eq!(hits.load(Ordering::SeqCst), 2);
+    assert_eq!(model_turn.step_count(), 2);
+    // A -> B -> A is replay, even though each model proposal would receive
+    // a fresh call ID. Do not rely on journal idempotency scoped to call ID.
+    assert_eq!(model_turn.handle_model_reply_observed_durable(
+        &request("9/14 + 5/21"), &catalog, &registry, &authority,
+        &Policy, &|_| {}, &effects,
+    ).await, Err(ToolTurnError::NoProgress));
+    assert_eq!(hits.load(Ordering::SeqCst), 2);
+    assert_eq!(model_turn.step_count(), 2);
+    drop(model_turn);
+    drop(effects);
+    fs::remove_dir_all(dir).unwrap();
 }
 
 #[tokio::test]
