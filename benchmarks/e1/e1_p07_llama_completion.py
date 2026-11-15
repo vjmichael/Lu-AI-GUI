@@ -41,13 +41,16 @@ ws ::= | " " | "\n" [ \t]{0,20}
 '''
 GENERIC_REPLY_GBNF = {
     "required": "root ::= observed-tool\n" + _JSON_RULES,
+    # Original TOOLS-05/06 have typed, MODEL-CHOSEN JSON arguments.
+    # Require a tool envelope but never supply its name or parameter values.
+    "required_args": "root ::= tool\n" + _JSON_RULES,
     "auto": "root ::= tool | final\n" + _JSON_RULES,
 }
 
 def model_payload(prompt: str, tokens: int, protocol: str, tool_mode: str = "auto") -> dict:
-    if tool_mode not in ("auto", "required"):
+    if tool_mode not in ("auto", "required", "required_args"):
         raise ValueError("Unknown reviewed observation mode")
-    if tool_mode == "required" and protocol != "json_schema":
+    if tool_mode in ("required", "required_args") and protocol != "json_schema":
         raise ValueError("Required observation mode needs strict JSON schema")
     if protocol not in ("raw", "json_schema"):
         raise ValueError("Unknown explicit test-only response protocol")
