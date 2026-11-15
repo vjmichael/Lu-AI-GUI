@@ -5,7 +5,9 @@ const read=p=>readFileSync(new URL(p,import.meta.url),'utf8');
 const inspector=read('../../supervisor/src/debug_control_evidence.rs');
 // Preserve original global-journal denial assertions across rustfmt's purely
 // lexical spacing of Rust operators and struct initializers.
-const inspectorLexical = inspector.replace(/\s*([=,:?{}()])\s*/g,'$1');
+// Include two-character comparison/aggregation operators, never remove the
+// original all-project journal and OS-recovery assertions below.
+const inspectorLexical = inspector.replace(/\s*(!=|\|=|==|<=|>=|[=,:?{}()])\s*/g,'$1');
 const supervisor=read('../../supervisor/src/lib.rs');
 const native=read('../src-tauri/src/debug_backend.rs');
 const handlers=read('../src-tauri/src/lib.rs');

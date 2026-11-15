@@ -97,7 +97,11 @@ test('frontend selectable build IDs never include npm, pytest, CMake or shell',(
     .enum.includes('rust_build'));
   assert.ok(schema.operations['job.prepare'].request.properties.recipeId.enum
     .includes('rust_build'));
-  assert.match(ui,/invoke\('ide_build_start',/);
+  // Current UI only submits a native registered project/profile and the
+  // reviewed saved manifest digest; no renderer-selected argv or executable.
+  assert.match(ui,/invoke\('ide_build_run_profile',\s*\{\s*projectId,\s*recipeId:plan\.recipeId,\s*expectedManifestSha256:plan\.expectedManifestSha256,/);
+  assert.match(ui,/const checked = protectedBuildOutcome\(outcome,plan,projectId\)/);
+  assert.match(ui,/!isCurrentProtectedBuildPlan\(plan,projectRunProfiles,buildStatus,projectId\)/);
   const portion=ui.slice(ui.indexOf('function chooseProjectRunProfile'),
     ui.indexOf('async function refreshProtectedBuildStatus'));
   assert.doesNotMatch(portion,/ide_build_start|spawn\(|eval\(/);

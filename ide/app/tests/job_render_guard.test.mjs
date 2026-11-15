@@ -41,7 +41,11 @@ test('IDE-05.6 all project-scoped Jobs, Packages and Editor views require a real
   // an unscoped result pane. Cross-project entries must not render.
   assert.match(ui,/projectJobLifecycle\(buildStatus,activeProject\?\.projectId,/);
   assert.match(ui,/\{belongsToSelectedProject\(activeProject, visibleNativeDebuggerResult\)/);
-  assert.doesNotMatch(ui,/\?\.projectId\s*={2,3}\s*activeProject\?\.projectId/);
+  // A project-ID comparison is mandatory when selecting a saved editor tab,
+  // but never sufficient to render a native Job receipt. The original native
+  // receipt guard above still rejects unscoped direct JSX comparisons.
+  assert.match(ui,/const activeTab = useMemo\(\(\) => tabs\.find\(tab => tab\.key === activeTabKey &&\s*tab\.projectId === activeProject\?\.projectId\) \|\| null/);
+  assert.doesNotMatch(ui,/\{(?:buildStatus\?\.current|debugStatus\?\.current|buildResult|debugResult)\?\.projectId\s*={2,3}\s*activeProject\?\.projectId/);
   assert.doesNotMatch(ui,/projectRunProfiles\?\.projectId\s*!==\s*activeProject\?\.projectId/);
 });
 test('IDE-05.6 no-project and cross-project receipts cannot select UI panels',()=>{

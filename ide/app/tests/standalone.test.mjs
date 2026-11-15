@@ -30,7 +30,7 @@ test('WebView exposes only project lifecycle, source browse and explicit save co
   // literal IPC must have an exact Tauri registration. No arbitrary command
   // string, shell, path or DAP instruction gains authority from the renderer.
   const native = read('../src-tauri/src/lib.rs');
-  const registered = new Set([...native.matchAll(/^\\s+(ide_[a-z_]+),?$/gm)]
+  const registered = new Set([...native.matchAll(/^\s+(ide_[a-z_]+),?$/gm)]
     .map(match=>match[1]));
   for (const command of new Set(calls))
     assert.ok(registered.has(command),'WebView command not registered: '+command);
