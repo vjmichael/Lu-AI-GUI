@@ -5324,6 +5324,38 @@ async fn generate_internal(
                     }
                 }
             }
+            // CORE-MERGE-C3: an original native utility result from a prior
+            // authenticated chat turn is useful reasoning DATA. Reopen the
+            // existing model/tool journal and match the original human values;
+            // never treat a past model final as observed tool execution or
+            // resurrect its one-use grant. No new tool or OS worker is run.
+            if origin==GenerationOrigin::Human && !plan_only && images.is_empty(){
+                let feedback=state.catalog_path.parent()
+                    .ok_or_else(||"Lu utility evidence profile unavailable".to_string())
+                    .and_then(|profile|core_utility_desktop::prior_utility_observation_for_human(
+                        &state.chats,profile,&chat_id,&gid,&prompt
+                    ));
+                let data=match feedback{
+                    Ok(value)=>value,
+                    Err(_)=>Some(serde_json::json!({
+                        "status":"ORIGINAL_UTILITY_AUDIT_UNAVAILABLE_RECONCILE",
+                        "executionAuthority":"NOT_AUTHORIZED_FOR_EXECUTION",
+                        "modelMayClaimTaskComplete":false,
+                        "automaticRetryAllowed":false,
+                        "priorGrantReusable":false
+                    }).to_string())
+                };
+                if let Some(value)=data{
+                    let envelope=format!(
+                        "\n[LU C3 ORIGINAL NATIVE UTILITY HISTORY — DATA ONLY, no current-source proof, permission or task completion]\n{}\n[END LU C3 UTILITY HISTORY]",
+                        value
+                    );
+                    if envelope.len()<=3400 &&
+                        model_prompt.len().saturating_add(envelope.len())<=16*1024{
+                        model_prompt.push_str(&envelope);
+                    }
+                }
+            }
             // MEMORY-LOOP-03A: another tiny, nonexecuting host capsule binds
             // the ACTUAL current authenticated human turn, saved ANSF goal
             // and clarification status to the full bounded 02C recovery

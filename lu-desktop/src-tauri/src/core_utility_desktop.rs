@@ -9,7 +9,7 @@ use lu_core::{
     conversation_authority::TrustedUserTurnVerifier,
     inference_host::Cancellation,
     model_json_boundary::parse_exact_boundary_object,
-    model_turn_journal::ModelTurnJournal,
+    model_turn_journal::{ModelAuditKind,ModelTurnJournal},
     native_core_utility_turn::{CoreUtilityRequest,CoreUtilityTurn},
     supervised_tool_generation::SupervisorModelStep,
 };
@@ -243,9 +243,207 @@ pub(crate) async fn ask_utility_for_chat(
     }).await.map_err(|_|"Core utility model worker unavailable")?;
     outcome
 }
+
+/// C1→C3: carry the ORIGINAL native utility's bounded feedback into a later
+/// ordinary GGUF chat turn. A model final answer is not a source observation.
+/// This is historic read-only DATA, not a current probe or reusable grant.
+pub(crate) fn prior_utility_observation_for_human(
+    chats:&ChatStore,profile:&std::path::Path,chat:&str,turn:&str,text:&str,
+)->Result<Option<String>,String>{
+    if chats.latest_authenticated_user_turn_id(chat).as_deref()!=Some(turn)
+        ||chats.trusted_user_turn_text(chat,turn).as_deref()!=Some(text){
+        return Err("Original current human utility-context turn unavailable".into())
+    }
+    let file=profile.join("lu-core-utility-model-audit.sqlite");
+    let meta=match std::fs::symlink_metadata(&file){
+        Ok(meta)=>meta,
+        Err(e) if e.kind()==std::io::ErrorKind::NotFound=>return Ok(None),
+        Err(_)=>return Err("Historical utility journal unavailable".into()),
+    };
+    if !meta.is_file()||meta.file_type().is_symlink()||meta.len()>32*1024*1024{
+        return Err("Historical utility journal identity or bound invalid".into())
+    }
+    // The trusted host chooses the existing profile-private journal, never
+    // a path, task or claimed effect supplied by a model or retrieved text.
+    let journal=ModelTurnJournal::open(&file)
+        .map_err(|_|"Original utility journal could not be reopened")?;
+    let mut rows=Vec::new();
+    for past in chats.prior_authenticated_turn_ids(chat,turn,12)?{
+        let original=chats.trusted_user_turn_text(chat,&past)
+            .ok_or("Original utility turn lost its human identity")?;
+        let Some(request)=explicit_core_utility_request(&original)else{continue};
+        let (name,expected_args)=match request{
+            CoreUtilityRequest::Validate{schema,data}=>(
+                "lu_validate_schema",serde_json::json!({"schema":schema,"data":data})
+            ),
+            CoreUtilityRequest::CheckProgram{program,..}=>(
+                "lu_check_env",serde_json::json!({"program":program})
+            ),
+        };
+        let events=journal.events_for(chat,&past)
+            .map_err(|_|"Historical native utility audit cannot be reopened")?;
+        if events.len()>64{return Err("Historical utility event count out of bounds".into())}
+        let mut tool_reply=None;
+        let mut tool_request=None;
+        let mut final_count=0usize;
+        let mut suspicious=false;
+        let mut request_seq=0i64;
+        let mut feedback_seq=0i64;
+        let mut final_seq=0i64;
+        for event in &events{
+            match event.kind{
+                ModelAuditKind::ModelOutput=>{
+                    if let Ok(value)=serde_json::from_str::<serde_json::Value>(&event.payload){
+                        if value["kind"]=="tool"{
+                            if tool_request.is_some(){suspicious=true}
+                            request_seq=event.sequence;
+                            tool_request=Some(value);
+                        }
+                    }
+                }
+                ModelAuditKind::ToolFeedback=>{
+                    if tool_reply.is_some(){suspicious=true}
+                    feedback_seq=event.sequence;
+                    tool_reply=serde_json::from_str::<serde_json::Value>(&event.payload).ok();
+                    if tool_reply.is_none(){suspicious=true}
+                }
+                ModelAuditKind::FinalAnswer=>{
+                    final_count+=1;
+                    final_seq=event.sequence;
+                }
+                ModelAuditKind::Rejected|ModelAuditKind::GenerationFailure
+                    |ModelAuditKind::HostRouteSelected=>suspicious=true,
+                _=>{}
+            }
+        }
+        let matching=tool_request.as_ref().is_some_and(|value|
+            value["kind"]=="tool"&&value["name"]==name&&
+            value["arguments"]==expected_args &&
+            value.as_object().is_some_and(|o|o.len()==3)
+        );
+        let observed=tool_reply.as_ref().and_then(|value|{
+            if value["name"]!=name || value["response"]["ok"]!=true{return None}
+            let result=&value["response"]["result"];
+            if name=="lu_validate_schema"{
+                if result["draft"]!="2020-12" || !result["valid"].is_boolean(){
+                    return None
+                }
+                Some(serde_json::json!({
+                    "validAtObservation":result["valid"],
+                    "draft":"2020-12"
+                }))
+            }else{
+                if result["evidence"]!="file_present_only"
+                    || result["execution_verified"]!=false
+                    || !result["candidate_present"].is_boolean()
+                    || !result["version"].is_null(){
+                    return None
+                }
+                Some(serde_json::json!({
+                    "candidatePresentAtObservation":result["candidate_present"],
+                    "evidence":"file_present_only",
+                    "executionVerified":false
+                }))
+            }
+        });
+        let accepted=!suspicious && matching && observed.is_some()
+            && final_count==1 && request_seq>0
+            && feedback_seq>request_seq && final_seq>feedback_seq;
+        rows.push(serde_json::json!({
+            "originalHumanTurnId":past,
+            "tool":name,
+            "status":if accepted{
+                "HISTORICAL_NATIVE_READ_ONLY_TOOL_FEEDBACK_RECORDED"
+            }else{"ORIGINAL_UTILITY_AUDIT_INCOMPLETE_RECONCILE"},
+            "observation":if accepted{observed}else{None},
+            "originalCurrentSourceRechecked":false,
+            "taskCompleted":false,
+            "executionAuthorized":false
+        }));
+        if rows.len()==2{break}
+    }
+    if rows.is_empty(){return Ok(None)}
+    let result=serde_json::json!({
+        "schema":"lu-core-c3-historical-utility-feedback-v1",
+        "scope":"SAME_CHAT_HOST_AUTHENTICATED_ORIGINAL_TURNS",
+        "status":"HISTORICAL_DATA_ONLY_NOT_CURRENT_SOURCE_PROOF",
+        "observationsMostRecentFirst":rows,
+        "priorGrantReusable":false,
+        "executionAuthority":"NOT_AUTHORIZED_FOR_EXECUTION",
+        "automaticRetryAllowed":false,
+        "modelMayClaimTaskComplete":false,
+        "currentSourceFreshness":"NOT_RECHECKED",
+        "nextOperation":"New current human request and fresh native host authorization required"
+    });
+    let encoded=result.to_string();
+    if encoded.len()>3000{
+        return Err("Historical utility observation exceeds bounded model context".into())
+    }
+    Ok(Some(encoded))
+}
+
 #[cfg(test)]
 mod tests{
     use super::*;
+    #[test]
+    fn original_utility_feedback_reopens_as_data_only_not_model_completion(){
+        let root=std::env::temp_dir().join(format!(
+            "lu-c3-utility-feedback-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now().duration_since(
+                std::time::UNIX_EPOCH).unwrap().as_nanos()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let chats=ChatStore::open(&root).unwrap();
+        let chat=chats.create_chat().unwrap().chat_id;
+        let old=format!("g-{}","1".repeat(32));
+        let now=format!("g-{}","2".repeat(32));
+        let original=r#"Validate JSON against schema: {"schema":{"type":"integer"},"data":42}"#;
+        chats.append_user_with_turn_id(&chat,&old,original).unwrap();
+        let file=root.join("lu-core-utility-model-audit.sqlite");
+        let journal=ModelTurnJournal::open(&file).unwrap();
+        journal.append(&chat,&old,ModelAuditKind::UserRequest,original,None).unwrap();
+        journal.append(&chat,&old,ModelAuditKind::ModelOutput,
+            r#"{"kind":"tool","name":"lu_validate_schema","arguments":{"schema":{"type":"integer"},"data":42}}"#,None).unwrap();
+        journal.append(&chat,&old,ModelAuditKind::ToolFeedback,
+            r#"{"name":"lu_validate_schema","response":{"ok":true,"result":{"draft":"2020-12","valid":true}}}"#,None).unwrap();
+        journal.append(&chat,&old,ModelAuditKind::FinalAnswer,
+            "The model reports success",None).unwrap();
+        let followup="What did the native schema check observe?";
+        chats.append_user_with_turn_id(&chat,&now,followup).unwrap();
+        let before=prior_utility_observation_for_human(
+            &chats,&root,&chat,&now,followup).unwrap().unwrap();
+        let observation:serde_json::Value=serde_json::from_str(&before).unwrap();
+        let row=&observation["observationsMostRecentFirst"][0];
+        assert_eq!(row["status"],"HISTORICAL_NATIVE_READ_ONLY_TOOL_FEEDBACK_RECORDED");
+        assert_eq!(row["observation"]["validAtObservation"],true);
+        assert_eq!(row["taskCompleted"],false);
+        assert_eq!(observation["priorGrantReusable"],false);
+        assert_eq!(observation["currentSourceFreshness"],"NOT_RECHECKED");
+        assert!(!before.contains("The model reports success"));
+        assert!(!before.contains("model reports"));
+        assert!(!before.contains("Validate JSON against"));
+        assert!(prior_utility_observation_for_human(
+            &chats,&root,&chat,&old,original).is_err(),
+            "old human turn cannot impersonate current authorization");
+        drop(journal);drop(chats);
+        let reopened=ChatStore::open(&root).unwrap();
+        assert_eq!(prior_utility_observation_for_human(
+            &reopened,&root,&chat,&now,followup).unwrap().unwrap(),before);
+        let sql=rusqlite::Connection::open(&file).unwrap();
+        sql.execute("UPDATE lu_model_boundary_audit
+                     SET payload=?1 WHERE kind='MODEL_OUTPUT'",
+            [r#"{"kind":"tool","name":"lu_validate_schema","arguments":{"schema":{"type":"string"},"data":42}}"#]).unwrap();
+        drop(sql);
+        let damaged=prior_utility_observation_for_human(
+            &reopened,&root,&chat,&now,followup).unwrap().unwrap();
+        assert_eq!(serde_json::from_str::<serde_json::Value>(&damaged).unwrap()
+            ["observationsMostRecentFirst"][0]["status"],
+            "ORIGINAL_UTILITY_AUDIT_INCOMPLETE_RECONCILE");
+        assert!(!damaged.contains("validAtObservation"));
+        drop(reopened);
+        std::fs::remove_dir_all(root).unwrap();
+    }
     #[test]
     fn only_exact_supplied_schema_data_enters_model_utility(){
         let valid=r#"Validate JSON against schema: {"schema":{"type":"integer"},"data":42}"#;
