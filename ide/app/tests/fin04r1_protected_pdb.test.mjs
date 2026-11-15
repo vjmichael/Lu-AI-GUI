@@ -28,13 +28,13 @@ test('release helper is independently AppContainer+SCM Job-contained, never gene
  assert.match(worker,/fn read_protected_pe_pdb\(/);
  assert.match(worker,/spawn_contained_stdio\([\s\S]*?false,\s*\)\?/);
  assert.match(worker,/if owner_channel\.is_some\(\)/);
- assert.match(worker,/native_lsp_bundle_digest\(&bundle,"dap_lldb_project"\)/);
+ assert.match(worker,/native_lsp_bundle_digest\(&bundle,\s*"dap_lldb_project"\)/);
  assert.match(worker,/verify_suspended_appcontainer_token/);
  assert.match(worker,/let jobs = \[job\.handle\.0\]/);
  assert.match(worker,/if !self\.lease\.alive\(\)/);
- assert.match(worker,/output\.len\(\)>=MAX_OUTPUT/);
+ assert.match(worker,/output\.len\(\)\s*>=\s*MAX_OUTPUT/);
  assert.match(worker,/GetExitCodeProcess\(child\.0/);
- assert.match(worker,/check_file\(pdb,pdb_sha256\)\?/);
+ assert.match(worker,/check_file\(pdb,\s*pdb_sha256\)\?/);
  assert.match(gate,/fn read_pe_pdb_inside_owned_job/);
  assert.match(transport,/fn read_protected_pe_pdb/);
 });
@@ -42,7 +42,7 @@ test('mapped source is exact original kernel stop and original source/PDB/Job se
  assert.match(worker,/pub fn observe_release_owned_stop\(/);
  assert.match(worker,/independently_verify_pdb_line_with_reader/);
  assert.match(worker,/read_pe_pdb_inside_owned_job/);
- assert.match(worker,/end!=event/);
+ assert.match(worker,/end\s*!=\s*event/);
  assert.match(worker,/!self\.gateway\.poll\(\)\?\.is_empty\(\)/);
  assert.match(worker,/target\.verify\(\)\?/);
  assert.match(source,/equal_mapped_line\(/);
@@ -72,7 +72,7 @@ test('post-command step requires newer OS/PDB stop; breakpoint ACK alone never v
  assert.match(controls,/fn verify_independent_step_result/);
  assert.match(controls,/fn verify_independent_breakpoint_hit/);
  assert.match(controls,/new_kernel_owned_pe_pdb_hit_is_distinct_from_dap_breakpoint_ack/);
- assert.match(controls,/after\.owner_sequence != dispatched\.from\.owner_sequence/);
+ assert.match(controls,/after\.owner_sequence[\s\S]*?!=[\s\S]*?dispatched[\s\S]*?\.from[\s\S]*?\.owner_sequence[\s\S]*?\.checked_add\(1\)/);
  assert.match(controls,/after\.owner_receipt_sha256 == dispatched\.from\.owner_receipt_sha256/);
  assert.match(controls,/if cfg!\(all\(windows, feature = "fin04-release-owner-evidence"\)\)/);
  assert.match(controls,/return Err\(ControlDenial::Unreviewed\)/);

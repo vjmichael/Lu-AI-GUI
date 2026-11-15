@@ -64,7 +64,8 @@ test('E2 only accepts plain limited content; rejects remote URI and executable e
       {label:'command',insertText:'x',command:{command:'rm -rf /'}},
       {label:'edit',insertText:'x',textEdit:{newText:'surprise'}},
     ],
-    definition:{relativePath:'src/main.rs',range:{
+    // Independent original saved disk identity is mandatory before navigation.
+    definition:{relativePath:'src/main.rs',diskSha256:t.revision,range:{
       start:{line:1,character:0},end:{line:1,character:6}
     }},
   });
@@ -80,6 +81,10 @@ test('E2 only accepts plain limited content; rejects remote URI and executable e
   });
   assert.equal(visibleHover(t,visible),visible.hover);
   assert.deepEqual(visibleDefinition(t,visible),{from:9,to:15});
+  assert.equal(visibleDefinition(t,{...visible,definition:{
+    ...visible.definition,diskSha256:'0'.repeat(64)}}),null);
+  assert.equal(visibleDefinition(t,{...visible,definition:{
+    relativePath:'src/main.rs',range:visible.definition.range}}),null);
   assert.equal(visibleDefinition(t,{
     ...visible,definition:{...visible.definition,relativePath:'../outside.rs'},
   }),null);

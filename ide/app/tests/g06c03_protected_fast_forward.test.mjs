@@ -81,5 +81,11 @@ test('G06C03 UI offers fast-forward only after exact clean merge preview; never 
   assert.match(ui, /mergePlan\.blockers\.length === 0/);
   assert.match(ui, /mergePlanRequest\.current \+= 1/);
   assert.match(ui, /No automatic checkout, branch rewrite, rollback or lock deletion/);
-  assert.doesNotMatch(ui, /invoke\('ide_git_execute_divergent_merge'/);
+  // Modern G06C03B also supports a *separately* reviewed two-parent merge.
+  // The fast-forward button must stay within the exact clean-merge handler
+  // and must never dispatch the unrelated divergent merge.
+  const ff = ui.slice(ui.indexOf('async function executeReviewedFastForward()'),
+    ui.indexOf('async function ',ui.indexOf('async function executeReviewedFastForward()')+1));
+  assert.match(ff, /invoke\('ide_git_execute_fast_forward'/);
+  assert.doesNotMatch(ff, /ide_git_execute_divergent_merge/);
 });

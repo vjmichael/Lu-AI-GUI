@@ -1378,21 +1378,36 @@ mod tests {
                 DapError::InvalidMessage
             );
         }
-        let wire = session
-            .launch_verified_project("/debug-target/target/debug/fixture")
-            .unwrap();
-        let wire = String::from_utf8(wire).unwrap();
-        assert!(wire.contains("/debug-target/target/debug/fixture"));
-        assert!(wire.contains(r#""runInTerminal":false"#));
-        assert!(wire.contains(r#""disableSTDIO":true"#));
-        assert!(wire.contains(r#""disableASLR":false"#));
-        assert_eq!(session.phase(), DapPhase::Launching);
-        assert_eq!(
-            session
+        // The sealed Linux mount has a POSIX root; Windows must NOT
+        // reinterpret that same untrusted POSIX string as a native executable.
+        #[cfg(target_os = "linux")]
+        {
+            let wire = session
                 .launch_verified_project("/debug-target/target/debug/fixture")
-                .unwrap_err(),
-            DapError::InvalidPhase
-        );
+                .unwrap();
+            let wire = String::from_utf8(wire).unwrap();
+            assert!(wire.contains("/debug-target/target/debug/fixture"));
+            assert!(wire.contains(r#""runInTerminal":false"#));
+            assert!(wire.contains(r#""disableSTDIO":true"#));
+            assert!(wire.contains(r#""disableASLR":false"#));
+            assert_eq!(session.phase(), DapPhase::Launching);
+            assert_eq!(
+                session
+                    .launch_verified_project("/debug-target/target/debug/fixture")
+                    .unwrap_err(),
+                DapError::InvalidPhase
+            );
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            assert_eq!(
+                session
+                    .launch_verified_project("/debug-target/target/debug/fixture")
+                    .unwrap_err(),
+                DapError::InvalidMessage
+            );
+            assert_eq!(session.phase(), DapPhase::Ready);
+        }
     }
     #[test]
     fn sealed_native_cargo_debug_root_is_exact_and_nested_paths_are_refused() {

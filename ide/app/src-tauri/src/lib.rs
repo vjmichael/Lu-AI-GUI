@@ -2053,6 +2053,38 @@ async fn ide_debug_control_evidence(
   Err("FIN04_NATIVE_DEBUG_EVIDENCE_NOT_INSTALLED".into())
  }
 }
+/// INT-04: original terminated, independently journal-matched native
+/// debugger session may supply only a read-only source-navigation proposal.
+/// The renderer supplies identifiers, NEVER a source path, PID or DAP payload.
+#[tauri::command]
+async fn ide_debug_review_stopped_source(
+    app: AppHandle,
+    registry: State<'_, Arc<IdeWorkspaceRegistry>>,
+    project_id: String,
+    job_id: String,
+    plan_sha256: String,
+) -> Result<serde_json::Value, String> {
+    #[cfg(all(feature = "native-debug", any(windows, target_os = "linux")))]
+    {
+        let runtime = app
+            .try_state::<Arc<debug_backend::NativeDebugRuntime>>()
+            .ok_or("INT04_NATIVE_DEBUG_SUPERVISOR_UNAVAILABLE")?;
+        let runtime = Arc::clone(runtime.inner());
+        let registry = Arc::clone(registry.inner());
+        let review = tauri::async_runtime::spawn_blocking(move || {
+            runtime.review_stopped_source(&registry, &project_id, &job_id, &plan_sha256)
+        })
+        .await
+        .map_err(|_| "INT04_STOPPED_SOURCE_TASK_INTERRUPTED".to_owned())??;
+        return serde_json::to_value(review)
+            .map_err(|_| "INT04_STOPPED_SOURCE_SERIALIZATION_DENIED".into());
+    }
+    #[cfg(not(all(feature = "native-debug", any(windows, target_os = "linux"))))]
+    {
+        let _ = (app, registry, project_id, job_id, plan_sha256);
+        Err("INT04_NATIVE_DEBUG_REVIEW_NOT_INSTALLED".into())
+    }
+}
 /// FIN-04: read-only control candidate bound to an existing original
 /// stopped-source review, never a live owner or executable adapter command.
 #[tauri::command]
@@ -4291,6 +4323,7 @@ pub fn run() {
             ide_debug_status,
             ide_debug_control_evidence,
             ide_debug_action_os_recovery,
+            ide_debug_review_stopped_source,
             ide_debug_review_control_candidate,
             ide_debug_run_fixture,
             ide_debug_run_project,

@@ -115,7 +115,7 @@ test('UI reports local provenance limits, restart state and optional OS-only pri
   assert.match(ui, /packageRunResult\.packageOutputAudit/);
   assert.match(ui, /wheelArchivesVerifiedAgainstLock/);
   assert.match(ui, /postrunOriginalManifestLockUnchanged/);
-  assert.match(ui, /row\.mayExecuteOrRetryWorker/);
+  assert.match(ui, /May reexecute: false/);
   assert.match(ui, /row\.installedIntoProject/);
   assert.match(ui, /invoke\('ide_package_discard_private_output',\{/);
   assert.match(ui, /original_package_job_requires_native_reconciliation/);

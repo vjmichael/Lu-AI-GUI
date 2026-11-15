@@ -13,7 +13,7 @@ test('debugger actions are fixed proposals; no WebView-supplied DAP control, PID
   assert.match(commands, /compile_error!\("DEV-04\.6D native dialog must not ship in release/);
   const web=read('../web/main.jsx');
   assert.match(web, /invoke\(command,\{projectId\}\)/);
-  assert.match(web, /debugStatus\?\.operationControlSupported/);
+  assert.match(web, /debugAdmission\.operationControlSupported/);
   assert.doesNotMatch(web, /invoke\(command,\{projectId,\s*(?:pid|threadId|path|token|dap)/);
 });
 test('native callback requires verified LLDB owner and one fresh per-action OS dialog', () => {

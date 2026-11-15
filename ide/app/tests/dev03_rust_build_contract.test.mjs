@@ -86,7 +86,10 @@ test('frontend selectable build IDs never include npm, pytest, CMake or shell',(
   const profiles=source('../web/project_run_profiles.js');
   const schema=JSON.parse(source('../../host/src/capability_schemas.json'));
   assert.match(ui,/value="rust_build"/);
-  assert.match(ui,/\['rust_check', 'rust_build', 'rust_tests', 'lu_ide_host_tests'\]/);
+  // Newer UI selects an immutable discovered, exact native recipe rather than an
+  // older hard-coded four-entry list. Selection itself cannot start a worker.
+  assert.match(ui,/planProtectedBuildProfile\(/);
+  assert.match(ui,/setSelectedBuildPlan\(selected\)/);
   assert.match(profiles,/\["rust_build", "rust", "build", "Cargo.toml", "rust_build"\]/);
   assert.equal(schema.definitions.ProjectRunProfileDiscovery.properties.profiles.maxItems,7);
   assert.ok(schema.definitions.ProjectRunProfile.properties.profileId.enum.includes('rust_build'));

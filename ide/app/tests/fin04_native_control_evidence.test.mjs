@@ -3,6 +3,9 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 const read=p=>readFileSync(new URL(p,import.meta.url),'utf8');
 const inspector=read('../../supervisor/src/debug_control_evidence.rs');
+// Preserve original global-journal denial assertions across rustfmt's purely
+// lexical spacing of Rust operators and struct initializers.
+const inspectorLexical = inspector.replace(/\s*([=,:?{}()])\s*/g,'$1');
 const supervisor=read('../../supervisor/src/lib.rs');
 const native=read('../src-tauri/src/debug_backend.rs');
 const handlers=read('../src-tauri/src/lib.rs');
@@ -10,24 +13,24 @@ const ui=read('../web/main.jsx');
 
 test('FIN04 original control evidence is independently validated without importing control dispatch',()=>{
  assert.match(supervisor,/pub mod debug_control_evidence;/);
- assert.match(inspector,/pub fn inspect_debug_control_evidence/);
- assert.match(inspector,/fn read_verified\(/);
- assert.match(inspector,/FIN04_ACTION_JOURNAL_HASH_OR_IDENTITY_INVALID/);
- assert.match(inspector,/FIN04_ACTION_JOURNAL_OWNER_CHANGED/);
- assert.match(inspector,/FIN04_ACTION_JOURNAL_INVALID_TRANSITION/);
- assert.match(inspector,/FIN04_DEBUG_JOURNAL_CHANGED_DURING_ACTION_INSPECTION/);
- assert.match(inspector,/original_debug_journal_digest/);
+ assert.match(inspectorLexical,/pub fn inspect_debug_control_evidence/);
+ assert.match(inspectorLexical,/fn read_verified\(/);
+ assert.match(inspectorLexical,/FIN04_ACTION_JOURNAL_HASH_OR_IDENTITY_INVALID/);
+ assert.match(inspectorLexical,/FIN04_ACTION_JOURNAL_OWNER_CHANGED/);
+ assert.match(inspectorLexical,/FIN04_ACTION_JOURNAL_INVALID_TRANSITION/);
+ assert.match(inspectorLexical,/FIN04_DEBUG_JOURNAL_CHANGED_DURING_ACTION_INSPECTION/);
+ assert.match(inspectorLexical,/original_debug_journal_digest/);
  assert.doesNotMatch(inspector.split('#[cfg(test)]')[0],
    /debug_control_dispatch|CiControlSlot|\.take_step\(|\.take_breakpoint\(|\.take_variables\(|NativeConsentMarker/);
 });
 test('FIN04 full foreign action chain is checked before project-specific redaction',()=>{
- assert.match(inspector,/let parsed=read_verified\(&entry\.path\(\),action\)\?/);
- assert.match(inspector,/FIN04_ACTION_ORIGINAL_PLAN_MISMATCH/);
- assert.match(inspector,/if original\.project_id!=project_id \{continue;\}/);
- assert.match(inspector,/project_action_count=all\.len\(\)/);
- assert.match(inspector,/journal_chain_verified:true/);
- assert.match(inspector,/native_owner_event_live_verified:false,global_kernel_custody_accepted:false/);
- assert.match(inspector,/debugger_execution_authorized:false,replay_authorized:false/);
+ assert.match(inspectorLexical,/let parsed=read_verified\(&entry\.path\(\),action\)\?/);
+ assert.match(inspectorLexical,/FIN04_ACTION_ORIGINAL_PLAN_MISMATCH/);
+ assert.match(inspectorLexical,/if original\.project_id!=project_id\{continue;\}/);
+ assert.match(inspectorLexical,/project_action_count=all\.len\(\)/);
+ assert.match(inspectorLexical,/journal_chain_verified:true/);
+ assert.match(inspectorLexical,/native_owner_event_live_verified:false,global_kernel_custody_accepted:false/);
+ assert.match(inspectorLexical,/debugger_execution_authorized:false,replay_authorized:false/);
 });
 test('FIN04 read-only control candidate is not a DAP control or an OS grant',()=>{
  assert.match(native,/pub fn review_control_candidate/);
@@ -56,17 +59,17 @@ test('FIN04 native desktop exposes only review and audit commands from these cha
 });
 
 test('FIN04 full original-action inventory blocks production admission across every project',()=>{
- assert.match(inspector,/pub global_os_cleanup_required:bool/);
- assert.match(inspector,/global_action_cleanup \|= parsed\.requires_os_cleanup/);
- assert.match(inspector,/let global_os_cleanup_required=global_action_cleanup/);
- assert.match(inspector,/pub global_unresolved_action_required:bool/);
- assert.match(inspector,/global_action_reconciliation \|=/);
- assert.match(inspector,/original_debug_journal_digest/);
- assert.match(inspector,/FIN04_ORIGINAL_DEBUG_SUPERVISOR_STATE_STALE/);
- assert.match(inspector,/if original\.project_id!=project_id \{continue;\}/);
- assert.match(inspector,/action_directory_fingerprint/);
- assert.match(inspector,/FIN04_ACTION_DIRECTORY_CHANGED_DURING_INSPECTION/);
- assert.match(inspector,/FIN04_ORIGINAL_DEBUG_SUPERVISOR_STATE_STALE/);
+ assert.match(inspectorLexical,/pub global_os_cleanup_required:bool/);
+ assert.match(inspectorLexical,/global_action_cleanup\|=parsed\.requires_os_cleanup/);
+ assert.match(inspectorLexical,/let global_os_cleanup_required=global_action_cleanup/);
+ assert.match(inspectorLexical,/pub global_unresolved_action_required:bool/);
+ assert.match(inspectorLexical,/global_action_reconciliation \|=/);
+ assert.match(inspectorLexical,/original_debug_journal_digest/);
+ assert.match(inspectorLexical,/FIN04_ORIGINAL_DEBUG_SUPERVISOR_STATE_STALE/);
+ assert.match(inspectorLexical,/if original\.project_id!=project_id\{continue;\}/);
+ assert.match(inspectorLexical,/action_directory_fingerprint/);
+ assert.match(inspectorLexical,/FIN04_ACTION_DIRECTORY_CHANGED_DURING_INSPECTION/);
+ assert.match(inspectorLexical,/FIN04_ORIGINAL_DEBUG_SUPERVISOR_STATE_STALE/);
  assert.match(native,/let original_action_cleanup_required=/);
  assert.match(native,/action_evidence\.global_unresolved_action_required/);
  assert.match(native,/action_evidence\.global_os_cleanup_required/);
@@ -77,8 +80,8 @@ test('FIN04 full original-action inventory blocks production admission across ev
  assert.doesNotMatch(native,/let dangling_action_jobs: Vec<String> = Vec::new\(\)/);
 });
 test('FIN04 source candidate SHA binds original debugger and action journal identities',()=>{
- assert.match(inspector,/pub original_debug_journal_sha256:String/);
- assert.match(inspector,/pub action_manifest_sha256:String/);
+ assert.match(inspectorLexical,/pub original_debug_journal_sha256:String/);
+ assert.match(inspectorLexical,/pub action_manifest_sha256:String/);
  assert.match(native,/audit\.original_debug_journal_sha256\.as_str\(\)/);
  assert.match(native,/audit\.action_manifest_sha256\.as_str\(\)/);
  assert.match(native,/FIN04_READ_ONLY_CONTROL_SOURCE_CHANGED/);
@@ -100,9 +103,9 @@ test('FIN04 web inspector rejects fabricated global flags and missing native jou
 });
 
 test('FIN04 distinguishes an active worker from unresolved action outcome claims',()=>{
- assert.match(inspector,/requires_result_reconciliation:end\.phase=="ResultUncertain"/);
- assert.match(inspector,/pub independent_result_reconciliation_required:bool/);
- assert.match(inspector,/pub global_unresolved_action_required:bool/);
+ assert.match(inspectorLexical,/requires_result_reconciliation:end\.phase=="ResultUncertain"/);
+ assert.match(inspectorLexical,/pub independent_result_reconciliation_required:bool/);
+ assert.match(inspectorLexical,/pub global_unresolved_action_required:bool/);
  assert.match(native,/orphaned_debug_action_required: original_action_cleanup_required/);
  assert.match(native,/let global_recovery_required =/);
  assert.match(native,/global_unresolved_action_required/);

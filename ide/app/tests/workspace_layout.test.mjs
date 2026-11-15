@@ -118,7 +118,12 @@ test('no automatically opened files or source writes in frontend command wiring'
   assert.match(ui,/invoke\('ide_workspace_layout_save',\{layout\}\)/);
   assert.match(ui,/invoke\('ide_workspace_layout_read',\{projectId\}\)/);
   assert.match(ui,/invoke\('ide_workspace_layout_clear',\{projectId\}\)/);
-  assert.match(ui,/revalidatedResumeDecision\(layout,entry,preview,projectId\)/);
+  // INT01D reconciles ALL remembered saved files and separately rechecks
+  // every source revision before opening a clean buffer, rather than trusting
+  // the older per-entry decision alone.
+  assert.match(ui,/planRestartReconciliation\(layout,observations,tabsRef\.current,/);
+  assert.match(ui,/projectEditorWitnessChanged\(projectId,initialWitness\)/);
+  assert.match(ui,/latest\.revision!==opened\.revision \|\| latest\.text!==opened\.text/);
   assert.match(ui,/const ticket=beginExplorerIo\(\)/);
   assert.match(native,/ide_workspace_layout_save,/);
   assert.match(native,/ide_workspace_layout_read,/);

@@ -17,7 +17,9 @@ test('P04 actual selected project matches only exact scoped native job', () => {
 });
 test('P04 React protected Job requests view uses proven scoped guards', () => {
   const ui=readFileSync(new URL('../web/main.jsx', import.meta.url),'utf8');
-  for (const name of ['buildStatus?.current','buildResult','debugStatus?.current','debugResult']) {
+  // Current debugger receipts are preselected by project and only the
+  // validated visible receipt can render, not the untrusted raw debugResult.
+  for (const name of ['buildStatus?.current','buildResult','debugStatus?.current','visibleNativeDebuggerResult']) {
     assert.ok(ui.includes('belongsToSelectedProject(activeProject, '+name+')'), name);
   }
   assert.doesNotMatch(ui,/\{(?:buildStatus\?\.current|debugStatus\?\.current|buildResult|debugResult)\?\.projectId === activeProject\?\.projectId/);
@@ -26,7 +28,7 @@ test('P04 React protected Job requests view uses proven scoped guards', () => {
 test('IDE-05.6 all project-scoped Jobs, Packages and Editor views require a real selected project',()=>{
   const ui=readFileSync(new URL('../web/main.jsx', import.meta.url),'utf8');
   const names=[
-    'projectRunProfiles','adapterReview','testDiscovery','nativeJobOutput',
+    'projectRunProfiles','adapterReview','testDiscovery',
     'debugTargetReview','packageInspection','packagePreview','buildStatus?.current',
     'packageRunResult','diskAuditReport','activeTab','editorTaskCatalog',
     'diskComparison','mergeReview'
@@ -35,6 +37,10 @@ test('IDE-05.6 all project-scoped Jobs, Packages and Editor views require a real
     ui.includes('belongsToSelectedProject(activeProject, '+name+')'),
     'missing identity guard: '+name
   );
+  // Native job output enters a project-filtering lifecycle projection, never
+  // an unscoped result pane. Cross-project entries must not render.
+  assert.match(ui,/projectJobLifecycle\(buildStatus,activeProject\?\.projectId,/);
+  assert.match(ui,/\{belongsToSelectedProject\(activeProject, visibleNativeDebuggerResult\)/);
   assert.doesNotMatch(ui,/\?\.projectId\s*={2,3}\s*activeProject\?\.projectId/);
   assert.doesNotMatch(ui,/projectRunProfiles\?\.projectId\s*!==\s*activeProject\?\.projectId/);
 });

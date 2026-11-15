@@ -59,17 +59,17 @@ test('Linux and Windows use same reviewed native LSP permission boundary, not PA
 test('real UI distinguishes Ruff diagnostic-only and validates native source after every request',()=>{
   for(const marker of [
     "import { languageServiceCapabilities, languageMethodAvailable }",
-    "languageMethodAvailable(currentLanguageId, kind)",
-    "currentLanguageId === 'python'",
+    "languageMethodAvailable(source.languageId,kind,lspWorker)",
+    "source.languageId==='python'",
     'Ruff · diagnostics only',
     "invoke('ide_lsp_start_session'",
     "invoke('ide_lsp_change_document'",
     "invoke('ide_lsp_read_diagnostics'",
-    "kind === 'completion'",
-    "kind === 'hover'",
-    "kind === 'definition'",
-    'matchesSource(tab,response)',
-    'visibleDefinition(tab,response)',
+    "kind==='completion'",
+    "kind==='hover'",
+    "kind==='definition'",
+    'isCurrentLspReply(source,response,epoch)',
+    'visibleDefinition(',
     'tabIdentity: tab.key +',
   ]) assert.ok(ui.includes(marker),marker);
   assert.ok(!cargo.includes('default = ["native-lsp"]'));

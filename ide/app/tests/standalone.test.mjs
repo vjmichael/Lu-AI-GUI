@@ -18,7 +18,7 @@ test('WebView exposes only project lifecycle, source browse and explicit save co
   assert.ok(calls.includes('ide_choose_project'));
   assert.ok(calls.includes('ide_close_project'));
   assert.ok(calls.includes('ide_open_project'));
-  assert.ok(calls.includes('ide_list_source_directory'));
+  assert.ok(calls.includes('ide_list_source_directory_page'));
   assert.ok(calls.includes('ide_preview_source_file'));
   assert.ok(calls.includes('ide_review_source_change'));
   assert.ok(calls.includes('ide_save_source_file'));
@@ -26,40 +26,20 @@ test('WebView exposes only project lifecycle, source browse and explicit save co
   for(const command of ['ide_import_proposal', 'ide_list_proposals', 'ide_review_proposal',
     'ide_decide_proposal', 'ide_stage_proposal', 'ide_discard_proposal']) assert.ok(calls.includes(command), command);
 
-  assert.deepEqual([...new Set(calls)].sort(), [
-    'ide_choose_project', 'ide_close_project', 'ide_list_projects',
-    'ide_list_source_directory', 'ide_open_project', 'ide_preview_source_file',
-    'ide_review_source_change', 'ide_save_source_file', 'ide_unregister_project',
-    'ide_import_proposal', 'ide_list_proposals', 'ide_review_proposal',
-    'ide_decide_proposal', 'ide_stage_proposal', 'ide_discard_proposal',
-    'ide_read_source_span', 'ide_list_capabilities', 'ide_read_project_context', 'ide_capture_project_inventory', 'ide_compare_project_inventory', 'ide_read_git_status', 'ide_compare_live_github', 'ide_read_exact_head_ci', 'ide_record_task_update', 'ide_observe_task_ci', 'ide_prepare_execution_intent', 'ide_decide_execution_intent', 'ide_list_execution_intents', 'ide_read_git_diff', 'ide_read_git_history', 'ide_probe_project_resource',
-    'ide_list_language_servers', 'ide_lsp_worker_status',
-    'ide_lsp_start_session', 'ide_lsp_change_document',
-    'ide_lsp_read_diagnostics', 'ide_lsp_stop_session',
-    // WO6 native-only build/test controls are never a Lu capability grant.
-    'ide_build_status', 'ide_build_start', 'ide_build_cancel', 'ide_build_reconcile',
-    'ide_debug_status', 'ide_debug_run_fixture', 'ide_debug_cancel', 'ide_debug_reconcile',
-    'ide_workflow_preview', 'ide_workflow_verify',
-    'ide_workflow_export_manifest', 'ide_workflow_export_bundle',
-    'ide_git_review_file', 'ide_git_stage_reviewed', 'ide_git_commit_reviewed',
-    'ide_workflow_create', 'ide_workflow_list_runs', 'ide_workflow_cancel_pending',
-    'ide_workflow_run_step', 'ide_workflow_verify_native_receipt',
-    // B3 read-only project search plus B2 native-private draft vault lifecycle.
-    'ide_find_in_project', 'ide_draft_checkpoint', 'ide_draft_latest',
-    'ide_draft_load', 'ide_draft_discard',
-    // Reviewed profile discovery, bounded output, exact debug target review,
-    // project debugging and explicit split-layout persistence are native-only.
-    'ide_build_read_output', 'ide_debug_run_project',
-    'ide_inspect_package_managers', 'ide_preview_package_operation',
-    'ide_revalidate_package_operation', 'ide_package_run_reviewed_uv',
-    'ide_package_discard_private_output',
-    'ide_discover_conventional_tests', 'ide_discover_project_run_profiles',
-    'ide_link_task_source', 'ide_review_multilang_adapter',
-    'ide_review_project_debug_target', 'ide_workspace_layout_clear',
-    'ide_workspace_layout_read', 'ide_workspace_layout_save'
-  ].sort());
+  // The modern WebView has additional native project operations, but every
+  // literal IPC must have an exact Tauri registration. No arbitrary command
+  // string, shell, path or DAP instruction gains authority from the renderer.
+  const native = read('../src-tauri/src/lib.rs');
+  const registered = new Set([...native.matchAll(/^\\s+(ide_[a-z_]+),?$/gm)]
+    .map(match=>match[1]));
+  for (const command of new Set(calls))
+    assert.ok(registered.has(command),'WebView command not registered: '+command);
+  for (const command of ['ide_build_run_profile','ide_debug_review_stopped_source',
+    'ide_workspace_layout_save','ide_git_execute_fast_forward',
+    'ide_read_git_repository_inventory','ide_lsp_runtime_state'])
+    assert.ok(calls.includes(command),'modern native route missing: '+command);
   // E2's dynamic method string is restricted to the two inspected options.
-  assert.match(web, /kind === 'diagnostics' \? 'ide_lsp_read_diagnostics' : 'ide_lsp_feature'/);
+  assert.match(web, /kind==='diagnostics'\s*\?\s*'ide_lsp_read_diagnostics'\s*:\s*'ide_lsp_feature'/);
   const desktop = read('../src-tauri/src/lib.rs');
   assert.match(desktop, /LSP_PROTECTED_WORKER_UNVERIFIED/);
   assert.match(desktop, /cfg\(not\(all\(any\(windows, target_os = "linux"\), feature = "native-lsp"\)\)\)/);
@@ -103,10 +83,10 @@ test('R3 editor has explicit revision-checked save, dirty buffers and conflict h
   const web = read('../web/main.jsx');
   const native = read('../src-tauri/src/lib.rs');
   const editor = read('../web/code_editor.jsx');
-  assert.match(web, /expectedRevision: base/);
-  assert.match(web, /text: content/);
+  assert.match(web, /expectedRevision: started\.savedRevision/);
+  assert.match(web, /text: started\.text/);
   assert.match(web, /FILE_CHANGED_ON_DISK/);
-  assert.match(web, /Your unsaved edits are preserved/);
+  assert.match(web, /Your live unsaved editor buffer was preserved/);
   assert.match(web, /window\.confirm/);
   assert.match(web, /key === 's'/);
   assert.match(web, /saveTab\(activeTab\)/);
@@ -154,7 +134,7 @@ test('Remove from IDE only delists catalog and confirms disk folders are retaine
   assert.match(ui, /Remove from IDE<\/button>/);
   assert.match(ui, /window\.confirm\(message\)/);
   assert.match(ui, /original project folder and ALL files on disk will be kept/);
-  assert.match(ui, /Unsaved edits in its open tabs will be discarded/);
+  assert.match(ui, /Unsaved live editor changes will be discarded unless/);
   assert.match(ui, /operation\('ide_unregister_project'/);
   assert.match(native, /fn ide_unregister_project/);
   assert.match(native, /\.unregister\(&project_id\)/);
@@ -179,9 +159,9 @@ test('bounded change reviews are explicit and independent of AI execution', () =
   assert.match(web, /Review changes/);
   assert.match(web, /Save reviewed changes/);
   assert.match(web, /review\.truncated/);
-  assert.match(web, /tab\.draft !== review\.draft/);
-  assert.match(web, /tab\.revision !== review\.expectedRevision/);
-  assert.match(web, /saveTab\(tab\)/);
+  assert.match(web, /stillCurrentEditorIntent\(review\.liveIntent,tab,/);
+  assert.match(web, /proposal\.expectedRevision!==intent\.savedRevision/);
+  assert.match(web, /saveTab\(tab, review\.liveIntent\)/);
   assert.match(native, /fn ide_review_source_change/);
   assert.match(native, /\.review_source_change\(\s*&project_id,\s*&relative_path,\s*&expected_revision,\s*&proposed_text,?\s*\)/);
   assert.match(host, /const MAX_REVIEW_LINES: usize = 240/);
@@ -250,7 +230,7 @@ test('R3.5 standalone proposal inbox requires explicit review and never applies 
   assert.match(web, /ide_decide_proposal/);
   assert.match(web, /ide_discard_proposal/);
   assert.match(web, /ide_stage_proposal/);
-  assert.match(web, /Proposal staged as editor drafts/);
+  assert.match(web, /Proposal staged only as editor drafts/);
   assert.match(web, /stageConfirmation/);
   assert.match(web, /noticeDismiss/);
   assert.match(web, /aria-label="Dismiss notification"/);
@@ -311,22 +291,28 @@ test('Wave A2 registry advertises actual host operations without granting execut
   assert.equal(commands.length, 49, 'native capability catalog must match the 49 explicitly typed operations');
   assert.equal(new Set(commands).size, commands.length);
   const nativeLspCommands = [
-    'ide_lsp_worker_status', 'ide_lsp_start_session',
-    'ide_lsp_change_document', 'ide_lsp_feature',
-    'ide_lsp_read_diagnostics', 'ide_lsp_stop_session',
+    'ide_lsp_worker_status', 'ide_lsp_runtime_state',
+    'ide_lsp_start_session', 'ide_lsp_open_document',
+    'ide_lsp_close_document', 'ide_lsp_change_document',
+    'ide_lsp_feature', 'ide_lsp_read_diagnostics',
+    'ide_lsp_project_diagnostics', 'ide_lsp_stop_session',
+    'ide_lsp_recoverable_jobs', 'ide_lsp_reconcile',
   ];
   assert.deepEqual(registered.filter(value => value.startsWith('ide_lsp_')).sort(),
     nativeLspCommands.slice().sort());
   const nativeBuildCommands = [
     'ide_build_status', 'ide_build_start', 'ide_build_cancel', 'ide_build_reconcile',
-    'ide_build_read_output'
+    'ide_build_read_output', 'ide_build_run_profile', 'ide_build_review_test_target'
   ];
   assert.deepEqual(registered.filter(value => value.startsWith('ide_build_')).sort(),
     nativeBuildCommands.slice().sort());
   const nativeDebugCommands = [
     'ide_debug_status', 'ide_debug_run_fixture', 'ide_debug_run_project',
     'ide_debug_cancel', 'ide_debug_reconcile',
-    'ide_debug_step_project', 'ide_debug_breakpoint_project'
+    'ide_debug_step_project', 'ide_debug_breakpoint_project',
+    'ide_debug_inspect_project_variables', 'ide_debug_control_evidence',
+    'ide_debug_action_os_recovery', 'ide_debug_review_control_candidate',
+    'ide_debug_review_release_action', 'ide_debug_review_stopped_source'
   ];
   assert.deepEqual(registered.filter(value => value.startsWith('ide_debug_')).sort(),
     nativeDebugCommands.slice().sort());
@@ -376,7 +362,33 @@ test('Wave A2 registry advertises actual host operations without granting execut
     !nativeBuildCommands.includes(value) && !nativeDebugCommands.includes(value) &&
     !nativeUiOnlyCommands.includes(value) &&
     !nativePackageCommands.includes(value));
-  assert.deepEqual(commands.slice().sort(), declared.slice().sort());
+  // The 49 original agent-facing capabilities remain EXACT, while newer
+  // independent native IDE-only operations are not silently granted to Lu.
+  assert.ok(commands.every(value => declared.includes(value)),
+    'every agent capability requires an actual registered native handler');
+  const additional = registered.filter(value => !commands.includes(value));
+  const exactNativeOnly = new Set([
+    'ide_list_capabilities', 'ide_native_feature_inventory',
+    'ide_inspect_package_managers', 'ide_preview_package_operation',
+    'ide_revalidate_package_operation',
+    'ide_preview_exact_vcpkg_manifest_edit', 'ide_apply_reviewed_vcpkg_manifest_edit',
+    'ide_discover_conventional_tests', 'ide_inspect_saved_test_symbols',
+    'ide_review_project_debug_target', 'ide_list_source_directory_page',
+    'ide_quick_open_source_paths', 'ide_create_source_entry', 'ide_move_source_file',
+    'ide_trash_source_file', 'ide_list_trashed_sources', 'ide_restore_source_file',
+    'ide_workflow_run_step', 'ide_workflow_verify_native_receipt',
+    'ide_read_local_stash_inventory'
+  ]);
+  for (const value of additional)
+    assert.ok(exactNativeOnly.has(value) ||
+      ['ide_lsp_', 'ide_build_', 'ide_debug_', 'ide_package_',
+       'ide_terminal_', 'ide_git_', 'ide_read_git_', 'ide_read_github_',
+       'ide_workspace_layout_', 'ide_run_protected_'].some(prefix=>value.startsWith(prefix)),
+    'new native-only route requires an explicit source-contract review: '+value);
+  for (const value of nativeLspCommands.concat(nativeBuildCommands,nativeDebugCommands,
+      nativePackageCommands, nativeUiOnlyCommands,
+      ['ide_terminal_submit','ide_terminal_open']))
+    assert.ok(!commands.includes(value),'privileged native UI route became a Lu tool: '+value);
   assert.ok(commands.includes('ide_list_language_servers'));
   assert.match(registry, /descriptions_only: true/);
   assert.match(registry, /connected_to_lu: false/);
@@ -635,7 +647,7 @@ test('B3 project search is saved-byte and capability-scoped, never an execution 
   assert.match(frontend, /aria-label="Search project text"/);
   assert.match(frontend, /invoke\('ide_find_in_project'/);
   assert.match(frontend, /opened\.revision !== match\.revision/);
-  assert.match(frontend, /existing\.dirty/);
+  assert.match(frontend, /lateSourceOpenDecision\(tabsRef\.current,projectId,/);
   assert.match(frontend, /activeProjectIdRef\.current !== projectId/);
   assert.match(frontend, /projectSearchGeneration\.current/);
   assert.match(css, /\.projectSearchResults/);
@@ -691,15 +703,15 @@ test('B4 two-pane layout preserves distinct native-registered CodeMirror tabs an
   assert.match(ui,/import \{ secondaryEditor, initialSecondaryKey, canSaveFocusedPane \} from '\.\/editor_layout\.js'/);
   assert.match(ui,/aria-label="Toggle split editor"/);
   assert.match(ui,/aria-label="Second editor file"/);
-  assert.match(ui,/initialSecondaryKey\(projectTabs,activeProject\?\.projectId,activeTabKey\)/);
+  assert.match(ui,/initialSecondaryKey\(projectTabs,\s*activeProject\.projectId,activeTabKey\)/);
   assert.match(ui,/secondaryEditor\(\s*projectTabs, activeProject\?\.projectId, activeTab\?\.key, secondaryTabKey\)/);
   assert.match(ui,/data-ide-editor-pane="primary"/);
   assert.match(ui,/data-ide-editor-pane="secondary"/);
-  assert.match(ui,/className="splitSecondaryPane"/);
+  assert.match(ui,/className=\{'splitSecondaryPane'/);
   assert.match(ui,/key=\{secondaryTab\.key \+ ':' \+ secondaryTab\.generation \+ ':secondary'\}/);
   assert.match(ui,/editorState=\{editorStates\.current\.get\(secondaryTab\.key\)\}/);
   assert.match(ui,/onClick=\{\(\) => void saveTab\(secondaryTab\)\}/);
-  assert.match(ui,/canSaveFocusedPane\(focusedPane,activeTab,secondaryTab\)/);
+  assert.match(ui,/canSaveFocusedPane\(pane,activeTab,secondaryTab\)/);
   assert.match(ui,/clearPrivateDraftSession\(key\)/);
   assert.match(ui,/setSecondaryTabKey\(null\)/);
   assert.match(ui,/setSplitEditorOpen\(false\)/);

@@ -10,7 +10,7 @@ const ui = read('../web/main.jsx');
 
 test('G06A read-only inventory is scoped to registered native project', () => {
   assert.match(hostMod, /pub mod git_inventory;/);
-  assert.match(host, /registry\.registered_git_root\(project_id\)/);
+  assert.match(host, /self\.registered_git_root\(project_id\)/);
   assert.match(host, /Repository::open\(root\)/);
   assert.match(host, /actual != root/);
   for (const prohibited of [

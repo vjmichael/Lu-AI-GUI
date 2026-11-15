@@ -85,11 +85,15 @@ test('invalid or empty view is navigation-only and never creates an editor',()=>
 test('UI project switching captures before changing project, and restores scoped focus',()=>{
   const ui=readFileSync(new URL('../web/main.jsx',import.meta.url),'utf8');
   assert.match(ui,/const projectEditorViews = useRef\(new Map\(\)\)/);
-  assert.match(ui,/const previousView = captureProjectView\(tabsRef\.current/);
-  assert.match(ui,/restoreProjectView\(tabsRef\.current,/);
-  assert.match(ui,/setActiveTabKey\(restoredView\.primaryKey\)/);
-  assert.match(ui,/setSecondaryTabKey\(restoredView\.secondaryKey\)/);
-  assert.match(ui,/setSplitEditorOpen\(restoredView\.splitOpen\)/);
+  // Current project switching reconciles both pane identities before changing
+  // the active project and refuses a stale navigation epoch.
+  assert.match(ui,/captureProjectView\(tabsRef\.current/);
+  assert.match(ui,/planProjectSwitchView\(tabsRef\.current,/);
+  assert.match(ui,/if \(!selection\.allowed\)/);
+  assert.match(ui,/projectEditorViews\.current\.set\(request\.fromProjectId,selection\.leaving\)/);
+  assert.match(ui,/setActiveTabKey\(selection\.primaryKey\)/);
+  assert.match(ui,/setSecondaryTabKey\(selection\.secondaryKey\)/);
+  assert.match(ui,/setSplitEditorOpen\(selection\.splitOpen\)/);
   assert.match(ui,/projectEditorViews\.current\.delete\(projectId\)/);
   assert.match(ui,/tab\.projectId === activeProject\?\.projectId/);
   assert.doesNotMatch(ui,/setSplitEditorOpen\(false\);\s*setSecondaryTabKey\(null\);\s*setTabWindowStart\(0\);\s*setProjectProblemsOpen/);
