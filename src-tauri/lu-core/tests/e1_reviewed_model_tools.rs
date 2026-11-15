@@ -19,6 +19,10 @@ use lu_core::{
     },
     journal::{EffectJournal,EffectState},
     model::{ModelToolCatalog,ModelToolError},
+    native_schema_validation::register_schema_validation_tool,
+    native_environment_discovery::{
+        register_environment_discovery_tool,HostProgramSpec,
+    },
     native_app_admission::HostReviewedExecutable,
     native_app_typed_git::{GitReadOperation,HostReviewedGitRead},
     native_app_typed_ffprobe::{HostReviewedMediaProbe,ReviewedContainer},
@@ -26,7 +30,10 @@ use lu_core::{
     native_reviewed_app_tool::{
         register_reviewed_application_tools,ReviewedApplicationTurnSession,
     },
-    supervised_tool_generation::{ModelStepGenerator,NativeGenerationError,NativeTurnRecord},
+    supervised_tool_generation::{
+        run_supervised_native_turn_journaled,ModelStepGenerator,
+        NativeGenerationError,NativeTurnRecord,NativeTurnServices,
+    },
     inference_host::Cancellation,
     model_turn_journal::{ModelTurnJournal,ModelAuditKind},
     registry::NativeToolRegistry,
@@ -880,6 +887,120 @@ impl ModelStepGenerator for GenuineGgufStep{
         Ok(actual.into())
     }
 }
+/// Actual pinned Qwen3 GGUF chooses the ORIGINAL TOOLS-05/06 model names and
+/// arguments. No scripted model response, synthetic native outcome, test-side
+/// tool-name replacement, file execution or unreviewed installed-program claim.
+/// This exercises the existing supervised model->catalog->Protobuf->registry
+/// path; it is not an installed Tauri / physical Radeon assertion.
+#[tokio::test]
+#[ignore="requires the existing pinned real llama.cpp/Qwen3 localhost server in the grouped C4 gate"]
+async fn genuine_qwen_selects_original_schema_and_environment_native_tools(){
+    for mode in ["schema","environment"] {
+        let dir=temp();
+        fs::create_dir_all(&dir).unwrap();
+        let bound=origin();
+        let prompt=if mode=="schema" {
+            "Use the authorized lu_validate_schema native tool to check schema \\"type=integer\\" (JSON schema object {\\"type\\":\\"integer\\"}) against the JSON number 42. Then explain the observed validity from Lu's actual tool reply, not your guess."
+        } else {
+            "Use the authorized lu_check_env native tool with program \\"python\\" to inspect the host-approved candidate presence. This is file-presence only, not proof of runnable Python; explain the observed value after the actual tool reply."
+        };
+        let book=AnsfStore::open(&dir.join("ansf.sqlite")).unwrap();
+        book.create_session(&bound.conversation_id,&bound.user_turn_id,prompt).unwrap();
+        book.append_entry(
+            &bound.conversation_id,&bound.user_turn_id,EntryRole::User,
+            "Original approved observation",prompt
+        ).unwrap();
+        let registry=NativeToolRegistry::new();
+        let mut catalog=ModelToolCatalog::new();
+        let (native_id,public_name)=if mode=="schema" {
+            register_schema_validation_tool(&registry,&mut catalog).unwrap();
+            ("lu.validate.schema","lu_validate_schema")
+        } else {
+            let test_candidate=dir.join(if cfg!(windows){"python.exe"}else{"python"});
+            fs::write(&test_candidate,b"NOT_A_REAL_EXECUTABLE").unwrap();
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                fs::set_permissions(&test_candidate,fs::Permissions::from_mode(0o700)).unwrap();
+            }
+            register_environment_discovery_tool(
+                &registry,&mut catalog,vec![HostProgramSpec{
+                    id:"python".into(),candidate_files:vec![test_candidate.clone()],
+                }]
+            ).unwrap();
+            ("lu.exec.check_env","lu_check_env")
+        };
+        let auth=ConversationAuthority::new();
+        auth.open_user_task(TaskAuthority{
+            conversation_id:bound.conversation_id.clone(),
+            user_turn_id:bound.user_turn_id.clone(),
+            task_id:bound.task_id.clone(),
+            execution_scope_id:"source-reviewed-original-observation".into(),
+            capabilities:vec![AuthorizedCapability{
+                tool_id:native_id.into(),effect:ToolEffect::ReadWorkspace,
+            }],
+            expires_at:None,
+        },&Human(&book)).unwrap();
+        let mut turn=NativeToolTurn::new_read_only(
+            &catalog,&registry,&auth,bound.clone(),
+            "source-reviewed-original-observation".into(),
+            &BTreeSet::from([public_name.to_string()])
+        ).unwrap();
+        turn.require_observed_tool_result();
+        let audit_path=dir.join("original-model-audit.sqlite");
+        let journal=ModelTurnJournal::open(&audit_path).unwrap();
+        let mut real_model=GenuineGgufStep{raw_replies:vec![]};
+        let report=run_supervised_native_turn_journaled(
+            prompt,&mut turn,&mut real_model,
+            &NativeTurnServices{
+                catalog:&catalog,registry:&registry,
+                authority:&auth,host_policy:&Allow,
+            },
+            &Cancellation::default(),&journal,
+        ).await.unwrap();
+        assert_eq!(report.host_routed_calls,0,
+            "real GGUF must choose the advertised tool, not host-side routing");
+        assert_eq!(report.tool_calls,1,
+            "model must choose one original authorized native operation");
+        assert!(report.model_generations>=2);
+        let actual:serde_json::Value=
+            serde_json::from_str(&real_model.raw_replies[0]).unwrap();
+        assert_eq!(actual["kind"],"tool");
+        assert_eq!(actual["name"],public_name);
+        if mode=="schema" {
+            assert_eq!(actual["arguments"]["schema"]["type"],"integer");
+            assert_eq!(actual["arguments"]["data"],42);
+        } else {
+            assert_eq!(actual["arguments"]["program"],"python");
+            assert_eq!(actual["arguments"].as_object().unwrap().len(),1);
+        }
+        let feedback=report.records.iter().find_map(|r|{
+            if let NativeTurnRecord::ToolFeedback(data)=r{
+                (data["name"]==public_name).then_some(data)
+            }else{None}
+        }).expect("actual original typed native result must reach the model");
+        assert_eq!(feedback["response"]["ok"],true);
+        if mode=="schema" {
+            assert_eq!(feedback["response"]["result"]["draft"],"2020-12");
+            assert_eq!(feedback["response"]["result"]["valid"],true);
+        }else{
+            assert_eq!(feedback["response"]["result"]["evidence"],"file_present_only");
+            assert_eq!(feedback["response"]["result"]["candidate_present"],true);
+            assert_eq!(feedback["response"]["result"]["execution_verified"],false);
+            assert_eq!(feedback["response"]["result"]["version"],serde_json::Value::Null);
+            assert!(!feedback.to_string().contains(dir.to_string_lossy().as_ref()));
+        }
+        assert!(!report.answer.trim().is_empty());
+        let actual_audit=journal.events_for(&bound.conversation_id,&bound.task_id).unwrap();
+        assert!(actual_audit.iter().any(|e|e.kind==ModelAuditKind::ToolFeedback));
+        assert!(actual_audit.iter().any(|e|e.kind==ModelAuditKind::FinalAnswer));
+        assert!(actual_audit.iter().any(|e|e.kind==ModelAuditKind::ModelOutput
+            &&e.payload==real_model.raw_replies[0]));
+        drop(turn);drop(journal);drop(auth);drop(catalog);drop(registry);drop(book);
+        fs::remove_dir_all(dir).unwrap();
+    }
+}
+
 #[tokio::test]
 #[ignore="requires verified real GGUF running in localhost llama.cpp, installed Git and FFprobe"]
 async fn genuine_gguf_independently_selects_git_and_media_tools_and_survives_journal_restart(){
