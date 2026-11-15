@@ -7,6 +7,7 @@ It never grants model/desktop tool execution or accepts a command to run.
 The original Python destructive test and Rust Git/restart test are unchanged.
 """
 import argparse
+import ctypes
 import importlib.util
 from importlib.machinery import SourceFileLoader
 import os
@@ -151,6 +152,48 @@ def parent_of(pid):
     return int(line.rsplit(")",1)[1].split()[1])
 
 
+
+def publish_original_handshake(profile,nonce,uid,result):
+    # Original Python test creates a PRIVATE 0700 directory owned by the
+    # nonroot runner. The systemd service intentionally has no CAP_DAC_OVERRIDE.
+    # Temporarily use ONLY that exact runner FSUID for the six-line READY
+    # handshake; keep EUID root and restore ROOT FSUID before waiting for
+    # SIGKILL / invoking independent kernel cgroup.kill.
+    if os.geteuid()!=0:
+        fail("only the root-owned fixture may publish original handshake")
+    if profile.is_symlink() or not profile.is_dir():
+        fail("original runner's private profile changed")
+    info=profile.lstat()
+    if info.st_uid!=uid or info.st_mode&0o077:
+        fail("original runner profile ownership changed")
+    libc=ctypes.CDLL(None,use_errno=True)
+    libc.setfsuid.argtypes=[ctypes.c_int]
+    libc.setfsuid.restype=ctypes.c_int
+    prior=libc.setfsuid(uid)
+    try:
+        if prior!=0 or libc.setfsuid(-1)!=uid:
+            fail("original scoped FSUID admission refused")
+        evidence=profile/"host-crash-evidence.txt"
+        staged=profile/(".lu-agent01l-"+nonce+".stage")
+        fd=os.open(staged,os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o644)
+        with os.fdopen(fd,"w",encoding="ascii") as out:
+            out.write(result)
+            out.flush()
+            os.fsync(out.fileno())
+        if evidence.exists() or evidence.is_symlink():
+            fail("original test evidence file already occupied")
+        os.rename(staged,evidence)
+        folder=os.open(profile,os.O_RDONLY|os.O_DIRECTORY)
+        try:
+            os.fsync(folder)
+        finally:
+            os.close(folder)
+    finally:
+        prior=libc.setfsuid(0)
+        if prior!=uid or libc.setfsuid(-1)!=0:
+            fail("protected root FSUID not restored before kernel cleanup")
+
+
 def main():
     ap=argparse.ArgumentParser(allow_abbrev=False)
     ap.add_argument("--nonce",required=True)
@@ -245,25 +288,13 @@ def main():
             for root in (leaf,nested):
                 if root.stat().st_uid!=0 or root.stat().st_mode&0o022:
                     fail("original same-UID cgroup boundary is mutable")
-            evidence=profile/"host-crash-evidence.txt"
-            staged=profile/(".lu-agent01l-"+args.nonce+".stage")
             result="\n".join([
                 "READY",f"HOST={args.host_pid}",f"LEADER={leader.pid}",
                 f"ESCAPED={child}",f"CGROUP={leaf}",
                 f"RECEIPT={receipt}",""])
-            # Publish only a COMPLETE original six-line evidence record;
-            # the unchanged Python test rejects any partial-read record.
-            fd=os.open(staged,os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o644)
-            with os.fdopen(fd,"w",encoding="ascii") as out:
-                out.write(result)
-                out.flush()
-                os.fsync(out.fileno())
-            if evidence.exists() or evidence.is_symlink():
-                fail("original test evidence file already occupied")
-            os.rename(staged,evidence)
-            folder=os.open(profile,os.O_RDONLY|os.O_DIRECTORY)
-            try:os.fsync(folder)
-            finally:os.close(folder)
+            # Original six-line proof is only a handoff. The unchanged test
+            # independently reopens genuine kernel groups and root receipt.
+            publish_original_handshake(profile,args.nonce,args.uid,result)
             hostpoll=select.poll()
             hostpoll.register(hostfd,select.POLLIN)
             end=time.monotonic()+35

@@ -186,6 +186,10 @@ test('root manager migrates known original leader BEFORE relying on nonroot cgro
   assert.match(rootFixture,/checked_admission\(nonce,pid,uid,kernel_starttime\(pid\)\)/);
   assert.match(rootFixture,/O_NOFOLLOW\|os.O_CLOEXEC/);
   assert.match(rootFixture,/AGENT01L_ROOT_VERIFIED_HOST_V1/);
+  assert.match(rootFixture,/publish_original_handshake\(profile,args\.nonce,args\.uid,result\)/);
+  assert.match(rootFixture,/libc\.setfsuid\(uid\)/);
+  assert.match(rootFixture,/libc\.setfsuid\(0\)/);
+  assert.match(rootFixture,/protected root FSUID not restored before kernel cleanup/);
   assert.match(rootFixture,/hostpoll\.register\(hostfd,select\.POLLIN\)/);
   assert.match(rootFixture,/\(leaf\/"cgroup\.kill"\)\.write_text\("1",encoding="ascii"\)/);
   assert.match(rootFixture,/shared\.wait_kernel_zero\(events,8\)/);
