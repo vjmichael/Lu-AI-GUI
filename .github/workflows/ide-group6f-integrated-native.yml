@@ -95,6 +95,7 @@ jobs:
           cargo test --locked --manifest-path ide/host/Cargo.toml --lib project_search -- --nocapture
           cargo test --locked --manifest-path ide/host/Cargo.toml --lib quick_open -- --nocapture
           cargo test --locked --manifest-path ide/host/Cargo.toml --lib package_preview -- --nocapture
+          cargo test --locked --manifest-path ide/supervisor/Cargo.toml --features dap-transport --lib debug_control_evidence::tests -- --nocapture
           cargo test --locked --manifest-path ide/supervisor/Cargo.toml --features fin04w2-c2 --lib fin04w2_c2 -- --nocapture
           echo "IDE_MERGE02_ORIGINAL_NATIVE_FILE_OPS=PASS"
           echo "IDE_MERGE03_C2_FIXED_JOURNAL_SOURCE=PASS"
@@ -292,3 +293,132 @@ jobs:
           echo "G06D_G06E_G06F_REAL_DESKTOP_SOURCE_LINK=PASS"
           echo "G06F_NATIVE_VAULT_CREDENTIAL_USED=NO"
           echo "G06F_INSTALLED_AND_HUMAN_ACCEPTANCE=NOT_TESTED"
+
+  dev01-modern-real-installed-linux:
+    name: DEV-01 actual Debian GTK AT-SPI 867-file four-feature regression (not release)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 110
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.INTEGRATION_SOURCE_SHA }}
+          persist-credentials: false
+      - name: Preserve the exact integration source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$INTEGRATION_SOURCE_SHA"
+          python3 -m py_compile ide/app/fixtures/dev01_modern_linux_installed_atspi.py
+          bash -n ide/app/fixtures/Test-DEV01ModernInstalledDeb.sh
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install actual GTK/AT-SPI and Debian build requirements
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev \
+            pkg-config libdbus-1-dev libssl-dev libgtk-3-dev patchelf \
+            xvfb xauth xdotool xclip dbus-x11 x11-utils at-spi2-core \
+            python3-pyatspi openbox
+      - name: Resolve current IDE native desktop lock for this exact candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s ide/app/src-tauri/Cargo.lock || \
+            cargo generate-lockfile --manifest-path ide/app/src-tauri/Cargo.toml
+          test -s ide/app/src-tauri/Cargo.lock
+          echo "DEV01_MODERN_CARGO_LOCK=RESOLVED_NOT_REVIEWED_RELEASE_PIN"
+      - name: Build actual unsigned Debian desktop without extending execution authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd ide/app
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm run check
+          npx --yes @tauri-apps/cli@2.12.4 build \
+            --config src-tauri/tauri.wo8.linux.conf.json --bundles deb
+      - name: Exercise installed GTK source UI/OS and hard-kill recovery
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          packages=(ide/app/src-tauri/target/release/bundle/deb/*.deb)
+          [[ "${#packages[@]}" -eq 1 ]] || { echo 'DENIED: one real .deb required'; exit 1; }
+          bash ide/app/fixtures/Test-DEV01ModernInstalledDeb.sh \
+            "${packages[0]}" "$INTEGRATION_SOURCE_SHA"
+          echo 'DEV01_MODERN_LINUX_INSTALLED=OS_ACCEPTED_NOT_RELEASE_AUTHORIZED'
+
+  dev01-modern-real-installed-windows:
+    name: DEV-01 actual NSIS WebView2 UIA 867-file four-feature regression (not release)
+    runs-on: windows-2022
+    timeout-minutes: 110
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.INTEGRATION_SOURCE_SHA }}
+          persist-credentials: false
+      - name: Exact integration source and original native UIA parser
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          if ((git rev-parse HEAD).Trim() -ne $env:INTEGRATION_SOURCE_SHA) {
+            throw 'DEV01_WINDOWS_EXACT_HEAD_MISMATCH'
+          }
+          foreach($path in @(
+            'ide/app/fixtures/Test-Wo8NativeDesktopUI.ps1',
+            'ide/app/fixtures/Test-DEV01ModernInstalledNsis.ps1'
+          )) {
+            $tokens=$null; $errors=$null
+            [void][System.Management.Automation.Language.Parser]::ParseFile(
+              (Resolve-Path $path).Path,[ref]$tokens,[ref]$errors)
+            if ($errors.Count) {
+              foreach($err in $errors) { Write-Host ('DEV01_WINDOWS_PARSE_ERROR:'+ $path + ':' + $err.Message) }
+              throw 'DEV01_WINDOWS_REAL_UIA_DRIVER_SYNTAX_DENIED'
+            }
+          }
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Resolve current Tauri desktop dependency lock (not a release pin)
+        shell: pwsh
+        run: |
+          if (!(Test-Path ide/app/src-tauri/Cargo.lock)) {
+            cargo generate-lockfile --manifest-path ide/app/src-tauri/Cargo.toml
+            if ($LASTEXITCODE -ne 0) { throw 'DEV01_WINDOWS_CARGO_LOCK_RESOLUTION_FAILED' }
+          }
+          if (!(Test-Path ide/app/src-tauri/Cargo.lock)) { throw 'DEV01_WINDOWS_CARGO_LOCK_MISSING' }
+          if (!(Test-Path ide/app/src-tauri/icons/icon.ico)) {
+            python ide/app/fixtures/make_g04d_ci_icon.py
+            if ($LASTEXITCODE -ne 0) { throw 'DEV01_WINDOWS_TAURI_ICON_DENIED' }
+          }
+      - name: Build real unsigned NSIS desktop from current source
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          Push-Location ide/app
+          try {
+            npm ci --ignore-scripts --no-audit --no-fund
+            if ($LASTEXITCODE -ne 0) { throw 'DEV01_WINDOWS_FRONTEND_DEPENDENCIES_FAILED' }
+            npm run check
+            if ($LASTEXITCODE -ne 0) { throw 'DEV01_WINDOWS_FRONTEND_CHECK_FAILED' }
+            npx --yes @tauri-apps/cli@2.12.4 build --config src-tauri/tauri.installed-smoke.conf.json --bundles nsis
+            if ($LASTEXITCODE -ne 0) { throw 'DEV01_WINDOWS_REAL_NSIS_BUILD_FAILED' }
+          } finally { Pop-Location }
+      - name: Exercise two actual installed OS sessions, no GUI/backend shortcut
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $setups=@(Get-ChildItem -LiteralPath ide/app/src-tauri/target/release/bundle/nsis -Filter '*setup.exe' -File)
+          if ($setups.Count -ne 1) { throw 'DEV01_WINDOWS_EXACTLY_ONE_NSIS_REQUIRED' }
+          & ide/app/fixtures/Test-DEV01ModernInstalledNsis.ps1 -SetupPath $setups[0].FullName -SourceSha $env:INTEGRATION_SOURCE_SHA
+          if (!$? -or $LASTEXITCODE -ne 0) { throw 'DEV01_WINDOWS_REAL_INSTALLED_OS_REGRESSION_DENIED' }
+          Write-Host 'DEV01_MODERN_WINDOWS_INSTALLED=OS_ACCEPTED_NOT_RELEASE_AUTHORIZED'

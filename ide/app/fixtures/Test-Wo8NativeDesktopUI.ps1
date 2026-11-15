@@ -4,7 +4,7 @@
 param(
   [Parameter(Mandatory=$true)][string]$InstalledExecutable,
   [Parameter(Mandatory=$true)][string]$ExpectedSha256,
-  [ValidateSet('Shell','ProjectReadOnly','EditorPersistence','PersistedRestart','P04ReinstalledProject','ExternalConflict','ProtectedBuildDebug','ProtectedCancellation','ProtectedHostCrash','ProtectedServiceCrash','ProtectedTamperDenial','ProtectedDebuggerCancellation','Wo9WorkflowPortfolio','Wo9ReviewedGit','Wo9ProtectedGraph','Wo9ProtectedGraphCancel','Wo9ProtectedGraphHostCrash','Dev02ProtectedLsp','Dev035JobsReadOnly','Dev045ProjectDebuggerDenied','Dev045CInstalledProjectDebugger','Dev045CInstalledProjectRestartDenied','B4SplitEditor','B5LargeProject')][string]$Scenario='Shell',
+  [ValidateSet('Shell','ProjectReadOnly','EditorPersistence','PersistedRestart','P04ReinstalledProject','ExternalConflict','ProtectedBuildDebug','ProtectedCancellation','ProtectedHostCrash','ProtectedServiceCrash','ProtectedTamperDenial','ProtectedDebuggerCancellation','Wo9WorkflowPortfolio','Wo9ReviewedGit','Wo9ProtectedGraph','Wo9ProtectedGraphCancel','Wo9ProtectedGraphHostCrash','Dev02ProtectedLsp','Dev035JobsReadOnly','Dev045ProjectDebuggerDenied','Dev045CInstalledProjectDebugger','Dev045CInstalledProjectRestartDenied','B4SplitEditor','B5LargeProject','Dev01Modern','Dev01ModernRecovery')][string]$Scenario='Shell',
   [string]$FixtureRoot='',
   [string]$MetricsFile=''
 )
@@ -490,7 +490,7 @@ try {
   Click 'Projects'
   Require 'Workspace projects'
   $stage='picker'
-  if ($Scenario -notin @('PersistedRestart','P04ReinstalledProject','Dev045CInstalledProjectRestartDenied')) {
+  if ($Scenario -notin @('PersistedRestart','P04ReinstalledProject','Dev045CInstalledProjectRestartDenied','Dev01ModernRecovery')) {
     # Native folder chooser must be opened through UI, never by trusting input path.
     Click '+ Open folder'
     Start-Sleep -Seconds 2
@@ -510,7 +510,7 @@ try {
         !(Test-Path -LiteralPath (Join-Path $fixed 'main.rs'))) {
       Deny 'non_disposable_or_missing_fixture'
     }
-    if ($Scenario -notin @('PersistedRestart','P04ReinstalledProject','Dev045CInstalledProjectRestartDenied')) {
+    if ($Scenario -notin @('PersistedRestart','P04ReinstalledProject','Dev045CInstalledProjectRestartDenied','Dev01ModernRecovery')) {
       # Native chooser name is not an IDE project registration.
       [System.Windows.Forms.SendKeys]::SendWait('^l')
       if ($fixed -match '[+^%~(){}\[\]]') { Deny 'native_picker_path_contains_keyboard_metacharacters' }
@@ -1405,7 +1405,71 @@ try {
       Write-Host ('B5_WINDOWS_INSTALLED_RSS_PEAK_OBSERVED_BYTES='+$data.rssPeakObservedBytes)
       Write-Host 'B5_WINDOWS_48_REAL_EDITOR_TABS_OS_PROCESS_MEMORY=MEASURED_NOT_APPROVED'
     }
-    if ($Scenario -eq 'B4SplitEditor') {
+    if ($Scenario -eq 'Dev01Modern') {
+      # Exact installed UIA/OS controls on the consolidated source, not the
+      # original unsupported DEV-01 page selectors or Tauri/JS shortcuts.
+      if (@(Get-ChildItem -LiteralPath $fixed -File -Recurse -Filter '*.rs').Count -ne 867) {
+        Deny 'dev01_not_original_867_file_fixture'
+      }
+      function Dev01-Input([string]$label,[string]$value) {
+        $item=Find-Control $label '' 18
+        if (!$item.Current.IsKeyboardFocusable) { Deny 'dev01_native_text_input_not_focusable' }
+        $item.SetFocus()
+        [System.Windows.Forms.SendKeys]::SendWait('^a')
+        [System.Windows.Forms.SendKeys]::SendWait($value)
+        Start-Sleep -Milliseconds 400
+      }
+      function Dev01-Confirm([string]$message) {
+        # Find-Control accepts descendants only of the installed HWND and
+        # its actual WebView renderer; never a foreign or synthetic dialog.
+        Require $message
+        Click 'OK'
+      }
+      Dev01-Input 'Quick Open filename search' 'src-23/file-035.rs'
+      Click 'Find files'
+      Require 'Quick Open filename results'
+      Require 'src-23/file-035.rs'
+      Write-Host 'DEV01_MODERN_WINDOWS_QUICK_OPEN_OS_UIA=PASS'
+      $original=Join-Path $fixed 'move-me.rs'
+      $renamed=Join-Path $fixed 'renamed.rs'
+      if (!(Test-Path $original) -or (Test-Path $renamed)) { Deny 'dev01_bad_source_fixture' }
+      $originalSha=(Get-FileHash $original -Algorithm SHA256).Hash
+      Click 'Move file'
+      Dev01-Input 'Source action path or new name' 'move-me.rs'
+      Dev01-Input 'Project-relative move destination' 'renamed.rs'
+      Click 'Review and apply'
+      Dev01-Confirm 'Move move-me.rs to renamed.rs? No existing file will be overwritten.'
+      $limit=(Get-Date).AddSeconds(25)
+      while (!(Test-Path $renamed) -and (Get-Date) -lt $limit) { Start-Sleep -Milliseconds 400 }
+      if (!(Test-Path $renamed) -or (Test-Path $original) -or
+          (Get-FileHash $renamed -Algorithm SHA256).Hash -ne $originalSha) {
+        Deny 'dev01_native_move_bytes_changed'
+      }
+      Click 'Trash file'
+      Dev01-Input 'Source action path or new name' 'renamed.rs'
+      Click 'Review and apply'
+      Dev01-Confirm 'Move renamed.rs to recoverable project trash? This will not erase private draft checkpoints.'
+      $limit=(Get-Date).AddSeconds(25)
+      while ((Test-Path $renamed) -and (Get-Date) -lt $limit) { Start-Sleep -Milliseconds 400 }
+      if ((Test-Path $renamed) -or !(Test-Path (Join-Path $fixed '.lu-ide-trash'))) {
+        Deny 'dev01_native_trash_missing'
+      }
+      Click 'Restore file'
+      $choice=Find-Control 'Recoverable project source file' '' 20
+      if (!$choice.Current.IsKeyboardFocusable) { Deny 'dev01_restore_select_not_focusable' }
+      $choice.SetFocus()
+      [System.Windows.Forms.SendKeys]::SendWait('{END}{ENTER}')
+      Click 'Review and apply'
+      Dev01-Confirm 'Restore renamed.rs from project trash? No existing file will be overwritten.'
+      $limit=(Get-Date).AddSeconds(25)
+      while (!(Test-Path $renamed) -and (Get-Date) -lt $limit) { Start-Sleep -Milliseconds 400 }
+      if (!(Test-Path $renamed) -or
+          (Get-FileHash $renamed -Algorithm SHA256).Hash -ne $originalSha) {
+        Deny 'dev01_restore_not_original_bytes'
+      }
+      Write-Host 'DEV01_MODERN_WINDOWS_MOVE_TRASH_RESTORE_NO_CLOBBER=PASS'
+    }
+    if ($Scenario -in @('B4SplitEditor','Dev01Modern')) {
       # Actual installed Windows WebView2 UIA, no JavaScript or Tauri API bypass.
       $mainSource=Join-Path $fixed 'main.rs'
       $secondSource=Join-Path $fixed 'second.rs'
@@ -1496,6 +1560,68 @@ try {
       }
       Write-Host 'B4_REAL_INSTALLED_WINDOWS_TWO_DISTINCT_CODEMIRROR_PANES=PASS'
       Write-Host 'B4_REAL_INSTALLED_WINDOWS_EXPLICIT_SECONDARY_AND_FOCUSED_PRIMARY_SAVE=PASS'
+    }
+    if ($Scenario -eq 'Dev01Modern') {
+      # After the real two-editor native focus/Save witness above, checkpoint
+      # another unsaved edit into OS-private app data before hard process kill.
+      Click 'Toggle split editor'
+      Click 'main.rs'
+      $source=Join-Path $fixed 'main.rs'
+      $beforeDraft=(Get-FileHash $source -Algorithm SHA256).Hash
+      $editor=Find-Control 'Source editor text' '' 18
+      if (!$editor.Current.IsKeyboardFocusable) { Deny 'dev01_private_editor_not_focusable' }
+      $editor.SetFocus()
+      [System.Windows.Forms.SendKeys]::SendWait('^{END}{ENTER}// DEV01_MODERN_UNSAVED_PRIVATE_AFTER_KILL')
+      Start-Sleep -Milliseconds 650
+      if ((Get-FileHash $source -Algorithm SHA256).Hash -ne $beforeDraft) {
+        Deny 'dev01_implicit_save_before_kill'
+      }
+      [System.Windows.Forms.Clipboard]::Clear()
+      Click 'Preserve draft + copy durable reference'
+      $copy=''
+      $limit=(Get-Date).AddSeconds(20)
+      while ((Get-Date) -lt $limit) {
+        Start-Sleep -Milliseconds 350
+        if ([System.Windows.Forms.Clipboard]::ContainsText()) {
+          $copy=[System.Windows.Forms.Clipboard]::GetText()
+          if ($copy.StartsWith('ide-draft:v1')) { break }
+        }
+      }
+      if (!$copy.StartsWith('ide-draft:v1') -or
+          !$copy.Contains('checkpoint=') -or
+          !$copy.Contains('lifetime=persistent-private-app-data') -or
+          $copy.Contains('DEV01_MODERN_UNSAVED_PRIVATE_AFTER_KILL')) {
+        Deny 'dev01_durable_private_reference_missing_or_disclosing'
+      }
+      Click 'Remember tabs'
+      if ((Get-FileHash $source -Algorithm SHA256).Hash -ne $beforeDraft) {
+        Deny 'dev01_remembered_layout_wrote_unsaved_source'
+      }
+      # The common finally kills this real installed OS process. Recovery is
+      # tested by an independent invocation in a new process.
+      Write-Host 'DEV01_MODERN_WINDOWS_PRE_KILL_PRIVATE_CHECKPOINT=PASS'
+    }
+    if ($Scenario -eq 'Dev01ModernRecovery') {
+      $source=Join-Path $fixed 'main.rs'
+      if ([IO.File]::ReadAllText($source).Contains('DEV01_MODERN_UNSAVED_PRIVATE_AFTER_KILL')) {
+        Deny 'dev01_crash_implicitly_saved'
+      }
+      Require 'Recover preserved draft'
+      Click 'Recover preserved draft'
+      Require 'Recovered private checkpoint to editor only'
+      if ([IO.File]::ReadAllText($source).Contains('DEV01_MODERN_UNSAVED_PRIVATE_AFTER_KILL')) {
+        Deny 'dev01_recovery_implicitly_saved'
+      }
+      Click 'Save · Ctrl+S'
+      $limit=(Get-Date).AddSeconds(25)
+      while ((Get-Date) -lt $limit -and
+             ![IO.File]::ReadAllText($source).Contains('DEV01_MODERN_UNSAVED_PRIVATE_AFTER_KILL')) {
+        Start-Sleep -Milliseconds 450
+      }
+      if (![IO.File]::ReadAllText($source).Contains('DEV01_MODERN_UNSAVED_PRIVATE_AFTER_KILL')) {
+        Deny 'dev01_recovered_draft_not_explicitly_saved'
+      }
+      Write-Host 'DEV01_MODERN_WINDOWS_INSTALLED_HARD_KILL_RESTART_DRAFT=PASS'
     }
     if ($Scenario -eq 'ExternalConflict') {
       # A real external editor replaces the file after the CodeMirror draft is

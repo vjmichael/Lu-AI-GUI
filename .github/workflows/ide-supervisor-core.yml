@@ -31,6 +31,10 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - name: Test supervisor durable journal and one-shot authorization
         run: cargo test --manifest-path ide/supervisor/Cargo.toml --all-targets
+      - name: Original read-only DAP action audit tests under the explicit DAP feature
+        # Preserve the default-feature test above and all original assertions.
+        # DAP transport is opt-in; running this test does not enable release.
+        run: cargo test --manifest-path ide/supervisor/Cargo.toml --features dap-transport --lib debug_control_evidence::tests -- --nocapture
       - name: Compile and test Linux worker admission (no uncontained execution)
         if: matrix.os == 'ubuntu-latest'
         run: cargo test --manifest-path ide/supervisor/Cargo.toml --features linux-worker --all-targets

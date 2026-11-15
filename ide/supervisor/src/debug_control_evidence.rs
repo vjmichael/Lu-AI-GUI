@@ -428,7 +428,11 @@ pub fn inspect_debug_control_evidence(
  })
 }
 
-#[cfg(test)]
+// These genuine DAP audit cases construct a feature-authorized DAP plan.
+// The default supervisor intentionally DENIES that plan; execute the complete
+// original assertions explicitly with --features dap-transport in BOTH OS jobs.
+// Do not relax validate_plan or fabricate a default-feature debugger grant.
+#[cfg(all(test, feature = "dap-transport"))]
 mod tests{
  use super::*;
  use crate::JobPlan;
