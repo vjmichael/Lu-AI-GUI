@@ -11,6 +11,7 @@ mod generation_queue;
 mod stream_delivery;
 mod background_context;
 mod environment_context;
+mod core_utility_desktop;
 mod host_clock;
 mod perf01_router;
 mod perf01_telemetry;
@@ -4997,6 +4998,18 @@ async fn lu_generate(
             app,state,session_id,chat_id,prompt,"media".into()
         ).await?.ok_or_else(||"Media file was not selected".into())
     }
+    // TOOLS-05/06: explicit original-human structured JSON check or single
+    // fixed host candidate availability refresh. Neither a generic
+    // conversation nor retrieved text opens this one-read-only-tool scope.
+    // Native model arguments are checked against the human's exact values.
+    if !read_only_workspace.unwrap_or(false)&&image_refs.is_empty()
+        &&max_new_tokens==512{
+        if let Some(request)=core_utility_desktop::explicit_core_utility_request(&prompt){
+            return core_utility_desktop::ask_utility_for_chat(
+                app,Arc::clone(state.inner()),session_id,chat_id,prompt,request
+            ).await
+        }
+    }
     // The UI's fixed 512-token Send still enables deterministic host
     // utilities above. Only the real GGUF lane uses the loaded model's
     // host-saved output budget; an unbound renderer cannot invent one.
@@ -6746,6 +6759,7 @@ fn lu_tool_turn_history(
         ("Reader","lu-reader-turn-audit.sqlite"),
         ("Git","lu-git-read-audit.sqlite"),
         ("Reviewed app","lu-reviewed-app-model-audit.sqlite"),
+        ("Core utilities","lu-core-utility-model-audit.sqlite"),
     ]{
         let path=state.catalog_path.with_file_name(file);
         // Reading history must never create a fake audit database.
