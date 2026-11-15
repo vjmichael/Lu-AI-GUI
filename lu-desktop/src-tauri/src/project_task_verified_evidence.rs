@@ -459,9 +459,21 @@ fn dependency_completion_current(
     conn:&Connection,r:&register::TaskRegister,board_sha:&str,
     task:&register::TaskRevision,
 )->Result<bool,String>{
-    for dependency in &task.depends_on{
-        if dependency==&task.task_id{return Ok(false)}
-        let Some(dep)=register::latest(r,dependency)else{return Ok(false)};
+    // A direct parent with an old "COMPLETED_AT_REVIEW" record is NOT
+    // sufficient if ITS own prerequisites were later rescinded. Verify the
+    // transitive DAG against the exact current register/board source lease.
+    // Bound by the original PLAN05 16-task source register, reject cycles,
+    // absent IDs, stale decisions, and any conservative override.
+    fn verify(
+        conn:&Connection,r:&register::TaskRegister,board_sha:&str,
+        id:&str,visiting:&mut std::collections::BTreeSet<String>,
+        done:&mut std::collections::BTreeSet<String>,
+    )->Result<bool,String>{
+        if done.contains(id){return Ok(true)}
+        if visiting.len()>=16||!visiting.insert(id.to_owned()){
+            return Ok(false)
+        }
+        let Some(dep)=register::latest(r,id)else{return Ok(false)};
         if !full_source_contract(&dep.acceptance_criteria)||
             dep.needs_human_reconciliation||dep.execution_authorized||
             !dep.independently_verified_requirement||
@@ -469,7 +481,7 @@ fn dependency_completion_current(
             !no_unresolved_text_blocker(&dep.blocked_by){
             return Ok(false)
         }
-        let rows=completion_rows(conn,&r.register_id,dependency)?;
+        let rows=completion_rows(conn,&r.register_id,id)?;
         let Some(last)=rows.last()else{return Ok(false)};
         if last.decision!="COMPLETED_AT_REVIEW"||
             !last.task_completed_at_observation||
@@ -479,6 +491,21 @@ fn dependency_completion_current(
             last.graph_sha256!=dep.graph_sha256||
             last.status_sha256!=dep.status_sha256||
             last.acceptance_criterion_sha256!=sha(dep.acceptance_criteria.as_bytes()){
+            return Ok(false)
+        }
+        for prerequisite in &dep.depends_on{
+            if !verify(conn,r,board_sha,prerequisite,visiting,done)?{
+                return Ok(false)
+            }
+        }
+        visiting.remove(id);
+        done.insert(id.to_owned());
+        Ok(true)
+    }
+    let mut visiting=std::collections::BTreeSet::from([task.task_id.clone()]);
+    let mut done=std::collections::BTreeSet::new();
+    for prerequisite in &task.depends_on{
+        if !verify(conn,r,board_sha,prerequisite,&mut visiting,&mut done)?{
             return Ok(false)
         }
     }
@@ -1056,6 +1083,89 @@ mod tests{
         assert!(!completion_native_eligible(&v,true));
         let mut v=valid;v.execution_authorized=true;
         assert!(!completion_native_eligible(&v,true));
+    }
+
+    #[test]
+    fn transitive_source_dependency_rescission_invalidates_parent_completion(){
+        fn task(id:&str,depends:Vec<String>)->register::TaskRevision{
+            register::TaskRevision{
+                task_id:id.into(),version:1,source_requirement_id:"R-1".into(),
+                summary:"Original native requirement".into(),
+                description:"Strict original deterministic native source".into(),
+                group:"Source".into(),priority:"P1".into(),blocked_by:"none".into(),
+                acceptance_criteria:NATIVE_SOURCE_ONLY_CONTRACT.into(),
+                depends_on:depends,evidence_ids:vec!["R-1".into()],
+                original_model_proposal_sha256:"e".repeat(64),
+                graph_sha256:"c".repeat(64),status_sha256:"d".repeat(64),
+                selected_head:None,
+                observed_status:lu_core::project_status_classifier::Status::Accepted,
+                observed_at_unix:0,needs_human_reconciliation:false,
+                independently_verified_requirement:true,execution_authorized:false
+            }
+        }
+        fn signed(conn:&Connection,event:&CompletionDecision,seq:i64){
+            let bytes=serde_json::to_vec(event).unwrap();
+            conn.execute(
+                "INSERT INTO ansf_project_task_completion_decisions(
+                    register_id,task_id,sequence,event_sha256,event_json,no_execution_authority
+                ) VALUES(?1,?2,?3,?4,?5,1)",
+                params![event.register_id,event.task_id,seq,sha(&bytes),bytes]
+            ).unwrap();
+        }
+        let db=Connection::open_in_memory().unwrap();
+        completion_init(&db).unwrap();
+        let id="lu-register-fixture";
+        let base="lu-task-base";
+        let mid="lu-task-mid";
+        let root="lu-task-root";
+        let tasks=[
+            task(base,vec![]),
+            task(mid,vec![base.into()]),
+            task(root,vec![mid.into()])
+        ];
+        let events=tasks.iter().enumerate().map(|(i,t)|register::TaskEvent{
+            sequence:i as u64+1,
+            kind:register::RevisionKind::Imported,
+            previous_sha256:None,reason:"Original fixture source admission".into(),
+            revision:t.clone(),sha256:"f".repeat(64),
+        }).collect();
+        let register=register::TaskRegister{
+            schema:"lu-project-task-register-v1".into(),
+            register_id:id.into(),scope_sha256:"a".repeat(64),
+            original_proposal_sha256:"e".repeat(64),events,
+            latest_sha256:"b".repeat(64),no_execution_authority:true
+        };
+        let mut original_base=completion_fixture("COMPLETED_AT_REVIEW");
+        original_base.task_id=base.into();
+        let mut original_mid=original_base.clone();
+        original_mid.task_id=mid.into();
+        signed(&db,&original_base,1);
+        signed(&db,&original_mid,1);
+        assert!(dependency_completion_current(
+            &db,&register,&"a".repeat(64),&tasks[2]
+        ).unwrap(),"two-layer dependencies must reopen original decisions");
+        let mut uncertain=completion_fixture("UNCERTAIN");
+        uncertain.task_id=base.into();
+        uncertain.previous_event_sha256=Some(sha(
+            &serde_json::to_vec(&original_base).unwrap()
+        ));
+        signed(&db,&uncertain,2);
+        assert!(!dependency_completion_current(
+            &db,&register,&"a".repeat(64),&tasks[2]
+        ).unwrap(),"uncertain grandparent invalidates descendant completion");
+        // A cyclic dependency cannot be legitimized by an old signed row.
+        let cyc=task(root,vec![mid.into()]);
+        let mut new_mid=task(mid,vec![root.into()]);
+        new_mid.version=1;
+        let mut cyclic=register.clone();
+        cyclic.events.push(register::TaskEvent{
+            sequence:4,kind:register::RevisionKind::HumanCorrection,
+            previous_sha256:None,reason:"Source cycle test".into(),
+            revision:new_mid,sha256:"f".repeat(64)
+        });
+        assert!(!dependency_completion_current(
+            &db,&cyclic,&"a".repeat(64),&cyc
+        ).unwrap());
     }
     #[test]
     fn original_completion_decision_hash_chain_rejects_forged_completion_after_restart(){
