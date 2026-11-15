@@ -868,7 +868,7 @@ impl NativeLspRuntime {
             if let Ok(mut uncertain) = self.cleanup_uncertain.lock() {
                 *uncertain = true;
             }
-            return Err(code);
+            return Err(code.to_string());
         }
         active.documents.remove(&request.relative_path);
         Ok(())
@@ -1071,7 +1071,7 @@ impl NativeLspRuntime {
         if let Some(active) = lock.take() {
             if let Err(error) = active.session.close() {
                 *uncertain = true;
-                return Err(error.code());
+                return Err(error.code().to_string());
             }
         }
         drop(uncertain);

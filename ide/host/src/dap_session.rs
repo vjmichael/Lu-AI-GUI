@@ -274,9 +274,12 @@ impl DapSession {
                     b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_')
                 })
         };
+        #[cfg(target_os = "linux")]
         let linux = program.strip_prefix("/debug-target/debug/")
             .or_else(|| program.strip_prefix("/debug-target/target/debug/"))
             .is_some_and(safe_stem);
+        #[cfg(not(target_os = "linux"))]
+        let linux = false;
         let windows = if program.len() <= 1024
             && std::path::Path::new(program).is_absolute()
         {
