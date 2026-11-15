@@ -405,6 +405,15 @@ pub(super) fn criterion_supports_method(
 )->bool{
     if !compatible_independent_method(tool,method)||
        criterion.len()>300{return false}
+    // A narrowly typed WHOLE-task equality predicate may be supported by
+    // the ORIGINAL independent Git HEAD method. Its SHA must be a single
+    // exact lowercase 40-hex literal; no model-supplied path or extra clause.
+    if tool=="lu.reviewed.git.head"&&method=="GIT_HEAD_DIRECT_V1"{
+        if let Some(head)=criterion.strip_prefix("LU_COMPLETE_V1:GIT_HEAD_EQUALS:"){
+            return head.len()==40&&head.bytes().all(|b|
+                b.is_ascii_digit()||matches!(b,b'a'..=b'f'))
+        }
+    }
     let Some((line,body))=criterion.split_once('\n') else {
         return false
     };
@@ -671,6 +680,30 @@ mod task_method_tests{
         assert!(!criterion_supports_method(
             "LU_CRITERION_METHOD_V1:lu.reviewed.pdf.info|PDFINFO_CLASSIC_PAGE_TREE_V1\nObserve original source PDF metadata.",
             "lu.reviewed.pdf.info","PDFINFO_CLASSIC_PAGE_TREE_V1"));
+    }
+    #[test]
+    fn exact_git_head_whole_criterion_only_admits_original_head_oracle(){
+        let full=format!("LU_COMPLETE_V1:GIT_HEAD_EQUALS:{}", "a".repeat(40));
+        assert!(criterion_supports_method(&full,
+            "lu.reviewed.git.head","GIT_HEAD_DIRECT_V1"));
+        for (tool,method) in [
+            ("lu.reviewed.git.status","GIT_STATUS_INDEX_TREE_V1"),
+            ("lu.reviewed.git.head","GIT_HISTORY_OBJECT_DAG_V2"),
+            ("lu.reviewed.media.facts","WAV_PCM_DIRECT_V1"),
+        ]{
+            assert!(!criterion_supports_method(&full,tool,method));
+        }
+        for bad in [
+            format!("{full}\nAlso publish release"),
+            format!("{full}; shell"),
+            format!("{full} "),
+            format!("LU_COMPLETE_V1:GIT_HEAD_EQUALS:{}", "A".repeat(40)),
+            format!("LU_COMPLETE_V1:GIT_HEAD_EQUALS:{}", "a".repeat(39)),
+            format!("LU_COMPLETE_V1:GIT_HEAD_EQUALS:{}", "a".repeat(64))
+        ]{
+            assert!(!criterion_supports_method(&bad,
+                "lu.reviewed.git.head","GIT_HEAD_DIRECT_V1"));
+        }
     }
 
 }
