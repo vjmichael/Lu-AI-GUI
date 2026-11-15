@@ -45,6 +45,7 @@ enum ExactInput{
 }
 struct OnlyOriginalInput{
     tool_id:String,
+    scope:String,
     exact:ExactInput,
 }
 impl ToolAuthorizer for OnlyOriginalInput{
@@ -52,7 +53,7 @@ impl ToolAuthorizer for OnlyOriginalInput{
         ->Result<(),AuthorizationError>{
         if desc.effect!=ToolEffect::ReadWorkspace ||
             desc.id!=self.tool_id || call.tool_id!=self.tool_id ||
-            call.workspace_id.is_some() && call.workspace_id.as_deref()!=Some(""){
+            call.workspace_id.as_deref()!=Some(self.scope.as_str()){
             // No workspace path is authorized. A host-selected opaque scope
             // is accepted below; model-selected paths are never considered.
             return Err(AuthorizationError::new("utility effect or identity not approved"));
@@ -156,7 +157,7 @@ impl CoreUtilityTurn{
         ).map_err(|_|"Original utility tool admission failed")?;
         turn.require_observed_tool_result();
         Ok(Self{registry,catalog,authority,turn,
-            policy:OnlyOriginalInput{tool_id,exact},origin})
+            policy:OnlyOriginalInput{tool_id,scope:task_id.into(),exact},origin})
     }
     pub fn capabilities(&self)->Result<Vec<NativeCapabilityView>,String>{
         discover_turn_capabilities(
