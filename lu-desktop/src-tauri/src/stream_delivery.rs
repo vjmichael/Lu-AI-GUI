@@ -76,6 +76,17 @@ impl BoundedStreamDelivery {
 #[cfg(test)]
 mod tests{
     use super::*;
+    // Exercise transport bounds with diverse bytes: the new Core guard
+    // intentionally rejects a 2–64 KiB solid-character token cycle.
+    fn varied_ascii(len:usize)->String{
+        let mut seed=0x9e37_79b9_u32;
+        (0..len).map(|_|{
+            seed ^= seed << 13;
+            seed ^= seed >> 17;
+            seed ^= seed << 5;
+            (b'a'+(seed%26) as u8) as char
+        }).collect()
+    }
     #[test]
     fn first_chunk_is_not_delayed_and_small_followups_coalesce(){
         let mut stream=BoundedStreamDelivery::default();
@@ -91,11 +102,12 @@ mod tests{
     fn utf8_and_threshold_preserve_order_and_bound_each_event(){
         let mut stream=BoundedStreamDelivery::default();
         let mut output=stream.accept("✓").unwrap();
-        output.extend(stream.accept(&"x".repeat(COALESCE_BYTES)).unwrap());
+        let varied=varied_ascii(COALESCE_BYTES);
+        output.extend(stream.accept(&varied).unwrap());
         output.extend(stream.accept("end").unwrap());
         if let Some(end)=stream.flush(){output.push(end)}
         assert_eq!(output.iter().map(|p|p.text.as_str()).collect::<String>(),
-            format!("✓{}end","x".repeat(COALESCE_BYTES)));
+            format!("✓{varied}end"));
         assert_eq!(output.iter().map(|p|p.index).collect::<Vec<_>>(),
             (0..output.len() as u32).collect::<Vec<_>>());
         assert!(output.iter().all(|p|p.text.len()<=MAX_EVENT_BYTES));
@@ -140,7 +152,8 @@ mod tests{
         let mut stream=BoundedStreamDelivery::default();
         stream.accept("first").unwrap();
         stream.accept("tail").unwrap();
-        let delivered=stream.accept(&"z".repeat(MAX_EVENT_BYTES)).unwrap();
+        let varied=varied_ascii(MAX_EVENT_BYTES);
+        let delivered=stream.accept(&varied).unwrap();
         assert_eq!(delivered.len(),2);
         assert_eq!(delivered[0],DeliveryChunk{index:1,text:"tail".into()});
         assert_eq!(delivered[1].index,2);
