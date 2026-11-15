@@ -21,6 +21,23 @@ test('FIN05 vcpkg is separate bounded and feature-gated package authority',()=>{
  assert.match(linux,/--binarysource=clear/);
  assert.doesNotMatch(app,/package-vcpkg-worker/);
 });
+test('FIN05 manifest selection cannot shadow separately gated offline vcpkg binary-only execution',()=>{
+ const manifestStart=linux.indexOf('let manifest = match plan.recipe_id.as_str() {');
+ const manifestEnd=linux.indexOf('let linker = trusted_gnu_linker()?',manifestStart);
+ const commandStart=linux.indexOf('cmd.arg("--");',manifestEnd);
+ const commandEnd=linux.indexOf('cmd.stdin(Stdio::null())',commandStart);
+ assert.ok(manifestStart>=0 && manifestEnd>manifestStart && commandStart>manifestEnd && commandEnd>commandStart);
+ const manifest=linux.slice(manifestStart,manifestEnd);
+ const dispatch=linux.slice(commandStart,commandEnd);
+ assert.equal((manifest.match(/"vcpkg_install_offline"/g)||[]).length,1);
+ assert.equal((dispatch.match(/"vcpkg_install_offline"/g)||[]).length,1);
+ assert.doesNotMatch(manifest,/\bcmd\./);
+ assert.match(manifest,/RuntimeProfile::VcpkgInstallOffline/);
+ assert.match(dispatch,/cmd\.arg\("\/runtime\/bin\/vcpkg"\)/);
+ for(const required of ['--no-downloads','--only-binarycaching','--binarysource=clear','--binarysource=files,/runtime/binary-cache,read']) {
+   assert.ok(dispatch.includes(required),required);
+ }
+});
 test('FIN05 native worker code never accepts a user-supplied shell command',()=>{
  assert.doesNotMatch(linux,/std::process::Command::new\(plan\.recipe_id\)/);
  assert.match(linux,/Command::new\(BWRAP\)/);

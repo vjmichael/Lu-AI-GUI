@@ -561,34 +561,18 @@ fn command_for(
             }
         }
         "python_pytest" if runtime.is_some() => "/workspace/pyproject.toml",
-        "vcpkg_install_offline" if cfg!(feature = "package-vcpkg-worker") && runtime.is_some() => {
-            "/workspace/vcpkg.json"
-        }
         "vcpkg_install_offline"
             if cfg!(all(feature = "package-vcpkg-worker", target_os = "linux"))
                 && runtime.is_some() =>
         {
-            // FIN-05: the exact independently hashed runtime is mounted
-            // read-only at /runtime. No host vcpkg, port build, network,
-            // install into the project or caller-selected command is allowed.
-            // A cache miss is a terminal denial, not authority to rebuild.
-            if !input.root.join("vcpkg.json").is_file()
-                || !runtime.is_some_and(|bundle| {
-                    bundle.profile == crate::runtime_bundles::RuntimeProfile::VcpkgInstallOffline
-                })
-            {
+            // Manifest selection only; actual binary-only invocation is
+            // selected separately after the Bubblewrap "--" separator.
+            if !runtime.is_some_and(|bundle| {
+                bundle.profile == crate::runtime_bundles::RuntimeProfile::VcpkgInstallOffline
+            }) {
                 return Err(SupervisorError::WrongProjectOrSource);
             }
-            cmd.arg("/runtime/bin/vcpkg").args([
-                "install",
-                "--x-manifest-root=/workspace",
-                "--x-install-root=/output/installed/",
-                "--vcpkg-root=/runtime",
-                "--no-downloads",
-                "--only-binarycaching",
-                "--binarysource=clear",
-                "--binarysource=files,/runtime/binary-cache,read",
-            ]);
+            "/workspace/vcpkg.json"
         }
         "uv_sync_offline" if cfg!(feature = "package-uv-worker") && runtime.is_some() => {
             "/workspace/pyproject.toml"
@@ -814,6 +798,23 @@ fn command_for(
                 "-q",
                 "-p",
                 "no:cacheprovider",
+            ]);
+        }
+        "vcpkg_install_offline"
+            if cfg!(all(feature = "package-vcpkg-worker", target_os = "linux"))
+                && runtime.is_some() =>
+        {
+            // FIN-05: the independently hashed runtime is read-only at
+            // /runtime; cache misses deny rather than building or downloading.
+            cmd.arg("/runtime/bin/vcpkg").args([
+                "install",
+                "--x-manifest-root=/workspace",
+                "--x-install-root=/output/installed/",
+                "--vcpkg-root=/runtime",
+                "--no-downloads",
+                "--only-binarycaching",
+                "--binarysource=clear",
+                "--binarysource=files,/runtime/binary-cache,read",
             ]);
         }
         "js_tests" if runtime.is_some() => {
