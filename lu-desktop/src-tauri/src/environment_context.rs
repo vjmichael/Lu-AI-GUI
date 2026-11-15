@@ -31,7 +31,7 @@ pub(crate) fn explicit_environment_status_request(prompt:&str)->bool{
 /// Fixed host-selected executable locations. This is NOT a PATH search, a
 /// launcher or a claim that these files are installed or functional.
 /// Further candidate sites require a reviewed host source change.
-fn fixed_ambient_program_candidates() -> Vec<HostProgramSpec> {
+pub(crate) fn fixed_ambient_program_candidates() -> Vec<HostProgramSpec> {
     let entries: Vec<(&str, &str)> = if cfg!(windows) {
         vec![
             ("git", r"C:\Program Files\Git\cmd\git.exe"),
