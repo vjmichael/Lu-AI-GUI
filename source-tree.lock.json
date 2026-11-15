@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "5c8dd0e191b0a42b5a4d97cd2b0b5e42ed5d765b",
+  "sourceCommitBeforeLock": "0dd72a3f8eb062abcabfab1346d07b9de261d064",
   "trackedFileCount": 1034,
   "files": [
     {
@@ -1589,7 +1589,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/project_task_verified_evidence.rs",
-      "blob": "b0961b873de6d4cf383acdb36d7cc47c2cda7b55"
+      "blob": "8a3a4cb74113afdf8fa972675f46660b8e78a897"
     },
     {
       "path": "lu-desktop/src-tauri/src/project_update_model_desktop.rs",
