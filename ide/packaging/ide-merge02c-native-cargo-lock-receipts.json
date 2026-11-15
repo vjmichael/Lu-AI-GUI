@@ -1,0 +1,30 @@
+{
+  "schema": "lu.ide.merge02c.native-lock-source-evidence.v1",
+  "originalSourceSha": "f4e8a1a587c4aadd3d7293896324ceb8fa299738",
+  "originatingRun": 43743660974,
+  "originatingJobs": {
+    "linux": 132902109472,
+    "windows": 132902109711
+  },
+  "sourceOnly": true,
+  "locks": [
+    {
+      "path": "ide/host/Cargo.lock",
+      "gitBlobSha": "90e52a812a834786d828fefb86d244732a882dd7",
+      "sha256": "00de403d7aeb63cd476f7694d52af1db1ff25a87fd2460a782ad2301edf893ef",
+      "bytes": 39190,
+      "packages": 166
+    },
+    {
+      "path": "ide/supervisor/Cargo.lock",
+      "gitBlobSha": "cf3ea845e89c7b8242a75d71c9dd5288b5580595",
+      "sha256": "1fcc77eb3790e34b5815f69df2adb3948034d1944e12e4ddc904861038e1edfb",
+      "bytes": 40607,
+      "packages": 171
+    }
+  ],
+  "releaseApproved": false,
+  "legalReviewed": false,
+  "physicalOsAccepted": false,
+  "mainMergeAuthorized": false
+}
