@@ -19,15 +19,28 @@ import time
 
 HEX64=re.compile(r"^[a-f0-9]{64}$")
 KINDS={"scan-file","archive-preview","archive-extract",
-       "fixed-version","fixed-artifact","app-version"}
+       "fixed-version","fixed-artifact","app-version","p06-acceptance-version"}
 LIMITS={
  "scan-file":128*1024,
  "archive-preview":0,
  "archive-extract":0,
  "fixed-version":32*1024,
  "fixed-artifact":16*1024*1024,
- "app-version":16*1024
+ "app-version":16*1024,
+ "p06-acceptance-version":16*1024
 }
+P06_FIXED_PYTHON=(
+    ("-I","-S","-c","import time;time.sleep(20);print('Python 3.13.0')"),
+    ("-I","-S","-c","print('Python '+('9'*8192))"),
+)
+P06_MARKER=pathlib.Path("/usr/libexec/lu/lu-sec06c-p06-acceptance-marker")
+P06_MARKER_BYTES=b"LU_P06_ACCEPTANCE_ONLY_V1\n"
+def p06_marker_valid():
+    try:st=P06_MARKER.lstat()
+    except OSError:return False
+    return (stat.S_ISREG(st.st_mode) and st.st_uid==0
+        and not st.st_mode&0o022 and st.st_nlink==1
+        and P06_MARKER.read_bytes()==P06_MARKER_BYTES)
 def reject(reason):raise RuntimeError("SEC06C_NATIVE_MEDIATOR_DENIED: "+reason)
 def safe_name(s):
     return (0<len(s)<=128 and not s.startswith(".") and ".." not in s
@@ -60,6 +73,8 @@ def finite(kind,args):
     if kind=="fixed-artifact":return (len(args)==2 and
        args[0]=="--lu-e1-artifact-one-shot" and args[1] in ("docx","xlsx"))
     if kind=="app-version":return args in (["--version"],["-version"])
+    if kind=="p06-acceptance-version":
+        return tuple(args) in P06_FIXED_PYTHON and p06_marker_valid()
     return False
 def digest(exe,argv):
     return hashlib.sha256(("\0".join([exe]+argv)+"\0").encode("utf-8")).hexdigest()
@@ -101,6 +116,9 @@ def run(opts):
         reject("finite worker args invalid")
     if not finite(opts.kind,opts.arg):
         reject("exact finite reviewed argument contract denied")
+    if opts.kind=="p06-acceptance-version":
+        if opts.binary!=str(pathlib.Path("/usr/bin/python3").resolve(strict=True)):
+            reject("acceptance-only finite Python requires canonical system Python")
     if digest(opts.binary,opts.arg)!=opts.args_sha:
         reject("host-to-root finite arguments digest changed")
     attested_binary(opts.binary,opts.binary_sha)

@@ -13,6 +13,9 @@ publish = false
 # builds and all release packaging unless CI opts in explicitly.
 [features]
 e1-p08-crash-fixture = []
+# Never a production-default worker route; requires installed root-only
+# acceptance marker and immutable finite Python scripts.
+p06-protected-acceptance = []
 
 [[bin]]
 name = "lu-e1-p08-linux-crash-parent"

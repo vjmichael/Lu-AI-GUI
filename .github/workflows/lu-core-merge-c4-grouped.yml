@@ -262,6 +262,39 @@ jobs:
             fi
           done
           exit "$failures"
+      - name: C1 original protected Linux P06 finite-operation broker admission
+        # Root-owned installed SEC-06C sources, never same-UID fallback.
+        if: always() && runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile \
+            scripts/lu-sec06c-owned-native-launcher.py \
+            scripts/lu-sec06c-owned-native-worker.py \
+            scripts/lu-sec06c-owned-kernel-manager.py \
+            scripts/lu-sec06c-owned-git-launcher.py \
+            scripts/lu-sec06c-owned-git-worker.py
+          test "$(id -u)" -ne 0
+          test -f /usr/bin/python3
+          sudo install -d -o root -g root -m 0755 /usr/libexec/lu
+          sudo install -o root -g root -m 0755 scripts/lu-sec06c-owned-kernel-manager.py /usr/libexec/lu/lu-sec06c-owned-kernel-manager
+          sudo install -o root -g root -m 0755 scripts/lu-sec06c-owned-native-launcher.py /usr/libexec/lu/lu-sec06c-launch-native
+          sudo install -o root -g root -m 0755 scripts/lu-sec06c-owned-native-worker.py /usr/libexec/lu/lu-sec06c-owned-native-worker
+          sudo install -o root -g root -m 0755 scripts/lu-sec06c-owned-git-launcher.py /usr/libexec/lu/lu-sec06c-launch-git
+          sudo install -o root -g root -m 0755 scripts/lu-sec06c-owned-git-worker.py /usr/libexec/lu/lu-sec06c-owned-git-worker
+          # Only the two exact reviewed hostile Python acceptance strings
+          # exist in this ephemeral root-owned runner; not an installer part.
+          printf 'LU_P06_ACCEPTANCE_ONLY_V1\n' | sudo tee /usr/libexec/lu/lu-sec06c-p06-acceptance-marker >/dev/null
+          sudo chown root:root /usr/libexec/lu/lu-sec06c-p06-acceptance-marker
+          sudo chmod 0444 /usr/libexec/lu/lu-sec06c-p06-acceptance-marker
+          printf '%s ALL=(root) NOPASSWD: /usr/libexec/lu/lu-sec06c-launch-native *\n' "$USER" | sudo tee /etc/sudoers.d/lu-c4-p06-native >/dev/null
+          printf '%s ALL=(root) NOPASSWD: /usr/libexec/lu/lu-sec06c-launch-git *\n' "$USER" | sudo tee /etc/sudoers.d/lu-c4-p06-git >/dev/null
+          sudo chmod 0440 /etc/sudoers.d/lu-c4-p06-native /etc/sudoers.d/lu-c4-p06-git
+          sudo visudo -cf /etc/sudoers.d/lu-c4-p06-native
+          sudo visudo -cf /etc/sudoers.d/lu-c4-p06-git
+          test "$(stat -c %u /usr/libexec/lu/lu-sec06c-launch-native)" = 0
+          test "$(stat -c %u /usr/libexec/lu/lu-sec06c-p06-acceptance-marker)" = 0
+          test "$(cat /usr/libexec/lu/lu-sec06c-p06-acceptance-marker)" = LU_P06_ACCEPTANCE_ONLY_V1
       - name: C1 original P06A-D installed Git and Python, watchdog and verified-stop contracts
         # Preserve original independent process tests, not merely Cargo's
         # zero-ignored default. A failed earlier family cannot hide this gap.
@@ -276,7 +309,7 @@ jobs:
           if not git: raise RuntimeError("Actual installed Git is required")
           for key,path in {
             "LU_E1_P06_GIT":os.path.realpath(git),
-            "LU_E1_P06_PYTHON":os.path.realpath(sys.executable),
+            "LU_E1_P06_PYTHON":os.path.realpath("/usr/bin/python3") if sys.platform=="linux" else os.path.realpath(sys.executable),
           }.items():
             if not os.path.isabs(path) or not os.path.isfile(path):
               raise RuntimeError("Genuine native reviewed executable missing: "+key)
@@ -288,7 +321,12 @@ jobs:
           # Re-resolve the two verified, host-installed binaries into this
           # shell's environment; never supply a test-side fake executable.
           export LU_E1_P06_GIT="$(python -c 'import os,shutil; p=shutil.which("git"); print(os.path.realpath(p) if p else "")')"
-          export LU_E1_P06_PYTHON="$(python -c 'import os,sys; print(os.path.realpath(sys.executable))')"
+          if [[ "$RUNNER_OS" == "Linux" ]]; then
+            export LU_E1_P06_PYTHON="$(readlink -f /usr/bin/python3)"
+            export LU_SEC06C_BROKER_DEBUG=1
+          else
+            export LU_E1_P06_PYTHON="$(python -c 'import os,sys; print(os.path.realpath(sys.executable))')"
+          fi
           test -f "$LU_E1_P06_GIT" && test -f "$LU_E1_P06_PYTHON"
           failures=0
           run_original() {
@@ -304,8 +342,17 @@ jobs:
             fi
           }
           core=(cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml)
+          if [[ "$RUNNER_OS" == "Linux" ]]; then
+            core+=(--features p06-protected-acceptance)
+          fi
           run_original p06b-real-version 6 "${core[@]}" --lib native_app_version_execution::tests -- --ignored --nocapture
           run_original p06d-real-git 5 "${core[@]}" --lib native_app_typed_git::tests -- --ignored --nocapture
+          if [[ "$RUNNER_OS" == "Linux" ]]; then
+            run_original p06-finite-denials 1 \
+              cargo test --locked --manifest-path src-tauri/lu-win-worker-job/Cargo.toml \
+              --features p06-protected-acceptance --lib \
+              p06_acceptance_only_two_exact_python_operations_not_generic_code -- --nocapture
+          fi
           run_original llama-watchdog 1 "${core[@]}" --lib persistent_llama_backend::tests::original_watchdog_kills_exact_owned_child_even_when_decoder_blocks -- --nocapture
           run_original llama-slots 1 "${core[@]}" --lib persistent_llama_backend::tests::original_slot_verification_rejects_busy_multiple_and_forged_idleness -- --nocapture
           exit "$failures"
@@ -639,6 +686,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          PYTHONPATH=benchmarks/e1 python3 -m unittest -v test_e1_p07_llama_completion \
+            2>&1 | tee c4-qwen-evidence/typed-grammar-source-contract.log
           PYTHONPATH=benchmarks/e1 python3 - <<'PY'
           import os
           from e1_p07_llama_completion import (

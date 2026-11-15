@@ -586,7 +586,16 @@ impl BackgroundProcessSupervisor {
                 |"--lu-e1-artifact-one-shot"))
             ||(typed_capture.is_some()&&matches!(
                 plan.args.first().and_then(|arg|arg.to_str()),
-                Some("--version"|"-version")));
+                Some("--version"|"-version")))
+            ||(cfg!(feature="p06-protected-acceptance")
+                &&typed_capture.is_some()
+                &&plan.args.len()==4
+                &&plan.args[0].to_str()==Some("-I")
+                &&plan.args[1].to_str()==Some("-S")
+                &&plan.args[2].to_str()==Some("-c")
+                &&matches!(plan.args[3].to_str(),
+                    Some("import time;time.sleep(20);print('Python 3.13.0')"
+                        |"print('Python '+('9'*8192))")));
         #[cfg(target_os="linux")]
         let reviewed_origin=if let Some(profile)=self.profile.as_deref()
             .filter(|_|typed_capture.is_some()||native_candidate){

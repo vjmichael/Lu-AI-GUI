@@ -4,7 +4,7 @@
 This separate reviewed sudo policy never launches arbitrary user programs,
 never accepts browser URLs or model commands and never runs a desktop worker
 as root. It provisions only the installed root-owned systemd kernel manager
-with one of the six explicitly typed, independently checked native modes.
+with one of the finite explicitly typed, independently checked native modes.
 """
 import argparse
 import hashlib
@@ -23,10 +23,22 @@ SYSTEMD=pathlib.Path("/usr/bin/systemd-run")
 RUN_DIR=pathlib.Path("/run/lu-sec06c")
 RECEIPTS=pathlib.Path("/var/lib/lu-sec06c/native-receipts")
 KINDS={"scan-file","archive-preview","archive-extract",
-       "fixed-version","fixed-artifact","app-version"}
+       "fixed-version","fixed-artifact","app-version","p06-acceptance-version"}
 REVIEW_ID=re.compile(r"^[a-zA-Z0-9_-]{1,128}$")
 HEX32=re.compile(r"^[a-f0-9]{32}$")
 HEX64=re.compile(r"^[a-f0-9]{64}$")
+P06_FIXED_PYTHON=(
+    ("-I","-S","-c","import time;time.sleep(20);print('Python 3.13.0')"),
+    ("-I","-S","-c","print('Python '+('9'*8192))"),
+)
+P06_MARKER=pathlib.Path("/usr/libexec/lu/lu-sec06c-p06-acceptance-marker")
+P06_MARKER_BYTES=b"LU_P06_ACCEPTANCE_ONLY_V1\n"
+def p06_marker_valid():
+    try:st=P06_MARKER.lstat()
+    except OSError:return False
+    return (stat.S_ISREG(st.st_mode) and st.st_uid==0
+        and not st.st_mode&0o022 and st.st_nlink==1
+        and P06_MARKER.read_bytes()==P06_MARKER_BYTES)
 def deny(reason):raise RuntimeError("SEC06C_NATIVE_BROKER_DENIED: "+reason)
 def root_file(path):
     p=pathlib.Path(path)
@@ -74,6 +86,8 @@ def finite(kind,args):
         len(args)==2 and args[0]=="--lu-e1-artifact-one-shot"
         and args[1] in ("docx","xlsx"))
     if kind=="app-version":return args in (["--version"],["-version"])
+    if kind=="p06-acceptance-version":
+        return tuple(args) in P06_FIXED_PYTHON and p06_marker_valid()
     return False
 def binary(exe,sha):
     if not canonical(exe) or not HEX64.fullmatch(sha):
@@ -102,8 +116,12 @@ def run(opts):
     for p in (pathlib.Path(__file__).resolve(),MANAGER,NATIVE,PYTHON,SYSTEMD):
         root_file(p)
     binary(opts.binary,opts.binary_sha)
+    if opts.kind=="p06-acceptance-version":
+        root_file(P06_MARKER)
+        if not p06_marker_valid() or opts.binary!=str(PYTHON):
+            deny("fixed Python acceptance mode requires original root-owned marker and system Python")
     if not finite(opts.kind,opts.arg) or digest(opts.binary,opts.arg)!=opts.args_sha:
-        deny("not one of six finite reviewed native argument contracts")
+        deny("not one of finite reviewed native argument contracts")
     root_dir(RUN_DIR);root_dir(RECEIPTS)
     receipt=RECEIPTS/(opts.nonce+".receipt")
     if receipt.exists() or (RUN_DIR/(opts.nonce+".go")).exists():

@@ -39,7 +39,8 @@ OPS={
  "git": {"head","status","branch","count"},
  "probe": {"ffprobe-wav","ffprobe-mp4","pdfinfo-pdf","exiftool-image"},
  "native": {"scan-file","archive-preview","archive-extract",
-            "fixed-version","fixed-artifact","app-version"},
+            "fixed-version","fixed-artifact","app-version",
+            "p06-acceptance-version"},
 }
 MS_RDONLY=1
 MS_REMOUNT=32
@@ -51,6 +52,18 @@ PR_SET_NO_NEW_PRIVS=38
 PR_SET_KEEPCAPS=8
 MAX_OUTPUT=16384
 
+P06_FIXED_PYTHON=(
+    ("-I","-S","-c","import time;time.sleep(20);print('Python 3.13.0')"),
+    ("-I","-S","-c","print('Python '+('9'*8192))"),
+)
+P06_MARKER=pathlib.Path("/usr/libexec/lu/lu-sec06c-p06-acceptance-marker")
+P06_MARKER_BYTES=b"LU_P06_ACCEPTANCE_ONLY_V1\n"
+def p06_marker_valid():
+    try:st=P06_MARKER.lstat()
+    except OSError:return False
+    return (stat.S_ISREG(st.st_mode) and st.st_uid==0
+        and not st.st_mode&0o022 and st.st_nlink==1
+        and P06_MARKER.read_bytes()==P06_MARKER_BYTES)
 def refuse(reason):
     raise RuntimeError("SEC06C_PINNED_KERNEL_SUPERVISOR_DENIED: "+reason)
 
@@ -252,6 +265,8 @@ def finite_native(kind,arguments):
     if kind=="fixed-artifact":return (len(arguments)==2 and
         arguments[0]=="--lu-e1-artifact-one-shot" and arguments[1] in ("docx","xlsx"))
     if kind=="app-version":return arguments in (["--version"],["-version"])
+    if kind=="p06-acceptance-version":
+        return tuple(arguments) in P06_FIXED_PYTHON and p06_marker_valid()
     return False
 
 def one_use_worker_args(args):
@@ -262,6 +277,10 @@ def one_use_worker_args(args):
                 any(ord(c)<32 for c in x) for x in args.arg)):
             refuse("reviewed native finite source contract absent")
         reviewed=digest_file(args.binary,args.binary_sha)
+        if args.op=="p06-acceptance-version":
+            checked_root_file(P06_MARKER)
+            if not p06_marker_valid() or reviewed!=PYTHON:
+                refuse("protected acceptance-only Python source is not root-owned system Python")
         digest=hashlib.sha256(("\0".join([str(reviewed)]+args.arg)+"\0")
                               .encode("utf-8")).hexdigest()
         if digest!=args.args_sha or not finite_native(args.op,args.arg):
@@ -396,7 +415,7 @@ def run(args):
         16*1024*1024 if args.domain=="native" and args.op=="fixed-artifact"
         else 128*1024 if args.domain=="native" and args.op=="scan-file"
         else 32*1024 if args.domain=="native"
-        and args.op in ("fixed-version","app-version") else 0)
+        and args.op in ("fixed-version","app-version","p06-acceptance-version") else 0)
     try:
         # All privileged namespace/cgroup operations happen before drop.
         child=subprocess.Popen(argv,stdin=sys.stdin.buffer,

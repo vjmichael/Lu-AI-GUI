@@ -39,6 +39,25 @@ class RealQwenJsonInterface(unittest.TestCase):
         self.assertNotIn('lu_reviewed_media_facts',grammar)
         self.assertNotIn('json_schema',out)
 
+    def test_typed_tool_mode_preserves_model_chosen_values_and_schema_shape(self):
+        prompt='<|im_start|>assistant\n'
+        out=m.model_payload(prompt,256,'json_schema','required_args')
+        grammar=out['grammar']
+        self.assertIn('root ::= typed-tool\n',grammar)
+        self.assertIn('typed-arguments ::= typed-schema-arguments | typed-environment-arguments',grammar)
+        self.assertIn('typed-schema-arguments ::=',grammar)
+        self.assertIn('typed-environment-arguments ::=',grammar)
+        # An unstructured string cannot masquerade as a JSON Schema object.
+        self.assertIn('ws "{" ws',grammar)
+        self.assertIn('"\\"type\\""',grammar)
+        self.assertIn('"\\"data\\""',grammar)
+        self.assertIn('"\\"program\\""',grammar)
+        # Host decoder cannot choose the original model's tool or input.
+        for forbidden in ('lu_validate_schema','lu_check_env','integer','42','python',
+                          'lu_reviewed_git_head','lu_reviewed_media_facts'):
+            self.assertNotIn(forbidden,grammar)
+        self.assertNotIn('json_schema',out)
+
     def test_unreviewed_required_mode_is_not_admitted(self):
         with self.assertRaises(ValueError):
             m.model_payload('hello',128,'raw','required')

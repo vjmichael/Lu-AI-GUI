@@ -67,6 +67,13 @@ pub fn finite_kind(args:&[OsString])->io::Result<&'static str>{
         ["--lu-e1-version-one-shot"]=>Some("fixed-version"),
         ["--lu-e1-artifact-one-shot",("docx"|"xlsx")]=>Some("fixed-artifact"),
         [("--version"|"-version")]=>Some("app-version"),
+        // Original P06 hostile timeout/oversize cases are precisely two
+        // immutable Python invocations, not a model-selected CLI bridge.
+        // Linux root broker also requires a root-owned CI acceptance marker.
+        #[cfg(feature="p06-protected-acceptance")]
+        ["-I","-S","-c","import time;time.sleep(20);print('Python 3.13.0')"]|
+        ["-I","-S","-c","print('Python '+('9'*8192))"]=>
+            Some("p06-acceptance-version"),
         _=>None
     };
     allowed.ok_or_else(||io::Error::other(
@@ -202,4 +209,24 @@ mod tests{
             "fixed-artifact");
         assert_eq!(finite_kind(&v(&["--version"])).unwrap(),"app-version");
     }
+    #[cfg(feature="p06-protected-acceptance")]
+    #[test]
+    fn p06_acceptance_only_two_exact_python_operations_not_generic_code(){
+        assert_eq!(finite_kind(&v(&[
+            "-I","-S","-c","import time;time.sleep(20);print('Python 3.13.0')"
+        ])).unwrap(),"p06-acceptance-version");
+        assert_eq!(finite_kind(&v(&[
+            "-I","-S","-c","print('Python '+('9'*8192))"
+        ])).unwrap(),"p06-acceptance-version");
+        for malicious in [
+            vec!["-c","print('Python 3.13.0')"],
+            vec!["-I","-S","-c","import os;os.system('id')"],
+            vec!["-I","-S","-c","import time;time.sleep(21);print('Python 3.13.0')"],
+            vec!["-I","-S","-c","print('Python '+('9'*8193))"],
+            vec!["-I","-S","-c","print('Python '+('9'*8192))","--extra"],
+        ]{
+            assert!(finite_kind(&v(&malicious)).is_err(),"{malicious:?}");
+        }
+    }
+
 }
