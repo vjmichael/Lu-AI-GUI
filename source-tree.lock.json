@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "2c0653d2254a3f2f6a4b7ed915699b420bbf74eb",
+  "sourceCommitBeforeLock": "a74fd853de04b06052c955eb4ca7e47fd739e0ce",
   "trackedFileCount": 1034,
   "files": [
     {
@@ -69,7 +69,7 @@
     },
     {
       "path": ".github/workflows/lu-core-merge-c4-grouped.yml",
-      "blob": "f74031b73c86c818758c6019b1543a5c392c67bd"
+      "blob": "1d321d05f752b9f31cde59a6803493517ad3eae8"
     },
     {
       "path": ".github/workflows/lu-development-ledger.yml",
@@ -337,7 +337,7 @@
     },
     {
       "path": "benchmarks/e1/e1_p07_llama_completion.py",
-      "blob": "e794fdb795a2d9727d54a6a735137db866b34b88"
+      "blob": "c3c67f154db426571b0e228bebcf8fc7badb7efa"
     },
     {
       "path": "benchmarks/e1/e1_p08_linux_group_guard.py",
@@ -433,7 +433,7 @@
     },
     {
       "path": "benchmarks/e1/test_e1_p07_llama_completion.py",
-      "blob": "7b6736823baacc6810544703331277cc02418e46"
+      "blob": "312f20bdf7e1c1b709ad49ae7c50ff870478be5e"
     },
     {
       "path": "benchmarks/e1/test_memory_loop02_qwen_feedback.py",
@@ -2357,15 +2357,15 @@
     },
     {
       "path": "scripts/lu-sec06c-owned-kernel-manager.py",
-      "blob": "3e1045728301c6f088812e37981702ba98a20e09"
+      "blob": "d2306d080975c426add6754428fe22c955086b17"
     },
     {
       "path": "scripts/lu-sec06c-owned-native-launcher.py",
-      "blob": "371d21353701bcd3ac9c6feabee1d9184ed875d1"
+      "blob": "06426ac5a87621263961b61242b0db8a1cf8ec51"
     },
     {
       "path": "scripts/lu-sec06c-owned-native-worker.py",
-      "blob": "b07de121360c300fa8bf0dda9e2f99faa9233709"
+      "blob": "bc80f943564079a723568a9c5a640af50965220f"
     },
     {
       "path": "scripts/lu-sec06c-owned-probe-launcher.py",
@@ -2533,7 +2533,7 @@
     },
     {
       "path": "src-tauri/lu-core/Cargo.toml",
-      "blob": "abbe84d4813c661b0538b0944754fe1b5826ee42"
+      "blob": "c6a4f1e017331ffd34fec3771989270f86d1fe48"
     },
     {
       "path": "src-tauri/lu-core/DESIGN_GAP_AUDIT_2026-10-25.md",
@@ -3029,7 +3029,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/native_app_typed_git.rs",
-      "blob": "b2a0297028a0732da9ad7816b00b39d44de1f01b"
+      "blob": "af3d160db0d0cccef10dbd09ff35e8a1a25cfd0d"
     },
     {
       "path": "src-tauri/lu-core/src/native_app_typed_specialist.rs",
@@ -3037,7 +3037,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/native_app_version_execution.rs",
-      "blob": "2b1b916d1e4fc800481b87556a4ec037254625cb"
+      "blob": "fa93a33933b205b089609b7ff340ec93e811b5c4"
     },
     {
       "path": "src-tauri/lu-core/src/native_ar_deb.rs",
@@ -3089,7 +3089,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/native_background_process.rs",
-      "blob": "5cccf16cd1f88903bfc3cddaa3331c8f9f897efb"
+      "blob": "b800315f30834557b92452702b0c6554a41bb75c"
     },
     {
       "path": "src-tauri/lu-core/src/native_background_result.rs",
@@ -4061,7 +4061,7 @@
     },
     {
       "path": "src-tauri/lu-win-worker-job/Cargo.toml",
-      "blob": "824ab80d866ccda34ffa61f2439e14d9086216d6"
+      "blob": "64c1005a00985f7650cbe523a559850fdf2cac0a"
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/bin/lu-e1-p08-linux-cgroup-crash-parent.rs",
@@ -4109,7 +4109,7 @@
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/os_owned_native.rs",
-      "blob": "0a7370a4cf4fd4d99d4039577ef5382303ccddc9"
+      "blob": "a7cf602f34730e8dc332f3b39ac739119aafb693"
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/os_owned_probe.rs",
