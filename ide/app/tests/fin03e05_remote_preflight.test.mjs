@@ -11,11 +11,11 @@ const tauri = read('../src-tauri/src/lib.rs');
 test('FIN03 6E05A remains native registered-project preview only', () => {
   assert.match(host, /pub mod github_remote_publication;/);
   assert.match(native, /pub fn review_github_remote_publication\(/);
-  assert.match(native, /exact_repo\(self,project_id\)/);
+  assert.match(native, /exact_repo\(\s*self,\s*project_id\s*\)/);
   assert.match(native, /github_repo/);
   assert.match(native, /preview_evidence_sha256/);
-  assert.match(native, /tracking_source:"local_stored_ref_only_not_live_remote"/);
-  assert.match(native, /source_rechecked:true/);
+  assert.match(native, /tracking_source:\s*"local_stored_ref_only_not_live_remote"/);
+  assert.match(native, /source_rechecked:\s*true/);
   assert.doesNotMatch(tauri, /ide_github_remote_publication_execute/);
   assert.doesNotMatch(tauri, /ide_github_publish_branch/);
 });
@@ -33,7 +33,7 @@ test('FIN03 6E05A never converts a cached tracking ref or CI into authority', ()
     'network_queried:false',
     'release_accepted:false',
   ]) {
-    assert.ok(native.includes(field), 'missing hardcoded deny: '+field);
+    assert.ok(native.replace(/\s+/g,'').includes(field), 'missing hardcoded deny: '+field);
   }
   assert.match(native, /live_remote_ref_compare_and_swap_missing/);
   assert.match(native, /origin_push_url_override_denied/);
@@ -61,7 +61,7 @@ test('FIN03 native unit fixtures reject dirty, drift, spoofing and write asserti
   assert.match(native,/FIN03_REMOTE_SOURCE_DRIFT_DURING_PREVIEW/);
   assert.match(native,/FIN03_REMOTE_ORIGIN_NOT_CANONICAL_GITHUB/);
   assert.match(native,/FIN03_REMOTE_TRACKING_UNVERIFIED/);
-  assert.match(native,/remote_write_route_available:false/);
+  assert.match(native,/remote_write_route_available:\s*false/);
 });
 
 test('FIN03 6E05B uses OS native credential read only, not WebView secrets', () => {
@@ -70,7 +70,7 @@ test('FIN03 6E05B uses OS native credential read only, not WebView secrets', () 
   assert.match(host, /pub mod github_remote_live_policy;/);
   assert.match(live, /NativeOsGitHubReadVault/);
   assert.match(live, /keyring::Entry::new\(/);
-  assert.match(live, /entry\.get_password\(\)/);
+  assert.match(live, /entry\s*\.\s*get_password\(\)/);
   assert.match(live, /zeroize::Zeroizing::new/);
   assert.match(live, /fin03-native-vault/);
   assert.doesNotMatch(code, /\.set_password\s*\(/);
@@ -83,7 +83,7 @@ test('FIN03 6E05B uses OS native credential read only, not WebView secrets', () 
     'native_approval_verified:false',
     'remote_mutation_performed:false',
     'remote_write_route_available:false',
-  ]) assert.ok(code.includes(fence), fence);
+  ]) assert.ok(code.replace(/\s+/g,'').includes(fence), fence);
 });
 
 test('FIN03 6E05C offline intent remains host-only and never remotely executes', () => {
@@ -91,7 +91,7 @@ test('FIN03 6E05C offline intent remains host-only and never remotely executes',
   const code = intent.split('#[cfg(test)]')[0];
   assert.match(host, /mod github_remote_publication_intent;/);
   assert.match(code, /pub\(crate\) fn prepare_github_remote_publication_intent\(/);
-  assert.match(code, /graph_descendant_of\(to,from\)/);
+  assert.match(code, /graph_descendant_of\(\s*to,\s*from\s*\)/);
   assert.match(code, /create_new\(true\)/);
   assert.match(code, /file\.sync_all\(\)/);
   assert.match(code, /reconciliation_required_no_remote_retry/);
@@ -131,7 +131,7 @@ test('Group 6F aggregates nine original native recovery inspectors without publi
     'os_human_approval_granted:false',
     'automatic_retry_authorized:false',
     'automatic_lock_removal_authorized:false',
-  ]) assert.ok(production.includes(marker),marker);
+  ]) assert.ok(production.replace(/\s+/g,'').includes(marker),marker);
   for (const forbidden of [/Command\s*::\s*new\(/,/ureq\s*::/,
       /\.set_target\s*\(/,/\.push_to\s*\(/,
       /\.remove_file\s*\(/,/\.remove_dir\s*\(/]) {
@@ -143,7 +143,7 @@ test('FIN03 6E05B actually compiles native Linux Secret Service and Windows vaul
   const live=read('../../host/src/github_remote_live_policy.rs');
   const diag=read('../../host/examples/fin03_live_vault_probe.rs');
   assert.doesNotMatch(live, /any\(windows,linux\)/);
-  assert.match(live,/any\(windows,target_os="linux"\)/);
+  assert.match(live,/any\(\s*windows,\s*target_os\s*=\s*"linux"\s*\)/);
   assert.match(diag,/NativeOsGitHubReadVault::default\(\)/);
   assert.match(diag,/inspect_live_github_branch_policy\(/);
   assert.match(diag,/authenticated_host_read/);

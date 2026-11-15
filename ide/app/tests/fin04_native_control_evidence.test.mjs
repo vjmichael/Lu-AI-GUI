@@ -65,7 +65,7 @@ test('FIN04 full original-action inventory blocks production admission across ev
  assert.match(inspectorLexical,/global_action_cleanup\|=parsed\.requires_os_cleanup/);
  assert.match(inspectorLexical,/let global_os_cleanup_required=global_action_cleanup/);
  assert.match(inspectorLexical,/pub global_unresolved_action_required:bool/);
- assert.match(inspectorLexical,/global_action_reconciliation \|=/);
+ assert.match(inspectorLexical,/global_action_reconciliation\|=/);
  assert.match(inspectorLexical,/original_debug_journal_digest/);
  assert.match(inspectorLexical,/FIN04_ORIGINAL_DEBUG_SUPERVISOR_STATE_STALE/);
  assert.match(inspectorLexical,/if original\.project_id!=project_id\{continue;\}/);

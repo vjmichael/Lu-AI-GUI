@@ -19,7 +19,7 @@ test('6E01 uses fixed GitHub public REST origin and same local repository', () =
 
 test('6E01 never trusts arbitrary PR URL, approval, or CI metadata', () => {
   assert.match(native, /https:\/\/github\.com\/\{repository\}\/pull\/\{number\}/);
-  assert.match(native, /review_approval_verified: false, checks_verified: false/);
+  assert.match(native, /review_approval_verified:\s*false,\s*checks_verified:\s*false/);
   assert.match(native, /operation_authorized: false/);
   assert.match(native, /listing_partial = next_page \|\| pulls\.len\(\) == MAX_PRS/);
   assert.match(native, /never_accept_foreign_pr_wrong_commit_as_approval_or_malicious_title/);

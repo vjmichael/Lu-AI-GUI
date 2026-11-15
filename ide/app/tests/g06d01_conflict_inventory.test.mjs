@@ -15,12 +15,12 @@ test('6D01 conflict inspection is registered read-only with no approval route', 
   assert.match(ui, /Inspect unresolved Git conflicts \(read only\)/);
 });
 test('6D01 reads original index conflict stages and validates evidence', () => {
-  assert.match(native, /index\.conflicts\(\)/);
-  assert.match(native, /c\.ancestor\.as_ref\(\)/);
-  assert.match(native, /c\.our\.as_ref\(\)/);
-  assert.match(native, /c\.their\.as_ref\(\)/);
+  assert.match(native, /index\s*\.\s*conflicts\(\)/);
+  assert.match(native, /c\s*\.\s*ancestor\s*\.\s*as_ref\(\)/);
+  assert.match(native, /c\s*\.\s*our\s*\.\s*as_ref\(\)/);
+  assert.match(native, /c\s*\.\s*their\s*\.\s*as_ref\(\)/);
   assert.match(native, /raw_index\(repo\.path\(\)\)\? != before_index/);
   assert.match(native, /changed_path_is_plain_safe\(\&root, first\)/);
-  assert.match(native, /authority_granted: false, resolution_written: false/);
+  assert.match(native, /authority_granted:\s*false,\s*resolution_written:\s*false/);
   assert.match(native, /real_unresolved_stage_one_two_three_is_inspected_without_mutation/);
 });

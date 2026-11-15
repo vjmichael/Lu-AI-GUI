@@ -8,8 +8,8 @@ const cargo=read('../src-tauri/Cargo.toml');
 test('FIN03 stash save is a reviewed native one-file mutation, never a shell',()=>{
  assert.match(host,/review_single_file_restore\(id\)/);
  assert.match(host,/execute_reviewed_one_file_stash_save/);
- assert.match(host,/source_again\.review_sha256!=fresh\.source_review_sha256/);
- assert.match(host,/stash_save\(&signature/);
+ assert.match(host,/source_again\.review_sha256\s*!=\s*fresh\.source_review_sha256/);
+ assert.match(host,/stash_save\(\s*&signature/);
  assert.match(host,/FIN03_STASH_REF_READBACK_UNCERTAIN/);
  assert.match(host,/FIN03_STASH_WORKTREE_READBACK_UNCERTAIN/);
  assert.match(host,/FIN03_STASH_ORIGINAL_BACKUP_CHANGED/);
