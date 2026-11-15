@@ -71,3 +71,28 @@ test("CORE-MERGE-C4 remains manual/reusable and is admitted only by original exa
   assert.match(gate, /!contains\(github\.event\.changes\.body\.from/);
   assert.match(gate, /uses: \.\/\.github\/workflows\/lu-core-merge-c4-grouped\.yml/);
 });
+
+test("original AGENT-01L positive proof is routed only to configured native Linux and a skipped proof fails full C4", () => {
+  const grouped=fs.readFileSync(".github/workflows/lu-core-merge-c4-grouped.yml","utf8");
+  const standalone=fs.readFileSync(".github/workflows/lu-agent01l-linux-cgroup-v2.yml","utf8");
+  const original=fs.readFileSync("benchmarks/e1/agent01l_cgroup_escape_crash_acceptance.py","utf8");
+  const g=grouped.split("  linux-real-cgroup:")[1]?.split("\n  linux-original-root-owned-git:")[0];
+  const s=standalone.split("  linux-kernel-crash-and-escaped-descendant:")[1];
+  const final=grouped.split("  exact-sha-consolidated-reconciliation:")[1];
+  assert.ok(g && s && final,"original separated kernel acceptance jobs must exist");
+  for(const block of [g,s]){
+    assert.match(block,/runs-on: \[self-hosted, linux, x64, lu-cgroup-v2-delegated\]/);
+    assert.doesNotMatch(block,/runs-on: ubuntu-24\.04|continue-on-error: true/);
+    assert.match(block,/agent01l_cgroup_escape_crash_acceptance\.py/);
+    assert.match(block,/AGENT01L_NATIVE_CGROUP_ESCAPED_DESCENDANT_PASS=1/);
+  }
+  assert.match(g,/vars\.LU_CGROUP_POSITIVE_RUNNER_READY == 'true'/);
+  assert.match(final,/- linux-real-cgroup/);
+  assert.match(final,/LINUX: \$\{\{ needs\.linux-real-cgroup\.result \}\}/);
+  assert.match(final,/test "\$LINUX" = success/);
+  assert.match(final,/LINUX_DELEGATED_CGROUP_POSITIVE_OPEN=1/);
+  assert.match(original,/AGENT01L_CGROUP_DELEGATION_NOT_AVAILABLE=1/);
+  assert.match(original,/return 78/);
+  assert.match(original,/os\.kill\(host\.pid,signal\.SIGKILL\)/);
+  assert.match(original,/os\.pidfd_open\(escaped_pid\)/);
+});

@@ -454,8 +454,17 @@ jobs:
           if-no-files-found: warn
 
   linux-real-cgroup:
+    # AGENT-01L original POSITIVE escaped-descendant proof requires a
+    # deliberately prepared native cgroup-v2 runner. Hosted Ubuntu provides
+    # the mount but not a secure, delegatable worker subtree (exit 78).
+    # A missing repo readiness variable makes this job SKIPPED, not PASS;
+    # exact-sha-consolidated-reconciliation still requires its SUCCESS.
+    # This does NOT replace the original test with root-owned Git or PGID.
+    if: >-
+      needs.exact-source-admission.result == 'success' &&
+      vars.LU_CGROUP_POSITIVE_RUNNER_READY == 'true'
     needs: exact-source-admission
-    runs-on: ubuntu-24.04
+    runs-on: [self-hosted, linux, x64, lu-cgroup-v2-delegated]
     timeout-minutes: 115
     steps:
       - uses: actions/checkout@v4
@@ -777,6 +786,9 @@ jobs:
             echo "Windows/Linux native: $NATIVE"
             echo "Windows/Linux security and recovery: $RECOVERY"
             echo "Linux delegated kernel cgroup: $LINUX"
+            if [[ "$LINUX" != success ]]; then
+              echo "LINUX_DELEGATED_CGROUP_POSITIVE_OPEN=1; dedicated native runner and original escaped-descendant evidence required. A skipped job is NOT accepted."
+            fi
             echo "Original independently root-owned Git worker: $ROOT_GIT"
             echo "Actual pinned Qwen GGUF: $QWEN"
             echo "Installed Windows and physical owner Qwen 27B remain separately open."

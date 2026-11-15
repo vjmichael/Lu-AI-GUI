@@ -87,7 +87,10 @@ jobs:
           retention-days: 14
 
   linux-kernel-crash-and-escaped-descendant:
-    runs-on: ubuntu-24.04
+    # Execute only when deliberately dispatched onto an administrator
+    # provisioned native Linux kernel-custody runner. Merely having
+    # cgroup2 mounted on ubuntu-24.04 is NOT secure delegation.
+    runs-on: [self-hosted, linux, x64, lu-cgroup-v2-delegated]
     timeout-minutes: 65
     # NO continue-on-error: a kernel mount without delegation is NOT proof.
     # The failure artifact must display NOT_AVAILABLE, not a passing test.
