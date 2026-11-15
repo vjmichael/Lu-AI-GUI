@@ -256,7 +256,8 @@ mod tests{
         },
     };
     use sha2::{Digest,Sha256};
-    use std::{fs,path::{Path,PathBuf},time::{Duration,SystemTime,UNIX_EPOCH}};
+    use std::{fs,path::{Path,PathBuf},time::{Duration,SystemTime,UNIX_EPOCH},
+        sync::atomic::{AtomicU64,Ordering}};
     struct RealUser<'a>(&'a AnsfStore);
     impl TrustedUserTurnVerifier for RealUser<'_>{
         fn verify_user_turn(&self,chat:&str,turn:&str)->bool{
@@ -272,12 +273,27 @@ mod tests{
             else{Err(AuthorizationError::new("host policy veto"))}
         }
     }
+    // Windows' wall-clock resolution can repeat across parallel Cargo test
+    // threads. A repeated PID + nanosecond-looking timestamp once allowed
+    // two independent original P06 tests to open the SAME ANSF SQLite book.
+    // This serial is process-owned fixture identity, never execution scope,
+    // permission, a relaxed test assertion, or worker-custody evidence.
+    static NEXT_FIXTURE_ID:AtomicU64=AtomicU64::new(0);
     fn scratch()->PathBuf{
         std::env::temp_dir().join(format!(
-            "lu-e1-p06b-{}-{}",
+            "lu-e1-p06b-{}-{}-{}",
             std::process::id(),
-            SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos()
+            SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos(),
+            NEXT_FIXTURE_ID.fetch_add(1,Ordering::Relaxed)
         ))
+    }
+    #[test]
+    fn original_parallel_version_fixtures_never_share_a_sqlite_root(){
+        let threads=(0..32).map(|_|std::thread::spawn(scratch))
+            .collect::<Vec<_>>();
+        let paths=threads.into_iter().map(|h|h.join().unwrap())
+            .collect::<std::collections::BTreeSet<_>>();
+        assert_eq!(paths.len(),32,"separate original ANSF sessions cannot alias");
     }
     fn required_executable(key:&str)->PathBuf{
         let value=std::env::var_os(key)
@@ -324,7 +340,9 @@ mod tests{
     }
     impl Fixture{
         fn new(binary:&Path,parser:VersionParser,slow:bool,limit_seconds:u64)->Self{
-            let root=scratch();fs::create_dir_all(&root).unwrap();
+            // Never open a preexisting fixture directory: a colliding path
+            // must fail BEFORE any journal/session/effect can be shared.
+            let root=scratch();fs::create_dir(&root).unwrap();
             let book=AnsfStore::open(&root.join("chat.sqlite")).unwrap();
             book.create_session("c-000000000000000000000000000000b6","g-000000000000000000000000000000b6","Real version runner").unwrap();
             book.start_chapter("c-000000000000000000000000000000b6","Real human request").unwrap();

@@ -489,7 +489,8 @@ mod tests{
         },
     };
     use sha2::{Digest,Sha256};
-    use std::{process::Command,time::{Duration,SystemTime,UNIX_EPOCH}};
+    use std::{process::Command,time::{Duration,SystemTime,UNIX_EPOCH},
+        sync::atomic::{AtomicU64,Ordering}};
     struct RealUser<'a>(&'a AnsfStore);
     impl TrustedUserTurnVerifier for RealUser<'_>{
         fn verify_user_turn(&self,chat:&str,turn:&str)->bool{
@@ -512,12 +513,25 @@ mod tests{
         assert!(image.is_file()&&image.is_absolute());
         image
     }
+    // Original native Git fixtures run concurrently. Windows clock ticks
+    // need not be unique even though the timestamp is expressed in nanos.
+    // Distinct test sessions must never share an original Git index/root.
+    static NEXT_FIXTURE_ID:AtomicU64=AtomicU64::new(0);
     fn root()->PathBuf{
         std::env::temp_dir().join(format!(
-            "lu-e1-p06c-{}-{}",
+            "lu-e1-p06c-{}-{}-{}",
             std::process::id(),
-            SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos()
+            SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos(),
+            NEXT_FIXTURE_ID.fetch_add(1,Ordering::Relaxed)
         ))
+    }
+    #[test]
+    fn original_parallel_git_fixtures_have_distinct_native_repositories(){
+        let threads=(0..32).map(|_|std::thread::spawn(root))
+            .collect::<Vec<_>>();
+        let paths=threads.into_iter().map(|h|h.join().unwrap())
+            .collect::<std::collections::BTreeSet<_>>();
+        assert_eq!(paths.len(),32,"independent original Git repositories aliased");
     }
     fn invoke_git(git:&Path,repo:&Path,args:&[&str])->String{
         let output=Command::new(git).arg("-C").arg(repo).args(args)
@@ -578,7 +592,9 @@ mod tests{
     impl Fixture{
         fn new(op:GitReadOperation,read_permission:bool)->Self{
             let git=git_exe();
-            let root=root();fs::create_dir_all(&root).unwrap();
+            // Exclusive fixture creation is required before Git init or
+            // ANSF opens; never reuse a stale/colliding original root.
+            let root=root();fs::create_dir(&root).unwrap();
             let repo=root.join("repo");fs::create_dir_all(&repo).unwrap();
             let output=Command::new(&git).arg("init").arg("-q").arg(&repo)
                 .output().unwrap();
