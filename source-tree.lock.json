@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "0b6af98573691638127adf39c69244fac364f83b",
+  "sourceCommitBeforeLock": "7ac7630691dfde850eddcdcb9d048835c53709e8",
   "trackedFileCount": 1040,
   "files": [
     {
@@ -69,7 +69,7 @@
     },
     {
       "path": ".github/workflows/lu-core-merge-c4-grouped.yml",
-      "blob": "e5c5795b8d99ccf5d199428e58bab744c8a87702"
+      "blob": "449994e183533b5eae57f4cb41bf6657bfc9ea1c"
     },
     {
       "path": ".github/workflows/lu-development-ledger.yml",
@@ -1581,7 +1581,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/project_task_agent_handoff.rs",
-      "blob": "d0b3fe2298991a3793a5cfb719e2f3759d1b8abd"
+      "blob": "b8b97a121f48b34cab8c47b769c800676ba6884d"
     },
     {
       "path": "lu-desktop/src-tauri/src/project_task_board_desktop.rs",
