@@ -33,6 +33,10 @@ pub struct OcrObservation {
     pub recognized_text_sha256:String,
     pub engine_sha256:String,
     pub recognized_text:String,
+    /// Actual mean Tesseract word confidence, 0..100; not a probability or oracle.
+    pub observed_confidence_percent:u32,
+    pub recognized_word_count:u32,
+    pub transcription_truncated:bool,
     pub source_format:&'static str,
     pub extracted_from_image:bool,
     pub source_verified:bool,
@@ -176,6 +180,81 @@ fn run_owned_filter(
         }
     }
 }
+/// Strict first-party Tesseract TSV evidence. Confidence is measured from
+/// engine word rows; it is not calibrated probability or permission to trust
+/// recognized instructions. No model, image path or executable is chosen here.
+#[derive(Debug,Clone,PartialEq,Eq)]
+pub struct TsvOcrObservation{
+    pub text:String,
+    pub observed_confidence_percent:u32,
+    pub word_count:u32,
+    pub truncated:bool,
+}
+pub fn parse_tesseract_tsv(
+    output:&[u8],max_chars:usize,
+)->Result<TsvOcrObservation,OcrFailure>{
+    if output.is_empty()||output.len()>MAX_TEXT_BYTES||max_chars==0||
+        max_chars>MAX_TEXT_BYTES{return Err(OcrFailure::TooLarge);}
+    let raw=std::str::from_utf8(output).map_err(|_|OcrFailure::UnsupportedEncoding)?;
+    let mut lines=raw.lines();
+    const HEADER:&str="level\tpage_num\tblock_num\tpar_num\tline_num\tword_num\tleft\ttop\twidth\theight\tconf\ttext";
+    if lines.next().unwrap_or("").trim_end_matches('\r')!=HEADER{
+        return Err(OcrFailure::Unreadable)
+    }
+    let mut text=String::new();
+    let mut total=0f64;
+    let mut count=0u32;
+    let mut last_line:Option<(u32,u32,u32,u32)>=None;
+    let mut truncated=false;
+    for (number,line) in lines.enumerate(){
+        if number>=12_000{return Err(OcrFailure::TooLarge)}
+        let cells:Vec<_>=line.trim_end_matches('\r').splitn(12,'\t').collect();
+        if cells.len()!=12{return Err(OcrFailure::Unreadable)}
+        let level:u32=cells[0].parse().map_err(|_|OcrFailure::Unreadable)?;
+        if !(1..=5).contains(&level){return Err(OcrFailure::Unreadable)}
+        if level!=5{continue}
+        let (p,b,par,l,word_num)=(
+            cells[1].parse::<u32>().map_err(|_|OcrFailure::Unreadable)?,
+            cells[2].parse::<u32>().map_err(|_|OcrFailure::Unreadable)?,
+            cells[3].parse::<u32>().map_err(|_|OcrFailure::Unreadable)?,
+            cells[4].parse::<u32>().map_err(|_|OcrFailure::Unreadable)?,
+            cells[5].parse::<u32>().map_err(|_|OcrFailure::Unreadable)?,
+        );
+        if p==0||b==0||par==0||l==0||word_num==0{
+            return Err(OcrFailure::Unreadable)
+        }
+        for dimension in &cells[6..10]{
+            dimension.parse::<u32>().map_err(|_|OcrFailure::Unreadable)?;
+        }
+        let word=cells[11].trim();
+        if word.is_empty(){continue}
+        if word.contains('\0')||word.chars().any(|ch|
+            ch.is_control() && ch!='\t'){
+            return Err(OcrFailure::Unreadable)
+        }
+        let confidence:f64=cells[10].parse().map_err(|_|OcrFailure::Unreadable)?;
+        if !confidence.is_finite()||!(0.0..=100.0).contains(&confidence){
+            return Err(OcrFailure::Unreadable)
+        }
+        total+=confidence;
+        count=count.checked_add(1).ok_or(OcrFailure::TooLarge)?;
+        let group=(p,b,par,l);
+        let separator=if text.is_empty(){""}else if last_line==Some(group){" "}else{"\n"};
+        if !truncated &&
+           text.chars().count()+separator.chars().count()+word.chars().count()<=max_chars{
+            text.push_str(separator);
+            text.push_str(word);
+        }else{truncated=true;}
+        last_line=Some(group);
+    }
+    if count==0||text.is_empty(){return Err(OcrFailure::Unreadable)}
+    Ok(TsvOcrObservation{
+        text,observed_confidence_percent:(total/f64::from(count))
+            .round().clamp(0.0,100.0) as u32,
+        word_count:count,truncated
+    })
+}
+
 /// Only the trusted desktop may call this after the operator chooses an
 /// original image. A model cannot pass a filename or executable path.
 pub fn recognize_pinned_image(
@@ -214,16 +293,17 @@ pub fn recognize_pinned_image_cancellable(
     // No shell, no ambient TESSDATA_PREFIX, user profile or network paths.
     worker.env_clear()
         .args(["stdin","stdout","-l","eng","--psm","3","--tessdata-dir"])
-        .arg(tessdata)
+        .arg(tessdata).arg("tsv")
         .stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::null());
     let data=run_owned_filter(worker,bytes,MAX_TEXT_BYTES,MAX_RUNTIME,cancel)?;
-    let text=String::from_utf8(data).map_err(|_|OcrFailure::UnsupportedEncoding)?;
-    let normalized=text.replace("\r\n","\n");
-    if normalized.trim().is_empty(){return Err(OcrFailure::Unreadable);}
-    if normalized.chars().any(|c|c=='\0'){return Err(OcrFailure::Unreadable);}
+    let parsed=parse_tesseract_tsv(&data,MAX_TEXT_BYTES)?;
+    let normalized=parsed.text;
     Ok(OcrObservation{
         source_sha256:sha(bytes),recognized_text_sha256:sha(normalized.as_bytes()),
-        engine_sha256:digest,recognized_text:normalized,source_format:fmt,
+        engine_sha256:digest,recognized_text:normalized,
+        observed_confidence_percent:parsed.observed_confidence_percent,
+        recognized_word_count:parsed.word_count,
+        transcription_truncated:parsed.truncated,source_format:fmt,
         extracted_from_image:true,source_verified:false,human_review_required:true,
     })
 }
@@ -353,6 +433,40 @@ pub fn recognize_pinned_pdf_pages(
 mod tests{
     use super::*;
     use image::DynamicImage;
+
+    #[test]
+    fn historical_real_tesseract_word_confidence_is_87_and_lines_remain_separate(){
+        const SAMPLE:&str=concat!(
+            "level\tpage_num\tblock_num\tpar_num\tline_num\tword_num\tleft\ttop\twidth\theight\tconf\ttext\n",
+            "1\t1\t0\t0\t0\t0\t0\t0\t400\t100\t-1\t\n",
+            "5\t1\t1\t1\t1\t1\t1\t1\t50\t20\t92.5\tHello\n",
+            "5\t1\t1\t1\t1\t2\t70\t1\t50\t20\t87.5\tworld\n",
+            "5\t1\t1\t1\t2\t1\t1\t30\t50\t20\t80.0\tAgain\n"
+        );
+        let actual=parse_tesseract_tsv(SAMPLE.as_bytes(),16_000).unwrap();
+        assert_eq!(actual.text,"Hello world\nAgain");
+        assert_eq!(actual.observed_confidence_percent,87);
+        assert_eq!(actual.word_count,3);
+        assert!(!actual.truncated);
+        let limited=parse_tesseract_tsv(SAMPLE.as_bytes(),11).unwrap();
+        assert_eq!(limited.text,"Hello world");
+        assert_eq!(limited.word_count,3);
+        assert!(limited.truncated);
+    }
+    #[test]
+    fn historical_tsv_hostile_incomplete_nan_out_of_range_and_control_rows_refused(){
+        const HEADER:&str="level\tpage_num\tblock_num\tpar_num\tline_num\tword_num\tleft\ttop\twidth\theight\tconf\ttext\n";
+        for raw in [
+            "".to_owned(),"not TSV".into(),"level\tbad".into(),
+            format!("{HEADER}5\t1\t1"),
+            format!("{HEADER}5\t1\t1\t1\t1\t1\t0\t0\t1\t1\tNaN\tevil\n"),
+            format!("{HEADER}5\t1\t1\t1\t1\t1\t0\t0\t1\t1\t101\tevil\n"),
+            format!("{HEADER}5\t1\t1\t1\t1\t1\t0\t0\t1\t1\t100\tevil\0control\n"),
+        ]{
+            assert!(parse_tesseract_tsv(raw.as_bytes(),200).is_err(),
+                "accepted untrusted TSV: {raw:?}");
+        }
+    }
     #[test]
     fn ocr_admission_rejects_corrupt_magic_and_decompression_bombs(){
         let mut image=Vec::new();

@@ -11,6 +11,7 @@
 use crate::inference_host::{
     Cancellation, EngineError, GenerationRequest, InferenceBackend, TokenChunk,
 };
+use crate::backend_restart_ledger::{BackendRestartLedger,RestartAdmission};
 use crate::mmproj_admission::AdmittedProjector;
 use crate::model_admission::AdmittedModel;
 use crate::prefix_kv_cache::PromptCacheGate;
@@ -86,8 +87,26 @@ pub struct PersistentLlamaBackend {
     port: Option<u16>,
     cache_gate: PromptCacheGate,
     next_trusted_cache_scope: Option<String>,
+    durable_spawn_gate: Option<HostEngineSpawnGate>,
     #[cfg(windows)]
     job: Option<lu_win_worker_job::Job>,
+}
+
+/// Only the trusted host may enroll a durable, profile-local attempt gate.
+/// This is NOT a model tool or a permission to restart after cancellation.
+struct HostEngineSpawnGate{
+    ledger:Arc<BackendRestartLedger>,
+    host_key:String,
+}
+impl HostEngineSpawnGate{
+    fn check_before_spawn(&self)->Result<(),String>{
+        match self.ledger.admit_now(&self.host_key){
+            Ok(RestartAdmission::Allowed)=>Ok(()),
+            Ok(RestartAdmission::CircuitOpen)=>
+                Err("llama.cpp start circuit open: repeated attempts within five minutes; human review or cooldown required".into()),
+            Err(_)=>Err("llama.cpp durable start receipt unavailable; worker not launched".into()),
+        }
+    }
 }
 
 fn verify_engine(path: &Path, expected: &[u8; 32]) -> Result<PathBuf, String> {
@@ -206,9 +225,21 @@ impl PersistentLlamaBackend {
             port: None,
             cache_gate: PromptCacheGate::default(),
             next_trusted_cache_scope: None,
+            durable_spawn_gate: None,
             #[cfg(windows)]
             job: None,
         })
+    }
+    /// Bind a trusted application-profile SQLite circuit before any future
+    /// llama.cpp child spawn. The host key is derived only from its reviewed
+    /// model/engine catalog. Failed spawns count; the ledger survives restart.
+    pub fn with_durable_spawn_gate(
+        mut self, ledger:Arc<BackendRestartLedger>,host_key:String,
+    )->Result<Self,String>{
+        BackendRestartLedger::validate(&host_key)
+            .map_err(|_|"Invalid trusted llama.cpp restart admission key")?;
+        self.durable_spawn_gate=Some(HostEngineSpawnGate{ledger,host_key});
+        Ok(self)
     }
     /// Called only by the host at load admission. Already loaded engine
     /// settings cannot silently change during a running conversation.
@@ -532,6 +563,11 @@ impl InferenceBackend for PersistentLlamaBackend {
         #[cfg(windows)]
         let job = lu_win_worker_job::Job::new()
             .map_err(|e| format!("cannot establish Lu engine job: {e}"))?;
+        // Journal the exact source-pinned worker start BEFORE spawning it.
+        // A process-crash loop cannot erase this SQLite receipt on restart.
+        if let Some(gate)=self.durable_spawn_gate.as_ref(){
+            gate.check_before_spawn()?;
+        }
         #[allow(unused_mut)]
         let mut child = command.spawn().map_err(|e| e.to_string())?;
         #[cfg(windows)]
@@ -684,6 +720,32 @@ impl Drop for PersistentLlamaBackend {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn original_durable_start_gate_blocks_third_pre_spawn_attempt_after_reopen(){
+        let stamp=std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+        let path=std::env::temp_dir().join(format!(
+            "lu-llama-gate-{}-{stamp}.sqlite",std::process::id()
+        ));
+        let key="llama.reviewed-model".to_owned();
+        {
+            let ledger=Arc::new(BackendRestartLedger::open(&path).unwrap());
+            let gate=HostEngineSpawnGate{ledger,host_key:key.clone()};
+            assert!(gate.check_before_spawn().is_ok());
+            assert!(gate.check_before_spawn().is_ok());
+            assert!(gate.check_before_spawn().is_err());
+        }
+        {
+            let ledger=Arc::new(BackendRestartLedger::open(&path).unwrap());
+            let gate=HostEngineSpawnGate{ledger,host_key:key};
+            assert!(gate.check_before_spawn().is_err(),
+                "a restarted Lu process must not get a fresh quota");
+        }
+        let _=std::fs::remove_file(&path);
+        let _=std::fs::remove_file(path.with_extension("sqlite-wal"));
+        let _=std::fs::remove_file(path.with_extension("sqlite-shm"));
+    }
     #[test]
     fn original_watchdog_kills_exact_owned_child_even_when_decoder_blocks() {
         #[cfg(windows)]

@@ -96,6 +96,7 @@ use chat_store::{ChatFolder, ChatMessage, ChatStore, ChatSummary};
 use generation_queue::{CancelState, GenerationQueue, TurnClass};
 use load_trace::{LoadTrace, LoadTraceView};
 use lu_core::{
+    backend_restart_ledger::BackendRestartLedger,
     inference_bridge::BridgeError,
     inference_supervisor::{SupervisorError, TrustedInferenceSupervisor},
     inference_wire::decode_frame,
@@ -1195,6 +1196,11 @@ impl DesktopState {
         let engine_trace = Arc::clone(&load_trace);
         let engine_start_events=Arc::new(AtomicU64::new(0));
         let engine_start_observer=Arc::clone(&engine_start_events);
+        // One root-local WAL-backed circuit shared by every reviewed engine
+        // start; a desktop crash must not reset the pre-spawn attempt count.
+        let backend_start_ledger=Arc::new(BackendRestartLedger::open(
+            &root.join("llama-start-attempts.sqlite")
+        ).map_err(|_|"Durable llama.cpp restart ledger unavailable")?);
         let profiles_for_engine=Arc::clone(&inference_profiles);
         let supervisor = TrustedInferenceSupervisor::new_with_model_profile(
             // Explicit test-only installed CPU package must not claim AMD
@@ -1214,6 +1220,11 @@ impl DesktopState {
                 let key = raw.iter().map(|b| format!("{b:02x}")).collect::<String>();
                 let engine_trace_for_load = Arc::clone(&engine_trace);
                 let engine_start_for_load=Arc::clone(&engine_start_observer);
+                let mut key_hasher=Sha256::new();
+                key_hasher.update(backend_label.as_bytes());
+                key_hasher.update([0]);
+                key_hasher.update(model_ref.as_bytes());
+                let host_backend_key=format!("llama.{:x}",key_hasher.finalize());
                 let backend=PersistentLlamaBackend::new(PersistentEngineConfig {
                     executable: executable.clone(),
                     expected_sha256: decode_sha(selected_engine_sha)?,
@@ -1230,7 +1241,9 @@ impl DesktopState {
                             trace.record_engine(phase, None, pid);
                         }
                     })),
-                })?.with_sampling_profile(SamplingProfile{
+                })?.with_durable_spawn_gate(
+                    Arc::clone(&backend_start_ledger),host_backend_key,
+                )?.with_sampling_profile(SamplingProfile{
                     temperature: profile.temperature,
                     top_p: profile.top_p,
                     top_k: profile.top_k,

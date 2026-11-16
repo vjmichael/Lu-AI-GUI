@@ -3,19 +3,55 @@
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
-export function selectSuperseded(runs, branch, headSha, limit = 25) {
-  if (!/^lu\/[a-zA-Z0-9._/-]+$/.test(branch) || !/^[0-9a-f]{40}$/.test(headSha))
-    throw Error("Require a specific Lu branch and an exact 40-character head SHA");
-  const selected = runs.filter((r) =>
-    r && r.head_branch === branch &&
-    r.status === "queued" &&
-    (r.event === "push" || r.event === "pull_request") &&
-    /^[0-9a-f]{40}$/.test(r.head_sha || "") &&
-    r.head_sha !== headSha &&
-    Number.isSafeInteger(r.id) && r.id > 0
-  );
+const MIN_SUPERSEDED_AGE_MS = 30 * 60 * 1000;
+const ACCEPTABLE_SUCCESSOR = new Set(["queued", "in_progress", "completed"]);
+function samePullRequest(a, b) {
+  const ours = new Set((a.pull_requests || []).map((p) => p.number)
+    .filter((n) => Number.isSafeInteger(n) && n > 0));
+  return (b.pull_requests || []).some((p) => ours.has(p.number));
+}
+function validRun(run, branch) {
+  return run && run.head_branch === branch &&
+    (run.event === "push" || run.event === "pull_request") &&
+    Number.isSafeInteger(run.id) && run.id > 0 &&
+    Number.isSafeInteger(run.workflow_id) && run.workflow_id > 0 &&
+    /^[0-9a-f]{40}$/.test(run.head_sha || "") &&
+    Number.isFinite(Date.parse(run.created_at || ""));
+}
+function successorOk(run, headSha) {
+  return run.head_sha === headSha &&
+    ACCEPTABLE_SUCCESSOR.has(run.status) &&
+    (run.status !== "completed" ||
+      run.conclusion === "success");
+}
+export function selectSuperseded(runs, branch, headSha, limit = 25, nowMs = Date.now()) {
+  if (!/^lu\/[a-zA-Z0-9._/-]+$/.test(branch) ||
+      !/^[0-9a-f]{40}$/.test(headSha) || !Number.isFinite(nowMs))
+    throw Error("Require exact Lu branch, current SHA and trustworthy clock");
+  const groups = new Map();
+  for (const run of runs) {
+    if (!validRun(run, branch)) continue;
+    const key = [run.workflow_id, run.head_branch, run.event].join("\x00");
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(run);
+  }
+  const candidates = [];
+  for (const group of groups.values()) {
+    group.sort((a, b) => Date.parse(a.created_at) - Date.parse(b.created_at) ||
+      a.id - b.id);
+    const successor = group.filter((r) => successorOk(r, headSha)).at(-1);
+    if (!successor) continue;
+    for (const old of group) {
+      if (old.status !== "queued" || old.head_sha === headSha ||
+          old.id === successor.id ||
+          Date.parse(old.created_at) >= Date.parse(successor.created_at) ||
+          nowMs - Date.parse(old.created_at) < MIN_SUPERSEDED_AGE_MS ||
+          (old.event === "pull_request" && !samePullRequest(old, successor))) continue;
+      candidates.push({...old, verified_successor_id: successor.id});
+    }
+  }
   const unique = new Map();
-  for (const run of selected) unique.set(run.id, run);
+  for (const run of candidates) unique.set(run.id, run);
   return [...unique.values()].sort((a, b) => a.id - b.id).slice(0, limit);
 }
 
@@ -60,27 +96,37 @@ export async function execute(opts, fetcher) {
   const runs = [];
   for (let page = 1; page <= 10; page++) {
     const query = "?branch=" + encodeURIComponent(opts.branch) +
-      "&status=queued&per_page=100&page=" + page;
+      "&per_page=100&page=" + page;
     const list = await api(base + "/actions/runs" + query);
     const pageRuns = list.workflow_runs || [];
     if (!Array.isArray(pageRuns)) throw Error("Malformed run list");
     runs.push(...pageRuns);
+    if (page === 10 && pageRuns.length === 100)
+      throw Error("Incomplete Actions run history; refuse cleanup");
     if (pageRuns.length < 100) break;
   }
   const selected = selectSuperseded(runs, opts.branch, head, opts.limit);
   const report = { schema: "lu-superseded-queue-plan-v1", branch: opts.branch,
     currentHeadSha: head, mode: opts.apply ? "APPLY" : "DRY_RUN",
-    selected: selected.map((r) => ({ id: r.id, oldSha: r.head_sha, workflow: r.name })),
+    selected: selected.map((r) => ({ id: r.id, oldSha: r.head_sha,
+      workflow: r.name, successorId: r.verified_successor_id })),
     cancellationRequests: [] };
   if (opts.apply) {
     for (const r of selected) {
       const freshBranch = await api(base + "/branches/" + encodeURIComponent(opts.branch));
       if (freshBranch?.commit?.sha !== head) throw Error("Branch changed while processing; stop");
       const fresh = await api(base + "/actions/runs/" + r.id);
+      const newer = await api(base + "/actions/runs/" + r.verified_successor_id);
       if (fresh.status !== "queued" || fresh.head_sha !== r.head_sha ||
-          fresh.head_branch !== opts.branch ||
-          !["push", "pull_request"].includes(fresh.event))
-        throw Error("Queued run changed identity/status; stop");
+          fresh.head_branch !== opts.branch || fresh.event !== r.event ||
+          fresh.workflow_id !== r.workflow_id ||
+          !successorOk(newer, head) || newer.id !== r.verified_successor_id ||
+          newer.head_branch !== opts.branch || newer.event !== r.event ||
+          newer.workflow_id !== r.workflow_id ||
+          Date.parse(newer.created_at) <= Date.parse(fresh.created_at) ||
+          Date.now() - Date.parse(fresh.created_at) < MIN_SUPERSEDED_AGE_MS ||
+          (r.event === "pull_request" && !samePullRequest(fresh, newer)))
+        throw Error("Original run/successor identity, age or status changed; stop");
       const response = await fetcher(base + "/actions/runs/" + r.id + "/cancel", { method: "POST" });
       report.cancellationRequests.push({ id: r.id, httpStatus: response.status,
         accepted: response.status === 202 });
