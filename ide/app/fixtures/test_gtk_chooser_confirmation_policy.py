@@ -4,7 +4,7 @@ from pathlib import Path
 import unittest
 from gtk_chooser_confirmation_policy import (
     candidate_captions, retry_requires_native_fallback,
-    exact_native_directory_row
+    exact_native_directory_row, verified_native_list_text_candidate
 )
 
 
@@ -50,6 +50,20 @@ class ChooserPolicyTests(unittest.TestCase):
             "", "fixture-42", "fixture-42", "dialog"))
         self.assertFalse(exact_native_directory_row(
             "fixture-42", "", "../fixture-42", "table cell"))
+
+    def test_exact_list_text_requires_real_selectable_native_container(self):
+        self.assertTrue(verified_native_list_text_candidate(
+            'fixture-42', 'fixture-42', 'text', ('table',)))
+        self.assertTrue(verified_native_list_text_candidate(
+            'fixture-42', 'fixture-42', 'label', ('grid', 'panel')))
+        for parents in ((), ('entry',), ('search field',), ('dialog',),
+                        ('location entry', 'table')):
+            self.assertFalse(verified_native_list_text_candidate(
+                'fixture-42', 'fixture-42', 'text', parents))
+        self.assertFalse(verified_native_list_text_candidate(
+            'other-folder', 'fixture-42', 'text', ('table',)))
+        self.assertFalse(verified_native_list_text_candidate(
+            'fixture-42', 'fixture-42', 'button', ('table',)))
 
     def test_actual_installed_atspi_script_requires_native_outcome(self):
         fixture = Path(__file__).with_name("wo8_linux_editor_atspi.py").read_text(

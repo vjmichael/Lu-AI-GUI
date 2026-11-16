@@ -14,7 +14,8 @@ import time
 
 import pyatspi
 
-from gtk_chooser_confirmation_policy import candidate_captions, exact_native_directory_row
+from gtk_chooser_confirmation_policy import (candidate_captions,
+    exact_native_directory_row, verified_native_list_text_candidate)
 
 EXE = os.environ["WO8_INSTALLED_EXE"]
 ROOT = Path(os.environ["WO8_FIXTURE_ROOT"]).resolve()
@@ -927,9 +928,20 @@ def _select_real_fixture_directory():
                     ancestors.append(parent_role)
                 except Exception:
                     break
-            if not exact_native_directory_row(
-                    name, text_value, ROOT.name, role, tuple(ancestors)):
+            direct_row = exact_native_directory_row(
+                name, text_value, ROOT.name, role, tuple(ancestors))
+            # A genuine GTK list sometimes exposes only the child's text,
+            # with an accessible list/table parent but no separately named
+            # row/cell. Never accept an entry-field echo. Even a qualifying
+            # candidate must still pass native Selection/focus and the exact
+            # canonical project registration/closed-dialog checks below.
+            text_only_list = verified_native_list_text_candidate(
+                text_value, ROOT.name, role, tuple(ancestors))
+            if not direct_row and not text_only_list:
                 continue
+            if text_only_list and not direct_row:
+                print('P04_GTK_NATIVE_EXACT_LIST_TEXT_CANDIDATE=requires_os_selection',
+                      flush=True)
             exact += 1
             # GTK may expose a label nested within a selectable row/table.
             # A real OS selection interface can exist several parents above

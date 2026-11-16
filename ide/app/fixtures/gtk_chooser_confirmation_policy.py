@@ -38,6 +38,26 @@ def retry_requires_native_fallback(names, attempt):
     return not candidate_captions(names, attempt)
 
 
+def verified_native_list_text_candidate(text, basename, role, ancestor_roles=()):
+    """A text-only GTK file-list child requiring an actual OS selection API.
+
+    An exact text label under a selectable list/table/grid can be considered
+    only as a candidate for a real AT-SPI Selection action. A typed location
+    field or a plain dialog label never grants selection or registration.
+    """
+    if (not isinstance(text, str) or not isinstance(basename, str)
+            or not basename or '/' in basename or '\\' in basename
+            or text.strip() != basename or role.casefold() not in ('label', 'text')
+            or not isinstance(ancestor_roles, (tuple, list))):
+        return False
+    parents = [name.casefold() for name in ancestor_roles[:6] if isinstance(name, str)]
+    if any(any(unsafe in parent for unsafe in ('entry', 'search', 'location', 'address', 'path'))
+           for parent in parents):
+        return False
+    return any(any(kind in parent for kind in ('list', 'table', 'tree', 'grid'))
+               for parent in parents)
+
+
 def exact_native_directory_row(name, text, basename, role, ancestor_roles=()):
     """Classify an exact GTK native directory row, not approximate typeahead.
 
