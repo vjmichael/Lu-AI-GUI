@@ -30,6 +30,12 @@ if($app.Name -notin @('Lu.exe','lu-desktop.exe')){throw 'Expected native Lu exec
 $model=Read-LocalFile $ModelGGUF '.gguf'
 $projector=$null
 if($MmprojGGUF){$projector=Read-LocalFile $MmprojGGUF '.gguf'}
+if($null -eq $projector){throw 'C6 image acceptance requires a matching pinned MMProj GGUF; no text-only substitution'}
+$gpus=@(Get-CimInstance Win32_VideoController | Select-Object Name,DriverVersion,AdapterRAM,PNPDeviceID)
+$matchedRadeon=@($gpus | Where-Object { $_.Name -match '(?i)Radeon\s+AI\s+PRO\s+R9700' })
+if($matchedRadeon.Count -lt 1){
+  throw 'C6 hardware gate: genuine AMD Radeon AI PRO R9700 adapter not enumerated by Windows'
+}
 if(Test-Path -LiteralPath $EvidenceDir){throw 'Evidence directory already exists'}
 $null=New-Item -ItemType Directory -Path $EvidenceDir
 $installRoot=$app.DirectoryName
@@ -40,13 +46,14 @@ $vk=Read-LocalFile $vkFile '.exe'
 $expected=@{}
 $expected[$cpu.FullName.ToLowerInvariant()]=(Get-FileHash -LiteralPath $cpu.FullName -Algorithm SHA256).Hash
 $expected[$vk.FullName.ToLowerInvariant()]=(Get-FileHash -LiteralPath $vk.FullName -Algorithm SHA256).Hash
-$gpus=@(Get-CimInstance Win32_VideoController | Select-Object Name,DriverVersion,AdapterRAM,PNPDeviceID)
 $report=[ordered]@{
   schema='lu-p0-radeon-qwen38-physical-observation-v1'
   startedUtc=[DateTime]::UtcNow.ToString('o')
   machine=[Environment]::MachineName
   physicalWindowsOperatorConfirmed=$true
   deviceDisplayAdapters=$gpus
+  r9700HardwareObserved=$true
+  modelArchitectureFromGGUF='NOT_INDEPENDENTLY_PARSED_BY_THIS_RECORDER'
   installedLuName=$app.Name
   installedLuSha256=(Get-FileHash -LiteralPath $app.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
   cpuEngineSha256=$expected[$cpu.FullName.ToLowerInvariant()].ToLowerInvariant()
@@ -61,29 +68,36 @@ $report=[ordered]@{
   ramSource='Windows OS process WorkingSet64 and PrivateMemorySize64'
   ggufTensorLoadedPercent='NOT_MEASURED_BACKEND_TENSOR_TELEMETRY_REQUIRED'
   ownedEngineSamples=0
+  ownedVulkanEngineSamples=0
   samples=@()
   humanWitness=@()
   acceptance='NOT_ACCEPTED_REQUIRES_REVIEW'
 }
 function Find-OwnedEngine {
   $owned=@()
+  $desktop=@(Get-CimInstance Win32_Process -Filter "Name='lu-desktop.exe' OR Name='Lu.exe'" -ErrorAction SilentlyContinue |
+    Where-Object {
+      $_.ExecutablePath -and
+      [IO.Path]::GetFullPath([string]$_.ExecutablePath).Equals($app.FullName,[StringComparison]::OrdinalIgnoreCase)
+    })
+  $parents=@($desktop | ForEach-Object { [int]$_.ProcessId })
   $cim=@(Get-CimInstance Win32_Process -Filter "Name='llama-server.exe' OR Name='llama-server-vulkan.exe'" -ErrorAction SilentlyContinue)
   foreach($p in $cim){
-    if(-not $p.ExecutablePath){continue}
+    if(-not $p.ExecutablePath -or [int]$p.ParentProcessId -notin $parents){continue}
     $key=[IO.Path]::GetFullPath([string]$p.ExecutablePath).ToLowerInvariant()
     if(-not $expected.ContainsKey($key)){continue}
     if((Get-FileHash -LiteralPath $p.ExecutablePath -Algorithm SHA256).Hash -ine $expected[$key]){continue}
-    $owned+=@([pscustomobject]@{pid=[int]$p.ProcessId;backend=[IO.Path]::GetFileName($p.ExecutablePath);started=[string]$p.CreationDate})
+    $owned+=@([pscustomobject]@{pid=[int]$p.ProcessId;ownerPid=[int]$p.ParentProcessId;backend=[IO.Path]::GetFileName($p.ExecutablePath);started=[string]$p.CreationDate})
   }
   return @($owned)
 }
-function Gpu-Pid-Bytes([int]$pid){
+function Gpu-Pid-Bytes([int]$engineProcessId){
   $dedicated=$null;$shared=$null
   try{
     $list=@((Get-Counter -Counter '\GPU Process Memory(*)\Local Usage','\GPU Process Memory(*)\Non Local Usage' -ErrorAction Stop).CounterSamples)
     $d=0.0;$v=0.0;$n=0
     foreach($x in $list){
-      if($x.Path -notmatch "(?i)pid_$pid(?:_|\\\\)"){continue}
+      if($x.Path -notmatch "(?i)pid_$engineProcessId(?:_|\\\\)"){continue}
       if($x.CookedValue -lt 0){continue}
       if($x.Path -match '(?i)\\local usage$'){$d+=$x.CookedValue;$n++}
       if($x.Path -match '(?i)\\non local usage$'){$v+=$x.CookedValue;$n++}
@@ -104,7 +118,7 @@ while([DateTime]::UtcNow -lt $end){
     if($null -eq $native){continue}
     $mem=Gpu-Pid-Bytes $w.pid
     $rows+=@([ordered]@{
-      pid=$w.pid;backend=$w.backend;started=$w.started
+      pid=$w.pid;ownerPid=$w.ownerPid;backend=$w.backend;started=$w.started
       workingSetRamBytes=[int64]$native.WorkingSet64
       privateRamBytes=[int64]$native.PrivateMemorySize64
       dedicatedGpuProcessBytes=$mem.dedicated
@@ -113,6 +127,9 @@ while([DateTime]::UtcNow -lt $end){
     })
   }
   if($rows.Count){$report.ownedEngineSamples += $rows.Count}
+  $report.ownedVulkanEngineSamples += @($rows | Where-Object {
+    $_.backend -ieq 'llama-server-vulkan.exe'
+  }).Count
   $report.samples+=@([ordered]@{utc=$now;engineProcesses=@($rows)})
   Start-Sleep -Seconds $SampleEverySeconds
 }
@@ -135,6 +152,9 @@ foreach($q in $questions){
 }
 $report.finishedUtc=[DateTime]::UtcNow.ToString('o')
 if($report.ownedEngineSamples -eq 0){$report.acceptance='INCOMPLETE_NO_REVIEWED_ENGINE_OBSERVED'}
+elseif($report.ownedVulkanEngineSamples -eq 0){
+  $report.acceptance='INCOMPLETE_NO_LU_OWNED_VULKAN_ENGINE_OBSERVED'
+}
 $report|ConvertTo-Json -Depth 9|Set-Content -LiteralPath (Join-Path $EvidenceDir 'qwen38-radeon-evidence.json') -Encoding UTF8
 Write-Host "Saved local observation: $(Join-Path $EvidenceDir 'qwen38-radeon-evidence.json')"
 Write-Host 'No GPU tensor percentage is claimed. Share the redacted receipt/screen captures for independent review.'

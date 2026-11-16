@@ -1,0 +1,160 @@
+name: Lu C6 exact-SHA Windows dual-engine NSIS hosted preflight (NOT physical R9700)
+on:
+  workflow_dispatch:
+  workflow_call:
+permissions:
+  contents: read
+concurrency:
+  group: lu-c6-dual-nsis-${{ github.sha }}
+  cancel-in-progress: false
+jobs:
+  reviewed-source:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify exact SHA, current source lock and hostile C6 contract
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          node scripts/verify-source-tree.mjs
+          node --test scripts/lu-c6-hosted-physical-contract.test.mjs lu-desktop/tests/preview-dual-backend.test.mjs lu-desktop/tests/agent01g-physical-installer-contract.test.mjs
+  native-windows-dual-nsis:
+    needs: reviewed-source
+    runs-on: windows-2025
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Assert reviewed immutable source and PowerShell parser contracts
+        shell: pwsh
+        env:
+          EXPECTED_SHA: ${{ github.sha }}
+        run: |
+          $ErrorActionPreference='Stop'
+          if((git rev-parse HEAD).Trim() -cne $env:EXPECTED_SHA){throw 'Wrong C6 source SHA'}
+          node scripts/verify-source-tree.mjs
+          if($LASTEXITCODE -ne 0){throw 'C6 source manifest mismatch'}
+          foreach($src in @(
+            'scripts/build-current-windows-nsis.ps1',
+            'scripts/m3-windows-nsis-cycle.ps1',
+            'scripts/p0-windows-installed-gui-smoke.ps1',
+            'scripts/p0-qwen38-radeon-physical.ps1',
+            'scripts/stage-research-windows.ps1'
+          )){
+            $tokens=$null;$errors=$null
+            [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $src).Path,[ref]$tokens,[ref]$errors)|Out-Null
+            if($errors.Count -ne 0){throw "C6 PowerShell invalid: $src : $errors"}
+          }
+      - name: Provision pinned genuine NSIS 3.11 on hosted Windows
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $exe=Join-Path ([Environment]::GetFolderPath('ProgramFilesX86')) 'NSIS\makensis.exe'
+          if(-not(Test-Path -LiteralPath $exe)){
+            choco install nsis --version=3.11.0 --yes --no-progress --limit-output
+            if($LASTEXITCODE -ne 0){throw 'Pinned NSIS 3.11 install failed'}
+          }
+          if(-not(Test-Path -LiteralPath $exe)){throw 'NSIS compiler absent'}
+          & $exe /VERSION
+          if($LASTEXITCODE -ne 0){throw 'Pinned NSIS compiler failed'}
+      - name: Install pinned Vulkan SDK 1.4.350 for real source-built shaders
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          choco install vulkan-sdk --version=1.4.350 --yes --no-progress --limit-output
+          if($LASTEXITCODE -ne 0){throw 'Pinned Vulkan SDK 1.4.350 install failed'}
+          $sdk=@(Get-ChildItem 'C:\VulkanSDK' -Directory -ErrorAction Stop |
+            Where-Object {Test-Path (Join-Path $_.FullName 'Bin\glslc.exe')})
+          if($sdk.Count -ne 1){throw 'Pinned shader compiler missing or ambiguous'}
+          "VULKAN_SDK=$($sdk[0].FullName)" >> $env:GITHUB_ENV
+          (Join-Path $sdk[0].FullName 'Bin') >> $env:GITHUB_PATH
+          & (Join-Path $sdk[0].FullName 'Bin\glslc.exe') --version
+          if($LASTEXITCODE -ne 0){throw 'Pinned shader compiler unusable'}
+      - name: Build exact-current native Lu and separately pinned CPU plus Vulkan llama.cpp NSIS
+        shell: pwsh
+        timeout-minutes: 145
+        env:
+          EXPECTED_SHA: ${{ github.sha }}
+          LU_REQUIRE_BROWSER: '0'
+        run: |
+          $ErrorActionPreference='Stop'
+          $out=Join-Path $env:RUNNER_TEMP 'lu-c6-hosted-windows-preview'
+          & scripts/build-current-windows-nsis.ps1 -SourceSha $env:EXPECTED_SHA -OutputDirectory $out
+          if($LASTEXITCODE -ne 0){throw 'Genuine C6 preview builder failed'}
+          $f=Get-Content (Join-Path $out 'installer-checksums.json') -Raw|ConvertFrom-Json
+          $exe=Join-Path $out $f.installerName
+          if(-not(Test-Path -LiteralPath $exe)){throw 'Compiled NSIS installer missing'}
+          $hash=(Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          if($hash -cne $f.installerSha256 -or $f.sourceSha -cne $env:EXPECTED_SHA){
+            throw 'Installer SHA256 or exact source SHA mismatch'
+          }
+          if($f.engineSha256 -ceq $f.vulkanEngineSha256){throw 'CPU/Vulkan engines must be distinct'}
+          $provenance=Get-Content (Join-Path $out 'BUILD_PROVENANCE.json') -Raw|ConvertFrom-Json
+          if($provenance.sourceSha -cne $env:EXPECTED_SHA -or $provenance.browserRuntime -ne 'NOT_PACKAGED'){
+            throw 'Wrong preview identity or browser scope; cannot claim release packaging'
+          }
+          "C6_HOSTED_SOURCE_SHA=$env:EXPECTED_SHA" >> $env:GITHUB_STEP_SUMMARY
+          "C6_HOSTED_INSTALLER_SHA256=$hash" >> $env:GITHUB_STEP_SUMMARY
+          'Real x64 Lu and two source-built pinned CPU+Vulkan engines; hosted GPU offload NOT TESTED.' >> $env:GITHUB_STEP_SUMMARY
+          'Browser package intentionally absent; physical R9700, Qwen 27B, MMProj and real tool approval NOT TESTED.' >> $env:GITHUB_STEP_SUMMARY
+      - name: Actual disposable hosted Windows NSIS install and WebView2/native-window lifecycle
+        shell: pwsh
+        timeout-minutes: 20
+        run: |
+          $ErrorActionPreference='Stop'
+          $out=Join-Path $env:RUNNER_TEMP 'lu-c6-hosted-windows-preview'
+          $f=Get-Content (Join-Path $out 'installer-checksums.json') -Raw|ConvertFrom-Json
+          $receipt=Join-Path $out 'hosted-c6-installed-lifecycle'
+          $params=@{
+            InstallerPath=(Join-Path $out $f.installerName)
+            InstallerSha256=$f.installerSha256
+            ExpectedLuSha256=$f.appSha256
+            ExpectedEngineSha256=$f.engineSha256
+            ExpectedVulkanSha256=$f.vulkanEngineSha256
+            ExpectedResearchSha256=$f.researchClientSha256
+            ProfileIdentifier='org.lu.current.devpreview'
+            UninstallerName='UninstallLuCurrentPreview.exe'
+            DisposableWindowsConfirmed=$true
+            ExerciseInstalledGui=$true
+            EvidenceDir=$receipt
+          }
+          & scripts/m3-windows-nsis-cycle.ps1 @params
+          if($LASTEXITCODE -ne 0){throw 'Hosted installed Lu lifecycle failed'}
+          $r=Get-Content (Join-Path $receipt 'm3-nsis-cycle.json') -Raw|ConvertFrom-Json
+          if($r.installer -ne 'PASS_REAL_NATIVE_PROCESS_EXIT' -or
+             $r.installedApp -ne 'PASS_SHA256' -or
+             $r.installedRealEngine -ne 'PASS_SHA256' -or
+             $r.installedVulkanEngine -ne 'PASS_SHA256' -or
+             $r.installedResearchClient -ne 'PASS_SHA256' -or
+             $r.installedUiSmoke -ne 'PASS_INSTALLED_NATIVE_WINDOW_AND_BOTH_DIALOGS' -or
+             $r.profilePreservation -ne 'PASS_UNTOUCHED_APPDATA_SENTINEL' -or
+             $r.packageRemoval -ne 'PASS_BINARIES_ABSENT'){
+            throw 'Original installed/native source/window/uninstall assertions are not all positive'
+          }
+          'Hosted NSIS install, GUI/Settings/Model Library windows, uninstall, AppData sentinel: PASS. NOT physical C6.' >> $env:GITHUB_STEP_SUMMARY
+      - name: Preserve genuine installer if built and original terminal evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Lu-C6-Hosted-Dual-Engine-NSIS-${{ github.sha }}
+          path: ${{ runner.temp }}/lu-c6-hosted-windows-preview/
+          if-no-files-found: warn
+          retention-days: 14

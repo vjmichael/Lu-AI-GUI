@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "a2d946ae850c5017e2ff645cacad93ae4d6ef099",
-  "trackedFileCount": 1056,
+  "sourceCommitBeforeLock": "279123e88b9b18f17a6d80ab25b07f2d3180f8c4",
+  "trackedFileCount": 1059,
   "files": [
     {
       "path": ".github/pull_request_template.md",
@@ -74,6 +74,10 @@
     {
       "path": ".github/workflows/lu-core-c4-delegated-kernel-original-sha.yml",
       "blob": "824e3eeb85a9f422255e52c9fb17ff336667e927"
+    },
+    {
+      "path": ".github/workflows/lu-core-c6-hosted-dual-nsis.yml",
+      "blob": "ec19d3607b49b848d68d509f8e18b5db6b275596"
     },
     {
       "path": ".github/workflows/lu-core-merge-c4-grouped.yml",
@@ -249,7 +253,7 @@
     },
     {
       "path": ".github/workflows/lu-repo01-full-source.yml",
-      "blob": "d7b17cca268240c28f6dc24374f10e028eeb3242"
+      "blob": "2e4d36ad3e57704b517196d668def4599bfa42d5"
     },
     {
       "path": ".github/workflows/lu-tools-01-05-integration.yml",
@@ -660,6 +664,10 @@
       "blob": "766fe824796b95e7a600f49c7855d7a2a43a4535"
     },
     {
+      "path": "docs/LU_CORE_C6_PHYSICAL_WINDOWS_ACCEPTANCE_20261116.md",
+      "blob": "085980cb1eaa6df6eea3fc99b8c1f703eebca127"
+    },
+    {
       "path": "docs/LU_CORE_CONSOLIDATION_INVENTORY_20261113.md",
       "blob": "054edb072685986a24b7edfd8189d5762f6aa012"
     },
@@ -693,7 +701,7 @@
     },
     {
       "path": "docs/LU_DEVELOPMENT_LEDGER.md",
-      "blob": "63ded220311de5bedb4225515efc9584fdc041c1"
+      "blob": "2ee4c41c091c4ee436b7ff11ff0534eb79a9d206"
     },
     {
       "path": "docs/LU_E1_NATIVE_EVIDENCE_20261107.md",
@@ -2360,6 +2368,10 @@
       "blob": "48a7dea9090587af9447a73c188e37bceec4447f"
     },
     {
+      "path": "scripts/lu-c6-hosted-physical-contract.test.mjs",
+      "blob": "44c0ff95e3402ac8103696fb42113c995451707b"
+    },
+    {
       "path": "scripts/lu-ci-group-policy.mjs",
       "blob": "006e95e26fe5e855cb262f9d628d09eac66d49a5"
     },
@@ -2465,7 +2477,7 @@
     },
     {
       "path": "scripts/p0-qwen38-radeon-physical.ps1",
-      "blob": "6d33e3546b0611efa64555ff4039ad4a2268143b"
+      "blob": "b13185a88f8c62fcb38978a54a311636fb8492ce"
     },
     {
       "path": "scripts/p0-sec06-consolidated.mjs",

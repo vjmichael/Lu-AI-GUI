@@ -3921,3 +3921,40 @@ jobs:
     needs: [verify-source, c1-five-gap-one-time-admission]
     if: needs.c1-five-gap-one-time-admission.result == 'success'
     uses: ./.github/workflows/lu-core-c1-five-gaps-acceptance.yml
+
+  # C6: one explicit main source-lock transition, not general push/PR fanout.
+  # A CI Windows machine builds an installer but is not the owner's R9700 PC.
+  c6-one-time-installed-package-admission:
+    needs: verify-source
+    if: >-
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main' &&
+      startsWith(github.event.head_commit.message, 'CORE-MERGE-C6.1:')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+          ref: ${{ github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify exact source SHA, immediate ancestor and lock before hosted C6 admission
+        shell: bash
+        env:
+          EXPECTED_PARENT_SHA: '279123e88b9b18f17a6d80ab25b07f2d3180f8c4'
+          EXPECTED_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          test "$(git rev-parse HEAD^)" = "$EXPECTED_PARENT_SHA"
+          test "$(git rev-parse --abbrev-ref HEAD)" = "HEAD"
+          node scripts/verify-source-tree.mjs
+          node --test scripts/lu-c6-hosted-physical-contract.test.mjs
+          printf 'C6_HOSTED_ONE_SHOT_SHA=%s\nC6_PHYSICAL_R9700=NOT_TESTED\n' "$EXPECTED_SHA"
+  c6-one-time-windows-hosted-nsis:
+    needs: [verify-source, c6-one-time-installed-package-admission]
+    if: needs.c6-one-time-installed-package-admission.result == 'success'
+    uses: ./.github/workflows/lu-core-c6-hosted-dual-nsis.yml
