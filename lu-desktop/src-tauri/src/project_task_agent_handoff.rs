@@ -405,6 +405,10 @@ pub(super) fn criterion_supports_method(
 )->bool{
     if !compatible_independent_method(tool,method)||
        criterion.len()>300{return false}
+    if let Some(allowed)=super::project_task_verified_evidence::
+        whole_criterion_supports_method(criterion,tool,method){
+        return allowed
+    }
     // A narrowly typed WHOLE-task equality predicate may be supported by
     // the ORIGINAL independent Git HEAD method. Its SHA must be a single
     // exact lowercase 40-hex literal; no model-supplied path or extra clause.
@@ -681,6 +685,33 @@ mod task_method_tests{
             "LU_CRITERION_METHOD_V1:lu.reviewed.pdf.info|PDFINFO_CLASSIC_PAGE_TREE_V1\nObserve original source PDF metadata.",
             "lu.reviewed.pdf.info","PDFINFO_CLASSIC_PAGE_TREE_V1"));
     }
+    #[test]
+    fn every_v2_declared_method_requires_its_own_exact_original_worker(){
+        let criterion=format!(
+            "LU_COMPLETE_V2:ALL_OF\nCURRENT_NATIVE_REQUIREMENT\n\
+             GIT_HEAD_EQUALS:{}\nGIT_STATUS_REVIEWED\nMP4_BOXES_REVIEWED",
+            "a".repeat(40)
+        );
+        for (tool,method) in [
+            ("lu.reviewed.git.head","GIT_HEAD_DIRECT_V1"),
+            ("lu.reviewed.git.status","GIT_STATUS_INDEX_TREE_V1"),
+            ("lu.reviewed.media.facts","MP4_BOXES_DIRECT_V1"),
+        ]{
+            assert!(criterion_supports_method(&criterion,tool,method));
+        }
+        for (tool,method) in [
+            ("lu.reviewed.media.facts","WAV_PCM_DIRECT_V1"),
+            ("lu.reviewed.git.branch","GIT_BRANCH_DIRECT_V1"),
+            ("lu.reviewed.git.status","GIT_HEAD_DIRECT_V1"),
+        ]{
+            assert!(!criterion_supports_method(&criterion,tool,method));
+        }
+        assert!(!criterion_supports_method(
+            &format!("{criterion}\nPUBLISH RELEASE"),
+            "lu.reviewed.git.status","GIT_STATUS_INDEX_TREE_V1"
+        ));
+    }
+
     #[test]
     fn exact_git_head_whole_criterion_only_admits_original_head_oracle(){
         let full=format!("LU_COMPLETE_V1:GIT_HEAD_EQUALS:{}", "a".repeat(40));

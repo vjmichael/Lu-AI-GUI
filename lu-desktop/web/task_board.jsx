@@ -635,6 +635,9 @@ export function TaskBoardWindow(){
                   <p>Original project rescanned: {completionReconciliation.sourceRescannedThisReview?'yes':'no'} ·
                     Native requirement accepted: {completionReconciliation.nativeRequirementAccepted?'yes':'no'} ·
                     Original independently reopened, human-reviewed witnesses: {completionReconciliation.reopenedHumanCriterionWitnesses}.</p>
+                  <p>Declared bounded criteria: {completionReconciliation.requiredCriterionCount} ·
+                    Every declared criterion independently verified: {completionReconciliation.allDeclaredCriteriaIndependentlyVerified?'yes':'no'}.
+                    A verified criterion set does not itself complete a task.</p>
                   <small>Original human evidence decisions: {completionReconciliation.originalHumanReviewCount} ·
                     Entire review history inspected: {completionReconciliation.historyFullyInspected?'yes':'no'} ·
                     Whole-task decision events: {completionReconciliation.completionDecisionCount} ·
@@ -644,14 +647,17 @@ export function TaskBoardWindow(){
 
                 <section className="plan06CompletionDecision" aria-label="Separately authorized whole-task completion decision">
                   <h3>Whole-task completion · independent source audit</h3>
-                  <p>Only the exact <code>LU_COMPLETE_V1:CURRENT_NATIVE_REQUIREMENT</code>
-                    criterion is machine-verifiable as a complete task in this version.
-                    Other acceptance criteria, unresolved blockers and dependent tasks
-                    without current completed decisions cannot be marked complete.
-                    Blocked, uncertain and replan-required statuses can still be
-                    recorded after source drift or an unapproved plan; they grant
-                    no execution or completion authority.
-                    An original tool witness alone remains supporting evidence.</p>
+                  <p>Whole-task completion requires every exact declared machine criterion,
+                    current source and dependencies, then a separate OS-native human
+                    approval. Supported bounded criteria are V1 current native source,
+                    V1 exact Git HEAD, or canonical <code>LU_COMPLETE_V2:ALL_OF</code>
+                    source and independently reviewed Git/media checks. A reviewed
+                    Git status or WAV/MP4 fact is evidence of observation, not proof
+                    of a clean tree, correct film or completed delivery. Missing,
+                    rejected, stale, unsupported or free-text conditions remain
+                    incomplete. Blocked, uncertain and reviewed-replan decisions grant
+                    no execution authority; an old model or worker answer cannot
+                    complete a task.</p>
                   <label>Human whole-task decision
                     <select aria-label="Whole task completion disposition"
                       disabled={busy} value={wholeDecision}

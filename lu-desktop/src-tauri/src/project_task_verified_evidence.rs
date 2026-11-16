@@ -342,7 +342,91 @@ pub(super) fn original_review_history_for_memory(
 const COMPLETION_SCHEMA:&str="lu-c3-whole-task-completion-decision-v1";
 const NATIVE_SOURCE_ONLY_CONTRACT:&str="LU_COMPLETE_V1:CURRENT_NATIVE_REQUIREMENT";
 const GIT_HEAD_EQUALS_PREFIX:&str="LU_COMPLETE_V1:GIT_HEAD_EQUALS:";
+const ALL_OF_PREFIX:&str="LU_COMPLETE_V2:ALL_OF\n";
 const MAX_COMPLETION_EVENTS:usize=128;
+/// An exact, bounded declaration of ALL required predicates. No free-text
+/// criterion, arbitrary process output or model-selected tool is a predicate.
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]
+enum WholeCriterion<'a>{
+    Native,
+    GitHead(&'a str),
+    GitStatusReviewed,
+    WavPcmReviewed,
+    Mp4BoxesReviewed,
+}
+impl WholeCriterion<'_>{
+    fn method(self)->Option<(&'static str,&'static str)>{
+        match self{
+            Self::Native=>None,
+            Self::GitHead(_)=>Some(("lu.reviewed.git.head","GIT_HEAD_DIRECT_V1")),
+            Self::GitStatusReviewed=>Some((
+                "lu.reviewed.git.status","GIT_STATUS_INDEX_TREE_V1")),
+            Self::WavPcmReviewed=>Some((
+                "lu.reviewed.media.facts","WAV_PCM_DIRECT_V1")),
+            Self::Mp4BoxesReviewed=>Some((
+                "lu.reviewed.media.facts","MP4_BOXES_DIRECT_V1"))
+        }
+    }
+    fn order(self)->u8{
+        match self{
+            Self::Native=>0,Self::GitHead(_)=>1,
+            Self::GitStatusReviewed=>2,Self::WavPcmReviewed=>3,
+            Self::Mp4BoxesReviewed=>4,
+        }
+    }
+}
+fn exact_git_sha(head:&str)->bool{
+    head.len()==40&&head.bytes().all(|b|
+        b.is_ascii_digit()||matches!(b,b'a'..=b'f'))
+}
+fn whole_criteria(criterion:&str)->Option<Vec<WholeCriterion<'_>>>{
+    if criterion.len()>300{return None}
+    if criterion==NATIVE_SOURCE_ONLY_CONTRACT{
+        return Some(vec![WholeCriterion::Native])
+    }
+    if let Some(head)=criterion.strip_prefix(GIT_HEAD_EQUALS_PREFIX){
+        return exact_git_sha(head).then_some(vec![WholeCriterion::GitHead(head)])
+    }
+    let body=criterion.strip_prefix(ALL_OF_PREFIX)?;
+    let lines:Vec<_>=body.split('\n').collect();
+    if lines.len()<2||lines.len()>5||lines.first()!=Some(&"CURRENT_NATIVE_REQUIREMENT"){
+        return None
+    }
+    let mut result=Vec::with_capacity(lines.len());
+    let mut last=None;
+    for line in lines{
+        let clause=if line=="CURRENT_NATIVE_REQUIREMENT"{
+            WholeCriterion::Native
+        }else if let Some(head)=line.strip_prefix("GIT_HEAD_EQUALS:"){
+            if !exact_git_sha(head){return None}
+            WholeCriterion::GitHead(head)
+        }else{
+            match line{
+                "GIT_STATUS_REVIEWED"=>WholeCriterion::GitStatusReviewed,
+                "WAV_PCM_REVIEWED"=>WholeCriterion::WavPcmReviewed,
+                "MP4_BOXES_REVIEWED"=>WholeCriterion::Mp4BoxesReviewed,
+                _=>return None
+            }
+        };
+        // Strict canonical ordering, no duplicates, hidden extra conditions,
+        // CRLF ambiguity, multi-HEAD aliasing or empty lines.
+        if last.is_some_and(|p|p>=clause.order()){return None}
+        last=Some(clause.order());
+        result.push(clause);
+    }
+    Some(result)
+}
+/// Only the methods explicitly declared by an exact, entire multi-criterion
+/// manifest can be reviewed for eventual whole-task acceptance.
+pub(super) fn whole_criterion_supports_method(
+    criterion:&str,tool:&str,method:&str
+)->Option<bool>{
+    if !criterion.starts_with("LU_COMPLETE_V2:"){return None}
+    let clauses=whole_criteria(criterion);
+    Some(clauses.is_some_and(|items|items.into_iter().any(|item|
+        item.method()==Some((tool,method))
+    )))
+}
 #[derive(Clone,Debug,Serialize,Deserialize)]
 #[serde(rename_all="camelCase",deny_unknown_fields)]
 struct CompletionDecision{
@@ -456,23 +540,25 @@ fn completion_history(profile:&Path,reg:&str,task:&str)
     }).collect())
 }
 fn git_head_expected(criterion:&str)->Option<&str>{
-    // Exactly one entire, machine-verifiable fact; no trailing instructions,
-    // shell grammar, branch alias, model-assigned path or extra requirement.
-    let head=criterion.strip_prefix(GIT_HEAD_EQUALS_PREFIX)?;
-    if head.len()==40&&head.bytes().all(|b|
-        b.is_ascii_digit()||matches!(b,b'a'..=b'f')){
-        Some(head)
-    }else{None}
+    whole_criteria(criterion)?.into_iter().find_map(|item|
+        if let WholeCriterion::GitHead(head)=item{Some(head)}else{None}
+    )
 }
 fn full_source_contract(criterion:&str)->bool{
-    criterion==NATIVE_SOURCE_ONLY_CONTRACT||git_head_expected(criterion).is_some()
+    whole_criteria(criterion).is_some()
 }
 fn current_whole_task_criterion(task:&register::TaskRevision)->bool{
-    if let Some(expected)=git_head_expected(&task.acceptance_criteria){
-        // PLAN-03 rescan verifies the live OS-picked Git HEAD independently
-        // of the model, worker receipt and previous task register.
-        task.selected_head.as_deref()==Some(expected)
-    }else{task.acceptance_criteria==NATIVE_SOURCE_ONLY_CONTRACT}
+    let Some(clauses)=whole_criteria(&task.acceptance_criteria)else{
+        return false
+    };
+    clauses.into_iter().all(|clause|match clause{
+        WholeCriterion::GitHead(expected)=>
+            // PLAN-03 independently rescans live OS-selected Git HEAD.
+            task.selected_head.as_deref()==Some(expected),
+        // These clauses must ALSO obtain separate current independent
+        // audited, human-reviewed worker witnesses before completion.
+        _=>true
+    })
 }
 fn no_unresolved_text_blocker(blocked:&str)->bool{
     matches!(blocked.trim().to_ascii_lowercase().as_str(),
@@ -580,42 +666,129 @@ fn reviewed_git_head_event_matches(
     e.acceptance_criterion==task.acceptance_criteria&&
     e.acceptance_criterion_sha256==sha(task.acceptance_criteria.as_bytes())
 }
-fn independently_reopened_git_head_witness(
+// A generic method name or model-generated summary is never an outcome.
+// Each declaration requires the exact matching original human-reviewed,
+// independently audited first-party worker, its current source lease and
+// task version, and the original OS-reopened receipt.
+fn reviewed_whole_method_event_matches(
+    e:&CriterionDecision,r:&register::TaskRegister,board_sha:&str,
+    task:&register::TaskRevision,tool:&str,method:&str,
+)->bool{
+    if tool=="lu.reviewed.git.head"&&method=="GIT_HEAD_DIRECT_V1"{
+        return reviewed_git_head_event_matches(e,r,board_sha,task)
+    }
+    whole_criterion_supports_method(&task.acceptance_criteria,tool,method)
+        ==Some(true)&&
+    e.decision=="ACCEPTED_AS_SUPPORTING_EVIDENCE"&&
+    e.verdict_at_review=="VERIFIED_AT_OBSERVATION"&&
+    e.tool_id==tool&&e.independent_method==method&&
+    e.register_id==r.register_id&&e.task_id==task.task_id&&
+    e.task_version==task.version&&e.board_sha256==board_sha&&
+    e.register_sha256==r.latest_sha256&&
+    e.source_scope_sha256==r.scope_sha256&&
+    e.graph_sha256==task.graph_sha256&&
+    e.status_sha256==task.status_sha256&&
+    e.selected_head==task.selected_head&&
+    e.source_requirement_id==task.source_requirement_id&&
+    e.acceptance_criterion==task.acceptance_criteria&&
+    e.acceptance_criterion_sha256==sha(task.acceptance_criteria.as_bytes())
+}
+/// Pure, fail-closed selection, suitable for hostile negative/restart tests.
+/// One separate last review for EACH method is required. Later rejected or
+/// uncertain evidence for a method rescinds its older favorable review.
+fn select_all_required_reviews<'a>(
+    rows:&'a[CriterionDecision],r:&register::TaskRegister,board_sha:&str,
+    task:&register::TaskRevision,
+)->Option<Vec<&'a CriterionDecision>>{
+    let clauses=whole_criteria(&task.acceptance_criteria)?;
+    let mut reviews=Vec::new();
+    for clause in clauses{
+        let Some((tool,method))=clause.method()else{continue};
+        let selected=rows.iter().rev().find(|event|
+            event.tool_id==tool&&event.independent_method==method)?;
+        // Preserve V1's stronger global-last-event revocation rule.
+        if task.acceptance_criteria.starts_with(GIT_HEAD_EQUALS_PREFIX)&&
+            rows.last().map(|e|e.event_id.as_str())!=Some(selected.event_id.as_str()){
+            return None
+        }
+        if !reviewed_whole_method_event_matches(
+            selected,r,board_sha,task,tool,method
+        ){return None}
+        reviews.push(selected);
+    }
+    Some(reviews)
+}
+#[derive(Clone,Debug)]
+struct WholeTaskWitnessSet{
+    // Original immutable criterion decisions, not model claims.
+    reviewed:Vec<CriterionDecision>,
+    // V1 single original Git witness retains its existing receipt hash. V2
+    // binds ALL ordered method/receipt/review identities to one digest.
+    receipt_binding:Option<String>,
+}
+fn selected_witness_binding(
+    criterion:&str,reviews:&[&CriterionDecision]
+)->Option<String>{
+    if criterion==NATIVE_SOURCE_ONLY_CONTRACT{return None}
+    if criterion.starts_with(GIT_HEAD_EQUALS_PREFIX){
+        return reviews.first().map(|e|e.receipt_sha256.clone())
+    }
+    if !criterion.starts_with(ALL_OF_PREFIX)||reviews.is_empty(){
+        return None
+    }
+    let bound:Vec<_>=reviews.iter().map(|e|(
+        e.tool_id.as_str(),e.independent_method.as_str(),
+        e.event_id.as_str(),e.receipt_sha256.as_str(),
+        e.observed_sha256.as_str(),
+    )).collect();
+    Some(sha(&serde_json::to_vec(&bound)
+        .expect("bounded original reviewed witness tuple")))
+}
+fn independently_reopened_whole_task_witnesses(
     profile:&Path,conn:&Connection,r:&register::TaskRegister,
     board_sha:&str,task:&register::TaskRevision,
     chats:&chat_store::ChatStore,
-)->Result<Option<CriterionDecision>,String>{
-    if git_head_expected(&task.acceptance_criteria).is_none()||
-        !current_whole_task_criterion(task){return Ok(None)}
-    let history=history_rows(conn,&r.register_id,&task.task_id)?;
-    // A later rejected, uncertain or obsolete human criterion review
-    // rescinds positive completion. Do not select an older favorable receipt.
-    let Some(last)=history.last()else{return Ok(None)};
-    if !reviewed_git_head_event_matches(last,r,board_sha,task){
-        return Ok(None)
+)->Result<Option<WholeTaskWitnessSet>,String>{
+    if !current_whole_task_criterion(task){return Ok(None)}
+    let rows=history_rows(conn,&r.register_id,&task.task_id)?;
+    if !all_human_criterion_history_inspected(rows.len()){
+        return Err("CORE_C3_COMPLETION_REVIEW_HISTORY_NOT_FULLY_INSPECTABLE".into())
     }
-    let actual=project_task_agent_handoff::independently_verified_task_witness(
-        profile,&r.register_id,&task.task_id,
-        &last.handoff_id,&last.receipt_sha256,chats
-    )?;
-    if actual.handoff_id!=last.handoff_id||
-        actual.tool_id!=last.tool_id||
-        actual.independent_method!=last.independent_method||
-        actual.receipt_sha256!=last.receipt_sha256||
-        actual.observed_sha256!=last.observed_sha256||
-        actual.step_index!=last.step_index{
-        return Err("CORE_C3_GIT_HEAD_ORIGINAL_WITNESS_CONFLICT".into())
+    let Some(reviews)=select_all_required_reviews(&rows,r,board_sha,task)
+        else{return Ok(None)};
+    for item in &reviews{
+        let actual=project_task_agent_handoff::independently_verified_task_witness(
+            profile,&r.register_id,&task.task_id,
+            &item.handoff_id,&item.receipt_sha256,chats
+        )?;
+        if actual.handoff_id!=item.handoff_id||
+            actual.tool_id!=item.tool_id||
+            actual.independent_method!=item.independent_method||
+            actual.receipt_sha256!=item.receipt_sha256||
+            actual.observed_sha256!=item.observed_sha256||
+            actual.step_index!=item.step_index{
+            return Err("CORE_C3_ORIGINAL_CRITERION_WORKER_CONFLICT".into())
+        }
     }
-    Ok(Some(last.clone()))
+    Ok(Some(WholeTaskWitnessSet{
+        receipt_binding:selected_witness_binding(
+            &task.acceptance_criteria,&reviews),
+        reviewed:reviews.into_iter().cloned().collect()
+    }))
 }
 fn completion_receipt_matches(
     task:&register::TaskRevision,last:&CompletionDecision,
-    reviewed_head_receipt:Option<&str>,
+    reviewed_witness_binding:Option<&str>,
 )->bool{
-    if git_head_expected(&task.acceptance_criteria).is_some(){
-        reviewed_head_receipt.is_some()&&
-            last.task_specific_witness_sha256.as_deref()==reviewed_head_receipt
-    }else{last.task_specific_witness_sha256.is_none()}
+    if !full_source_contract(&task.acceptance_criteria){return false}
+    if task.acceptance_criteria==NATIVE_SOURCE_ONLY_CONTRACT{
+        return last.task_specific_witness_sha256.is_none()&&
+            reviewed_witness_binding.is_none()
+    }
+    // V1 Git binds its original independently reopened receipt. V2 binds
+    // EVERY method/review/oracle identity in a canonical witness-set digest.
+    reviewed_witness_binding.is_some()&&
+        last.task_specific_witness_sha256.as_deref()==reviewed_witness_binding
 }
 fn completed_for_current_source(
     conn:&Connection,r:&register::TaskRegister,board_sha:&str,
@@ -657,10 +830,10 @@ fn completion_append(
             profile,selected,reg,task,expected_board,expected_register,version
         )?)
     }else{None};
-    // Reopen the original reviewed Git HEAD operation after OS confirmation.
-    // All additional paths are read-only, independently reviewed host records.
-    let reviewed_head=if completed&&reopened.as_ref().is_some_and(|v|
-        git_head_expected(&v.acceptance_criteria).is_some()){
+    // Reopen EACH original method/receipt declared in the ENTIRE current
+    // criterion set, after source rescan and independently of model text.
+    // The later OS-native completion dialog is a distinct authorization.
+    let reviewed_set=if completed{
         let db=project_register_desktop::library(profile)?;
         let (r,b,current)=current_revision(&db,reg,task)?;
         let original=reopened.as_ref().ok_or("CORE_C3_MISSING_RESCANNED_SOURCE")?;
@@ -669,11 +842,11 @@ fn completion_append(
             current.status_sha256!=original.status_sha256||
             current.acceptance_criteria!=original.acceptance_criteria||
             current.selected_head!=original.selected_head{
-            return Err("CORE_C3_GIT_HEAD_SOURCE_DRIFT".into())
+            return Err("CORE_C3_ALL_CRITERIA_SOURCE_DRIFT".into())
         }
-        Some(independently_reopened_git_head_witness(
+        Some(independently_reopened_whole_task_witnesses(
             profile,&db,&r,&b.sha256,&current,chats
-        )?.ok_or("CORE_C3_GIT_HEAD_REVIEWED_WITNESS_REQUIRED")?)
+        )?.ok_or("CORE_C3_EVERY_REQUIRED_CRITERION_NEEDS_ORIGINAL_WITNESS")?)
     }else{None};
     let mut conn=project_register_desktop::library(profile)?;
     let tx=conn.transaction_with_behavior(TransactionBehavior::Immediate)
@@ -709,15 +882,21 @@ fn completion_append(
             return Err("CORE_C3_COMPLETION_ALL_CRITERIA_NOT_INDEPENDENTLY_VERIFIED".into())
         }
     }
-    if completed&&git_head_expected(&latest.acceptance_criteria).is_some(){
-        let approved=reviewed_head.as_ref()
-            .ok_or("CORE_C3_GIT_HEAD_REVIEWED_WITNESS_REQUIRED")?;
+    if completed{
+        let approved=reviewed_set.as_ref()
+            .ok_or("CORE_C3_REQUIRED_CRITERION_WITNESSES_MISSING")?;
         let rows=history_rows(&tx,reg,task)?;
-        if !rows.last().is_some_and(|last|
-            last.event_id==approved.event_id&&
-            last.receipt_sha256==approved.receipt_sha256&&
-            reviewed_git_head_event_matches(last,&r,&board.sha256,&latest)){
-            return Err("CORE_C3_GIT_HEAD_WITNESS_DRIFTED_AFTER_CONFIRMATION".into())
+        let selected=select_all_required_reviews(
+            &rows,&r,&board.sha256,&latest
+        ).ok_or("CORE_C3_REQUIRED_CRITERION_REVIEW_RESCINDED")?;
+        if selected.len()!=approved.reviewed.len()||
+            selected.iter().zip(&approved.reviewed).any(|(a,b)|
+                a.event_id!=b.event_id||
+                a.receipt_sha256!=b.receipt_sha256||
+                a.observed_sha256!=b.observed_sha256||
+                a.tool_id!=b.tool_id||
+                a.independent_method!=b.independent_method){
+            return Err("CORE_C3_REQUIRED_CRITERION_WITNESS_DRIFTED".into())
         }
     }
     let earlier=completion_rows(&tx,reg,task)?;
@@ -726,7 +905,7 @@ fn completion_append(
     }
     if completed&&completed_for_current_source(
         &tx,&r,&board.sha256,&latest,
-        reviewed_head.as_ref().map(|e|e.receipt_sha256.as_str())
+        reviewed_set.as_ref().and_then(|s|s.receipt_binding.as_deref())
     )?{
         return Err("CORE_C3_COMPLETION_ALREADY_RECORDED".into())
     }
@@ -740,8 +919,8 @@ fn completion_append(
         decision:decision.into(),operator_reason:reason.into(),
         previous_event_sha256:earlier.last().map(|e|
             sha(&serde_json::to_vec(e).expect("audited completion record"))),
-        task_specific_witness_sha256:reviewed_head.as_ref()
-            .map(|e|e.receipt_sha256.clone()),
+        task_specific_witness_sha256:reviewed_set.as_ref()
+            .and_then(|s|s.receipt_binding.clone()),
         source_rescanned:completed,native_requirement_accepted:completed,
         all_criteria_independently_verified:completed,
         dependencies_completed:completed,human_authorized:true,
@@ -840,12 +1019,11 @@ pub(crate) async fn lu_project_task_decide_completion(
         ){
             return Err("CORE_C3_COMPLETION_NOT_ALL_MACHINE_CHECKABLE_CRITERIA_VERIFIED".into())
         }
-        if git_head_expected(&original_task.acceptance_criteria).is_some()&&
-            independently_reopened_git_head_witness(
-                &profile,&conn,&original.1,&expected_board_sha256,
-                &original_task,&host.chats
-            )?.is_none(){
-            return Err("CORE_C3_GIT_HEAD_REVIEWED_WITNESS_REQUIRED".into())
+        if independently_reopened_whole_task_witnesses(
+            &profile,&conn,&original.1,&expected_board_sha256,
+            &original_task,&host.chats
+        )?.is_none(){
+            return Err("CORE_C3_EVERY_REQUIRED_CRITERION_NEEDS_ORIGINAL_WITNESS".into())
         }
         Some(root)
     }else{None};
@@ -866,11 +1044,13 @@ pub(crate) async fn lu_project_task_decide_completion(
         original.0.blocked_by,expected_register_sha256,
         expected_board_sha256,decision,operator_reason,
         if complete{
-            "Only an ENTIRE exact LU_COMPLETE_V1:CURRENT_NATIVE_REQUIREMENT \
-             or LU_COMPLETE_V1:GIT_HEAD_EQUALS:<40 lowercase SHA> criterion \
-             can complete. Git HEAD equality also requires a CURRENT approved \
-             original independent Git HEAD witness reopened after consent. \
-             The OS-selected original project is independently rescanned."
+            "Only a complete typed LU_COMPLETE_V1 single criterion or \
+             canonical LU_COMPLETE_V2:ALL_OF source+independent-method set \
+             can finish. Every declared method has a distinct CURRENT \
+             human-reviewed native worker/OS-oracle receipt; all are \
+             independently reopened after consent. Unchecked/free-text \
+             requirements remain BLOCKED. The OS-selected original project \
+             and transitive task dependencies are independently rescanned."
         }else{
             "This records BLOCKED, UNCERTAIN or REPLAN_REQUIRED. It does \
              not certify any completion and overrides the earlier status."
@@ -916,6 +1096,8 @@ pub(crate) struct TaskCompletionReconciliationView{
     history_fully_inspected:bool,
     status:&'static str,
     completion_decision_count:usize,
+    required_criterion_count:usize,
+    all_declared_criteria_independently_verified:bool,
     task_completed:bool,
     execution_authorized:bool,
 }
@@ -982,18 +1164,37 @@ fn reconcile_completion(
     let conn=project_register_desktop::library(profile)?;
     let (r,board,latest)=current_revision(&conn,register_id,task_id)?;
     let decisions=completion_rows(&conn,register_id,task_id)?;
-    let reviewed_head=if git_head_expected(&latest.acceptance_criteria).is_some(){
-        independently_reopened_git_head_witness(
+    // Recheck the source and exact current task lease as well as EVERY
+    // distinct original worker/method. A partial multi-criterion set
+    // can never inherit an earlier completion event.
+    let source_current=r.latest_sha256==register_sha&&
+        board.sha256==board_sha&&
+        board.review_state=="human_approved"&&
+        board.source_register_sha256==r.latest_sha256&&
+        latest.version==version&&!latest.execution_authorized&&
+        latest.source_requirement_id==current.source_requirement_id&&
+        latest.graph_sha256==current.graph_sha256&&
+        latest.status_sha256==current.status_sha256&&
+        latest.acceptance_criteria==current.acceptance_criteria&&
+        latest.selected_head==current.selected_head;
+    let required_criterion_count=whole_criteria(
+        &latest.acceptance_criteria
+    ).map_or(0,|c|c.len());
+    let reviewed_set=if full&&native&&source_current{
+        independently_reopened_whole_task_witnesses(
             profile,&conn,&r,&board.sha256,&latest,chats
         )?
     }else{None};
-    // A current old completion decision is never sufficient when one or
-    // more original human review events could not be reopened. In particular,
-    // native-source-only tasks must not bypass the same history bound.
-    let complete=full&&native&&completed_for_current_source(
-        &conn,&r,&board.sha256,&latest,
-        reviewed_head.as_ref().map(|e|e.receipt_sha256.as_str())
-    )?;
+    let all_declared_criteria_independently_verified=
+        source_current&&native&&reviewed_set.is_some()&&
+        completion_native_eligible(&latest,
+            dependency_completion_current(&conn,&r,&board.sha256,&latest)?)&&
+        required_criterion_count>0;
+    let complete=full&&all_declared_criteria_independently_verified&&
+        completed_for_current_source(
+            &conn,&r,&board.sha256,&latest,
+            reviewed_set.as_ref().and_then(|s|s.receipt_binding.as_deref())
+        )?;
     Ok(TaskCompletionReconciliationView{
         schema:"lu-core-c3-task-completion-reconciliation-v1",
         register_id:register_id.into(),task_id:task_id.into(),
@@ -1004,8 +1205,16 @@ fn reconcile_completion(
         history_fully_inspected:full,
         status:if complete{
             "WHOLE_TASK_HUMAN_DECISION_CURRENT_SOURCE_REVERIFIED"
-        }else{completion_status(native,independently_reopened>0,full)},
+        }else if !full{
+            "STOP_REVIEW_HISTORY_RECONCILIATION_REQUIRED"
+        }else if !all_declared_criteria_independently_verified{
+            "REQUIRES_EVERY_DECLARED_CRITERION_INDEPENDENT_PROOF"
+        }else{
+            "ALL_CRITERIA_VERIFIED_AWAITING_SEPARATE_HUMAN_TASK_DECISION"
+        },
         completion_decision_count:decisions.len(),
+        required_criterion_count,
+        all_declared_criteria_independently_verified,
         task_completed:complete,execution_authorized:false,
     })
 }
@@ -1220,6 +1429,155 @@ mod tests{
         }
         assert_eq!(native_completion_decision_button("UNTRUSTED"),
             "Cancel unsupported task decision");
+    }
+
+    #[test]
+    fn all_of_manifest_requires_every_canonical_exact_machine_clause(){
+        let head="a".repeat(40);
+        let complete=format!(
+            "LU_COMPLETE_V2:ALL_OF\nCURRENT_NATIVE_REQUIREMENT\n\
+             GIT_HEAD_EQUALS:{head}\nGIT_STATUS_REVIEWED\nWAV_PCM_REVIEWED"
+        );
+        let parsed=whole_criteria(&complete).unwrap();
+        assert_eq!(parsed.len(),4);
+        assert_eq!(git_head_expected(&complete),Some(head.as_str()));
+        assert!(full_source_contract(&complete));
+        for (tool,method) in [
+            ("lu.reviewed.git.head","GIT_HEAD_DIRECT_V1"),
+            ("lu.reviewed.git.status","GIT_STATUS_INDEX_TREE_V1"),
+            ("lu.reviewed.media.facts","WAV_PCM_DIRECT_V1")
+        ]{
+            assert_eq!(whole_criterion_supports_method(
+                &complete,tool,method),Some(true));
+        }
+        assert_eq!(whole_criterion_supports_method(
+            &complete,"lu.reviewed.media.facts","MP4_BOXES_DIRECT_V1"
+        ),Some(false));
+        for invalid in [
+            format!("{complete}\nAlso deploy"),
+            format!("{complete}\n"),
+            format!("LU_COMPLETE_V2:ALL_OF\nCURRENT_NATIVE_REQUIREMENT\n\
+                GIT_HEAD_EQUALS:{head}\nGIT_HEAD_EQUALS:{head}"),
+            format!("LU_COMPLETE_V2:ALL_OF\nGIT_HEAD_EQUALS:{head}\n\
+                CURRENT_NATIVE_REQUIREMENT"),
+            format!("LU_COMPLETE_V2:ALL_OF\nCURRENT_NATIVE_REQUIREMENT\n\
+                GIT_STATUS_REVIEWED\nGIT_HEAD_EQUALS:{head}"),
+            "LU_COMPLETE_V2:ALL_OF\nCURRENT_NATIVE_REQUIREMENT".into(),
+            "LU_COMPLETE_V2:ALL_OF\nCURRENT_NATIVE_REQUIREMENT\n\
+                GIT_STATUS_REVIEWED;EXEC".into(),
+            "LU_COMPLETE_V2:ALL_OF\nCURRENT_NATIVE_REQUIREMENT\n\
+                GIT_STATUS_REVIEWED\r\n".into(),
+        ]{
+            assert!(!full_source_contract(&invalid),
+                "malformed/hidden criterion must fail closed: {invalid}");
+            assert_eq!(whole_criterion_supports_method(
+                &invalid,"lu.reviewed.git.status","GIT_STATUS_INDEX_TREE_V1"
+            ),Some(false));
+        }
+    }
+    #[test]
+    fn all_of_distinct_method_reviews_are_required_and_rescinded_individually(){
+        let head="a".repeat(40);
+        let criterion=format!(
+            "LU_COMPLETE_V2:ALL_OF\nCURRENT_NATIVE_REQUIREMENT\n\
+             GIT_HEAD_EQUALS:{head}\nGIT_STATUS_REVIEWED\nWAV_PCM_REVIEWED"
+        );
+        let task=register::TaskRevision{
+            task_id:"lu-task-all".into(),version:3,
+            source_requirement_id:"R-all".into(),summary:"Multi criterion".into(),
+            description:"All original typed source and worker facts".into(),
+            group:"Reviewed".into(),priority:"P1".into(),blocked_by:"none".into(),
+            acceptance_criteria:criterion.clone(),depends_on:vec![],
+            evidence_ids:vec!["R-all".into()],
+            original_model_proposal_sha256:"a".repeat(64),
+            graph_sha256:"b".repeat(64),status_sha256:"c".repeat(64),
+            selected_head:Some(head.clone()),
+            observed_status:lu_core::project_status_classifier::Status::Accepted,
+            observed_at_unix:0,needs_human_reconciliation:false,
+            independently_verified_requirement:true,execution_authorized:false,
+        };
+        let register=register::TaskRegister{
+            schema:register::SCHEMA.into(),register_id:"lu-register-all".into(),
+            scope_sha256:"d".repeat(64),
+            original_proposal_sha256:"e".repeat(64),events:vec![],
+            latest_sha256:"f".repeat(64),no_execution_authority:true,
+        };
+        let board="0".repeat(64);
+        let event=|tool:&str,method:&str,id:&str|CriterionDecision{
+            schema:SCHEMA.into(),event_id:id.into(),
+            register_id:register.register_id.clone(),
+            task_id:task.task_id.clone(),task_version:task.version,
+            board_sha256:board.clone(),
+            register_sha256:register.latest_sha256.clone(),
+            source_scope_sha256:register.scope_sha256.clone(),
+            graph_sha256:task.graph_sha256.clone(),
+            status_sha256:task.status_sha256.clone(),
+            selected_head:task.selected_head.clone(),
+            source_requirement_id:task.source_requirement_id.clone(),
+            acceptance_criterion:task.acceptance_criteria.clone(),
+            acceptance_criterion_sha256:sha(criterion.as_bytes()),
+            handoff_id:format!("h-{id}"),receipt_sha256:sha(id.as_bytes()),
+            observed_sha256:sha(format!("observed-{id}").as_bytes()),
+            tool_id:tool.into(),independent_method:method.into(),
+            step_index:0,verdict_at_review:"VERIFIED_AT_OBSERVATION".into(),
+            decision:"ACCEPTED_AS_SUPPORTING_EVIDENCE".into(),
+            operator_reason:"Separate original native human witness review".into(),
+            previous_event_sha256:None,
+            task_completed:false,execution_authorized:false,
+        };
+        let head_event=event("lu.reviewed.git.head","GIT_HEAD_DIRECT_V1","ev-head");
+        let status=event("lu.reviewed.git.status","GIT_STATUS_INDEX_TREE_V1","ev-status");
+        let wav=event("lu.reviewed.media.facts","WAV_PCM_DIRECT_V1","ev-wav");
+        let all=vec![head_event.clone(),status.clone(),wav.clone()];
+        assert!(all.iter().all(review_event_valid));
+        assert!(completion_native_eligible(&task,true));
+        assert!(select_all_required_reviews(&all,&register,&board,&task)
+            .is_some_and(|r|r.len()==3));
+        for removed in 0..3{
+            let mut partial=all.clone();partial.remove(removed);
+            assert!(select_all_required_reviews(&partial,&register,&board,&task)
+                .is_none(),"one missing original worker must block");
+        }
+        let reviews=select_all_required_reviews(&all,&register,&board,&task).unwrap();
+        let binding=selected_witness_binding(&criterion,&reviews).unwrap();
+        assert!(valid_hash(&binding));
+        let mut completion=completion_fixture("COMPLETED_AT_REVIEW");
+        assert!(!completion_receipt_matches(&task,&completion,Some(&binding)));
+        completion.task_specific_witness_sha256=Some(binding.clone());
+        assert!(completion_receipt_matches(&task,&completion,Some(&binding)));
+        assert!(!completion_receipt_matches(&task,&completion,None));
+        assert!(!completion_receipt_matches(&task,&completion,
+            Some("1".repeat(64).as_str())));
+        // Later explicit human negative revokes just that criterion even if
+        // all earlier positives remain in the append-only review journal.
+        let mut rescinded=all.clone();
+        let mut negative=status.clone();
+        negative.event_id="ev-status-rejected".into();
+        negative.decision="NEEDS_MORE_INDEPENDENT_EVIDENCE".into();
+        rescinded.push(negative);
+        assert!(select_all_required_reviews(
+            &rescinded,&register,&board,&task
+        ).is_none());
+        let mut stale=all.clone();
+        stale[1].task_version+=1;
+        assert!(select_all_required_reviews(&stale,&register,&board,&task)
+            .is_none());
+        let mut stale=all.clone();
+        stale[2].register_sha256="0".repeat(64);
+        assert!(select_all_required_reviews(&stale,&register,&board,&task)
+            .is_none());
+        let mut stale=task.clone();
+        stale.selected_head=Some("1".repeat(40));
+        assert!(!current_whole_task_criterion(&stale));
+        assert!(select_all_required_reviews(&all,&register,&board,&stale)
+            .is_none());
+        // A model completion/review-only step can never substitute for a
+        // CURRENT native OS source, all original receipts and human decision.
+        let mut unverified=task;unverified.independently_verified_requirement=false;
+        assert!(!completion_native_eligible(&unverified,true));
+        let mut denied=completion;
+        denied.human_authorized=false;
+        assert!(!completion_decision_valid(&denied));
     }
     #[test]
     fn source_only_completion_policy_rejects_unchecked_dependencies_and_blockers(){
