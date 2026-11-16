@@ -562,6 +562,33 @@ fn spawn_contained_stdio(
         }
         return Err(denied());
     }
+    // CI-only diagnostic: a freshly token-attested AppContainer PID permits
+    // kernel ETW correlation. Never passed into the child, never used for
+    // authorization, ignored in release, and no raw filesystem path emitted.
+    #[cfg(debug_assertions)]
+    if native_lsp_debug_enabled()
+        && std::env::var_os("GITHUB_ACTIONS").as_deref() == Some(OsStr::new("true"))
+    {
+        if let (Some(temp), Some(witness)) = (
+            std::env::var_os("RUNNER_TEMP"),
+            std::env::var_os("LU_IDE_WO6_ETW_PID_WITNESS"),
+        ) {
+            let path = Path::new(&witness);
+            if Path::new(&temp).is_absolute()
+                && path.parent() == Some(Path::new(&temp))
+                && path.file_name() == Some(OsStr::new("wo6-contained-pids.txt"))
+            {
+                if let Ok(mut output) = std::fs::OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(path)
+                {
+                    let data = format!("{}\n", child.dwProcessId);
+                    let _ = std::io::Write::write_all(&mut output, data.as_bytes());
+                }
+            }
+        }
+    }
     // Only the native host retains the owner-event read end. The extra
     // write end closes here and cannot leak through normal launch paths.
     let owner_read = event_pipe.map(|(host_read, _write, nonce)| (host_read, nonce));

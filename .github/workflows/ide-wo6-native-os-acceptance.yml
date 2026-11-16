@@ -170,7 +170,42 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw 'DENIED: exact service NUL readback failed' }
             $env:LU_IDE_WO6_DAP_TRUSTED_SERVICE=$service
             $env:LU_IDE_E2_NATIVE_TRACE='1'
-            & $hostExe
+            # Diagnostic only: in-box Windows ETW file-I/O events around the
+            # ORIGINAL protected host invocation. No token/ACL/Job/SCM changes,
+            # no raw ETL upload, no replacement of native acceptance assertions.
+            $trace=Join-Path $env:RUNNER_TEMP 'wo6-contained-fileio.etl'
+            $pidWitness=Join-Path $env:RUNNER_TEMP 'wo6-contained-pids.txt'
+            $env:LU_IDE_WO6_ETW_PID_WITNESS=$pidWitness
+            $traceStarted=$false
+            try {
+              & logman.exe start LuIdeWo6NativeFileTrace -ets -p Microsoft-Windows-Kernel-File 0xffffffffffffffff 5 -o $trace -max 16 1>$null 2>$null
+              $traceStarted=($LASTEXITCODE -eq 0)
+            } catch {
+              Write-Host 'PROTECTED_WO6_ETW_FILE_DENIAL=kernel_tracer_unavailable'
+            }
+            try {
+              & $hostExe
+              $normalExit=$LASTEXITCODE
+            } finally {
+              if ($traceStarted) {
+                try {
+                  & logman.exe stop LuIdeWo6NativeFileTrace -ets 1>$null 2>$null
+                } catch {
+                  Write-Host 'PROTECTED_WO6_ETW_FILE_DENIAL=trace_stop_unavailable'
+                }
+              }
+            }
+            try {
+              if ($traceStarted) {
+                & 'ide/supervisor/fixtures/debug/Probe-WindowsWo6FileDenial.ps1' -TracePath $trace -PidWitness $pidWitness
+              } else {
+                Write-Host 'PROTECTED_WO6_ETW_FILE_DENIAL=trace_unavailable_not_acceptance'
+              }
+            } finally {
+              Remove-Item -LiteralPath $trace,$pidWitness -Force -ErrorAction SilentlyContinue
+              Remove-Item Env:\LU_IDE_WO6_ETW_PID_WITNESS -ErrorAction SilentlyContinue
+            }
+            $global:LASTEXITCODE=$normalExit
             if ($LASTEXITCODE -ne 0) { throw 'DENIED: protected native debugger normal acceptance failed' }
             & $hostExe --cancel
             if ($LASTEXITCODE -ne 0) { throw 'DENIED: protected native debugger cancellation/restart failed' }

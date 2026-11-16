@@ -40,7 +40,7 @@ REVIEWED = {
         "push_trigger_removed_requires_authorization"),
     ".github/workflows/ide-wo6-native-os-acceptance.yml": (
         "d7627899b3a6cafc7b383f00abbb2b9e7107fe2d",
-        "c507f9ed89a867d1c86724c54ec35d678335af76",
+        "ac7992aac3a9e17bda4d44d450bcd199d5a5d874",
         "windows_runner_and_protected_dap_evidence_changed"),
     ".github/workflows/ide-wo8-installed-windows.yml": (
         "8fadc3f1829e62123b9da6a5e6bbd49a3f3ec36f",
