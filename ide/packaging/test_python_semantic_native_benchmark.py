@@ -59,8 +59,7 @@ class PythonSemanticBenchmarkSourceTests(unittest.TestCase):
                 # Native BasedPyright uses a percent-encoded NTFS drive colon.
                 # Require real OS file identity after decoding; never accept
                 # a same-name file that does not exist or differs on disk.
-                encoded=uri.replace(':/','%3A/',1) if False else (
-                    uri[:9]+'%3A'+uri[10:])
+                encoded=uri[:9]+'%3A'+uri[10:]
                 self.assertIn('%3A',encoded)
                 self.assertTrue(same_local_uri(encoded,uri))
                 self.assertTrue(same_local_uri(encoded.replace('%3A','%3a'),uri))

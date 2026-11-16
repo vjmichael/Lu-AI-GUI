@@ -18,6 +18,9 @@ FIXED_HOST = BUNDLE + "/debuggee/wo6-selftest"
 CASES = (
     ("host_distro", [SOURCE], FIXED_HOST),
     ("copied_bundle", [COPIED], FIXED_HOST),
+    # Distinguish executable relocation from namespace/ptrace denial without
+    # changing the production worker or treating this probe as acceptance.
+    ("bwrap_distro", NAMESPACE[:-1] + [SOURCE], "/ls/debuggee/wo6-selftest"),
     ("bwrap_namespace", NAMESPACE, "/ls/debuggee/wo6-selftest"),
 )
 
@@ -55,6 +58,9 @@ def stage(label: str, argv: list[str], target: str) -> bool:
     sent_launch = False
     got_launch = False
     got_stop = False
+    got_initialized_event = False
+    sent_configuration = False
+    got_configuration = False
     failure = "timeout_or_disconnect"
     try:
         child = subprocess.Popen(
@@ -73,7 +79,7 @@ def stage(label: str, argv: list[str], target: str) -> bool:
         sel.register(child.stdout, selectors.EVENT_READ, "out")
         sel.register(child.stderr, selectors.EVENT_READ, "err")
         deadline = time.monotonic() + 8
-        while time.monotonic() < deadline and not (got_launch and got_stop):
+        while time.monotonic() < deadline and not (got_launch and got_stop and got_configuration):
             for key, _ in sel.select(0.15):
                 raw = os.read(key.fileobj.fileno(), 8192)
                 if not raw:
@@ -113,6 +119,10 @@ def stage(label: str, argv: list[str], target: str) -> bool:
                             }))
                             child.stdin.flush()
                             sent_launch = True
+                            if got_initialized_event and not sent_configuration:
+                                child.stdin.write(request(3, "configurationDone", {}))
+                                child.stdin.flush()
+                                sent_configuration = True
                     else:
                         failure = "initialize_rejected"
                         break
@@ -129,9 +139,21 @@ def stage(label: str, argv: list[str], target: str) -> bool:
                                   else str(raw_error))
                         failure = classify(str(detail) + " " + str(item.get("message", "")))
                         break
+                elif item.get("type") == "event" and item.get("event") == "initialized":
+                    got_initialized_event = True
+                    if sent_launch and not sent_configuration:
+                        child.stdin.write(request(3, "configurationDone", {}))
+                        child.stdin.flush()
+                        sent_configuration = True
+                elif item.get("type") == "response" and item.get("request_seq") == 3:
+                    if (item.get("command") != "configurationDone" or
+                            item.get("success") is not True or not sent_configuration):
+                        failure = "configuration_rejected"
+                        break
+                    got_configuration = True
                 elif item.get("type") == "event" and item.get("event") == "stopped":
                     got_stop = True
-            if got_launch and got_stop:
+            if got_launch and got_stop and got_configuration:
                 break
             if failure != "timeout_or_disconnect":
                 break
@@ -140,6 +162,8 @@ def stage(label: str, argv: list[str], target: str) -> bool:
         if not got_launch:
             if failure == "timeout_or_disconnect":
                 failure = "process_exited" if child.poll() is not None else "response_not_received"
+        elif not got_configuration:
+            failure = "launch_without_configuration_done"
         elif not got_stop:
             failure = "launch_ack_without_kernel_stop"
     except (OSError, BrokenPipeError, ValueError):
@@ -155,9 +179,10 @@ def stage(label: str, argv: list[str], target: str) -> bool:
             for pipe in (child.stdin, child.stdout, child.stderr):
                 if pipe:
                     pipe.close()
-    outcome = "launch_stop_observed_not_os_attested" if got_launch and got_stop else failure
+    outcome = ("launch_stop_observed_not_os_attested" if
+               (got_launch and got_stop and got_configuration) else failure)
     print(f"FIN04_NATIVE_LAUNCH_PROBE={label}:{outcome}", flush=True)
-    return got_launch and got_stop
+    return got_launch and got_stop and got_configuration
 
 def main() -> int:
     outcomes = [stage(*entry) for entry in CASES]
