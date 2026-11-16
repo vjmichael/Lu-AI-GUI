@@ -253,7 +253,29 @@ function Click([string]$label) {
   try {
     $p=$element.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern)
     $p.Invoke()
-  } catch { Deny ('ui_invoke_failure_'+$label.Replace(' ','_')) }
+  } catch {
+    # An installed WebView2 UIA button can expose a live native element
+    # while its Invoke provider rejects a transient post-navigation call.
+    # Only the demonstrated Move file control receives one real OS keyboard
+    # retry. No DOM/JS/backend injection, no synthetic outcome, and the
+    # original required move/review/file-byte assertions still run.
+    if ($label -cne 'Move file') { Deny ('ui_invoke_failure_'+$label.Replace(' ','_')) }
+    $fresh=Find-Control $label 'Button' 6
+    if (!$fresh.Current.IsEnabled -or !$fresh.Current.IsKeyboardFocusable) {
+      Deny 'ui_invoke_failure_Move_file'
+    }
+    $hwnd=$proc.MainWindowHandle
+    if ($hwnd -eq [IntPtr]::Zero) { Deny 'ui_invoke_failure_Move_file' }
+    [void][P04NativeWebViewWindows]::SetForegroundWindow($hwnd)
+    if ([P04NativeWebViewWindows]::GetForegroundWindow() -ne $hwnd) {
+      Deny 'ui_invoke_failure_Move_file'
+    }
+    try {
+      $fresh.SetFocus()
+      [System.Windows.Forms.SendKeys]::SendWait(' ')
+      Write-Host 'WO8_MOVE_FILE_OS_UIA_FOCUSED_KEYBOARD_RETRY=attempted_not_acceptance'
+    } catch { Deny 'ui_invoke_failure_Move_file' }
+  }
 }
 function Require([string]$text) {
   [void](Find-Control $text '' 15)

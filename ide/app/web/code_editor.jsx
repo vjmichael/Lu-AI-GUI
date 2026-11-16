@@ -144,7 +144,9 @@ export function CodeEditor({ editorState, tabIdentity, findRequest, replaceReque
     });
     viewRef.current = view;
     if (typeof label === 'string' && label.length<=1100) {
-      view.contentDOM.setAttribute('aria-label',label);
+      // Preserve the stable OS accessibility name while retaining the
+      // pane and filename for native screen readers and installed UI tests.
+      view.contentDOM.setAttribute('aria-label','Source editor text · '+label);
     }
     const reportFocus=()=>onFocusedRef.current?.(pane,tabIdentity);
     view.dom.addEventListener('focusin',reportFocus);

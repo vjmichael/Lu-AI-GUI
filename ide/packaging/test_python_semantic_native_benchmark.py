@@ -55,6 +55,17 @@ class PythonSemanticBenchmarkSourceTests(unittest.TestCase):
             path.write_text("def f(): pass\n",encoding="utf-8")
             uri=path.as_uri()
             self.assertTrue(same_local_uri(uri,uri))
+            if os.name == 'nt':
+                # Native BasedPyright uses a percent-encoded NTFS drive colon.
+                # Require real OS file identity after decoding; never accept
+                # a same-name file that does not exist or differs on disk.
+                encoded=uri.replace(':/','%3A/',1) if False else (
+                    uri[:9]+'%3A'+uri[10:])
+                self.assertIn('%3A',encoded)
+                self.assertTrue(same_local_uri(encoded,uri))
+                self.assertTrue(same_local_uri(encoded.replace('%3A','%3a'),uri))
+                self.assertFalse(same_local_uri(
+                    encoded.replace('case_00.py','missing.py'),uri))
             # Both paths must exist and resolve to the identical OS file
             # identity, never merely share a similar name or extension.
             alias=path.with_name("case_00_alias.py")

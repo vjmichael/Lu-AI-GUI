@@ -260,6 +260,19 @@ def completions(result:list|dict|None,expected:str)->bool:
     return any(isinstance(x,dict) and x.get("label")==expected for x in items)
 
 
+def native_file_url_path(path: str) -> str:
+    """Decode a Windows file URI drive colon before url2pathname.
+
+    BasedPyright emits file:///d%3A/... for the same NTFS file that Path.as_uri
+    expresses as file:///D:/.... Python's Windows url2pathname interprets an
+    encoded drive colon as a relative path. Canonical OS samefile validation
+    is still mandatory; this helper alone never authorizes a location.
+    """
+    if os.name == "nt":
+        path = re.sub(r"^/([A-Za-z])%3[Aa](?=/)", r"/\1:", path)
+    return urllib.request.url2pathname(path)
+
+
 def same_local_uri(candidate: str, expected: str) -> bool:
     """Only the identical native fixture file, without query/fragment/remote host.
 
@@ -273,8 +286,8 @@ def same_local_uri(candidate: str, expected: str) -> bool:
         if any(uri.scheme.lower() != "file" or uri.netloc not in ("", "localhost")
                or uri.query or uri.fragment for uri in (left, right)):
             return False
-        a = urllib.request.url2pathname(left.path)
-        b = urllib.request.url2pathname(right.path)
+        a = native_file_url_path(left.path)
+        b = native_file_url_path(right.path)
         if not os.path.isabs(a) or not os.path.isabs(b):
             return False
         # On Windows, distinct valid file: spellings (drive casing, short
@@ -311,8 +324,8 @@ def definition_response_class(result, expected_uri: str|None=None) -> str:
         facts=""
         if isinstance(expected_uri,str):
             other=urllib.parse.urlsplit(expected_uri)
-            local=urllib.request.url2pathname(parsed.path)
-            registered=urllib.request.url2pathname(other.path)
+            local=native_file_url_path(parsed.path)
+            registered=native_file_url_path(other.path)
             actual=os.path.exists(local)
             expected_exists=os.path.exists(registered)
             # Distinguish a genuinely different target from a Windows
