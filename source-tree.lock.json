@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "e959ff7d52e5f10d840361c166f96013fa226b22",
+  "sourceCommitBeforeLock": "40be2af7b23f0c3cd270adecd7cd58642be92529",
   "trackedFileCount": 1041,
   "files": [
     {
@@ -2261,7 +2261,7 @@
     },
     {
       "path": "scripts/c3-windows-installed-native-completion.ps1",
-      "blob": "b69211b3ea92aaf635976ede85edda0ed31609bd"
+      "blob": "c531fa6472f77ac95ec0be758f515218007153d7"
     },
     {
       "path": "scripts/core-merge-c1-family-contracts.test.mjs",
