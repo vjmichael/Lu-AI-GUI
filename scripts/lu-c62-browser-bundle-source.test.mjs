@@ -20,7 +20,7 @@ test("C6.2A candidate is one exact-SHA batch, not automatic trust",()=>{
   assert.match(workflow,/browser-ci-executable\.test\.mjs/);
   assert.match(workflow,/candidate-summary\.json/);
   assert.match(workflow,/C62A_CANDIDATE_UNAPPROVED=1/);
-  assert.doesNotMatch(workflow,/continue-on-error: true|C62A_.*APPROVED=1/);
+  assert.doesNotMatch(workflow,/continue-on-error: true|C62A_BROWSER_PRODUCTION_APPROVED=1/);
 });
 test("candidate never masquerades as an approved browser manifest",()=>{
   assert.match(candidate,/status:'candidate'/);

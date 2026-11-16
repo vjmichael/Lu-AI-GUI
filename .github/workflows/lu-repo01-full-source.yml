@@ -3966,7 +3966,7 @@ jobs:
     if: >-
       github.event_name == 'push' &&
       github.ref == 'refs/heads/main' &&
-      startsWith(github.event.head_commit.message, 'CORE-MERGE-C6.2A:')
+      startsWith(github.event.head_commit.message, 'CORE-MERGE-C6.2A2:')
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -3981,7 +3981,7 @@ jobs:
       - name: Exact frozen first-parent C6.2A candidate-only authorization
         shell: bash
         env:
-          EXPECTED_PARENT_SHA: '83a4517eef370803e101fe4de440f96ee3954895'
+          EXPECTED_PARENT_SHA: 'c870116f1939830f0f0d426e8eebe41b6ac930b6'
           EXPECTED_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
