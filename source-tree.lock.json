@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "3449ddf40a96e16af3a3b79ccc9a1c986bd8e62f",
+  "sourceCommitBeforeLock": "115ee8ae748378dddc70d244b9602ccfda046801",
   "trackedFileCount": 1067,
   "files": [
     {
@@ -265,7 +265,7 @@
     },
     {
       "path": ".github/workflows/lu-repo01-full-source.yml",
-      "blob": "691b9c95a22953446936871ab40d723ee9ab0f45"
+      "blob": "b67c7b3b17f6a34726d147141a14d49df54def9c"
     },
     {
       "path": ".github/workflows/lu-tools-01-05-integration.yml",
@@ -713,7 +713,7 @@
     },
     {
       "path": "docs/LU_DEVELOPMENT_LEDGER.md",
-      "blob": "9f37c1fdfc89463243eadabdedc8893da544f815"
+      "blob": "ad8766e0d5bcd8dab0b372ed835dd0bb96c48c20"
     },
     {
       "path": "docs/LU_E1_NATIVE_EVIDENCE_20261107.md",
@@ -2401,7 +2401,7 @@
     },
     {
       "path": "scripts/lu-c62b-reviewed-browser-contract.test.mjs",
-      "blob": "18972eeba83dcb7598003e5cb7102151776eb1df"
+      "blob": "ce990f5ed15475fceebfbca612afed689b9edb7b"
     },
     {
       "path": "scripts/lu-ci-group-policy.mjs",
@@ -2497,7 +2497,7 @@
     },
     {
       "path": "scripts/m3-windows-nsis-cycle.ps1",
-      "blob": "cb15f8d849f1a590958e3bc18e47de9798ebf50f"
+      "blob": "b4e8395ec67398129acce0c4e2094f683e4a06ba"
     },
     {
       "path": "scripts/m4-windows-installed-memory-acceptance.ps1",

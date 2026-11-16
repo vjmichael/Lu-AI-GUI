@@ -70,6 +70,8 @@ test('browser is actually installed, independently rehashed, and removed without
  assert.match(nsis,/File \/r "\$\{LU_BROWSER_DIR\}\\\*\.\*"/);
  assert.match(nsis,/RMDir \/r "\$INSTDIR\\lu-browser"/);
  assert.match(m3,/ExpectedBrowserManifestSha256/);
+ assert.equal((m3.match(/if\(\$ExpectedBrowserManifestSha256\)\{/g)||[]).length,1,'One real original NSIS cycle, no duplicated insertion');
+ assert.ok(m3.length<18500,'Original installed script preserved without repeated injected content');
  assert.match(m3,/Installed Browser manifest differs from independently approved SHA/);
  assert.match(m3,/Installed Browser symlink in reviewed component parent/);
  assert.match(m3,/Installed Browser unexpected file/);
