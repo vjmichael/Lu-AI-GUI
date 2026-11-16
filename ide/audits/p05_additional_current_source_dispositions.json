@@ -1,0 +1,81 @@
+{
+  "schema": "lu.ide.merge02.p05.additional-current-source-dispositions.v1",
+  "historicalTree": "8c61d570c04a5384772705d123f860b0e3484073",
+  "immutableHistoricalWorkflowCount": 38,
+  "historicalOwnerAuthorizedCount": 8,
+  "scopedCurrentSourceOnlyCount": 5,
+  "scope": "exact current source correspondence only; not retroactive owner authorization",
+  "historicalP05Rewritten": false,
+  "priorOwnerDecisionModified": false,
+  "originalTriggersRetained": true,
+  "originalJobsAndNamedStepsRetained": true,
+  "originalNativeNegativeTestsRetained": true,
+  "nativeWindowsAccepted": false,
+  "nativeLinuxAccepted": false,
+  "llvm18Accepted": false,
+  "installedGuiAccepted": false,
+  "releaseApproved": false,
+  "mergeApproved": false,
+  "workflows": [
+    {
+      "path": ".github/workflows/ide-e2-native-lsp.yml",
+      "original": "8ca27a7f666460e021b45c2e5469d532d0a82071",
+      "current": "b0e8017157e9727f7c5a3fe474f7510db08b97fe",
+      "mode": "measured_clangd_bundle_binding",
+      "originalNamedStepCount": 13,
+      "disposition": "source_reviewed_not_native_accepted",
+      "historicalOwnerAuthorization": false,
+      "originalTriggerAndTestsRetained": true,
+      "nativeAccepted": false,
+      "reason": "Propagate only the previously validated measured clangd bundle into the original AppContainer host; original SCM and OS-denial checks remain"
+    },
+    {
+      "path": ".github/workflows/ide-e2-supervised-lsp.yml",
+      "original": "c2be7149dc3424d7c296aae2f98a6fd37b99c77b",
+      "current": "a29c605710c16b9fe8678f4072f79f12a4797d98",
+      "mode": "exact_sha_checkout_and_real_llvm18_oracle",
+      "originalNamedStepCount": 18,
+      "disposition": "source_reviewed_not_native_accepted",
+      "historicalOwnerAuthorization": false,
+      "originalTriggerAndTestsRetained": true,
+      "nativeAccepted": false,
+      "reason": "Require exact PR source and full historical Git evidence; install real LLVM18 symbolizer before unchanged Linux packaging regression; preserve original jobs"
+    },
+    {
+      "path": ".github/workflows/ide-e2-unsigned-installed-smoke.yml",
+      "original": "6d8761823e67575cb979b15570f8fb44d571d4d5",
+      "current": "29b34141b0557ddc4a341ebf5ce5f64f16c69ab1",
+      "mode": "reviewed_p06_lock_successor",
+      "originalNamedStepCount": 6,
+      "disposition": "source_reviewed_not_native_accepted",
+      "historicalOwnerAuthorization": false,
+      "originalTriggerAndTestsRetained": true,
+      "nativeAccepted": false,
+      "reason": "Verify identical resolved Windows Cargo lock using existing reviewed merge02 successor option at two original gates, without changing lock or license tests"
+    },
+    {
+      "path": ".github/workflows/ide-wo8-installed-linux.yml",
+      "original": "cbb33c566a492ed176d7af8ef381019c5753605e",
+      "current": "a40f2ba4867acd24e94ccc73a86cd6e4580735b3",
+      "mode": "reviewed_p06_lock_successor",
+      "originalNamedStepCount": 9,
+      "disposition": "source_reviewed_not_native_accepted",
+      "historicalOwnerAuthorization": false,
+      "originalTriggerAndTestsRetained": true,
+      "nativeAccepted": false,
+      "reason": "Verify identical resolved Linux Cargo lock using existing reviewed merge02 successor at two original gates, preserve native Debian/GTK acceptance"
+    },
+    {
+      "path": ".github/workflows/ide-wo9-installed-native.yml",
+      "original": "60c1bf3d20fb08dcdcfd183a8ffec76599fa6c52",
+      "current": "6c6e8f89a9a60d8e9703dc54af91e6bc690024b8",
+      "mode": "reviewed_p06_lock_successor",
+      "originalNamedStepCount": 8,
+      "disposition": "source_reviewed_not_native_accepted",
+      "historicalOwnerAuthorization": false,
+      "originalTriggerAndTestsRetained": true,
+      "nativeAccepted": false,
+      "reason": "Use reviewed Windows and Linux Cargo successor option in four original gates; preserve OS-installed workflow/ZIP and licence acceptance"
+    }
+  ]
+}

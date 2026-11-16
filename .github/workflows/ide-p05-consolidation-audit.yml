@@ -3,6 +3,12 @@ on:
   pull_request:
     paths:
       - 'ide/packaging/p05-*'
+      - 'ide/audits/verify_p05_owner_successor.py'
+      - 'ide/audits/test_p05_owner_successor.py'
+      - 'ide/audits/p05_additional_current_source_dispositions.json'
+      - 'ide/packaging/audit_p05_reviewed_workflow_successor.py'
+      - 'ide/packaging/test_p05_reviewed_workflow_successor.py'
+      - '.github/workflows/ide-*.yml'
       - 'ide/packaging/verify_p05_pr_inventory.py'
       - 'ide/packaging/test_verify_p05_pr_inventory.py'
       - 'ide/packaging/p05-semantic-reconciliation.json'
@@ -77,6 +83,8 @@ jobs:
           set -euo pipefail
           python3 ide/audits/verify_p05_owner_successor.py --repo-root .
           python3 -m unittest discover -s ide/audits -p 'test_p05_owner_successor.py' -v
+      - name: Independently deny unreviewed sixth workflow and forged five-source approval
+        run: python -m unittest discover -s ide/packaging -p 'test_p05_reviewed_workflow_successor.py' -v
       - name: Verify all historical source behavior classifications and excluded features
         run: python -m unittest discover -s ide/packaging -p 'test_p05_semantic_reconciliation.py' -v
       - name: Deny unsafe CI trigger reduction and PR closures while native gates remain open
