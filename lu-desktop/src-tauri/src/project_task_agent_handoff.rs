@@ -6,7 +6,7 @@ use super::*;
 use lu_core::{
     ansf_goals::{GoalEvent,GoalEventKind},
     agent_plan_ledger::PlanStepKind,
-    agent_plan_revisions::{ExpectedDeliverable,AgentPlanRevisionStore},
+    agent_plan_revisions::{ExpectedDeliverable,RevisionStep,AgentPlanRevisionStore},
     agent_plan_ledger::AgentPlanLedger,
     agent_host_scheduler::AgentHostScheduler,
     agent_deliverable_receipts::AgentDeliverableReceipts,
@@ -373,6 +373,19 @@ fn list(profile:&Path,register_id:&str,task_id:&str,
                     task_completed:false,execution_authorized:false,
                 });
             }
+            // A verified root-plan witness is only the first criterion.
+            // Continue through immutable separately reviewed AGENT-01I child
+            // plans. Only exact, released original-child worker/oracle
+            // receipts may be considered for the remaining source criteria.
+            if current&&same_revision&&a.mode=="reviewed_whole_task"{
+                let descendants=verified_whole_task_continuations(
+                    profile,&file,&a,
+                    plan.as_deref().ok_or("CORE_C3_ROOT_PLAN_MISSING")?,
+                    revision.as_deref().ok_or("CORE_C3_ROOT_REVISION_MISSING")?,
+                    &ledger,&revisions,&receipts,&sources
+                )?;
+                view.independently_audited_outcomes.extend(descendants);
+            }
             let has_review_candidate=view.independently_audited_outcomes.iter()
                 .any(|o|o.review_eligible&&o.criterion_method_reviewable);
             view.next_safe_action=if !same_revision{
@@ -421,6 +434,150 @@ pub(super) fn compatible_independent_method(tool:&str,method:&str)->bool{
 /// A different verified tool in the correct task is NOT interchangeable.
 /// Reindexed continuation drafts need a new explicit human review; they do
 /// not inherit the original handoff's criterion authority.
+/// Exact bounded original plan suffix. The child starts at index zero in
+/// its OWN separately reviewed plan, but its first witness corresponds to
+/// the next slot of the immutable parent task declaration. No tool or model
+/// may rewrite that mapping, skip a step, or use a nonlinear replan.
+fn linear_independent_witness_suffix(steps:&[RevisionStep],expected:usize)->bool{
+    expected>0&&expected<=4&&steps.len()==expected&&
+    steps.iter().enumerate().all(|(i,step)|
+        step.kind==PlanStepKind::IndependentlyCheck&&
+        step.expected==ExpectedDeliverable::IndependentWitness&&
+        !step.deliverable_id.is_empty()&&
+        step.depends_on==if i==0{None}else{Some((i-1) as u8)}
+    )
+}
+
+/// Reopen *actual* original child plans, separately saved human turns,
+/// approved revisions, released scheduler custody and their independent
+/// first-party effect/oracle receipts. A parent claim or model final answer
+/// is not sufficient. Missing/incomplete children add NO completed criterion.
+/// The original handoff identity remains the only task-level review scope.
+/// This is read-only; no new grants, model work, or continuation is performed.
+#[allow(clippy::too_many_arguments)]
+fn verified_whole_task_continuations(
+    profile:&Path,file:&Path,anchor:&Anchor,
+    initial_plan:&str,initial_revision:&str,
+    ledger:&AgentPlanLedger,revisions:&AgentPlanRevisionStore,
+    receipts:&AgentDeliverableReceipts,
+    sources:&agent_plan_review::OriginalChatGoalSources<'_>,
+)->Result<Vec<TaskAgentEvidenceCandidate>,String>{
+    let methods=super::project_task_verified_evidence::
+        required_whole_task_independent_methods(&anchor.acceptance_criteria)
+        .ok_or("CORE_C3_CONTINUATION_REQUIRES_CANONICAL_METHODS")?;
+    if methods.len()<=1{return Ok(Vec::new())}
+    let db=Connection::open_with_flags(file,
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY|
+        rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX
+    ).map_err(|_|"CORE_C3_ORIGINAL_CONTINUATION_JOURNAL_MISSING")?;
+    let table:Option<String>=db.query_row(
+        "SELECT name FROM sqlite_master WHERE type='table'
+         AND name='lu_agent_continuation_children'",
+        [],|r|r.get(0)
+    ).optional().map_err(|_|"CORE_C3_CONTINUATION_SCHEMA_UNREADABLE")?;
+    if table.is_none(){return Ok(Vec::new())}
+    let scheduler=AgentHostScheduler::open_existing_readonly(file)
+        .map_err(|_|"CORE_C3_ORIGINAL_SCHEDULER_UNREADABLE")?;
+    let mut visited=std::collections::BTreeSet::from([initial_plan.to_owned()]);
+    let mut plan=initial_plan.to_owned();
+    let mut revision=initial_revision.to_owned();
+    let mut turn=anchor.user_turn_id.clone();
+    let mut out=Vec::new();
+    for slot in 1..methods.len(){
+        let parent_revision=revisions.latest(&plan,&anchor.chat_id)
+            .map_err(|_|"CORE_C3_PARENT_REVISION_UNREADABLE")?
+            .ok_or("CORE_C3_PARENT_REVISION_MISSING")?;
+        if parent_revision.revision_sha256!=revision||
+            parent_revision.review_state!="APPROVED_PLAN_ONLY"||
+            parent_revision.source_human_turn_id!=turn||
+            !linear_independent_witness_suffix(
+                &parent_revision.steps,methods.len()-slot+1
+            ){
+            return Err("CORE_C3_ORIGINAL_PLAN_CHANGED_OR_REPLANNED".into())
+        }
+        let child:Option<(String,String)>=db.query_row(
+            "SELECT child_plan_id,fresh_human_turn_id
+             FROM lu_agent_continuation_children
+             WHERE parent_plan_id=?1 AND revision_sha256=?2 AND step_index=1",
+            params![plan,revision],|r|Ok((r.get(0)?,r.get(1)?))
+        ).optional().map_err(|_|"CORE_C3_CONTINUATION_LINK_UNREADABLE")?;
+        let Some((next,child_turn))=child else{return Ok(out)};
+        if !visited.insert(next.clone())||next==plan{
+            return Err("CORE_C3_CONTINUATION_CYCLE_OR_REPLAY".into())
+        }
+        // This original AGENT-01I verifier reopens the immutable parent
+        // lineage, old human intent, fresh child origin, prior independently
+        // audited receipts and durable RELEASED scheduler before accepting
+        // even the child *identity*.
+        if !lu_core::agent_continuation_intent::reverify_child_before_execution(
+            file,profile,&next,&anchor.chat_id,ledger,revisions,
+            &scheduler,receipts,sources
+        ).map_err(|_|"CORE_C3_CONTINUATION_LINEAGE_UNVERIFIED")?{
+            return Err("CORE_C3_NOT_AN_ORIGINAL_REVIEWED_CHILD".into())
+        }
+        let child_revision=revisions.latest(&next,&anchor.chat_id)
+            .map_err(|_|"CORE_C3_CHILD_REVISION_UNREADABLE")?
+            .ok_or("CORE_C3_CHILD_REVISION_MISSING")?;
+        if child_revision.source_human_turn_id!=child_turn||
+            !linear_independent_witness_suffix(
+                &child_revision.steps,methods.len()-slot
+            ){
+            return Err("CORE_C3_CHILD_PLAN_NOT_THE_REVIEWED_SUFFIX".into())
+        }
+        if child_revision.review_state!="APPROVED_PLAN_ONLY"{
+            return Ok(out) // A child DRAFT is never an approved receipt.
+        }
+        let child_view=scheduler.view(&next,&anchor.chat_id,&child_turn,ledger)
+            .map_err(|_|"CORE_C3_CHILD_HOST_CUSTODY_UNREADABLE")?;
+        let Some(child_view)=child_view else{return Ok(out)};
+        if child_view.state!="RELEASED"{
+            return Ok(out) // Interrupted/cancelled/running child is not done.
+        }
+        if child_view.revision_sha!=child_revision.revision_sha256||
+            child_view.claims.len()!=1||
+            child_view.claims[0].step_index!=0||
+            child_view.claims[0].claim_state!="OBSERVED_VERIFIED_HISTORICAL"{
+            return Err("CORE_C3_CHILD_RELEASE_NOT_INDEPENDENTLY_VERIFIED".into())
+        }
+        let child_history=receipts.history(
+            &next,&anchor.chat_id,&child_turn,profile,ledger,revisions,sources
+        ).map_err(|_|"CORE_C3_CHILD_ORIGINAL_WORKER_OR_ORACLE_INVALID")?;
+        let selected:Vec<_>=child_history.into_iter().filter(|item|
+            item.revision_sha256==child_revision.revision_sha256&&
+            item.step_index==0&&
+            item.status=="VERIFIED_AT_OBSERVATION"
+        ).collect();
+        if selected.is_empty(){return Ok(out)}
+        if selected.len()!=1||
+            (selected[0].tool_id.as_str(),
+             selected[0].independent_method.as_str())!=methods[slot]{
+            return Err("CORE_C3_CHILD_WITNESS_WRONG_CRITERION".into())
+        }
+        let item=&selected[0];
+        out.push(TaskAgentEvidenceCandidate{
+            // Reindexed child step zero is cryptographically traceable to
+            // the original root task's next declared criterion slot.
+            step_index:slot as u8,
+            tool_id:item.tool_id.clone(),
+            independent_method:item.independent_method.clone(),
+            receipt_sha256:item.receipt_sha256.clone(),
+            observed_sha256:item.observed_sha256.clone(),
+            historical_verdict:item.status.into(),
+            review_eligible:true,
+            criterion_method_reviewable:exact_whole_task_slot(
+                &anchor.acceptance_criteria,slot as u8,
+                &item.tool_id,&item.independent_method
+            ),
+            original_requirement_id:anchor.requirement_id.clone(),
+            task_completed:false,execution_authorized:false,
+        });
+        plan=next;
+        revision=child_revision.revision_sha256;
+        turn=child_turn;
+    }
+    Ok(out)
+}
+
 fn exact_whole_task_slot(
     criterion:&str,step_index:u8,tool:&str,method:&str
 )->bool{
@@ -749,6 +906,39 @@ mod task_method_tests{
         assert_eq!(mode_steps("reviewed_git_media_check",&criterion)
             .unwrap().len(),1);
     }
+    #[test]
+    fn c3_reviewed_continuation_must_preserve_all_unexecuted_witness_slots(){
+        let make=|n:usize|RevisionStep{
+            kind:PlanStepKind::IndependentlyCheck,
+            depends_on:if n==0{None}else{Some((n-1) as u8)},
+            deliverable_id:format!("d-{:032x}",n+1),
+            expected:ExpectedDeliverable::IndependentWitness,
+        };
+        let steps=(0..3).map(make).collect::<Vec<_>>();
+        assert!(linear_independent_witness_suffix(&steps,3));
+        let child=(0..2).map(make).collect::<Vec<_>>();
+        assert!(linear_independent_witness_suffix(&child,2));
+        let grandchild=vec![make(0)];
+        assert!(linear_independent_witness_suffix(&grandchild,1));
+        assert!(!linear_independent_witness_suffix(&child,3),
+            "missing one method is incomplete");
+        assert!(!linear_independent_witness_suffix(&steps,2),
+            "an extra old step cannot impersonate the child suffix");
+        let mut wrong=child.clone();
+        wrong[0].depends_on=Some(0);
+        assert!(!linear_independent_witness_suffix(&wrong,2));
+        let mut wrong=child.clone();
+        wrong[1].kind=PlanStepKind::Present;
+        assert!(!linear_independent_witness_suffix(&wrong,2));
+        let mut wrong=child.clone();
+        wrong[1].expected=ExpectedDeliverable::Explanation;
+        assert!(!linear_independent_witness_suffix(&wrong,2));
+        let mut wrong=child;
+        wrong[0].deliverable_id.clear();
+        assert!(!linear_independent_witness_suffix(&wrong,2));
+        assert!(!linear_independent_witness_suffix(&[],0));
+    }
+
     #[test]
     fn every_whole_task_receipt_slot_refuses_another_declared_method(){
         let criterion=format!(

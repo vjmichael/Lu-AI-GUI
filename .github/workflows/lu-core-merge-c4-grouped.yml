@@ -226,7 +226,7 @@ jobs:
           # Use the ACTUAL Rust module paths, not a guessed ::tests suffix.
           # A no-op "0 passed" is an acceptance failure, even if cargo exits 0.
           for spec in \
-            "project_task_agent_handoff::task_method_tests|project_task_agent_handoff|7" \
+            "project_task_agent_handoff::task_method_tests|project_task_agent_handoff|8" \
             "agent_plan_admission::tests|agent_plan_admission|8" \
             "agent_plan_continuation_desktop::phase2_multistep_tests|agent_plan_continuation_desktop|3"; do
             IFS='|' read -r family label expected_count <<< "$spec"
