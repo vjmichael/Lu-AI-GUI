@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "def39f60d4c87ac9decbff697c007d9885da4f44",
-  "trackedFileCount": 1041,
+  "sourceCommitBeforeLock": "3a0ee16dad76a11f38a92547c5dc6862f2703720",
+  "trackedFileCount": 1051,
   "files": [
     {
       "path": ".github/pull_request_template.md",
@@ -68,12 +68,16 @@
       "blob": "7aa4ecd6cc5ca55de9b9e4b412a09d01635ac7a7"
     },
     {
+      "path": ".github/workflows/lu-core-c4-delegated-kernel-original-sha.yml",
+      "blob": "824e3eeb85a9f422255e52c9fb17ff336667e927"
+    },
+    {
       "path": ".github/workflows/lu-core-merge-c4-grouped.yml",
       "blob": "2b5b26d022bbd1d9cfbb2f29cc3c7cf6862c5a3c"
     },
     {
       "path": ".github/workflows/lu-development-ledger.yml",
-      "blob": "6cf584f67245fea02fc1730cb43e13e0dc6e1938"
+      "blob": "35c5de7ab6bb4e4b50db76f785064809f342396b"
     },
     {
       "path": ".github/workflows/lu-e1-app-admission.yml",
@@ -644,6 +648,18 @@
       "blob": "95ddc8de3b518ad233862d3892c7d81533a65369"
     },
     {
+      "path": "docs/LU_CORE_C4_EPHEMERAL_LINUX_RUNNER.md",
+      "blob": "dd4c6594a08a19d5e4c2b3a8cddb34ed4d7848bd"
+    },
+    {
+      "path": "docs/LU_CORE_C4_ISOLATED_KVM_VM.md",
+      "blob": "766fe824796b95e7a600f49c7855d7a2a43a4535"
+    },
+    {
+      "path": "docs/LU_CORE_CONSOLIDATION_INVENTORY_20261113.md",
+      "blob": "054edb072685986a24b7edfd8189d5762f6aa012"
+    },
+    {
       "path": "docs/LU_CORE_CONVERGENCE_PLAN_20261109.md",
       "blob": "854f86c673e72d6754118767be37471c38c017de"
     },
@@ -673,7 +689,7 @@
     },
     {
       "path": "docs/LU_DEVELOPMENT_LEDGER.md",
-      "blob": "66c1820d0fc401ea10a3351eccca6d0f4e675ad5"
+      "blob": "522b4dcfe6a4a3cee1e2d1f4fe02146da14793ed"
     },
     {
       "path": "docs/LU_E1_NATIVE_EVIDENCE_20261107.md",
@@ -2314,6 +2330,30 @@
     {
       "path": "scripts/lu-c1-scanned-pdf-fixture.py",
       "blob": "835d17915fc56ed24937d584a8336fae1d972de7"
+    },
+    {
+      "path": "scripts/lu-c4-create-kvm-vm.sh",
+      "blob": "5b261ac0d0b7be84e94827b9d232ee5551c267d0"
+    },
+    {
+      "path": "scripts/lu-c4-ephemeral-runner-preflight.py",
+      "blob": "c4f5fdf9bc76a0dfad11552306401242a5402e33"
+    },
+    {
+      "path": "scripts/lu-c4-ephemeral-runner.service.example",
+      "blob": "0ff14a380e8b33a9ef293f04190e9602d2efe131"
+    },
+    {
+      "path": "scripts/lu-c4-register-ephemeral-runner.sh",
+      "blob": "3dd6afe05d344a877578a3b8d0d484965f4552cb"
+    },
+    {
+      "path": "scripts/lu-c4-vm-audit.py",
+      "blob": "f0cc0466be71c9fb91b8db1d97b5a772d19389b5"
+    },
+    {
+      "path": "scripts/lu-c4-vm-cloud-init.py",
+      "blob": "48a7dea9090587af9447a73c188e37bceec4447f"
     },
     {
       "path": "scripts/lu-ci-group-policy.mjs",
