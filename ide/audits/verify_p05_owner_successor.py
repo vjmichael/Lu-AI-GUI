@@ -22,7 +22,7 @@ EXPECTED = {
     ".github/workflows/ide-d7d-protected-service.yml": ("ce56f987cb056c01ef7be58318d70c9e136aafad", "3450fba59185c88dc67ccc87627570db3a91b1b7"),
     ".github/workflows/ide-sandbox-windows.yml": ("4344a3563b9151e874443c5000639114342e66b5", "742a255acbbae975514ea468d5932c07021d7643"),
     ".github/workflows/ide-supervisor-core.yml": ("e0d26f80713cdf498c3bfdf82645498dddf34e16", "11203a4e5f8cfeecee9effa00c88c981492be527"),
-    ".github/workflows/ide-wo6-native-os-acceptance.yml": ("d7627899b3a6cafc7b383f00abbb2b9e7107fe2d", "aabfc76f4674018923710492f5adbaffc14c2f3b"),
+    ".github/workflows/ide-wo6-native-os-acceptance.yml": ("d7627899b3a6cafc7b383f00abbb2b9e7107fe2d", "9f7a946aa5d0e703539224683ed6748de79b32ce"),
     ".github/workflows/ide-wo8-installed-windows.yml": ("8fadc3f1829e62123b9da6a5e6bbd49a3f3ec36f", "95138087b419a4b1f9baa052e717c34fc069ae44"),
     ".github/workflows/ide-wo8-signed-protected-e2e.yml": ("08e2ab350b9e0c9e88958a40a3eeca59a3a66df5", "3cbaf9efc3836bfbe3a978cdd5511daac04f2380"),
 }

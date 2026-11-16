@@ -255,7 +255,7 @@ jobs:
           done
           test -n "$adapter" || { echo 'DENIED: genuine packaged LLDB-DAP not available'; exit 1; }
           server=''
-          for exe in /usr/lib/llvm-18/bin/lldb-server /usr/bin/lldb-server-18 /usr/bin/lldb-server; do
+          for exe in /usr/lib/llvm-18/bin/lldb-server /usr/bin/lldb-server-18 ; do
             if test -f "$exe" && test -x "$exe"; then server="$exe"; break; fi
           done
           test -n "$server" || { echo 'DENIED: genuine LLVM18 lldb-server companion unavailable'; exit 1; }
@@ -362,7 +362,7 @@ jobs:
           done
           test -n "$adapter" || { echo 'DENIED: native LLDB-DAP unavailable'; exit 1; }
           server=''
-          for file in /usr/lib/llvm-18/bin/lldb-server /usr/bin/lldb-server-18 /usr/bin/lldb-server; do
+          for file in /usr/lib/llvm-18/bin/lldb-server /usr/bin/lldb-server-18 ; do
             if test -f "$file" && test -x "$file"; then server="$file"; break; fi
           done
           test -n "$server" || { echo 'DENIED: authentic LLVM18 lldb-server unavailable'; exit 1; }

@@ -49,7 +49,7 @@
     {
       "path": ".github/workflows/ide-wo6-native-os-acceptance.yml",
       "original": "d7627899b3a6cafc7b383f00abbb2b9e7107fe2d",
-      "replacement": "aabfc76f4674018923710492f5adbaffc14c2f3b",
+      "replacement": "9f7a946aa5d0e703539224683ed6748de79b32ce",
       "ownerAuthorized": true
     },
     {
@@ -65,7 +65,12 @@
       "ownerAuthorized": true
     }
   ],
-  "additionalCurrentSourceRepair": {\n    "reason": "User-directed protected Linux LLDB launch repair; original OS assertions retained, new companion must be root-owned, measured and cgroup-contained",\n    "candidateSourceOnly": true,\n    "nativeAccepted": false\n  },\n  "sourceEquivalenceStatus": "original_exact_38_source_blob_comparison_and_new_exceptions_required",
+  "additionalCurrentSourceRepair": {
+    "reason": "User-directed protected Linux LLDB launch repair; original OS assertions retained, new companion must be root-owned, measured and cgroup-contained",
+    "candidateSourceOnly": true,
+    "nativeAccepted": false
+  },
+  "sourceEquivalenceStatus": "original_exact_38_source_blob_comparison_and_new_exceptions_required",
   "nativeWindowsAccepted": false,
   "nativeLinuxAccepted": false,
   "llvm18Accepted": false,
