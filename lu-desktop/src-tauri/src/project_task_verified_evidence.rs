@@ -685,6 +685,19 @@ fn reviewed_whole_method_event_matches(
     e:&CriterionDecision,r:&register::TaskRegister,board_sha:&str,
     task:&register::TaskRevision,tool:&str,method:&str,
 )->bool{
+    // Every V2 accepted review must refer to the exact original whole-task
+    // plan slot, INCLUDING the Git HEAD first-method specialization below.
+    // Reindexed child plans are resolved to this slot only after original
+    // immutable lineage, human turns and worker receipts are reopened.
+    if task.acceptance_criteria.starts_with(ALL_OF_PREFIX){
+        let expected_slot=required_whole_task_independent_methods(
+            &task.acceptance_criteria
+        ).and_then(|methods|methods.iter()
+            .position(|required|*required==(tool,method)));
+        if expected_slot!=Some(usize::from(e.step_index)){
+            return false
+        }
+    }
     if tool=="lu.reviewed.git.head"&&method=="GIT_HEAD_DIRECT_V1"{
         return reviewed_git_head_event_matches(e,r,board_sha,task)
     }
@@ -713,6 +726,7 @@ fn select_all_required_reviews<'a>(
 )->Option<Vec<&'a CriterionDecision>>{
     let clauses=whole_criteria(&task.acceptance_criteria)?;
     let mut reviews=Vec::new();
+    let mut original_handoff:Option<&str>=None;
     for clause in clauses{
         let Some((tool,method))=clause.method()else{continue};
         let selected=rows.iter().rev().find(|event|
@@ -725,6 +739,13 @@ fn select_all_required_reviews<'a>(
         if !reviewed_whole_method_event_matches(
             selected,r,board_sha,task,tool,method
         ){return None}
+        if task.acceptance_criteria.starts_with(ALL_OF_PREFIX){
+            match original_handoff{
+                Some(id) if id!=selected.handoff_id=>return None,
+                None=>original_handoff=Some(selected.handoff_id.as_str()),
+                _=>{}
+            }
+        }
         reviews.push(selected);
     }
     Some(reviews)
@@ -1527,10 +1548,14 @@ mod tests{
             source_requirement_id:task.source_requirement_id.clone(),
             acceptance_criterion:task.acceptance_criteria.clone(),
             acceptance_criterion_sha256:sha(criterion.as_bytes()),
-            handoff_id:format!("h-{id}"),receipt_sha256:sha(id.as_bytes()),
+            handoff_id:"h-original-whole-task".into(),
+            receipt_sha256:sha(id.as_bytes()),
             observed_sha256:sha(format!("observed-{id}").as_bytes()),
             tool_id:tool.into(),independent_method:method.into(),
-            step_index:0,verdict_at_review:"VERIFIED_AT_OBSERVATION".into(),
+            step_index:required_whole_task_independent_methods(&criterion)
+                .unwrap().iter().position(|item|*item==(tool,method))
+                .unwrap() as u8,
+            verdict_at_review:"VERIFIED_AT_OBSERVATION".into(),
             decision:"ACCEPTED_AS_SUPPORTING_EVIDENCE".into(),
             operator_reason:"Separate original native human witness review".into(),
             previous_event_sha256:None,
@@ -1548,6 +1573,18 @@ mod tests{
             let mut partial=all.clone();partial.remove(removed);
             assert!(select_all_required_reviews(&partial,&register,&board,&task)
                 .is_none(),"one missing original worker must block");
+        }
+        // A correct method in the wrong source slot (or from an unrelated
+        // handoff) is NOT a criterion; neither may satisfy all-of evidence.
+        for index in 0..all.len(){
+            let mut wrong=all.clone();
+            wrong[index].step_index=(wrong[index].step_index+1)%3;
+            assert!(select_all_required_reviews(&wrong,&register,&board,&task)
+                .is_none(),"reindexed worker cannot pass the original slot");
+            let mut mixed=all.clone();
+            mixed[index].handoff_id="h-another-original-plan".into();
+            assert!(select_all_required_reviews(&mixed,&register,&board,&task)
+                .is_none(),"multiple original handoffs cannot be combined");
         }
         let reviews=select_all_required_reviews(&all,&register,&board,&task).unwrap();
         let binding=selected_witness_binding(&criterion,&reviews).unwrap();

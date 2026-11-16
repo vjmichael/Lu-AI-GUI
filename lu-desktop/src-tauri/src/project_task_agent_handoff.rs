@@ -484,6 +484,16 @@ fn verified_whole_task_continuations(
     let mut turn=anchor.user_turn_id.clone();
     let mut out=Vec::new();
     for slot in 1..methods.len(){
+        // A newly prepared whole-task root is still pending review; no
+        // continuation link exists yet. Do NOT make the Task Board fail just
+        // because another plan somewhere created the shared child table.
+        let child:Option<(String,String)>=db.query_row(
+            "SELECT child_plan_id,fresh_human_turn_id
+             FROM lu_agent_continuation_children
+             WHERE parent_plan_id=?1 AND revision_sha256=?2 AND step_index=1",
+            params![plan,revision],|r|Ok((r.get(0)?,r.get(1)?))
+        ).optional().map_err(|_|"CORE_C3_CONTINUATION_LINK_UNREADABLE")?;
+        let Some((next,child_turn))=child else{return Ok(out)};
         let parent_revision=revisions.latest(&plan,&anchor.chat_id)
             .map_err(|_|"CORE_C3_PARENT_REVISION_UNREADABLE")?
             .ok_or("CORE_C3_PARENT_REVISION_MISSING")?;
@@ -495,13 +505,6 @@ fn verified_whole_task_continuations(
             ){
             return Err("CORE_C3_ORIGINAL_PLAN_CHANGED_OR_REPLANNED".into())
         }
-        let child:Option<(String,String)>=db.query_row(
-            "SELECT child_plan_id,fresh_human_turn_id
-             FROM lu_agent_continuation_children
-             WHERE parent_plan_id=?1 AND revision_sha256=?2 AND step_index=1",
-            params![plan,revision],|r|Ok((r.get(0)?,r.get(1)?))
-        ).optional().map_err(|_|"CORE_C3_CONTINUATION_LINK_UNREADABLE")?;
-        let Some((next,child_turn))=child else{return Ok(out)};
         if !visited.insert(next.clone())||next==plan{
             return Err("CORE_C3_CONTINUATION_CYCLE_OR_REPLAY".into())
         }
