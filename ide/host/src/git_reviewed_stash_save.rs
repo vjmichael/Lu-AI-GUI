@@ -220,8 +220,8 @@ impl IdeWorkspaceRegistry {
             .content()
             .to_vec();
         let target = root.join(&fresh.relative_path);
-        let restored = fs::read(&target)
-            .map_err(|_| "FIN03_STASH_WORKTREE_READBACK_UNAVAILABLE")?;
+        let restored =
+            fs::read(&target).map_err(|_| "FIN03_STASH_WORKTREE_READBACK_UNAVAILABLE")?;
         if restored != head_bytes {
             // libgit2 stash_save checks out the original HEAD with Git's
             // configured text filters; on Windows this can be CRLF even when
@@ -234,12 +234,9 @@ impl IdeWorkspaceRegistry {
             // the interruption marker remains live until ALL readbacks pass.
             // Recheck the exact regular path and observed bytes before the
             // only additional write. Never touch another worktree path.
-            crate::git_protected_merge::changed_path_is_plain_safe(
-                &root,
-                &fresh.relative_path,
-            )?;
-            let metadata = fs::symlink_metadata(&target)
-                .map_err(|_| "FIN03_STASH_TARGET_UNVERIFIABLE")?;
+            crate::git_protected_merge::changed_path_is_plain_safe(&root, &fresh.relative_path)?;
+            let metadata =
+                fs::symlink_metadata(&target).map_err(|_| "FIN03_STASH_TARGET_UNVERIFIABLE")?;
             if !metadata.is_file() || metadata.file_type().is_symlink() {
                 return Err("FIN03_STASH_TARGET_UNVERIFIABLE");
             }
@@ -268,8 +265,7 @@ impl IdeWorkspaceRegistry {
             if fs::read(&target).map_err(|_| "FIN03_STASH_TARGET_UNREADABLE")? != restored {
                 return Err("FIN03_STASH_TARGET_CHANGED_AFTER_STASH");
             }
-            fs::rename(&temp, &target)
-                .map_err(|_| "FIN03_STASH_EXACT_REPLACE_FAILED")?;
+            fs::rename(&temp, &target).map_err(|_| "FIN03_STASH_EXACT_REPLACE_FAILED")?;
             if fs::read(&target).map_err(|_| "FIN03_STASH_WORKTREE_READBACK_UNAVAILABLE")?
                 != head_bytes
             {
