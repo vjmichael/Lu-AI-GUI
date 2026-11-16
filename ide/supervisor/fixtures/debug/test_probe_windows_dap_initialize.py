@@ -23,6 +23,19 @@ class DapPreflightBoundaries(unittest.TestCase):
         self.assertEqual(probe.classify_exit(0xC000007B), "invalid_binary_format")
         self.assertEqual(probe.classify_exit(None), "timeout_or_unreaped")
 
+    def test_stderr_diagnostic_is_fixed_class_only(self):
+        self.assertEqual(probe.classify_stderr(b""), "empty")
+        self.assertEqual(probe.classify_stderr(
+            b"Fatal Python error: init_fs_encoding: No module named encodings"),
+            "python_runtime_or_module_path")
+        self.assertEqual(probe.classify_stderr(
+            b"C:\\private\\sensitive.txt: Permission denied"),
+            "permission_denied_unspecified_object")
+        self.assertEqual(probe.classify_stderr(
+            b"WriteFile pipe handle was invalid"), "native_stdio_or_handle")
+        self.assertEqual(probe.classify_stderr(b"irrelevant user content"),
+                         "unclassified_nonempty")
+
     def test_fixed_private_environment_is_closed_and_matches_native_runner(self):
         local = Path("D:/ci/private")
         tools = Path("D:/ci/reviewed/bin")

@@ -70,6 +70,27 @@ def parse_initialize_response(stream):
     return False
 
 
+def classify_stderr(raw: bytes) -> str:
+    """Fixed categories only, never print LLDB messages, paths or DAP data."""
+    lower = raw[:4096].decode("utf-8", "replace").casefold()
+    if not lower:
+        return "empty"
+    if any(word in lower for word in (
+            "python path configuration", "python home", "pythonhome",
+            "encodings", "no module named", "cannot import")):
+        return "python_runtime_or_module_path"
+    if any(word in lower for word in (
+            "permission denied", "access is denied", "access denied")):
+        return "permission_denied_unspecified_object"
+    if any(word in lower for word in ("library", "dll", "cannot load")):
+        return "library_or_dependency"
+    if any(word in lower for word in ("stdin", "stdout", "pipe", "handle")):
+        return "native_stdio_or_handle"
+    if any(word in lower for word in ("cache", "temp", "directory")):
+        return "private_runtime_directory"
+    return "unclassified_nonempty"
+
+
 def fixed_private_environment(local: Path, bindir: Path, system: Path):
     """Host-only comparison of the exact native private-profile environment.
 
@@ -183,6 +204,7 @@ def run():
         reader.join(timeout=1)
     with lock:
         stdout = bytes(out)
+        stderr_class = classify_stderr(bytes(err))
     status = classify_exit(actual_exit)
     # No raw stdout/stderr, absolute paths, user project data or file names.
     if status not in ("other", "timeout_or_unreaped"):
@@ -198,6 +220,7 @@ def run():
         return 0
     outcome = ("no_initialize_timeout" if timed_out else "no_initialize_" + status)
     if compare_private_env:
+        print("PROTECTED_WO6_PRIVATE_ENV_STDERR_CLASS=" + stderr_class)
         print("PROTECTED_WO6_PRIVATE_ENV=" + outcome + "_no_AppContainer_claim")
     else:
         print("PROTECTED_WO6_DAP_PREFLIGHT=" + outcome)
