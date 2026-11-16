@@ -5,7 +5,8 @@
   "windows": [
     "main",
     "settings",
-    "model-library"
+    "model-library",
+    "task-list"
   ],
   "permissions": [
     "core:default",

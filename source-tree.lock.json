@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "40be2af7b23f0c3cd270adecd7cd58642be92529",
+  "sourceCommitBeforeLock": "9811f3dd444dbfcce2d824ac5902c2d3a2512f8b",
   "trackedFileCount": 1041,
   "files": [
     {
@@ -1293,7 +1293,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/capabilities/default.json",
-      "blob": "cbbb98bce1289e7acc1c75606fc55d999558cc02"
+      "blob": "afa2c1b7b1a64a4170382d40ed2da22fa016dc97"
     },
     {
       "path": "lu-desktop/src-tauri/icons/icon.ico",
