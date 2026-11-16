@@ -4003,7 +4003,7 @@ jobs:
     if: >-
       github.event_name == 'push' &&
       github.ref == 'refs/heads/main' &&
-      startsWith(github.event.head_commit.message, 'CORE-MERGE-C6.2T:')
+      startsWith(github.event.head_commit.message, 'CORE-MERGE-C6.2T2:')
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -4022,12 +4022,15 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$EXACT_SOURCE"
-          test "$(git rev-parse HEAD^)" = "d9af093ef259d7279b5d1abb226ce307593b50cb"
+          test "$(git rev-parse HEAD^)" = "fc4b5a6cab06f9e0ba1b8be90f0f63762376b6d3"
           test "$(git rev-parse --abbrev-ref HEAD)" = "HEAD"
           node scripts/verify-source-tree.mjs
           node --test scripts/lu-c62-browser-transport.test.mjs
           echo "C62T_ORIGINAL_CANDIDATE_REVIEW_TRANSPORT_ONLY=$EXACT_SOURCE"
   c62t-original-windows-candidate-transport:
+    permissions:
+      contents: read
+      actions: read
     needs: [verify-source, c62t-one-time-transport-admission]
     if: needs.c62t-one-time-transport-admission.result == 'success'
     uses: ./.github/workflows/lu-core-c62t-browser-review-transport.yml

@@ -7,6 +7,8 @@ test("C6.2T is manual/reusable exact-SHA transport of original successful Window
  assert.match(block,/workflow_dispatch:/);assert.match(block,/workflow_call:/);
  assert.doesNotMatch(block,/push:|pull_request:|pull_request_target:/);
  assert.match(wf,/actions: read/);
+ const caller=readFileSync(new URL("../.github/workflows/lu-repo01-full-source.yml",import.meta.url),"utf8");
+ assert.match(caller,/c62t-original-windows-candidate-transport:\n    permissions:\n      contents: read\n      actions: read/);
  assert.match(wf,/run-id: 43976953361/);
  assert.match(wf,/candidateArtifactId":14281077871/);
  assert.match(wf,/d9af093ef259d7279b5d1abb226ce307593b50cb/);

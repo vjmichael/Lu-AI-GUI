@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "d9af093ef259d7279b5d1abb226ce307593b50cb",
+  "sourceCommitBeforeLock": "fc4b5a6cab06f9e0ba1b8be90f0f63762376b6d3",
   "trackedFileCount": 1064,
   "files": [
     {
@@ -261,7 +261,7 @@
     },
     {
       "path": ".github/workflows/lu-repo01-full-source.yml",
-      "blob": "c555c152a8ad1709e29f2844d696c7686560c56f"
+      "blob": "13a63be70ad851074c86c3130345ffa988035ef0"
     },
     {
       "path": ".github/workflows/lu-tools-01-05-integration.yml",
@@ -709,7 +709,7 @@
     },
     {
       "path": "docs/LU_DEVELOPMENT_LEDGER.md",
-      "blob": "1dc53ecb54ff4e57e6a26af03cbc12a596d8fb05"
+      "blob": "078f138d4799838189c1076828b570d33013b922"
     },
     {
       "path": "docs/LU_E1_NATIVE_EVIDENCE_20261107.md",
@@ -2389,7 +2389,7 @@
     },
     {
       "path": "scripts/lu-c62-browser-transport.test.mjs",
-      "blob": "d82e4ddf16e6065c0dad1f71e09dd437a84987bb"
+      "blob": "2a52166f949482fd6cb28f39a98eb1c1f28adf48"
     },
     {
       "path": "scripts/lu-ci-group-policy.mjs",
