@@ -28,6 +28,22 @@ export function reconciledTaskStatus(task,decision){
     return 'Whole task completed · original human decision and current native source independently reverified';
   return taskStatus(task);
 }
+// Pure UI admission only. The native command still reselects and rescans
+// the source and validates original worker, dependency and decision history
+// after a SECOND OS-owned human confirmation. A reloaded window has no
+// reconciliation object and cannot reuse a previous app session's permission.
+export function canRequestPositiveWholeTask(task,board,review){
+  return !!task&&board?.reviewCurrent===true&&
+    task.needsHumanReconciliation===false&&
+    review?.taskId===task.taskId&&review?.taskVersion===task.version&&
+    review.sourceRescannedThisReview===true&&
+    review.nativeRequirementAccepted===true&&
+    review.historyFullyInspected===true&&
+    review.allDeclaredCriteriaIndependentlyVerified===true&&
+    review.requiredCriterionCount>0&&
+    review.executionAuthorized===false&&review.taskCompleted===false&&
+    review.status==='ALL_CRITERIA_VERIFIED_AWAITING_SEPARATE_HUMAN_TASK_DECISION';
+}
 export function shownTasks(tasks,filter='All',search=''){
   const needle=String(search).trim().toLowerCase();
   return tasks.filter(t=>(filter==='All'||taskKind(t)===filter)&&

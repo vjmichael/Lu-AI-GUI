@@ -1,7 +1,7 @@
 import React,{useEffect,useMemo,useState} from 'react';
 import {invoke} from '@tauri-apps/api/core';
 import {NativeWindowFrame} from './native_windows.jsx';
-import {FILTERS,taskKind,taskStatus,reconciledTaskStatus,shownTasks,taskGroups,movedOrder} from './task_board_model.mjs';
+import {FILTERS,taskKind,taskStatus,reconciledTaskStatus,canRequestPositiveWholeTask,shownTasks,taskGroups,movedOrder} from './task_board_model.mjs';
 
 const errorText=e=>String(e?.message||e||'Native task list unavailable');
 const correction=t=>({
@@ -125,7 +125,7 @@ export function TaskBoardWindow(){
   async function decideWholeTask(){
     if(!current||!active||busy||wholeReason.trim().length<10||
        (wholeDecision==='COMPLETED_AT_REVIEW'&&
-        (!current.reviewCurrent||active.needsHumanReconciliation)))return;
+        !canRequestPositiveWholeTask(active,current,completionReconciliation)))return;
     await act('Original whole-task decision written and independently journaled. No future tool execution authorized.',async()=>{
       const result=await invoke('lu_project_task_decide_completion',{
         registerId:current.board.registerId,taskId:active.taskId,
@@ -677,10 +677,16 @@ export function TaskBoardWindow(){
                   </label>
                   <button type="button" disabled={busy||wholeReason.trim().length<10||
                     (wholeDecision==='COMPLETED_AT_REVIEW'&&
-                      (!current.reviewCurrent||active.needsHumanReconciliation))}
+                      !canRequestPositiveWholeTask(active,current,completionReconciliation))}
                     onClick={()=>void decideWholeTask()}>
                     Open native human whole-task decision…
                   </button>
+                  {wholeDecision==='COMPLETED_AT_REVIEW'&&
+                    !canRequestPositiveWholeTask(active,current,completionReconciliation)&&
+                    <p role="status">First select “Reconcile native requirement and original completion evidence” above.
+                      Incomplete, cancelled, stale, interrupted or replanned work cannot request
+                      positive completion. After restarting Lu, select the source and
+                      independently reconcile it again before a separate native decision.</p>}
                   <p><small>Positive completion reselects the source with the OS picker,
                     verifies native evidence and dependencies twice, and commits an
                     immutable human-approved record. Historical completion must be

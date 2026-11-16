@@ -642,6 +642,18 @@ fn native_completion_decision_button(decision:&str)->&'static str{
         _=>"Cancel unsupported task decision",
     }
 }
+/// An original explicit UNCERTAIN or REPLAN_REQUIRED human decision is a
+/// barrier for the SAME immutable task version, even if stale historical
+/// worker receipts later reappear. A new, human-reviewed source/task revision
+/// is required before positive completion can be considered.
+fn original_interruption_requires_new_task_review(
+    earlier:&[CompletionDecision],current_version:u64
+)->bool{
+    earlier.last().is_some_and(|event|
+        event.task_version==current_version&&
+        matches!(event.decision.as_str(),"UNCERTAIN"|"REPLAN_REQUIRED")
+    )
+}
 fn completion_native_eligible(
     task:&register::TaskRevision,deps:bool
 )->bool{
@@ -932,6 +944,11 @@ fn completion_append(
         }
     }
     let earlier=completion_rows(&tx,reg,task)?;
+    if completed&&original_interruption_requires_new_task_review(
+        &earlier,version
+    ){
+        return Err("CORE_C3_INTERRUPTED_TASK_REQUIRES_NEW_REVIEWED_REVISION".into())
+    }
     if earlier.len()>=MAX_COMPLETION_EVENTS{
         return Err("CORE_C3_COMPLETION_HISTORY_BOUNDED".into())
     }
@@ -1031,6 +1048,15 @@ pub(crate) async fn lu_project_task_decide_completion(
         (task,r,board)
     };
     let complete=decision=="COMPLETED_AT_REVIEW";
+    if complete{
+        let conn=project_register_desktop::library(&profile)?;
+        if original_interruption_requires_new_task_review(
+            &completion_rows(&conn,&register_id,&task_id)?,
+            expected_task_version
+        ){
+            return Err("CORE_C3_INTERRUPTED_TASK_REQUIRES_NEW_REVIEWED_REVISION".into())
+        }
+    }
     let picked=if complete{
         let app=app.clone();
         let chosen=tauri::async_runtime::spawn_blocking(move||
@@ -1196,6 +1222,9 @@ fn reconcile_completion(
     let conn=project_register_desktop::library(profile)?;
     let (r,board,latest)=current_revision(&conn,register_id,task_id)?;
     let decisions=completion_rows(&conn,register_id,task_id)?;
+    let interrupted=original_interruption_requires_new_task_review(
+        &decisions,version
+    );
     // Recheck the source and exact current task lease as well as EVERY
     // distinct original worker/method. A partial multi-criterion set
     // can never inherit an earlier completion event.
@@ -1218,7 +1247,7 @@ fn reconcile_completion(
         )?
     }else{None};
     let all_declared_criteria_independently_verified=
-        source_current&&native&&reviewed_set.is_some()&&
+        !interrupted&&source_current&&native&&reviewed_set.is_some()&&
         completion_native_eligible(&latest,
             dependency_completion_current(&conn,&r,&board.sha256,&latest)?)&&
         required_criterion_count>0;
@@ -1239,6 +1268,8 @@ fn reconcile_completion(
             "WHOLE_TASK_HUMAN_DECISION_CURRENT_SOURCE_REVERIFIED"
         }else if !full{
             "STOP_REVIEW_HISTORY_RECONCILIATION_REQUIRED"
+        }else if interrupted{
+            "REQUIRES_NEW_REVIEWED_TASK_REVISION_AFTER_INTERRUPTION"
         }else if !all_declared_criteria_independently_verified{
             "REQUIRES_EVERY_DECLARED_CRITERION_INDEPENDENT_PROOF"
         }else{
@@ -1833,6 +1864,50 @@ mod tests{
         assert!(!dependency_completion_current(
             &db,&register,&"a".repeat(64),&tasks[2]
         ).unwrap(),"uncertain grandparent invalidates descendant completion");
+    }
+    #[test]
+    fn interrupted_completion_ledger_cannot_reuse_old_authorization_after_restart(){
+        let folder=std::env::temp_dir().join(format!(
+            "lu-c3-interrupted-review-{}-{}",
+            std::process::id(),std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()
+        ));
+        std::fs::create_dir_all(&folder).unwrap();
+        let file=folder.join("original-completion.sqlite");
+        for decision in ["UNCERTAIN","REPLAN_REQUIRED"]{
+            {
+                let conn=Connection::open(&file).unwrap();
+                completion_init(&conn).unwrap();
+                let existing=completion_rows(&conn,
+                    "lu-register-fixture","lu-task-fixture").unwrap();
+                let mut event=completion_fixture(decision);
+                event.previous_event_sha256=existing.last().map(|prev|
+                    sha(&serde_json::to_vec(prev).unwrap()));
+                let raw=serde_json::to_vec(&event).unwrap();
+                conn.execute(
+                    "INSERT INTO ansf_project_task_completion_decisions
+                    (register_id,task_id,sequence,event_sha256,event_json,
+                     no_execution_authority) VALUES(?1,?2,?3,?4,?5,1)",
+                    params![&event.register_id,&event.task_id,
+                        existing.len() as i64+1,sha(&raw),raw]
+                ).unwrap();
+            }
+            // CLOSE/REOPEN the original database. A fresh process cannot
+            // promote the uncertain/replanned SAME task version just because
+            // old positive witness hashes happen to be present on disk.
+            let reopened=Connection::open(&file).unwrap();
+            let rows=completion_rows(&reopened,
+                "lu-register-fixture","lu-task-fixture").unwrap();
+            assert!(original_interruption_requires_new_task_review(&rows,1));
+            assert!(!original_interruption_requires_new_task_review(&rows,2),
+                "new source revision still must pass all current checks separately");
+        }
+        let mut blocked=vec![completion_fixture("BLOCKED")];
+        assert!(!original_interruption_requires_new_task_review(&blocked,1),
+            "BLOCKED still requires original evidence, but not a forced version change");
+        blocked.push(completion_fixture("REPLAN_REQUIRED"));
+        assert!(original_interruption_requires_new_task_review(&blocked,1));
+        std::fs::remove_dir_all(&folder).unwrap();
     }
     #[test]
     fn original_completion_decision_hash_chain_rejects_forged_completion_after_restart(){

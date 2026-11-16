@@ -216,7 +216,7 @@ jobs:
           cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml \
             --lib project_task_verified_evidence::tests -- --nocapture \
             2>&1 | tee c4-native-evidence/task-criterion-reconciliation.log
-          grep -Eq 'test result: ok\. 11 passed; 0 failed;' \
+          grep -Eq 'test result: ok\. 12 passed; 0 failed;' \
             c4-native-evidence/task-criterion-reconciliation.log || {
             echo 'CORE_C3_COMPLETION_TESTS_MISSING_OR_FAILED' >&2
             exit 1
@@ -226,7 +226,7 @@ jobs:
           # Use the ACTUAL Rust module paths, not a guessed ::tests suffix.
           # A no-op "0 passed" is an acceptance failure, even if cargo exits 0.
           for spec in \
-            "project_task_agent_handoff::task_method_tests|project_task_agent_handoff|8" \
+            "project_task_agent_handoff::task_method_tests|project_task_agent_handoff|9" \
             "agent_plan_admission::tests|agent_plan_admission|8" \
             "agent_plan_continuation_desktop::phase2_multistep_tests|agent_plan_continuation_desktop|3"; do
             IFS='|' read -r family label expected_count <<< "$spec"

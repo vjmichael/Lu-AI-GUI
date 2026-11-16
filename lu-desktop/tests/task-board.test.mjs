@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {FILTERS,taskKind,taskStatus,reconciledTaskStatus,shownTasks,taskGroups,movedOrder}
+import {FILTERS,taskKind,taskStatus,reconciledTaskStatus,canRequestPositiveWholeTask,shownTasks,taskGroups,movedOrder}
   from '../web/task_board_model.mjs';
 
 const tasks=[
@@ -62,4 +62,37 @@ test('accessible up/down ordering never inserts or drops task identities',()=>{
   assert.equal(movedOrder(ids,'e',1),null);
   assert.equal(movedOrder(ids,'not-a-task',1),null);
   assert.equal(movedOrder(ids,'b',2),null);
+});
+
+test('C3 native positive completion cannot bypass fresh same-task full-source reconciliation after restart',()=>{
+  const task={...tasks[3],version:4};
+  const board={reviewCurrent:true};
+  const accepted={
+    taskId:task.taskId,taskVersion:4,sourceRescannedThisReview:true,
+    nativeRequirementAccepted:true,historyFullyInspected:true,
+    allDeclaredCriteriaIndependentlyVerified:true,requiredCriterionCount:3,
+    taskCompleted:false,executionAuthorized:false,
+    status:'ALL_CRITERIA_VERIFIED_AWAITING_SEPARATE_HUMAN_TASK_DECISION'
+  };
+  assert.equal(canRequestPositiveWholeTask(task,board,accepted),true,
+    'complete machine evidence only opens a separate human OS decision');
+  assert.equal(canRequestPositiveWholeTask(task,board,null),false,
+    'restart clears the in-memory native source review');
+  for(const bad of [
+    {...accepted,taskId:'another'},
+    {...accepted,taskVersion:3},
+    {...accepted,sourceRescannedThisReview:false},
+    {...accepted,nativeRequirementAccepted:false},
+    {...accepted,historyFullyInspected:false},
+    {...accepted,allDeclaredCriteriaIndependentlyVerified:false},
+    {...accepted,requiredCriterionCount:0},
+    {...accepted,taskCompleted:true},
+    {...accepted,executionAuthorized:true},
+    {...accepted,status:'REQUIRES_EVERY_DECLARED_CRITERION_INDEPENDENT_PROOF'},
+    {...accepted,status:'REQUIRES_NEW_REVIEWED_TASK_REVISION_AFTER_INTERRUPTION'},
+    {...accepted,status:'WHOLE_TASK_HUMAN_DECISION_CURRENT_SOURCE_REVERIFIED'},
+  ])assert.equal(canRequestPositiveWholeTask(task,board,bad),false,
+    'any old, incomplete, cancellation or suspect review must refuse positive UI admission');
+  assert.equal(canRequestPositiveWholeTask(task,{reviewCurrent:false},accepted),false);
+  assert.equal(canRequestPositiveWholeTask({...task,needsHumanReconciliation:true},board,accepted),false);
 });

@@ -1903,7 +1903,7 @@ async fn agent01i_exercise_real_qwen(child_media:bool){
                 "Choose exactly one advertised reviewed Git HEAD tool for this fresh authorized turn; report the independently verified commit SHA."
             }
         ),
-        &mut child_model,&Cancellation::default(),&child_audit,&|_{ }
+        &mut child_model,&Cancellation::default(),&child_audit,&|_|{}
     ).await.unwrap();
     assert_eq!(child_report.host_routed_calls,0);
     assert_eq!(child_report.tool_calls,1,

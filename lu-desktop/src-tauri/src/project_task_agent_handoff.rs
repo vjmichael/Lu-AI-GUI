@@ -254,6 +254,22 @@ fn publish(profile:&Path,anchor:&Anchor,plan:&str,revision:&str)->Result<(),Stri
     Ok(())
 }
 
+/// An original independently audited tool receipt is not eligible to
+/// complete ANY task while its host still owns work, was cancelled, was
+/// quarantined after a restart, or its plan review is no longer current.
+/// The read-only historical receipt remains visible for reconciliation.
+fn current_released_reviewed_outcome(
+    source_current:bool,same_revision:bool,
+    plan_review:&str,plan_state:&str,supervisor_state:&str,
+    receipt_status:&str
+)->bool{
+    source_current&&same_revision&&
+    plan_review=="APPROVED_PLAN_ONLY"&&
+    !matches!(plan_state,"CANCEL_REQUESTED"|"NEEDS_REVIEW")&&
+    supervisor_state=="RELEASED"&&
+    receipt_status=="VERIFIED_AT_OBSERVATION"
+}
+
 /// Every displayed link is audited against immutable original ANSF bytes,
 /// exact current task version and the existing AGENT-01 read-only ledger.
 /// Historical VERIFIED status never marks the project task complete.
@@ -353,8 +369,11 @@ fn list(profile:&Path,register_id:&str,task_id:&str,
                     &chat,&turn,profile,&ledger,&revisions,&sources)
                 .map_err(|_|"P0_NEXT_ORIGINAL_EFFECT_ORACLE_HISTORY_INVALID")?;
             for item in original{
-                let eligible=current&&same_revision
-                    &&item.status=="VERIFIED_AT_OBSERVATION";
+                let eligible=current_released_reviewed_outcome(
+                    current,same_revision,view.plan_review.as_str(),
+                    view.plan_state.as_str(),view.supervisor_state.as_str(),
+                    &item.status
+                );
                 let criterion_method_reviewable=criterion_supports_method(
                     &a.acceptance_criteria,&item.tool_id,&item.independent_method)
                     &&(a.mode!="reviewed_whole_task"||exact_whole_task_slot(
@@ -377,7 +396,11 @@ fn list(profile:&Path,register_id:&str,task_id:&str,
             // Continue through immutable separately reviewed AGENT-01I child
             // plans. Only exact, released original-child worker/oracle
             // receipts may be considered for the remaining source criteria.
-            if current&&same_revision&&a.mode=="reviewed_whole_task"{
+            if current_released_reviewed_outcome(
+                current,same_revision,view.plan_review.as_str(),
+                view.plan_state.as_str(),view.supervisor_state.as_str(),
+                "VERIFIED_AT_OBSERVATION"
+            )&&a.mode=="reviewed_whole_task"{
                 let descendants=verified_whole_task_continuations(
                     profile,&file,&a,
                     plan.as_deref().ok_or("CORE_C3_ROOT_PLAN_MISSING")?,
@@ -821,6 +844,37 @@ pub(crate) async fn lu_project_task_prepare_agent_plan(
 #[cfg(test)]
 mod task_method_tests{
     use super::*;
+    #[test]
+    fn c3_cancelled_or_unreleased_root_worker_is_historical_not_completion_evidence(){
+        let eligible=|current,revision,review,plan,supervisor,receipt|
+            current_released_reviewed_outcome(
+                current,revision,review,plan,supervisor,receipt);
+        assert!(eligible(true,true,"APPROVED_PLAN_ONLY",
+            "OBSERVATIONS_ONLY","RELEASED","VERIFIED_AT_OBSERVATION"));
+        for (current,rev,review,plan,host,receipt) in [
+            (false,true,"APPROVED_PLAN_ONLY","OBSERVATIONS_ONLY",
+                "RELEASED","VERIFIED_AT_OBSERVATION"),
+            (true,false,"APPROVED_PLAN_ONLY","OBSERVATIONS_ONLY",
+                "RELEASED","VERIFIED_AT_OBSERVATION"),
+            (true,true,"PENDING_HUMAN_REVIEW","OBSERVATIONS_ONLY",
+                "RELEASED","VERIFIED_AT_OBSERVATION"),
+            (true,true,"APPROVED_PLAN_ONLY","CANCEL_REQUESTED",
+                "RELEASED","VERIFIED_AT_OBSERVATION"),
+            (true,true,"APPROVED_PLAN_ONLY","NEEDS_REVIEW",
+                "RELEASED","VERIFIED_AT_OBSERVATION"),
+            (true,true,"APPROVED_PLAN_ONLY","OBSERVATIONS_ONLY",
+                "OWNED","VERIFIED_AT_OBSERVATION"),
+            (true,true,"APPROVED_PLAN_ONLY","OBSERVATIONS_ONLY",
+                "RECOVERY_REQUIRED","VERIFIED_AT_OBSERVATION"),
+            (true,true,"APPROVED_PLAN_ONLY","OBSERVATIONS_ONLY",
+                "CANCEL_REQUESTED","VERIFIED_AT_OBSERVATION"),
+            (true,true,"APPROVED_PLAN_ONLY","OBSERVATIONS_ONLY",
+                "RELEASED","NEEDS_RECONCILIATION"),
+        ]{
+            assert!(!eligible(current,rev,review,plan,host,receipt),
+                "an interrupted, stale or unreviewed plan cannot be a completed criterion");
+        }
+    }
     #[test]
     fn only_independent_original_git_media_methods_are_candidates(){
         assert!(compatible_independent_method(
