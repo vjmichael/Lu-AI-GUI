@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { inspectOne, inspectDirectory } from "./lu-ci-group-policy.mjs";
+import { inspectOne, inspectDirectory, isCanonicalMainLedgerWorkflow } from "./lu-ci-group-policy.mjs";
 import fs from "node:fs";
 
 const manual = "name: One\non:\n  workflow_dispatch:\npermissions:\n  contents: read\njobs:\n  test:\n    runs-on: ubuntu-latest\n";
@@ -14,6 +14,27 @@ test("keep only baseline source and desktop checks automatic", () => {
   assert.deepEqual(inspectOne("lu-repo01-full-source.yml", auto).problems, []);
   assert.deepEqual(inspectOne("lu-ci.yml", manual).problems, []);
 });
+test("canonical main ledger refresh is admitted ONLY at the exact reviewed main Git blob", () => {
+  const filename = "lu-development-ledger.yml";
+  const exact = fs.readFileSync(".github/workflows/" + filename, "utf8");
+  assert.deepEqual(inspectOne(filename, exact).problems, []);
+  assert.equal(isCanonicalMainLedgerWorkflow(filename, exact,
+    ["push", "workflow_dispatch", "schedule"]), true);
+  // Preserving main is not permission for an arbitrary new write-capable
+  // scheduled/push workflow. Every mutation of this verified blob fails.
+  for (const altered of [
+    exact.replace("contents: write", "contents: read"),
+    exact.replace("node scripts/lu-ledger.mjs --update",
+      "node scripts/lu-ledger.mjs --update && echo changed"),
+    exact + "\n# unreviewed source drift\n"
+  ]) {
+    assert.ok(inspectOne(filename, altered).problems.includes(
+      "HEAVY_WORKFLOW_AUTOMATIC_FANOUT"));
+  }
+  assert.ok(inspectOne("lu-unauthorized-ledger.yml", exact).problems.includes(
+    "HEAVY_WORKFLOW_AUTOMATIC_FANOUT"));
+});
+
 test("broken events, duplicate dispatch or missing jobs fail policy", () => {
   assert.throws(() => inspectOne("lu-any.yml", "name: Broken\njobs:\n"));
   assert.ok(inspectOne("lu-any.yml", manual.replace("  workflow_dispatch:\n", "  workflow_dispatch:\n  workflow_dispatch:\n")).problems.includes("DUPLICATE_DISPATCH"));

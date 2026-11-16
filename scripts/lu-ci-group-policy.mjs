@@ -2,9 +2,23 @@
 /** Group-scoped CI policy: heavy Lu Core workflows do NOT run on every PR or source-lock update. */
 import fs from "node:fs";
 import path from "node:path";
+import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 
 export const AUTOMATIC = new Set(["lu-repo01-full-source.yml"]);
+
+// Only the exact canonical metadata-only workflow already on main may retain
+// its existing scheduled/push maintenance. This is a fixed Git blob identity
+// exception, NEVER a filename-wide exception to task-group fanout safety.
+const CANONICAL_MAIN_LEDGER_GIT_BLOB = "35c5de7ab6bb4e4b50db76f785064809f342396b";
+export function isCanonicalMainLedgerWorkflow(filename, source, keys) {
+  if (filename !== "lu-development-ledger.yml" ||
+      keys.join(",") !== "push,workflow_dispatch,schedule") return false;
+  const contents = Buffer.from(source, "utf8");
+  const digest = createHash("sha1").update(`blob ${contents.length}\0`).update(contents).digest("hex");
+  return digest === CANONICAL_MAIN_LEDGER_GIT_BLOB;
+}
+
 
 export function eventKeys(source) {
   const matches = [...source.matchAll(/^on:\s*$/gm)];
@@ -61,11 +75,12 @@ export function inspectOne(filename, source) {
   const keys = eventKeys(source);
   const problems = [];
   const narrowlyAdmitted = isGuardedPlan07D(filename, source, keys);
+  const canonicalMainLedger = isCanonicalMainLedgerWorkflow(filename, source, keys);
   if (!keys.includes("workflow_dispatch") && !narrowlyAdmitted) problems.push("NO_GROUP_DISPATCH");
   if (keys.filter((x) => x === "workflow_dispatch").length !== (narrowlyAdmitted ? 0 : 1)) problems.push("DUPLICATE_DISPATCH");
   if (!AUTOMATIC.has(filename) && keys.some((x) => [
     "push", "pull_request", "pull_request_target", "merge_group", "repository_dispatch"
-  ].includes(x)) && !narrowlyAdmitted) problems.push("HEAVY_WORKFLOW_AUTOMATIC_FANOUT");
+  ].includes(x)) && !narrowlyAdmitted && !canonicalMainLedger) problems.push("HEAVY_WORKFLOW_AUTOMATIC_FANOUT");
   if (AUTOMATIC.has(filename) && !keys.includes("pull_request"))
     problems.push("BASELINE_PR_CHECK_MISSING");
   if (!/\njobs:\s*\n/.test(source)) problems.push("NO_JOBS");
