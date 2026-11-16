@@ -145,7 +145,7 @@ def verify(manifest: pathlib.Path, root: pathlib.Path, release: bool = False) ->
         # Node/npm installers, PATH wrappers or dynamically fetched scripts
         # cannot become a production provider by changing "mode" alone.
         if row.get("category") != "native":
-            raise ValueError(f"{ident}: production needs reviewed offline standalone executable")
+            raise ValueError(f"unsupported {ident}: production needs reviewed offline standalone executable")
         if ident == "pyright" and row.get("offlineStandaloneReviewed") is not True:
             raise ValueError("Pyright standalone runtime/dependency closure not independently reviewed")
         if not row.get("copyrightReviewed") or not row.get("dependenciesAudited") \

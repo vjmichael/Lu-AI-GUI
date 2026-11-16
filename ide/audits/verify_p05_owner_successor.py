@@ -80,7 +80,7 @@ def verify(root: Path):
         ledger.get("originalWorkflowCount")!=38):
         raise Denied("p05_owner_successor_historical_baseline_changed")
     decision=ledger.get("ownerDecision",{})
-    if (decision.get("issue"),decision.get("commentId"))!=USER_DECISION or
+    if ((decision.get("issue"),decision.get("commentId"))!=USER_DECISION or
         decision.get("authorizedSevenChanges") is not True or
         decision.get("noSecondReviewerRequired") is not True):
         raise Denied("p05_missing_explicit_owner_authorization")

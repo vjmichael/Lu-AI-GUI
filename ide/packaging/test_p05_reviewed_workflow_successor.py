@@ -1,4 +1,4 @@
-"""Original P05 stays red on seven real workflow changes; successor is witness only."""
+"""Original P05 stays red on eight current changes; successor is witness only."""
 import copy
 import json
 from pathlib import Path
@@ -21,12 +21,12 @@ def fixture():
 
 
 class OriginalP05VsCurrentSourceTests(unittest.TestCase):
-    def test_all_38_original_pins_covered_and_only_seven_reviewed_deltas(self):
+    def test_all_38_original_pins_covered_and_only_eight_scoped_deltas(self):
         original, blobs = fixture()
         report = classify(original, blobs)
         self.assertEqual(report["historicalPinnedWorkflows"], 38)
-        self.assertEqual(report["identicalHistoricalWorkflows"], 31)
-        self.assertEqual(report["historicallyDivergentWorkflows"], 7)
+        self.assertEqual(report["identicalHistoricalWorkflows"], 30)
+        self.assertEqual(report["historicallyDivergentWorkflows"], 8)
         self.assertEqual(len(report["pushTriggerReductionAuthorizationRequired"]), 2)
         for name in ("historicalP05ImmutableCheckoutPass", "originalNativeAcceptanceClosed",
                      "signedInstalledReleaseAccepted", "legalAndLicenseReviewApproved",
@@ -43,7 +43,7 @@ class OriginalP05VsCurrentSourceTests(unittest.TestCase):
                                     "reviewed_native_ci_workflow_changed"):
             check_checkout(ROOT, prs, original)
 
-    def test_unreviewed_eighth_workflow_change_or_missing_workflow_denied(self):
+    def test_unreviewed_ninth_workflow_change_or_missing_workflow_denied(self):
         historical, current = fixture()
         unchanged = next(x for x in current if x not in REVIEWED)
         current[unchanged] = "f" * 40

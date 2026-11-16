@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Source-only successor witness for P05's seven divergent IDE workflows.
+"""Source-only successor witness for P05's eight current IDE workflow changes.
 
 This does NOT replace the historical immutable 38-blob P05 checker, approve
 push-trigger reduction, certify OS runtime/security or authorize release.
@@ -19,13 +19,20 @@ REVIEWED = {
         "518635e58bbac5b249bfeadba7e60c90b9d0010c",
         "6832a33bdab3539d85805ccd43a9aa479758d08d",
         "push_trigger_removed_requires_authorization"),
+    # Separately owner-scoped current-stack security correction (not one of
+    # the seven historical replacements): original worker denial is retained
+    # at its historical SHA, while default-disabled native-build is checked.
+    ".github/workflows/ide-sandbox-windows.yml": (
+        "4344a3563b9151e874443c5000639114342e66b5",
+        "742a255acbbae975514ea468d5932c07021d7643",
+        "additional_default_denial_security_reconciliation"),
     ".github/workflows/ide-d7b-native-acceptance.yml": (
         "f70955319c621cbd08cd2a7a6f7eac77caffc3a1",
         "c247635e41a4c325a76cc5223239f890898c92c1",
         "new_protected_cargo_native_proof"),
     ".github/workflows/ide-d7d-protected-service.yml": (
         "ce56f987cb056c01ef7be58318d70c9e136aafad",
-        "35a0a506186694caaa6ff72d8bfdeec694cf0235",
+        "3450fba59185c88dc67ccc87627570db3a91b1b7",
         "dap_feature_and_native_scm_proof"),
     ".github/workflows/ide-supervisor-core.yml": (
         "e0d26f80713cdf498c3bfdf82645498dddf34e16",
@@ -33,7 +40,7 @@ REVIEWED = {
         "push_trigger_removed_requires_authorization"),
     ".github/workflows/ide-wo6-native-os-acceptance.yml": (
         "d7627899b3a6cafc7b383f00abbb2b9e7107fe2d",
-        "de7cae8464649481ff46f148341bd575aca045da",
+        "cea665eec68062b4071f57be206d56676a885ed3",
         "windows_runner_and_protected_dap_evidence_changed"),
     ".github/workflows/ide-wo8-installed-windows.yml": (
         "8fadc3f1829e62123b9da6a5e6bbd49a3f3ec36f",
@@ -83,14 +90,14 @@ def classify(inventory, actual_blobs):
             raise Denied("unreviewed_successor_workflow_drift:" + path)
         if approved:
             changed.append(path)
-    if (set(actual_blobs) != seen or len(changed) != 7
+    if (set(actual_blobs) != seen or len(changed) != 8
             or set(changed) != set(REVIEWED)):
         raise Denied("successor_workflow_coverage_incomplete")
     return {
         "schema": "lu.ide.p05.reviewed-current-workflow-source-only.v1",
         "historicalPinnedWorkflows": 38,
-        "identicalHistoricalWorkflows": 31,
-        "historicallyDivergentWorkflows": 7,
+        "identicalHistoricalWorkflows": 30,
+        "historicallyDivergentWorkflows": 8,
         "reviewedCurrentGitSourceIdentitiesVerified": True,
         "historicalP05ImmutableCheckoutPass": False,
         "originalHistoricalDenialPreserved": True,
