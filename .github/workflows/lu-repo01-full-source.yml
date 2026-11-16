@@ -3893,7 +3893,7 @@ jobs:
     if: >-
       github.event_name == 'push' &&
       github.ref == 'refs/heads/main' &&
-      startsWith(github.event.head_commit.message, 'CORE-MERGE-C1.2:')
+      startsWith(github.event.head_commit.message, 'CORE-MERGE-C1.3:')
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -3908,13 +3908,13 @@ jobs:
       - name: Authorize one source-locked direct descendant, never later commits
         shell: bash
         env:
-          EXPECTED_C1_SOURCE_PARENT: '526feeab5767b77a82a2c93be2ddd80026957d02'
+          EXPECTED_C1_SOURCE_PARENT: '77d67f7645b89d71a0edeb4bec80d8387399a446'
           EXPECTED_ONE_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$EXPECTED_ONE_SHA"
           test "$(git rev-parse HEAD^)" = "$EXPECTED_C1_SOURCE_PARENT"
-          test "$(git symbolic-ref -q HEAD || true)" = ""
+          test "$(git rev-parse --abbrev-ref HEAD)" = "HEAD"
           node scripts/verify-source-tree.mjs
           printf 'C1_ONE_SHOT_NATIVE_ADMISSION=%s\nBASE=%s\n' "$EXPECTED_ONE_SHA" "$EXPECTED_C1_SOURCE_PARENT"
   c1-five-gap-unchanged-sha-native:
