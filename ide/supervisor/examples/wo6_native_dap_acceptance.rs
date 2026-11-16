@@ -766,7 +766,7 @@ mod protected {
                     owner.debug_running_receipt_sha256.clone(),
                     owner.build_terminal_receipt_sha256.clone(),
                 ));
-                owner_receipt = Some((owner.owner_sequence, owner.native_owner_receipt_sha256));
+                owner_receipt = Some((owner.owner_sequence, owner.native_owner_receipt_sha256.clone()));
                 if let Some(mode) = ci_control {
                     #[cfg(all(windows, debug_assertions, feature = "dev046c-ci-control"))]
                     {
