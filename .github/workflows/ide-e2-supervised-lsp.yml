@@ -32,6 +32,7 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
+          fetch-depth: 0
       - uses: dtolnay/rust-toolchain@stable
       - name: Native host LSP session and source revision tests
         run: cargo test --manifest-path ide/host/Cargo.toml lsp_session::tests -- --nocapture
@@ -77,6 +78,7 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
+          fetch-depth: 0
       - uses: dtolnay/rust-toolchain@stable
       # cargo check invokes tauri-build, which requires icon.ico even for
       # compilation-only jobs. Generate the first-party deterministic icon
@@ -124,6 +126,7 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
