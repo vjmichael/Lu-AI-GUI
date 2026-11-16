@@ -110,6 +110,9 @@ jobs:
           $versionStatus=$LASTEXITCODE
           $versionLines | Select-Object -First 3 | ForEach-Object { Write-Host ([string]$_) }
           if ($versionStatus -ne 0) { throw 'DENIED: independently staged clangd startup arguments invalid' }
+          # Only the just-audited, self-measured native CI bundle is admitted
+          # by the later fixed AppContainer acceptance host. Never use PATH.
+          Add-Content -LiteralPath $env:GITHUB_ENV -Value ('LU_IDE_E2_PINNED_LSP_BUNDLE='+$bundle)
       - name: Independently install SCM service and verify real AppContainer clangd
         shell: pwsh
         run: |
