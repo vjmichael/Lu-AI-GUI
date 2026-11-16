@@ -9114,8 +9114,12 @@ fn auxiliary_window_spec(caller:&str,kind:&str)->Option<AuxiliaryWindowSpec>{
         _=>None,
     }
 }
+// Windows WebView2 window creation must not run from a synchronous Tauri
+// command. The original installed UIA artifact showed a native HWND with no
+// WebView2/React descendants; Tauri documents this exact synchronous command
+// deadlock for WebviewWindowBuilder. Keep caller/label policy unchanged.
 #[tauri::command]
-fn lu_open_aux_window(
+async fn lu_open_aux_window(
     app:AppHandle,caller:tauri::WebviewWindow,kind:String
 )->Result<(),String>{
     let spec=auxiliary_window_spec(caller.label(),&kind)
