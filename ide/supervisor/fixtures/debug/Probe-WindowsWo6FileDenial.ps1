@@ -51,8 +51,9 @@ try {
         $irp=[string]$fields['Irp']
         if ([string]::IsNullOrEmpty($irp)) { continue }
         if ($record.Id -in @(12,30)) {
-            $pid=[string]$record.ProcessId
-            if (!$ids.ContainsKey($pid)) { continue }
+            # $PID is a read-only PowerShell automatic variable.
+            $childProcessId=[string]$record.ProcessId
+            if (!$ids.ContainsKey($childProcessId)) { continue }
             if ($begins.Count -ge 4096) { continue }
             $operation=if ($record.Id -eq 30) { 'create_new' } else { 'create_open' }
             $path=[string]$fields['FileName']
@@ -61,7 +62,7 @@ try {
             elseif ($path -match '(?i)appdata[\\/]local[\\/]packages') { $object='appcontainer_local' }
             elseif ($path -match '(?i)[\\/]windows[\\/]') { $object='windows_system_file' }
             elseif ($path -match '(?i)[\\/]device[\\/]') { $object='windows_device_file' }
-            $begins[$irp]=@($operation,$object,$pid)
+            $begins[$irp]=@($operation,$object,$childProcessId)
             continue
         }
         $raw=[string]$fields['Status']

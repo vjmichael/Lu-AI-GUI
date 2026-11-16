@@ -102,7 +102,7 @@
     },
     {
       "path": "ide/supervisor/fixtures/debug/Probe-WindowsWo6FileDenial.ps1",
-      "sha": "224e0a2052843a927d80a6fac65821710f7c7dde",
+      "sha": "0dd1d35488619a8c4f683a18ea1adf0b169cb960",
       "scope": "CI-only diagnostic, no capability expansion"
     },
     {

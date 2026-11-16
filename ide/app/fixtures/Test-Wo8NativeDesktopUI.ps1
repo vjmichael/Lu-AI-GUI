@@ -259,22 +259,29 @@ function Click([string]$label) {
     # Only the demonstrated Move file control receives one real OS keyboard
     # retry. No DOM/JS/backend injection, no synthetic outcome, and the
     # original required move/review/file-byte assertions still run.
-    if ($label -cne 'Move file') { Deny ('ui_invoke_failure_'+$label.Replace(' ','_')) }
+    if ($label -cnotin @('Move file','Toggle split editor')) {
+      Deny ('ui_invoke_failure_'+$label.Replace(' ','_'))
+    }
+    $denial='ui_invoke_failure_'+$label.Replace(' ','_')
     $fresh=Find-Control $label 'Button' 6
     if (!$fresh.Current.IsEnabled -or !$fresh.Current.IsKeyboardFocusable) {
-      Deny 'ui_invoke_failure_Move_file'
+      Deny $denial
     }
     $hwnd=$proc.MainWindowHandle
-    if ($hwnd -eq [IntPtr]::Zero) { Deny 'ui_invoke_failure_Move_file' }
+    if ($hwnd -eq [IntPtr]::Zero) { Deny $denial }
     [void][P04NativeWebViewWindows]::SetForegroundWindow($hwnd)
     if ([P04NativeWebViewWindows]::GetForegroundWindow() -ne $hwnd) {
-      Deny 'ui_invoke_failure_Move_file'
+      Deny $denial
     }
     try {
       $fresh.SetFocus()
       [System.Windows.Forms.SendKeys]::SendWait(' ')
-      Write-Host 'WO8_MOVE_FILE_OS_UIA_FOCUSED_KEYBOARD_RETRY=attempted_not_acceptance'
-    } catch { Deny 'ui_invoke_failure_Move_file' }
+      if ($label -ceq 'Move file') {
+        Write-Host 'WO8_MOVE_FILE_OS_UIA_FOCUSED_KEYBOARD_RETRY=attempted_not_acceptance'
+      } else {
+        Write-Host 'WO8_SPLIT_EDITOR_UIA_FOCUSED_KEYBOARD_RETRY=attempted_not_acceptance'
+      }
+    } catch { Deny $denial }
   }
 }
 function Require([string]$text) {
