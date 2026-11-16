@@ -3884,3 +3884,40 @@ jobs:
           path: agent01l-hosted-original-evidence/
           if-no-files-found: warn
           retention-days: 14
+
+  # CORE-MERGE-C1.2: one-time owner-directed native admission bound to the
+  # immutable immediately preceding C1 source. The heavy workflow is reusable
+  # / manual-only; no future push/PR gets general runtime acceptance.
+  c1-five-gap-one-time-admission:
+    needs: verify-source
+    if: >-
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main' &&
+      startsWith(github.event.head_commit.message, 'CORE-MERGE-C1.2:')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+          ref: ${{ github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Authorize one source-locked direct descendant, never later commits
+        shell: bash
+        env:
+          EXPECTED_C1_SOURCE_PARENT: '526feeab5767b77a82a2c93be2ddd80026957d02'
+          EXPECTED_ONE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_ONE_SHA"
+          test "$(git rev-parse HEAD^)" = "$EXPECTED_C1_SOURCE_PARENT"
+          test "$(git symbolic-ref -q HEAD || true)" = ""
+          node scripts/verify-source-tree.mjs
+          printf 'C1_ONE_SHOT_NATIVE_ADMISSION=%s\nBASE=%s\n' "$EXPECTED_ONE_SHA" "$EXPECTED_C1_SOURCE_PARENT"
+  c1-five-gap-unchanged-sha-native:
+    needs: [verify-source, c1-five-gap-one-time-admission]
+    if: needs.c1-five-gap-one-time-admission.result == 'success'
+    uses: ./.github/workflows/lu-core-c1-five-gaps-acceptance.yml

@@ -1,14 +1,7 @@
 name: Lu C1 Five-Gap Consolidated Native Acceptance
 on:
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/lu-core-c1-five-gaps-acceptance.yml'
-      - 'src-tauri/lu-core/**'
-      - 'lu-desktop/src-tauri/**'
-      - 'scripts/lu-ci-superseded-queue*'
-      - 'source-tree.lock.json'
   workflow_dispatch:
+  workflow_call:
 permissions:
   contents: read
 concurrency:

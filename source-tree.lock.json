@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "14eba0bab20ba729907b17fb5963b047c8e7f744",
+  "sourceCommitBeforeLock": "526feeab5767b77a82a2c93be2ddd80026957d02",
   "trackedFileCount": 1056,
   "files": [
     {
@@ -69,7 +69,7 @@
     },
     {
       "path": ".github/workflows/lu-core-c1-five-gaps-acceptance.yml",
-      "blob": "72a8038044cde21f23304db1ecd39cdc33a7294a"
+      "blob": "0e877090b621e7dbe83492cbfcccee472326c79d"
     },
     {
       "path": ".github/workflows/lu-core-c4-delegated-kernel-original-sha.yml",
@@ -249,7 +249,7 @@
     },
     {
       "path": ".github/workflows/lu-repo01-full-source.yml",
-      "blob": "5b3dadce97aaf4d90b3e3ba7cb53223eda30412f"
+      "blob": "9d4f0621c86a437b4e01bf5b4c973128235dc49f"
     },
     {
       "path": ".github/workflows/lu-tools-01-05-integration.yml",
@@ -693,7 +693,7 @@
     },
     {
       "path": "docs/LU_DEVELOPMENT_LEDGER.md",
-      "blob": "8c91181bf2af6b2d9bb40737f742940711f9306e"
+      "blob": "217394965a9748c7bd7b20ec61280723c07999b0"
     },
     {
       "path": "docs/LU_E1_NATIVE_EVIDENCE_20261107.md",
