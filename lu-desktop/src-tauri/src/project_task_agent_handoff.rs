@@ -356,7 +356,10 @@ fn list(profile:&Path,register_id:&str,task_id:&str,
                 let eligible=current&&same_revision
                     &&item.status=="VERIFIED_AT_OBSERVATION";
                 let criterion_method_reviewable=criterion_supports_method(
-                    &a.acceptance_criteria,&item.tool_id,&item.independent_method);
+                    &a.acceptance_criteria,&item.tool_id,&item.independent_method)
+                    &&(a.mode!="reviewed_whole_task"||exact_whole_task_slot(
+                        &a.acceptance_criteria,item.step_index,
+                        &item.tool_id,&item.independent_method));
                 view.independently_audited_outcomes.push(TaskAgentEvidenceCandidate{
                     step_index:item.step_index,
                     tool_id:item.tool_id,
@@ -371,7 +374,7 @@ fn list(profile:&Path,register_id:&str,task_id:&str,
                 });
             }
             let has_review_candidate=view.independently_audited_outcomes.iter()
-                .any(|o|o.review_eligible);
+                .any(|o|o.review_eligible&&o.criterion_method_reviewable);
             view.next_safe_action=if !same_revision{
                 "Agent plan revision changed. This original task link is historical; review the current plan from the original chat and grant no inherited authority.".into()
             }else if !current{
@@ -414,6 +417,19 @@ pub(super) fn compatible_independent_method(tool:&str,method:&str)->bool{
 
 /// P0-NEXT-CM1: classify exact original, human-reviewed criterion METHOD,
 /// not the desired result. Does not establish a satisfied task or authority.
+/// A V2 whole-task worker must occupy the original declared method slot.
+/// A different verified tool in the correct task is NOT interchangeable.
+/// Reindexed continuation drafts need a new explicit human review; they do
+/// not inherit the original handoff's criterion authority.
+fn exact_whole_task_slot(
+    criterion:&str,step_index:u8,tool:&str,method:&str
+)->bool{
+    super::project_task_verified_evidence::
+        required_whole_task_independent_methods(criterion)
+        .and_then(|methods|methods.get(usize::from(step_index)).copied())
+        .is_some_and(|required|required==(tool,method))
+}
+
 pub(super) fn criterion_supports_method(
     criterion:&str,tool:&str,method:&str
 )->bool{
@@ -467,6 +483,7 @@ pub(super) fn independently_verified_task_witness(
         .filter(|e|e.receipt_sha256==receipt_sha256);
     let exact=evidence.next().ok_or("P0_TOOLS05_ORIGINAL_RECEIPT_NOT_FOUND")?;
     if evidence.next().is_some()||!exact.review_eligible||
+        (link.mode=="reviewed_whole_task"&&!exact.criterion_method_reviewable)||
         exact.historical_verdict!="VERIFIED_AT_OBSERVATION"||
         !compatible_independent_method(&exact.tool_id,&exact.independent_method){
         return Err("P0_TOOLS05_RECEIPT_IS_NOT_INDEPENDENTLY_AUDITED".into())
@@ -732,6 +749,39 @@ mod task_method_tests{
         assert_eq!(mode_steps("reviewed_git_media_check",&criterion)
             .unwrap().len(),1);
     }
+    #[test]
+    fn every_whole_task_receipt_slot_refuses_another_declared_method(){
+        let criterion=format!(
+            "LU_COMPLETE_V2:ALL_OF\nCURRENT_NATIVE_REQUIREMENT\n\
+             GIT_HEAD_EQUALS:{}\nGIT_STATUS_REVIEWED\nWAV_PCM_REVIEWED\nMP4_BOXES_REVIEWED",
+            "a".repeat(40)
+        );
+        let methods=[
+            ("lu.reviewed.git.head","GIT_HEAD_DIRECT_V1"),
+            ("lu.reviewed.git.status","GIT_STATUS_INDEX_TREE_V1"),
+            ("lu.reviewed.media.facts","WAV_PCM_DIRECT_V1"),
+            ("lu.reviewed.media.facts","MP4_BOXES_DIRECT_V1"),
+        ];
+        for (index,(tool,method)) in methods.iter().enumerate(){
+            assert!(exact_whole_task_slot(&criterion,index as u8,tool,method));
+            for (other_index,(other_tool,other_method)) in methods.iter().enumerate(){
+                if index!=other_index{
+                    // A method that belongs to the same ALL_OF manifest
+                    // cannot satisfy a different step.
+                    assert!(!exact_whole_task_slot(
+                        &criterion,index as u8,other_tool,other_method));
+                }
+            }
+        }
+        assert!(!exact_whole_task_slot(&criterion,4,methods[0].0,methods[0].1));
+        assert!(!exact_whole_task_slot(&criterion,31,methods[0].0,methods[0].1));
+        assert!(!exact_whole_task_slot(
+            "LU_COMPLETE_V2:ALL_OF\nCURRENT_NATIVE_REQUIREMENT\nGIT_STATUS_REVIEWED\nGIT_STATUS_REVIEWED",
+            0,methods[1].0,methods[1].1));
+        assert!(!exact_whole_task_slot(
+            "Verify my project is complete",0,methods[0].0,methods[0].1));
+    }
+
     #[test]
     fn every_v2_declared_method_requires_its_own_exact_original_worker(){
         let criterion=format!(

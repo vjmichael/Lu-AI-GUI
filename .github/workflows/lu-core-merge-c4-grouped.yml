@@ -216,12 +216,28 @@ jobs:
           cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml \
             --lib project_task_verified_evidence::tests -- --nocapture \
             2>&1 | tee c4-native-evidence/task-criterion-reconciliation.log
+          grep -Eq 'test result: ok\. 11 passed; 0 failed;' \
+            c4-native-evidence/task-criterion-reconciliation.log || {
+            echo 'CORE_C3_COMPLETION_TESTS_MISSING_OR_FAILED' >&2
+            exit 1
+          }
           # C1/C3 desktop ANSF->human source->plan handoff, including stale
           # task leases, original-turn binding and denied automatic replay.
-          for family in project_task_agent_handoff agent_plan_admission agent_plan_continuation_desktop; do
+          # Use the ACTUAL Rust module paths, not a guessed ::tests suffix.
+          # A no-op "0 passed" is an acceptance failure, even if cargo exits 0.
+          for spec in \
+            "project_task_agent_handoff::task_method_tests|project_task_agent_handoff|7" \
+            "agent_plan_admission::tests|agent_plan_admission|8" \
+            "agent_plan_continuation_desktop::phase2_multistep_tests|agent_plan_continuation_desktop|3"; do
+            IFS='|' read -r family label expected_count <<< "$spec"
             cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml \
-              --lib "${family}::tests" -- --nocapture \
-              2>&1 | tee "c4-native-evidence/c3-${family}.log"
+              --lib "$family" -- --nocapture \
+              2>&1 | tee "c4-native-evidence/c3-${label}.log"
+            if ! grep -Eq "test result: ok\\. ${expected_count} passed; 0 failed;" \
+                "c4-native-evidence/c3-${label}.log"; then
+              echo "CORE_C3_ORIGINAL_TEST_FAMILY_MISSING: $family" >&2
+              exit 1
+            fi
           done
           cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml \
             --lib browser_model_desktop::tests -- --nocapture \
