@@ -432,6 +432,26 @@ mod tests {
         assert!(!host.package_verified());
         assert!(host.require_launch_ready().is_err());
     }
+    // C6.2 reviewed Windows package: positive OS byte comparison against the
+    // exact manifest compiled into this Rust binary. Default full Cargo
+    // suites never substitute a missing/placeholder browser for this fixture.
+    #[test]
+    #[ignore = "requires externally approved real Windows browser package"]
+    fn c62_reviewed_runtime_exact_bytes_and_compiled_manifest() {
+        assert_eq!(
+            std::env::var("LU_C62_REVIEWED_RUNTIME_TEST").ok().as_deref(),
+            Some("1"),
+            "C6.2 proof requires explicit real source-reviewed package fixture"
+        );
+        let resources = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("resources");
+        let host = DesktopBrowserHost::new(
+            resources, std::env::temp_dir().join("lu-c62-browser-no-personal-profile"));
+        assert!(host.packaged_components_present(), "actual browser bytes absent");
+        assert!(host.package_verified(),
+            "compiled exact manifest and every browser file must be identical");
+        // Even a valid package does not authorize a model/browser session,
+        // select an origin, or synthesize native human approval.
+    }
     #[test]
     fn preferences_and_process_ownership_are_separate_authorities(){
         let _mode=lu_core::browser_visibility_settings::BrowserVisibilityPreference::default();

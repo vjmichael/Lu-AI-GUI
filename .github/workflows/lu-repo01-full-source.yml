@@ -4034,3 +4034,42 @@ jobs:
     needs: [verify-source, c62t-one-time-transport-admission]
     if: needs.c62t-one-time-transport-admission.result == 'success'
     uses: ./.github/workflows/lu-core-c62t-browser-review-transport.yml
+
+  # C6.2B one-time source-bound installer with independently reviewed 482-file
+  # browser manifest. No generic post-review push, model grant or release.
+  c62b-one-time-reviewed-package-admission:
+    needs: verify-source
+    if: >-
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main' &&
+      startsWith(github.event.head_commit.message, 'CORE-MERGE-C6.2B:')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+          ref: ${{ github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Exactly one real browser manifest review at the immediate first parent
+        shell: bash
+        env:
+          REVIEWED_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$REVIEWED_SHA"
+          test "$(git rev-parse HEAD^)" = "3449ddf40a96e16af3a3b79ccc9a1c986bd8e62f"
+          test "$(git rev-parse --abbrev-ref HEAD)" = "HEAD"
+          node scripts/verify-source-tree.mjs
+          node --test scripts/lu-c62b-reviewed-browser-contract.test.mjs
+          echo "C62B_REVIEWED_NATIVE_BROWSER_BUILD_SHA=$REVIEWED_SHA; PHYSICAL_WINDOWS_NOT_TESTED"
+  c62b-original-windows-installed-browser:
+    needs: [verify-source, c62b-one-time-reviewed-package-admission]
+    if: needs.c62b-one-time-reviewed-package-admission.result == 'success'
+    permissions:
+      contents: read
+      actions: read
+    uses: ./.github/workflows/lu-core-c62b-reviewed-browser-nsis.yml

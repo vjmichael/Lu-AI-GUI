@@ -1,0 +1,199 @@
+name: Lu C6.2B exact-SHA reviewed browser native Windows NSIS and integrity acceptance
+on:
+  workflow_dispatch:
+  workflow_call:
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: lu-c62b-reviewed-browser-${{ github.sha }}
+  cancel-in-progress: false
+jobs:
+  original-source-and-review:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Exact source/host authorization, approved candidate digest and original security contracts
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          node scripts/verify-source-tree.mjs
+          node --test scripts/lu-c62b-reviewed-browser-contract.test.mjs \
+            lu-desktop/tests/browser-staging.test.mjs \
+            lu-desktop/tests/browser-native-authorization.test.mjs \
+            lu-desktop/tests/p0-browser-bundle.test.mjs \
+            lu-desktop/tests/p0-browser-real-ci-gate.test.mjs
+          node --test tests/lu-browser-worker.test.mjs
+  native-windows-installed-reviewed-browser:
+    needs: original-source-and-review
+    runs-on: windows-2025
+    timeout-minutes: 210
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify original SHA and actual Windows PowerShell source
+        shell: pwsh
+        env:
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          $ErrorActionPreference='Stop'
+          if((git rev-parse HEAD).Trim() -cne $env:SOURCE_SHA){throw 'C6.2B Windows SHA mismatch'}
+          node scripts/verify-source-tree.mjs
+          if($LASTEXITCODE -ne 0){throw 'C6.2B repository lock failed'}
+          foreach($p in @('scripts/build-current-windows-nsis.ps1',
+            'scripts/m3-windows-nsis-cycle.ps1',
+            'scripts/stage-research-windows.ps1',
+            'scripts/p0-windows-installed-gui-smoke.ps1')){
+            $tokens=$null;$errors=$null
+            [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $p).Path,[ref]$tokens,[ref]$errors)|Out-Null
+            if($errors.Count -ne 0){throw "C6.2B native PowerShell parser failed: $p : $errors"}
+          }
+      - name: Download exact independently reviewed original C6.2A Windows artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: Lu-C62A-UNAPPROVED-Windows-Browser-d9af093ef259d7279b5d1abb226ce307593b50cb
+          run-id: 43976953361
+          github-token: ${{ github.token }}
+          path: out/lu-browser-candidate
+      - name: Genuine downloaded Windows bundle is still original executable candidate
+        shell: pwsh
+        env:
+          LU_BROWSER_REQUIRE_CANDIDATE: '1'
+        run: |
+          node --test lu-desktop/tests/browser-ci-candidate.test.mjs
+          if($LASTEXITCODE -ne 0){throw 'Original exact reviewed-candidate byte/Node protocol failed'}
+          node --test lu-desktop/tests/browser-ci-executable.test.mjs
+          if($LASTEXITCODE -ne 0){throw 'Original actual headed Chromium candidate failed'}
+      - name: Offline review promotion requires separately pinned candidate and review digests
+        shell: pwsh
+        env:
+          LU_BROWSER_CANDIDATE_DIR: ${{ github.workspace }}/out/lu-browser-candidate
+          LU_BROWSER_REVIEWED_OUT: ${{ github.workspace }}/out/lu-browser-reviewed
+        run: |
+          $ErrorActionPreference='Stop'
+          node lu-desktop/scripts/promote-reviewed-browser-candidate.mjs
+          if($LASTEXITCODE -ne 0){throw 'Independent candidate/review exact pin mismatch'}
+          $expected='859ae6365aabaad2ada9362bb556243ede414f3de65fa3667ea0c3e5da38af0b'
+          $actual=(Get-FileHash -LiteralPath 'out/lu-browser-reviewed/manifest.json' -Algorithm SHA256).Hash.ToLowerInvariant()
+          if($actual -cne $expected){throw 'Promotion cannot alter independently pinned reviewed manifest SHA'}
+          $m=Get-Content 'out/lu-browser-reviewed/manifest.json' -Raw|ConvertFrom-Json
+          if($m.status -cne 'reviewed' -or @($m.files).Count -ne 482){throw 'Reviewed runtime identity invalid'}
+      - name: Provision exact current NSIS and source-built Vulkan toolchain
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $exe=Join-Path ([Environment]::GetFolderPath('ProgramFilesX86')) 'NSIS\makensis.exe'
+          if(-not(Test-Path -LiteralPath $exe)){
+            choco install nsis --version=3.11.0 --yes --no-progress --limit-output
+            if($LASTEXITCODE -ne 0){throw 'Pinned NSIS 3.11 unavailable'}
+          }
+          if(-not(Test-Path -LiteralPath $exe)){throw 'NSIS exe missing'}
+          & $exe /VERSION
+          if($LASTEXITCODE -ne 0){throw 'NSIS failed native invocation'}
+          choco install vulkan-sdk --version=1.4.350 --yes --no-progress --limit-output
+          if($LASTEXITCODE -ne 0){throw 'Pinned Vulkan SDK unavailable'}
+          $sdk=@(Get-ChildItem 'C:\VulkanSDK' -Directory -ErrorAction Stop |
+            Where-Object { Test-Path (Join-Path $_.FullName 'Bin\glslc.exe') })
+          if($sdk.Count -ne 1){throw 'Pinned Vulkan SDK absent or ambiguous'}
+          "VULKAN_SDK=$($sdk[0].FullName)" >> $env:GITHUB_ENV
+          (Join-Path $sdk[0].FullName 'Bin') >> $env:GITHUB_PATH
+          & (Join-Path $sdk[0].FullName 'Bin\glslc.exe') --version
+          if($LASTEXITCODE -ne 0){throw 'Pinned Vulkan compiler unusable'}
+      - name: Compile current Lu with EMBEDDED reviewed Chromium manifest and genuine CPU/Vulkan servers
+        shell: pwsh
+        timeout-minutes: 150
+        env:
+          SOURCE_SHA: ${{ github.sha }}
+          LU_BROWSER_PACKAGE_DIR: ${{ github.workspace }}/out/lu-browser-reviewed
+          LU_BROWSER_MANIFEST_SHA256: '859ae6365aabaad2ada9362bb556243ede414f3de65fa3667ea0c3e5da38af0b'
+          LU_REQUIRE_BROWSER: '1'
+        run: |
+          $ErrorActionPreference='Stop'
+          $out=Join-Path $env:RUNNER_TEMP 'lu-c62b-installed-browser'
+          & scripts/build-current-windows-nsis.ps1 -SourceSha $env:SOURCE_SHA -OutputDirectory $out
+          if($LASTEXITCODE -ne 0){throw 'Reviewed native browser Windows installer build failed'}
+          $f=Get-Content (Join-Path $out 'installer-checksums.json') -Raw|ConvertFrom-Json
+          $p=Get-Content (Join-Path $out 'BUILD_PROVENANCE.json') -Raw|ConvertFrom-Json
+          $actual=(Get-FileHash -LiteralPath (Join-Path $out $f.installerName) -Algorithm SHA256).Hash.ToLowerInvariant()
+          if($actual -cne $f.installerSha256 -or $f.sourceSha -cne $env:SOURCE_SHA -or
+             $f.browserManifestSha256 -cne $env:LU_BROWSER_MANIFEST_SHA256 -or
+             $p.browserManifestSha256 -cne $env:LU_BROWSER_MANIFEST_SHA256 -or
+             $p.browserRuntime -cne 'REVIEWED_AND_STAGED'){
+            throw 'Installer/provenance/browser exact hash mismatch'
+          }
+          "C62B_SOURCE_SHA=$env:SOURCE_SHA" >> $env:GITHUB_STEP_SUMMARY
+          "C62B_INSTALLED_BROWSER_MANIFEST_SHA256=$($f.browserManifestSha256)" >> $env:GITHUB_STEP_SUMMARY
+          "C62B_INSTALLER_SHA256=$actual" >> $env:GITHUB_STEP_SUMMARY
+          'Browser embedded from separate exact SHA256 review. No model tool grant or physical AMD test asserted.' >> $env:GITHUB_STEP_SUMMARY
+      - name: Native Rust host independently recomputes the exact compiled reviewed-browser manifest AND all files
+        shell: pwsh
+        timeout-minutes: 60
+        env:
+          LU_C62_REVIEWED_RUNTIME_TEST: '1'
+        run: |
+          $ErrorActionPreference='Stop'
+          cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib native_browser_host::tests::c62_reviewed_runtime_exact_bytes_and_compiled_manifest -- --ignored --exact --nocapture
+          if($LASTEXITCODE -ne 0){throw 'Actual Rust browser host rejected pinned review manifest or component'}
+      - name: Genuine hosted Windows install / browser bytes / UI windows / uninstall / AppData preservation
+        shell: pwsh
+        timeout-minutes: 24
+        run: |
+          $ErrorActionPreference='Stop'
+          $out=Join-Path $env:RUNNER_TEMP 'lu-c62b-installed-browser'
+          $f=Get-Content (Join-Path $out 'installer-checksums.json') -Raw|ConvertFrom-Json
+          $evidence=Join-Path $out 'installed-c62b-original-evidence'
+          $args=@{
+            InstallerPath=(Join-Path $out $f.installerName)
+            InstallerSha256=$f.installerSha256
+            ExpectedLuSha256=$f.appSha256
+            ExpectedEngineSha256=$f.engineSha256
+            ExpectedVulkanSha256=$f.vulkanEngineSha256
+            ExpectedResearchSha256=$f.researchClientSha256
+            ExpectedBrowserManifestSha256=$f.browserManifestSha256
+            ProfileIdentifier='org.lu.current.devpreview'
+            UninstallerName='UninstallLuCurrentPreview.exe'
+            DisposableWindowsConfirmed=$true
+            ExerciseInstalledGui=$true
+            EvidenceDir=$evidence
+          }
+          & scripts/m3-windows-nsis-cycle.ps1 @args
+          if($LASTEXITCODE -ne 0){throw 'Installed browser/NSIS lifecycle failed'}
+          $r=Get-Content (Join-Path $evidence 'm3-nsis-cycle.json') -Raw|ConvertFrom-Json
+          if($r.installer -ne 'PASS_REAL_NATIVE_PROCESS_EXIT' -or
+             $r.installedApp -ne 'PASS_SHA256' -or
+             $r.installedRealEngine -ne 'PASS_SHA256' -or
+             $r.installedVulkanEngine -ne 'PASS_SHA256' -or
+             $r.installedReviewedBrowser -ne 'PASS_EXACT_BROWSER_FILES_AND_REAL_BUNDLED_NODE' -or
+             $r.installedUiSmoke -ne 'PASS_INSTALLED_NATIVE_WINDOW_AND_BOTH_DIALOGS' -or
+             $r.profilePreservation -ne 'PASS_UNTOUCHED_APPDATA_SENTINEL' -or
+             $r.packageRemoval -ne 'PASS_BINARIES_ABSENT'){
+            throw 'Original installed browser/GUI/NSIS exact assertions incomplete'
+          }
+          'Real hosted installed browser payload, native Rust positive, UI windows and uninstall: PASS; owner physical model/browser approval separate.' >> $env:GITHUB_STEP_SUMMARY
+      - name: Preserve real current native NSIS with reviewed browser and original OS receipts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Lu-C62B-Reviewed-Browser-NSIS-${{ github.sha }}
+          path: ${{ runner.temp }}/lu-c62b-installed-browser/
+          if-no-files-found: warn
+          retention-days: 14
+          compression-level: 6

@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "fc4b5a6cab06f9e0ba1b8be90f0f63762376b6d3",
-  "trackedFileCount": 1064,
+  "sourceCommitBeforeLock": "3449ddf40a96e16af3a3b79ccc9a1c986bd8e62f",
+  "trackedFileCount": 1067,
   "files": [
     {
       "path": ".github/pull_request_template.md",
@@ -82,6 +82,10 @@
     {
       "path": ".github/workflows/lu-core-c62a-windows-browser-candidate.yml",
       "blob": "a43cf5382a879369632bc2cbb2fa5e72c0ddd8cd"
+    },
+    {
+      "path": ".github/workflows/lu-core-c62b-reviewed-browser-nsis.yml",
+      "blob": "d7e03f37c4aa692616f9ea8058b2caa247013649"
     },
     {
       "path": ".github/workflows/lu-core-c62t-browser-review-transport.yml",
@@ -261,7 +265,7 @@
     },
     {
       "path": ".github/workflows/lu-repo01-full-source.yml",
-      "blob": "13a63be70ad851074c86c3130345ffa988035ef0"
+      "blob": "691b9c95a22953446936871ab40d723ee9ab0f45"
     },
     {
       "path": ".github/workflows/lu-tools-01-05-integration.yml",
@@ -709,7 +713,7 @@
     },
     {
       "path": "docs/LU_DEVELOPMENT_LEDGER.md",
-      "blob": "078f138d4799838189c1076828b570d33013b922"
+      "blob": "9f37c1fdfc89463243eadabdedc8893da544f815"
     },
     {
       "path": "docs/LU_E1_NATIVE_EVIDENCE_20261107.md",
@@ -1156,6 +1160,10 @@
       "blob": "971afade9b71ee3b725eca2a4fde1ad153e48afc"
     },
     {
+      "path": "docs/acceptance/LU_C62_WINDOWS_BROWSER_REVIEW.json",
+      "blob": "3e57e652264dbf4d939dc9f7bf912775304fae5e"
+    },
+    {
       "path": "docs/acceptance/LU_M3_WINDOWS_NATIVE_ACCEPTANCE_20261107.md",
       "blob": "ebedc54a3b544ffc3d3c635f09c3ec0426b85c95"
     },
@@ -1537,7 +1545,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/native_browser_host.rs",
-      "blob": "4778a0089bcf1f05b2e85231e6d376920e42c8bc"
+      "blob": "86841a5cf5ba4d6a125b42b438154baa2fc6dd17"
     },
     {
       "path": "lu-desktop/src-tauri/src/native_host_edit.rs",
@@ -2297,7 +2305,7 @@
     },
     {
       "path": "scripts/build-current-windows-nsis.ps1",
-      "blob": "3d2b5b2420d958e4a629664b1268c9b31e60af1d"
+      "blob": "dfc336d80145cf3459b453aecdecc0a6c8e9469e"
     },
     {
       "path": "scripts/c3-windows-installed-native-completion.ps1",
@@ -2390,6 +2398,10 @@
     {
       "path": "scripts/lu-c62-browser-transport.test.mjs",
       "blob": "2a52166f949482fd6cb28f39a98eb1c1f28adf48"
+    },
+    {
+      "path": "scripts/lu-c62b-reviewed-browser-contract.test.mjs",
+      "blob": "18972eeba83dcb7598003e5cb7102151776eb1df"
     },
     {
       "path": "scripts/lu-ci-group-policy.mjs",
@@ -2485,7 +2497,7 @@
     },
     {
       "path": "scripts/m3-windows-nsis-cycle.ps1",
-      "blob": "9bede8de776a22430351b48535e7056caa943019"
+      "blob": "cb15f8d849f1a590958e3bc18e47de9798ebf50f"
     },
     {
       "path": "scripts/m4-windows-installed-memory-acceptance.ps1",

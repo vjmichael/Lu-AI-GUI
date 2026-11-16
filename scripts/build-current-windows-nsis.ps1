@@ -161,6 +161,7 @@ try{
   # with a manifest digest. No ambient Edge/Chrome, PATH Node, or automatic
   # network installation can become a browser grant.
   $browserBundle=''
+  $browserDigest='NOT_PACKAGED'
   if($env:LU_BROWSER_PACKAGE_DIR -or $env:LU_BROWSER_MANIFEST_SHA256){
     if(-not($env:LU_BROWSER_PACKAGE_DIR -and $env:LU_BROWSER_MANIFEST_SHA256)){
       throw 'Reviewed Browser needs BOTH LU_BROWSER_PACKAGE_DIR and LU_BROWSER_MANIFEST_SHA256'
@@ -248,6 +249,7 @@ try{
     engineUpstreamCommit=$upstream;engineBackend='two-source-built-cpu-and-vulkan-gpu-unproven'
     engineDigestEmbeddedIntoApp=$true;modelBundled=$false
     browserRuntime=if($browserBundle){'REVIEWED_AND_STAGED'}else{'NOT_PACKAGED'}
+    browserManifestSha256=$browserDigest
     researchClientSha256=$env:LU_RESEARCH_CURL_SHA256
     providerRuntime='MICROSOFT_SIGNED_SYSTEM32_HASH_PINNED'
     installedUiAcceptance='NOT_TESTED'
@@ -276,6 +278,7 @@ try{
     sourceSha=$SourceSha;installerName=(Split-Path -Leaf $installer)
     installerSha256=$installerHash;installerBytes=[int64](Get-Item $installer).Length
     appSha256=$appHash;engineSha256=$engineHash;vulkanEngineSha256=$vkHash;researchClientSha256=$env:LU_RESEARCH_CURL_SHA256
+    browserManifestSha256=$browserDigest
     genuineInstallerProduced=$true;physicallyInstalledAndTested=$false
     nativeUiEvidence='NOT_TESTED';realModelToolEvidence='NOT_TESTED'
     gpuVulkanEvidence='VULKAN_ENGINE_BUILT_GPU_OFFLOAD_NOT_TESTED';qwen38SupportPinnedEngine=$upstream
