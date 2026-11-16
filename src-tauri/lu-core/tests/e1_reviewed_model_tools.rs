@@ -1494,6 +1494,19 @@ async fn agent01g_genuine_gguf_requires_fresh_ansf_review_native_git_oracle_and_
 #[tokio::test]
 #[ignore="requires actual Qwen3 GGUF, native Git, two separate authorization sessions and real independent source oracles"]
 async fn agent01i_genuine_qwen_two_fresh_approvals_independent_git_and_restart(){
+    agent01i_exercise_real_qwen(false).await;
+}
+
+/// Real GGUF, one original saved human task, two DIFFERENT independently
+/// checked native methods and two separately reviewed execution sessions.
+/// The human consent here is TEST-ONLY; it does not impersonate an actual
+/// desktop OS-native whole-task completion decision.
+#[tokio::test]
+#[ignore="requires real pinned local GGUF, root-owned Git/FFprobe and native oracles"]
+async fn c3_genuine_gguf_one_task_git_head_then_wav_pcm_with_recovery(){
+    agent01i_exercise_real_qwen(true).await;
+}
+async fn agent01i_exercise_real_qwen(child_media:bool){
     use lu_core::{
         ansf_goals::{GoalEvent,GoalEventKind},
         agent_plan_ledger::{AgentPlanLedger,PlanStepSpec,PlanStepKind},
@@ -1508,8 +1521,11 @@ async fn agent01i_genuine_qwen_two_fresh_approvals_independent_git_and_restart()
         },
     };
     let git=actual_binary("LU_E1_P07_GIT");
+    let probe=child_media.then(||actual_binary("LU_E1_P07_FFPROBE"));
     let root=temp();
     fs::create_dir_all(&root).unwrap();
+    let wav=root.join("approved-original.wav");
+    if child_media{fs::write(&wav,wav_one_second()).unwrap();}
     let repo=root.join("git-fixture");
     fs::create_dir_all(&repo).unwrap();
     assert!(Command::new(&git).arg("init").arg("-q").arg(&repo)
@@ -1534,12 +1550,16 @@ async fn agent01i_genuine_qwen_two_fresh_approvals_independent_git_and_restart()
     book.create_session(&chat,&fresh_turn,"Reviewed AGENT-01G source").unwrap();
     book.start_chapter(&chat,"Original human task and approvals").unwrap();
     book.append_entry(&chat,&original,EntryRole::User,
-        "Original human goal","Verify the exact Git HEAD of my selected repository"
+        "Original human goal",if child_media{
+            "Verify exact Git HEAD and approved WAV PCM codec and duration as two independent requirements"
+        }else{"Verify the exact Git HEAD of my selected repository"}
     ).unwrap();
     book.mirror_goal_event(&chat,&GoalEvent{
         event_id:goal_event.clone(),goal_id:goal_id.clone(),
         question_id:None,kind:GoalEventKind::SetGoal,
-        text:"Independently verify the approved local Git HEAD".into(),
+        text:(if child_media{
+            "Independently verify both the Git HEAD and WAV PCM facts from my approved local sources"
+        }else{"Independently verify the approved local Git HEAD"}).into(),
         choice:None,comment:None
     }).unwrap();
     let source=Agent01gAnsfSource{book:&book,chat:chat.clone()};
@@ -1812,7 +1832,9 @@ async fn agent01i_genuine_qwen_two_fresh_approvals_independent_git_and_restart()
     ).is_err(),"child requires its own saved human execution turn");
     book.append_entry(&chat,&child_turn,EntryRole::User,
         "Third distinct child per-operation confirmation fixture",
-        "Authorize one Git HEAD operation for the newly reviewed child plan"
+        if child_media{
+            "Authorize one separate, read-only WAV PCM check through the original native FFprobe worker"
+        }else{"Authorize one Git HEAD operation for the newly reviewed child plan"}
     ).unwrap();
     scheduler.propose_step(
         &child_plan,&chat,&preparation,&child_owner,1,&child_revision,0,
@@ -1825,11 +1847,11 @@ async fn agent01i_genuine_qwen_two_fresh_approvals_independent_git_and_restart()
         task_id:child_turn.clone(),execution_scope_id:child_turn.clone(),
         capabilities:vec![
             AuthorizedCapability{
-                tool_id:"lu.reviewed.git.head".into(),
+                tool_id:(if child_media{"lu.reviewed.media.facts"}else{"lu.reviewed.git.head"}).into(),
                 effect:ToolEffect::ExecuteCode
             },
             AuthorizedCapability{
-                tool_id:"lu.reviewed.git.repo-read".into(),
+                tool_id:(if child_media{"lu.reviewed.media.file-read"}else{"lu.reviewed.git.repo-read"}).into(),
                 effect:ToolEffect::ReadWorkspace
             },
         ],expires_at:None
@@ -1846,17 +1868,26 @@ async fn agent01i_genuine_qwen_two_fresh_approvals_independent_git_and_restart()
             Arc::clone(&child_tasks),root.clone()
         )
     );
-    let mut child_git=git_config(&git,&repo);
-    child_git.executable.workspace_id=child_turn.clone();
+    let (child_git,child_probe)=if child_media{
+        let mut selected=media_config(probe.as_deref().unwrap(),&wav);
+        selected.executable.workspace_id=child_turn.clone();
+        (vec![],Some(selected))
+    }else{
+        let mut selected=git_config(&git,&repo);
+        selected.executable.workspace_id=child_turn.clone();
+        (vec![selected],None)
+    };
     let mut child_session=ReviewedApplicationTurnSession::from_verified_host_task(
         child_auth.clone(),child_origin.clone(),child_turn.clone(),
         Arc::clone(&child_tasks),Arc::clone(&child_supervisor),
-        Arc::clone(&child_effects),Arc::new(Allow),vec![child_git],None,None
+        Arc::clone(&child_effects),Arc::new(Allow),child_git,child_probe,None
     ).unwrap();
     let child_binding=child_session.preflight_scheduled_step(
         &scheduler,&ledger,&revisions,&source,
         &child_plan,&preparation,&child_owner,1,&child_revision,
-        &child_claim,0,ReviewedBrokerOperation::GitHead
+        &child_claim,0,if child_media{
+            ReviewedBrokerOperation::MediaFacts
+        }else{ReviewedBrokerOperation::GitHead}
     ).unwrap();
     assert_eq!(child_session.schemas().unwrap().len(),1);
     let child_audit_path=root.join("gguf-child-audit.sqlite");
@@ -1864,23 +1895,38 @@ async fn agent01i_genuine_qwen_two_fresh_approvals_independent_git_and_restart()
     let mut child_model=GenuineGgufStep{raw_replies:vec![],first_tool_mode:"required"};
     let child_report=child_session.run_journaled_observed(
         &format!(
-            "The user made a NEW separately approved plan for the same current ANSF goal: {}. \
-             Choose exactly one advertised reviewed Git HEAD tool for this new \
-             human-authorized turn; incorporate the actual independently verified SHA.",
-            original_context.goal
+            "The user made a NEW separately reviewed plan for the same original ANSF goal: {}. {}",
+            original_context.goal,
+            if child_media{
+                "Choose only the advertised reviewed WAV media inspection tool. Report actual PCM codec and duration from its original native feedback; do not invent outcomes or claim whole-task completion."
+            }else{
+                "Choose exactly one advertised reviewed Git HEAD tool for this fresh authorized turn; report the independently verified commit SHA."
+            }
         ),
-        &mut child_model,&Cancellation::default(),&child_audit,&|_|{}
+        &mut child_model,&Cancellation::default(),&child_audit,&|_{ }
     ).await.unwrap();
     assert_eq!(child_report.host_routed_calls,0);
     assert_eq!(child_report.tool_calls,1,
         "second Qwen selection must be genuine and independently authorized");
     assert!(child_report.model_generations>=2);
-    assert!(child_model.raw_replies.iter().any(|s|s.contains("lu_reviewed_git_head")));
-    assert!(child_report.answer.contains(&actual_head));
+    let child_tool=if child_media{"lu_reviewed_media_facts"}
+        else{"lu_reviewed_git_head"};
+    assert!(child_model.raw_replies.iter().any(|s|s.contains(child_tool)));
+    if child_media{
+        assert!(child_report.answer.contains("pcm_s16le"),
+            "real model must incorporate original observed PCM result");
+    }else{
+        assert!(child_report.answer.contains(&actual_head));
+    }
     let child_calls:Vec<String>=child_report.records.iter().filter_map(|event|{
         if let NativeTurnRecord::ToolFeedback(value)=event{
-            if value["name"]=="lu_reviewed_git_head"
-                &&value["response"]["result"]["headCommit"]==actual_head{
+            if value["name"]==child_tool &&
+                (if child_media{
+                    value["response"]["result"]["durationMilliseconds"]==1000
+                    &&value["response"]["result"]["streams"][0]["codec"]=="pcm_s16le"
+                }else{
+                    value["response"]["result"]["headCommit"]==actual_head
+                }){
                 return value["call_id"].as_str().map(str::to_owned)
             }
         }
@@ -1890,15 +1936,24 @@ async fn agent01i_genuine_qwen_two_fresh_approvals_independent_git_and_restart()
     let child_verified=link_verified_scheduled_worker_outcome(
         &scheduler,&ledger,&revisions,&receipts,&source,&human,
         &root,&child_plan,&chat,&preparation,&child_owner,1,
-        &child_binding,&child_origin,&format!("{}-gh",child_calls[0])
+        &child_binding,&child_origin,&format!(
+            "{}{}",child_calls[0],if child_media{"-fm"}else{"-gh"}
+        )
     ).unwrap();
     assert_eq!(child_verified.status,"VERIFIED_AT_OBSERVATION");
+    assert_eq!(child_verified.tool_id,
+        if child_media{"lu.reviewed.media.facts"}else{"lu.reviewed.git.head"});
+    if child_media{
+        assert_eq!(child_verified.independent_method,"WAV_PCM_DIRECT_V1");
+        assert_ne!(child_verified.receipt_sha256,receipt.receipt_sha256,
+            "different original criteria must have distinct receipts");
+    }
     assert_eq!(child_verified.continuation,"NOT_AUTHORIZED_FOR_EXECUTION");
     assert!(child_auth.permitted_tool_ids(&child_origin).is_ok_and(|names|names.is_empty()));
     book.append_entry(&chat,&agent01g_id("g-",123),EntryRole::Assistant,
-        "Second separately verified result",&format!(
-            "Independently verified second fresh Git HEAD: {actual_head}"
-        )
+        "Second separately verified result",&if child_media{
+            "Independently verified WAV: pcm_s16le, 1000 ms".to_string()
+        }else{format!("Independently verified second fresh Git HEAD: {actual_head}")}
     ).unwrap();
     scheduler.release_without_dispatch(
         &child_plan,&chat,&preparation,&child_owner,1
@@ -1917,7 +1972,12 @@ async fn agent01i_genuine_qwen_two_fresh_approvals_independent_git_and_restart()
     assert!(child_events.iter().any(|e|e.kind==ModelAuditKind::ModelOutput
         &&child_model.raw_replies.iter().any(|raw|raw==&e.payload)));
     drop(reopened_child);
-    eprintln!("AGENT01I_TWO_STEP_REAL_QWEN_AND_NATIVE_ORACLE_PASS");
+    if child_media{
+        eprintln!("CORE_C3_REAL_QWEN_ONE_GOAL_GIT_HEAD_AND_WAV_PCM_ORACLES_PASS");
+        eprintln!("CORE_C3_SEPARATE_REAL_HUMAN_TASK_COMPLETION_NOT_TESTED=1");
+    }else{
+        eprintln!("AGENT01I_TWO_STEP_REAL_QWEN_AND_NATIVE_ORACLE_PASS");
+    }
 
     drop(session);drop(audit);drop(supervisor);drop(tasks);drop(effects);
     // A historical receipt is not timeless permission: if the actual
