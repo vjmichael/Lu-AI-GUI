@@ -2,6 +2,9 @@ name: IDE DEV04.5D5 pinned LLVM owner-event native Windows acceptance
 on:
   pull_request:
     paths:
+      # The Windows native gate runs cargo fmt --check over the host crate;
+      # changes to its source must rerun the same original OS acceptance.
+      - 'ide/host/src/**'
       - 'ide/llvm18_owner/**'
       - 'ide/supervisor/src/windows_event_owner.rs'
       - 'ide/supervisor/src/windows_lsp_worker.rs'
