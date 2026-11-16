@@ -33,7 +33,7 @@ if($exe.Name -cne 'lu-desktop.exe' -or $exe.PSIsContainer -or
 Add-Type -AssemblyName UIAutomationClient
 Add-Type -AssemblyName UIAutomationTypes
 Add-Type -AssemblyName System.Windows.Forms
-$script:app=$null;$script:board=$null
+$script:app=$null;$script:main=$null;$script:board=$null;$script:dialog=$null
 $script:report=[ordered]@{
  schema='lu-c3-installed-windows-native-decision-negative-v1'
  installedSourceExeSha256=$ExpectedSha256.ToLowerInvariant()
@@ -53,6 +53,55 @@ function All([System.Windows.Automation.AutomationElement]$owner){
  return $owner.FindAll([System.Windows.Automation.TreeScope]::Descendants,
    [System.Windows.Automation.Condition]::TrueCondition)
 }
+function CaptureOriginalUIATree([string]$label,[System.Windows.Automation.AutomationElement]$root){
+ if($null -eq $root){return}
+ try{
+  $sample=@()
+  $items=All $root
+  for($i=0;$i -lt [Math]::Min(450,$items.Count);$i++){
+   try{
+    $item=$items[$i]
+    $sample+=@([ordered]@{
+      name=$item.Current.Name
+      type=$item.Current.ControlType.ProgrammaticName
+      processId=$item.Current.ProcessId
+      offscreen=$item.Current.IsOffscreen
+      enabled=$item.Current.IsEnabled
+      hwnd=$item.Current.NativeWindowHandle
+    })
+   }catch{}
+  }
+  $file=Join-Path $EvidenceDir ('uia-'+$label+'.json')
+  [ordered]@{
+    rootProcessId=$root.Current.ProcessId
+    rootHwnd=$root.Current.NativeWindowHandle
+    appProcessId=$script:app.Id
+    originalElements=$sample
+    truncated=($items.Count -gt 450)
+  }|ConvertTo-Json -Depth 6|Set-Content -LiteralPath $file -Encoding UTF8
+ }catch{
+  $script:report.errors+=@('UIA diagnostic '+$label+': '+$_.Exception.Message)
+ }
+}
+# Windows WebView2 DOM UIA elements often have a child process PID, but are
+# still descendants of the *verified* Tauri app-owned native window. Reject
+# all controls outside the already authenticated native window subtrees.
+function InOwnedNativeTree([System.Windows.Automation.AutomationElement]$target){
+ foreach($root in @($script:main,$script:board,$script:dialog)){
+  if($null -eq $root){continue}
+  try{
+   if($root.Current.ProcessId -ne $script:app.Id -or
+      $root.Current.NativeWindowHandle -eq 0){continue}
+   if([System.Windows.Automation.AutomationElement]::Compare($root,$target)){return $true}
+   foreach($candidate in (All $root)){
+    if([System.Windows.Automation.AutomationElement]::Compare($candidate,$target)){
+     return $true
+    }
+   }
+  }catch{}
+ }
+ return $false
+}
 function Visible([System.Windows.Automation.AutomationElement]$x){
  if(-not $x.Current.IsOffscreen){return $true}
  $pat=$null
@@ -63,20 +112,22 @@ function Visible([System.Windows.Automation.AutomationElement]$x){
  return (-not $x.Current.IsOffscreen)
 }
 function Find([System.Windows.Automation.AutomationElement]$owner,[string]$name,[int]$seconds=30){
+ if(-not (InOwnedNativeTree $owner)){throw 'UIA search owner is not in Lu native window ancestry'}
  $limit=[DateTime]::UtcNow.AddSeconds($seconds)
  do{
   foreach($x in (All $owner)){
    try{
-    if($x.Current.Name -cne $name -or $x.Current.ProcessId -ne $script:app.Id){continue}
+    if($x.Current.Name -cne $name){continue}
     if(Visible $x){return $x}
    }catch{}
   }
   Start-Sleep -Milliseconds 250
  }while([DateTime]::UtcNow -lt $limit)
+ CaptureOriginalUIATree ('missing-'+($name -replace '[^a-zA-Z0-9]','-')) $owner
  throw ('Real UIA control missing/offscreen: '+$name)
 }
 function Click([System.Windows.Automation.AutomationElement]$x){
- if($x.Current.ProcessId -ne $script:app.Id -or -not (Visible $x) -or
+ if(-not (InOwnedNativeTree $x) -or -not (Visible $x) -or
     -not $x.Current.IsEnabled){throw 'Refuse disabled/foreign/offscreen UIA action'}
  $p=$null
  if($x.TryGetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern,[ref]$p)){
@@ -97,11 +148,13 @@ function Native([string]$title){
     if($w.Current.Name -cne $title -or $w.Current.ProcessId -ne $script:app.Id -or
        $w.Current.NativeWindowHandle -eq 0 -or $w.Current.IsOffscreen -or
        $w.Current.ControlType -ne [System.Windows.Automation.ControlType]::Window){continue}
+    $script:dialog=$w
     return $w
    }catch{}
   }
   Start-Sleep -Milliseconds 250
  }while([DateTime]::UtcNow -lt $limit)
+ CaptureOriginalUIATree 'missing-installed-native-dialog' $script:board
  throw ('No independent OS-owned installed native dialog: '+$title)
 }
 function Journal(){
@@ -138,8 +191,11 @@ function StartInstalled(){
  if($script:app.MainWindowHandle -eq [IntPtr]::Zero){throw 'No real app main HWND'}
  $main=[System.Windows.Automation.AutomationElement]::FromHandle($script:app.MainWindowHandle)
  if($main.Current.ProcessId -ne $script:app.Id){throw 'Wrong installed main process'}
+ $script:main=$main
+ CaptureOriginalUIATree 'installed-main-before-task-board' $main
  Click (Find $main 'Project tasks')
  $script:board=Native 'Lu — Project Tasks'
+ CaptureOriginalUIATree 'installed-native-task-board' $script:board
  if($main.Current.NativeWindowHandle -eq $script:board.Current.NativeWindowHandle){
   throw 'Task Board did not open in a distinct native HWND'
  }
@@ -150,8 +206,7 @@ function SelectTask(){
  do{
   foreach($x in (All $region)){
    try{
-    if($x.Current.ProcessId -ne $script:app.Id -or
-       $x.Current.ControlType.ProgrammaticName -cne 'ControlType.Button' -or
+    if($x.Current.ControlType.ProgrammaticName -cne 'ControlType.Button' -or
        $x.Current.Name -notmatch 'Review (north|south) source requirement 1'){continue}
     Click $x
     $null=Find $script:board 'Whole task completion disposition'
@@ -191,7 +246,7 @@ function StopInstalled(){
   throw 'Installed app failed graceful task-window restart exit'
  }
  if($script:app.ExitCode -ne 0){throw 'Installed app exit nonzero'}
- $script:app=$null;$script:board=$null
+ $script:app=$null;$script:main=$null;$script:board=$null;$script:dialog=$null
 }
 try{
  StartInstalled
