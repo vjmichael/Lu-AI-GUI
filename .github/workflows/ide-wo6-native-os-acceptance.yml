@@ -43,6 +43,9 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference='Stop'
+          # Preserve the original non-oracle Windows feature graph separately.
+          cargo build --manifest-path ide/supervisor/Cargo.toml --features 'dap-transport,protected-recovery-service' --bin windows_recovery_service --bin windows_null_service_bootstrap --example wo6_native_dap_acceptance
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: WO6 historical Windows native build failed' }
           cargo build --manifest-path ide/supervisor/Cargo.toml --features 'dap-transport,protected-recovery-service,dev045d4c-ci-oracle' --bin windows_recovery_service --bin windows_null_service_bootstrap --example wo6_native_dap_acceptance
           if ($LASTEXITCODE -ne 0) { throw 'DENIED: native debugger test compilation failed' }
       - name: Stage test-only self-measured LLDB-DAP and fixed debuggee
@@ -367,6 +370,9 @@ jobs:
           export LU_IDE_D3_LINUX_SYMBOLIZER_SHA256="$(sha256sum /usr/lib/llvm-18/bin/llvm-symbolizer | cut -d' ' -f1)"
           test "${#LU_IDE_D3_LINUX_SYMBOLIZER_SHA256}" = 64
           cargo build --manifest-path ide/sandbox/Cargo.toml --bin linux_cgroup_prepare --bin linux_delegated_ci_wo6_build_host
+          # Preserve the historical Linux-worker-only build without a debugger oracle.
+          cargo build --manifest-path ide/supervisor/Cargo.toml --features linux-worker --example wo6_linux_native_build_acceptance
+          if [ $? -ne 0 ]; then echo 'DENIED: WO6 historical Linux native build failed'; exit 2; fi
           cargo build --manifest-path ide/supervisor/Cargo.toml --features 'linux-worker,dap-transport,dev045d3-ci-oracle' --example wo6_linux_native_build_acceptance
       - name: Real isolated Cargo check, test and cancellation with kernel receipts
         shell: bash

@@ -49,6 +49,22 @@ jobs:
           set -euo pipefail
           cargo test --manifest-path ide/supervisor/Cargo.toml --lib --locked debug_binary_witness
           cargo test --manifest-path ide/supervisor/Cargo.toml --lib --locked wo6_build_test_evidence
+      - name: Build real pinned Tauri frontendDist before native Cargo compile
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          # cargo check does not run Tauri beforeBuildCommand. Install the
+          # checked-in npm lock and build the actual React entry, not an empty
+          # placeholder dist or a generated fake frontend.
+          npm ci --ignore-scripts --no-audit --no-fund --prefix ide/app
+          node ide/app/scripts/build.mjs
+          test -s ide/app/dist/index.html
+          test -s ide/app/dist/assets/app.js
+          test -s ide/app/dist/assets/frontend_startup_diagnostic.js
+          # Bundling must not silently change native application sources.
+          git diff --exit-code -- ide/app/web ide/app/src-tauri
+          echo 'IDE_DEV04_REAL_FRONTEND_DIST=PREPARED_NOT_NATIVE_OR_INSTALLED_ACCEPTANCE'
       - name: Exact integrated native Tauri build
         shell: bash
         run: |

@@ -1,0 +1,82 @@
+{
+  "schema": "lu.ide.merge02.p05.owner-authorized-current-stack.v1",
+  "originalManifestBlob": "5299b1ca6981f341d2855f549e567b8c2747dc13",
+  "originalVerifierBlob": "92299fb443f58e73d0600a1e2a1b84be5fcef5e7",
+  "historicalManifestExactTree": "8c61d570c04a5384772705d123f860b0e3484073",
+  "originalWorkflowCount": 38,
+  "ownerDecision": {
+    "issue": 237,
+    "commentId": 6921053701,
+    "authorizedSevenChanges": true,
+    "noSecondReviewerRequired": true
+  },
+  "scopeAdditional": {
+    "path": ".github/workflows/ide-sandbox-windows.yml",
+    "reason": "User's explicitly requested current-stack Windows worker security assertion correction; original no-worker source check remains executed at exact historical snapshot",
+    "governance": "current_turn_engineering_scope_not_an_extra_original_seven_review"
+  },
+  "workflows": [
+    {
+      "path": ".github/workflows/ide-d7-windows-worker.yml",
+      "original": "518635e58bbac5b249bfeadba7e60c90b9d0010c",
+      "replacement": "6832a33bdab3539d85805ccd43a9aa479758d08d",
+      "ownerAuthorized": true
+    },
+    {
+      "path": ".github/workflows/ide-d7b-native-acceptance.yml",
+      "original": "f70955319c621cbd08cd2a7a6f7eac77caffc3a1",
+      "replacement": "c247635e41a4c325a76cc5223239f890898c92c1",
+      "ownerAuthorized": true
+    },
+    {
+      "path": ".github/workflows/ide-d7d-protected-service.yml",
+      "original": "ce56f987cb056c01ef7be58318d70c9e136aafad",
+      "replacement": "3450fba59185c88dc67ccc87627570db3a91b1b7",
+      "ownerAuthorized": true
+    },
+    {
+      "path": ".github/workflows/ide-sandbox-windows.yml",
+      "original": "4344a3563b9151e874443c5000639114342e66b5",
+      "replacement": "742a255acbbae975514ea468d5932c07021d7643",
+      "ownerAuthorized": true
+    },
+    {
+      "path": ".github/workflows/ide-supervisor-core.yml",
+      "original": "e0d26f80713cdf498c3bfdf82645498dddf34e16",
+      "replacement": "11203a4e5f8cfeecee9effa00c88c981492be527",
+      "ownerAuthorized": true
+    },
+    {
+      "path": ".github/workflows/ide-wo6-native-os-acceptance.yml",
+      "original": "d7627899b3a6cafc7b383f00abbb2b9e7107fe2d",
+      "replacement": "cea665eec68062b4071f57be206d56676a885ed3",
+      "ownerAuthorized": true
+    },
+    {
+      "path": ".github/workflows/ide-wo8-installed-windows.yml",
+      "original": "8fadc3f1829e62123b9da6a5e6bbd49a3f3ec36f",
+      "replacement": "95138087b419a4b1f9baa052e717c34fc069ae44",
+      "ownerAuthorized": true
+    },
+    {
+      "path": ".github/workflows/ide-wo8-signed-protected-e2e.yml",
+      "original": "08e2ab350b9e0c9e88958a40a3eeca59a3a66df5",
+      "replacement": "3cbaf9efc3836bfbe3a978cdd5511daac04f2380",
+      "ownerAuthorized": true
+    }
+  ],
+  "sourceEquivalenceStatus": "original_exact_38_source_blob_comparison_and_new_exceptions_required",
+  "nativeWindowsAccepted": false,
+  "nativeLinuxAccepted": false,
+  "llvm18Accepted": false,
+  "installedGuiAccepted": false,
+  "releaseApproved": false,
+  "mergeApproved": false,
+  "historicalManifestRewritten": false,
+  "originalNegativeTestsDropped": false,
+  "unresolvedRuntimeEvidence": [
+    "WO6 actual Windows protected LLDB fails SUPERVISOR_RECONCILIATION_REQUIRED",
+    "WO6 delegated Linux DAP launch fails SUPERVISOR_RECONCILIATION_REQUIRED",
+    "WO6 Linux Cargo cancellation fixture fails SUPERVISOR_RECONCILIATION_REQUIRED"
+  ]
+}

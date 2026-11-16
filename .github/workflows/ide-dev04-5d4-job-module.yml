@@ -60,9 +60,14 @@ jobs:
           assert 'os_thread_context_ip_verified: false' in src
           assert 'independent_pdb_line_verified: false' in src
           assert 'source_line_mapping_verified: false' in w
+          # The historical strict no-debug-control assertion remains. Ignore
+          # only Rust line comments, which cannot invoke a kernel API.
+          # Still reject every prohibited identifier in executable source.
+          import re
+          executable_src = re.sub(r'(?m)//[^\n]*', '', src)
           for command in ('setBreakpoints', 'runInTerminal', 'setExpression',
                           'ContinueDebugEvent', 'SuspendThread', 'WriteProcessMemory'):
-              assert command not in src
+              assert command not in executable_src, command
           print('DEV045D4_JOB_PE_MODULE_NO_EXECUTION_ESCALATION=PASS')
           PY
           echo 'DEV045D4_LIVE_PROTECTED_JOB_ACCEPTANCE=REQUIRES_REAL_WO6_NATIVE_RUN'

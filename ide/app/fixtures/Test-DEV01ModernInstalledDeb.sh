@@ -46,9 +46,15 @@ for d in range(24):
         (folder/f"file-{n:03d}.rs").write_text(f"// source {d} {n}\n")
 assert len(list(root.rglob("*.rs")))==867
 PY
+# This Xvfb session must have a real EWMH window manager. The original
+# 06beb2d8 run had no active X11 window during a genuine GTK chooser:
+# xdotool getactivewindow failed, so no owned keyboard confirmation was possible.
+# Keep all original AT-SPI/dialog-close/exact-root assertions inside the driver.
+bash -n ide/app/fixtures/Run-DEV01ModernGtkSession.sh \
+  || deny native_window_manager_fixture_syntax
 env WO8_INSTALLED_EXE=/usr/bin/lu-ide-desktop WO8_FIXTURE_ROOT="$fixture" \
   dbus-run-session -- xvfb-run -a -s '-screen 0 1280x800x24' \
-  /usr/bin/python3 ide/app/fixtures/dev01_modern_linux_installed_atspi.py \
+  bash ide/app/fixtures/Run-DEV01ModernGtkSession.sh \
   || deny native_four_feature_installed_os_regression_failed
 echo 'DEV01_MODERN_LINUX_DEBIAN_ACTUAL_INSTALLED_UI=PASS'
 echo 'DEV01_MODERN_LINUX_PHYSICAL_RELEASE_OR_HUMAN_APPROVAL=NOT_TESTED'

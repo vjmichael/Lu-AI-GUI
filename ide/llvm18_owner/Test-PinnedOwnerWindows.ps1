@@ -25,6 +25,17 @@ if ($LASTEXITCODE -ne 0) { throw 'DENIED: native debugger action security contra
 # G04D's source-only CI fixture for an actual installed icon.
 python ide/app/fixtures/verify_reviewed_ide_icons.py --repo-root .
 if ($LASTEXITCODE -ne 0) { throw 'DENIED: first-party native Windows Tauri icon missing or changed' }
+# cargo check invokes Tauri's generate_context! but does not run
+# beforeBuildCommand. Build the real bundled React files explicitly.
+# The build-only script leaves the independently verified icons untouched.
+npm ci --ignore-scripts --no-audit --no-fund --prefix ide/app
+if ($LASTEXITCODE -ne 0) { throw 'DENIED: pinned IDE frontend dependencies unavailable' }
+node ide/app/scripts/build.mjs
+if ($LASTEXITCODE -ne 0) { throw 'DENIED: real IDE frontend bundle build failed' }
+if (!(Test-Path -LiteralPath 'ide/app/dist/index.html' -PathType Leaf) -or
+    !(Test-Path -LiteralPath 'ide/app/dist/assets/app.js' -PathType Leaf)) {
+  throw 'DENIED: real Tauri frontendDist is incomplete'
+}
 cargo check --manifest-path ide/app/src-tauri/Cargo.toml --features dev046d-native-dialog
 if ($LASTEXITCODE -ne 0) { throw 'DENIED: developer-only Windows Tauri native-dialog bridge compile failed' }
 cargo check --manifest-path ide/supervisor/Cargo.toml --features $features --example dev046d_restart_receipt_audit

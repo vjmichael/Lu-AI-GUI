@@ -42,6 +42,28 @@ pub struct ReviewedStashReceipt {
     pub original_preserved: bool,
     pub installed_accepted: bool,
 }
+// Only the precise LF-to-CRLF checkout projection is eligible for a
+// byte-exact follow-up. Other filter results, mixed endings, or source changes
+// remain uncertain and keep the durable private journal/backup in place.
+fn is_exact_crlf_checkout(head: &[u8], worktree: &[u8]) -> bool {
+    if !head.contains(&b'\n') || head.contains(&b'\r') {
+        return false;
+    }
+    let added = head.iter().filter(|byte| **byte == b'\n').count();
+    if worktree.len() != head.len() + added {
+        return false;
+    }
+    let mut cursor = worktree.iter();
+    for byte in head {
+        if *byte == b'\n' && cursor.next() != Some(&b'\r') {
+            return false;
+        }
+        if cursor.next() != Some(byte) {
+            return false;
+        }
+    }
+    cursor.next().is_none()
+}
 fn stash_tip(repo: &git2::Repository) -> Result<Option<String>, &'static str> {
     match repo.find_reference("refs/stash") {
         Ok(r) => r
@@ -197,10 +219,62 @@ impl IdeWorkspaceRegistry {
             .map_err(|_| "FIN03_STASH_HEAD_BLOB_UNAVAILABLE")?
             .content()
             .to_vec();
-        let restored = fs::read(root.join(&fresh.relative_path))
+        let target = root.join(&fresh.relative_path);
+        let restored = fs::read(&target)
             .map_err(|_| "FIN03_STASH_WORKTREE_READBACK_UNAVAILABLE")?;
         if restored != head_bytes {
-            return Err("FIN03_STASH_WORKTREE_READBACK_UNCERTAIN");
+            // libgit2 stash_save checks out the original HEAD with Git's
+            // configured text filters; on Windows this can be CRLF even when
+            // the authoritative HEAD blob is LF. Do not weaken the byte
+            // equality assertion or accept an arbitrary filtered result.
+            if !is_exact_crlf_checkout(&head_bytes, &restored) {
+                return Err("FIN03_STASH_WORKTREE_READBACK_UNCERTAIN");
+            }
+            // The original pre-stash bytes are already fsynced privately and
+            // the interruption marker remains live until ALL readbacks pass.
+            // Recheck the exact regular path and observed bytes before the
+            // only additional write. Never touch another worktree path.
+            crate::git_protected_merge::changed_path_is_plain_safe(
+                &root,
+                &fresh.relative_path,
+            )?;
+            let metadata = fs::symlink_metadata(&target)
+                .map_err(|_| "FIN03_STASH_TARGET_UNVERIFIABLE")?;
+            if !metadata.is_file() || metadata.file_type().is_symlink() {
+                return Err("FIN03_STASH_TARGET_UNVERIFIABLE");
+            }
+            if fs::read(&target).map_err(|_| "FIN03_STASH_TARGET_UNREADABLE")? != restored {
+                return Err("FIN03_STASH_TARGET_CHANGED_AFTER_STASH");
+            }
+            // Private, same-filesystem temporary replacement; unlike
+            // truncating the checked-out file, an interrupted write retains
+            // the restored file and the original backup for reconciliation.
+            let temp = repo.path().join(format!(
+                "lu-ide-fin03-stash-exact-{}.tmp",
+                fresh.review_sha256
+            ));
+            let mut exact = OpenOptions::new()
+                .create_new(true)
+                .write(true)
+                .open(&temp)
+                .map_err(|_| "FIN03_STASH_EXACT_TEMP_UNAVAILABLE")?;
+            exact
+                .set_permissions(metadata.permissions())
+                .map_err(|_| "FIN03_STASH_EXACT_PERMISSIONS_FAILED")?;
+            exact
+                .write_all(&head_bytes)
+                .and_then(|_| exact.sync_all())
+                .map_err(|_| "FIN03_STASH_EXACT_SYNC_FAILED")?;
+            if fs::read(&target).map_err(|_| "FIN03_STASH_TARGET_UNREADABLE")? != restored {
+                return Err("FIN03_STASH_TARGET_CHANGED_AFTER_STASH");
+            }
+            fs::rename(&temp, &target)
+                .map_err(|_| "FIN03_STASH_EXACT_REPLACE_FAILED")?;
+            if fs::read(&target).map_err(|_| "FIN03_STASH_WORKTREE_READBACK_UNAVAILABLE")?
+                != head_bytes
+            {
+                return Err("FIN03_STASH_WORKTREE_READBACK_UNCERTAIN");
+            }
         }
         // Verify the original persisted backup independently before clearing.
         if fs::read(&backup).map_err(|_| "FIN03_STASH_BACKUP_READBACK_UNAVAILABLE")? != original {

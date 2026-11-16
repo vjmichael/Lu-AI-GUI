@@ -7,7 +7,9 @@ import vm from 'node:vm';
 import { build } from 'esbuild';
 
 const mainPath = fileURLToPath(new URL('../web/main.jsx', import.meta.url));
-const source = readFileSync(mainPath, 'utf8');
+// Windows checkouts can use CRLF; only normalize line endings for source inspection.
+// The complete original React entry and empty-workspace assertions stay required.
+const source = readFileSync(mainPath, 'utf8').replace(/\r\n/g, '\n');
 
 const providerExpression = source.match(
   /const lspProviderForTab = ([\s\S]+?);\s*const lspMayAddCurrentFile/

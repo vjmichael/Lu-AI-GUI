@@ -43,6 +43,7 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
+          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
@@ -51,14 +52,31 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+      - name: Materialize the unchanged historical 38-blob P05 checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          P05_HISTORICAL=8c61d570c04a5384772705d123f860b0e3484073
+          git cat-file -e "$P05_HISTORICAL^{commit}"
+          git worktree add --detach "$RUNNER_TEMP/p05-original-$GITHUB_RUN_ID" "$P05_HISTORICAL"
+          test "$(git -C "$RUNNER_TEMP/p05-original-$GITHUB_RUN_ID" rev-parse HEAD)" = "$P05_HISTORICAL"
+          echo 'P05_EXACT_HISTORICAL_38_BLOB_CHECKOUT=READY'
       - name: Enforce 30 retained PR identities and 38 source-pinned IDE workflows
+        working-directory: ${{ runner.temp }}/p05-original-${{ github.run_id }}
         run: >-
           python ide/packaging/verify_p05_pr_inventory.py
           --repo-root .
           --pr-inventory ide/packaging/p05-pr-source-audit.json
           --workflow-inventory ide/packaging/p05-workflow-coverage.json
       - name: Hostile closed-PR, missing-workflow, deferred bridge and false-native regression
+        working-directory: ${{ runner.temp }}/p05-original-${{ github.run_id }}
         run: python -m unittest discover -s ide/packaging -p 'test_verify_p05_pr_inventory.py' -v
+      - name: Verify owner-approved current stack against unchanged P05 historical fingerprints
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 ide/audits/verify_p05_owner_successor.py --repo-root .
+          python3 -m unittest discover -s ide/audits -p 'test_p05_owner_successor.py' -v
       - name: Verify all historical source behavior classifications and excluded features
         run: python -m unittest discover -s ide/packaging -p 'test_p05_semantic_reconciliation.py' -v
       - name: Deny unsafe CI trigger reduction and PR closures while native gates remain open

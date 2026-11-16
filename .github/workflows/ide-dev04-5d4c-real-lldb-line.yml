@@ -64,7 +64,19 @@ jobs:
           fixture=Path('ide/supervisor/examples/wo6_native_dap_acceptance.rs').read_text()
           workflow=Path('.github/workflows/ide-wo6-native-os-acceptance.yml').read_text()
           assert 'dev045d4c-ci-oracle = ["dap-transport", "protected-recovery-service"]' in cargo
-          assert 'cfg(all(windows, debug_assertions, feature = "dev045d4c-ci-oracle"))' in native
+          # The original spawned LLVM reader remains CI/debug-only, but
+          # observation-only FIN04 release evidence is now a separate opt-in
+          # module scope. Require both exact gates, never infer DAP control.
+          assert '#![cfg(all(' in native and '    windows,' in native
+          assert 'all(debug_assertions, feature = "dev045d4c-ci-oracle")' in native
+          assert 'feature = "fin04-release-owner-evidence"' in native
+          assert 'all(debug_assertions, feature = "fin04w2-split-native")' in native
+          assert '#[cfg(all(debug_assertions, feature = "dev045d4c-ci-oracle"))]' in native
+          assert 'pub(crate) fn independently_verify_pdb_line_for_ci' in native
+          assert 'fn run_measured_reader(' in native
+          assert 'thread.debugger_control_authorized' in native
+          assert 'default = []' in cargo
+          assert 'fin04-release-owner-evidence = ["dap-transport", "protected-recovery-service"]' in cargo
           assert 'verify_project_os_thread_pdb_receipts_for_ci' in host
           assert 'dev045d4c-ci-oracle' in workflow
           assert '& $hostExe --project-debug-line' in workflow

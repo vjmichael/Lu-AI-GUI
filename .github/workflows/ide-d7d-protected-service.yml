@@ -32,6 +32,12 @@ jobs:
           $ErrorActionPreference='Stop'
           # Debug-control evidence fixtures require the original DAP feature;
           # do not run them with a deliberately invalid DAP JobPlan.
+          # Historical D7D service-only profile is an independent acceptance gate.
+          # The later DAP-enabled profile must never replace it.
+          cargo check --manifest-path ide/supervisor/Cargo.toml --features protected-recovery-service --all-targets
+          if ($LASTEXITCODE -ne 0) { throw 'D7D_ORIGINAL_SERVICE_ONLY_ALL_TARGETS_FAILED' }
+          cargo test --manifest-path ide/supervisor/Cargo.toml --features protected-recovery-service --lib
+          if ($LASTEXITCODE -ne 0) { throw 'D7D_ORIGINAL_SERVICE_ONLY_LIB_TESTS_FAILED' }
           cargo check --manifest-path ide/supervisor/Cargo.toml --features protected-recovery-service,dap-transport --all-targets
           if ($LASTEXITCODE -ne 0) { throw 'D7D_WINDOWS_ALL_TARGETS_COMPILER_FAILED' }
           cargo test --manifest-path ide/supervisor/Cargo.toml --features protected-recovery-service,dap-transport --lib

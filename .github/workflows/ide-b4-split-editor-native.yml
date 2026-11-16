@@ -49,12 +49,22 @@ jobs:
             echo 'DENIED: B4 not descended from exact accepted source baseline'
             exit 2
           }
-          if git diff --quiet "$B2_BASE" HEAD -- ide/host/src/editor.rs ide/host/src/reviewed_git.rs ide/host/src/browser.rs ide/supervisor ide/packaging/language-server-release-manifest.json; then
-            echo 'B4_NO_UNREVIEWED_NATIVE_EXECUTION_AUTHORITY_CHANGE=PASS'
-          else
-            echo 'DENIED: B4 must not expand worker or source write authority'
-            exit 2
+          # B4 was an editor-only change at its original, exact historical commit.
+          # Re-run the old prohibited-scope comparison over that ORIGINAL span.
+          B4_HISTORICAL=93e8fad1fa48478e31ffebb62c89d6f1d0c3a2ed
+          git merge-base --is-ancestor "$B4_HISTORICAL" HEAD || { echo 'DENIED: B4 historical source not ancestral'; exit 2; }
+          if ! git diff --quiet "$B2_BASE" "$B4_HISTORICAL" -- ide/host/src/editor.rs ide/host/src/reviewed_git.rs ide/host/src/browser.rs ide/supervisor ide/packaging/language-server-release-manifest.json; then
+            echo 'DENIED: original B4 editor-only boundary changed'; exit 2
           fi
+          echo 'B4_HISTORICAL_EDITOR_ONLY_SOURCE_BOUNDARY=PASS'
+          # The later native integration has a distinct, frozen authority baseline.
+          # Allow NO NEW protected source changes in this grouped workflow repair.
+          IDE_INTEGRATED_NATIVE_BASE=06beb2d8725f1175a1c4eb930e829afd582a6e96
+          git merge-base --is-ancestor "$IDE_INTEGRATED_NATIVE_BASE" HEAD || { echo 'DENIED: integrated source baseline not ancestral'; exit 2; }
+          if ! git diff --quiet "$IDE_INTEGRATED_NATIVE_BASE" HEAD -- ide/host/src/editor.rs ide/host/src/reviewed_git.rs ide/host/src/browser.rs ide/supervisor ide/packaging/language-server-release-manifest.json; then
+            echo 'DENIED: current B4 integration unexpectedly expands worker or source-write authority'; exit 2
+          fi
+          echo 'B4_HISTORICAL_AND_CURRENT_NATIVE_BOUNDARIES=PASS'
       - name: Linux native GTK WebKit build prerequisites
         if: runner.os == 'Linux'
         shell: bash

@@ -1,5 +1,37 @@
 # Lu IDE — Development changelog
 
+## 2026-11-16 — Grouped original-native-coverage and source-security repair (unpublished)
+
+Sole owner approval completed in Issue #237; no external signoff gate. Restored original service-only D7D and original WO6 Windows/Linux feature-only compiles alongside stronger tests. Reconciled B4/B5 by rerunning each unchanged historical editor-only/performance-only forbidden-scope comparison across its authentic historic SHA span plus a separate integrated current-stack no-new-authority check (seven exact reviewed FIN03/P05/P06 source hashes). Windows sandbox continues historical no-worker check and new opt-in/disabled-by-default worker source assertion; D4 comment-only forbidden names distinguished from executable APIs; D4C verifies CI-only reader and release opt-in without granting debugger control. P05 audit now runs original immutable verifier+hostile unit tests on exact 38-blob tree `8c61d570` and a separate owner-authorized pinned current successor with zero native/release approval. Real OS failures still open; publication and consolidated acceptance not yet performed.
+
+## 2026-11-15 — P05 exact historical preservation discrepancy review (unpublished)
+
+Verified all 38 original protected workflow blob IDs against the actual candidate Git tree: 31 byte-identical, seven not. Original P05 source remains fail-closed; D7/supervisor-core removed push paths require independent trigger-reduction authority, and D7B/D7D/WO6/WO8 changed runtime/native acceptance must not be reverted without security review. Added exact seven-blob pending disposition ledger and denial-only checksum diagnostic with hostile negative tests, without modifying original P05 verifier, hashes, 38 workflows, B4/B5/Windows worker/FIN04 authority guards, or releasing a candidate. One expected-SHA update and same-SHA acceptance batch remain blocked.
+
+## 2026-11-15 — IDE-MERGE-02C original security and build-preflight audit (unpublished)
+
+Reconciled original 62-run wave: source historical P05, B4/B5 editor-only negative boundaries, older Windows worker isolation and D4 debugger oracle gates must remain live decisions rather than being weakened for a merged architecture. Original genuine DEV04.1/DEV04.4/DEV03.5 Tauri checks fail missing actual `frontendDist`: build verified first-party frontend under pinned npm before unchanged Cargo tests on both OSes. DEV02.2 native source uses independently reviewed original/IDE05/IDE-MERGE02 lock selection; original language server release denials remain. Old protected P05 workflow sources and original negative tests untouched. Requires grouped current-SHA native and installer acceptance, not source-only victory.
+
+## 2026-11-15 — P06 successor lock identity reconciliation (unpublished)
+
+Original P06 resolved-lock Windows/Linux CI passes with independently pinned IDE-MERGE02 review. Added a separate strict CI checkout selector verifying Git HEAD/working-copy raw blobs before explicitly choosing only original P06, IDE05 or IDE-MERGE02 hardened verification. Adopted it in unprotected B2/B3 native and B2/B4 installed workflow paths, preserving the existing double checks across locked fetch and unchanged security/license/installed tests. The original P06 verifier and negative regression tests, Cargo/npm lock bytes, P05 immutable critical workflows including WO9 and E2, and all release-approval false flags are unchanged. A new negative selector unit test was added. Actual CI/native acceptance not rerun.
+
+## 2026-11-15 — FIN-03 Windows stash byte-exact checked restoration (unpublished)
+
+Original Windows Wave E2 at `06beb2d8` fails one genuine FIN-03 positive stash readback while its negative interrupted-marker test passes. Git's configured CRLF checkout may rewrite LF HEAD bytes during the stash reset. Added a tightly checked, original-HEAD exact-byte restore solely when Git's observed working-tree bytes are precisely the LF→CRLF projection of that trusted HEAD blob. Uses fsynced private temporary replacement and a still-live interruption marker; any other mismatch keeps recovery blocked. Adds a real-Git `core.autocrlf=true` cross-platform fixture without modifying existing test assertions. Original Linux/Windows native result pending; no CI launched or PR branch changed. The earlier LLVM18 original run is now terminal FAILURE at missing frontend dist after successful C++ compilation; candidate prebuild remains unaccepted.
+
+## 2026-11-15 — DEV04.2/DEV04.3 real frontendDist prebuild (unpublished)
+
+Original Windows/Linux DEV04.2 run #43796693082 and DEV04.3 run #43796693093 each reached native Tauri compilation but failed when `generate_context!()` required absent `../dist`. Added exact-head, checked-in npm-lock installation and actual first-party build-only `esbuild` entry before the previously unchanged native Rust compilation, with file-existence and source-diff negative checks. Existing native ELF/PE, PDB/DWARF, source identity and protected-worker assertions remain mandatory. The original P05 critical workflow manifest is unchanged. No CI rerun, native pass, installer or SCM success is inferred.
+
+## 2026-11-15 — IDE-MERGE-02C GTK EWMH original run reconciliation (unpublished)
+
+Original integrated `06beb2d8` run #43796693034 verified real Windows/Linux Git recovery but rejected Windows frontend contract before installer and Linux actual Debian GTK folder picker after OS dialog. The GTK log showed no X11 active-window owner. The original DEV-01 installed driver lacked a window manager in its own Xvfb session, unlike the existing standalone window acceptance; added a bounded Openbox EWMH readiness and cleanup harness scoped only to installed test, retaining all native chooser and canonical project assertions. This is a correction candidate only: no new exact-SHA full installed or LLVM acceptance yet.
+
+## 2026-11-15 — IDE-MERGE-02C staged CI corrections (unpublished; not accepted)
+
+Prepared from `06beb2d8` after original `374f22b9` LLVM18 run #43784599198 failed at the Tauri `frontendDist` prerequisite, not at LLVM compilation. The native owner-event script now runs pinned npm install and the actual first-party frontend bundler, verifies the expected `dist` files, and then retains all native-dialog, kernel custody, cancellation, recovery, icon and human-consent checks. The CI React source test now normalizes CRLF/LF line endings before matching the unchanged entire production entry, addressing the original two Windows frontend-test failures without weakening any negative assertions. **No branch publication, complete 62-run reconciliation, installed regression pass, or release authorization claimed.**
+
 ## 2026-11-13 — FIN-03 / 6E-05A remote publication preflight, no write authority
 
 Added `ide/host/src/github_remote_publication.rs` as a native,

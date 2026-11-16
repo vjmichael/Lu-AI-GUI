@@ -124,3 +124,67 @@ fn stash_review_rejects_untracked_file_and_interrupted_marker() {
     drop(registry);
     fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn reviewed_stash_with_explicit_crlf_checkout_preserves_exact_head_and_backup() {
+    // Recreate the real Windows failure even on a Linux Git runner:
+    // core.autocrlf=true may write CRLF when libgit2 resets after stash.
+    // The FIN-03 receipt still requires byte-for-byte LF HEAD contents.
+    let root = std::env::temp_dir().join(format!(
+        "fin03-stash-crlf-{}-{:016x}",
+        std::process::id(),
+        rand::random::<u64>()
+    ));
+    let folder = root.join("project");
+    fs::create_dir_all(&folder).unwrap();
+    let repo = git2::Repository::init(&folder).unwrap();
+    repo.config()
+        .unwrap()
+        .set_bool("core.autocrlf", true)
+        .unwrap();
+    fs::write(folder.join("tracked.txt"), b"head first\nhead second\n").unwrap();
+    let mut index = repo.index().unwrap();
+    index.add_path(Path::new("tracked.txt")).unwrap();
+    index.write().unwrap();
+    let tree = repo.find_tree(index.write_tree().unwrap()).unwrap();
+    let who = git2::Signature::now("Fixture", "fixture@example.invalid").unwrap();
+    repo.commit(Some("HEAD"), &who, &who, "initial", &tree, &[])
+        .unwrap();
+    drop(tree);
+    drop(index);
+    drop(repo);
+    let registry = IdeWorkspaceRegistry::open(root.join("catalog.json")).unwrap();
+    let id = registry
+        .register_from_native_picker(&mut Picker(Some(folder.clone())))
+        .unwrap()
+        .unwrap()
+        .project_id;
+    fs::write(folder.join("tracked.txt"), b"private draft\n").unwrap();
+    let review = registry.review_one_file_stash_save(&id).unwrap();
+    let receipt = registry
+        .execute_reviewed_one_file_stash_save(&review, &AtomicU8::new(0))
+        .unwrap();
+    assert!(receipt.stash_ref_changed && receipt.original_preserved);
+    assert!(receipt.worktree_restored_to_head && !receipt.installed_accepted);
+    assert_eq!(
+        fs::read(folder.join("tracked.txt")).unwrap(),
+        b"head first\nhead second\n"
+    );
+    assert_eq!(
+        fs::read(folder.join(".git").join(&receipt.original_backup_name)).unwrap(),
+        b"private draft\n"
+    );
+    let git = git2::Repository::open(&folder).unwrap();
+    assert_eq!(
+        git.find_reference("refs/stash")
+            .unwrap()
+            .target()
+            .unwrap()
+            .to_string(),
+        receipt.stash_oid
+    );
+    assert!(!registry.one_file_stash_recovery_required(&id).unwrap());
+    drop(git);
+    drop(registry);
+    fs::remove_dir_all(root).unwrap();
+}

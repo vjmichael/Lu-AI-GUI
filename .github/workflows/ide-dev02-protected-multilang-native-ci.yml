@@ -49,7 +49,9 @@ jobs:
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
           test "$(git rev-parse HEAD:ide/app/package-lock.json)" = "dfe4412bfacfc22ad1149f5213f4a26aa49b4067"
-          test "$(git rev-parse HEAD:ide/app/src-tauri/Cargo.lock)" = "87d0045a4be1c78651f080300aba71c14dbe1f30"
+          # Preserve source-locked original P06 or the independently pinned
+          # IDE05 / IDE-MERGE02 local-only successors; no release authorization.
+          python3 ide/packaging/verify_p06_checkout_lock.py --repo-root . --platform ${{ matrix.os }}
           python3 ide/packaging/verify_language_servers.py
           if python3 ide/packaging/verify_language_servers.py --release; then
             echo 'DENIED: unapproved LSP binary manifest was accepted for release'

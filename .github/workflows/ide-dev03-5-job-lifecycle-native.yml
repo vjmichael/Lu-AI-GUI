@@ -52,6 +52,20 @@ jobs:
           set -euo pipefail
           cargo test --manifest-path ide/host/Cargo.toml --test conventional_tests --locked
           cargo test --manifest-path ide/supervisor/Cargo.toml --all-targets --locked
+      - name: Prepare exact real Tauri frontendDist before native Cargo check
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          # Cargo check skips Tauri's beforeBuildCommand. Reproduce the real
+          # source-locked esbuild entry; never fake a directory or change icons.
+          npm ci --prefix ide/app --ignore-scripts --no-audit --no-fund
+          node ide/app/scripts/build.mjs
+          test -s ide/app/dist/index.html
+          test -s ide/app/dist/assets/app.js
+          test -s ide/app/dist/assets/frontend_startup_diagnostic.js
+          git diff --exit-code -- ide/app/web ide/app/src-tauri
+          echo 'IDE_REAL_FRONTEND_DIST=BUILT_NOT_INSTALLED_ACCEPTANCE'
       - name: Native Tauri build and cancellation/recovery regression
         shell: bash
         run: |

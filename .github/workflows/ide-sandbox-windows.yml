@@ -21,6 +21,10 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Exact historical no-worker assertion needs real old Git objects.
+          fetch-depth: 0
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
       - name: Build isolated Windows Job Object probe
         run: cargo build --manifest-path ide/sandbox/Cargo.toml --bin windows_probe --release
@@ -32,8 +36,23 @@ jobs:
       - name: Assert no IDE/Tauri worker integration
         shell: pwsh
         run: |
-          $native = Get-Content ide/app/src-tauri/src/lib.rs -Raw
-          if ($native -match 'run_worker|spawn_worker|execute_job') {
-            throw "Unexpected worker execution route in standalone desktop"
+          $ErrorActionPreference='Stop'
+          # Preserve the ORIGINAL no-worker check at the historical pre-native
+          # source boundary; later opt-in native-build is explicitly reviewed.
+          $historical = (& git show bc4fd78685c342675e4a80556970e934125a0e20:ide/app/src-tauri/src/lib.rs | Out-String)
+          if ($LASTEXITCODE -ne 0 -or $historical -match 'run_worker|spawn_worker|execute_job') {
+            throw 'DENIED: historical standalone desktop worker-execution boundary changed'
           }
-          Write-Host "Probe-only binary; desktop worker not enabled"
+          $native = Get-Content ide/app/src-tauri/src/lib.rs -Raw
+          $manifest = Get-Content ide/app/src-tauri/Cargo.toml -Raw
+          if ($manifest -notmatch '(?m)^default\s*=\s*\[\]') { throw 'DENIED: default desktop now enables worker' }
+          if ($manifest -notmatch '(?m)^native-build\s*=\s*\[') { throw 'DENIED: native worker feature is not explicit' }
+          if ($native -notmatch 'async fn ide_build_run_profile\(' -or
+              $native -notmatch 'INT03_PROTECTED_RUNTIME_UNAVAILABLE' -or
+              $native -notmatch 'cfg\(all\(feature = "native-build", any\(windows, target_os = "linux"\)\)\)') {
+            throw 'DENIED: opt-in native command missing its original compile-time default denial'
+          }
+          if ($native -match 'execute_windows_worker|ide_run_job|ide_launch_worker|ide_execute_job') {
+            throw 'DENIED: unrestricted legacy worker command exposed to Tauri'
+          }
+          Write-Host 'HISTORICAL_STANDALONE_NO_WORKER=PASS; CURRENT_DEFAULT_DISABLED_WORKER=SOURCE_ONLY_NOT_NATIVE_ACCEPTANCE'

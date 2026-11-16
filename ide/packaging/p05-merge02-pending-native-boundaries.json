@@ -1,0 +1,100 @@
+{
+  "schema": "lu.ide.p05.merge02-unresolved-workflow-boundaries.v1",
+  "historicalSourceSha": "bc4fd78685c342675e4a80556970e934125a0e20",
+  "candidateParentSha": "06beb2d8725f1175a1c4eb930e829afd582a6e96",
+  "immutableHistoricalManifestBlob": "5299b1ca6981f341d2855f549e567b8c2747dc13",
+  "protectedWorkflowCount": 38,
+  "byteEqualProtectedWorkflows": 31,
+  "changedProtectedWorkflowCount": 7,
+  "sourceStatus": "pending_independent_historical_authority_review",
+  "originalP05AuditMayBeClaimedPassed": false,
+  "permissionToPrunePushTriggers": false,
+  "independentlyAuthorizedReplacement": false,
+  "independentlyAcceptedNativeEquivalence": false,
+  "installedOrNativeAcceptance": false,
+  "signedOrReleaseApproved": false,
+  "originalNegativeAssertionsRetained": true,
+  "scopeNotes": {
+    "B4": "Original B4 editor-only comparison to 97940239e1af4a6c8edbdfa3a176579d01ae5f18 must remain a historical negative gate; integrated host/supervisor changes require separate native authorization",
+    "B5": "Original B5 performance-only comparison to 93e8fad1fa48478e31ffebb62c89d6f1d0c3a2ed fails on integrated Tauri native source; no expanding approved source mutation scope by assertion edit",
+    "WindowsJob": "Original sandbox run #43796693161 passes real Windows Job probes but legacy source regex matches INT05D_RUN_WORKER_UNAVAILABLE; actual native-build run_profile must independently prove one-use consent and OS custody",
+    "DEV04D4": "Original Windows kernel source text includes forbidden API names in a negative explanatory comment, not demonstrated API calls; old string test untouched",
+    "DEV04D4C": "Source windows_stopped_line_oracle.rs gate expanded to fin04-release-owner-evidence and fin04w2-split-native; release and kernel authority require separate human and OS proof",
+    "LLVM": "Original LLVM18 #43796693162 Windows failed missing Tauri frontendDist after source-pinned native C++ compilation; compiled owner-event and SCM recovery not accepted",
+    "P06": "Exact-head original P06 #43796692643 passed with reviewed IDE-MERGE02 local Cargo successor, while original P06 default-deny and immutable historical workflow source remain unchanged"
+  },
+  "workflows": [
+    {
+      "path": ".github/workflows/ide-d7-windows-worker.yml",
+      "approvedHistoricalBlob": "518635e58bbac5b249bfeadba7e60c90b9d0010c",
+      "currentUnacceptedBlob": "6832a33bdab3539d85805ccd43a9aa479758d08d",
+      "deltaClass": "removed_push_trigger",
+      "reviewReason": "Restored original push job would recreate automatic micro-jobs; no P05 trigger-pruning authorization exists",
+      "independentReplacementApproved": false,
+      "historicalSourceRestorationAccepted": false,
+      "retainOriginalChecks": true
+    },
+    {
+      "path": ".github/workflows/ide-d7b-native-acceptance.yml",
+      "approvedHistoricalBlob": "f70955319c621cbd08cd2a7a6f7eac77caffc3a1",
+      "currentUnacceptedBlob": "c247635e41a4c325a76cc5223239f890898c92c1",
+      "deltaClass": "expanded_source_triggers_and_native_binary_receipt",
+      "reviewReason": "Later coverage includes protected desktop source plus genuine one-use Cargo executable receipt, cannot silently drop",
+      "independentReplacementApproved": false,
+      "historicalSourceRestorationAccepted": false,
+      "retainOriginalChecks": true
+    },
+    {
+      "path": ".github/workflows/ide-d7d-protected-service.yml",
+      "approvedHistoricalBlob": "ce56f987cb056c01ef7be58318d70c9e136aafad",
+      "currentUnacceptedBlob": "35a0a506186694caaa6ff72d8bfdeec694cf0235",
+      "deltaClass": "opt_in_dap_compile_and_explicit_exit_checks",
+      "reviewReason": "Later original-DAP feature admission and explicit Windows SCM compile/test error handling",
+      "independentReplacementApproved": false,
+      "historicalSourceRestorationAccepted": false,
+      "retainOriginalChecks": true
+    },
+    {
+      "path": ".github/workflows/ide-supervisor-core.yml",
+      "approvedHistoricalBlob": "e0d26f80713cdf498c3bfdf82645498dddf34e16",
+      "currentUnacceptedBlob": "11203a4e5f8cfeecee9effa00c88c981492be527",
+      "deltaClass": "removed_push_trigger_and_added_dap_tests",
+      "reviewReason": "Original push trigger removed, opt-in DAP negative evidence tests added",
+      "independentReplacementApproved": false,
+      "historicalSourceRestorationAccepted": false,
+      "retainOriginalChecks": true
+    },
+    {
+      "path": ".github/workflows/ide-wo6-native-os-acceptance.yml",
+      "approvedHistoricalBlob": "d7627899b3a6cafc7b383f00abbb2b9e7107fe2d",
+      "currentUnacceptedBlob": "de7cae8464649481ff46f148341bd575aca045da",
+      "deltaClass": "pinned_windows_runner_and_independent_pdb_oracle",
+      "reviewReason": "Current job pins Windows 2022 toolchain and real llvm-symbolizer/Job receipts; old job lacks new protections",
+      "independentReplacementApproved": false,
+      "historicalSourceRestorationAccepted": false,
+      "retainOriginalChecks": true
+    },
+    {
+      "path": ".github/workflows/ide-wo8-installed-windows.yml",
+      "approvedHistoricalBlob": "8fadc3f1829e62123b9da6a5e6bbd49a3f3ec36f",
+      "currentUnacceptedBlob": "95138087b419a4b1f9baa052e717c34fc069ae44",
+      "deltaClass": "exact_locked_dependencies_and_installed_ui",
+      "reviewReason": "Current job requires reviewed dependency SHA, original license retrieval, native installed UI and read-only Jobs tests",
+      "independentReplacementApproved": false,
+      "historicalSourceRestorationAccepted": false,
+      "retainOriginalChecks": true
+    },
+    {
+      "path": ".github/workflows/ide-wo8-signed-protected-e2e.yml",
+      "approvedHistoricalBlob": "08e2ab350b9e0c9e88958a40a3eeca59a3a66df5",
+      "currentUnacceptedBlob": "3cbaf9efc3836bfbe3a978cdd5511daac04f2380",
+      "deltaClass": "installed_project_debugger_restart_uninstall_negative",
+      "reviewReason": "Later job requires installed project LLDB, restart refusal, original source and cleanup instead of only earlier fixed adapter smoke",
+      "independentReplacementApproved": false,
+      "historicalSourceRestorationAccepted": false,
+      "retainOriginalChecks": true
+    }
+  ],
+  "requiredDisposition": "retain_historical_workflow_checks_until_independent_nonweakened_replacement_and_same_sha_windows_linux_native_acceptance",
+  "priorPreparedCandidateSha": "9dd367e80099b9d60a47bd579abb998c6616f181"
+}
