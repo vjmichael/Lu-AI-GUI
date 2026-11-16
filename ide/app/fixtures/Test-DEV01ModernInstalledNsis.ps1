@@ -43,6 +43,22 @@ try {
   $installed=$true
   $exe=Join-Path $install 'lu-ide-desktop.exe'
   if (!(Test-Path -LiteralPath $exe -PathType Leaf)) { Deny 'installed_webview2_app_missing' }
+  # An installed WebView2 application without its actual reviewed legal
+  # resource tree is not an accepted native installer.
+  $notice=Join-Path $install 'THIRD_PARTY_LICENSES'
+  $inventory=Join-Path $notice 'inventory.json'
+  $upstream=Join-Path $notice 'upstream-fetch.json'
+  if (!(Test-Path -LiteralPath $inventory -PathType Leaf) -or
+      !(Test-Path -LiteralPath $upstream -PathType Leaf)) {
+    Deny 'installed_third_party_license_source_evidence_missing'
+  }
+  $noticeReview=Get-Content -LiteralPath $inventory -Raw | ConvertFrom-Json
+  if ($noticeReview.schema -cne 'lu.ide.p04.verification-licenses.v1' -or
+      $noticeReview.sourceSha -cne $SourceSha -or
+      $noticeReview.releaseApproved -ne $false -or
+      $noticeReview.licenseLegalReviewApproved -ne $false) {
+    Deny 'installed_third_party_license_source_or_authority_mismatch'
+  }
   $sha=(Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash
   & 'ide/app/fixtures/Test-Wo8NativeDesktopUI.ps1' -InstalledExecutable $exe `
     -ExpectedSha256 $sha -Scenario Dev01Modern -FixtureRoot $fixture

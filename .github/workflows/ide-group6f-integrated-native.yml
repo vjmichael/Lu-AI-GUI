@@ -375,6 +375,21 @@ jobs:
           cd ide/app
           npm ci --ignore-scripts --no-audit --no-fund
           npm run check
+          # Preserve the exact original P04/WO8 legal-notice gate.
+          # No synthetic licenses, blank resources or release approval.
+          cargo fetch --locked --manifest-path src-tauri/Cargo.toml
+          python ../packaging/verify_p06_candidate_lock.py \
+            --repo-root ../.. --platform ubuntu-24.04 --ide-merge02-successor
+          python ../packaging/upstream_notice_receipt.py \
+            --repo-root ../.. --source-sha "$INTEGRATION_SOURCE_SHA" \
+            --output src-tauri/upstream-notice-receipt.json
+          python ../packaging/collect_verification_licenses.py \
+            --repo-root ../.. --source-sha "$INTEGRATION_SOURCE_SHA" \
+            --upstream-receipt src-tauri/upstream-notice-receipt.json \
+            --output src-tauri/verification-notices
+          python ../packaging/verify_p04_license_bundle.py \
+            --license-root src-tauri/verification-notices \
+            --source-sha "$INTEGRATION_SOURCE_SHA" --require-upstream
           npx --yes @tauri-apps/cli@2.12.4 build \
             --config src-tauri/tauri.wo8.linux.conf.json --bundles deb
       - name: Exercise installed GTK source UI/OS and hard-kill recovery
@@ -384,6 +399,11 @@ jobs:
           shopt -s nullglob
           packages=(ide/app/src-tauri/target/release/bundle/deb/*.deb)
           [[ "${#packages[@]}" -eq 1 ]] || { echo 'DENIED: one real .deb required'; exit 1; }
+          python ide/packaging/verify_p04_license_bundle.py \
+            --license-root ide/app/src-tauri/verification-notices \
+            --source-sha "$INTEGRATION_SOURCE_SHA" --require-upstream \
+            --artifact "${packages[0]}" \
+            --receipt ide/app/src-tauri/verification-package-receipt.json
           bash ide/app/fixtures/Test-DEV01ModernInstalledDeb.sh \
             "${packages[0]}" "$INTEGRATION_SOURCE_SHA"
           echo 'DEV01_MODERN_LINUX_INSTALLED=OS_ACCEPTED_NOT_RELEASE_AUTHORIZED'
@@ -441,6 +461,18 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw 'DEV01_WINDOWS_FRONTEND_DEPENDENCIES_FAILED' }
             npm run check
             if ($LASTEXITCODE -ne 0) { throw 'DEV01_WINDOWS_FRONTEND_CHECK_FAILED' }
+            # Tauri requires real source- and lock-bound upstream notices.
+            # Never create empty placeholder resources to pass packaging.
+            cargo fetch --locked --manifest-path src-tauri/Cargo.toml
+            if ($LASTEXITCODE -ne 0) { throw 'DEV01_WINDOWS_RESOLVED_CARGO_FETCH_DENIED' }
+            python ../packaging/verify_p06_candidate_lock.py --repo-root ../.. --platform windows-2022 --ide-merge02-successor
+            if ($LASTEXITCODE -ne 0) { throw 'DEV01_WINDOWS_POST_FETCH_P06_DRIFT_DENIED' }
+            python ../packaging/upstream_notice_receipt.py --repo-root ../.. --source-sha $env:INTEGRATION_SOURCE_SHA --output src-tauri/upstream-notice-receipt.json
+            if ($LASTEXITCODE -ne 0) { throw 'DEV01_WINDOWS_UPSTREAM_ORIGINAL_LICENSE_DENIED' }
+            python ../packaging/collect_verification_licenses.py --repo-root ../.. --source-sha $env:INTEGRATION_SOURCE_SHA --upstream-receipt src-tauri/upstream-notice-receipt.json --output src-tauri/verification-notices
+            if ($LASTEXITCODE -ne 0) { throw 'DEV01_WINDOWS_RESOLVED_LICENSE_COLLECTION_DENIED' }
+            python ../packaging/verify_p04_license_bundle.py --license-root src-tauri/verification-notices --source-sha $env:INTEGRATION_SOURCE_SHA --require-upstream
+            if ($LASTEXITCODE -ne 0) { throw 'DEV01_WINDOWS_PRE_BUILD_LICENSE_PROVENANCE_DENIED' }
             npx --yes @tauri-apps/cli@2.12.4 build --config src-tauri/tauri.installed-smoke.conf.json --bundles nsis
             if ($LASTEXITCODE -ne 0) { throw 'DEV01_WINDOWS_REAL_NSIS_BUILD_FAILED' }
           } finally { Pop-Location }
@@ -450,6 +482,8 @@ jobs:
           $ErrorActionPreference='Stop'
           $setups=@(Get-ChildItem -LiteralPath ide/app/src-tauri/target/release/bundle/nsis -Filter '*setup.exe' -File)
           if ($setups.Count -ne 1) { throw 'DEV01_WINDOWS_EXACTLY_ONE_NSIS_REQUIRED' }
+          python ide/packaging/verify_p04_license_bundle.py --license-root ide/app/src-tauri/verification-notices --source-sha $env:INTEGRATION_SOURCE_SHA --require-upstream --artifact $setups[0].FullName --receipt ide/app/src-tauri/verification-package-receipt.json
+          if ($LASTEXITCODE -ne 0) { throw 'DEV01_WINDOWS_POST_BUILD_LICENSE_AND_ARTIFACT_DENIED' }
           & ide/app/fixtures/Test-DEV01ModernInstalledNsis.ps1 -SetupPath $setups[0].FullName -SourceSha $env:INTEGRATION_SOURCE_SHA
           if (!$? -or $LASTEXITCODE -ne 0) { throw 'DEV01_WINDOWS_REAL_INSTALLED_OS_REGRESSION_DENIED' }
           Write-Host 'DEV01_MODERN_WINDOWS_INSTALLED=OS_ACCEPTED_NOT_RELEASE_AUTHORIZED'

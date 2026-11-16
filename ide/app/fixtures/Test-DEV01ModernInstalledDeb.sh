@@ -11,6 +11,12 @@ deb="$(realpath -- "$1")"
 [[ -f "$deb" && ! -L "$deb" ]] || deny untrusted_deb
 package="$(dpkg-deb --field "$deb" Package)"
 [[ "$package" == lu-ide-desktop || "$package" == lu-ide ]] || deny package_identity
+# Verify that Tauri copied *actual* reviewed P04 license receipts into the
+# real .deb, not merely generated an external directory before packaging.
+dpkg-deb --contents "$deb" | grep -F '/THIRD_PARTY_LICENSES/inventory.json' >/dev/null \
+  || deny missing_packaged_resolved_license_inventory
+dpkg-deb --contents "$deb" | grep -F '/THIRD_PARTY_LICENSES/upstream-fetch.json' >/dev/null \
+  || deny missing_packaged_original_upstream_license_evidence
 [[ "$(dpkg-query --show --showformat='${Status}' "$package" 2>/dev/null || true)" != "install ok installed" ]] || deny preexisting_install
 installed=0
 cleanup() {

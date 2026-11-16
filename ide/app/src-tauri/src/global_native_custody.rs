@@ -446,7 +446,7 @@ mod tests{
   assert!(same_marker(&p,&original,&meta).is_err());
   drop(lease);fs::remove_dir_all(&p).unwrap();
   fs::create_dir_all(&p).unwrap();
-  let marker=format!("FIN01-V1:build:{}:{:016x}\\n",
+  let marker=format!("FIN01-V1:build:{}:{:016x}\n",
     std::process::id(),42u64);
   fs::write(marker_path(&p),marker).unwrap();
   let rows=vec![job(JobPhase::Running,true)];

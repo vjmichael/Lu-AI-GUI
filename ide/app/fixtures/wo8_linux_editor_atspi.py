@@ -67,6 +67,20 @@ def accessible(name, role=None, seconds=20):
             except Exception:
                 pass
         time.sleep(0.3)
+    # Record a bounded allowlisted startup classification only. Never emit
+    # arbitrary accessibility names, path names or source-file text.
+    if name == "Workspace projects":
+        frontend_error = False
+        for obj in elements():
+            try:
+                if (obj.name or "") == "Lu IDE frontend unavailable":
+                    frontend_error = True
+                    break
+            except Exception:
+                continue
+        print("WO8_LINUX_FRONTEND_DIAGNOSTIC=" +
+              ("visible_render_failure" if frontend_error else
+               "workspace_heading_missing_cause_unverified"), flush=True)
     deny("missing_native_accessible_control_" + name.replace(" ", "_"))
 
 

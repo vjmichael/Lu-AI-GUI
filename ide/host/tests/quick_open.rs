@@ -202,8 +202,11 @@ fn dev01_original_864_nested_files_are_all_observed_and_refresh_after_mutation()
         let folder = project.join(format!("src-{dir:02}"));
         fs::create_dir(&folder).unwrap();
         for file in 0..36 {
-            fs::write(folder.join(format!("file-{file:03}.rs")), b"original bytes unread")
-                .unwrap();
+            fs::write(
+                folder.join(format!("file-{file:03}.rs")),
+                b"original bytes unread",
+            )
+            .unwrap();
         }
     }
     let result = registry
@@ -216,8 +219,11 @@ fn dev01_original_864_nested_files_are_all_observed_and_refresh_after_mutation()
     assert!(!result.truncated);
     assert!(result.read_only && !result.source_files_read && !result.worktree_modified);
     assert!(!result.process_started);
-    fs::write(project.join("new-after-search.rs"), b"not available in prior query")
-        .unwrap();
+    fs::write(
+        project.join("new-after-search.rs"),
+        b"not available in prior query",
+    )
+    .unwrap();
     let fresh = registry
         .quick_open_source_paths(&id, "new-after-search")
         .unwrap();
@@ -248,9 +254,14 @@ fn dev01_original_1005_entry_single_directory_is_never_presented_as_complete() {
         )
         .unwrap();
     }
-    let result = registry.quick_open_source_paths(&id, "legacy-cap-").unwrap();
+    let result = registry
+        .quick_open_source_paths(&id, "legacy-cap-")
+        .unwrap();
     assert_eq!(result.matches.len(), 60);
-    assert!(result.truncated, "original excess entries must not appear complete");
+    assert!(
+        result.truncated,
+        "original excess entries must not appear complete"
+    );
     assert!(result.entries_examined <= 30_000);
     assert!(result.read_only && !result.source_files_read && !result.worktree_modified);
     assert!(!result.process_started);

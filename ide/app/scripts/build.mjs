@@ -25,6 +25,8 @@ try {
   console.error('Standalone IDE bundle failed:', error);
   process.exit(1);
 }
+copyFileSync(join(root, 'web', 'frontend_startup_diagnostic.js'),
+  join(output, 'assets', 'frontend_startup_diagnostic.js'));
 copyFileSync(join(root, 'web', 'index.html'), join(output, 'index.html'));
 copyFileSync(join(root, 'web', 'styles.css'), join(output, 'assets', 'styles.css'));
 console.log('Standalone Lu IDE web resources built');

@@ -12322,4 +12322,9 @@ function App() {
   </div>;
 }
 
-createRoot(document.getElementById('root')).render(<App />);
+// React 19 reports true uncaught render failures independently of OS UIA.
+// Render a visible, fixed error only when the real interface cannot mount.
+// This does not include the original workspace control or imply acceptance.
+createRoot(document.getElementById('root'), {
+  onUncaughtError: () => window.__luIdeReportStartupFailure?.('react_render_failed', true),
+}).render(<App />);

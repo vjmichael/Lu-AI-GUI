@@ -906,18 +906,25 @@ mod tests {
             line: 1,
             character: 27,
         };
+        // Native LSP permits exactly one in-flight semantic request.
+        // A newer request invalidates the prior reply, so consume hover first.
         session
             .request("hover", &source, at_symbol.clone())
             .unwrap();
-        session.request("definition", &source, at_symbol).unwrap();
         let (hover, _) = session
             .receive(&encode_frame(&messages["hover"]).unwrap())
             .unwrap();
-        assert!(matches!(&hover[0], LspEvent::Hover(text) if text.contains("addition")));
+        assert!(matches!(&hover[..], [LspEvent::Hover(text)] if text.contains("addition")));
+        session.request("definition", &source, at_symbol).unwrap();
+        // Replayed old semantic results must not authorize a current request.
+        let (late_hover, _) = session
+            .receive(&encode_frame(&messages["hover"]).unwrap())
+            .unwrap();
+        assert!(late_hover.is_empty(), "late hover replay must be refused");
         let (definition, _) = session
             .receive(&encode_frame(&messages["definition"]).unwrap())
             .unwrap();
-        assert!(matches!(&definition[0], LspEvent::Definition(Some(_))));
+        assert!(matches!(&definition[..], [LspEvent::Definition(Some(_))]));
         let old = source.clone();
         source.buffer_revision = 2;
         session.did_change(&old, source.clone(), changed).unwrap();

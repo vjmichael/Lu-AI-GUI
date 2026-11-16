@@ -148,6 +148,14 @@ function Warm-InstalledWebViewAccessibility {
       Start-Sleep -Milliseconds 450
     }
   }
+  # A frontend render-failure alert is diagnostic only, never a successful
+  # UIA workspace witness. The original exact heading is still mandatory.
+  try {
+    [void](Find-Control 'Lu IDE frontend unavailable' '' 2)
+    Write-Host 'WO8_WINDOWS_FRONTEND_DIAGNOSTIC=visible_render_failure'
+  } catch {
+    Write-Host 'WO8_WINDOWS_FRONTEND_DIAGNOSTIC=workspace_heading_missing_cause_unverified'
+  }
   Deny 'installed_webview_accessibility_not_ready_after_native_focus'
 }
 
