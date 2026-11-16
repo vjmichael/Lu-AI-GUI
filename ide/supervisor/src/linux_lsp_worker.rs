@@ -166,6 +166,10 @@ pub fn native_lsp_bundle_digest(root: &Path, recipe: &str) -> Result<String, Sup
     #[cfg(feature = "dap-transport")]
     if matches!(recipe, "dap_lldb_fixed" | "dap_lldb_project") {
         ensure_root_owned_tool(&root.join("debuggee/wo6-selftest"))?;
+        // A moved LLDB-DAP executable can initialize yet fail to locate its
+        // genuine lldb-server when launching a target. Both fixed binaries
+        // must be root-owned and hashed into the same release bundle.
+        ensure_root_owned_tool(&root.join("bin/lldb-server"))?;
     }
     native_linux_lsp_trace("root_owned_clangd_binary_verified");
     let result = audit_bundle(root)?;
@@ -704,7 +708,12 @@ fn start_linux_dap_inner(
         .arg("/ls/bin:/usr/bin:/bin")
         .arg("--setenv")
         .arg("LANG")
-        .arg("C");
+        .arg("C")
+        // Immutable, measured companion inside the same read-only namespace
+        // and delegated cgroup; never inherit a host/PATH debugger server.
+        .arg("--setenv")
+        .arg("LLDB_DEBUGSERVER_PATH")
+        .arg("/ls/bin/lldb-server");
     if let Some(target) = project_target {
         // Executable is supplied ONLY by the previously sealed completed
         // Cargo build. It is read-only in the same cgroup/Bwrap custody as

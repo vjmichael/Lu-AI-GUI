@@ -15,13 +15,18 @@ import time
 from probe_lldb_dap_initialize import SOURCE, COPIED, NAMESPACE, BUNDLE
 
 FIXED_HOST = BUNDLE + "/debuggee/wo6-selftest"
+SERVER_HOST = BUNDLE + "/bin/lldb-server"
+# Put the fixed read-only companion in the actual Bubblewrap environment,
+# not in the outer process environment cleared by --clearenv.
+SERVER_NAMESPACE = NAMESPACE[:-2] + [
+    "--setenv", "LLDB_DEBUGSERVER_PATH", "/ls/bin/lldb-server"
+] + NAMESPACE[-2:]
 CASES = (
-    ("host_distro", [SOURCE], FIXED_HOST),
-    ("copied_bundle", [COPIED], FIXED_HOST),
-    # Distinguish executable relocation from namespace/ptrace denial without
-    # changing the production worker or treating this probe as acceptance.
-    ("bwrap_distro", NAMESPACE[:-1] + [SOURCE], "/ls/debuggee/wo6-selftest"),
-    ("bwrap_namespace", NAMESPACE, "/ls/debuggee/wo6-selftest"),
+    ("host_distro", [SOURCE], FIXED_HOST, None),
+    ("copied_bundle", [COPIED], FIXED_HOST, SERVER_HOST),
+    ("bwrap_distro", SERVER_NAMESPACE[:-1] + [SOURCE],
+     "/ls/debuggee/wo6-selftest", None),
+    ("bwrap_namespace", SERVER_NAMESPACE, "/ls/debuggee/wo6-selftest", None),
 )
 
 def classify(fragment: str) -> str:
@@ -50,7 +55,7 @@ def request(seq: int, command: str, args: dict) -> bytes:
     }, separators=(",", ":")).encode()
     return b"Content-Length: %d\r\n\r\n" % len(body) + body
 
-def stage(label: str, argv: list[str], target: str) -> bool:
+def stage(label: str, argv: list[str], target: str, server: str | None) -> bool:
     child = None
     sel = selectors.DefaultSelector()
     buffer = bytearray()
@@ -62,11 +67,14 @@ def stage(label: str, argv: list[str], target: str) -> bool:
     sent_configuration = False
     got_configuration = False
     failure = "timeout_or_disconnect"
+    env = {"PATH": "/usr/bin:/bin", "HOME": "/tmp", "LANG": "C"}
+    if server is not None:
+        env["LLDB_DEBUGSERVER_PATH"] = server
     try:
         child = subprocess.Popen(
             argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            env={"PATH": "/usr/bin:/bin", "HOME": "/tmp", "LANG": "C"},
+            env=env,
             start_new_session=True
         )
         assert child.stdin and child.stdout and child.stderr

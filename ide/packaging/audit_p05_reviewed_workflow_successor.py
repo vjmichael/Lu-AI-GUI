@@ -13,7 +13,7 @@ import sys
 
 HISTORICAL_INVENTORY_GIT_BLOB = "5299b1ca6981f341d2855f549e567b8c2747dc13"
 # Each independently source-compared path keeps BOTH original and successor
-# exact Git blob identities. All other 31 must equal their original P05 pins.
+# exact Git blob identities. All other 30 must equal their original P05 pins.
 REVIEWED = {
     ".github/workflows/ide-d7-windows-worker.yml": (
         "518635e58bbac5b249bfeadba7e60c90b9d0010c",
@@ -40,7 +40,7 @@ REVIEWED = {
         "push_trigger_removed_requires_authorization"),
     ".github/workflows/ide-wo6-native-os-acceptance.yml": (
         "d7627899b3a6cafc7b383f00abbb2b9e7107fe2d",
-        "cea665eec68062b4071f57be206d56676a885ed3",
+        "aabfc76f4674018923710492f5adbaffc14c2f3b",
         "windows_runner_and_protected_dap_evidence_changed"),
     ".github/workflows/ide-wo8-installed-windows.yml": (
         "8fadc3f1829e62123b9da6a5e6bbd49a3f3ec36f",
