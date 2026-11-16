@@ -23,6 +23,21 @@ class DapPreflightBoundaries(unittest.TestCase):
         self.assertEqual(probe.classify_exit(0xC000007B), "invalid_binary_format")
         self.assertEqual(probe.classify_exit(None), "timeout_or_unreaped")
 
+    def test_fixed_private_environment_is_closed_and_matches_native_runner(self):
+        local = Path("D:/ci/private")
+        tools = Path("D:/ci/reviewed/bin")
+        system = Path("C:/Windows")
+        env = probe.fixed_private_environment(local, tools, system)
+        self.assertEqual(set(env), {
+            "APPDATA", "HOME", "LOCALAPPDATA", "PATH", "SystemRoot",
+            "TEMP", "TMP", "USERPROFILE"})
+        for name in ("APPDATA", "HOME", "LOCALAPPDATA", "TEMP",
+                     "TMP", "USERPROFILE"):
+            self.assertEqual(env[name], str(local))
+        self.assertEqual(env["PATH"], str(tools) + ";" + str(system / "System32"))
+        self.assertNotIn("PYTHONPATH", env)
+        self.assertNotIn("LLDBDAP_LOG", env)
+
     def test_only_exact_successful_initialize_response_counts(self):
         valid = {"seq": 2, "type": "response", "request_seq": 1,
                  "command": "initialize", "success": True}

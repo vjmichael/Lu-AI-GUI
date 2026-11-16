@@ -70,7 +70,26 @@ def parse_initialize_response(stream):
     return False
 
 
+def fixed_private_environment(local: Path, bindir: Path, system: Path):
+    """Host-only comparison of the exact native private-profile environment.
+
+    This tests an environment mismatch WITHOUT claiming AppContainer file or
+    object rights; all inputs are fixed by the disposable CI runner.
+    """
+    return {
+        "APPDATA": str(local), "HOME": str(local),
+        "LOCALAPPDATA": str(local),
+        "PATH": str(bindir) + ";" + str(system / "System32"),
+        "SystemRoot": str(system), "TEMP": str(local),
+        "TMP": str(local), "USERPROFILE": str(local),
+    }
+
+
 def run():
+    compare_private_env = sys.argv[1:] == ["--compare-private-environment"]
+    if sys.argv[1:] and not compare_private_env:
+        print("PROTECTED_WO6_DAP_PREFLIGHT=denied_unknown_probe_mode")
+        return 2
     if sys.platform != "win32" or os.environ.get("GITHUB_ACTIONS") != "true":
         print("PROTECTED_WO6_DAP_PREFLIGHT=denied_non_ci_windows")
         return 2
@@ -91,8 +110,22 @@ def run():
         "PATH": str(exe.parent) + ";" + str(Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32"),
         "TEMP": str(temp), "TMP": str(temp),
     }
+    cwd = exe.parent
+    if compare_private_env:
+        # Distinguish a missing private runtime environment from denial by
+        # the actual AppContainer token. Never modify privileges, ACLs, or
+        # parent environment, and never claim this is OS acceptance.
+        local = temp / "wo6-native-private-environment-probe"
+        if local.exists() or local.is_symlink():
+            print("PROTECTED_WO6_PRIVATE_ENV=denied_nonempty_private_probe")
+            return 2
+        local.mkdir(mode=0o700)
+        cwd = local / "workspace"
+        cwd.mkdir(mode=0o700)
+        env = fixed_private_environment(local, exe.parent,
+                                        Path(env["SystemRoot"]))
     try:
-        child = subprocess.Popen([str(exe)], cwd=str(exe.parent),
+        child = subprocess.Popen([str(exe)], cwd=str(cwd),
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             env=env, creationflags=subprocess.CREATE_NO_WINDOW)
     except OSError:
@@ -158,10 +191,16 @@ def run():
         print("PROTECTED_WO6_DAP_PREFLIGHT=denied_unbounded_output")
         return 2
     if ready and parse_initialize_response(stdout):
-        print("PROTECTED_WO6_DAP_PREFLIGHT=initialize_pass_no_containment_claim")
+        if compare_private_env:
+            print("PROTECTED_WO6_PRIVATE_ENV=initialize_pass_without_AppContainer")
+        else:
+            print("PROTECTED_WO6_DAP_PREFLIGHT=initialize_pass_no_containment_claim")
         return 0
-    print("PROTECTED_WO6_DAP_PREFLIGHT="
-          + ("no_initialize_timeout" if timed_out else "no_initialize_" + status))
+    outcome = ("no_initialize_timeout" if timed_out else "no_initialize_" + status)
+    if compare_private_env:
+        print("PROTECTED_WO6_PRIVATE_ENV=" + outcome + "_no_AppContainer_claim")
+    else:
+        print("PROTECTED_WO6_DAP_PREFLIGHT=" + outcome)
     return 2
 
 

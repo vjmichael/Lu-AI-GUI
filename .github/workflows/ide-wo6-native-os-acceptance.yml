@@ -132,6 +132,13 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'DENIED: fixed loader probe unit tests failed' }
           python ide/supervisor/fixtures/debug/probe_windows_dap_initialize.py
           if ($LASTEXITCODE -ne 0) { throw 'DENIED: copied adapter cannot initialize outside AppContainer; no native containment claim' }
+          # The protected process exits with one bare permission-denied
+          # category. Separate a missing private HOME/TEMP/PATH dependency
+          # from the actual package-SID token with a second FIXED host-only
+          # environment witness. This can never replace the original Job,
+          # SCM, normal/cancel, PE/PDB or kernel-ownership assertions.
+          python ide/supervisor/fixtures/debug/probe_windows_dap_initialize.py --compare-private-environment
+          if ($LASTEXITCODE -ne 0) { Write-Host 'PROTECTED_WO6_PRIVATE_ENV_COMPARE=DIAGNOSTIC_FAILED_NOT_NATIVE_ACCEPTANCE' }
       - name: Prepare exact offline MSVC and SDK for DEV-04.5B project build
         shell: pwsh
         run: |
