@@ -904,6 +904,8 @@ impl LinuxDapSession {
         // immutable JobPlans. No renderer or DAP response can supply either.
         target.verify()?;
         verify_input(&self.source_input).map_err(|_| SupervisorError::WrongProjectOrSource)?;
+        #[cfg(all(debug_assertions, feature = "dev045d3-ci-oracle"))]
+        eprintln!("DEV045D3_KERNEL_LINE_GATE=sealed_target_and_snapshot_verified");
         let job = supervisor
             .inspect()?
             .into_iter()
@@ -924,6 +926,8 @@ impl LinuxDapSession {
         }) {
             return Err(SupervisorError::InvalidTransition);
         }
+        #[cfg(all(debug_assertions, feature = "dev045d3-ci-oracle"))]
+        eprintln!("DEV045D3_KERNEL_LINE_GATE=debug_job_and_receipts_verified");
         let build_receipts = supervisor.receipt_history(&target.lineage.build_job_id)?;
         if build_receipts.last().is_none_or(|r| {
             r.body.phase != JobPhase::Completed
@@ -932,6 +936,8 @@ impl LinuxDapSession {
         }) {
             return Err(SupervisorError::InvalidTransition);
         }
+        #[cfg(all(debug_assertions, feature = "dev045d3-ci-oracle"))]
+        eprintln!("DEV045D3_KERNEL_LINE_GATE=completed_build_lineage_verified");
         let candidate = self
             .gateway
             .source_candidate()
@@ -939,6 +945,8 @@ impl LinuxDapSession {
         let pc = candidate
             .instruction_address
             .ok_or(SupervisorError::NoContainment)?;
+        #[cfg(all(debug_assertions, feature = "dev045d3-ci-oracle"))]
+        eprintln!("DEV045D3_KERNEL_LINE_GATE=bounded_dap_source_and_pc_present");
         // The source path must be the native-only read-only snapshot mounted
         // as /workspace; no arbitrary path or suffix/basename lookup.
         let relative = candidate
@@ -962,6 +970,8 @@ impl LinuxDapSession {
         let digest = format!("{:x}", Sha256::digest(&bytes));
         // Only native worker translates the confined adapter path to the
         // already verified snapshot; the renderer cannot pass an alternate.
+        #[cfg(all(debug_assertions, feature = "dev045d3-ci-oracle"))]
+        eprintln!("DEV045D3_KERNEL_LINE_GATE=snapshot_source_path_and_bytes_verified");
         let mut native_candidate = candidate.clone();
         native_candidate.adapter_path = actual_source
             .to_str()
@@ -974,6 +984,8 @@ impl LinuxDapSession {
             &native_candidate,
         )
         .map_err(|_| SupervisorError::WrongProjectOrSource)?;
+        #[cfg(all(debug_assertions, feature = "dev045d3-ci-oracle"))]
+        eprintln!("DEV045D3_KERNEL_LINE_GATE=native_dap_source_line_correlated");
         let binary = target.root.join(target.confined_relative_binary());
         let kernel = observe_linux_project_pc(
             &self.native_cgroup_dir,
@@ -982,6 +994,8 @@ impl LinuxDapSession {
             &target.binary.binary_sha256,
             pc,
         )?;
+        #[cfg(all(debug_assertions, feature = "dev045d3-ci-oracle"))]
+        eprintln!("DEV045D3_KERNEL_LINE_GATE=kernel_cgroup_stopped_pc_verified");
         // Second validation closes source/binary TOCTOU after /proc maps.
         target.verify()?;
         verify_input(&self.source_input).map_err(|_| SupervisorError::WrongProjectOrSource)?;
@@ -994,6 +1008,8 @@ impl LinuxDapSession {
         if !still_running {
             return Err(SupervisorError::InvalidTransition);
         }
+        #[cfg(all(debug_assertions, feature = "dev045d3-ci-oracle"))]
+        eprintln!("DEV045D3_KERNEL_LINE_GATE=post_kernel_recheck_and_receipts_verified");
         Ok(ProtectedStopLineage {
             kernel,
             debugger_job_id: job_id.to_owned(),
@@ -1029,9 +1045,15 @@ impl LinuxDapSession {
         }
         #[cfg(all(debug_assertions, feature = "dev045d3-ci-oracle"))]
         {
+            #[cfg(all(debug_assertions, feature = "dev045d3-ci-oracle"))]
+            eprintln!("DEV045D3_KERNEL_LINE_GATE=protected_image_verification_begin");
             let mut witness =
                 self.verify_stopped_project_image(supervisor, job_id, plan, target)?;
+            #[cfg(all(debug_assertions, feature = "dev045d3-ci-oracle"))]
+            eprintln!("DEV045D3_KERNEL_LINE_GATE=independent_llvm_dwarf_line_begin");
             crate::native_kernel_pc::verify_independent_dwarf_line_for_ci(&mut witness, target)?;
+            #[cfg(all(debug_assertions, feature = "dev045d3-ci-oracle"))]
+            eprintln!("DEV045D3_KERNEL_LINE_GATE=independent_llvm_dwarf_line_verified");
             Ok(witness)
         }
     }
