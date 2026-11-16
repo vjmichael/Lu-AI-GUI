@@ -6,6 +6,7 @@ on:
     paths:
       - 'ide/app/**'
       - 'ide/host/**'
+      - 'ide/ci/**'
       - 'ide/docs/IDE_B4_SPLIT_EDITOR_20261108.md'
       - '.github/workflows/ide-b4-split-editor-native.yml'
   workflow_dispatch:
@@ -61,10 +62,12 @@ jobs:
           # Allow NO NEW protected source changes in this grouped workflow repair.
           IDE_INTEGRATED_NATIVE_BASE=06beb2d8725f1175a1c4eb930e829afd582a6e96
           git merge-base --is-ancestor "$IDE_INTEGRATED_NATIVE_BASE" HEAD || { echo 'DENIED: integrated source baseline not ancestral'; exit 2; }
-          if ! git diff --quiet "$IDE_INTEGRATED_NATIVE_BASE" HEAD -- ide/host/src/editor.rs ide/host/src/reviewed_git.rs ide/host/src/browser.rs ide/supervisor ide/packaging/language-server-release-manifest.json; then
-            echo 'DENIED: current B4 integration unexpectedly expands worker or source-write authority'; exit 2
-          fi
-          echo 'B4_HISTORICAL_AND_CURRENT_NATIVE_BOUNDARIES=PASS'
+          # Distinct CURRENT integration review: pin every native source blob,
+          # reject additions and source mutations, retain historic B4 negative
+          # check above. This is not native/kernal/release acceptance.
+          python3 ide/ci/verify_reviewed_native_boundaries.py --repo-root .
+          python3 -m unittest discover -s ide/ci -p 'test_verify_reviewed_native_boundaries.py' -v
+          echo 'B4_HISTORICAL_AND_SCOPED_CURRENT_SOURCE_IDENTITIES=PASS_NATIVE_OS_OPEN'
       - name: Linux native GTK WebKit build prerequisites
         if: runner.os == 'Linux'
         shell: bash

@@ -89,7 +89,7 @@ class LanguageServerBundlePolicyTests(unittest.TestCase):
                    "windows-x86_64":{},
                    "linux-x86_64":{},
                  }}
-            with self.assertRaisesRegex(ValueError,"LLVM resources"):
+            with self.assertRaisesRegex(ValueError,"complete reviewed original dependency closure"):
                 reviewed_native_resources(row,root,"windows-x86_64")
             row["nativeResourceFilesByPlatform"]["windows-x86_64"]={
                 "bin/original.dll":{

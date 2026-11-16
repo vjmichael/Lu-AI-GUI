@@ -24,7 +24,7 @@ class NativePickerSourceTests(unittest.TestCase):
         a=s.split("def select_native_folder():",1)[1].split("def editor_project():",1)[0]
         self.assertIn("type_text(str(ROOT))",a)
         self.assertNotIn("type_text(str(ROOT.parent))",a)
-        self.assertIn("_select_real_fixture_directory()",a)
+        self.assertIn("_native_parent_and_exact_child()",a)
         self.assertIn("_native_picker_confirm(attempts)",a)
         self.assertIn('"select folder"',s)
         self.assertIn('"open folder"',s)
@@ -41,9 +41,10 @@ class NativePickerSourceTests(unittest.TestCase):
         self.assertIn("WO8_NATIVE_PROJECT_REOPEN=real_installed_ui_reactivated",mark)
         linux=(ROOT/"ide/app/fixtures/wo8_linux_editor_atspi.py").read_text(encoding="utf-8")
         editor=linux.split("def editor_project():",1)[1].split("def main():",1)[0]
-        self.assertIn('activate("Reopen", timeout=15)',editor)
-        self.assertLess(editor.index('activate("Reopen"'),editor.index('activate("Edit")'))
-        self.assertIn('accessible("Open · editor available", seconds=15)',editor)
+        self.assertIn('_activate_exact_project_button("Reopen project "',editor)
+        self.assertIn('_activate_exact_project_button("Edit project "',editor)
+        self.assertLess(editor.index('"Reopen project "'),editor.index('"Edit project "'))
+        self.assertIn('accessible("Source explorer and editor", seconds=15)',editor)
         frontend=(ROOT/"ide/app/web/main.jsx").read_text(encoding="utf-8")
         self.assertIn("Closed · ready to reopen",frontend)
         self.assertIn(">Reopen</button>",frontend)
@@ -70,8 +71,8 @@ class NativePickerSourceTests(unittest.TestCase):
         self.assertIn("pyatspi.STATE_SHOWING", checker)
         self.assertIn("pyatspi.STATE_VISIBLE", checker)
         self.assertIn('if "file chooser" not in role:', checker)
-        self.assertIn("within_dialog = True", source)
-        self.assertIn("if not _registered_native_project_is_exposed():",source)
+        self.assertIn("_native_dialog_ancestor(obj)", source)
+        self.assertIn('if observed == "exact_native_root_persisted" and _registered_native_project_is_exposed():',source)
         self.assertIn('deny("native_folder_chooser_did_not_register_project")',source)
     def test_windows_git_committed_head_must_really_change(self):
         source=(ROOT/"ide/app/fixtures/Test-Wo8NativeDesktopUI.ps1").read_text(encoding="utf-8")
@@ -92,7 +93,7 @@ class NativePickerSourceTests(unittest.TestCase):
                      '"mousemove"', '"click"'):
             self.assertIn(term,section)
         self.assertIn("if _atspi_bounded_chooser_mouse(attempt):",src)
-        self.assertIn("if not _registered_native_project_is_exposed():",src)
+        self.assertIn('if observed == "exact_native_root_persisted" and _registered_native_project_is_exposed():',src)
         self.assertNotIn("window.__TAURI_INTERNALS__",section)
         self.assertNotIn("invoke_tauri",section)
 
@@ -105,7 +106,7 @@ class NativePickerSourceTests(unittest.TestCase):
                      "unrecognized_active_window_title"):
             self.assertIn(term, section)
         self.assertIn("if _x11_dialog_activation(attempt):",source)
-        self.assertIn("if not _registered_native_project_is_exposed():",source)
+        self.assertIn('if observed == "exact_native_root_persisted" and _registered_native_project_is_exposed():',source)
         self.assertIn('deny("native_folder_chooser_did_not_register_project")',source)
         self.assertNotIn("window.__TAURI_INTERNALS__",section)
         self.assertNotIn("invoke_tauri",section)
@@ -114,14 +115,15 @@ class NativePickerSourceTests(unittest.TestCase):
         native=(ROOT/"ide/app/fixtures/wo8_linux_editor_atspi.py").read_text(encoding="utf-8")
         chooser=native.split("def _native_picker_confirm(",1)[1].split(
             "def _native_chooser_still_open():",1)[0]
-        self.assertIn('"select folder": 0', chooser)
+        self.assertIn("candidate_captions(",chooser)
         self.assertIn('getExtents(pyatspi.DESKTOP_COORDS)',chooser)
         self.assertIn('ranked.sort(key=lambda record: record[:4])',chooser)
-        self.assertIn('start = min(attempt',chooser)
+        self.assertIn('if attempt > 0 and not ranked:',chooser)
         self.assertIn('_native_dialog_ancestor(obj)',chooser)
         self.assertIn('native_dialog_confirmation_not_found',chooser)
         self.assertIn('if not _select_real_fixture_directory():',native)
-        self.assertIn('key("alt+Up")',native)
+        self.assertIn('_native_parent_and_exact_child()',native)
+        self.assertIn('type_text(str(ROOT.parent))',native)
         self.assertIn('type_text(str(ROOT))',native)
     def test_installed_windows_startup_only_uses_real_os_focus_before_uia(self):
         native=(ROOT/"ide/app/fixtures/Test-Wo8NativeDesktopUI.ps1").read_text(encoding="utf-8")

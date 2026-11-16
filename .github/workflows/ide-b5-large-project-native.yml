@@ -6,6 +6,7 @@ on:
     paths:
       - 'ide/app/**'
       - 'ide/host/**'
+      - 'ide/ci/**'
       - 'ide/docs/IDE_B5_LARGE_PROJECT_WORKING_SET_20261108.md'
       - '.github/workflows/ide-b5-large-project-native.yml'
   workflow_dispatch:
@@ -59,33 +60,12 @@ jobs:
           # diagnostic-only files are the ONLY acknowledged B5-current-stack
           # exceptions. The original B5 performance-only historical diff above
           # still strictly forbids native authority changes in its own span.
-          python3 - <<'PY'
-          from pathlib import Path
-          import subprocess
-          base="06beb2d8725f1175a1c4eb930e829afd582a6e96"
-          expected={
-              "ide/host/src/git_reviewed_stash_save.rs": "6ee705292a5e95fb0cbd62a5362f490b1f2e3c8b",
-              "ide/host/tests/fin03_stash_save.rs": "90df81f8f5df31c7db1bbdaf52643f8e67efe323",
-              "ide/packaging/p05-merge02-pending-native-boundaries.json": "510293d0df6b18150739cee0fbdcd58dc24cb392",
-              "ide/packaging/test_p05_merge02_pending_native_boundaries.py": "e004af8f1010c9e9d30809027946ffd1ccdbbe5e",
-              "ide/packaging/test_p06_checkout_lock.py": "7058bb489bde7b92efbc07e8af3e92a149b958a1",
-              "ide/packaging/verify_p05_merge02_pending_native_boundaries.py": "c7c7a3daa21d4c6550d7630c96b044cb2d5cde88",
-              "ide/packaging/verify_p06_checkout_lock.py": "9645f844d78e64c27ff482aed0f9404ceb4805f8",
-          }
-          def git(*args):
-              return subprocess.check_output(['git',*args], text=True).strip()
-          changed=set(filter(None,git('diff','--name-only',base,'HEAD','--',
-              'ide/host','ide/supervisor','ide/app/src-tauri','ide/packaging').splitlines()))
-          if changed!=set(expected):
-              raise SystemExit('DENIED: unreviewed B5 integrated native boundary change: '+repr(sorted(changed^set(expected))))
-          for path, pin in expected.items():
-              recorded=git('rev-parse','HEAD:'+path)
-              actual=git('hash-object','--',path)
-              if pin!=recorded or recorded!=actual or Path(path).is_symlink():
-                  raise SystemExit('DENIED: reviewed B5 current-stack source pin drift: '+path)
-          print('B5_NATIVE_INTEGRATION_EXACT_SEVEN_REVIEWED_SOURCE_EXCEPTIONS=PASS_NOT_OS_ACCEPTANCE')
-          PY
-          echo 'B5_HISTORICAL_AND_CURRENT_NATIVE_BOUNDARIES=PASS'
+          # Independently pin every approved native integration blob; no
+          # dynamic exception discovery, false release flag or worker rights.
+          # Original historical B5 performance-only test above is intact.
+          python3 ide/ci/verify_reviewed_native_boundaries.py --repo-root .
+          python3 -m unittest discover -s ide/ci -p 'test_verify_reviewed_native_boundaries.py' -v
+          echo 'B5_REVIEWED_CURRENT_NATIVE_SOURCE_IDENTITIES=PASS_NATIVE_OS_OPEN'          echo 'B5_HISTORICAL_AND_CURRENT_NATIVE_BOUNDARIES=PASS'
           python3 ide/packaging/verify_tauri_minor.py --repo-root .
           python3 ide/packaging/verify_language_servers.py
           if python3 ide/packaging/verify_language_servers.py --release; then

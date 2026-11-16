@@ -1,0 +1,134 @@
+{
+  "schema": "lu.ide.merge02.reviewed-integrated-native-boundaries.v1",
+  "baseSha": "06beb2d8725f1175a1c4eb930e829afd582a6e96",
+  "sourceScope": [
+    "ide/host",
+    "ide/supervisor",
+    "ide/app/src-tauri",
+    "ide/packaging"
+  ],
+  "originalHistoricalB4AndB5GuardsRetained": true,
+  "sourceReviewApprovedForExactListOnly": true,
+  "nativeWindowsAccepted": false,
+  "nativeLinuxAccepted": false,
+  "installedGuiAccepted": false,
+  "releaseApproved": false,
+  "mergeApproved": false,
+  "files": [
+    {
+      "path": "ide/host/src/git_reviewed_stash_save.rs",
+      "sha": "f1d54aaee76acca98c53fa405d959eceb9ee1b0c",
+      "scope": "FIN03 recovery source reviewed, native OS admission pending"
+    },
+    {
+      "path": "ide/host/tests/fin03_stash_save.rs",
+      "sha": "90df81f8f5df31c7db1bbdaf52643f8e67efe323",
+      "scope": "source or historical preservation test, not native acceptance"
+    },
+    {
+      "path": "ide/packaging/audit_p05_reviewed_workflow_successor.py",
+      "sha": "f258ce890d3aa0b8bc3db4b63a4c6b2c772d52b3",
+      "scope": "source or historical preservation test, not native acceptance"
+    },
+    {
+      "path": "ide/packaging/p05-merge02-pending-native-boundaries.json",
+      "sha": "510293d0df6b18150739cee0fbdcd58dc24cb392",
+      "scope": "source or historical preservation test, not native acceptance"
+    },
+    {
+      "path": "ide/packaging/p05-semantic-reconciliation.json",
+      "sha": "05191345a4033c75954d902c00e4f869921bfe2c",
+      "scope": "source or historical preservation test, not native acceptance"
+    },
+    {
+      "path": "ide/packaging/python_semantic_native_benchmark.py",
+      "sha": "c11c0b883eb26d976489146a8df73c7e8402a8fe",
+      "scope": "source or historical preservation test, not native acceptance"
+    },
+    {
+      "path": "ide/packaging/test_p05_merge02_pending_native_boundaries.py",
+      "sha": "e004af8f1010c9e9d30809027946ffd1ccdbbe5e",
+      "scope": "source or historical preservation test, not native acceptance"
+    },
+    {
+      "path": "ide/packaging/test_p05_native_picker_repair.py",
+      "sha": "0eb22e9f58e71cf544d24bbd72cbb0bff3ed186a",
+      "scope": "source or historical preservation test, not native acceptance"
+    },
+    {
+      "path": "ide/packaging/test_p05_reviewed_workflow_successor.py",
+      "sha": "e4318db01b61434d2c703961db6ceb8c980e4787",
+      "scope": "source or historical preservation test, not native acceptance"
+    },
+    {
+      "path": "ide/packaging/test_p05_semantic_reconciliation.py",
+      "sha": "368589dfbc5938e6fe823619fb206dab7c48e92f",
+      "scope": "source or historical preservation test, not native acceptance"
+    },
+    {
+      "path": "ide/packaging/test_p06_checkout_lock.py",
+      "sha": "7058bb489bde7b92efbc07e8af3e92a149b958a1",
+      "scope": "source or historical preservation test, not native acceptance"
+    },
+    {
+      "path": "ide/packaging/test_python_semantic_native_benchmark.py",
+      "sha": "28809796c39f8302bed7a4f1703b72a8ed77f5ed",
+      "scope": "source or historical preservation test, not native acceptance"
+    },
+    {
+      "path": "ide/packaging/test_verify_language_servers.py",
+      "sha": "bc2b9660918a74a4912d5652bcbd09798f6937d4",
+      "scope": "native redistribution manifest still blocked pending full closure"
+    },
+    {
+      "path": "ide/packaging/verify_language_servers.py",
+      "sha": "62fc38065834ddd0ceb0cc49764711c828833716",
+      "scope": "native redistribution manifest still blocked pending full closure"
+    },
+    {
+      "path": "ide/packaging/verify_p05_merge02_pending_native_boundaries.py",
+      "sha": "c7c7a3daa21d4c6550d7630c96b044cb2d5cde88",
+      "scope": "source or historical preservation test, not native acceptance"
+    },
+    {
+      "path": "ide/packaging/verify_p06_checkout_lock.py",
+      "sha": "9645f844d78e64c27ff482aed0f9404ceb4805f8",
+      "scope": "source or historical preservation test, not native acceptance"
+    },
+    {
+      "path": "ide/supervisor/examples/wo6_native_dap_acceptance.rs",
+      "sha": "f8a496b1e1aaaca299bde83926157b759f47f162",
+      "scope": "LLVM18 ownership compile repair, negative tests retained"
+    },
+    {
+      "path": "ide/supervisor/fixtures/debug/Probe-WindowsWo6FileDenial.ps1",
+      "sha": "224e0a2052843a927d80a6fac65821710f7c7dde",
+      "scope": "CI-only diagnostic, no capability expansion"
+    },
+    {
+      "path": "ide/supervisor/fixtures/debug/probe_lldb_dap_launch.py",
+      "sha": "c9ee172e1fb2344a8f3b89c07c2360e0815c6697",
+      "scope": "CI-only diagnostic, no capability expansion"
+    },
+    {
+      "path": "ide/supervisor/fixtures/debug/probe_windows_dap_initialize.py",
+      "sha": "bfbecf11d42c830ed51fd011a9129fd595ab02a4",
+      "scope": "CI-only diagnostic, no capability expansion"
+    },
+    {
+      "path": "ide/supervisor/fixtures/debug/test_probe_windows_dap_initialize.py",
+      "sha": "ac79d5e5f45478f4a49d96f5d8e0062067bb78f8",
+      "scope": "CI-only diagnostic, no capability expansion"
+    },
+    {
+      "path": "ide/supervisor/src/linux_lsp_worker.rs",
+      "sha": "d327f8175c04a6adb7b778900028b06c61f204d1",
+      "scope": "native debugger witness or worker, OS acceptance pending"
+    },
+    {
+      "path": "ide/supervisor/src/windows_lsp_worker.rs",
+      "sha": "8cc8de68bcc529bb6606ea361e7e3b414167d122",
+      "scope": "native debugger witness or worker, OS acceptance pending"
+    }
+  ]
+}
