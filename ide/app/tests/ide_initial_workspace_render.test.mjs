@@ -128,3 +128,14 @@ test('real esbuild production entry renders first project view with no native pr
   assert.ok(!strings.includes('Lu IDE frontend unavailable'),
     'the failure diagnostic must never substitute for the workspace');
 });
+
+// The actual installed GTK AT-SPI/WebView2 UIA drivers search for this
+// stable contenteditable name. Pane identity must augment, not replace it.
+test('mounted CodeMirror retains native editor accessibility identity', () => {
+  const editor = readFileSync(fileURLToPath(new URL('../web/code_editor.jsx', import.meta.url)), 'utf8');
+  assert.match(editor, /'aria-label': 'Source editor text'/);
+  assert.ok(editor.includes("view.contentDOM.setAttribute('aria-label','Source editor text · '+label);"));
+  assert.ok(!editor.includes("view.contentDOM.setAttribute('aria-label',label);"),
+    'mount may not erase the OS-visible source editor name');
+  assert.match(editor, /role: 'textbox'/);
+});
