@@ -14,8 +14,7 @@ import time
 
 import pyatspi
 
-from gtk_chooser_confirmation_policy import (candidate_captions,
-    exact_native_directory_row, verified_native_list_text_candidate)
+from gtk_chooser_confirmation_policy import candidate_captions, exact_native_directory_row, verified_native_list_text_candidate
 
 EXE = os.environ["WO8_INSTALLED_EXE"]
 ROOT = Path(os.environ["WO8_FIXTURE_ROOT"]).resolve()

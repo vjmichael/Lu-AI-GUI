@@ -47,7 +47,8 @@ def verified_native_list_text_candidate(text, basename, role, ancestor_roles=())
     """
     if (not isinstance(text, str) or not isinstance(basename, str)
             or not basename or '/' in basename or '\\' in basename
-            or text.strip() != basename or role.casefold() not in ('label', 'text')
+            or text.strip() != basename or not isinstance(role, str)
+            or role.casefold() not in ('label', 'text')
             or not isinstance(ancestor_roles, (tuple, list))):
         return False
     parents = [name.casefold() for name in ancestor_roles[:6] if isinstance(name, str)]
