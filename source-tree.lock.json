@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "faf9f73e0a564ec4bb94d4e7a3d00f5244248a5f",
+  "sourceCommitBeforeLock": "572164b57e39df6de4deae46375064d2f72fb5b3",
   "trackedFileCount": 1040,
   "files": [
     {
@@ -1581,7 +1581,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/project_task_agent_handoff.rs",
-      "blob": "9acdc42d0b9626e6084d21a3bdf7b6967df3a38a"
+      "blob": "ef85562180827ecf580c1184184d7e144baa075f"
     },
     {
       "path": "lu-desktop/src-tauri/src/project_task_board_desktop.rs",
@@ -1593,7 +1593,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/project_task_verified_evidence.rs",
-      "blob": "dd0513ebc88914a66b1d23af68e3be519f18e25b"
+      "blob": "6d89aa2a4b5d7854b5bcf0280576fbc37af1b2a3"
     },
     {
       "path": "lu-desktop/src-tauri/src/project_update_model_desktop.rs",
