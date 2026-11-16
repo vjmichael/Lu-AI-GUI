@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "286f07ec7ed5e228d74bb1db1e617acc6df49802",
-  "trackedFileCount": 1040,
+  "sourceCommitBeforeLock": "80bb48ecb3d8715f5cd9fc86b8ce2d63afd59f87",
+  "trackedFileCount": 1041,
   "files": [
     {
       "path": ".github/pull_request_template.md",
@@ -69,7 +69,7 @@
     },
     {
       "path": ".github/workflows/lu-core-merge-c4-grouped.yml",
-      "blob": "fa78cb3c65647af2896edd3f32b106144672b154"
+      "blob": "2b5b26d022bbd1d9cfbb2f29cc3c7cf6862c5a3c"
     },
     {
       "path": ".github/workflows/lu-development-ledger.yml",
@@ -2258,6 +2258,10 @@
     {
       "path": "scripts/build-current-windows-nsis.ps1",
       "blob": "3d2b5b2420d958e4a629664b1268c9b31e60af1d"
+    },
+    {
+      "path": "scripts/c3-windows-installed-native-completion.ps1",
+      "blob": "a8ff2bba316b00dcc9c6893471493992bea03b06"
     },
     {
       "path": "scripts/core-merge-c1-family-contracts.test.mjs",
