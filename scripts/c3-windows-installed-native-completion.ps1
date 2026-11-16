@@ -85,6 +85,79 @@ function CaptureOriginalUIATree([string]$label,[System.Windows.Automation.Automa
   $script:report.errors+=@('UIA diagnostic '+$label+': '+$_.Exception.Message)
  }
 }
+# Failure-only diagnostics for the actual installed Windows window and original
+# ANSF SQLite journal. They do not add authority or relax any UIA assertion.
+function CaptureFailedInstalledObservation(){
+ foreach($entry in @(
+  @{name='failure-main-after-timeout';root=$script:main},
+  @{name='failure-board-after-timeout';root=$script:board}
+ )){
+  if($null -ne $entry.root){CaptureOriginalUIATree $entry.name $entry.root}
+ }
+ try{
+  $windows=@()
+  foreach($entry in @(
+   @{name='main';root=$script:main},
+   @{name='task-board';root=$script:board}
+  )){
+   if($null -eq $entry.root){continue}
+   try{
+    $r=$entry.root.Current.BoundingRectangle
+    $children=$entry.root.FindAll([System.Windows.Automation.TreeScope]::Children,
+      [System.Windows.Automation.Condition]::TrueCondition)
+    $windows+=@([ordered]@{
+     role=$entry.name;name=$entry.root.Current.Name
+     className=$entry.root.Current.ClassName
+     controlType=$entry.root.Current.ControlType.ProgrammaticName
+     processId=$entry.root.Current.ProcessId
+     hwnd=$entry.root.Current.NativeWindowHandle
+     offscreen=$entry.root.Current.IsOffscreen
+     bounds=@([double]$r.Left,[double]$r.Top,[double]$r.Width,[double]$r.Height)
+     immediateChildCount=$children.Count
+    })
+   }catch{$script:report.errors+=@('Window diagnostic '+$entry.name+': '+$_.Exception.Message)}
+  }
+  $processes=@(Get-CimInstance Win32_Process -Filter "Name='lu-desktop.exe' OR Name='msedgewebview2.exe'" |
+    Select-Object Name,ProcessId,ParentProcessId)
+  [ordered]@{
+   schema='lu-c3-installed-os-window-provenance-diagnostic-v1'
+   installedAppProcessId=if($null -ne $script:app){$script:app.Id}else{$null}
+   windows=$windows;processes=$processes
+  }|ConvertTo-Json -Depth 7|Set-Content -LiteralPath (
+   Join-Path $EvidenceDir 'uia-installed-failure-window-processes.json') -Encoding UTF8
+ }catch{$script:report.errors+=@('Window/process diagnostic: '+$_.Exception.Message)}
+ try{
+  $root=if($null -ne $script:board){$script:board}else{$script:main}
+  if($null -ne $root){
+   $rect=$root.Current.BoundingRectangle
+   $width=[int][Math]::Ceiling($rect.Width)
+   $height=[int][Math]::Ceiling($rect.Height)
+   if($width -gt 0 -and $height -gt 0 -and $width -le 3840 -and $height -le 2160){
+    $bitmap=[System.Drawing.Bitmap]::new($width,$height)
+    $graphics=[System.Drawing.Graphics]::FromImage($bitmap)
+    try{
+     $graphics.CopyFromScreen([int]$rect.Left,[int]$rect.Top,0,0,$bitmap.Size)
+     $bitmap.Save((Join-Path $EvidenceDir 'uia-installed-failure-window.png'),
+      [System.Drawing.Imaging.ImageFormat]::Png)
+    }finally{$graphics.Dispose();$bitmap.Dispose()}
+   }else{throw 'Window screenshot bounds outside diagnostic limits'}
+  }
+ }catch{$script:report.errors+=@('Window screenshot diagnostic: '+$_.Exception.Message)}
+ try{
+  # Query the original database in read-only mode without creating a new DB.
+  $db=Join-Path $ProfileDir 'ansf\library.db'
+  $rows=@(Journal)
+  [ordered]@{
+   schema='lu-c3-installed-original-sqlite-negative-observation-v1'
+   originalLibraryExists=(Test-Path -LiteralPath $db -PathType Leaf)
+   decisionCount=$rows.Count
+   originalVerifiedDecisions=$rows
+   taskCompletionNotInferred=$true
+  }|ConvertTo-Json -Depth 7|Set-Content -LiteralPath (
+   Join-Path $EvidenceDir 'sqlite-independent-failure-observation.json') -Encoding UTF8
+ }catch{$script:report.errors+=@('Original SQLite readback diagnostic: '+$_.Exception.Message)}
+}
+
 # Windows WebView2 DOM UIA elements often have a child process PID, but are
 # still descendants of the *verified* Tauri app-owned native window. Reject
 # all controls outside the already authenticated native window subtrees.
@@ -307,6 +380,7 @@ try{
 }catch{
  $script:report.errors+=@($_.Exception.ToString())
  Write-Warning ('C3 installed native acceptance FAILED: '+$_.Exception.Message)
+ CaptureFailedInstalledObservation
 }finally{
  if($null -ne $script:app){
   try{$script:app.Refresh();if(-not $script:app.HasExited){
