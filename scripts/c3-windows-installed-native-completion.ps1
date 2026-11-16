@@ -57,7 +57,9 @@ function CaptureOriginalUIATree([string]$label,[System.Windows.Automation.Automa
  if($null -eq $root){return}
  try{
   $sample=@()
-  $items=All $root
+  # PowerShell unwraps returned UIA collections into 0, 1 or many objects.
+  # Force an array so both empty and singleton diagnostics retain .Count.
+  $items=@(All $root)
   for($i=0;$i -lt [Math]::Min(450,$items.Count);$i++){
    try{
     $item=$items[$i]
@@ -92,9 +94,9 @@ function InOwnedNativeTree([System.Windows.Automation.AutomationElement]$target)
   try{
    if($root.Current.ProcessId -ne $script:app.Id -or
       $root.Current.NativeWindowHandle -eq 0){continue}
-   if([System.Windows.Automation.AutomationElement]::Compare($root,$target)){return $true}
-   foreach($candidate in (All $root)){
-    if([System.Windows.Automation.AutomationElement]::Compare($candidate,$target)){
+   if([System.Windows.Automation.Automation]::Compare($root,$target)){return $true}
+   foreach($candidate in @(All $root)){
+    if([System.Windows.Automation.Automation]::Compare($candidate,$target)){
      return $true
     }
    }
@@ -112,7 +114,10 @@ function Visible([System.Windows.Automation.AutomationElement]$x){
  return (-not $x.Current.IsOffscreen)
 }
 function Find([System.Windows.Automation.AutomationElement]$owner,[string]$name,[int]$seconds=30){
- if(-not (InOwnedNativeTree $owner)){throw 'UIA search owner is not in Lu native window ancestry'}
+ if(-not (InOwnedNativeTree $owner)){
+  CaptureOriginalUIATree 'rejected-owned-native-search-root' $owner
+  throw 'UIA search owner is not in Lu native window ancestry'
+ }
  $limit=[DateTime]::UtcNow.AddSeconds($seconds)
  do{
   foreach($x in (All $owner)){
