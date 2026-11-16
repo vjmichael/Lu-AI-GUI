@@ -1,0 +1,158 @@
+name: Lu C6.2T original browser candidate transport (NO trust promotion)
+on:
+  workflow_dispatch:
+  workflow_call:
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: lu-c62t-transport-${{ github.sha }}
+  cancel-in-progress: false
+jobs:
+  source-verified-immutable-transport:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify transport source is identical to one reviewed commit
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          node scripts/verify-source-tree.mjs
+          node --test scripts/lu-c62-browser-bundle-source.test.mjs
+      - name: Fetch ORIGINAL successful C6.2A native Windows candidate
+        uses: actions/download-artifact@v4
+        with:
+          name: Lu-C62A-UNAPPROVED-Windows-Browser-d9af093ef259d7279b5d1abb226ce307593b50cb
+          path: out/lu-browser-candidate
+          run-id: 43976953361
+          github-token: ${{ github.token }}
+      - name: Re-verify original exact candidate SHA and all 482 file identities
+        shell: bash
+        env:
+          PINNED_CANDIDATE_SHA: '5fcd81eabd4d54989e5878ee6f5bc89e076a108118c458dd8b4699182d88c373'
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib,json,os,pathlib
+          root=pathlib.Path("out/lu-browser-candidate").resolve()
+          assert root.is_dir() and not root.is_symlink()
+          raw=(root/"manifest.json").read_bytes()
+          digest=hashlib.sha256(raw).hexdigest()
+          assert digest==os.environ["PINNED_CANDIDATE_SHA"],"original immutable SHA wrong"
+          m=json.loads(raw)
+          assert m["status"]=="candidate" and m["runtime"]=="lu-browser" and m["schema"]==1
+          assert m["playwrightVersion"]=="1.64.1" and m["platform"]=="win32" and m["arch"]=="x64"
+          assert len(m["files"])==482
+          expected=set()
+          for f in m["files"]:
+            name=f["path"]
+            assert name not in expected and all(x not in ("",".","..") and x.strip()==x for x in name.split("/"))
+            expected.add(name)
+            p=root.joinpath(*name.split("/"))
+            assert p.is_file() and not p.is_symlink() and p.resolve().is_relative_to(root)
+            assert p.stat().st_size==f["bytes"]
+            h=hashlib.sha256()
+            with p.open("rb") as fd:
+              for block in iter(lambda:fd.read(1024*1024),b""):
+                h.update(block)
+            assert h.hexdigest()==f["sha256"],"candidate byte identity mismatch: "+name
+          actual={p.relative_to(root).as_posix() for p in root.rglob("*") if p.is_file()}
+          assert not any(p.is_symlink() for p in root.rglob("*")),"candidate symlink"
+          assert actual==expected|{"manifest.json","manifest.sha256","candidate-summary.json"},"extra/missing browser content"
+          assert (root/"manifest.sha256").read_text().strip()==digest
+          summary=json.loads((root/"candidate-summary.json").read_text())
+          assert summary["manifestSha256"]==digest and summary["status"]=="candidate"
+          print("C62T_ORIGINAL_WINDOWS_CANDIDATE_482_FILES_REVERIFIED_SHA256="+digest)
+          PY
+      - name: Make deterministic compressed transport and FOUR independently hashed pieces
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib,json,math,os,pathlib,zipfile
+          root=pathlib.Path("out/lu-browser-candidate")
+          target=pathlib.Path("out/browser-transport")
+          target.mkdir(parents=True,exist_ok=True)
+          package=target/"browser-c62-native.zip"
+          with zipfile.ZipFile(package,"w",compression=zipfile.ZIP_DEFLATED,compresslevel=6,allowZip64=True) as z:
+            for p in sorted(root.rglob("*")):
+              if p.is_file():z.write(p,p.relative_to(root).as_posix())
+          size=package.stat().st_size
+          step=math.ceil(size/4)
+          whole=hashlib.sha256()
+          parts=[]
+          with package.open("rb") as stream:
+            for index in range(4):
+              data=stream.read(step)
+              assert data, "transport part must exist"
+              whole.update(data)
+              dest=target/("part"+str(index))
+              dest.mkdir(exist_ok=True)
+              name="part-"+str(index)+".bin"
+              (dest/name).write_bytes(data)
+              parts.append({"index":index,"name":name,"size":len(data),"sha256":hashlib.sha256(data).hexdigest()})
+            assert not stream.read(1)
+          digest=whole.hexdigest()
+          manifest={
+            "schema":"lu-c62-candidate-transport-v1",
+            "status":"transport-only-unapproved",
+            "sourceSha":os.environ["SOURCE_SHA"],
+            "candidateSourceSha":"d9af093ef259d7279b5d1abb226ce307593b50cb",
+            "candidateRunId":43976953361,
+            "candidateArtifactId":14281077871,
+            "candidateManifestSha256":"5fcd81eabd4d54989e5878ee6f5bc89e076a108118c458dd8b4699182d88c373",
+            "zipSha256":digest,"zipSize":size,"parts":parts
+          }
+          raw=json.dumps(manifest,indent=2)+"\n"
+          for index in range(4):
+            (target/("part"+str(index))/"transport-manifest.json").write_text(raw)
+          package.unlink()
+          print("C62T_REVIEW_TRANSPORT_SHA256="+digest)
+          print("C62T_REVIEW_TRANSPORT_BYTES="+str(size))
+          print("C62T_MAX_PART_BYTES="+str(max(x["size"] for x in parts)))
+          assert max(x["size"] for x in parts)<400*1024*1024
+          PY
+      - name: Upload independently verifiable quarter 0
+        uses: actions/upload-artifact@v4
+        with:
+          name: Lu-C62T-part0-${{ github.sha }}
+          path: out/browser-transport/part0/
+          compression-level: 0
+          retention-days: 14
+          if-no-files-found: error
+      - name: Upload independently verifiable quarter 1
+        uses: actions/upload-artifact@v4
+        with:
+          name: Lu-C62T-part1-${{ github.sha }}
+          path: out/browser-transport/part1/
+          compression-level: 0
+          retention-days: 14
+          if-no-files-found: error
+      - name: Upload independently verifiable quarter 2
+        uses: actions/upload-artifact@v4
+        with:
+          name: Lu-C62T-part2-${{ github.sha }}
+          path: out/browser-transport/part2/
+          compression-level: 0
+          retention-days: 14
+          if-no-files-found: error
+      - name: Upload independently verifiable quarter 3
+        uses: actions/upload-artifact@v4
+        with:
+          name: Lu-C62T-part3-${{ github.sha }}
+          path: out/browser-transport/part3/
+          compression-level: 0
+          retention-days: 14
+          if-no-files-found: error

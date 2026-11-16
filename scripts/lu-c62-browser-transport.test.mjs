@@ -1,0 +1,22 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import {readFileSync} from "node:fs";
+const wf=readFileSync(new URL("../.github/workflows/lu-core-c62t-browser-review-transport.yml",import.meta.url),"utf8");
+test("C6.2T is manual/reusable exact-SHA transport of original successful Windows test only",()=>{
+ const block=wf.split("\non:\n")[1].split("\npermissions:")[0];
+ assert.match(block,/workflow_dispatch:/);assert.match(block,/workflow_call:/);
+ assert.doesNotMatch(block,/push:|pull_request:|pull_request_target:/);
+ assert.match(wf,/actions: read/);
+ assert.match(wf,/run-id: 43976953361/);
+ assert.match(wf,/candidateArtifactId":14281077871/);
+ assert.match(wf,/d9af093ef259d7279b5d1abb226ce307593b50cb/);
+ assert.match(wf,/5fcd81eabd4d54989e5878ee6f5bc89e076a108118c458dd8b4699182d88c373/);
+ assert.match(wf,/len\(m\["files"\]\)==482/);
+ assert.match(wf,/sha256/);
+ assert.match(wf,/candidate symlink/);
+ assert.match(wf,/status":"transport-only-unapproved"/);
+ assert.match(wf,/for index in range\(4\)/);
+ assert.match(wf,/C62T_MAX_PART_BYTES/);
+ for(let i=0;i<4;i++)assert.match(wf,new RegExp("Lu-C62T-part"+i+"-"));
+ assert.doesNotMatch(wf,/continue-on-error: true|status.*reviewed|LU_BROWSER_MANIFEST_SHA256=/);
+});

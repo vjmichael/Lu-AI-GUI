@@ -3995,3 +3995,39 @@ jobs:
     needs: [verify-source, c62a-one-time-candidate-admission]
     if: needs.c62a-one-time-candidate-admission.result == 'success'
     uses: ./.github/workflows/lu-core-c62a-windows-browser-candidate.yml
+
+  # C6.2T: one source-locked compression/transport of prior PASS Windows bytes.
+  # No automatic trust promotion, release or new runtime admission.
+  c62t-one-time-transport-admission:
+    needs: verify-source
+    if: >-
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main' &&
+      startsWith(github.event.head_commit.message, 'CORE-MERGE-C6.2T:')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+          ref: ${{ github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Authorize original C6.2A browser transport only at one new parent
+        shell: bash
+        env:
+          EXACT_SOURCE: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXACT_SOURCE"
+          test "$(git rev-parse HEAD^)" = "d9af093ef259d7279b5d1abb226ce307593b50cb"
+          test "$(git rev-parse --abbrev-ref HEAD)" = "HEAD"
+          node scripts/verify-source-tree.mjs
+          node --test scripts/lu-c62-browser-transport.test.mjs
+          echo "C62T_ORIGINAL_CANDIDATE_REVIEW_TRANSPORT_ONLY=$EXACT_SOURCE"
+  c62t-original-windows-candidate-transport:
+    needs: [verify-source, c62t-one-time-transport-admission]
+    if: needs.c62t-one-time-transport-admission.result == 'success'
+    uses: ./.github/workflows/lu-core-c62t-browser-review-transport.yml

@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "8b9342bd409c1c42acb1b0211397b3e89f266be1",
-  "trackedFileCount": 1062,
+  "sourceCommitBeforeLock": "d9af093ef259d7279b5d1abb226ce307593b50cb",
+  "trackedFileCount": 1064,
   "files": [
     {
       "path": ".github/pull_request_template.md",
@@ -82,6 +82,10 @@
     {
       "path": ".github/workflows/lu-core-c62a-windows-browser-candidate.yml",
       "blob": "a43cf5382a879369632bc2cbb2fa5e72c0ddd8cd"
+    },
+    {
+      "path": ".github/workflows/lu-core-c62t-browser-review-transport.yml",
+      "blob": "4b0bf62c7188e3449279f5440d0a1e6af7a59688"
     },
     {
       "path": ".github/workflows/lu-core-merge-c4-grouped.yml",
@@ -257,7 +261,7 @@
     },
     {
       "path": ".github/workflows/lu-repo01-full-source.yml",
-      "blob": "947295430ee85573ec8c356707f4ed4c6e13eb52"
+      "blob": "c555c152a8ad1709e29f2844d696c7686560c56f"
     },
     {
       "path": ".github/workflows/lu-tools-01-05-integration.yml",
@@ -705,7 +709,7 @@
     },
     {
       "path": "docs/LU_DEVELOPMENT_LEDGER.md",
-      "blob": "ae25f63f6abe1407aea1d3db3fc2f7c89096beab"
+      "blob": "1dc53ecb54ff4e57e6a26af03cbc12a596d8fb05"
     },
     {
       "path": "docs/LU_E1_NATIVE_EVIDENCE_20261107.md",
@@ -2382,6 +2386,10 @@
     {
       "path": "scripts/lu-c62-browser-bundle-source.test.mjs",
       "blob": "e27602ddb1654411c74c26ab8f13f189104fc1d5"
+    },
+    {
+      "path": "scripts/lu-c62-browser-transport.test.mjs",
+      "blob": "d82e4ddf16e6065c0dad1f71e09dd437a84987bb"
     },
     {
       "path": "scripts/lu-ci-group-policy.mjs",
