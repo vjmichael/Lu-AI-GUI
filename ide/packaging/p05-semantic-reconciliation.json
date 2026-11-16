@@ -200,6 +200,9 @@
       "path": "ide/app/tests/standalone.test.mjs",
       "terms": [
         "capability!\\(\\s*",
+        "commands.length, 49"
+      ],
+      "historicalTerms": [
         "commands.length, 41"
       ]
     },

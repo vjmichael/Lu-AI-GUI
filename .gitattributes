@@ -1,5 +1,6 @@
 ide/app/package-lock.json text eol=lf
 ide/app/src-tauri/Cargo.lock text eol=lf
+ide/packaging/p05-workflow-coverage.json text eol=lf
 ide/host/Cargo.lock text eol=lf
 ide/supervisor/Cargo.lock text eol=lf
 

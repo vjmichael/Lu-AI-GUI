@@ -2,6 +2,7 @@
 import copy
 import json
 from pathlib import Path
+import subprocess
 import unittest
 PACK=Path(__file__).resolve().parent
 ROOT=PACK.parents[1]
@@ -39,6 +40,27 @@ def verify(a,s):
             raise ValueError("premature_release_or_pr_cleanup")
     if len(s["witnesses"])!=8:
         raise ValueError("missing_patch_witnesses")
+    # PR #47 historically proved 41 first-party Lu capabilities at the
+    # source-candidate SHA, whereas the integrated current source explicitly
+    # proves 49. Preserve both distinct authentic claims; never invent 41
+    # in the current test or silently treat new host operations as Lu grants.
+    original=s["witnesses"][0]
+    if (s["sourceCandidateSha"]!="bc4fd78685c342675e4a80556970e934125a0e20"
+            or original.get("pr")!=47
+            or original.get("path")!="ide/app/tests/standalone.test.mjs"
+            or original.get("historicalTerms")!=["commands.length, 41"]
+            or "commands.length, 49" not in original["terms"]):
+        raise ValueError("historical_semantic_witness_changed")
+    try:
+        historical=subprocess.run(
+            ["git","-C",str(ROOT),"show",
+             s["sourceCandidateSha"]+":ide/app/tests/standalone.test.mjs"],
+            capture_output=True,text=True,check=True,timeout=10,
+        ).stdout
+    except (subprocess.CalledProcessError,OSError,subprocess.TimeoutExpired) as exc:
+        raise ValueError("historical_semantic_witness_unavailable") from exc
+    if not all(term in historical for term in original["historicalTerms"]):
+        raise ValueError("historical_semantic_witness_missing")
     for row in s["witnesses"]:
         path=row["path"]
         if not (path.startswith("ide/") or path.startswith(".github/workflows/ide-")):
@@ -56,6 +78,16 @@ class P05SemanticTests(unittest.TestCase):
         self.a,self.s=load()
     def test_complete_exact_historical_classification(self):
         self.assertTrue(verify(self.a,self.s))
+    def test_historical_native_catalog_witness_cannot_be_rewritten(self):
+        changed=copy.deepcopy(self.s)
+        changed["witnesses"][0]["historicalTerms"]=["commands.length, 49"]
+        with self.assertRaisesRegex(ValueError,"historical_semantic_witness_changed"):
+            verify(self.a,changed)
+    def test_current_native_catalog_witness_cannot_be_relabelled_historical(self):
+        changed=copy.deepcopy(self.s)
+        changed["witnesses"][0]["terms"]=["commands.length, 41"]
+        with self.assertRaisesRegex(ValueError,"historical_semantic_witness_changed"):
+            verify(self.a,changed)
     def test_no_forged_ancestry(self):
         changed=copy.deepcopy(self.s);changed["ancestral"][0]["aheadBy"]=2
         with self.assertRaisesRegex(ValueError,"ancestral_pr_unique_commit"):
