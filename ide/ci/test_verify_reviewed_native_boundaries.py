@@ -22,6 +22,13 @@ class ReviewedCurrentNativeBoundaries(unittest.TestCase):
     def test_only_exact_pinned_source_is_reviewable(self):
         self.assertEqual(compare(self.review, self.observed), 1)
 
+    def test_exact_powershell_diagnostic_is_reviewable_but_not_a_grant(self):
+        self.review["files"][0]["path"] = "ide/supervisor/fixtures/debug/Probe-WindowsWo6FileDenial.ps1"
+        self.assertEqual(compare(self.review, {"ide/supervisor/fixtures/debug/Probe-WindowsWo6FileDenial.ps1": "a" * 40}), 1)
+        self.observed = {"ide/supervisor/fixtures/debug/Probe-WindowsWo6FileDenial.ps1": "b" * 40}
+        with self.assertRaisesRegex(Denied, "blob_drift"):
+            compare(self.review, self.observed)
+
     def test_unknown_native_source_denied(self):
         self.observed["ide/supervisor/src/new_permission.rs"] = "b" * 40
         with self.assertRaisesRegex(Denied, "path_set_drift"):

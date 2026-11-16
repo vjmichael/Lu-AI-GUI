@@ -938,13 +938,22 @@ impl LinuxDapSession {
         }
         #[cfg(all(debug_assertions, feature = "dev045d3-ci-oracle"))]
         eprintln!("DEV045D3_KERNEL_LINE_GATE=completed_build_lineage_verified");
-        let candidate = self
-            .gateway
-            .source_candidate()
-            .ok_or(SupervisorError::NoContainment)?;
-        let pc = candidate
-            .instruction_address
-            .ok_or(SupervisorError::NoContainment)?;
+        let candidate = match self.gateway.source_candidate() {
+            Some(candidate) => candidate,
+            None => {
+                #[cfg(all(debug_assertions, feature = "dev045d3-ci-oracle"))]
+                eprintln!("DEV045D3_KERNEL_LINE_GATE=no_dap_source_candidate");
+                return Err(SupervisorError::NoContainment);
+            }
+        };
+        let pc = match candidate.instruction_address {
+            Some(pc) => pc,
+            None => {
+                #[cfg(all(debug_assertions, feature = "dev045d3-ci-oracle"))]
+                eprintln!("DEV045D3_KERNEL_LINE_GATE=dap_source_without_instruction_address");
+                return Err(SupervisorError::NoContainment);
+            }
+        };
         #[cfg(all(debug_assertions, feature = "dev045d3-ci-oracle"))]
         eprintln!("DEV045D3_KERNEL_LINE_GATE=bounded_dap_source_and_pc_present");
         // The source path must be the native-only read-only snapshot mounted
