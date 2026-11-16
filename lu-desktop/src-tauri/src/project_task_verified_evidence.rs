@@ -375,6 +375,17 @@ impl WholeCriterion<'_>{
         }
     }
 }
+/// Exact original worker families declared by the entire bounded V2 task.
+/// This is a proposed plan shape, NOT a tool selection, grant, verified
+/// outcome or completion decision.
+pub(super) fn required_whole_task_independent_methods(
+    criterion:&str,
+)->Option<Vec<(&'static str,&'static str)>>{
+    if !criterion.starts_with(ALL_OF_PREFIX){return None}
+    let methods=whole_criteria(criterion)?.into_iter()
+        .filter_map(|clause|clause.method()).collect::<Vec<_>>();
+    (!methods.is_empty()).then_some(methods)
+}
 fn exact_git_sha(head:&str)->bool{
     head.len()==40&&head.bytes().all(|b|
         b.is_ascii_digit()||matches!(b,b'a'..=b'f'))

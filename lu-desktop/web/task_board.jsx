@@ -607,6 +607,7 @@ export function TaskBoardWindow(){
                     disabled={busy} onChange={e=>setAgentMode(e.target.value)}>
                     <option value="review_only">Review-only source, analysis and human decision (no installed worker adapter)</option>
                     <option value="reviewed_git_media_check">One independently reviewed Git/media source check (separate native tool approval required)</option>
+                    <option value="reviewed_whole_task" disabled={!active.acceptanceCriteria?.startsWith('LU_COMPLETE_V2:ALL_OF')}>Typed whole task: separate reviewed native check for each declared Git/media method</option>
                   </select>
                 </label>
                 <div className="plan06Actions">

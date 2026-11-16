@@ -86,7 +86,7 @@ pub(crate) struct TaskAgentHandoffView{
     execution_authorized:bool,
 }
 
-fn mode_steps(mode:&str)->Result<Vec<ProposedStep>,String>{
+fn mode_steps(mode:&str,criterion:&str)->Result<Vec<ProposedStep>,String>{
     match mode{
         "review_only"=>Ok(vec![
             ProposedStep{kind:PlanStepKind::CollectSource,depends_on:None,
@@ -100,6 +100,20 @@ fn mode_steps(mode:&str)->Result<Vec<ProposedStep>,String>{
             ProposedStep{kind:PlanStepKind::IndependentlyCheck,depends_on:None,
                 expected:ExpectedDeliverable::IndependentWitness},
         ]),
+        "reviewed_whole_task"=>{
+            let methods=super::project_task_verified_evidence::
+                required_whole_task_independent_methods(criterion)
+                .ok_or("CORE_C3_REQUIRES_CANONICAL_ALL_OF_CRITERIA")?;
+            // One independent check per exact worker-method requirement.
+            // These draft steps grant no tool use. Every step still needs
+            // plan review, a fresh human turn and separately authorized native
+            // execution; independent review follows original worker receipts.
+            Ok(methods.iter().enumerate().map(|(index,_)|ProposedStep{
+                kind:PlanStepKind::IndependentlyCheck,
+                depends_on:if index==0{None}else{Some((index-1) as u8)},
+                expected:ExpectedDeliverable::IndependentWitness,
+            }).collect())
+        },
         _=>Err("P0_NEXT_UNRECOGNIZED_PLAN_MODE".into()),
     }
 }
@@ -442,7 +456,9 @@ pub(super) fn independently_verified_task_witness(
     let link=handoffs.into_iter()
         .find(|h|h.handoff_id==handoff_id)
         .ok_or("P0_TOOLS05_HANDOFF_NOT_ORIGINAL")?;
-    if link.mode!="reviewed_git_media_check"||link.phase!="STAGED"||
+    if !matches!(link.mode.as_str(),
+        "reviewed_git_media_check"|"reviewed_whole_task")||
+        link.phase!="STAGED"||
         !link.source_lease_current||link.plan_id.is_none()||
         link.revision_sha256.is_none(){
         return Err("P0_TOOLS05_HANDOFF_IS_STALE_OR_INERT".into())
@@ -490,7 +506,10 @@ pub(crate) async fn lu_project_task_prepare_agent_plan(
     if caller.label()!="task-list"{
         return Err("P0_NEXT_REQUIRES_NATIVE_TASK_LIST".into())
     }
-    let _=mode_steps(&mode)?;
+    if !matches!(mode.as_str(),
+        "review_only"|"reviewed_git_media_check"|"reviewed_whole_task"){
+        return Err("P0_NEXT_UNRECOGNIZED_PLAN_MODE".into())
+    }
     let host=Arc::clone(state.inner());
     let profile=project_register_desktop::profile(&host)?;
     if !lu_core::project_evidence_graph::valid_digest(&expected_board_sha256)
@@ -517,6 +536,7 @@ pub(crate) async fn lu_project_task_prepare_agent_plan(
             task.source_requirement_id.clone(),task.blocked_by.clone(),
             task.description.clone())
     };
+    let _=mode_steps(&mode,&preview.1)?;
     let confirmed=project_register_desktop::confirm(&app,
         "Lu — Prepare source-linked agent plan only",format!(
         "Create a new ANSF conversation and separately reviewed AGENT plan for:\n\
@@ -597,7 +617,7 @@ pub(crate) async fn lu_project_task_prepare_agent_plan(
             kind:GoalEventKind::SetGoal,text:goal_text,choice:None,comment:None
         })?;
         let draft=stage_initial_draft(
-            &profile,&host.chats,&a.chat_id,&turn,&mode_steps(&mode)?
+            &profile,&host.chats,&a.chat_id,&turn,&mode_steps(&mode,&task.acceptance_criteria)?
         )?;
         // A newly created plan must have the same real scheduler and
         // independent-receipt schemas expected by the existing read-only
@@ -684,6 +704,33 @@ mod task_method_tests{
         assert!(!criterion_supports_method(
             "LU_CRITERION_METHOD_V1:lu.reviewed.pdf.info|PDFINFO_CLASSIC_PAGE_TREE_V1\nObserve original source PDF metadata.",
             "lu.reviewed.pdf.info","PDFINFO_CLASSIC_PAGE_TREE_V1"));
+    }
+    #[test]
+    fn c3_declared_whole_task_stages_each_required_worker_as_separate_check(){
+        let criterion=format!(
+            "LU_COMPLETE_V2:ALL_OF\nCURRENT_NATIVE_REQUIREMENT\n\
+             GIT_HEAD_EQUALS:{}\nGIT_STATUS_REVIEWED\nWAV_PCM_REVIEWED",
+            "a".repeat(40)
+        );
+        let steps=mode_steps("reviewed_whole_task",&criterion).unwrap();
+        assert_eq!(steps.len(),3);
+        for (index,step) in steps.iter().enumerate(){
+            assert_eq!(step.kind,PlanStepKind::IndependentlyCheck);
+            assert_eq!(step.expected,ExpectedDeliverable::IndependentWitness);
+            assert_eq!(step.depends_on,
+                if index==0{None}else{Some((index-1) as u8)});
+        }
+        for bad in [
+            "Implement all requirements",
+            "LU_COMPLETE_V1:CURRENT_NATIVE_REQUIREMENT",
+            "LU_COMPLETE_V2:ALL_OF\nCURRENT_NATIVE_REQUIREMENT\nGIT_STATUS_REVIEWED\nDEPLOY",
+            "LU_COMPLETE_V2:ALL_OF\nCURRENT_NATIVE_REQUIREMENT\nGIT_STATUS_REVIEWED\nGIT_STATUS_REVIEWED",
+        ]{
+            assert!(mode_steps("reviewed_whole_task",bad).is_err(),
+                "unsupported or incomplete criteria must not stage checks");
+        }
+        assert_eq!(mode_steps("reviewed_git_media_check",&criterion)
+            .unwrap().len(),1);
     }
     #[test]
     fn every_v2_declared_method_requires_its_own_exact_original_worker(){
