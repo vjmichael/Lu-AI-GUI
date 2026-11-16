@@ -799,7 +799,11 @@ function App() {
     !!currentLanguageId && Array.isArray(lspWorker.supportedLanguages) &&
     lspWorker.supportedLanguages.includes(currentLanguageId);
   const lspCapabilities = languageServiceCapabilities(currentLanguageId,lspWorker);
-  const lspProviderForTab = lspSession?.projectId===activeTab?.projectId &&
+  // The empty initial workspace has neither an active tab nor a session.
+  // undefined === undefined is true: presence must be checked *before*
+  // accessing the provider, without admitting an unrelated project.
+  const lspProviderForTab = !!lspSession && !!activeTab &&
+    lspSession.projectId===activeTab.projectId &&
     providerServesLanguage(lspSession.providerId,currentLanguageId)
     ? lspSession.providerId : (lspCapabilities?.provider || 'unavailable language provider');
   const lspMayAddCurrentFile = !!activeTab && !!lspSession &&
@@ -842,7 +846,11 @@ function App() {
   const visibleEditorTabs = useMemo(() => tabWindow(projectTabs,tabWindowStart),
     [projectTabs,tabWindowStart]);
   const diskAuditCounts = useMemo(()=>{
-    if (diskAuditReport?.projectId!==activeProject?.projectId)
+    // Likewise, an absent report and project have equal optional identities.
+    // Treat them as no audit, never dereference a null report's rows or
+    // carry another project's counts into the current workspace.
+    if (!diskAuditReport || !activeProject ||
+        diskAuditReport.projectId!==activeProject.projectId)
       return {changed:0,current:0,unavailable:0,stale:0,unsaved:0};
     const totals={changed:0,current:0,unavailable:0,stale:0,unsaved:0};
     for(const row of diskAuditReport.rows){
