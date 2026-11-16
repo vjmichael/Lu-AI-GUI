@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "572164b57e39df6de4deae46375064d2f72fb5b3",
+  "sourceCommitBeforeLock": "f8404d07b08a51cd624cc02fb94418a2c75c4516",
   "trackedFileCount": 1040,
   "files": [
     {
@@ -69,7 +69,7 @@
     },
     {
       "path": ".github/workflows/lu-core-merge-c4-grouped.yml",
-      "blob": "00bbe3ecfbac97a6f6392708943560cec60b22fb"
+      "blob": "7ec96bf6d7c98bbaf876759b17a57e9cd20b9db8"
     },
     {
       "path": ".github/workflows/lu-development-ledger.yml",
@@ -3741,7 +3741,7 @@
     },
     {
       "path": "src-tauri/lu-core/tests/e1_reviewed_model_tools.rs",
-      "blob": "dc164b4b6aea6842f00b1cf95dc0de854e1d70dd"
+      "blob": "62fddc5b07f6ebfc41c281e5ac5f91d3b60a43e7"
     },
     {
       "path": "src-tauri/lu-core/tests/edit_safety.rs",
