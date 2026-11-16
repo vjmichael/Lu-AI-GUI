@@ -888,6 +888,128 @@ jobs:
           retention-days: 14
           if-no-files-found: warn
 
+  c3-installed-native-task-board:
+    # Actual source-pinned NSIS executable, WebView2 accessible controls and
+    # separate OS-owned conservative whole-task decision dialog. The test's
+    # scripted CI operator does NOT count as independent live human completion.
+    needs: [exact-source-admission, native-planner-ipc-desktop, genuine-local-qwen]
+    if: >-
+      needs.exact-source-admission.result == 'success' &&
+      needs.native-planner-ipc-desktop.result == 'success' &&
+      needs.genuine-local-qwen.result == 'success'
+    runs-on: windows-2025
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Exact frozen source and pinned original NSIS builder
+        shell: pwsh
+        env:
+          C3_EXPECTED_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          $ErrorActionPreference='Stop'
+          if((git rev-parse HEAD).Trim() -cne $env:C3_EXPECTED_SHA){throw 'Wrong C3 commit'}
+          node scripts/verify-source-tree.mjs
+          if($LASTEXITCODE -ne 0){throw 'C3 source identity mismatch'}
+          $nsis=Join-Path ([Environment]::GetFolderPath('ProgramFilesX86')) 'NSIS\makensis.exe'
+          if(-not(Test-Path -LiteralPath $nsis)){
+            choco install nsis --version=3.11.0 --yes --no-progress --limit-output
+            if($LASTEXITCODE -ne 0){throw 'Pinned NSIS not installed'}
+          }
+          $out=Join-Path $env:RUNNER_TEMP 'c3-genuine-installer'
+          & scripts/build-agent01g-physical-windows-nsis.ps1 -SourceSha $env:C3_EXPECTED_SHA -OutputDirectory $out
+          if($LASTEXITCODE -ne 0){throw 'Genuine original NSIS build failed'}
+          $receipt=Get-Content (Join-Path $out 'installer-checksums.json') -Raw|ConvertFrom-Json
+          if($receipt.sourceSha -cne $env:C3_EXPECTED_SHA -or -not $receipt.genuineInstallerProduced){
+            throw 'Original pinned NSIS provenance missing'
+          }
+          $installer=Join-Path $out $receipt.installerName
+          if((Get-FileHash $installer -Algorithm SHA256).Hash.ToLowerInvariant() -cne $receipt.installerSha256){
+            throw 'Generated installer hash mismatch'
+          }
+          $target=Join-Path $env:RUNNER_TEMP 'c3-installed-Lu'
+          if(Test-Path $target){throw 'Cannot overwrite prior installed application'}
+          $process=Start-Process -FilePath $installer -ArgumentList @('/S',('/D='+$target)) -PassThru
+          if(-not $process.WaitForExit(600000)){$process.Kill($true);throw 'NSIS timed out'}
+          if($process.ExitCode -ne 0){throw 'Native NSIS install failed'}
+          $installed=Join-Path $target 'lu-desktop.exe'
+          if((Get-FileHash $installed -Algorithm SHA256).Hash.ToLowerInvariant() -cne $receipt.appSha256){
+            throw 'Actual installed executable changed'
+          }
+          $engine=Join-Path $target 'lu-inference\llama-server.exe'
+          if((Get-FileHash $engine -Algorithm SHA256).Hash.ToLowerInvariant() -cne $receipt.engineSha256){
+            throw 'Pinned packaged CPU engine changed'
+          }
+          "C3_INSTALLED_EXE=$installed" >> $env:GITHUB_ENV
+          "C3_INSTALLED_SHA=$($receipt.appSha256)" >> $env:GITHUB_ENV
+          "C3_INSTALLED_DIR=$target" >> $env:GITHUB_ENV
+          New-Item -ItemType Directory -Path (Join-Path $env:RUNNER_TEMP 'c3-installed-evidence') | Out-Null
+          Copy-Item (Join-Path $out 'installer-checksums.json') (Join-Path $env:RUNNER_TEMP 'c3-installed-evidence\installer.json')
+      - name: Independently create disposable original two-project ANSF task-board fixture
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $env:LU_PLAN06_INSTALLED_PROFILE=Join-Path $env:APPDATA 'org.lu.agent01g.devtest'
+          $env:LU_PLAN06_INSTALLED_PROJECTS=Join-Path $env:RUNNER_TEMP 'c3-original-projects'
+          $env:LU_PLAN06_INSTALLED_SEED_RECEIPT=Join-Path $env:RUNNER_TEMP 'c3-installed-evidence\original-seed.json'
+          if(Test-Path $env:LU_PLAN06_INSTALLED_PROFILE){throw 'Refuse non-disposable ANSF user profile'}
+          $native='lu-desktop/src-tauri/resources/lu-inference'
+          New-Item -Path $native -ItemType Directory -Force|Out-Null
+          foreach($dll in @('msvcp140.dll','vcruntime140.dll','vcruntime140_1.dll')){
+            if(Test-Path (Join-Path $native $dll)){throw 'Refuse existing genuine DLL replacement'}
+            Set-Content -LiteralPath (Join-Path $native $dll) -Value 'CI_FIXTURE_NONFUNCTIONAL' -NoNewline
+          }
+          cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib project_task_board_desktop::tests::export_dual_project_installed_ui_fixture -- --ignored --exact --nocapture
+          if($LASTEXITCODE -ne 0){throw 'Original fixture producer failed'}
+          "C3_PROFILE=$env:LU_PLAN06_INSTALLED_PROFILE" >> $env:GITHUB_ENV
+          "C3_SEED=$env:LU_PLAN06_INSTALLED_SEED_RECEIPT" >> $env:GITHUB_ENV
+      - name: Original installed WebView2 and real OS native completion refusal cancellation replan restart
+        shell: pwsh
+        timeout-minutes: 38
+        run: |
+          $ErrorActionPreference='Stop'
+          & scripts/c3-windows-installed-native-completion.ps1 -InstalledExe $env:C3_INSTALLED_EXE -ExpectedSha256 $env:C3_INSTALLED_SHA -ProfileDir $env:C3_PROFILE -SeedReceipt $env:C3_SEED -EvidenceDir (Join-Path $env:RUNNER_TEMP 'c3-installed-evidence\uia') -DisposableWindowsConfirmed
+          if($LASTEXITCODE -ne 0){throw 'Actual installed native C3 task-decision interaction failed'}
+          $proof=Get-Content (Join-Path $env:RUNNER_TEMP 'c3-installed-evidence\uia\c3-windows-native-completion.json') -Raw|ConvertFrom-Json
+          if($proof.acceptance -cne 'PASS_C3_REAL_INSTALLED_NATIVE_NEGATIVE_COMPLETION' -or
+             $proof.actualHumanCompletion -cne 'NOT_TESTED' -or
+             -not $proof.testFixtureSyntheticNotRealGguf){
+            throw 'Installed UI proof missing or dishonest human completion claim'
+          }
+          echo 'C3_INSTALLED_NEGATIVE_OS_UI_PASS=1; REAL_HUMAN_POSITIVE_TASK_DECISION_OPEN=1' >> $env:GITHUB_STEP_SUMMARY
+      - name: Original uninstall preserving signed source decision journal
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $before=Join-Path $env:C3_PROFILE 'ansf\library.db'
+          if(-not(Test-Path $before)){throw 'Missing original persisted ANSF after native UI'}
+          $uninstall=Join-Path $env:C3_INSTALLED_DIR 'UninstallLuAGENT01GPhysicalTest.exe'
+          if(-not(Test-Path $uninstall)){throw 'Actual uninstaller missing'}
+          $proc=Start-Process $uninstall -ArgumentList '/S' -PassThru
+          if(-not $proc.WaitForExit(180000)){$proc.Kill($true);throw 'Uninstall timed out'}
+          if($proc.ExitCode -ne 0){throw 'Uninstaller returned nonzero'}
+          if(-not(Test-Path $before)){throw 'Uninstall destroyed original human decision history'}
+          python -c "import sqlite3,sys; d=sqlite3.connect('file:'+sys.argv[1]+'?mode=ro',uri=True); a=d.execute('SELECT event_json,no_execution_authority FROM ansf_project_task_completion_decisions').fetchall(); assert len(a)==2 and all(v==1 for _,v in a)" $before
+          if($LASTEXITCODE -ne 0){throw 'Original completion journal failed independent post-uninstall readback'}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lu-c3-real-installed-windows-native-task-completion
+          path: ${{ runner.temp }}/c3-installed-evidence/
+          retention-days: 14
+          if-no-files-found: warn
+
   exact-sha-consolidated-reconciliation:
     if: always() && needs.exact-source-admission.result == 'success'
     needs:
@@ -897,6 +1019,7 @@ jobs:
       - linux-real-cgroup
       - linux-original-root-owned-git
       - genuine-local-qwen
+      - c3-installed-native-task-board
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
@@ -909,6 +1032,7 @@ jobs:
           LINUX: ${{ needs.linux-real-cgroup.result }}
           ROOT_GIT: ${{ needs.linux-original-root-owned-git.result }}
           QWEN: ${{ needs.genuine-local-qwen.result }}
+          C3_INSTALLED: ${{ needs.c3-installed-native-task-board.result }}
         shell: bash
         run: |
           set -euo pipefail
@@ -924,6 +1048,7 @@ jobs:
             fi
             echo "Original independently root-owned Git worker: $ROOT_GIT"
             echo "Actual pinned Qwen GGUF: $QWEN"
+            echo "Hosted installed Windows native C3 decision UI (test-only operator): $C3_INSTALLED"
             echo "Installed Windows and physical owner Qwen 27B remain separately open."
           } >> "$GITHUB_STEP_SUMMARY"
           test "$SOURCE" = success
@@ -932,3 +1057,4 @@ jobs:
           test "$LINUX" = success
           test "$ROOT_GIT" = success
           test "$QWEN" = success
+          test "$C3_INSTALLED" = success
