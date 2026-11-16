@@ -32,6 +32,8 @@ test("queue #112 does not bring automatic native fanout or unsafe cancellation",
  const policy=read('scripts/lu-ci-group-policy.mjs');
  const current=read('scripts/lu-ci-superseded-queue.mjs');
  assert.match(policy,/HEAVY_WORKFLOW_AUTOMATIC_FANOUT/);
- assert.match(current,/freshBranch/);assert.match(current,/r\.status === "queued"/);
+ assert.match(current,/freshBranch/);assert.match(current,/old\.status !== "queued"/);
+ assert.match(current,/samePullRequest\(old, successor\)/);
+ assert.match(current,/MIN_SUPERSEDED_AGE_MS/);
  assert.ok(!doc.entries.some(x=>x.nativeAcceptanceForTip));
 });

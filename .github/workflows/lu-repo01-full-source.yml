@@ -3893,7 +3893,7 @@ jobs:
     if: >-
       github.event_name == 'push' &&
       github.ref == 'refs/heads/main' &&
-      startsWith(github.event.head_commit.message, 'CORE-MERGE-C1.3:')
+      startsWith(github.event.head_commit.message, 'CORE-MERGE-C1.4:')
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -3908,7 +3908,7 @@ jobs:
       - name: Authorize one source-locked direct descendant, never later commits
         shell: bash
         env:
-          EXPECTED_C1_SOURCE_PARENT: '77d67f7645b89d71a0edeb4bec80d8387399a446'
+          EXPECTED_C1_SOURCE_PARENT: 'a2d946ae850c5017e2ff645cacad93ae4d6ef099'
           EXPECTED_ONE_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail

@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "77d67f7645b89d71a0edeb4bec80d8387399a446",
+  "sourceCommitBeforeLock": "a2d946ae850c5017e2ff645cacad93ae4d6ef099",
   "trackedFileCount": 1056,
   "files": [
     {
@@ -249,7 +249,7 @@
     },
     {
       "path": ".github/workflows/lu-repo01-full-source.yml",
-      "blob": "e4165520597f038b7c6b87ed83c24a218d26c4f1"
+      "blob": "d7b17cca268240c28f6dc24374f10e028eeb3242"
     },
     {
       "path": ".github/workflows/lu-tools-01-05-integration.yml",
@@ -693,7 +693,7 @@
     },
     {
       "path": "docs/LU_DEVELOPMENT_LEDGER.md",
-      "blob": "c3cc1075391a7feea1821212d424b5a678cff7e4"
+      "blob": "63ded220311de5bedb4225515efc9584fdc041c1"
     },
     {
       "path": "docs/LU_E1_NATIVE_EVIDENCE_20261107.md",
@@ -2377,7 +2377,7 @@
     },
     {
       "path": "scripts/lu-core-convergence-22.test.mjs",
-      "blob": "777fd613b32de5e532de41738df4d089df6d90f9"
+      "blob": "0c7d72ab1faa06aa3ccb37a09f25922d223f5513"
     },
     {
       "path": "scripts/lu-core-stack-graph.mjs",
