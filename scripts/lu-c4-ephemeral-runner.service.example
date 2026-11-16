@@ -1,0 +1,31 @@
+# Operator-reviewed example only; install from root-owned /etc/systemd/system.
+# Host MUST be an isolated disposable Linux VM, not a personal workstation.
+# The paired runner must be registered with --ephemeral, not persistent.
+[Unit]
+Description=Single-use Lu C4 delegated-kernel GitHub runner
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=exec
+User=lu-c4
+Group=lu-c4
+WorkingDirectory=/srv/lu-c4/runner
+Delegate=yes
+# This must PASS under the FINAL service cgroup before the runner goes online.
+# A regular Delegate=yes user-writable service leaf is not proof of Lu's
+# protected ancestor; do not weaken this to make the runner work.
+ExecStartPre=/usr/bin/python3 /srv/lu-c4/lu-main/scripts/lu-c4-ephemeral-runner-preflight.py
+ExecStart=/srv/lu-c4/runner/run.sh
+Restart=no
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=full
+CapabilityBoundingSet=
+RestrictSUIDSGID=yes
+LockPersonality=yes
+UMask=0077
+TimeoutStartSec=180
+
+[Install]
+WantedBy=multi-user.target
