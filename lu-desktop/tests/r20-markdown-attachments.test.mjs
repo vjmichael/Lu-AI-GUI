@@ -72,9 +72,11 @@ test('image thumbnails work under image-only blob CSP without scripting changes'
   assert.ok(ui.includes('URL.createObjectURL(file)'));
 });
 test('image and text attachment completion is scoped to the originating chat',()=>{
-  assert.ok(ui.includes("const targetChat = currentChat.current || 'new';"));
+  assert.ok(ui.includes('targetChat=await ensureAttachmentChat()'));
+  assert.ok(ui.includes('{chatId:targetChat,dataUrl,displayName:file.name}'));
   assert.ok(ui.includes('storeAttachment(\'files\',candidate)'));
-  assert.ok(ui.includes("storeAttachment('images',[...previous"));
+  assert.ok(ui.includes("refreshDraftImages(targetChat,[{...image,previewUrl"));
+  assert.ok(ui.includes("invoke('lu_image_attachments',{chatId:targetChat,visibleSeq:null})"));
   assert.ok(ui.includes('if (key === (currentChat.current||\'new\'))'));
 });
 test('user authored think tags remain literal user text, not reasoning blocks',()=>{

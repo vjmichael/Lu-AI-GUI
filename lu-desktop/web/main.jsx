@@ -980,6 +980,7 @@ function App() {
   const fileInput = useRef(null);
   const currentChat = useRef(null);
   const pendingDrafts = useRef(new Map());
+  const attachmentChatCreation = useRef(null);
   const draftText = useRef('');
   const draftImages = useRef([]);
   const draftFiles = useRef([]);
@@ -1846,11 +1847,9 @@ function App() {
     try{
       const image=await invoke('lu_observe_capture_local_image',{chatId:activeChat});
       if(!image)throw new Error('No completed local frame available; inspect the native receipt first.');
-      if(currentChat.current!==activeChat){
-        await invoke('lu_release_image',{imageRef:image.imageRef});
-        return;
-      }
-      setImages(prev=>prev.some(p=>p.imageRef===image.imageRef)?prev:[...prev,image]);
+      // Native custody remains bound to the original chat even when the
+      // user switches during capture. Never delete it on a focus change.
+      await refreshDraftImages(activeChat,[image]);
       setCaptureLocalTaskId(null);
       setActivity('Approved observed frame attached locally. Use the current multimodal GGUF to ask about its visible content.');
     }catch(e){setError(String(e));}
@@ -1995,17 +1994,9 @@ function App() {
          image.imageRef.length>128||
          !['image/png','image/jpeg'].includes(image.mimeType)||
          image.chatId!==currentChat.current)return;
-      if(draftImages.current.some(item=>item.imageRef===image.imageRef))return;
-      if(draftImages.current.length>=4){
-        setError('Maximum four image attachments. Remove one before attaching an observed frame.');
-        return;
-      }
-      const original={imageRef:image.imageRef,mimeType:image.mimeType,
-        name:'Approved local observation',size:0};
-      const next=[...draftImages.current,original];
-      draftImages.current=next;setImages(next);
-      const prior=pendingDrafts.current.get(image.chatId)||{prompt:draftText.current,files:draftFiles.current};
-      pendingDrafts.current.set(image.chatId,{...prior,images:next});
+      void refreshDraftImages(image.chatId).catch(error=>{
+        if(currentChat.current===image.chatId)setError(String(error));
+      });
       setActivity('Native-approved local frame attached. It remains local; the model has not analyzed it yet.');
     }).then(unsubscribe=>{if(alive)off=unsubscribe;else unsubscribe();})
       .catch(()=>{});
@@ -2325,6 +2316,9 @@ function App() {
     setChatId(id);
     setHistory(entries);
     setError('');
+    void refreshDraftImages(id).catch(error=>{
+      if(currentChat.current===id)setError(String(error));
+    });
     void reconcileActiveStream(id);
   }
   useEffect(() => {
@@ -2662,19 +2656,73 @@ function App() {
       await refreshCatalog();
     });
   }
+  // An image must have a real native chat before byte admission. Coalesce
+  // concurrent first-attachment requests; do not retarget a completed
+  // picker/drag to whichever conversation happens to be visible later.
+  async function ensureAttachmentChat() {
+    if(currentChat.current)return currentChat.current;
+    if(attachmentChatCreation.current)return attachmentChatCreation.current;
+    const requestAtStart=requestedChat.current;
+    const creation=(async()=>{
+      const created=await invoke('lu_new_chat');
+      const id=created.chatId;
+      const stillNew=!currentChat.current&&requestedChat.current===requestAtStart;
+      const original=stillNew
+        ? {prompt:draftText.current,images:draftImages.current,files:draftFiles.current}
+        : pendingDrafts.current.get('new')||{prompt:'',images:[],files:[]};
+      pendingDrafts.current.set(id,original);
+      pendingDrafts.current.delete('new');
+      if(stillNew){
+        currentChat.current=id;requestedChat.current=id;setChatId(id);
+        setHistoryWindow({older:null,hasOlder:false,hasNewer:false});setHistory([]);
+      }
+      void refreshChats().catch(()=>{});
+      return id;
+    })();
+    attachmentChatCreation.current=creation;
+    try{return await creation;}
+    finally{if(attachmentChatCreation.current===creation)attachmentChatCreation.current=null;}
+  }
+
+  // Native order and membership are authoritative. Renderer preview URLs
+  // are merely a cache. Ordinary saved draft bytes may be re-opened by
+  // exact chat+opaque ref; private observations never return pixel URLs.
+  async function refreshDraftImages(targetChat,extra=[]) {
+    const manifest=await invoke('lu_image_attachments',{chatId:targetChat,visibleSeq:null});
+    const visible=targetChat===currentChat.current;
+    const previous=visible?draftImages.current:(pendingDrafts.current.get(targetChat)?.images||[]);
+    const cache=new Map([...previous,...extra].map(im=>[im.imageRef,im]));
+    const next=manifest.map(im=>{
+      const cached=cache.get(im.imageRef);
+      return {...im,...(im.available&&cached?.previewUrl?{previewUrl:cached.previewUrl}:{}),
+        ...(cached?.detectedMimeType?{detectedMimeType:cached.detectedMimeType}:{})};
+    });
+    const currentlyVisible=targetChat===currentChat.current;
+    const old=currentlyVisible
+      ? {prompt:draftText.current,images:draftImages.current,files:draftFiles.current}
+      : pendingDrafts.current.get(targetChat)||{prompt:'',images:[],files:[]};
+    pendingDrafts.current.set(targetChat,{...old,images:next});
+    if(currentlyVisible){draftImages.current=next;setImages(next);}
+    return next;
+  }
+
   function pickImage() {
     action('Choosing image', async () => {
-      const image = await invoke('lu_pick_image');
-      if (image) setImages(prev => prev.some(p => p.imageRef === image.imageRef) ? prev : [...prev, image]);
+      const targetChat=await ensureAttachmentChat();
+      const image = await invoke('lu_pick_image',{chatId:targetChat});
+      if (image) await refreshDraftImages(targetChat,[image]);
     });
   }
-  function removeImage(imageRef) {
-    if (imageViewer?.imageRef===imageRef) setImageViewer(null);
-    const image = draftImages.current.find(i => i.imageRef === imageRef);
-    if (image?.previewUrl) { URL.revokeObjectURL(image.previewUrl); previewUrls.current.delete(image.previewUrl); }
-    draftImages.current = draftImages.current.filter(i => i.imageRef !== imageRef);
-    setImages(draftImages.current);
-    invoke('lu_release_image', {imageRef}).catch(error => setError(String(error)));
+  async function removeImage(imageRef) {
+    const targetChat=currentChat.current;
+    if(!targetChat)return;
+    const image=draftImages.current.find(i=>i.imageRef===imageRef);
+    try{
+      await invoke('lu_release_image',{chatId:targetChat,imageRef});
+      if(currentChat.current===targetChat&&imageViewer?.imageRef===imageRef)setImageViewer(null);
+      if(image?.previewUrl){URL.revokeObjectURL(image.previewUrl);previewUrls.current.delete(image.previewUrl);}
+      await refreshDraftImages(targetChat);
+    }catch(error){if(currentChat.current===targetChat)setError(String(error));}
   }
   function cancel() {
     const current = chatId && jobs[chatId];
@@ -4019,7 +4067,7 @@ function App() {
   }
   async function send(e) {
     e.preventDefault();
-    if (working || chatBusy ||
+    if (working || chatBusy || attachmentChatCreation.current ||
         (!runtime.sessionId && !modelFreeClockAllowed) || !prompt.trim()) return;
     const input = prompt.trim();
     const usePlanDraft=planDraftNextSend;
@@ -4153,9 +4201,20 @@ function App() {
       draftText.current = input;
       setPrompt(input);
     }
-    for (const image of submittedImages) {
-      if (image.previewUrl) {URL.revokeObjectURL(image.previewUrl);previewUrls.current.delete(image.previewUrl);}
-      await invoke('lu_release_image', {imageRef:image.imageRef}).catch(() => {});
+    // Submission cleanup may NEVER call the explicit remove command.
+    // Native admission failure retains the draft; committed images belong
+    // to immutable history even when inference is cancelled or fails.
+    const remaining=await refreshDraftImages(activeId,submittedImages).catch(error=>{
+      if(currentChat.current===activeId)setError(String(error));
+      return null;
+    });
+    if(remaining){
+      const live=new Set(remaining.map(im=>im.imageRef));
+      for(const image of submittedImages){
+        if(!live.has(image.imageRef)&&image.previewUrl){
+          URL.revokeObjectURL(image.previewUrl);previewUrls.current.delete(image.previewUrl);
+        }
+      }
     }
   }
   async function attachReaderDocument(continuePrevious=false) {
@@ -4226,9 +4285,11 @@ function App() {
     }
   }
   async function importAttachments(files) {
-    // Capture origin before a FileReader or native image admission can await.
-    // A chat switch must not redirect an in-flight attachment to another draft.
-    const targetChat = currentChat.current || 'new';
+    // Establish native ownership before FileReader or image admission.
+    // The original chat remains the destination across focus changes.
+    let targetChat;
+    try{targetChat=await ensureAttachmentChat();}
+    catch(error){setError(String(error));return;}
     function storeAttachment(kind, value) {
       const key=targetChat;
       const old=pendingDrafts.current.get(key) || {
@@ -4260,15 +4321,18 @@ function App() {
             reader.onerror = () => reject(Error('Could not read image'));
             reader.readAsDataURL(normalized.blob);
           });
-          const image = await invoke('lu_ingest_image_data_url', {dataUrl});
+          const image = await invoke('lu_ingest_image_data_url',
+            {chatId:targetChat,dataUrl,displayName:file.name});
           if (image) {
             const previewUrl = URL.createObjectURL(file);
             const previous=pendingDrafts.current.get(targetChat)?.images ||
               (targetChat === (currentChat.current||'new') ? draftImages.current : []);
-            if (previous.some(p => p.imageRef === image.imageRef)) URL.revokeObjectURL(previewUrl);
-            else {
+            if (previous.some(p => p.imageRef === image.imageRef&&p.previewUrl)){
+              URL.revokeObjectURL(previewUrl);
+              await refreshDraftImages(targetChat);
+            } else {
               previewUrls.current.add(previewUrl);
-              storeAttachment('images',[...previous,{...image, name:file.name, size:file.size, previewUrl, detectedMimeType: normalized.mimeType}]);
+              await refreshDraftImages(targetChat,[{...image,previewUrl,detectedMimeType:normalized.mimeType}]);
             }
           }
         } catch (error) { setError(String(error)); }
@@ -6252,7 +6316,7 @@ function App() {
           {(images.length > 0 || textFiles.length > 0) && <div className="attachments" aria-label="Draft attachments">
             {images.map(im => <span key={im.imageRef} className="attachment imageAttachment">
               {im.previewUrl ? <img src={im.previewUrl} alt="Attached image preview"/> : <span aria-hidden="true">▧</span>}
-              <span title={im.name || im.mimeType}>{im.name || im.mimeType}{im.detectedMimeType && im.name?.toLowerCase().endsWith('.jpg') && im.detectedMimeType === 'image/png' ? ' (PNG data)' : ''}</span>
+              <span title={im.name || im.mimeType}>{im.name || im.mimeType}{im.available===false?' (unavailable)':''}{im.detectedMimeType && im.name?.toLowerCase().endsWith('.jpg') && im.detectedMimeType === 'image/png' ? ' (PNG data)' : ''}</span>
               {im.previewUrl && <button type="button" onClick={()=>setImageViewer({imageRef:im.imageRef,zoom:1})} aria-label={'View image '+(im.name||'draft')}>View</button>}
               <button type="button" onClick={() => removeImage(im.imageRef)} aria-label="Remove image">×</button>
             </span>)}
