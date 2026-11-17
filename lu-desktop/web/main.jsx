@@ -2554,6 +2554,8 @@ function App() {
     const el=transcriptRef.current;
     if(!el||activeTab!=='chat'||currentChat.current!==chatId)return;
     for(const [ref,witness] of pendingDelivery.current){
+      // A human-edited display is not evidence of the original response.
+      if(displayRevisions[witness.assistantSeq]?.currentVersion>0)continue;
       const hasCommittedNode=Boolean(el.querySelector(
         '[data-ansf-seq="'+witness.assistantSeq+'"].assistant'));
       if(!deliveryCandidate({witness,chatId,activeTab,currentChat:currentChat.current,

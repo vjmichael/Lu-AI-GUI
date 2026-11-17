@@ -29,7 +29,8 @@ test('CP01E original native reply observation is exact-attempt scoped and passiv
   assert.match(perf,/#\[serde\(skip\)\]\s*cp01_trace/);
   assert.match(ui,/const result=await invoke\('lu_submit_image_turn'/);
   assert.match(ui,/result.receipt.generationId===attempt.generationId/);
-  assert.match(ui,/void invoke\('lu_cp01_reply_observed'/);
+  assert.match(ui,/const replyReceipt=invoke\('lu_cp01_reply_observed'/);
+  assert.match(ui,/Promise.resolve\(replyReceipt\).then\(\(\)=>invoke\('lu_cp01_reply_observed',delivery\)/);
   assert.match(host,/authenticated_completed_assistant_seq\(&chat_id,&generation_id\)/);
   assert.match(ui,/useLayoutEffect\(\(\)=>\{[\s\S]*?deliveryCandidate/);
 });
