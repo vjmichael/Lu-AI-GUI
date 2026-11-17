@@ -188,7 +188,10 @@ jobs:
           }finally{
             [IO.File]::WriteAllText($configPath,$original)
           }
-          if((git diff --name-only -- lu-desktop/src-tauri/tauri.conf.json).Trim()){
+          # --quiet uses the actual Git exit status and emits no output.
+          # An unchanged file is success, not a nullable PowerShell string.
+          & git diff --quiet --exit-code -- lu-desktop/src-tauri/tauri.conf.json
+          if($LASTEXITCODE -ne 0){
             throw 'Native Rust test did not restore the source Tauri configuration'
           }
       - name: Genuine hosted Windows install / browser bytes / UI windows / uninstall / AppData preservation

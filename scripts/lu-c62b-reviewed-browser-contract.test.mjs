@@ -81,7 +81,7 @@ test('browser is actually installed, independently rehashed, and removed without
  assert.match(wf,/PASS_BINARIES_ABSENT/);
 });
 
-test('C6.2B3 native Rust test uses precisely the staged NSIS resource map and restores config',()=>{
+test('C6.2B4 native Rust test uses precisely the staged NSIS resource map and restores config',()=>{
  const active=wf.split('      - name: Native Rust host independently recomputes')[1].split('      - name: Genuine hosted Windows install')[0];
  const buildMap=build.split('  $conf.bundle.resources=@{')[1].split('  }')[0];
  const testMap=active.split('            $conf.bundle.resources=@{')[1].split('            }')[0];
@@ -91,6 +91,8 @@ test('C6.2B3 native Rust test uses precisely the staged NSIS resource map and re
  assert.match(active,/\$browserHash -cne \$env:LU_BROWSER_MANIFEST_SHA256/);
  assert.match(active,/-- --ignored --exact --nocapture/);
  assert.match(active,/finally\{\s*\[IO\.File\]::WriteAllText\(\$configPath,\$original\)/);
- assert.match(active,/git diff --name-only -- lu-desktop\/src-tauri\/tauri\.conf\.json/);
+ assert.match(active,/& git diff --quiet --exit-code -- lu-desktop\/src-tauri\/tauri\.conf\.json/);
+ assert.match(active,/if\(\$LASTEXITCODE -ne 0\)\{\s*throw 'Native Rust test did not restore/);
+ assert.doesNotMatch(active,/git diff[^\n]*\.Trim\(\)/);
  assert.doesNotMatch(active,/vcruntime140_1\.dll|msvcp140\.dll/);
 });

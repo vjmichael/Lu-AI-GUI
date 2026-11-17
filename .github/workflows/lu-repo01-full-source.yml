@@ -4042,7 +4042,7 @@ jobs:
     if: >-
       github.event_name == 'push' &&
       github.ref == 'refs/heads/main' &&
-      startsWith(github.event.head_commit.message, 'CORE-MERGE-C6.2B3:')
+      startsWith(github.event.head_commit.message, 'CORE-MERGE-C6.2B4:')
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -4061,7 +4061,7 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$REVIEWED_SHA"
-          test "$(git rev-parse HEAD^)" = "2dd0775c3f6542cff1f6f892beefe43a6a298b8a"
+          test "$(git rev-parse HEAD^)" = "c6156f509c3c1956c7479266bea938afe51ace0c"
           test "$(git rev-parse --abbrev-ref HEAD)" = "HEAD"
           node scripts/verify-source-tree.mjs
           node --test scripts/lu-c62b-reviewed-browser-contract.test.mjs
