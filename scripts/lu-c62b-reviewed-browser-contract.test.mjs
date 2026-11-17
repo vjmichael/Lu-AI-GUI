@@ -80,3 +80,17 @@ test('browser is actually installed, independently rehashed, and removed without
  assert.match(wf,/PASS_INSTALLED_NATIVE_WINDOW_AND_BOTH_DIALOGS/);
  assert.match(wf,/PASS_BINARIES_ABSENT/);
 });
+
+test('C6.2B3 native Rust test uses precisely the staged NSIS resource map and restores config',()=>{
+ const active=wf.split('      - name: Native Rust host independently recomputes')[1].split('      - name: Genuine hosted Windows install')[0];
+ const buildMap=build.split('  $conf.bundle.resources=@{')[1].split('  }')[0];
+ const testMap=active.split('            $conf.bundle.resources=@{')[1].split('            }')[0];
+ const entries=s=>[...s.matchAll(/'([^']+)'='([^']+)'/g)].map(m=>m[1]+'='+m[2]).sort();
+ assert.deepEqual(entries(testMap),[...entries(buildMap),'resources/lu-browser=lu-browser'].sort());
+ assert.match(active,/Get-FileHash -LiteralPath \$browserManifest -Algorithm SHA256/);
+ assert.match(active,/\$browserHash -cne \$env:LU_BROWSER_MANIFEST_SHA256/);
+ assert.match(active,/-- --ignored --exact --nocapture/);
+ assert.match(active,/finally\{\s*\[IO\.File\]::WriteAllText\(\$configPath,\$original\)/);
+ assert.match(active,/git diff --name-only -- lu-desktop\/src-tauri\/tauri\.conf\.json/);
+ assert.doesNotMatch(active,/vcruntime140_1\.dll|msvcp140\.dll/);
+});

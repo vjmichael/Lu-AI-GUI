@@ -148,10 +148,49 @@ jobs:
         timeout-minutes: 60
         env:
           LU_C62_REVIEWED_RUNTIME_TEST: '1'
+          LU_BROWSER_MANIFEST_SHA256: '859ae6365aabaad2ada9362bb556243ede414f3de65fa3667ea0c3e5da38af0b'
         run: |
           $ErrorActionPreference='Stop'
-          cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib native_browser_host::tests::c62_reviewed_runtime_exact_bytes_and_compiled_manifest -- --ignored --exact --nocapture
-          if($LASTEXITCODE -ne 0){throw 'Actual Rust browser host rejected pinned review manifest or component'}
+          # NSIS restores the checked-in alpha Tauri config after its release
+          # build. Cargo test must reuse the exact successful current NSIS
+          # resource map rather than the alpha map's absent historical CRT DLLs.
+          $configPath=(Resolve-Path 'lu-desktop/src-tauri/tauri.conf.json').Path
+          $original=[IO.File]::ReadAllText($configPath)
+          try{
+            $conf=ConvertFrom-Json -InputObject $original -AsHashtable
+            $conf.productName='Lu Current Development Preview'
+            $conf.identifier='org.lu.current.devpreview'
+            $conf.version='0.2.0-rc.1'
+            $conf.app.windows[0].title='Lu Current Development Preview (Unsigned)'
+            $conf.bundle.active=$false
+            $conf.bundle.resources=@{
+              'resources/lu-inference/llama-server.exe'='lu-inference/llama-server.exe'
+              'resources/lu-inference/llama-server-vulkan.exe'='lu-inference/llama-server-vulkan.exe'
+              'resources/lu-inference/manifest.json'='lu-inference/manifest.json'
+              'resources/lu-native-codecs'='lu-native-codecs'
+              'resources/lu-research/curl.exe'='lu-research/curl.exe'
+              'resources/lu-browser'='lu-browser'
+            }
+            $resourceRoot=(Resolve-Path 'lu-desktop/src-tauri').Path
+            foreach($src in @($conf.bundle.resources.Keys)){
+              if(-not(Test-Path -LiteralPath (Join-Path $resourceRoot $src))){
+                throw "Current NSIS staged resource missing before native test: $src"
+              }
+            }
+            $browserManifest=Join-Path $resourceRoot 'resources/lu-browser/manifest.json'
+            $browserHash=(Get-FileHash -LiteralPath $browserManifest -Algorithm SHA256).Hash.ToLowerInvariant()
+            if($browserHash -cne $env:LU_BROWSER_MANIFEST_SHA256){
+              throw 'Native Rust test input differs from independently approved browser manifest'
+            }
+            $conf|ConvertTo-Json -Depth 32|Set-Content -LiteralPath $configPath -Encoding utf8
+            cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib native_browser_host::tests::c62_reviewed_runtime_exact_bytes_and_compiled_manifest -- --ignored --exact --nocapture
+            if($LASTEXITCODE -ne 0){throw 'Actual Rust browser host rejected pinned review manifest or component'}
+          }finally{
+            [IO.File]::WriteAllText($configPath,$original)
+          }
+          if((git diff --name-only -- lu-desktop/src-tauri/tauri.conf.json).Trim()){
+            throw 'Native Rust test did not restore the source Tauri configuration'
+          }
       - name: Genuine hosted Windows install / browser bytes / UI windows / uninstall / AppData preservation
         shell: pwsh
         timeout-minutes: 24

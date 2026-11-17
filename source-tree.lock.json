@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "115ee8ae748378dddc70d244b9602ccfda046801",
+  "sourceCommitBeforeLock": "2dd0775c3f6542cff1f6f892beefe43a6a298b8a",
   "trackedFileCount": 1067,
   "files": [
     {
@@ -85,7 +85,7 @@
     },
     {
       "path": ".github/workflows/lu-core-c62b-reviewed-browser-nsis.yml",
-      "blob": "d7e03f37c4aa692616f9ea8058b2caa247013649"
+      "blob": "293ba964927ffaca90c64128dcdfd23f969639fd"
     },
     {
       "path": ".github/workflows/lu-core-c62t-browser-review-transport.yml",
@@ -265,7 +265,7 @@
     },
     {
       "path": ".github/workflows/lu-repo01-full-source.yml",
-      "blob": "b67c7b3b17f6a34726d147141a14d49df54def9c"
+      "blob": "5f0d436219f4b0e18392e1f34a77e657a0a60c1c"
     },
     {
       "path": ".github/workflows/lu-tools-01-05-integration.yml",
@@ -713,7 +713,7 @@
     },
     {
       "path": "docs/LU_DEVELOPMENT_LEDGER.md",
-      "blob": "ad8766e0d5bcd8dab0b372ed835dd0bb96c48c20"
+      "blob": "a3679740de255a49e3f098d14da58e92bd1f5324"
     },
     {
       "path": "docs/LU_E1_NATIVE_EVIDENCE_20261107.md",
@@ -2401,7 +2401,7 @@
     },
     {
       "path": "scripts/lu-c62b-reviewed-browser-contract.test.mjs",
-      "blob": "ce990f5ed15475fceebfbca612afed689b9edb7b"
+      "blob": "f8d0d3acc585c71aca8befd433da767820fb7174"
     },
     {
       "path": "scripts/lu-ci-group-policy.mjs",
