@@ -17,7 +17,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 90
     env:
-      SOURCE_CANDIDATE: 'ef02c8645f1a90f62ce6fbde314c9b0f5c948079'
+      SOURCE_CANDIDATE: '6f21a682d3ba0a10844862c64128712892c71ebb'
       SOURCE_PARENT: 'c1721cb1f9853794ab5a53fff010ef069614b389'
       CARGO_INCREMENTAL: '0'
       RUSTUP_TOOLCHAIN: '1.99.1'
@@ -25,7 +25,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: 'ef02c8645f1a90f62ce6fbde314c9b0f5c948079'
+          ref: '6f21a682d3ba0a10844862c64128712892c71ebb'
           fetch-depth: 2
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
