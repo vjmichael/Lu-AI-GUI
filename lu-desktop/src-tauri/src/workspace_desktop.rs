@@ -243,16 +243,72 @@ fn inspect_explicit_workspace_path(path:&Path)->Result<PathBuf,String>{
     path.canonicalize().map_err(|_|"The requested folder is unavailable.".into())
 }
 
-/// A suggested path never becomes a grant. The user confirms it in the
-/// existing native folder chooser. If the path was explicit, selecting a
-/// different folder is a refusal, not permission to search elsewhere.
+struct ApprovedWorkspace {
+    root:PathBuf,
+    #[cfg(windows)]
+    chain:Vec<std::fs::File>,
+}
+impl ApprovedWorkspace {
+    fn picked(root:PathBuf)->Self{
+        Self{root,#[cfg(windows)] chain:Vec::new()}
+    }
+    #[cfg(windows)]
+    fn hold(path:&Path)->Result<Self,String>{
+        use std::os::windows::fs::{OpenOptionsExt,MetadataExt};
+        let expected=inspect_explicit_workspace_path(path)?;
+        let mut chain=Vec::new();
+        let ancestors:Vec<_>=path.ancestors().filter(|p|p.is_absolute()).collect();
+        for ancestor in ancestors.into_iter().rev(){
+            let handle=std::fs::OpenOptions::new().read(true).access_mode(0x80)
+                .share_mode(1).custom_flags(0x02000000|0x00200000)
+                .open(ancestor).map_err(|_|"Cannot safely hold the requested folder.")?;
+            let meta=handle.metadata().map_err(|_|"Cannot inspect the requested folder.")?;
+            if !meta.is_dir()||meta.file_attributes()&0x400!=0{
+                return Err("The requested folder contains a link. No access granted.".into())
+            }
+            chain.push(handle);
+        }
+        if chain.is_empty()||inspect_explicit_workspace_path(path)?!=expected{
+            return Err("The requested folder changed. No access granted.".into())
+        }
+        Ok(Self{root:path.to_path_buf(),chain})
+    }
+    fn verify(&self)->Result<(),String>{
+        #[cfg(windows)]
+        if !self.chain.is_empty(){
+            let reopened=Self::hold(&self.root)?;
+            if self.chain.len()!=reopened.chain.len()||
+                !self.chain.iter().zip(&reopened.chain).all(|(a,b)|
+                    crate::linked_attachment_file::same_handle(a,b)){
+                return Err("The approved folder changed. No access granted.".into())
+            }
+        }
+        Ok(())
+    }
+}
+
+/// Exact paths on Windows use native consent, with the original directory
+/// chain held across the dialog, queue and entire native read session.
 async fn choose_read_workspace(app:&AppHandle,prompt:&str,git_mode:bool)
-    ->Result<Option<PathBuf>,String>{
+    ->Result<Option<ApprovedWorkspace>,String>{
     let suggested=if !git_mode&&explicit_read_workspace_request(prompt){
         explicit_workspace_path(prompt).map(PathBuf::from)
     }else{None};
     let chooser=app.clone();
     tauri::async_runtime::spawn_blocking(move||{
+        #[cfg(windows)]
+        if let Some(path)=suggested.as_ref(){
+            let approved=ApprovedWorkspace::hold(path)?;
+            approved.verify()?;
+            let accepted=chooser.dialog().message(format!(
+                "Allow Lu to read and search this folder for this request only?\n\n{}\n\nNo files will be changed.",approved.root.display()))
+                .title("Allow folder access?")
+                .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom(
+                    "Allow once".into(),"Cancel".into())).blocking_show();
+            if !accepted{return Ok(None)}
+            approved.verify()?;
+            return Ok(Some(approved))
+        }
         let expected=suggested.as_deref().map(inspect_explicit_workspace_path).transpose()?;
         let mut picker=chooser.dialog().file();
         if let Some(path)=suggested.as_ref(){
@@ -268,7 +324,7 @@ async fn choose_read_workspace(app:&AppHandle,prompt:&str,git_mode:bool)
                 return Err("The selected folder differs from the requested folder. No access granted.".into())
             }
         }
-        Ok(Some(root))
+        Ok(Some(ApprovedWorkspace::picked(root)))
     }).await.map_err(|_|"Workspace picker unavailable")?
 }
 
@@ -446,7 +502,8 @@ async fn ask_scoped_read_for_chat(
     if status.session_id.as_deref()!=Some(session_id.as_str()){
         return Err("Loaded model session changed".into())
     }
-    let Some(root)=choose_read_workspace(&app,&prompt,git_mode).await? else{return Ok(None)};
+    let Some(approved_workspace)=choose_read_workspace(&app,&prompt,git_mode).await? else{return Ok(None)};
+    let root=approved_workspace.root.clone();
     let git_executable=if git_mode{Some(trusted_git_executable()?)}else{None};
     // OS picker is the authority source; reject symlinks and Windows reparse.
     if !is_real_directory(&root) {
@@ -478,6 +535,7 @@ async fn ask_scoped_read_for_chat(
     let outcome=tauri::async_runtime::spawn_blocking(move||{
         let answer=(||->Result<String,String>{
             ticket.wait_for_slot()?;
+            approved_workspace.verify()?;
             if ticket.cancelled()||cancellation.is_cancelled(){
                 return Err("Cancelled workspace generation".into())
             }
@@ -754,6 +812,22 @@ mod tests {
         }
         assert_eq!(fs::read(&file).unwrap(),b"original");
         fs::remove_dir_all(dir).unwrap();
+    }
+    #[cfg(windows)]
+    #[test]
+    fn exact_workspace_holds_identity_until_drop(){
+        let base=std::env::temp_dir().join(next_id("lu-cp03-lease-"));
+        fs::create_dir(&base).unwrap();
+        let child=base.join("target");fs::create_dir(&child).unwrap();
+        let moved=base.join("moved");
+        let approved=ApprovedWorkspace::hold(&child).unwrap();
+        approved.verify().unwrap();
+        assert!(fs::rename(&child,&moved).is_err());
+        assert!(fs::rename(&base,base.with_extension("moved")).is_err());
+        approved.verify().unwrap();
+        drop(approved);
+        fs::rename(&child,&moved).unwrap();
+        fs::remove_dir_all(base).unwrap();
     }
     #[test]
     fn ordinary_explicit_workspace_question_can_offer_native_picker_without_toolbar(){

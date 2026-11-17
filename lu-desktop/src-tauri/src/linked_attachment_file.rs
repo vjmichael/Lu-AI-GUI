@@ -115,7 +115,7 @@ fn open_guarded(path:&Path)->Result<GuardedOpen,LinkFailure>{
 #[cfg(not(any(windows,all(target_os="linux",any(target_arch="x86_64",target_arch="aarch64")))))]
 fn open_guarded(_path:&Path)->Result<GuardedOpen,LinkFailure>{Err(LinkFailure::Unsafe)}
 #[cfg(windows)]
-fn same_handle(a:&File,b:&File)->bool{
+pub(crate) fn same_handle(a:&File,b:&File)->bool{
     use std::{ffi::c_void,os::windows::io::AsRawHandle};
     #[repr(C)]
     #[derive(PartialEq,Eq)]
