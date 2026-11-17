@@ -8,7 +8,7 @@ const native = readFileSync('../host/src/git_conflict_inventory.rs', 'utf8');
 
 test('6D01 conflict inspection is registered read-only with no approval route', () => {
   assert.match(host, /async fn ide_git_inspect_native_conflicts\(/);
-  assert.match(host, /registry\.inspect_native_git_conflicts\(/);
+  assert.match(host, /registry\s*\.\s*inspect_native_git_conflicts\(/);
   assert.match(ui, /invoke\('ide_git_inspect_native_conflicts'/);
   assert.match(ui, /result\.authorityGranted !== false/);
   assert.match(ui, /result\.resolutionWritten !== false/);

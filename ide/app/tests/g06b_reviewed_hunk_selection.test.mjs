@@ -40,8 +40,8 @@ test('G06B02 rejects binary, oversize, duplicate IDs and stale or tampered selec
 test('G06B02 Tauri and UI expose preview and recheck, never stage a chosen hunk', () => {
   assert.match(desktop, /async fn ide_git_preview_hunks\(/);
   assert.match(desktop, /async fn ide_git_select_reviewed_hunks\(/);
-  assert.match(desktop, /registry\.preview_reviewed_git_hunks\(&project_id, &relative_path\)/);
-  assert.match(desktop, /registry\.select_reviewed_git_hunks\(&expected, &selected_ids\)/);
+  assert.match(desktop, /registry\s*\.\s*preview_reviewed_git_hunks\(\s*&project_id,\s*&relative_path\s*,?\s*\)/);
+  assert.match(desktop, /registry\s*\.\s*select_reviewed_git_hunks\(\s*&expected,\s*&selected_ids\s*,?\s*\)/);
   assert.match(desktop, /ide_git_preview_hunks,\s*ide_git_select_reviewed_hunks,/);
   assert.match(ui, /invoke\('ide_git_preview_hunks'/);
   assert.match(ui, /invoke\('ide_git_select_reviewed_hunks'/);

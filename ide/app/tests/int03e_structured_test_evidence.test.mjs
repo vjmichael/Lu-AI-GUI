@@ -129,8 +129,8 @@ test('source test target IPC accepts only opaque job/plan/case, not paths',()=>{
   assert.match(lib,/async fn ide_build_review_test_target\(/);
   assert.match(lib,/ide_build_review_test_target,/);
   assert.match(backend,/pub fn review_test_case_target\(/);
-  assert.match(backend,/last\.entry_hash!=report\.terminal_receipt_sha256/);
-  assert.match(backend,/registry\.preview_source_file\(project_id,&source\.relative_path\)/);
+  assert.match(backend,/last\.entry_hash\s*!=\s*report\.terminal_receipt_sha256/);
+  assert.match(backend,/registry\s*\.\s*preview_source_file\(\s*project_id,\s*&source\.relative_path\s*,?\s*\)/);
   assert.match(ui,/invoke\('ide_build_review_test_target'/);
   assert.match(ui,/opened\.revision!==target\.diskSha256/);
   assert.match(ui,/current\.dirty/);

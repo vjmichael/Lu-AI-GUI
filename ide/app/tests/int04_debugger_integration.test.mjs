@@ -151,7 +151,7 @@ test('debugger native UI routes never take a source path, PID or DAP payload',()
   assert.match(native,/pub fn review_stopped_source\(/);
   assert.match(native,/terminal\.entry_hash\.clone\(\)/);
   assert.match(native,/verify_input\(input\)/);
-  assert.match(native,/registry\.preview_source_file\(project_id,&source\.relative_path\)/);
+  assert.match(native,/registry\s*\.\s*preview_source_file\(\s*project_id,\s*&source\.relative_path\s*,?\s*\)/);
   assert.match(ui,/invoke\('ide_debug_review_stopped_source'/);
   assert.match(ui,/opened\.revision!==reviewed\.diskSha256/);
   assert.match(ui,/current\.dirty/);

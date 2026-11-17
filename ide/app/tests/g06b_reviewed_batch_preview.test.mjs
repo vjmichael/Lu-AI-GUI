@@ -25,8 +25,8 @@ test('G06B preview uses the existing tracked regular file capability for every p
 test('G06B Tauri API remains preview-only without approval bypass or raw command', () => {
   assert.match(routes, /async fn ide_git_preview_batch\(/);
   assert.match(routes, /async fn ide_git_verify_batch_review\(/);
-  assert.match(routes, /registry\.preview_reviewed_git_batch\(&project_id, &relative_paths\)/);
-  assert.match(routes, /registry\.revalidate_reviewed_git_batch\(&expected\)/);
+  assert.match(routes, /registry\s*\.\s*preview_reviewed_git_batch\(\s*&project_id,\s*&relative_paths\s*,?\s*\)/);
+  assert.match(routes, /registry\s*\.\s*revalidate_reviewed_git_batch\(\s*&expected\s*,?\s*\)/);
   assert.match(routes, /ide_git_preview_batch,\s*ide_git_verify_batch_review,/);
 });
 test('G06B UI displays pinned files but has no multi-file stage or commit action', () => {

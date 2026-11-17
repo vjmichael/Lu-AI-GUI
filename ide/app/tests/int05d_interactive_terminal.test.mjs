@@ -27,7 +27,7 @@ test('native broker exposes no PTY, shell spawn, or arbitrary process',()=>{
   assert.match(code,/STALE_OR_REPLAYED_COMMAND/);
   assert.doesNotMatch(code,/std::process::Command|CreateProcess|openpty|powershell.exe/);
   const native=readFileSync(new URL('../src-tauri/src/lib.rs',import.meta.url),'utf8');
-  assert.match(native,/native\.run_profile\(&app_copy,&registry,&project,recipe,&sha\)/);
+  assert.match(native,/native\s*\.\s*run_profile\(\s*&app_copy,\s*&registry,\s*&project,\s*recipe,\s*&sha\s*,?\s*\)/);
   assert.match(native,/terminal_broker::TerminalSessions/);
   assert.match(native,/ide_terminal_submit,/);
 });
