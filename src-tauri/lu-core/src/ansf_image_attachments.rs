@@ -171,6 +171,28 @@ impl AnsfStore{
         tx.commit()?;
         Ok(a.clone())
     }
+    /// Restore a complete ordered ordinary-image batch to an EMPTY draft.
+    /// The native caller stages and verifies distinct fresh object handles.
+    /// The saved original is never modified; there is no partial restore.
+    pub fn restore_image_draft(&self,chat:&str,rows:&[ImageAttachment])
+        ->Result<(),AnsfError>{
+        if !valid_chat(chat)||rows.is_empty()||rows.iter().any(|a|a.observed){
+            return Err(AnsfError::InvalidInput)
+        }
+        validate_manifest(rows)?;
+        let mut conn=self.conn.lock().map_err(|_|AnsfError::Locked)?;
+        let tx=conn.transaction()?;
+        if !read_manifest(&tx,chat,None)?.is_empty(){return Err(AnsfError::InvalidInput)}
+        for a in rows{
+            tx.execute(
+                "INSERT INTO ansf_image_attachments
+                 (session_id,attachment_id,display_name,media_type,bytes,sha256,observed,turn_id)
+                 VALUES(?1,?2,?3,?4,?5,?6,0,NULL)",
+                params![chat,a.attachment_id,a.display_name,a.media_type,a.bytes,a.sha256])?;
+        }
+        tx.commit()?;
+        Ok(())
+    }
     /// Removes a draft reference only; past human turns cannot be detached
     /// or overwritten by a stale UI release. Host handles external cleanup.
     pub fn remove_draft_image(&self,chat:&str,id:&str)->Result<bool,AnsfError>{
@@ -271,6 +293,25 @@ mod tests{
         let mut bad=image(4);bad.attachment_id="../escape".into();
         assert!(book.admit_draft_image("chat",&bad).is_err());
         assert_eq!(book.image_draft("chat").unwrap(),vec![a,b]);
+    }
+    #[test]
+    fn explicit_restore_is_all_or_nothing_and_never_restores_observations(){
+        let book=AnsfStore::in_memory().unwrap();
+        book.create_session("chat","ws","Chat").unwrap();
+        book.start_chapter("chat","Original").unwrap();
+        let a=image(1);let b=image(2);
+        book.admit_draft_image("chat",&a).unwrap();
+        assert!(book.restore_image_draft("chat",&[b.clone()]).is_err());
+        assert_eq!(book.image_draft("chat").unwrap(),vec![a.clone()]);
+        let event=turn(5);
+        book.append_host_chat_event_with_image_draft("chat",&event,&[a.clone()]).unwrap();
+        assert!(book.restore_image_draft("chat",&[b.clone(),a.clone()]).is_err());
+        assert!(book.image_draft("chat").unwrap().is_empty());
+        let mut observed=image(3);observed.observed=true;
+        assert!(book.restore_image_draft("chat",&[b.clone(),observed]).is_err());
+        book.restore_image_draft("chat",&[b.clone()]).unwrap();
+        assert_eq!(book.image_draft("chat").unwrap(),vec![b]);
+        assert_eq!(book.saved_image_manifest("chat",event.user_turn_id.as_deref().unwrap()).unwrap(),vec![a]);
     }
     #[test]
     fn duplicate_limits_and_observe_taint_are_enforced(){
