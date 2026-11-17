@@ -52,7 +52,7 @@ test('FIN01D all three original supervisors participate in admission and recover
  assert.match(lsp,/reconcile_windows_interrupted_via_service/);
  assert.match(backend,/ide_lsp_recoverable_jobs,/);
  assert.match(backend,/ide_lsp_reconcile,/);
- assert.match(backend,/feature = "native-lsp"[\s,)]*\]/);
+ assert.match(backend,/feature\s*=\s*"native-lsp"\s*,?\s*\)\s*\)\s*\]/);
  assert.match(main,/LSP pending: \{fin01Recovery\.lspJournalPending\}/);
 });
 test('FIN01D no-worker denied admission releases only after unchanged original journal',()=>{
@@ -88,7 +88,7 @@ test('FIN01D only original strictly pre-OS jobs receive no-worker cancellation',
  for(const code of [build,debug]){
   assert.match(code,/if result\.is_err\(\)/);
   assert.match(code,/matches!\(\s*state\.phase,\s*JobPhase::Prepared\s*\|\s*JobPhase::Authorized\s*,?\s*\)/);
-  assert.match(code,/self\.supervisor\.cancel_before_start\(&id\)/);
+  assert.match(code,/self\s*\.\s*supervisor\s*\.\s*cancel_before_start\(\s*&id\s*,?\s*\)/);
  }
  assert.match(lsp,/let mut admitted_this_call\s*=\s*false/);
  assert.match(lsp,/let mut prepared_this_call:\s*Option<String>\s*=\s*None/);

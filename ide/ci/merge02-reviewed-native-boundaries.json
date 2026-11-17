@@ -16,6 +16,61 @@
   "mergeApproved": false,
   "files": [
     {
+      "path": "ide/app/src-tauri/build.rs",
+      "sha": "3bb3802f067a0150e01d232cef35e962948fac74",
+      "scope": "Prior formatter disposition; nonpunctuation lexical token counts unchanged; native acceptance pending; source-only, OS acceptance pending"
+    },
+    {
+      "path": "ide/app/src-tauri/src/build_backend.rs",
+      "sha": "7e11c76a091eff3400b4ca7c50253d033a282542",
+      "scope": "Formatter disposition; build admission, cancellation and terminal receipts retained; source-only, OS acceptance pending"
+    },
+    {
+      "path": "ide/app/src-tauri/src/debug_backend.rs",
+      "sha": "6e8fb681a6c61edb1a241abb4f68020d0d68ed47",
+      "scope": "Formatter disposition; debugger admission, cancellation and terminal receipts retained; source-only, OS acceptance pending"
+    },
+    {
+      "path": "ide/app/src-tauri/src/fin04w2_c4_desktop.rs",
+      "sha": "f18a9980c2a7ac7c260d9df7f7957cce316b8bd4",
+      "scope": "Formatter disposition; protected debugger desktop interface retained; source-only, OS acceptance pending"
+    },
+    {
+      "path": "ide/app/src-tauri/src/global_native_custody.rs",
+      "sha": "2b81b0c7464571d9a4637974409fc1e49ac9184f",
+      "scope": "Formatter disposition; profile-wide fence and kernel verification retained; source-only, OS acceptance pending"
+    },
+    {
+      "path": "ide/app/src-tauri/src/lib.rs",
+      "sha": "4555e1a80b6f7e700b88235646c313e9fc28c4b4",
+      "scope": "Formatter disposition; feature and physical-dialog-gated command routes retained; source-only, OS acceptance pending"
+    },
+    {
+      "path": "ide/app/src-tauri/src/lsp_backend.rs",
+      "sha": "689e5f6b665e5cc4e30919fadf72138561830d22",
+      "scope": "Formatter disposition; original LSP admission and journal recovery retained; source-only, OS acceptance pending"
+    },
+    {
+      "path": "ide/app/src-tauri/src/terminal_broker.rs",
+      "sha": "9ba854c880c4194cd7a2c9fe1de7d3d86b6fc0c1",
+      "scope": "Formatter disposition; terminal broker authority and commands retained; source-only, OS acceptance pending"
+    },
+    {
+      "path": "ide/app/src-tauri/src/test_case_evidence.rs",
+      "sha": "56f66fe982da2b226b984c5bc94ec95b84022659",
+      "scope": "Formatter disposition; test evidence source bindings retained; source-only, OS acceptance pending"
+    },
+    {
+      "path": "ide/host/Cargo.toml",
+      "sha": "ee529f038409f31e2dd6ca01aa03d095fd58fb69",
+      "scope": "Explicit debug CI oracle features only; no default expansion; source-only, OS acceptance pending"
+    },
+    {
+      "path": "ide/host/src/dap_session.rs",
+      "sha": "8396d524a0f6c135a28b6400ebd4a4a10ed8eb74",
+      "scope": "Fixed debug-only trap, topmost frame and thread checks; original production defaults retained; source-only, OS acceptance pending"
+    },
+    {
       "path": "ide/host/src/git_reviewed_stash_save.rs",
       "sha": "f1d54aaee76acca98c53fa405d959eceb9ee1b0c",
       "scope": "FIN03 recovery source reviewed, native OS admission pending"
@@ -27,8 +82,8 @@
     },
     {
       "path": "ide/packaging/audit_p05_reviewed_workflow_successor.py",
-      "sha": "f258ce890d3aa0b8bc3db4b63a4c6b2c772d52b3",
-      "scope": "source or historical preservation test, not native acceptance"
+      "sha": "f42432bba301210c97907e61478263f68e425848",
+      "scope": "Exact historical P05 successor projection; not native acceptance; source-only, OS acceptance pending"
     },
     {
       "path": "ide/packaging/p05-merge02-pending-native-boundaries.json",
@@ -57,8 +112,8 @@
     },
     {
       "path": "ide/packaging/test_p05_reviewed_workflow_successor.py",
-      "sha": "e4318db01b61434d2c703961db6ceb8c980e4787",
-      "scope": "source or historical preservation test, not native acceptance"
+      "sha": "f0d71fa1bb5e0a7f31f30ca7d200a854187439bd",
+      "scope": "Historical workflow counting and successor rejection tests; source-only, OS acceptance pending"
     },
     {
       "path": "ide/packaging/test_p05_semantic_reconciliation.py",
@@ -96,9 +151,19 @@
       "scope": "source or historical preservation test, not native acceptance"
     },
     {
+      "path": "ide/supervisor/Cargo.toml",
+      "sha": "c3e7033bcceec45b6314fb9152028fe8a59ea790",
+      "scope": "Protected debugger CI-only feature linkage; no default expansion; source-only, OS acceptance pending"
+    },
+    {
+      "path": "ide/supervisor/examples/wo6_linux_native_build_acceptance.rs",
+      "sha": "206ba5fc51d175d5feea6a5e6d91975ec7aa8e15",
+      "scope": "Fixed Linux fixture checks stopped PC and mapped source line; timeout is not acceptance; source-only, OS acceptance pending"
+    },
+    {
       "path": "ide/supervisor/examples/wo6_native_dap_acceptance.rs",
-      "sha": "678475fda5d1d221304799cd109a4698a7d9ad35",
-      "scope": "LLVM18 ownership compile repair, negative tests retained"
+      "sha": "6c752702b79fdf19b15bb19598a531cf01c47c3e",
+      "scope": "Fixed Windows CI trap and receipt cloning; release route retained; source-only, OS acceptance pending"
     },
     {
       "path": "ide/supervisor/fixtures/debug/Probe-WindowsWo6FileDenial.ps1",
@@ -121,14 +186,44 @@
       "scope": "CI-only diagnostic, no capability expansion"
     },
     {
+      "path": "ide/supervisor/src/dap_transport.rs",
+      "sha": "83dbec6e3adacfddfcae877cce3c0d9ae9bef1e4",
+      "scope": "Debug OS architecture feature gated fixture operations and timeout diagnostics; source-only, OS acceptance pending"
+    },
+    {
+      "path": "ide/supervisor/src/lib.rs",
+      "sha": "055a7045c3aa474a6adf5f1abdd485a54d4f5d95",
+      "scope": "Strict historical persisted owner receipt parsing; no authority expansion; source-only, OS acceptance pending"
+    },
+    {
       "path": "ide/supervisor/src/linux_lsp_worker.rs",
-      "sha": "93097c67fd5d0d252ff20cd98f9ebf8f78c184d5",
-      "scope": "native debugger witness or worker, OS acceptance pending"
+      "sha": "f45421d10223e7f93d685084eb9ae86ab990aefc",
+      "scope": "Root-owned LLDB companion, fixed fixture, bounded diagnostic drain and independent kernel receipt; source-only, OS acceptance pending"
+    },
+    {
+      "path": "ide/supervisor/src/native_kernel_pc.rs",
+      "sha": "2739e6f18f56e21418bd2d9205280bf60dd283f8",
+      "scope": "Bounded Linux task/tracer/register/cgroup/ELF verification and independent symbolization; source-only, OS acceptance pending"
+    },
+    {
+      "path": "ide/supervisor/src/windows_cap_tree.rs",
+      "sha": "23eab2ceac5872f7a083df49b2fa3f5f670c999c",
+      "scope": "Pinned directory membership and reparse denial; original hostile race assertion retained; source-only, OS acceptance pending"
+    },
+    {
+      "path": "ide/supervisor/src/windows_event_owner.rs",
+      "sha": "5efa27ba364f2f7f09b2b325fbd169991e26df3d",
+      "scope": "Exact software breakpoint ownership, persisted receipt and disconnect distinction; source-only, OS acceptance pending"
+    },
+    {
+      "path": "ide/supervisor/src/windows_kernel_pc.rs",
+      "sha": "58e824c887ce64e7e97069e4865669dbe540f6d3",
+      "scope": "Liveness verification with synchronize and query-only rights; source-only, OS acceptance pending"
     },
     {
       "path": "ide/supervisor/src/windows_lsp_worker.rs",
-      "sha": "8cc8de68bcc529bb6606ea361e7e3b414167d122",
-      "scope": "native debugger witness or worker, OS acceptance pending"
+      "sha": "5271af00c1fb3c7c37c8e6bb65d7e52633f9f73a",
+      "scope": "Fixed CI oracle, independent owner/PDB witness and redundant pre-copy hash removal; original 60s grant and copy readback retained; source-only, OS acceptance pending"
     }
   ]
 }
