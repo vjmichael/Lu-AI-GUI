@@ -328,6 +328,49 @@ impl ModelTrace{
 mod tests{
     use super::*;
     #[test]
+    fn cp01_exact_attempt_delivery_persists_only_sanitized_findings(){
+        let archive=Arc::new(DiagnosticArchive::open(std::path::Path::new(":memory:")).unwrap());
+        let ledger=PerfLedger::with_archive(Some(Arc::clone(&archive)));
+        let chat="private-chat-marker";
+        let generation="private-generation-marker";
+        let trace_id="0123456789abcdef0123456789abcdef";
+        let newer_id="fedcba9876543210fedcba9876543210";
+        let start=Instant::now();
+        let mut trace=ModelTrace::new(chat,generation,start,true)
+            .with_cp01_trace(trace_id.into(),start,ledger.archive());
+        for stage in [Checkpoint::SessionReady,Checkpoint::UserSaved,Checkpoint::WorkerEntered,
+            Checkpoint::SavedAttested,Checkpoint::ModelEntered,Checkpoint::ModelReturned,
+            Checkpoint::AssistantSaved] {
+            trace.causal_checkpoint(stage);
+        }
+        ledger.record(trace.finish("COMPLETED")).unwrap();
+        let mut newer=ModelTrace::new(chat,generation,Instant::now(),true)
+            .with_cp01_trace(newer_id.into(),Instant::now(),ledger.archive());
+        newer.causal_refused();
+        ledger.record(newer.finish("FAILED")).unwrap();
+        assert!(!ledger.observe_cp01_reply("other",generation,trace_id,true));
+        assert!(!ledger.observe_cp01_reply(chat,"other",trace_id,true));
+        assert!(!ledger.observe_cp01_reply(chat,generation,newer_id,true));
+        assert!(ledger.observe_cp01_reply(chat,generation,trace_id,false));
+        let original=ledger.exact_causal_turn(chat,generation,trace_id).unwrap();
+        assert_eq!(original.cp01_finding.unwrap().first_unconfirmed,"stream_closed");
+        assert!(ledger.observe_cp01_reply(chat,generation,trace_id,true));
+        assert!(ledger.observe_cp01_reply(chat,generation,trace_id,true));
+        let original=ledger.exact_causal_turn(chat,generation,trace_id).unwrap();
+        assert_eq!(original.cp01_finding.unwrap().evidence_strength,
+            diagnostic_localization::EvidenceStrength::Complete);
+        assert_eq!(ledger.exact_causal_turn(chat,generation,newer_id).unwrap().terminal_state,"FAILED");
+        let report=serde_json::to_value(archive.report().unwrap()).unwrap();
+        let json=report.to_string();
+        for secret in [chat,generation,trace_id,newer_id] {
+            assert!(!json.contains(secret),"private identity leaked into support report");
+        }
+        assert_eq!(report["unavailableRecords"],0);
+        assert_eq!(report["findings"].as_array().unwrap().len(),2);
+        assert!(report["findings"].as_array().unwrap().iter().any(|row|
+            row["recordingState"]=="sealed" && row["finding"]["evidenceStrength"]=="complete"));
+    }
+    #[test]
     fn bounded_ledger_is_scoped_and_never_exposes_other_chat_samples(){
         let ledger=PerfLedger::default();
         for i in 0..180{

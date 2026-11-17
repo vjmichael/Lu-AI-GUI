@@ -1,0 +1,105 @@
+name: Lu CP-01E/F grouped native acceptance
+on:
+  push:
+    branches:
+      - lu/cp01-attachment-transaction-20261116
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: lu-cp01-grouped-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  source-and-frontend:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify exact source and grouped attachment regressions
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          mkdir -p cp01-evidence
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          printf '%s\n' "$SOURCE_SHA" > cp01-evidence/source-sha.txt
+          node scripts/verify-source-tree.mjs | tee cp01-evidence/source-lock.log
+          node --test lu-desktop/tests/cp01-*.test.mjs lu-desktop/tests/r20-markdown-attachments.test.mjs lu-desktop/tests/c64-unified-tabs.test.mjs 2>&1 | tee cp01-evidence/frontend-tests.log
+          grep -Eq '^# pass [1-9][0-9]*$' cp01-evidence/frontend-tests.log
+          grep -Eq '^# fail 0$' cp01-evidence/frontend-tests.log
+          npm --prefix lu-desktop ci
+          npm --prefix lu-desktop run build
+          npm --prefix lu-desktop run check | tee cp01-evidence/frontend-build-check.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lu-cp01-source-frontend-${{ github.sha }}
+          path: cp01-evidence/
+          if-no-files-found: error
+          retention-days: 14
+  native:
+    needs: source-and-frontend
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify exact native source
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          mkdir -p cp01-evidence
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          printf '%s\n' "$SOURCE_SHA" > cp01-evidence/source-sha.txt
+          node scripts/verify-source-tree.mjs | tee cp01-evidence/source-lock.log
+          rustc --version | tee cp01-evidence/rust-version.txt
+      - name: Native Linux Tauri dependencies
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev libgtk-3-dev libxdo-dev patchelf libssl-dev pkg-config
+      - name: Build actual React bundle and stage only source-test resources
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm --prefix lu-desktop ci
+          npm --prefix lu-desktop run build
+          root=lu-desktop/src-tauri/resources/lu-inference
+          for name in llama-server.exe msvcp140.dll vcruntime140.dll vcruntime140_1.dll; do
+            test ! -e "$root/$name"
+            printf 'NOT_AN_ENGINE_CP01_SOURCE_TEST_PLACEHOLDER' > "$root/$name"
+          done
+      - name: Actual Rust diagnostic, attachment, queue, backend and stream tests
+        shell: bash
+        env:
+          LU_PERF01_SOURCE_HEAD: ${{ github.sha }}
+        run: bash scripts/lu-cp01-grouped-native.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lu-cp01-native-${{ matrix.os }}-${{ github.sha }}
+          path: cp01-evidence/
+          if-no-files-found: error
+          retention-days: 14
