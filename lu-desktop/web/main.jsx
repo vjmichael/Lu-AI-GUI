@@ -2559,7 +2559,10 @@ function App() {
       if(!deliveryCandidate({witness,chatId,activeTab,currentChat:currentChat.current,
           job:visibleJob,entries:displayedHistory,hasCommittedNode}))continue;
       pendingDelivery.current.delete(ref);
-      void invoke('lu_cp01_reply_observed',{...witness}).catch(()=>false);
+      const {replyReceipt,...delivery}=witness;
+      // One asynchronous acknowledgment follows the earlier reply receipt;
+      // no additional user submission or model request is issued.
+      void Promise.resolve(replyReceipt).then(()=>invoke('lu_cp01_reply_observed',delivery)).catch(()=>false);
     }
   });
   useLayoutEffect(() => {
@@ -4279,11 +4282,11 @@ function App() {
         // DOM paint or durable readback claim. Diagnostics never delay Send.
         const witness={chatId:target,submissionId:attempt.nonce,
           generationId:attempt.generationId,diagnosticRef:result.diagnosticRef};
+        const replyReceipt=invoke('lu_cp01_reply_observed',{...witness,assistantSeq:null}).catch(()=>false);
         if(Number.isSafeInteger(result.assistantSeq)&&result.assistantSeq>0){
-          pendingDelivery.current.set(result.diagnosticRef,{...witness,assistantSeq:result.assistantSeq});
+          pendingDelivery.current.set(result.diagnosticRef,{...witness,assistantSeq:result.assistantSeq,replyReceipt});
           while(pendingDelivery.current.size>64)pendingDelivery.current.delete(pendingDelivery.current.keys().next().value);
         }
-        void invoke('lu_cp01_reply_observed',{...witness,assistantSeq:null}).catch(()=>false);
       }
       if(decision==='saved'){
         await admitSavedImageAttempt(target,attempt,result.receipt);

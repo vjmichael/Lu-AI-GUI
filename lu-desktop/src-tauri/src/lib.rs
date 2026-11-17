@@ -2059,8 +2059,9 @@ async fn lu_submit_image_turn(app:AppHandle,state:State<'_,Arc<DesktopState>>,
 }
 
 /// The renderer reports receipt of this *exact* native image result after
-/// its awaited invoke resolves. No renderer claim of paint, authority,
-/// durable completion, or worker termination is accepted.
+/// its awaited invoke resolves. A subsequent main-WebView layout report
+/// is observational only; canonical ANSF readback, not renderer assertions,
+/// establishes durable completion. No compositor paint or worker exit claim.
 #[tauri::command]
 fn lu_cp01_reply_observed(caller:tauri::WebviewWindow,state:State<'_,Arc<DesktopState>>,
     chat_id:String,submission_id:String,generation_id:String,diagnostic_ref:String,
@@ -5642,6 +5643,8 @@ async fn generate_internal(
             // canonical event committed before a derived catalog write failed.
             perf_trace.admission_publication(false, images.len());
             if !images.is_empty(){perf_trace.image_failure("CP01_IMAGE_ADMISSION_REFUSED");}
+            // No durable diagnostic I/O while holding attachment admission.
+            drop(_gate);
             let _ = state.perf01.record(perf_trace.finish("ADMISSION_NOT_PUBLISHED"));
             return Err(error);
         }

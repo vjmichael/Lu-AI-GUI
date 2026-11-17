@@ -924,6 +924,35 @@ mod tests{
         assert!(store.append_host_chat_event("c-import",&spoof).is_err());
     }
     #[test]
+    fn exact_completed_assistant_witness_excludes_partial_cancelled_and_adjacent_turns(){
+        let db=path();
+        let turn=|n:u8|format!("g-{n:032x}");
+        let expected;
+        {
+            let store=AnsfStore::open(&db).unwrap();
+            for chat in ["c-a","c-b"]{
+                store.create_session(chat,"workspace","Chat").unwrap();
+                store.start_chapter(chat,"Original").unwrap();
+            }
+            store.append_host_chat_event("c-a",&event(1,LiveKind::User,"same",Some(1),None)).unwrap();
+            let first=store.append_host_chat_event("c-a",&event(2,LiveKind::AssistantProgress,"same",None,Some(1))).unwrap();
+            expected=first.seq;
+            assert_eq!(store.authenticated_completed_assistant_seq("c-a",&turn(1)).unwrap(),None);
+            store.append_host_chat_event("c-a",&event(3,LiveKind::AssistantProgress,"same",None,Some(1))).unwrap();
+            store.append_host_chat_event("c-a",&event(4,LiveKind::AssistantCompleted,"",None,Some(1))).unwrap();
+            store.append_host_chat_event("c-a",&event(5,LiveKind::User,"same",Some(2),None)).unwrap();
+            store.append_host_chat_event("c-a",&event(6,LiveKind::AssistantProgress,"same",None,Some(2))).unwrap();
+            store.append_host_chat_event("c-a",&event(7,LiveKind::AssistantCancelled,"",None,Some(2))).unwrap();
+            assert_eq!(store.authenticated_completed_assistant_seq("c-a",&turn(1)).unwrap(),Some(expected));
+            assert_eq!(store.authenticated_completed_assistant_seq("c-a",&turn(2)).unwrap(),None);
+            assert_eq!(store.authenticated_completed_assistant_seq("c-b",&turn(1)).unwrap(),None);
+        }
+        let reopened=AnsfStore::open(&db).unwrap();
+        assert_eq!(reopened.authenticated_completed_assistant_seq("c-a",&turn(1)).unwrap(),Some(expected));
+        assert_eq!(reopened.authenticated_completed_assistant_seq("c-a",&turn(2)).unwrap(),None);
+        drop(reopened);let _=fs::remove_file(db);
+    }
+    #[test]
     fn reader_grants_never_become_normal_user_turns(){
         let store=AnsfStore::in_memory().unwrap();
         store.create_session("c-reader","workspace","Reader").unwrap();
