@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "315b1c5a4e0d21bb0542f0dd9d97d379d320197e",
-  "trackedFileCount": 1088,
+  "sourceCommitBeforeLock": "6876933b45ef706b379ccbee432b5b5cbe8e3b11",
+  "trackedFileCount": 1090,
   "files": [
     {
       "path": ".github/pull_request_template.md",
@@ -94,6 +94,10 @@
     {
       "path": ".github/workflows/lu-core-merge-c4-grouped.yml",
       "blob": "2b5b26d022bbd1d9cfbb2f29cc3c7cf6862c5a3c"
+    },
+    {
+      "path": ".github/workflows/lu-cp01-grouped-native.yml",
+      "blob": "8cf4216f68a172e94f055316eec409bfa6be1d90"
     },
     {
       "path": ".github/workflows/lu-development-ledger.yml",
@@ -745,7 +749,7 @@
     },
     {
       "path": "docs/LU_DEVELOPMENT_LEDGER.md",
-      "blob": "4b80ce6445ca4953346ce625e1bfbbb48c4a3a51"
+      "blob": "3a56f4b8cfed425740ac3eecfd91a341e0d29ae2"
     },
     {
       "path": "docs/LU_E1_NATIVE_EVIDENCE_20261107.md",
@@ -1645,7 +1649,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/perf01_telemetry.rs",
-      "blob": "0bc0eb195ab5d38edf6da67662fc28e4f6490fad"
+      "blob": "9dc6aeb2feec5c9dbf838fe7c1c80bd39df59e91"
     },
     {
       "path": "lu-desktop/src-tauri/src/preview_engine_choice.rs",
@@ -2510,6 +2514,10 @@
     {
       "path": "scripts/lu-core-stack-graph.test.mjs",
       "blob": "01cb49225476b88151f118473d422146e70d0edb"
+    },
+    {
+      "path": "scripts/lu-cp01-grouped-native.sh",
+      "blob": "05dcb66721df42865d0a7efbdfd2c75f54b72dae"
     },
     {
       "path": "scripts/lu-ledger.mjs",
