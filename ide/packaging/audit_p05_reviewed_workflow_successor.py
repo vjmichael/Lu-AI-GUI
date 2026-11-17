@@ -11,6 +11,16 @@ import re
 import subprocess
 import sys
 
+# A separate source-only review (never historical owner authorization).
+AUDIT_DIR = Path(__file__).resolve().parents[1] / "audits"
+if str(AUDIT_DIR) not in sys.path:
+    sys.path.insert(0, str(AUDIT_DIR))
+from verify_p05_owner_successor import (
+    SCOPED_SOURCE_ONLY, ORIGINAL,
+    compare_38_with_separate_scoped_source_dispositions,
+    verify_source_only_patch,
+)
+
 HISTORICAL_INVENTORY_GIT_BLOB = "5299b1ca6981f341d2855f549e567b8c2747dc13"
 # Each independently source-compared path keeps BOTH original and successor
 # exact Git blob identities. All other 30 must equal their original P05 pins.
@@ -69,6 +79,8 @@ def classify(inventory, actual_blobs):
         raise Denied("historical_p05_gate_count_changed")
     seen = set()
     changed = []
+    owner_changed = []
+    source_only_changed = []
     for item in entries:
         if not isinstance(item, dict):
             raise Denied("invalid_historical_p05_row")
@@ -83,21 +95,33 @@ def classify(inventory, actual_blobs):
             raise Denied("historical_p05_pin_or_policy_changed")
         seen.add(path)
         approved = REVIEWED.get(path)
+        scoped = SCOPED_SOURCE_ONLY.get(path)
         if approved and old != approved[0]:
             raise Denied("reviewed_successor_original_blob_not_immutable:" + path)
-        expected = approved[1] if approved else old
+        if scoped and old != scoped[0]:
+            raise Denied("source_only_original_blob_not_immutable:" + path)
+        expected = approved[1] if approved else scoped[1] if scoped else old
         if actual_blobs.get(path) != expected:
             raise Denied("unreviewed_successor_workflow_drift:" + path)
-        if approved:
+        if approved or scoped:
             changed.append(path)
-    if (set(actual_blobs) != seen or len(changed) != 8
-            or set(changed) != set(REVIEWED)):
+        if approved:
+            owner_changed.append(path)
+        if scoped:
+            source_only_changed.append(path)
+    if (set(actual_blobs) != seen or len(changed) != 13
+            or len(owner_changed) != 8 or len(source_only_changed) != 5
+            or set(owner_changed) != set(REVIEWED)
+            or set(source_only_changed) != set(SCOPED_SOURCE_ONLY)):
         raise Denied("successor_workflow_coverage_incomplete")
     return {
         "schema": "lu.ide.p05.reviewed-current-workflow-source-only.v1",
         "historicalPinnedWorkflows": 38,
-        "identicalHistoricalWorkflows": 30,
-        "historicallyDivergentWorkflows": 8,
+        "identicalHistoricalWorkflows": 25,
+        "historicallyDivergentWorkflows": 13,
+        "ownerAuthorizedHistoricalReplacements": 8,
+        "separatelyReconciledSourceOnlyDifferences": 5,
+        "historicalOwnerApprovalRewritten": False,
         "reviewedCurrentGitSourceIdentitiesVerified": True,
         "historicalP05ImmutableCheckoutPass": False,
         "originalHistoricalDenialPreserved": True,
@@ -153,6 +177,24 @@ def checkout(root):
         if result.returncode or result.stdout.strip() != blob:
             raise Denied("successor_workflow_worktree_differs_from_head:" + path)
         blobs[path] = blob
+    # The separate source record is consulted only after every current
+    # workflow blob has already passed its exact expected identity check.
+    scope_path = root / "ide/audits/p05_additional_current_source_dispositions.json"
+    if scope_path.is_symlink():
+        raise Denied("source_only_review_is_linked")
+    source_review = json.loads(scope_path.read_text(encoding="utf-8"))
+    historical = {row["path"]: row["blobSha"] for row in inventory["requiredWorkflows"]}
+    compare_38_with_separate_scoped_source_dispositions(historical, blobs, source_review)
+    for path in SCOPED_SOURCE_ONLY:
+        try:
+            original_text = subprocess.run(
+                ["git", "show", ORIGINAL + ":" + path],
+                cwd=root, check=True, capture_output=True, text=True,
+                timeout=15,
+            ).stdout
+        except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+            raise Denied("source_only_historical_workflow_unavailable") from exc
+        verify_source_only_patch(path, original_text, (root / path).read_text(encoding="utf-8"))
     return classify(inventory, blobs)
 
 

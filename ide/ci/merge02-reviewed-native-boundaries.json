@@ -97,12 +97,12 @@
     },
     {
       "path": "ide/supervisor/examples/wo6_native_dap_acceptance.rs",
-      "sha": "f8a496b1e1aaaca299bde83926157b759f47f162",
+      "sha": "678475fda5d1d221304799cd109a4698a7d9ad35",
       "scope": "LLVM18 ownership compile repair, negative tests retained"
     },
     {
       "path": "ide/supervisor/fixtures/debug/Probe-WindowsWo6FileDenial.ps1",
-      "sha": "0dd1d35488619a8c4f683a18ea1adf0b169cb960",
+      "sha": "246f2ce3ad5ebc13b5152b85a637793f72ab5c9c",
       "scope": "CI-only diagnostic, no capability expansion"
     },
     {
@@ -122,7 +122,7 @@
     },
     {
       "path": "ide/supervisor/src/linux_lsp_worker.rs",
-      "sha": "d327f8175c04a6adb7b778900028b06c61f204d1",
+      "sha": "93097c67fd5d0d252ff20cd98f9ebf8f78c184d5",
       "scope": "native debugger witness or worker, OS acceptance pending"
     },
     {

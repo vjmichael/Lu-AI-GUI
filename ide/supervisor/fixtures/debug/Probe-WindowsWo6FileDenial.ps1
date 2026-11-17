@@ -35,12 +35,19 @@ try {
         Emit 'no_attested_child_pid'
         exit 0
     }
+    # Fixed, bounded ETW coverage counts distinguish absent provider events
+    # from failed attested-child correlation. No paths or PIDs are logged.
+    $providerRecords=0
+    $candidateOpenRecords=0
+    $attestedOpenRecords=0
+    $deniedEndRecords=0
     $begins=@{}
     $outcomes=New-Object 'System.Collections.Generic.List[string]'
     $events=Get-WinEvent -Path $TracePath -Oldest -MaxEvents 50000 -ErrorAction Stop
     foreach($record in $events) {
-        if ($record.ProviderName -ne 'Microsoft-Windows-Kernel-File' -or
-            $record.Id -notin @(12,24,30)) { continue }
+        if ($record.ProviderName -ne 'Microsoft-Windows-Kernel-File') { continue }
+        $providerRecords++
+        if ($record.Id -notin @(12,24,30)) { continue }
         try { [xml]$xml=$record.ToXml() } catch { continue }
         $fields=@{}
         foreach($entry in @($xml.Event.EventData.Data)) {
@@ -52,8 +59,23 @@ try {
         if ([string]::IsNullOrEmpty($irp)) { continue }
         if ($record.Id -in @(12,30)) {
             # $PID is a read-only PowerShell automatic variable.
+            $candidateOpenRecords++
             $childProcessId=[string]$record.ProcessId
+            if (!$ids.ContainsKey($childProcessId)) {
+                # Kernel-File may record an issuing host PID in the ETW
+                # header. Only a payload PID matching an already-attested
+                # child can participate in a diagnostic correlation.
+                foreach ($fieldName in @('ProcessId','PID','ProcessID')) {
+                    $payloadPid=[string]$fields[$fieldName]
+                    if ($payloadPid -match '^[1-9][0-9]{0,9}$' -and
+                        $ids.ContainsKey($payloadPid)) {
+                        $childProcessId=$payloadPid
+                        break
+                    }
+                }
+            }
             if (!$ids.ContainsKey($childProcessId)) { continue }
+            $attestedOpenRecords++
             if ($begins.Count -ge 4096) { continue }
             $operation=if ($record.Id -eq 30) { 'create_new' } else { 'create_open' }
             $path=[string]$fields['FileName']
@@ -71,7 +93,9 @@ try {
         elseif ($raw -match '^[0-9]+$') {
             try { $status=('{0:X8}' -f [uint32]$raw) } catch { continue }
         }
-        if ($status -ne 'C0000022' -or !$begins.ContainsKey($irp)) { continue }
+        if ($status -ne 'C0000022') { continue }
+        $deniedEndRecords++
+        if (!$begins.ContainsKey($irp)) { continue }
         $from=$begins[$irp]
         $candidate=[string]::Join(';',@(
             'operation=' + $from[0], 'object_class=' + $from[1],
@@ -79,6 +103,16 @@ try {
         if (!$outcomes.Contains($candidate)) { $outcomes.Add($candidate) }
         if ($outcomes.Count -ge 8) { break }
     }
+    $category=if ($providerRecords -eq 0) { 'provider_events_absent' }
+              elseif ($candidateOpenRecords -eq 0) { 'create_events_absent_or_unrecognized' }
+              elseif ($attestedOpenRecords -eq 0) { 'child_pid_not_correlated' }
+              elseif ($deniedEndRecords -eq 0) { 'no_access_denied_operation_end_seen' }
+              else { 'denial_event_seen_causality_unverified' }
+    Write-Host ('PROTECTED_WO6_ETW_COVERAGE='+$category+
+                ';provider='+$providerRecords+
+                ';create='+$candidateOpenRecords+
+                ';attested='+$attestedOpenRecords+
+                ';denied_end='+$deniedEndRecords)
     if ($outcomes.Count -eq 0) {
         Emit 'no_pid_correlated_file_access_denial_other_operations_unobserved'
     } else {

@@ -32,6 +32,160 @@ class Denied(ValueError):
     pass
 
 
+# These five changes are NOT retroactive owner approvals. They are individually
+# reviewed current-source dispositions, independently pinned to both Git blobs.
+# The historical P05 38/8 contract and its native/negative gates remain intact.
+SCOPED_SOURCE_ONLY = {
+    ".github/workflows/ide-e2-native-lsp.yml": (
+        "8ca27a7f666460e021b45c2e5469d532d0a82071",
+        "b0e8017157e9727f7c5a3fe474f7510db08b97fe",
+        "measured_clangd_bundle_binding", 13),
+    ".github/workflows/ide-e2-supervised-lsp.yml": (
+        "c2be7149dc3424d7c296aae2f98a6fd37b99c77b",
+        "a29c605710c16b9fe8678f4072f79f12a4797d98",
+        "exact_sha_checkout_and_real_llvm18_oracle", 18),
+    ".github/workflows/ide-e2-unsigned-installed-smoke.yml": (
+        "6d8761823e67575cb979b15570f8fb44d571d4d5",
+        "29b34141b0557ddc4a341ebf5ce5f64f16c69ab1",
+        "reviewed_p06_lock_successor", 6),
+    ".github/workflows/ide-wo8-installed-linux.yml": (
+        "cbb33c566a492ed176d7af8ef381019c5753605e",
+        "a40f2ba4867acd24e94ccc73a86cd6e4580735b3",
+        "reviewed_p06_lock_successor", 9),
+    ".github/workflows/ide-wo9-installed-native.yml": (
+        "60c1bf3d20fb08dcdcfd183a8ffec76599fa6c52",
+        "6c6e8f89a9a60d8e9703dc54af91e6bc690024b8",
+        "reviewed_p06_lock_successor", 8),
+}
+LOCK_INVOKES = {
+    ".github/workflows/ide-e2-unsigned-installed-smoke.yml": 2,
+    ".github/workflows/ide-wo8-installed-linux.yml": 2,
+    ".github/workflows/ide-wo9-installed-native.yml": 4,
+}
+
+def verify_source_only_patch(path, original, current):
+    """Require an exact additive, test-preserving patch, not step-count alone."""
+    old_names = re.findall(r"(?m)^\s*- name:\s*(.+)$", original)
+    new_names = re.findall(r"(?m)^\s*- name:\s*(.+)$", current)
+    if old_names != new_names[:len(old_names)] and path != ".github/workflows/ide-e2-supervised-lsp.yml":
+        raise Denied("p05_source_only_original_named_step_removed:" + path)
+    mode = SCOPED_SOURCE_ONLY[path][2]
+    if mode == "measured_clangd_bundle_binding":
+        added = (
+            "          # Only the just-audited, self-measured native CI bundle is admitted\n"
+            "          # by the later fixed AppContainer acceptance host. Never use PATH.\n"
+            "          Add-Content -LiteralPath $env:GITHUB_ENV -Value ('LU_IDE_E2_PINNED_LSP_BUNDLE='+$bundle)\n"
+        )
+        if current.count(added) != 1:
+            raise Denied("p05_clangd_measured_bundle_binding_changed")
+        normalized = current.replace(added, "", 1)
+    elif mode == "exact_sha_checkout_and_real_llvm18_oracle":
+        checkout = (
+            "        with:\n"
+            "          ref: ${{ github.event.pull_request.head.sha || github.sha }}\n"
+            "          persist-credentials: false\n"
+            "          fetch-depth: 0\n"
+        )
+        oracle = (
+            "      - name: Provide authentic LLVM18 source-line oracle for Linux packaging regression\n"
+            "        if: runner.os == 'Linux'\n"
+            "        shell: bash\n"
+            "        run: |\n"
+            "          set -euo pipefail\n"
+            "          sudo apt-get update -qq\n"
+            "          sudo apt-get install -y --no-install-recommends llvm-18 clang\n"
+            "          test -x /usr/lib/llvm-18/bin/llvm-symbolizer\n"
+            "          echo '/usr/lib/llvm-18/bin' >> \"$GITHUB_PATH\"\n"
+        )
+        if current.count(checkout) != 3 or current.count(oracle) != 1:
+            raise Denied("p05_source_checkout_or_real_llvm_oracle_changed")
+        normalized = current.replace(checkout, "", 3).replace(oracle, "", 1)
+        if new_names != old_names[:5] + [
+            "Provide authentic LLVM18 source-line oracle for Linux packaging regression"
+        ] + old_names[5:]:
+            raise Denied("p05_original_e2_named_steps_or_order_changed")
+    else:
+        suffix = " --ide-merge02-successor"
+        if current.count(suffix) != LOCK_INVOKES[path]:
+            raise Denied("p05_reviewed_lock_argument_count_changed")
+        for line in current.splitlines():
+            if suffix in line and (
+                "verify_p06_candidate_lock.py" not in line
+                or not line.endswith(suffix)
+            ):
+                raise Denied("p05_reviewed_lock_argument_moved")
+        normalized = current.replace(suffix, "")
+    if normalized.rstrip("\r\n") != original.rstrip("\r\n"):
+        raise Denied("p05_source_only_patch_expands_original_test_or_trigger")
+    return True
+
+def compare_38_with_separate_scoped_source_dispositions(baseline, current, review):
+    if len(baseline) != 38 or set(baseline) != set(current):
+        raise Denied("p05_expected_exact_38_original_workflows")
+    if not isinstance(review, dict) or (
+        review.get("schema") != "lu.ide.merge02.p05.additional-current-source-dispositions.v1"
+        or review.get("historicalTree") != ORIGINAL
+        or review.get("immutableHistoricalWorkflowCount") != 38
+        or review.get("historicalOwnerAuthorizedCount") != 8
+        or review.get("scopedCurrentSourceOnlyCount") != 5
+        or review.get("scope") != "exact current source correspondence only; not retroactive owner authorization"
+    ):
+        raise Denied("p05_source_disposition_historical_scope_changed")
+    for field in (
+        "historicalP05Rewritten", "priorOwnerDecisionModified",
+        "nativeWindowsAccepted", "nativeLinuxAccepted", "llvm18Accepted",
+        "installedGuiAccepted", "releaseApproved", "mergeApproved",
+    ):
+        if review.get(field) is not False:
+            raise Denied("p05_source_disposition_forged_acceptance:" + field)
+    for field in (
+        "originalTriggersRetained", "originalJobsAndNamedStepsRetained",
+        "originalNativeNegativeTestsRetained",
+    ):
+        if review.get(field) is not True:
+            raise Denied("p05_source_disposition_security_assertions_removed:" + field)
+    rows = review.get("workflows")
+    if not isinstance(rows, list) or len(rows) != 5:
+        raise Denied("p05_source_disposition_exact_five_required")
+    seen = set()
+    for row in rows:
+        if not isinstance(row, dict) or set(row) != {
+            "path", "original", "current", "mode", "originalNamedStepCount",
+            "disposition", "historicalOwnerAuthorization",
+            "originalTriggerAndTestsRetained", "nativeAccepted", "reason"
+        }:
+            raise Denied("p05_source_disposition_row_shape_changed")
+        path = row["path"]
+        if path not in SCOPED_SOURCE_ONLY or path in seen:
+            raise Denied("p05_source_disposition_unknown_or_duplicate_workflow")
+        seen.add(path)
+        expected = SCOPED_SOURCE_ONLY[path]
+        if (tuple(row[k] for k in ("original","current","mode","originalNamedStepCount")) != expected
+            or row["disposition"] != "source_reviewed_not_native_accepted"
+            or row["historicalOwnerAuthorization"] is not False
+            or row["originalTriggerAndTestsRetained"] is not True
+            or row["nativeAccepted"] is not False
+            or not isinstance(row["reason"], str)
+            or not 16 <= len(row["reason"]) <= 220):
+            raise Denied("p05_source_disposition_provenance_or_approval_changed")
+    if seen != set(SCOPED_SOURCE_ONLY):
+        raise Denied("p05_source_disposition_missing_workflow")
+    changed = {p:(v,current[p]) for p,v in baseline.items() if current[p] != v}
+    expected_changes = dict(EXPECTED)
+    expected_changes.update({p:(data[0],data[1]) for p,data in SCOPED_SOURCE_ONLY.items()})
+    if changed != expected_changes:
+        raise Denied("p05_unreviewed_or_unretained_native_workflow_change")
+    return {
+        "historicalExactWorkflows":38,
+        "unchangedCurrentWorkflows":25,
+        "ownerAuthorizedHistoricalReplacements":8,
+        "separatelyReconciledSourceOnlyDifferences":5,
+        "historicalApprovalRewritten":False,
+        "nativeAccepted":False,
+        "releaseApproved":False,
+    }
+
+
 def original_blob_sha(data: bytes) -> str:
     return hashlib.sha1(b"blob " + str(len(data)).encode() + b"\0" + data).hexdigest()
 
@@ -112,7 +266,18 @@ def verify(root: Path):
         recentsteps=re.findall(r"(?m)^\s*- name:\s*(.+)$",recent)
         if any(step not in recentsteps for step in oldsteps):
             raise Denied("p05_original_named_security_step_removed:"+path)
-    result=compare_38_unchanged_and_replacements(original,current)
+    # The historical 38/8 classifier above remains strict and unchanged.
+    # Only a separately documented, exact original-to-current source review
+    # may explain the five additional current source differences.
+    scoped_path = root / "ide/audits/p05_additional_current_source_dispositions.json"
+    if scoped_path.is_symlink():
+        raise Denied("p05_source_disposition_file_is_linked")
+    scoped = json.loads(scoped_path.read_text(encoding="utf-8"))
+    result=compare_38_with_separate_scoped_source_dispositions(original,current,scoped)
+    for path in SCOPED_SOURCE_ONLY:
+        historical=git("show",ORIGINAL+":"+path)
+        current_text=(root/path).read_text(encoding="utf-8")
+        verify_source_only_patch(path,historical,current_text)
     listed={x.get("path"):(x.get("original"),x.get("replacement"))
             for x in ledger.get("workflows",[])}
     if len(ledger.get("workflows",[]))!=8 or listed!=EXPECTED or any(
