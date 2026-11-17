@@ -35,6 +35,13 @@ test('extraction metadata is retained and prompt budget remains enforced',()=>{
   assert.throws(()=>documentDraftItem({...doc,text:' '}),/confirm/);
   assert.throws(()=>buildSubmittedPrompt('Summarize',[{...item,text:'🦈'.repeat(5000)}]),/16,384-byte/);
 });
+test('full 8 MiB exact payload preserved across base64 chunk boundaries',async()=>{
+  const bytes=new Uint8Array(MAX_DOCUMENT_BYTES);
+  for(let i=0;i<bytes.length;i++)bytes[i]=i%251;
+  const file={name:'large.pdf',size:bytes.length,arrayBuffer:async()=>bytes.buffer};
+  const result=await documentFilePayload(file);
+  assert.deepEqual(Buffer.from(result.encodedBytes,'base64'),Buffer.from(bytes));
+});
 test('all File-object entrypoints use same native intake and document text cannot open a native intent route',()=>{
   const ui=readFileSync(new URL('../web/main.jsx',import.meta.url),'utf8');
   const host=readFileSync(new URL('../src-tauri/src/lib.rs',import.meta.url),'utf8');
