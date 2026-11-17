@@ -25,7 +25,7 @@ test('Production host exposes bounded bidirectional cursor windows without chang
 });
 test('Active UI stages finite old/new messages and preserves independent model-facing context',()=>{
   assert.match(jsx,/MAX_VISIBLE_CHAT_ROWS=MAX_HISTORY_ROWS/);
-  assert.match(jsx,/loadLatestUiHistory\(id\)/);
+  assert.match(jsx,/loadLatestUiHistory\(id,navigation\)/);
   assert.match(jsx,/loadOlderUiHistory\(\)/);
   assert.match(jsx,/loadNewerUiHistory\(\)/);
   assert.match(jsx,/pendingPrepend\.current/);

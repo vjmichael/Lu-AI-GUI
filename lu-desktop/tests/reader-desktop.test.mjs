@@ -19,7 +19,9 @@ test('native Reader file selection is host-mediated and file path never supplied
   assert.ok(!ui.includes("invoke('lu_reader_pick_document',{path:"));
 });
 test('Reader attachments remain in originating chat and respect the 16k prompt cap',()=>{
-  assert.ok(ui.includes("const targetChat=currentChat.current||'new';"));
+  assert.ok(ui.includes("const origin=currentChat.current||'new';"));
+  assert.match(ui,/targetChat=await ensureAttachmentChat\(\)/);
+  assert.match(ui,/beginDraftMutation\(origin\)/);
   assert.ok(ui.includes('pendingDrafts.current.set(targetChat,{...old,files:next})'));
   assert.ok(ui.includes('buildSubmittedPrompt(prior?.prompt'));
   assert.ok(ui.includes('MAX_TEXT_FILES'));

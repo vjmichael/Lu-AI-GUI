@@ -53,7 +53,8 @@ test('pixel-stable source anchor survives variable message heights and far-end e
   assert.equal(viewport.scrollTop,660);
 });
 test('UI restores source-ID location after chat switching without eagerly fetching the full transcript',()=>{
-  assert.match(ui,/loadRememberedUiHistory\(id\)/);
+  assert.match(ui,/loadRememberedUiHistory\(id,navigation\)/);
+  assert.match(ui,/navigationSequence.current!==navigation/);
   assert.match(ui,/captureHistoryAnchor\(el\)/);
   assert.match(ui,/restoreHistoryAnchor\(el,stored.anchor\)/);
   assert.match(ui,/pendingPrepend\.current=\{chatId:id,anchor\}/);
