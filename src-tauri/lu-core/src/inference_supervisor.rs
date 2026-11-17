@@ -4,7 +4,7 @@
 use crate::{
     inference_bridge::{BridgeError, InferenceBridge},
     inference_host::{Cancellation, EnginePhase, InferenceBackend},
-    inference_wire::{validate_frame, INFERENCE_PROTOCOL_VERSION},
+    inference_wire::{encode_frame,validate_frame, INFERENCE_PROTOCOL_VERSION},
     mmproj_admission::AdmittedProjector,
     model_admission::AdmittedModel,
     multimodal_saved_turn::PinnedImage,
@@ -47,6 +47,8 @@ struct Active {
     generation_id: String,
     cancellation: Cancellation,
     cache_scope: Option<String>,
+    image_request_digest:Option<[u8;32]>,
+    image_run_claimed:bool,
 }
 struct SessionControl {
     active: Option<Active>,
@@ -369,6 +371,7 @@ impl<B: InferenceBackend + Send + 'static> TrustedInferenceSupervisor<B> {
             generation_id: generation_id.into(),
             cancellation: Cancellation::default(),
             cache_scope: None,
+            image_request_digest:None,image_run_claimed:false,
         });
         Ok(())
     }
@@ -391,7 +394,7 @@ impl<B: InferenceBackend + Send + 'static> TrustedInferenceSupervisor<B> {
         if control.closing { return Err(SupervisorError::Busy); }
         let active=control.active.as_mut().ok_or(SupervisorError::WrongGeneration)?;
         if active.generation_id != generation_id { return Err(SupervisorError::WrongGeneration); }
-        if active.cache_scope.is_some() { return Err(SupervisorError::InvalidRequest); }
+        if active.cache_scope.is_some()||active.image_request_digest.is_some() { return Err(SupervisorError::InvalidRequest); }
         active.cache_scope=Some(trusted_scope.to_owned());
         Ok(())
     }
@@ -436,6 +439,12 @@ impl<B: InferenceBackend + Send + 'static> TrustedInferenceSupervisor<B> {
         Ok(frame)
     }
 
+    fn image_request_digest(frame:&proto::InferenceFrame)->Result<[u8;32],SupervisorError>{
+        use sha2::{Digest,Sha256};
+        let encoded=encode_frame(frame).map_err(|_|SupervisorError::InvalidRequest)?;
+        Ok(Sha256::digest(encoded).into())
+    }
+
     /// A reservation binds a typed image request to host-pinned saved-turn
     /// bytes, not a WebView-supplied image URL or arbitrary filesystem path.
     pub fn reserve_generation_images(
@@ -471,7 +480,7 @@ impl<B: InferenceBackend + Send + 'static> TrustedInferenceSupervisor<B> {
         if max_new_tokens > session.max_output_tokens {
             return Err(SupervisorError::InvalidRequest);
         }
-        Self::image_frame(
+        let frame=Self::image_frame(
             session_id,
             generation_id,
             request_id,
@@ -480,6 +489,7 @@ impl<B: InferenceBackend + Send + 'static> TrustedInferenceSupervisor<B> {
             images,
             history,
         )?;
+        let digest=Self::image_request_digest(&frame)?;
         let mut control = session
             .control
             .lock()
@@ -492,6 +502,7 @@ impl<B: InferenceBackend + Send + 'static> TrustedInferenceSupervisor<B> {
             generation_id: generation_id.into(),
             cancellation: Cancellation::default(),
             cache_scope: None,
+            image_request_digest:Some(digest),image_run_claimed:false,
         });
         Ok(())
     }
@@ -528,41 +539,57 @@ impl<B: InferenceBackend + Send + 'static> TrustedInferenceSupervisor<B> {
         history: Vec<proto::InferenceChatTurn>,
         emit: impl FnMut(Vec<u8>) -> Result<(), BridgeError>,
     ) -> Result<(), SupervisorError> {
-        let session = self.session(session_id)?;
-        let frame = Self::image_frame(
-            session_id,
-            generation_id,
-            request_id,
-            &prompt,
-            max_new_tokens,
-            &images,
-            &history,
-        )?;
-        let cancellation = {
-            let control = session
-                .control
-                .lock()
-                .map_err(|_| SupervisorError::Poisoned)?;
-            let active = control
-                .active
-                .as_ref()
-                .ok_or(SupervisorError::WrongGeneration)?;
-            if active.generation_id != generation_id {
-                return Err(SupervisorError::WrongGeneration);
+        self.run_reserved_images_reported(session_id,generation_id,request_id,prompt,
+            max_new_tokens,images,history,emit,&mut None)
+    }
+    /// The report is populated only by the actual native backend, never
+    /// inferred from the reservation or a successful UI event.
+    pub fn run_reserved_images_reported(
+        &self,session_id:&str,generation_id:&str,request_id:&str,prompt:String,
+        max_new_tokens:u32,images:Vec<PinnedImage>,history:Vec<proto::InferenceChatTurn>,
+        emit:impl FnMut(Vec<u8>)->Result<(),BridgeError>,
+        report:&mut Option<crate::multimodal_http::ImageDeliveryReceipt>,
+    )->Result<(),SupervisorError>{
+        *report=None;
+        let session=self.session(session_id)?;
+        let (cancellation,expected)={
+            let mut control=session.control.lock().map_err(|_|SupervisorError::Poisoned)?;
+            let active=control.active.as_mut().ok_or(SupervisorError::WrongGeneration)?;
+            if active.generation_id!=generation_id{return Err(SupervisorError::WrongGeneration)}
+            let expected=active.image_request_digest.ok_or(SupervisorError::InvalidRequest)?;
+            if active.image_run_claimed{return Err(SupervisorError::Busy)}
+            active.image_run_claimed=true;
+            (active.cancellation.clone(),expected)
+        };
+        // Claim before frame validation, so an invalid replacement cannot
+        // strand the reservation. A concurrent duplicate cannot acquire it.
+        let _cleanup=GenerationCleanup{session:Arc::clone(&session),generation_id:generation_id.into()};
+        let frame=Self::image_frame(session_id,generation_id,request_id,&prompt,
+            max_new_tokens,&images,&history)?;
+        if Self::image_request_digest(&frame)?!=expected{
+            return Err(SupervisorError::InvalidRequest)
+        }
+        let (result,ejected)=match session.engine.lock(){
+            Ok(mut engine)=>{
+                // Discard any previous probe/turn report before this call.
+                let _=engine.take_image_delivery_receipt();
+                let result=engine.set_trusted_cache_scope(None)
+                    .and_then(|()|engine.generate_with_verified_images(&frame,&images,cancellation,emit))
+                    .map_err(SupervisorError::Bridge);
+                *report=engine.take_image_delivery_receipt();
+                (result,session.pid.is_some()&&engine.process_id().is_none())
             }
-            active.cancellation.clone()
+            Err(_)=>(Err(SupervisorError::Poisoned),false),
         };
-        let _cleanup = GenerationCleanup {
-            session: Arc::clone(&session),
-            generation_id: generation_id.into(),
-        };
-        let result = match session.engine.lock() {
-            Ok(mut engine) => engine.set_trusted_cache_scope(None)
-                .and_then(|()|engine.generate_with_verified_images(
-                    &frame, &images, cancellation, emit))
-                .map_err(Into::into),
-            Err(_) => Err(SupervisorError::Poisoned),
-        };
+        if ejected{
+            // Backend already reaped its exact child. Remove only the old
+            // session while its generation remains claimed; no new load or
+            // queued request can borrow the dead engine's ready identity.
+            let mut current=self.current.lock().map_err(|_|SupervisorError::Poisoned)?;
+            if current.as_ref().is_some_and(|v|Arc::ptr_eq(v,&session)){
+                *current=None;
+            }
+        }
         result
     }
     /// Called on a blocking worker after reservation. Does not acquire a model
@@ -616,6 +643,7 @@ impl<B: InferenceBackend + Send + 'static> TrustedInferenceSupervisor<B> {
             if active.generation_id!=generation_id{
                 return Err(SupervisorError::WrongGeneration);
             }
+            if active.image_request_digest.is_some(){return Err(SupervisorError::InvalidRequest)}
             active.cancellation.clone()
         };
         let _cleanup=GenerationCleanup{
@@ -665,6 +693,7 @@ impl<B: InferenceBackend + Send + 'static> TrustedInferenceSupervisor<B> {
             if active.generation_id != generation_id {
                 return Err(SupervisorError::WrongGeneration);
             }
+            if active.image_request_digest.is_some(){return Err(SupervisorError::InvalidRequest)}
             (active.cancellation.clone(), active.cache_scope.clone())
         };
         let _cleanup = GenerationCleanup {

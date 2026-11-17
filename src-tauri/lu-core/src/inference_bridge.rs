@@ -88,6 +88,9 @@ impl<B: InferenceBackend> InferenceBridge<B> {
     pub fn phase(&self) -> EnginePhase {
         self.host.phase()
     }
+    pub fn take_image_delivery_receipt(&mut self)->Option<crate::multimodal_http::ImageDeliveryReceipt>{
+        self.host.take_image_delivery_receipt()
+    }
     pub fn process_id(&self) -> Option<u32> {
         self.host.process_id()
     }
@@ -298,6 +301,11 @@ impl<B: InferenceBackend> InferenceBridge<B> {
                 || reference.mime_type != pinned.mime_type
                 || reference.sha256.as_slice() != pinned.sha256
                 || usize::try_from(reference.size_bytes).ok() != Some(pinned.bytes.len())
+                || {
+                    use sha2::{Digest,Sha256};
+                    let actual:[u8;32]=Sha256::digest(&pinned.bytes).into();
+                    actual!=pinned.sha256
+                }
             {
                 return Err(BridgeError::UnsupportedModality);
             }
