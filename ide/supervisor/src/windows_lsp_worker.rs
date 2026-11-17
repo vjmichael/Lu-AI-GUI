@@ -146,11 +146,23 @@ mod native_stderr_classification_tests {
     use super::*;
     #[test]
     fn native_exit_statuses_are_classified_without_paths_or_rights_changes() {
-        assert_eq!(classify_pipe_error(&io::Error::from_raw_os_error(109)), "closed_or_disconnected_pipe");
-        assert_eq!(classify_pipe_error(&io::Error::from_raw_os_error(5)), "host_pipe_access_denied");
+        assert_eq!(
+            classify_pipe_error(&io::Error::from_raw_os_error(109)),
+            "closed_or_disconnected_pipe"
+        );
+        assert_eq!(
+            classify_pipe_error(&io::Error::from_raw_os_error(5)),
+            "host_pipe_access_denied"
+        );
         assert_eq!(classify_pipe_error(&io::Error::from_raw_os_error(6)), "invalid_pipe_handle");
-        assert_eq!(classify_pipe_error(&io::Error::from_raw_os_error(87)), "invalid_pipe_parameter");
-        assert_eq!(classify_pipe_error(&io::Error::from_raw_os_error(123)), "other_win32_pipe_error");
+        assert_eq!(
+            classify_pipe_error(&io::Error::from_raw_os_error(87)),
+            "invalid_pipe_parameter"
+        );
+        assert_eq!(
+            classify_pipe_error(&io::Error::from_raw_os_error(123)),
+            "other_win32_pipe_error"
+        );
         assert_eq!(classify_native_exit(0xc0000135), "dependency_dll_missing");
         assert_eq!(
             classify_native_exit(0xc0000142),
