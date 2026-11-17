@@ -559,7 +559,16 @@ mod tests {
         body.extend_from_slice(b"0\r\n\r\n");
         body
     }
-    fn fixture(response: Vec<u8>, check_body: bool) -> (u16, thread::JoinHandle<()>) {
+    fn fixture(response:Vec<u8>,check_body:bool)->(u16,thread::JoinHandle<()>){
+        fixture_inspect(response,move|body|{
+            if check_body{
+                let value:serde_json::Value=serde_json::from_slice(body).unwrap();
+                assert_eq!(value["messages"][0]["content"][1]["type"],"image_url");
+            }
+        })
+    }
+    fn fixture_inspect(response:Vec<u8>,inspect:impl FnOnce(&[u8])+Send+'static)
+        ->(u16,thread::JoinHandle<()>){
         let l = TcpListener::bind("127.0.0.1:0").unwrap();
         let port = l.local_addr().unwrap().port();
         let handle = thread::spawn(move || {
@@ -585,14 +594,98 @@ mod tests {
             assert!(headers.contains("Authorization: Bearer "));
             let mut body = vec![0u8; len];
             reader.read_exact(&mut body).unwrap();
-            if check_body {
-                let value: serde_json::Value = serde_json::from_slice(&body).unwrap();
-                assert_eq!(value["messages"][0]["content"][1]["type"], "image_url");
-            }
+            inspect(&body);
             drop(reader);
             sock.write_all(&response).unwrap();
         });
         (port, handle)
+    }
+    fn distinct_images()->Vec<crate::multimodal_saved_turn::PinnedImage>{
+        [7u8,203,41,156].into_iter().map(|r|{
+            let mut bytes=Cursor::new(Vec::new());
+            DynamicImage::ImageRgb8(ImageBuffer::from_pixel(10,10,Rgb([r,17,91])))
+                .write_to(&mut bytes,ImageFormat::Png).unwrap();
+            crate::multimodal_saved_turn::admit_data_url(
+                &format!("data:image/png;base64,{}",STANDARD.encode(bytes.into_inner()))).unwrap()
+        }).collect()
+    }
+    #[test]
+    fn final_four_image_upload_preserves_exact_original_order_and_bytes(){
+        use crate::inference_host::ChatTurn;
+        let images=distinct_images();
+        let history=vec![ChatTurn{role:"assistant".into(),text:"Previous reply".into()}];
+        let prompt="Describe images in order.";
+        let body=crate::multimodal_saved_turn::build_structured_chat_request(prompt,&history,&images,128).unwrap();
+        // This independent socket listener compares the actual HTTP bytes
+        // received to the original admitted images, not to a generated body.
+        let original=images.clone();
+        let stream=b"data: {\"choices\":[{\"delta\":{\"content\":\"visible\"},\"finish_reason\":null}]}\n\ndata: {\"choices\":[{\"delta\":{\"content\":null},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n";
+        let (port,handle)=fixture_inspect(response(&[stream]),move|body|{
+            let value:serde_json::Value=serde_json::from_slice(body).unwrap();
+            assert_eq!(value["messages"][0]["content"],"Previous reply");
+            let parts=value["messages"][1]["content"].as_array().unwrap();
+            assert_eq!(parts.len(),5);assert_eq!(parts[0]["text"],prompt);
+            for (part,expected) in parts[1..].iter().zip(&original){
+                let raw=part["image_url"]["url"].as_str().unwrap()
+                    .strip_prefix("data:image/png;base64,").unwrap();
+                assert_eq!(STANDARD.decode(raw).unwrap(),expected.bytes);
+            }
+        });
+        let mut receipt=ImageDeliveryReceipt::new();
+        let result=generate_verified_image_body(port,&"ab".repeat(32),&body,prompt,
+            &history,&images,128,Duration::from_secs(10),||false,|_|Ok(()),&mut receipt);
+        handle.join().unwrap();result.unwrap();
+        assert_eq!(receipt.image_count,4);
+        assert_eq!(receipt.decoded_bytes,images.iter().map(|p|p.bytes.len()).sum::<usize>());
+        assert!(receipt.payload_verified&&receipt.upload_completed&&receipt.visible_answer&&receipt.stream_completed);
+        assert!(!receipt.worker_idle_verified,"socket fixture cannot prove actual llama worker custody");
+    }
+    #[test]
+    fn final_body_refuses_reorder_omission_altered_bytes_and_remote_url_before_socket(){
+        let images=distinct_images();
+        let body=crate::multimodal_saved_turn::build_structured_chat_request("Inspect",&[],&images,64).unwrap();
+        let value:serde_json::Value=serde_json::from_str(&body).unwrap();
+        let mut changed=Vec::new();
+        let mut reordered=value.clone();
+        reordered["messages"][0]["content"].as_array_mut().unwrap().swap(1,4);
+        changed.push(reordered);
+        let mut omitted=value.clone();
+        omitted["messages"][0]["content"].as_array_mut().unwrap().pop();
+        changed.push(omitted);
+        let mut wrong=value.clone();
+        wrong["messages"][0]["content"][1]["image_url"]["url"]=serde_json::json!("data:image/png;base64,AA==");
+        changed.push(wrong);
+        let mut remote=value;
+        remote["messages"][0]["content"][1]["image_url"]["url"]=serde_json::json!("https://example.invalid/x.png");
+        changed.push(remote);
+        for altered in changed{
+            let mut receipt=ImageDeliveryReceipt::new();
+            assert_eq!(generate_verified_image_body(1,&"ab".repeat(32),&altered.to_string(),"Inspect",
+                &[],&images,64,Duration::from_secs(1),||false,|_|Ok(()),&mut receipt).unwrap_err(),
+                "CP01_IMAGE_PAYLOAD_MISMATCH");
+            assert!(!receipt.payload_verified&&!receipt.upload_completed);
+        }
+    }
+    #[test]
+    fn partial_error_or_limit_and_no_visible_answer_never_pass_image_stream(){
+        let cases:[(&[u8],&str);4]=[
+            (b"data: {\"choices\":[{\"delta\":{\"content\":\"partial\"},\"finish_reason\":null}]}\n\ndata: {\"choices\":[{\"delta\":{},\"finish_reason\":\"length\"}]}\n\ndata: [DONE]\n\n","CP01_IMAGE_OUTPUT_LIMIT"),
+            (b"data: {\"choices\":[{\"delta\":{\"content\":\"partial\"},\"finish_reason\":null}]}\n\ndata: {\"error\":{\"message\":\"private engine detail\"}}\n\n","CP01_IMAGE_BACKEND_EVENT"),
+            (b"data: {\"choices\":[{\"delta\":{\"content\":\"partial\"},\"finish_reason\":\"stop\"}]}\n\n","CP01_IMAGE_STREAM_INCOMPLETE"),
+            (b"data: {\"choices\":[{\"delta\":{\"content\":\"   \"},\"finish_reason\":null}]}\n\ndata: [DONE]\n\n","CP01_IMAGE_NO_VISIBLE_ANSWER"),
+        ];
+        let turn=turn();
+        let body=build_llama_chat_request(&turn,64).unwrap();
+        for (stream,expected) in cases{
+            let (port,handle)=fixture(response(&[stream]),true);
+            let mut record=ImageDeliveryReceipt::new();
+            assert!(generate_verified_image_body(port,&"ab".repeat(32),&body,&turn.prompt,&[],
+                &turn.images,64,Duration::from_secs(5),||false,|_|Ok(()),&mut record).is_err());
+            handle.join().unwrap();
+            assert_eq!(record.failure_code,Some(expected));
+            assert!(record.payload_verified&&record.upload_completed);
+            assert!(!record.worker_idle_verified);
+        }
     }
     #[test]
     fn browser_tool_stream_accepts_clean_stop_but_not_bare_done() {

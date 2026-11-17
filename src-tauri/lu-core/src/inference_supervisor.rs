@@ -920,6 +920,57 @@ mod tests {
         }
     }
     #[test]
+    fn image_reservation_rejects_reordering_and_reaps_ejected_session(){
+        struct ImageBackend{loaded:bool}
+        impl InferenceBackend for ImageBackend{
+            fn load(&mut self,_:&AdmittedModel)->Result<(),String>{self.loaded=true;Ok(())}
+            fn unload(&mut self){self.loaded=false;}
+            fn process_id(&self)->Option<u32>{self.loaded.then_some(12345)}
+            fn generate(&mut self,_:&GenerationRequest,_:&Cancellation,
+                _:&mut dyn FnMut(TokenChunk)->Result<(),EngineError>)->Result<(),String>{
+                panic!("image reservation must not fall through to text")
+            }
+            fn generate_with_images(&mut self,_:&GenerationRequest,_:&[PinnedImage],
+                _:&Cancellation,_:&mut dyn FnMut(TokenChunk)->Result<(),EngineError>)->Result<(),String>{
+                self.loaded=false;Err("simulated backend ejection".into())
+            }
+        }
+        use sha2::{Sha256,Digest};
+        let directory=std::env::temp_dir().join(format!("lu-image-reserve-{}-{:?}",
+            std::process::id(),std::thread::current().id()));
+        fs::create_dir_all(&directory).unwrap();
+        let mut file=fs::File::create(directory.join("model.gguf")).unwrap();
+        file.write_all(b"GGUF").unwrap();file.write_all(&3u32.to_le_bytes()).unwrap();
+        file.write_all(&1u64.to_le_bytes()).unwrap();file.write_all(&1u64.to_le_bytes()).unwrap();
+        drop(file);
+        let mut admission=ModelAdmissionManager::new();
+        let model=admission.admit(&directory,"model.gguf").unwrap().clone();
+        let sup=TrustedInferenceSupervisor::new("llama-cpu".into(),512,
+            vec![("model-1".into(),model)],||Ok(ImageBackend{loaded:false})).unwrap();
+        sup.load("model-1","session".into(),"load").unwrap();
+        // This is a reservation/backend-boundary fixture, NOT actual pixel
+        // inference. The independent HTTP test uses genuine decoded PNGs.
+        let images=(0u8..4).map(|i|PinnedImage{image_ref:format!("img-{i}"),
+            mime_type:"image/png",bytes:vec![i,9],sha256:Sha256::digest([i,9]).into()})
+            .collect::<Vec<_>>();
+        sup.reserve_generation_images("session","g-1","req-1","Inspect",32,&images).unwrap();
+        assert!(sup.run_reserved("session","g-1","req-1","Inspect".into(),32,|_|Ok(())).is_err());
+        let mut wrong=images.clone();wrong.swap(0,3);
+        assert_eq!(sup.run_reserved_images("session","g-1","req-1","Inspect".into(),32,wrong,|_|Ok(())),
+            Err(SupervisorError::InvalidRequest));
+        assert_eq!(sup.status().unwrap().generation_id,None);
+        sup.reserve_generation_images("session","g-2","req-2","Inspect",32,&images).unwrap();
+        let mut changed=images.clone();changed[0].bytes[0]^=1;
+        assert!(sup.run_reserved_images("session","g-2","req-2","Inspect".into(),32,changed,|_|Ok(())).is_err());
+        assert_eq!(sup.status().unwrap().session_id.as_deref(),Some("session"));
+        sup.reserve_generation_images("session","g-3","req-3","Inspect",32,&images).unwrap();
+        assert!(sup.run_reserved_images("session","g-3","req-3","Inspect".into(),32,images,|_|Ok(())).is_err());
+        assert_eq!(sup.status().unwrap().session_id,None);
+        sup.load("model-1","fresh".into(),"load-fresh").unwrap();
+        sup.unload("fresh","unload").unwrap();
+        fs::remove_dir_all(directory).unwrap();
+    }
+    #[test]
     fn authorized_model_and_cancellation_without_deadlock() {
         let directory = std::env::temp_dir().join(format!(
             "lu-supervisor-{}-{:?}",
