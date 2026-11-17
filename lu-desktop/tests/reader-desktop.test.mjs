@@ -6,6 +6,7 @@ import {buildSubmittedPrompt} from '../web/attachment_drafts.mjs';
 const ui=readFileSync(new URL('../web/main.jsx',import.meta.url),'utf8');
 const host=readFileSync(new URL('../src-tauri/src/lib.rs',import.meta.url),'utf8');
 const readerHost=readFileSync(new URL('../src-tauri/src/reader_desktop.rs',import.meta.url),'utf8');
+const documentInput=readFileSync(new URL('../web/document_attachment_input.mjs',import.meta.url),'utf8');
 
 test('native Reader file selection is host-mediated and file path never supplied by WebView',()=>{
   assert.ok(host.includes('async fn lu_reader_pick_document('));
@@ -25,7 +26,8 @@ test('Reader attachments remain in originating chat and respect the 16k prompt c
   assert.ok(ui.includes('pendingDrafts.current.set(targetChat,{...old,files:next})'));
   assert.ok(ui.includes('buildSubmittedPrompt(prior?.prompt'));
   assert.ok(ui.includes('MAX_TEXT_FILES'));
-  assert.ok(ui.includes('document.truncated'));
+  assert.ok(documentInput.includes('document.truncated'));
+  assert.ok(ui.includes('documentDraftItem(document)'));
   assert.ok(ui.includes('Read file'));
 });
 
@@ -118,7 +120,7 @@ test('Reader desktop exposes source-checked continuation and section selection',
   assert.match(host,/expected_source_sha256:Option<String>/);
   assert.match(host,/read_selected_bytes\(/);
   assert.match(host,/read_plain_text_window\(/);
-  assert.match(ui,/sourceSha256:document\.sourceSha256/);
+  assert.match(documentInput,/sourceSha256:document\.sourceSha256/);
   assert.match(ui,/expectedSourceSha256:continuation\?\.sourceSha256/);
   assert.match(ui,/Reader section/);
   assert.match(ui,/Continue Reader at/);

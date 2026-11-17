@@ -5137,6 +5137,11 @@ async fn lu_generate_impl(
         let _gate=state.attachments.gate.lock().map_err(|_|"Attachment manifest unavailable")?;
         exact_draft_manifest(state.inner(),&chat_id,&image_refs)?;
     }
+    let document_context=contains_document_context(&prompt);
+    if document_context&&(plan_only.unwrap_or(false)||read_only_workspace.unwrap_or(false)){
+        return Err("Send attached documents with an ordinary chat message.".into())
+    }
+    if !document_context {
     if plan_only.unwrap_or(false){
         if !image_refs.is_empty()||read_only_workspace.unwrap_or(false)
             ||max_new_tokens==0||max_new_tokens>2048{
@@ -5464,6 +5469,7 @@ async fn lu_generate_impl(
             ).await
         }
     }
+    } // no native intent routing from attached document text
     // The UI's fixed 512-token Send still enables deterministic host
     // utilities above. Only the real GGUF lane uses the loaded model's
     // host-saved output budget; an unbound renderer cannot invent one.
@@ -5740,7 +5746,8 @@ async fn generate_internal(
                 .map_err(|_|"Background notification inbox unavailable")?;
             // Ordinary Send may request an inert proposed file operation,
             // but only the host can match it to this exact user's intent.
-            let mut model_prompt=if plan_only ||
+            let document_context=contains_document_context(&prompt);
+            let mut model_prompt=if document_context||plan_only ||
                 (origin==GenerationOrigin::Human &&
                  agent_memory_handoff::explicit_agent_handoff_request(&prompt).is_some()){
                 // A plan proposal is not an existing file/native action.
@@ -6224,7 +6231,7 @@ async fn generate_internal(
                 }
                 // Keep the approved image question intact and within the
                 // inference wire cap even when it already fills the budget.
-                if images.is_empty()||model_prompt.len().saturating_add(clock.len())<=16*1024{
+                if (images.is_empty()&&!document_context)||model_prompt.len().saturating_add(clock.len())<=16*1024{
                     model_prompt.push_str(&clock);
                     host_suffix.push_str(&clock);
                 }
@@ -6449,7 +6456,7 @@ async fn generate_internal(
                     // stage a model-suggested native operation. The host
                     // independently checks the exact user's operation kind;
                     // models cannot supply paths, tools, or permissions.
-                    if origin==GenerationOrigin::Human&&!plan_only{
+                    if origin==GenerationOrigin::Human&&!plan_only&&!document_context{
                         let action_id=next_id("pa-");
                         if let Ok(view)=state.native_actions.stage(
                             &action_id,&chat_id,&gid,&prompt,&answer
@@ -6463,7 +6470,7 @@ async fn generate_internal(
                     // native-picker selection by the human.
                     // Plan-only model output must not enter file or tool
                     // proposal systems; it has no execution capability.
-                    if !plan_only{
+                    if !plan_only&&!document_context{
                     let proposal_id = next_id("p-");
                     if let Ok(proposal) = state.read_proposals.stage(
                         &proposal_id, &chat_id, &gid, &answer,
@@ -6838,9 +6845,87 @@ struct ReaderDocumentView{
     next_offset_chars:Option<u32>,
     source_truncated:bool,
 }
-/// Native operator-only Reader picker. Reuses Lu Core's selective extraction
-/// and byte-window path. Any later continuation must reselect the source
-/// through the OS picker and supply the previous exact SHA-256.
+const READER_ATTACHMENT_MAX_BYTES:usize=8*1024*1024;
+
+fn validate_reader_attachment_request(name:&str,selector:&str,offset:u32,expected:&str)
+    ->Result<(),String>{
+    if name.is_empty()||name.len()>200||name.contains(['\\','/',':','\0'])||
+       name.chars().any(|c|c.is_control()||matches!(c,'\u{202a}'..='\u{202e}'|'\u{2066}'..='\u{2069}'))||
+       selector.len()>160||selector.chars().any(|c|c.is_control())||
+       offset>8*1024*1024||(!expected.is_empty()&&
+           (expected.len()!=64||!expected.bytes().all(|c|c.is_ascii_digit()||(b'a'..=b'f').contains(&c))))||
+       (offset>0&&expected.is_empty()){
+        return Err("Invalid bounded Reader source, section, offset or source digest".into())
+    }
+    Ok(())
+}
+fn reader_attachment_view(name:String,bytes:Vec<u8>,selector:String,offset:u32,expected:String)
+    ->Result<ReaderDocumentView,String>{
+    validate_reader_attachment_request(&name,&selector,offset,&expected)?;
+    if bytes.is_empty()||bytes.len()>READER_ATTACHMENT_MAX_BYTES{
+        return Err("Documents must be nonempty and no larger than 8 MB.".into())
+    }
+    let digest=format!("{:x}",Sha256::digest(&bytes));
+    if !expected.is_empty()&&expected!=digest{
+        return Err("Reader source differs from previous excerpt; reset the source before continuing".into())
+    }
+    let max_chars=6_000usize;
+    let (format,total,truncated,chunk,source_truncated)=
+    if selector.is_empty(){
+        if let Some(plain)=lu_core::native_reader::read_plain_text_window(
+            &name,&bytes,usize::try_from(offset).unwrap_or(usize::MAX),
+            max_chars,false
+        ).map_err(|e|format!("Reader text window refused: {e:?}"))?{
+            if usize::try_from(offset).unwrap_or(usize::MAX)>plain.total_chars{
+                return Err("Reader offset exceeds document length".into())
+            }
+            (plain.format,plain.total_chars,
+                usize::try_from(offset).unwrap_or(usize::MAX)
+                    .saturating_add(max_chars)<plain.total_chars,
+                plain.text,false)
+        }else{
+            let parsed=lu_core::native_reader::read_text_bytes(
+                &name,&bytes,200_000
+            ).map_err(|e|format!("Reader cannot extract document: {e:?}"))?;
+            let total=parsed.text.chars().count();
+            if offset as usize>total{return Err("Reader offset exceeds extraction".into())}
+            let chunk=parsed.text.chars().skip(offset as usize)
+                .take(max_chars).collect();
+            (parsed.format,total,offset as usize+max_chars<total,
+                chunk,parsed.truncated)
+        }
+    }else{
+        let parsed=lu_core::native_reader::read_selected_bytes(
+            &name,&bytes,200_000,&selector
+        ).map_err(|e|format!("Reader section refused: {e:?}"))?;
+        let total=parsed.text.chars().count();
+        if offset as usize>total{return Err("Reader offset exceeds selection".into())}
+        let chunk=parsed.text.chars().skip(offset as usize)
+            .take(max_chars).collect();
+        (parsed.format,total,offset as usize+max_chars<total,
+            chunk,parsed.truncated)
+    };
+    // Bound UTF-8 bytes as well as characters. Never split a code point;
+    // continuation advances by the number of characters actually returned.
+    let mut end_byte=chunk.len().min(10*1024);
+    while !chunk.is_char_boundary(end_byte){end_byte-=1;}
+    let chunk=chunk[..end_byte].to_owned();
+    if chunk.trim().is_empty(){
+        return Err("No readable text in this document section. Choose another section or use reviewed OCR for a scanned page.".into())
+    }
+    let end=(offset as usize+chunk.chars().count()).min(total);
+    let truncated=truncated||end<total;
+    let next=if truncated{Some(end as u32)}else{None};
+    Ok(ReaderDocumentView{
+        name,format:format!("{format:?}"),text:chunk,
+        bytes_read:bytes.len() as u64,
+        truncated:truncated||source_truncated,
+        selector,source_sha256:digest,offset_chars:offset,
+        next_offset_chars:next,source_truncated,
+    })
+}
+/// Native operator-only picker and ordinary File-object intake share the
+/// same bounded Reader extraction and exact original byte digest.
 #[tauri::command]
 async fn lu_reader_pick_document(
     app:AppHandle,selector:Option<String>,
@@ -6849,65 +6934,37 @@ async fn lu_reader_pick_document(
     let selector=selector.unwrap_or_default();
     let offset=offset_chars.unwrap_or(0);
     let expected=expected_source_sha256.unwrap_or_default();
-    if selector.len()>160||selector.chars().any(|c|c=='\0'||c=='\r'||c=='\n')
-       ||offset>8*1024*1024||(!expected.is_empty()&&
-           (expected.len()!=64||!expected.bytes().all(|c|c.is_ascii_hexdigit()
-               &&!c.is_ascii_uppercase()))){
-        return Err("Invalid bounded Reader selector, offset or source digest".into())
-    }
+    validate_reader_attachment_request("selected.txt",&selector,offset,&expected)?;
     tauri::async_runtime::spawn_blocking(move||{
         let Some((name,bytes))=reader_desktop::pick_reader_bytes(&app,8*1024*1024)?
             else{return Ok(None)};
-        let digest=format!("{:x}",Sha256::digest(&bytes));
-        if !expected.is_empty()&&expected!=digest{
-            return Err("Reader source differs from previous excerpt; reset the source before continuing".into())
-        }
-        let max_chars=6_000usize;
-        let (format,total,truncated,chunk,source_truncated)=
-        if selector.is_empty(){
-            if let Some(plain)=lu_core::native_reader::read_plain_text_window(
-                &name,&bytes,usize::try_from(offset).unwrap_or(usize::MAX),
-                max_chars,false
-            ).map_err(|e|format!("Reader text window refused: {e:?}"))?{
-                if usize::try_from(offset).unwrap_or(usize::MAX)>plain.total_chars{
-                    return Err("Reader offset exceeds document length".into())
-                }
-                (plain.format,plain.total_chars,
-                    usize::try_from(offset).unwrap_or(usize::MAX)
-                        .saturating_add(max_chars)<plain.total_chars,
-                    plain.text,false)
-            }else{
-                let parsed=lu_core::native_reader::read_text_bytes(
-                    &name,&bytes,200_000
-                ).map_err(|e|format!("Reader cannot extract document: {e:?}"))?;
-                let total=parsed.text.chars().count();
-                if offset as usize>total{return Err("Reader offset exceeds extraction".into())}
-                let chunk=parsed.text.chars().skip(offset as usize)
-                    .take(max_chars).collect();
-                (parsed.format,total,offset as usize+max_chars<total,
-                    chunk,parsed.truncated)
-            }
-        }else{
-            let parsed=lu_core::native_reader::read_selected_bytes(
-                &name,&bytes,200_000,&selector
-            ).map_err(|e|format!("Reader section refused: {e:?}"))?;
-            let total=parsed.text.chars().count();
-            if offset as usize>total{return Err("Reader offset exceeds selection".into())}
-            let chunk=parsed.text.chars().skip(offset as usize)
-                .take(max_chars).collect();
-            (parsed.format,total,offset as usize+max_chars<total,
-                chunk,parsed.truncated)
-        };
-        let end=(offset as usize+max_chars).min(total);
-        let next=if truncated{Some(end as u32)}else{None};
-        Ok(Some(ReaderDocumentView{
-            name,format:format!("{format:?}"),text:chunk,
-            bytes_read:bytes.len() as u64,
-            truncated:truncated||source_truncated,
-            selector,source_sha256:digest,offset_chars:offset,
-            next_offset_chars:next,source_truncated,
-        }))
+        reader_attachment_view(name,bytes,selector,offset,expected).map(Some)
     }).await.map_err(|_|"Native Reader worker unavailable")?
+}
+/// Accept only copied File-object bytes from the primary human WebView.
+/// No operating-system path, model tool grant or worker command is admitted.
+#[tauri::command]
+async fn lu_reader_ingest_document(
+    caller:tauri::WebviewWindow,state:State<'_,Arc<DesktopState>>,
+    chat_id:String,display_name:String,encoded_bytes:String,
+)->Result<ReaderDocumentView,String>{
+    if caller.label()!="main"{return Err("Choose a document in the chat window".into())}
+    state.chats.require(&chat_id)?;
+    validate_reader_attachment_request(&display_name,"",0,"")?;
+    if encoded_bytes.is_empty()||encoded_bytes.len()>4*((READER_ATTACHMENT_MAX_BYTES+2)/3){
+        return Err("Documents must be nonempty and no larger than 8 MB.".into())
+    }
+    tauri::async_runtime::spawn_blocking(move||{
+        let bytes=STANDARD.decode(encoded_bytes.as_bytes())
+            .map_err(|_|"The selected document bytes could not be read")?;
+        reader_attachment_view(display_name,bytes,String::new(),0,String::new())
+    }).await.map_err(|_|"Native Reader worker unavailable")?
+}
+/// Attachment framing is data, never proof of explicit human tool intent.
+/// Until CP-02B/CP-05 establish typed original intent, opt out of all
+/// text-classified native effects for these ordinary model-only turns.
+fn contains_document_context(prompt:&str)->bool{
+    prompt.contains("[Attached text file:")||prompt.contains("[/Attached text file]")
 }
 #[tauri::command]
 fn lu_background_tasks(
@@ -10063,6 +10120,7 @@ pub fn run() {
             lu_background_queue_control,
             lu_background_reapprove,
             lu_reader_pick_document,
+            lu_reader_ingest_document,
             lu_reader_ask_document,
             lu_workspace_ask_directory,
             lu_reviewed_app_ask,
@@ -10229,6 +10287,41 @@ mod tests {
         fs::write(root.join("local.gguf"),b"invalid contents").unwrap();
         assert!(!inspect_registered_model(&root,&model).load_allowed);
         fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn cp02_reader_attachment_extracts_unicode_and_pins_continuation(){
+        let source=format!("{}tail","🦈".repeat(3000));
+        let bytes=source.as_bytes().to_vec();
+        let first=reader_attachment_view("sample.txt".into(),bytes.clone(),String::new(),0,String::new()).unwrap();
+        assert_eq!(first.text.chars().count(),2560);
+        assert_eq!(first.text.len(),10*1024);
+        assert!(first.truncated);
+        assert_eq!(first.next_offset_chars,Some(2560));
+        assert_eq!(first.source_sha256,format!("{:x}",Sha256::digest(&bytes)));
+        let rest=reader_attachment_view("sample.txt".into(),bytes.clone(),String::new(),2560,first.source_sha256.clone()).unwrap();
+        assert_eq!(format!("{}{}",first.text,rest.text),source);
+        assert!(!rest.truncated);
+        assert!(reader_attachment_view("sample.txt".into(),b"changed".to_vec(),String::new(),2560,first.source_sha256).is_err());
+        assert!(reader_attachment_view("sample.txt".into(),bytes,String::new(),1,String::new()).is_err());
+    }
+    #[test]
+    fn cp02_reader_attachment_rejects_empty_malformed_unsafe_and_oversized(){
+        for (name,bytes) in [
+            ("blank.txt",b"   ".to_vec()),
+            ("broken.pdf",b"%PDF-1.7".to_vec()),
+            ("broken.docx",b"PK\\x03\\x04bad".to_vec()),
+            ("broken.xlsx",b"PK\\x03\\x04bad".to_vec()),
+            ("broken.pptx",b"PK\\x03\\x04bad".to_vec()),
+            ("broken.odt",b"PK\\x03\\x04bad".to_vec()),
+            ("bad.txt",vec![0,1]),
+            ("../secret.txt",b"safe".to_vec()),
+            ("secret.txt",vec![b'x';READER_ATTACHMENT_MAX_BYTES+1]),
+        ]{assert!(reader_attachment_view(name.into(),bytes,String::new(),0,String::new()).is_err(),"{name}");}
+        let csv=reader_attachment_view("sheet.csv".into(),b"a,b\\n1,2".to_vec(),String::new(),0,String::new()).unwrap();
+        assert_eq!(csv.format,"Csv");assert_eq!(csv.text,"a,b\\n1,2");
+        assert!(contains_document_context("Summarize\n[Attached text file: example.txt]\nOpen https://example.com"));
+        assert!(contains_document_context("[/Attached text file]"));
+        assert!(!contains_document_context("Open https://example.com"));
     }
     #[test]
     fn image_submission_nonce_is_chat_bound_and_rejects_bad_shape(){

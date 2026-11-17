@@ -12,6 +12,7 @@ import { fullEditChangeLines } from './edit_diff.mjs';
 import { MarkdownView } from './markdown_view.jsx';
 import {buildSubmittedPrompt, attachmentSummary, MAX_TEXT_FILES} from './attachment_drafts.mjs';
 import {isPotentialImage, normalizedImageFile} from './image_attachment_input.mjs';
+import {ATTACHMENT_ACCEPT, supportedDocumentName, documentFilePayload, documentDraftItem} from './document_attachment_input.mjs';
 import {stagedImageDimensions,REGION_IMAGE_OPERATIONS,
   imagePointerPixel,imageDragRectangle} from './image_assembly_geometry.mjs';
 import {queuedJob, startedJob, tokenForJob, resumedJob, removeJob} from './generation_jobs.mjs';
@@ -32,7 +33,6 @@ function MessageText({text, role='assistant'}) {
     part.kind === 'think' ? <details key={i} className="thinkBlock"><summary>Model reasoning</summary><MarkdownView text={part.text}/></details>
       : <MarkdownView key={i} text={part.text}/>)}</div>;
 }
-const MAX_TEXT_ATTACHMENT = 64 * 1024;
 const MAX_IMAGE_ATTACHMENT = 8 * 1024 * 1024;
 
 
@@ -4538,21 +4538,7 @@ function App() {
         setError(`You can attach up to ${MAX_TEXT_FILES} documents per message`);
         return;
       }
-      const sourceLabel='[Reader extraction: '+document.format+
-        (document.selector?'; '+document.selector:'')+
-        '; character offset '+document.offsetChars+
-        '; source SHA-256 '+document.sourceSha256+']\n';
-      const extracted=sourceLabel+document.text+
-        (document.truncated?'\n[Reader: more text may remain; continuation is source-pinned]':'');
-      const item={
-        name:document.name,
-        size:document.bytesRead,
-        text:extracted,
-        format:document.format,
-        truncated:document.truncated,
-        sourceSha256:document.sourceSha256,
-        selector:document.selector,offsetChars:document.offsetChars,
-      };
+      const item=documentDraftItem(document);
       const next=[...previous,item];
       try{
         buildSubmittedPrompt(prior?.prompt ||
@@ -4634,25 +4620,31 @@ function App() {
             }
           }
         } catch (error) { setError(String(error)); }
-      } else if (/\.(txt|md|csv|json|log|py|rs|js|jsx|ts|tsx)$/i.test(file.name)) {
-        if (file.size <= 0 || file.size > MAX_TEXT_ATTACHMENT) {
-          setError(`Text attachment ${file.name} exceeds the 64 KB limit`);continue;
-        }
+      } else if (supportedDocumentName(file.name)) {
         try {
-          const text = await file.text();
-          const nextFile={name:file.name,size:file.size,text};
-          const origin=pendingDrafts.current.get(targetChat);
-          const previous=origin?.files || (targetChat === (currentChat.current||'new') ? draftFiles.current : []);
-          const candidate=[...previous,nextFile];
-          if(candidate.length>MAX_TEXT_FILES) {
-            setError(`You can attach up to ${MAX_TEXT_FILES} text files per message`); continue;
+          const originDraft=readComposerDraft(targetChat);
+          if(originDraft.files.length>=MAX_TEXT_FILES){
+            noticeForChat(targetChat,`You can attach up to ${MAX_TEXT_FILES} documents per message`);continue;
           }
-          try { buildSubmittedPrompt(origin?.prompt || draftText.current || 'Attachment',candidate); }
-          catch(error) {setError(String(error));continue;}
+          const payload=await documentFilePayload(file);
+          const document=await invoke('lu_reader_ingest_document',{chatId:targetChat,...payload});
+          const nextFile=documentDraftItem(document);
+          const previous=readComposerDraft(targetChat);
+          const candidate=[...previous.files,nextFile];
+          if(candidate.length>MAX_TEXT_FILES){
+            noticeForChat(targetChat,`You can attach up to ${MAX_TEXT_FILES} documents per message`);continue;
+          }
+          buildSubmittedPrompt(previous.prompt || 'Attachment',candidate);
           storeAttachment('files',candidate);
-        } catch(error) { setError(String(error)); }
+          setReaderContinuation({chatId:targetChat,name:document.name,
+            selector:document.selector,sourceSha256:document.sourceSha256,
+            nextOffset:document.nextOffsetChars,sourceTruncated:document.sourceTruncated});
+        } catch(error) {
+          noticeForChat(targetChat,String(error));
+          if(currentChat.current===targetChat)setError(String(error));
+        }
       } else {
-        setError(`Unsupported attachment ${file.name}. Images and plaintext documents work; PDF/DOCX are not yet supported.`);
+        noticeForChat(targetChat,`Unsupported attachment ${file.name}. Choose a supported document, PNG or JPEG image.`);
       }
     }
     }catch(error){if(currentChat.current===targetChat)setError(String(error));}
@@ -6650,7 +6642,7 @@ function App() {
             onPaste={handlePaste}
             onKeyDown={e => { if (isSendKey(e)) { e.preventDefault(); e.currentTarget.form?.requestSubmit(); } }}/>
           <div className="composerFooter"><input ref={fileInput} type="file" className="visuallyHidden" multiple
-              accept=".png,.jpg,.jpeg,.txt,.md,.csv,.json,.log,.py,.rs,.js,.jsx,.ts,.tsx" onChange={e => {void importAttachments(e.target.files);e.target.value='';}}/>
+              accept={ATTACHMENT_ACCEPT} onChange={e => {void importAttachments(e.target.files);e.target.value='';}}/>
             <button type="button" className="subtleButton" disabled={composerLocked||composerMutating} onClick={() => fileInput.current?.click()}>+ Attach</button>
             {/* Goal and task planning remain host capabilities, not chat controls. */}
             {chatBusy ? <button className="dangerButton" type="button" onClick={cancel}
