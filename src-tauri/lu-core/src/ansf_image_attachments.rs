@@ -65,6 +65,11 @@ pub(crate) fn initialize_image_attachment_schema(conn:&Connection)->Result<(),An
             turn_id TEXT,
             UNIQUE(session_id,turn_id,sha256)
          );
+         CREATE TABLE IF NOT EXISTS ansf_image_submission_rejections(
+            session_id TEXT NOT NULL REFERENCES ansf_sessions(id),
+            turn_id TEXT NOT NULL,
+            PRIMARY KEY(session_id,turn_id)
+         );
          CREATE INDEX IF NOT EXISTS ansf_image_attachment_manifest
            ON ansf_image_attachments(session_id,turn_id,seq);
          CREATE TRIGGER IF NOT EXISTS ansf_image_saved_no_update
@@ -100,7 +105,8 @@ pub(crate) fn read_manifest(conn:&Connection,chat:&str,turn:Option<&str>)
 /// renderer refs nor a concurrent change can silently omit/reorder an image.
 pub(crate) fn bind_draft(tx:&Transaction<'_>,chat:&str,turn:&str,entry:i64,
     expected:&[ImageAttachment])->Result<(),AnsfError>{
-    if !opaque(turn,"g-")||entry<=0||read_manifest(tx,chat,None)?.as_slice()!=expected{
+    if !opaque(turn,"g-")||entry<=0||image_submission_rejected(tx,chat,turn)?||
+        read_manifest(tx,chat,None)?.as_slice()!=expected{
         return Err(AnsfError::InvalidInput)
     }
     for a in expected{
@@ -141,7 +147,33 @@ fn read_saved(conn:&Connection,chat:&str,turn:&str)->Result<Vec<ImageAttachment>
     }
     Ok(manifest)
 }
+fn image_submission_rejected(conn:&Connection,chat:&str,turn:&str)->Result<bool,AnsfError>{
+    if !valid_chat(chat)||!opaque(turn,"g-"){return Err(AnsfError::InvalidInput)}
+    Ok(conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM ansf_image_submission_rejections WHERE session_id=?1 AND turn_id=?2)",
+        params![chat,turn],|r|r.get(0))?)
+}
 impl AnsfStore{
+    pub fn image_submission_rejected(&self,chat:&str,turn:&str)->Result<bool,AnsfError>{
+        let conn=self.conn.lock().map_err(|_|AnsfError::Locked)?;
+        image_submission_rejected(&conn,chat,turn)
+    }
+    /// Native terminal refusal and original admission are mutually exclusive.
+    /// A delayed repeat of a rejected nonce can never consume a newer draft.
+    pub fn reject_image_submission(&self,chat:&str,turn:&str)->Result<bool,AnsfError>{
+        if !valid_chat(chat)||!opaque(turn,"g-"){return Err(AnsfError::InvalidInput)}
+        let mut conn=self.conn.lock().map_err(|_|AnsfError::Locked)?;
+        let tx=conn.transaction()?;
+        let original:bool=tx.query_row(
+            "SELECT EXISTS(SELECT 1 FROM ansf_live_chat_events WHERE session_id=?1
+             AND kind='user' AND origin='host' AND user_turn_id=?2)",
+            params![chat,turn],|r|r.get(0))?;
+        if original{return Ok(false)}
+        tx.execute("INSERT OR IGNORE INTO ansf_image_submission_rejections(session_id,turn_id)
+            VALUES(?1,?2)",params![chat,turn])?;
+        tx.commit()?;
+        Ok(true)
+    }
     pub fn image_draft(&self,chat:&str)->Result<Vec<ImageAttachment>,AnsfError>{
         let conn=self.conn.lock().map_err(|_|AnsfError::Locked)?;
         read_manifest(&conn,chat,None)
@@ -293,6 +325,22 @@ mod tests{
         let mut bad=image(4);bad.attachment_id="../escape".into();
         assert!(book.admit_draft_image("chat",&bad).is_err());
         assert_eq!(book.image_draft("chat").unwrap(),vec![a,b]);
+    }
+    #[test]
+    fn refused_submission_cannot_later_consume_a_draft(){
+        let book=AnsfStore::in_memory().unwrap();
+        book.create_session("chat","ws","Chat").unwrap();
+        book.start_chapter("chat","Original").unwrap();
+        let a=image(1);let e=turn(5);
+        let gid=e.user_turn_id.as_deref().unwrap();
+        book.admit_draft_image("chat",&a).unwrap();
+        assert!(book.reject_image_submission("chat",gid).unwrap());
+        assert!(book.image_submission_rejected("chat",gid).unwrap());
+        assert!(book.append_host_chat_event_with_image_draft("chat",&e,&[a.clone()]).is_err());
+        assert_eq!(book.image_draft("chat").unwrap(),vec![a.clone()]);
+        let e2=turn(6);
+        book.append_host_chat_event_with_image_draft("chat",&e2,&[a]).unwrap();
+        assert!(!book.reject_image_submission("chat",e2.user_turn_id.as_deref().unwrap()).unwrap());
     }
     #[test]
     fn explicit_restore_is_all_or_nothing_and_never_restores_observations(){

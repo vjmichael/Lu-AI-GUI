@@ -170,7 +170,17 @@ pub struct HistoryWindowPage{
 }
 #[derive(Debug,Clone,Serialize)]
 #[serde(rename_all="camelCase")]
+pub struct HistoryImageAttachment{
+    pub image_ref:String,
+    pub name:String,
+    pub mime_type:String,
+    pub size:u64,
+    pub observed:bool,
+}
+#[derive(Debug,Clone,Serialize)]
+#[serde(rename_all="camelCase")]
 pub struct HistoryWindowEntry{
+    pub attachments:Vec<HistoryImageAttachment>,
     pub seq:i64,
     pub role:String,
     pub text:String,
@@ -180,7 +190,7 @@ pub struct HistoryWindowEntry{
 impl From<VisibleChatMessage> for HistoryWindowEntry{
     fn from(e:VisibleChatMessage)->Self{
         Self{seq:e.seq,role:e.role,text:e.text,
-            interrupted:e.interrupted,cancelled:e.cancelled}
+            interrupted:e.interrupted,cancelled:e.cancelled,attachments:Vec::new()}
     }
 }
 
@@ -1322,10 +1332,18 @@ impl ChatStore {
             if direction=="older"{entries.first().map(|e|e.seq)}
             else{entries.last().map(|e|e.seq)}
         }else{None};
-        Ok(HistoryWindowPage{
-            entries:entries.into_iter().map(Into::into).collect(),
-            next_cursor,has_more
-        })
+        let entries=entries.into_iter().map(|e|{
+            let mut row=HistoryWindowEntry::from(e);
+            if row.role=="user"{
+                row.attachments=book.image_manifest_for_visible_seq(chat_id,row.seq)
+                    .map_err(to_err)?.into_iter().map(|a|HistoryImageAttachment{
+                        image_ref:a.attachment_id,name:a.display_name,mime_type:a.media_type,
+                        size:a.bytes,observed:a.observed,
+                    }).collect();
+            }
+            Ok(row)
+        }).collect::<Result<Vec<_>,String>>()?;
+        Ok(HistoryWindowPage{entries,next_cursor,has_more})
     }
 
     /// Record only a specifically chosen CURRENT human ANSF original as a

@@ -1855,10 +1855,11 @@ fn image_submission_generation(chat:&str,nonce:&str)->Result<String,String>{
 struct ImageSubmissionStatus{
     generation_id:String,
     visible_seq:Option<i64>,
+    rejected:bool,
 }
 /// Exact original receipt, not a text match or an optimistic event. Missing
 /// original is NOT a claim that an unresolved invocation cannot still commit.
-fn image_submission_status(state:&DesktopState,chat_id:&str,submission_id:&str)
+fn image_submission_status(state:&DesktopState,chat_id:&str,submission_id:&str,settle_failure:bool)
     ->Result<ImageSubmissionStatus,String>{
     let _gate=state.attachments.gate.lock().map_err(|_|"Attachment manifest unavailable")?;
     let gid=image_submission_generation(chat_id,submission_id)?;
@@ -1869,12 +1870,21 @@ fn image_submission_status(state:&DesktopState,chat_id:&str,submission_id:&str)
         .map_err(|_|"Saved submission manifest unavailable")?.is_empty(){
         return Err("Saved submission has no image manifest".into())
     }
-    Ok(ImageSubmissionStatus{generation_id:gid,visible_seq:original.map(|(seq,_)|seq)})
+    if settle_failure&&original.is_none(){
+        // Under the same native gate as admission, install a durable refusal
+        // before reporting that it is safe to edit and start a new attempt.
+        book.reject_image_submission(chat_id,&gid)
+            .map_err(|_|"Submission refusal could not be saved")?;
+    }
+    let rejected=book.image_submission_rejected(chat_id,&gid)
+        .map_err(|_|"Submission receipt unavailable")?;
+    if rejected&&original.is_some(){return Err("Conflicting saved submission receipt".into())}
+    Ok(ImageSubmissionStatus{generation_id:gid,visible_seq:original.map(|(seq,_)|seq),rejected})
 }
 #[tauri::command]
 fn lu_image_submission_status(state:State<'_,Arc<DesktopState>>,chat_id:String,submission_id:String)
     ->Result<ImageSubmissionStatus,String>{
-    image_submission_status(state.inner(),&chat_id,&submission_id)
+    image_submission_status(state.inner(),&chat_id,&submission_id,false)
 }
 #[derive(Serialize)]
 #[serde(rename_all="camelCase")]
@@ -1895,7 +1905,7 @@ async fn lu_submit_image_turn(app:AppHandle,state:State<'_,Arc<DesktopState>>,
     if image_refs.is_empty(){return Err("An image submission requires an image".into())}
     let result=lu_generate(app,state,session_id,chat_id.clone(),prompt,image_refs,
         512,Some(false),Some(false),Some(submission_id.clone())).await;
-    let receipt=image_submission_status(&owner,&chat_id,&submission_id)?;
+    let receipt=image_submission_status(&owner,&chat_id,&submission_id,result.is_err())?;
     let (outcome,error)=match result{
         Ok(_)=>("completed",None),
         Err(error) if error.contains("Cancelled")||error.contains("Canceled")=>("cancelled",None),
@@ -5361,10 +5371,16 @@ async fn generate_internal(
         Some(id)=>image_submission_generation(&chat_id,id)?,
         None=>next_id("g-"),
     };
-    if submission_id.is_some()&&state.chats.require(&chat_id)?
-        .authenticated_chat_turn(&chat_id,&generation_id)
-        .map_err(|_|"Submission lookup unavailable")?.is_some(){
-        return Err("This message is already saved. Check the conversation before retrying.".into())
+    if submission_id.is_some(){
+        let book=state.chats.require(&chat_id)?;
+        if book.authenticated_chat_turn(&chat_id,&generation_id)
+            .map_err(|_|"Submission lookup unavailable")?.is_some(){
+            return Err("This message is already saved. Check the conversation before retrying.".into())
+        }
+        if book.image_submission_rejected(&chat_id,&generation_id)
+            .map_err(|_|"Submission lookup unavailable")?{
+            return Err("This submission was refused. Start a new message after checking the draft.".into())
+        }
     }
     let request_id = next_id("req-");
     let observed_engine_starts_before=state.engine_start_events.load(Ordering::Relaxed);
