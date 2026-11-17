@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "97771084acc152d0d2dea7cc41c5a1cfae357e24",
-  "trackedFileCount": 1075,
+  "sourceCommitBeforeLock": "fa063c82a5da5012c4a3d003082739f7706c68bd",
+  "trackedFileCount": 1076,
   "files": [
     {
       "path": ".github/pull_request_template.md",
@@ -688,6 +688,10 @@
       "blob": "854f86c673e72d6754118767be37471c38c017de"
     },
     {
+      "path": "docs/LU_CORE_DESIGN_PARITY_CP13_20261116.md",
+      "blob": "a42b1314d6c8e1fd00e2da44cd69a3767202b304"
+    },
+    {
       "path": "docs/LU_CORE_DESIGN_TRACE_CP13_20261116.md",
       "blob": "ca86a06d4a74484222b11ea69ef44841dba5b540"
     },
@@ -737,7 +741,7 @@
     },
     {
       "path": "docs/LU_DEVELOPMENT_LEDGER.md",
-      "blob": "4f831765c3d058e434bbb81c82c66a98347539c2"
+      "blob": "f8a1476db3b9872e3ea359fa4388e06f491e788b"
     },
     {
       "path": "docs/LU_E1_NATIVE_EVIDENCE_20261107.md",
