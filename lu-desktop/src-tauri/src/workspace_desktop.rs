@@ -211,12 +211,13 @@ fn explicit_workspace_path(prompt:&str)->Option<&str>{
     let mut found=None;
     for marker in [" in "," within "," under "," from "]{
         for (offset,_) in lower.match_indices(marker){
-            if let Some(path)=extract_tail(&input[offset+marker.len()..]){
-                if is_absolute_spelling(path){
-                    if found.is_some(){return None}
-                    found=Some(path);
-                }
-            }
+            let tail=input[offset+marker.len()..].trim();
+            // A malformed quoted absolute scope is ambiguous, even if a
+            // second valid scope appears later. Never select the last one.
+            if !is_absolute_spelling(tail.strip_prefix('"').unwrap_or(tail)){continue}
+            let path=extract_tail(tail)?;
+            if found.is_some(){return None}
+            found=Some(path);
         }
     }
     found
