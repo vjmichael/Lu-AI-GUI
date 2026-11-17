@@ -5,7 +5,7 @@
 use crate::ansf::{AnsfError,AnsfStore};
 use crate::ansf_artifact_links::{ArtifactLink,insert_artifact_link};
 use crate::multimodal_saved_turn::{MAX_IMAGES,MAX_IMAGE_BYTES,MAX_TOTAL_IMAGE_BYTES};
-use rusqlite::{params,Connection,Transaction};
+use rusqlite::{params,Connection,Transaction,OptionalExtension};
 
 #[derive(Debug,Clone,PartialEq,Eq)]
 pub struct ImageAttachment {
@@ -118,6 +118,29 @@ pub(crate) fn bind_draft(tx:&Transaction<'_>,chat:&str,turn:&str,entry:i64,
     if changed!=expected.len(){return Err(AnsfError::InvalidInput)}
     Ok(())
 }
+fn read_saved(conn:&Connection,chat:&str,turn:&str)->Result<Vec<ImageAttachment>,AnsfError>{
+    let entry:Option<i64>=conn.query_row(
+        "SELECT source_entry_id FROM ansf_live_chat_events WHERE session_id=?1
+         AND user_turn_id=?2 AND kind='user' AND origin='host'
+         AND source_entry_id IS NOT NULL",params![chat,turn],|r|r.get(0)).optional()?;
+    let entry=entry.ok_or(AnsfError::InvalidInput)?;
+    let manifest=read_manifest(conn,chat,Some(turn))?;
+    // Independently require the original entry's artifact index to agree.
+    // Observations must have no persisted ordinary attachment link.
+    for a in &manifest{
+        let linked:Option<(String,String,u64,String)>=conn.query_row(
+            "SELECT display_name,media_type,expected_bytes,expected_sha256
+             FROM ansf_artifact_links WHERE session_id=?1 AND entry_id=?2 AND artifact_id=?3",
+            params![chat,entry,a.attachment_id],
+            |r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?))).optional()?;
+        if a.observed {
+            if linked.is_some(){return Err(AnsfError::InvalidInput)}
+        }else if linked!=Some((a.display_name.clone(),a.media_type.clone(),a.bytes,a.sha256.clone())){
+            return Err(AnsfError::InvalidInput)
+        }
+    }
+    Ok(manifest)
+}
 impl AnsfStore{
     pub fn image_draft(&self,chat:&str)->Result<Vec<ImageAttachment>,AnsfError>{
         let conn=self.conn.lock().map_err(|_|AnsfError::Locked)?;
@@ -159,25 +182,18 @@ impl AnsfStore{
     }
     pub fn saved_image_manifest(&self,chat:&str,turn:&str)->Result<Vec<ImageAttachment>,AnsfError>{
         let conn=self.conn.lock().map_err(|_|AnsfError::Locked)?;
-        let original:bool=conn.query_row(
-            "SELECT EXISTS(SELECT 1 FROM ansf_live_chat_events
-             WHERE session_id=?1 AND user_turn_id=?2 AND kind='user'
-             AND origin='host' AND source_entry_id IS NOT NULL)",
-            params![chat,turn],|r|r.get(0))?;
-        if !original{return Err(AnsfError::InvalidInput)}
-        read_manifest(&conn,chat,Some(turn))
+        read_saved(&conn,chat,turn)
     }
     /// Scope a UI history read to the exact immutable visible original.
     pub fn image_manifest_for_visible_seq(&self,chat:&str,seq:i64)
         ->Result<Vec<ImageAttachment>,AnsfError>{
-        use rusqlite::OptionalExtension;
         let conn=self.conn.lock().map_err(|_|AnsfError::Locked)?;
         let turn:Option<String>=conn.query_row(
             "SELECT e.user_turn_id FROM ansf_live_chat_events e
              JOIN ansf_visible_chat v ON v.first_seq=e.seq AND v.session_id=e.session_id
              WHERE e.session_id=?1 AND e.seq=?2 AND e.kind='user' AND e.origin='host'
              AND e.user_turn_id IS NOT NULL",params![chat,seq],|r|r.get(0)).optional()?;
-        match turn{Some(turn)=>read_manifest(&conn,chat,Some(&turn)),None=>Ok(vec![])}
+        match turn{Some(turn)=>read_saved(&conn,chat,&turn),None=>Ok(vec![])}
     }
     /// Used only to reconcile unpublished/removed bytes in the host-private
     /// store. Unknown scope or unavailable database must never authorize deletion.
@@ -241,6 +257,20 @@ mod tests{
             assert_eq!(book.artifact_links_for_entry("chat-a",entry).unwrap().len(),2);
         }
         let _=std::fs::remove_file(db);
+    }
+    #[test]
+    fn aggregate_budget_and_invalid_identity_do_not_mutate_draft(){
+        let book=AnsfStore::in_memory().unwrap();
+        book.create_session("chat","ws","Chat").unwrap();
+        book.start_chapter("chat","Original").unwrap();
+        let mut a=image(1);a.bytes=MAX_IMAGE_BYTES as u64;
+        let mut b=image(2);b.bytes=MAX_IMAGE_BYTES as u64;
+        book.admit_draft_image("chat",&a).unwrap();
+        book.admit_draft_image("chat",&b).unwrap();
+        assert!(book.admit_draft_image("chat",&image(3)).is_err());
+        let mut bad=image(4);bad.attachment_id="../escape".into();
+        assert!(book.admit_draft_image("chat",&bad).is_err());
+        assert_eq!(book.image_draft("chat").unwrap(),vec![a,b]);
     }
     #[test]
     fn duplicate_limits_and_observe_taint_are_enforced(){

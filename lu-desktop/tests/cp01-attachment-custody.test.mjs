@@ -1,0 +1,38 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+const read=p=>readFileSync(new URL(p,import.meta.url),'utf8');
+const host=read('../src-tauri/src/lib.rs');
+const store=read('../src-tauri/src/attachment_store.rs');
+const chat=read('../src-tauri/src/ansf_chat_store.rs');
+const core=read('../../src-tauri/lu-core/src/ansf_image_attachments.rs');
+const events=read('../../src-tauri/lu-core/src/ansf_live_chat.rs');
+const ui=read('../web/main.jsx');
+test('CP01 native draft authority, order, bound original and queue admission',()=>{
+  assert.match(host,/exact_draft_manifest\(state.inner\(\),&chat_id,&image_refs\)/);
+  assert.match(host,/manifest.iter\(\).map\(\|a\|&a.attachment_id\).ne\(refs.iter\(\)\)/);
+  assert.match(host,/enqueue_with_class_committing\([\s\S]*?append_user_with_image_draft\(&chat_id,&generation_id,&prompt,&manifest\)/);
+  assert.match(chat,/append_host_chat_event_with_image_draft\(chat_id,&event,manifest\)/);
+  assert.match(events,/bind_draft\(&tx,session_id,event.user_turn_id/);
+  assert.match(core,/UPDATE ansf_image_attachments SET turn_id=\?2/);
+  assert.match(core,/saved image attachments are immutable/);
+});
+test('CP01 native external object and cold saved source integrity',()=>{
+  assert.match(store,/options.create_new\(true\).write\(true\)/);
+  assert.match(store,/file.sync_all\(\)/);
+  assert.match(store,/self.read\(chat,a\)/);
+  assert.match(store,/Sha256::digest\(&bytes\)/);
+  assert.match(core,/FROM ansf_artifact_links WHERE session_id=\?1 AND entry_id=\?2 AND artifact_id=\?3/);
+  assert.match(host,/saved_image_manifest\(&chat_id,&gid\)/);
+  assert.match(host,/Saved image changed while queued/);
+});
+test('CP01 no implicit image release and no private observation byte export',()=>{
+  const send=ui.slice(ui.indexOf('async function send(e)'),ui.indexOf('async function attachReaderDocument('));
+  assert.doesNotMatch(send,/invoke\('lu_release_image'/);
+  assert.match(ui,/invoke\('lu_release_image',\{chatId:targetChat,imageRef\}\)/);
+  assert.match(ui,/\{chatId:targetChat,dataUrl,displayName:file.name\}/);
+  assert.match(host,/a\.attachment_id==image_ref&&!a\.observed/);
+  assert.match(store,/if a.observed\|\|!matches\(a,p\)/);
+  assert.match(store,/approved_observation_never_writes_pixels_and_expires_on_restart/);
+  assert.match(core,/AND turn_id IS NULL/);
+});

@@ -12,8 +12,11 @@ test('P4 CPU-first Send pathways precede the sole model queue and remain model-f
   const cpuSection=desktop.slice(desktop.indexOf('async fn lu_generate('),
     desktop.indexOf('async fn generate_internal('));
   const p=cpuSection.indexOf('perf01_router::classify(');
-  const m=desktop.indexOf('.enqueue_with_class(&session_id, &chat_id, &generation_id');
-  assert.ok(p>=0 && m>=0,'native CPU classifier and host-bound model queue exist');
+  const modelSection=desktop.slice(desktop.indexOf('async fn generate_internal('));
+  const m=modelSection.indexOf('enqueue_with_class_committing(');
+  assert.ok(p>=0 && m>=0,'native CPU classifier and transactional host-bound human model queue exist');
+  assert.match(modelSection,/enqueue_with_class_committing\([\s\S]*?TurnClass::Foreground/);
+  assert.match(modelSection,/TurnClass::Background/);
   assert.match(cpuSection,/Route::CurrentChatCounts/);
   assert.match(cpuSection,/Route::CurrentChatLiteral/);
   assert.match(cpuSection,/Route::LocalModelStatus/);

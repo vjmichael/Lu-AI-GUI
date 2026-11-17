@@ -981,6 +981,7 @@ function App() {
   const currentChat = useRef(null);
   const pendingDrafts = useRef(new Map());
   const attachmentChatCreation = useRef(null);
+  const imageRefreshSequence = useRef(new Map());
   const draftText = useRef('');
   const draftImages = useRef([]);
   const draftFiles = useRef([]);
@@ -2688,7 +2689,10 @@ function App() {
   // are merely a cache. Ordinary saved draft bytes may be re-opened by
   // exact chat+opaque ref; private observations never return pixel URLs.
   async function refreshDraftImages(targetChat,extra=[]) {
+    const sequence=(imageRefreshSequence.current.get(targetChat)||0)+1;
+    imageRefreshSequence.current.set(targetChat,sequence);
     const manifest=await invoke('lu_image_attachments',{chatId:targetChat,visibleSeq:null});
+    if(imageRefreshSequence.current.get(targetChat)!==sequence)return null;
     const visible=targetChat===currentChat.current;
     const previous=visible?draftImages.current:(pendingDrafts.current.get(targetChat)?.images||[]);
     const cache=new Map([...previous,...extra].map(im=>[im.imageRef,im]));

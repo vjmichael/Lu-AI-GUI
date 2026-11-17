@@ -1630,7 +1630,7 @@ async fn lu_attach_projector(
 /// host binds the decoded bytes to one exact existing conversation draft;
 /// the renderer cannot select a path or reuse another chat's handle.
 #[tauri::command]
-fn lu_ingest_image_data_url(
+async fn lu_ingest_image_data_url(
     state: State<'_, Arc<DesktopState>>,
     chat_id:String,
     data_url:String,
@@ -1639,9 +1639,12 @@ fn lu_ingest_image_data_url(
     if data_url.len() > 11 * 1024 * 1024 || !data_url.starts_with("data:image/") {
         return Err("Unsupported or oversized image attachment".into());
     }
-    state.chats.require(&chat_id)?;
-    let pinned=admit_data_url(&data_url).map_err(|_|"Image could not be decoded")?;
-    register_draft_image(state.inner(),&chat_id,display_name.as_deref().unwrap_or("Image"),pinned,false)
+    let state=Arc::clone(state.inner());
+    tauri::async_runtime::spawn_blocking(move||{
+        state.chats.require(&chat_id)?;
+        let pinned=admit_data_url(&data_url).map_err(|_|"Image could not be decoded")?;
+        register_draft_image(&state,&chat_id,display_name.as_deref().unwrap_or("Image"),pinned,false)
+    }).await.map_err(|_|"Image admission worker unavailable")?
 }
 
 fn register_draft_image(state:&Arc<DesktopState>,chat_id:&str,display_name:&str,
@@ -1794,37 +1797,43 @@ fn resolve_draft_image(state:&DesktopState,chat:&str,id:&str)->Result<PinnedImag
 /// object is explicitly unavailable, not silently omitted. No arbitrary
 /// filesystem address or model grant is provided.
 #[tauri::command]
-fn lu_image_attachments(state:State<'_,Arc<DesktopState>>,chat_id:String,visible_seq:Option<i64>)
+async fn lu_image_attachments(state:State<'_,Arc<DesktopState>>,chat_id:String,visible_seq:Option<i64>)
     ->Result<Vec<ImageView>,String>{
-    let _gate=state.attachments.gate.lock().map_err(|_|"Attachment manifest unavailable")?;
-    let book=state.chats.require(&chat_id)?;
-    let manifest=match visible_seq{
-        Some(seq)=>book.image_manifest_for_visible_seq(&chat_id,seq),
-        None=>book.image_draft(&chat_id),
-    }.map_err(|_|"Attachment manifest unavailable")?;
-    Ok(manifest.iter().map(|a|{
-        let available=if a.observed{
-            visible_seq.is_none()&&state.attachments.observed_available(&chat_id,a)
-        }else{state.attachments.read(&chat_id,a).is_ok()};
-        ImageView::from_attachment(a,available)
-    }).collect())
+    let state=Arc::clone(state.inner());
+    tauri::async_runtime::spawn_blocking(move||{
+        let _gate=state.attachments.gate.lock().map_err(|_|"Attachment manifest unavailable")?;
+        let book=state.chats.require(&chat_id)?;
+        let manifest=match visible_seq{
+            Some(seq)=>book.image_manifest_for_visible_seq(&chat_id,seq),
+            None=>book.image_draft(&chat_id),
+        }.map_err(|_|"Attachment manifest unavailable")?;
+        Ok(manifest.iter().map(|a|{
+            let available=if a.observed{
+                visible_seq.is_none()&&state.attachments.observed_available(&chat_id,a)
+            }else{state.attachments.read(&chat_id,a).is_ok()};
+            ImageView::from_attachment(a,available)
+        }).collect())
+    }).await.map_err(|_|"Attachment read worker unavailable")?
 }
 
 /// Reopen only ordinary image bytes already owned by this exact draft or
 /// original visible message. Observe bytes are NEVER serialized to WebView.
 #[tauri::command]
-fn lu_read_image_attachment(state:State<'_,Arc<DesktopState>>,chat_id:String,
+async fn lu_read_image_attachment(state:State<'_,Arc<DesktopState>>,chat_id:String,
     image_ref:String,visible_seq:Option<i64>)->Result<String,String>{
-    let _gate=state.attachments.gate.lock().map_err(|_|"Attachment manifest unavailable")?;
-    let book=state.chats.require(&chat_id)?;
-    let manifest=match visible_seq{
-        Some(seq)=>book.image_manifest_for_visible_seq(&chat_id,seq),
-        None=>book.image_draft(&chat_id),
-    }.map_err(|_|"Attachment manifest unavailable")?;
-    let a=manifest.iter().find(|a|a.attachment_id==image_ref&&!a.observed)
-        .ok_or("Image is not available in this conversation")?;
-    let p=state.attachments.read(&chat_id,a)?;
-    Ok(format!("data:{};base64,{}",p.mime_type,STANDARD.encode(p.bytes)))
+    let state=Arc::clone(state.inner());
+    tauri::async_runtime::spawn_blocking(move||{
+        let _gate=state.attachments.gate.lock().map_err(|_|"Attachment manifest unavailable")?;
+        let book=state.chats.require(&chat_id)?;
+        let manifest=match visible_seq{
+            Some(seq)=>book.image_manifest_for_visible_seq(&chat_id,seq),
+            None=>book.image_draft(&chat_id),
+        }.map_err(|_|"Attachment manifest unavailable")?;
+        let a=manifest.iter().find(|a|a.attachment_id==image_ref&&!a.observed)
+            .ok_or("Image is not available in this conversation")?;
+        let p=state.attachments.read(&chat_id,a)?;
+        Ok(format!("data:{};base64,{}",p.mime_type,STANDARD.encode(p.bytes)))
+    }).await.map_err(|_|"Attachment read worker unavailable")?
 }
 
 /// A diagnostic snapshot can be polled while the blocking engine load runs.
@@ -5188,7 +5197,9 @@ async fn generate_internal(
 )->Result<String,String>{
     let (manifest,images,mut perf_trace,supervisor,generation_id,request_id,
         observed_engine_starts_before,ticket,position) = {
-    let _gate=state.attachments.gate.lock().map_err(|_|"Attachment manifest unavailable")?;
+    let _gate=if origin==GenerationOrigin::Human{
+        Some(state.attachments.gate.lock().map_err(|_|"Attachment manifest unavailable")?)
+    }else{None};
     let perf_turn_start=std::time::Instant::now();
     let manifest=if origin==GenerationOrigin::Human{
         exact_draft_manifest(&state,&chat_id,&image_refs)?
@@ -5237,10 +5248,16 @@ async fn generate_internal(
     let admission = match origin {
         GenerationOrigin::Human => state.generation_queue.enqueue_with_class_committing(
             &session_id, &chat_id, &generation_id, TurnClass::Foreground,
-            || state.chats.append_user_with_image_draft(&chat_id,&generation_id,&prompt,&manifest)
-                .map(|catalog_synced|{
-                    if !catalog_synced{perf_trace.catalog_reconciliation_required();}
-                })),
+            || {
+                if manifest.is_empty(){
+                    state.chats.append_user_with_turn_id(&chat_id,&generation_id,&prompt)
+                }else{
+                    state.chats.append_user_with_image_draft(&chat_id,&generation_id,&prompt,&manifest)
+                        .map(|catalog_synced|{
+                            if !catalog_synced{perf_trace.catalog_reconciliation_required();}
+                        })
+                }
+            }),
         GenerationOrigin::BackgroundTerminal => state.generation_queue.enqueue_with_class(
             &session_id, &chat_id, &generation_id, TurnClass::Background),
     };
@@ -5295,8 +5312,9 @@ async fn generate_internal(
                 let original=state.chats.require(&chat_id)?.saved_image_manifest(&chat_id,&gid)
                     .map_err(|_|"Saved attachment manifest unavailable")?;
                 if original!=manifest{return Err("Saved attachment manifest changed".into())}
+                if original.len()!=images.len(){return Err("Saved image membership changed".into())}
                 for (a,pinned) in original.iter().zip(&images){
-                    if state.attachments.read(&chat_id,a)?!=*pinned{
+                    if &state.attachments.read(&chat_id,a)?!=pinned{
                         return Err("Saved image changed while queued".into())
                     }
                 }

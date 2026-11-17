@@ -57,7 +57,11 @@ impl AttachmentStore{
             builder.mode(0o700);
         }
         match builder.create(&path){
-            Ok(())=>(),
+            Ok(())=>{
+                #[cfg(unix)]
+                fs::File::open(&ansf).and_then(|f|f.sync_all())
+                    .map_err(|_|"Attachment storage parent sync failed")?;
+            },
             Err(e) if e.kind()==std::io::ErrorKind::AlreadyExists=>(),
             Err(_)=>return Err("Attachment storage creation failed".into()),
         }
@@ -85,7 +89,7 @@ impl AttachmentStore{
         // file FlushFileBuffers through sync_all; NTFS crash behavior remains
         // a physical acceptance gate, not a claim of proven power-loss safety.
         #[cfg(unix)]
-        self.root.try_clone().and_then(|d|d.into_std_file().sync_all())
+        self.root.open(".").and_then(|d|d.sync_all())
             .map_err(|_|"Attachment directory sync failed")?;
         Ok(())
     }
@@ -188,7 +192,9 @@ impl AttachmentStore{
     /// is bounded and never claims undiscovered files have been reconciled.
     pub(crate) fn reconcile_orphans(&self,chats:&crate::chat_store::ChatStore){
         let Ok(entries)=self.root.entries() else{return};
-        for entry in entries.take(4096).flatten(){
+        for (index,result) in entries.take(4097).enumerate(){
+            if index==4096{eprintln!("LU_CP01_ORPHAN_SCAN_BOUNDED");break}
+            let Ok(entry)=result else{continue};
             let filename=entry.file_name();
             let Some(s)=filename.to_str() else{continue};
             let Some(parts)=s.strip_suffix(".blob") else{continue};
@@ -235,6 +241,37 @@ mod tests{
             fs::write(path.join("ansf/attachment-objects").join(name(&chat,&a.attachment_id).unwrap()),
                 vec![0u8;p.bytes.len()]).unwrap();
             assert!(store.read(&chat,&a).is_err());
+        }
+        fs::remove_dir_all(path).unwrap();
+    }
+    #[test]
+    fn orphan_reconciliation_retains_original_and_draft_objects(){
+        let path=std::env::temp_dir().join(crate::next_id("lu-cp01-orphan-"));
+        let p=png();
+        let (chat,keep,orphan,saved);
+        {
+            let chats=crate::chat_store::ChatStore::open(&path).unwrap();
+            chat=chats.create_chat().unwrap().chat_id;
+            let store=AttachmentStore::open(&path).unwrap();
+            let book=chats.require(&chat).unwrap();
+            saved=AttachmentStore::metadata(crate::next_id("img-"),"saved.png",&p,false);
+            store.write_new(&chat,&saved,&p).unwrap();
+            book.admit_draft_image(&chat,&saved).unwrap();
+            chats.append_user_with_image_draft(&chat,&crate::next_id("g-"),"Inspect", &[saved.clone()]).unwrap();
+
+            keep=AttachmentStore::metadata(crate::next_id("img-"),"keep.png",&p,false);
+            store.write_new(&chat,&keep,&p).unwrap();
+            book.admit_draft_image(&chat,&keep).unwrap();
+            orphan=AttachmentStore::metadata(crate::next_id("img-"),"orphan.png",&p,false);
+            store.write_new(&chat,&orphan,&p).unwrap();
+        }
+        {
+            let chats=crate::chat_store::ChatStore::open(&path).unwrap();
+            let store=AttachmentStore::open(&path).unwrap();
+            store.reconcile_orphans(&chats);
+            assert_eq!(store.read(&chat,&keep).unwrap(),p);
+            assert_eq!(store.read(&chat,&saved).unwrap(),p);
+            assert!(store.read(&chat,&orphan).is_err());
         }
         fs::remove_dir_all(path).unwrap();
     }
