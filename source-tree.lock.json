@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "48250a2e3280b3292e5ef1596c3d38c41a142961",
-  "trackedFileCount": 1069,
+  "sourceCommitBeforeLock": "69e231d4a9efa7527ba32b5e01a86582fdb49f72",
+  "trackedFileCount": 1074,
   "files": [
     {
       "path": ".github/pull_request_template.md",
@@ -696,6 +696,26 @@
       "blob": "89a395c6741616dda7fe3cb8f94eaa04781af776"
     },
     {
+      "path": "docs/LU_CORE_POLISH_CP00B_MODEL_TOOL_AUDIT_20261116.md",
+      "blob": "6ad978223a483442c26adc84736031dab99b193e"
+    },
+    {
+      "path": "docs/LU_CORE_POLISH_CP00C_SIMPLIFICATION_AUDIT_20261116.md",
+      "blob": "4f56497b3509f85794efce512f99845c4687ef16"
+    },
+    {
+      "path": "docs/LU_CORE_POLISH_CP00D_HISTORICAL_RECONCILIATION_20261116.md",
+      "blob": "0d076335d6447463f2b77bf8443714f300309f7f"
+    },
+    {
+      "path": "docs/LU_CORE_POLISH_CP00E_FUNCTIONAL_ACCEPTANCE_20261116.md",
+      "blob": "42778fbbce89c8586e7f568a6052ec28c1ba487f"
+    },
+    {
+      "path": "docs/LU_CORE_POLISH_CP00_CALL_GRAPH_20261116.md",
+      "blob": "8b1f61cd86ec3e4bbab9aff45e68c237ba618dac"
+    },
+    {
       "path": "docs/LU_CORE_SIDE_BRANCH_COMPARISONS_20261109.json",
       "blob": "a55cda9825ee6274a0c24583b4a923a12f0aec29"
     },
@@ -713,7 +733,7 @@
     },
     {
       "path": "docs/LU_DEVELOPMENT_LEDGER.md",
-      "blob": "938cc608d13af13b8a3b4593274d72b56779ef2f"
+      "blob": "860d8161175a55a2f59f77f5bba4c836fd9d44fd"
     },
     {
       "path": "docs/LU_E1_NATIVE_EVIDENCE_20261107.md",
