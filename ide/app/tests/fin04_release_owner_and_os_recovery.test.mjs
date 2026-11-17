@@ -61,11 +61,11 @@ test('OS-only interrupted-action recovery cannot silently clear original marker 
  assert.match(tauri,/async fn ide_debug_action_os_recovery\(/);
  assert.match(tauri,/FIN04REC_OPERATOR_DECLINED/);
  assert.match(backend,/pub fn record_action_os_recovery\(/);
- assert.match(backend,/verify_global_worker_quiescence\(prior_owner,&jobs\)/);
+ assert.match(backend,/verify_global_worker_quiescence\(\s*prior_owner,\s*&jobs\s*,?\s*\)/);
  assert.match(backend,/options\.create_new\(true\)\.write\(true\)/);
  assert.match(backend,/actionOutcome":"unknown_never_replay"/);
- assert.match(backend,/global_marker_cleared:false/);
- assert.match(backend,/post_command_result_independently_verified:false/);
+ assert.match(backend,/global_marker_cleared:\s*false/);
+ assert.match(backend,/post_command_result_independently_verified:\s*false/);
  assert.match(ui,/invoke\('ide_debug_action_os_recovery'/);
  assert.match(ui,/result\.originalActionReplayed!==false/);
 });

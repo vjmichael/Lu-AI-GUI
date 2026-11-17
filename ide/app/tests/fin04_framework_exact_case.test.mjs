@@ -10,7 +10,7 @@ const supervisor=readFileSync(new URL('../supervisor/src/lib.rs',root),'utf8');
 const build=readFileSync(new URL('src-tauri/src/build_backend.rs',root),'utf8');
 test('FIN04H native Tauri action is explicit and remains feature-gated',()=>{
   assert.match(host,/async fn ide_run_protected_framework_test_case\(/);
-  assert.match(host,/feature="native-multilang"/);
+  assert.match(host,/feature\s*=\s*"native-multilang"/);
   assert.match(host,/FIN04H_OS_FRAMEWORK_WORKER_NOT_INSTALLED/);
   assert.match(host,/ide_run_protected_framework_test_case,/);
 });
@@ -18,7 +18,7 @@ test('FIN04H reviewed symbol and sealed manifest gate precede worker authorizati
   assert.match(build,/pub fn run_selected_framework_case\(/);
   assert.match(build,/inspect_test_symbol_candidates/);
   assert.match(build,/FIN04H_ORIGINAL_MANIFEST_STALE/);
-  assert.match(build,/Some\(\(relative_path.to_owned\(\),expected_source_revision.to_owned\(\)\)\)/);
+  assert.match(build,/Some\(\(\s*relative_path\.to_owned\(\),\s*expected_source_revision\.to_owned\(\)\s*,?\s*\)\)/);
   assert.match(build,/exact_framework_case\(recipe_id\)\.is_some\(\)/);
 });
 test('FIN04H restricted selectors never become arbitrary executable recipes',()=>{

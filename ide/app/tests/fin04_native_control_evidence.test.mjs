@@ -32,7 +32,7 @@ test('FIN04 full foreign action chain is checked before project-specific redacti
  assert.match(inspectorLexical,/project_action_count=all\.len\(\)/);
  assert.match(inspectorLexical,/journal_chain_verified:true/);
  assert.match(inspectorLexical,/native_owner_event_live_verified:false,global_kernel_custody_accepted:false/);
- assert.match(inspectorLexical,/debugger_execution_authorized:false,replay_authorized:false/);
+ assert.match(inspectorLexical,/debugger_execution_authorized:\s*false,replay_authorized:\s*false/);
 });
 test('FIN04 read-only control candidate is not a DAP control or an OS grant',()=>{
  assert.match(native,/pub fn review_control_candidate/);
@@ -42,9 +42,9 @@ test('FIN04 read-only control candidate is not a DAP control or an OS grant',()=
  assert.match(native,/debugger_job_already_terminal/);
  assert.match(native,/fin01d_native_kernel_acceptance_not_proven/);
  assert.match(native,/one_use_execution_consent_not_granted/);
- assert.match(native,/execution_route_available:false/);
- assert.match(native,/debugger_execution_authorized:false/);
- assert.match(native,/replay_authorized:false/);
+ assert.match(native,/execution_route_available:\s*false/);
+ assert.match(native,/debugger_execution_authorized:\s*false/);
+ assert.match(native,/replay_authorized:\s*false/);
 });
 test('FIN04 native desktop exposes only review and audit commands from these changes',()=>{
  assert.match(handlers,/async fn ide_debug_control_evidence/);
@@ -72,13 +72,13 @@ test('FIN04 full original-action inventory blocks production admission across ev
  assert.match(inspectorLexical,/action_directory_fingerprint/);
  assert.match(inspectorLexical,/FIN04_ACTION_DIRECTORY_CHANGED_DURING_INSPECTION/);
  assert.match(inspectorLexical,/FIN04_ORIGINAL_DEBUG_SUPERVISOR_STATE_STALE/);
- assert.match(native,/let original_action_cleanup_required=/);
+ assert.match(native,/let original_action_cleanup_required\s*=/);
  assert.match(native,/action_evidence\.global_unresolved_action_required/);
  assert.match(native,/action_evidence\.global_os_cleanup_required/);
  assert.match(native,/orphaned_debug_action_required: original_action_cleanup_required/);
  assert.match(native,/FIN04_ORIGINAL_ACTION_OR_JOB_RECONCILIATION_REQUIRED/);
  assert.match(native,/FIN04_ACTION_RECOVERY_REQUIRED_INSIDE_GLOBAL_FENCE/);
- assert.match(native,/release_before_prepare_if_unchanged\(&own_before,&after\)/);
+ assert.match(native,/release_before_prepare_if_unchanged\(\s*&own_before,\s*&after\s*,?\s*\)/);
  assert.doesNotMatch(native,/let dangling_action_jobs: Vec<String> = Vec::new\(\)/);
 });
 test('FIN04 source candidate SHA binds original debugger and action journal identities',()=>{
@@ -87,10 +87,10 @@ test('FIN04 source candidate SHA binds original debugger and action journal iden
  assert.match(native,/audit\.original_debug_journal_sha256\.as_str\(\)/);
  assert.match(native,/audit\.action_manifest_sha256\.as_str\(\)/);
  assert.match(native,/FIN04_READ_ONLY_CONTROL_SOURCE_CHANGED/);
- assert.match(native,/original_debug_journal_sha256:audit\.original_debug_journal_sha256/);
- assert.match(native,/action_manifest_sha256:audit\.action_manifest_sha256/);
- assert.match(native,/global_action_cleanup_required:audit\.global_os_cleanup_required/);
- assert.match(native,/execution_route_available:false/);
+ assert.match(native,/original_debug_journal_sha256:\s*audit\.original_debug_journal_sha256/);
+ assert.match(native,/action_manifest_sha256:\s*audit\.action_manifest_sha256/);
+ assert.match(native,/global_action_cleanup_required:\s*audit\.global_os_cleanup_required/);
+ assert.match(native,/execution_route_available:\s*false/);
 });
 test('FIN04 web inspector rejects fabricated global flags and missing native journal digests',()=>{
  assert.match(ui,/typeof evidence\.globalOsCleanupRequired!=='boolean'/);

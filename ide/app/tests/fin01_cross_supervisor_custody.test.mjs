@@ -13,16 +13,16 @@ test('FIN01 build and debugger share the exact profile-wide cross-process admiss
  assert.match(shared,/fn sibling_rows/);
  assert.match(shared,/debug-fixture-receipts\.jsonl/);
  assert.match(shared,/build-job-receipts\.jsonl/);
- assert.match(build,/GlobalAdmissionFence\s*::acquire\(&self\.global_custody_profile,"build"\)/);
- assert.match(debug,/GlobalAdmissionFence\s*::acquire\(&self\.global_custody_profile,"debug"\)/);
+ assert.match(build,/GlobalAdmissionFence\s*::acquire\(\s*&self\.global_custody_profile,\s*"build"\s*,?\s*\)/);
+ assert.match(debug,/GlobalAdmissionFence\s*::acquire\(\s*&self\.global_custody_profile,\s*"debug"\s*,?\s*\)/);
  assert.match(backend,/mod global_native_custody;/);
 });
 test('FIN01 all terminal receipts required before global fence release',()=>{
  assert.match(shared,/pub fn release_if_terminal/);
  assert.match(shared,/durable_busy\(own\) \|\| durable_busy\(other\)/);
  assert.match(shared,/FIN01_GLOBAL_CUSTODY_NOT_RECONCILED/);
- assert.match(build,/global_fence\.release_if_terminal\(&own,&sibling\)/);
- assert.match(debug,/global_fence\.release_if_terminal\(&own,&sibling\)/);
+ assert.match(build,/global_fence\.release_if_terminal\(\s*&own,\s*&sibling\s*,?\s*\)/);
+ assert.match(debug,/global_fence\.release_if_terminal\(\s*&own,\s*&sibling\s*,?\s*\)/);
  assert.doesNotMatch(shared,/impl Drop for GlobalAdmissionFence/);
 });
 test('FIN01 installed UI readiness observes interrupted fence and other supervisor',()=>{
@@ -31,7 +31,7 @@ test('FIN01 installed UI readiness observes interrupted fence and other supervis
   assert.match(s,/sibling_rows\(/);
   assert.match(s,/other_custody\.recovery_required/);
  }
- assert.match(build,/global_worker_busy = global_worker_busy \|\|/);
+ assert.match(build,/global_worker_busy\s*=\s*global_worker_busy\s+\|\|/);
  assert.match(debug,/!other_custody\.worker_busy_or_unreconciled/);
 });
 
@@ -42,9 +42,9 @@ test('FIN01D all three original supervisors participate in admission and recover
  assert.match(shared,/lsp-job-receipts\.jsonl/);
  assert.match(shared,/debug-fixture-receipts\.jsonl/);
  assert.match(shared,/build-job-receipts\.jsonl/);
- assert.match(shared,/for \(id,_\) in DOMAINS/);
+ assert.match(shared,/for \(id,\s*_\) in DOMAINS/);
  assert.match(shared,/pub fn preflight_global_idle/);
- assert.match(lsp,/GlobalAdmissionFence\s*::acquire\(&self\.global_custody_profile,"lsp"\)/);
+ assert.match(lsp,/GlobalAdmissionFence\s*::acquire\(\s*&self\.global_custody_profile,\s*"lsp"\s*,?\s*\)/);
  assert.match(lsp,/global_admission: Mutex<Option<crate::global_native_custody::GlobalAdmissionFence>>/);
  assert.match(lsp,/fn release_global_if_terminal/);
  assert.match(lsp,/pub fn reconcile\(/);
@@ -52,7 +52,7 @@ test('FIN01D all three original supervisors participate in admission and recover
  assert.match(lsp,/reconcile_windows_interrupted_via_service/);
  assert.match(backend,/ide_lsp_recoverable_jobs,/);
  assert.match(backend,/ide_lsp_reconcile,/);
- assert.match(backend,/feature = "native-lsp"\)\)\]/);
+ assert.match(backend,/feature = "native-lsp"[\s,)]*\]/);
  assert.match(main,/LSP pending: \{fin01Recovery\.lspJournalPending\}/);
 });
 test('FIN01D no-worker denied admission releases only after unchanged original journal',()=>{
@@ -60,14 +60,14 @@ test('FIN01D no-worker denied admission releases only after unchanged original j
  assert.match(shared,/FIN01_NEW_JOURNAL_EVENT_BEFORE_ADMISSION_RELEASE/);
  for(const impl of [build,debug]){
   assert.match(impl,/preflight_global_idle\(/);
-  assert.match(impl,/release_before_prepare_if_unchanged\(&own_before,&after\)/);
+  assert.match(impl,/release_before_prepare_if_unchanged\(\s*&own_before,\s*&after\s*,?\s*\)/);
  }
- assert.match(lsp,/release_before_prepare_if_unchanged\(&own,&after\)/);
+ assert.match(lsp,/release_before_prepare_if_unchanged\(\s*&own,\s*&after\s*,?\s*\)/);
  assert.doesNotMatch(shared,/impl Drop for GlobalAdmissionFence/);
 });
 test('FIN01D no operator UI control can release a global marker from a journal count',()=>{
- assert.match(shared,/marker_removal_authorized:false/);
- assert.match(shared,/auto_retry_authorized:false/);
+ assert.match(shared,/marker_removal_authorized:\s*false/);
+ assert.match(shared,/auto_retry_authorized:\s*false/);
  assert.match(main,/Request native OS-only cleanup/);
  assert.match(lsp,/FIN01_LSP_RECOVERY_NOT_APPROVED/);
  assert.match(lsp,/FIN01_LSP_OS_RECOVERY_UNVERIFIED/);
@@ -87,12 +87,12 @@ test('FIN01D live LSP commands demand matching owner marker',()=>{
 test('FIN01D only original strictly pre-OS jobs receive no-worker cancellation',()=>{
  for(const code of [build,debug]){
   assert.match(code,/if result\.is_err\(\)/);
-  assert.match(code,/matches!\(state\.phase,JobPhase::Prepared\|JobPhase::Authorized\)/);
+  assert.match(code,/matches!\(\s*state\.phase,\s*JobPhase::Prepared\s*\|\s*JobPhase::Authorized\s*,?\s*\)/);
   assert.match(code,/self\.supervisor\.cancel_before_start\(&id\)/);
  }
- assert.match(lsp,/let mut admitted_this_call=false/);
- assert.match(lsp,/let mut prepared_this_call:Option<String>=None/);
- assert.match(lsp,/JobPhase::Prepared\|JobPhase::Authorized/);
+ assert.match(lsp,/let mut admitted_this_call\s*=\s*false/);
+ assert.match(lsp,/let mut prepared_this_call:\s*Option<String>\s*=\s*None/);
+ assert.match(lsp,/JobPhase::Prepared\s*\|\s*JobPhase::Authorized/);
  assert.match(lsp,/self\.supervisor\.cancel_before_start\(id\)/);
  assert.match(lsp,/no_active && admitted_this_call/);
  assert.match(shared,/release_if_terminal/);
@@ -102,8 +102,8 @@ const windows=source('../../supervisor/src/windows_worker.rs');
 const linux=source('../../supervisor/src/linux_worker.rs');
 test('FIN01D stale clearance must query real kernel objects, not renderer booleans',()=>{
  assert.match(shared,/pub fn clear_stale_marker_with_kernel_proof/);
- assert.match(shared,/verify_global_worker_quiescence\(owner_pid,&jobs\)/);
- assert.match(shared,/original_journals_sha256:baseline/);
+ assert.match(shared,/verify_global_worker_quiescence\(\s*owner_pid,\s*&jobs\s*,?\s*\)/);
+ assert.match(shared,/original_journals_sha256:\s*baseline/);
  assert.match(shared,/FIN01_JOURNAL_CHANGED_AFTER_KERNEL_WITNESS/);
  assert.match(shared,/FIN01_STALE_MARKER_CHANGED/);
  assert.match(shared,/FIN01_RECOVERY_AUDIT_SYNC_FAILED/);
@@ -123,7 +123,7 @@ test('FIN01D host requires physical dialog and never promotes replay authority',
  assert.match(backend,/FIN01_GLOBAL_RECOVERY_NOT_APPROVED/);
  assert.match(backend,/Verify kernel and clear only if empty/);
  assert.match(backend,/ide_fin01_clear_stale_marker,/);
- assert.match(shared,/replay_authorized:false,execution_authorized:false/);
+ assert.match(shared,/replay_authorized:\s*false,\s*execution_authorized:\s*false/);
  assert.match(main,/Request OS-verified stale-marker clearance/);
  assert.match(main,/FIN01_NATIVE_KERNEL_RECEIPT_UNTRUSTED/);
 });
@@ -137,5 +137,5 @@ test('FIN01D stale sidecar and final kernel recheck cannot become UI authority',
  assert.match(shared,/FIN01_FINAL_LINUX_KERNEL_CUSTODY_UNVERIFIED/);
  assert.match(shared,/FIN01_FINAL_JOURNAL_CHANGED/);
  assert.match(shared,/FIN01_STALE_MARKER_DIRECTORY_SYNC_FAILED/);
- assert.doesNotMatch(shared,/fn clear_stale_marker_with_kernel_proof[^]*?execution_authorized:true/);
+ assert.doesNotMatch(shared,/fn clear_stale_marker_with_kernel_proof[^]*?execution_authorized:\s*true/);
 });

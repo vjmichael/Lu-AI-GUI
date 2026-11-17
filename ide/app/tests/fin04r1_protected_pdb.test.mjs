@@ -80,7 +80,7 @@ test('post-command step requires newer OS/PDB stop; breakpoint ACK alone never v
 test('unknown interrupted results remain non-replay and distinct from physical human acceptance',()=>{
  assert.match(desktop,/record_action_os_recovery/);
  assert.match(desktop,/actionOutcome":"unknown_never_replay"/);
- assert.match(desktop,/post_command_result_independently_verified:false/);
- assert.match(desktop,/global_marker_cleared:false/);
- assert.match(desktop,/installed_app_accepted:false/);
+ assert.match(desktop,/post_command_result_independently_verified:\s*false/);
+ assert.match(desktop,/global_marker_cleared:\s*false/);
+ assert.match(desktop,/installed_app_accepted:\s*false/);
 });

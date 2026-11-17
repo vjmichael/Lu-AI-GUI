@@ -17,7 +17,7 @@ test('FIN03 stash save is a reviewed native one-file mutation, never a shell',()
 });
 test('FIN03 stash mutation has native OS dialog and default-deny feature',()=>{
  assert.match(cargo,/fin03-reviewed-stash = \[\]/);
- assert.match(commands,/if !cfg!\(feature="fin03-reviewed-stash"\)/);
+ assert.match(commands,/if !cfg!\(feature\s*=\s*"fin03-reviewed-stash"\)/);
  assert.match(commands,/FIN03_STASH_NATIVE_ACCEPTANCE_REQUIRED/);
  assert.match(commands,/title\("Lu IDE · One-use protected stash save"\)/);
  assert.match(commands,/FIN03_STASH_HUMAN_DENIED/);
