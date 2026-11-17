@@ -18,7 +18,7 @@ if str(AUDIT_DIR) not in sys.path:
 from verify_p05_owner_successor import (
     SCOPED_SOURCE_ONLY, ORIGINAL,
     compare_38_with_separate_scoped_source_dispositions,
-    verify_source_only_patch,
+    verify_source_only_patch, project_checked_out_wo6_source,
 )
 
 HISTORICAL_INVENTORY_GIT_BLOB = "5299b1ca6981f341d2855f549e567b8c2747dc13"
@@ -184,7 +184,8 @@ def checkout(root):
         raise Denied("source_only_review_is_linked")
     source_review = json.loads(scope_path.read_text(encoding="utf-8"))
     historical = {row["path"]: row["blobSha"] for row in inventory["requiredWorkflows"]}
-    compare_38_with_separate_scoped_source_dispositions(historical, blobs, source_review)
+    projected = project_checked_out_wo6_source(root, blobs)
+    compare_38_with_separate_scoped_source_dispositions(historical, projected, source_review)
     for path in SCOPED_SOURCE_ONLY:
         try:
             original_text = subprocess.run(
@@ -195,7 +196,10 @@ def checkout(root):
         except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
             raise Denied("source_only_historical_workflow_unavailable") from exc
         verify_source_only_patch(path, original_text, (root / path).read_text(encoding="utf-8"))
-    return classify(inventory, blobs)
+    result = classify(inventory, projected)
+    result["wo6CurrentSourceRepairVerified"] = True
+    result["wo6CurrentSourceRepairOwnerAuthorizationInferred"] = False
+    return result
 
 
 def main():

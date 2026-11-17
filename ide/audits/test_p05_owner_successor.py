@@ -3,10 +3,12 @@ import copy
 import json
 from pathlib import Path
 import unittest
+import subprocess
 from verify_p05_owner_successor import (
     EXPECTED, SCOPED_SOURCE_ONLY, Denied, compare_38_unchanged_and_replacements,
     compare_38_with_separate_scoped_source_dispositions,
-    verify_source_only_patch,
+    verify_source_only_patch, project_reviewed_wo6_current_source,
+    WO6_PATH, WO6_PRIOR_OWNER_BLOB, WO6_CURRENT_SOURCE_BLOB,
 )
 
 class OriginalAndOwnerSuccessor(unittest.TestCase):
@@ -137,6 +139,29 @@ class FiveAdditionalSourceOnlyTests(unittest.TestCase):
         bad_test = current.replace("      - name: Original installed test\n", "")
         with self.assertRaisesRegex(Denied, "p05_source_only_original_named_step_removed"):
             verify_source_only_patch(path, original, bad_test)
+
+class ReviewedWo6CurrentSourceTests(unittest.TestCase):
+    def test_exact_successor_delta_not_an_owner_grant(self):
+        root = Path(__file__).resolve().parents[2]
+        def get_blob(sha):
+            return subprocess.run(
+                ["git", "-C", str(root), "cat-file", "blob", sha],
+                check=True, capture_output=True, timeout=20,
+            ).stdout
+        prior = get_blob(WO6_PRIOR_OWNER_BLOB)
+        current = get_blob(WO6_CURRENT_SOURCE_BLOB)
+        observed = {WO6_PATH: WO6_CURRENT_SOURCE_BLOB}
+        projected = project_reviewed_wo6_current_source(observed, prior, current)
+        self.assertEqual(projected[WO6_PATH], WO6_PRIOR_OWNER_BLOB)
+        self.assertEqual(observed[WO6_PATH], WO6_CURRENT_SOURCE_BLOB)
+        for wrong in (current + b"\n", current.replace(b"actions: read", b"actions: write")):
+            with self.assertRaisesRegex(Denied, "p05_wo6_current_source_blob_not_exact"):
+                project_reviewed_wo6_current_source(observed, prior, wrong)
+        with self.assertRaisesRegex(Denied, "p05_wo6_current_source_blob_not_exact"):
+            project_reviewed_wo6_current_source(
+                {WO6_PATH: "f" * 40}, prior, current
+            )
+
 
 if __name__=="__main__":
     unittest.main()

@@ -190,6 +190,57 @@ def original_blob_sha(data: bytes) -> str:
     return hashlib.sha1(b"blob " + str(len(data)).encode() + b"\0" + data).hexdigest()
 
 
+# This is a separately reviewed current source repair of ONE previously
+# authorized successor, not a change to the owner's original eight approvals.
+# Exact byte normalization proves that only the reviewed source-pinned
+# transfer and Linux breakpoint test additions differ from that successor.
+WO6_PATH = ".github/workflows/ide-wo6-native-os-acceptance.yml"
+WO6_PRIOR_OWNER_BLOB = "ac7992aac3a9e17bda4d44d450bcd199d5a5d874"
+WO6_CURRENT_SOURCE_BLOB = "0c617c002bc86ccf702319d4515ebbb86bfe9262"
+WO6_SOURCE_ONLY_DELTAS = (
+    (b"      - 'ide/llvm18_owner/**'\n      - '.github/workflows/ide-dev04-5d5-owner-event-native.yml'\n", b""),
+    (b"    # Reuse the exact-head pinned LLVM build rather than rebuilding it or\n    # pretending the runner's unmodified LLVM is AppContainer-compatible.\n    # Only this consumer job may read the source workflow's artifacts.\n    permissions:\n      contents: read\n      actions: read\n    timeout-minutes: 180\n", b"    timeout-minutes: 60\n"),
+    (b"      - name: Admit the same-head source-pinned LLDB for real protected WO6\n        shell: pwsh\n        env:\n          GH_TOKEN: ${{ github.token }}\n        run: |\n          # Above stock runner probes are retained as diagnostics, not native\n          # acceptance. The original protected normal/cancel/PE/PDB and all\n          # independent SCM/Job assertions below use the reviewed repaired\n          # artifact. No binary from another source head is admitted.\n          & ide/llvm18_owner/Transfer-PinnedOwnerBundle.ps1 -Mode Receive\n", b""),
+    (b"          cargo test --manifest-path ide/host/Cargo.toml --features dev045d3-ci-oracle --lib ci_source_trap_launch\n", b""),
+)
+
+
+def project_reviewed_wo6_current_source(blobs, prior, current):
+    """Return a historical projection ONLY after verifying both exact blobs.
+
+    Keep the old classifier strict and never grant native/release/merge approval.
+    """
+    if (EXPECTED[WO6_PATH][1] != WO6_PRIOR_OWNER_BLOB
+            or blobs.get(WO6_PATH) != WO6_CURRENT_SOURCE_BLOB
+            or original_blob_sha(prior) != WO6_PRIOR_OWNER_BLOB
+            or original_blob_sha(current) != WO6_CURRENT_SOURCE_BLOB):
+        raise Denied("p05_wo6_current_source_blob_not_exact")
+    normalized = current
+    for added, before in WO6_SOURCE_ONLY_DELTAS:
+        if normalized.count(added) != 1:
+            raise Denied("p05_wo6_current_source_delta_not_exact")
+        normalized = normalized.replace(added, before, 1)
+    if normalized != prior:
+        raise Denied("p05_wo6_current_source_diff_not_exact")
+    projected = dict(blobs)
+    projected[WO6_PATH] = WO6_PRIOR_OWNER_BLOB
+    return projected
+
+
+def project_checked_out_wo6_source(root, blobs):
+    def read_blob(sha):
+        try:
+            return subprocess.run(
+                ["git", "-C", str(root), "cat-file", "blob", sha],
+                check=True, timeout=20, capture_output=True,
+            ).stdout
+        except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+            raise Denied("p05_wo6_source_blob_unavailable") from exc
+    return project_reviewed_wo6_current_source(
+        blobs, read_blob(WO6_PRIOR_OWNER_BLOB), read_blob(WO6_CURRENT_SOURCE_BLOB)
+    )
+
+
 def compare_38_unchanged_and_replacements(baseline, current):
     if len(baseline) != 38 or set(baseline) != set(current):
         raise Denied("p05_expected_exact_38_original_workflows")
@@ -273,7 +324,10 @@ def verify(root: Path):
     if scoped_path.is_symlink():
         raise Denied("p05_source_disposition_file_is_linked")
     scoped = json.loads(scoped_path.read_text(encoding="utf-8"))
-    result=compare_38_with_separate_scoped_source_dispositions(original,current,scoped)
+    projected = project_checked_out_wo6_source(root, current)
+    result=compare_38_with_separate_scoped_source_dispositions(original,projected,scoped)
+    result["wo6CurrentSourceRepairVerified"] = True
+    result["wo6CurrentSourceRepairOwnerAuthorizationInferred"] = False
     for path in SCOPED_SOURCE_ONLY:
         historical=git("show",ORIGINAL+":"+path)
         current_text=(root/path).read_text(encoding="utf-8")

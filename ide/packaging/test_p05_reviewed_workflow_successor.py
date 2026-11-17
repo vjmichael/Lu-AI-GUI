@@ -43,6 +43,8 @@ class OriginalP05VsCurrentSourceTests(unittest.TestCase):
     def test_exact_checked_out_source_matches_successor_not_historical(self):
         checked = checkout(ROOT)
         self.assertTrue(checked["reviewedCurrentGitSourceIdentitiesVerified"])
+        self.assertTrue(checked["wo6CurrentSourceRepairVerified"])
+        self.assertFalse(checked["wo6CurrentSourceRepairOwnerAuthorizationInferred"])
         prs = json.loads((PACK / "p05-pr-source-audit.json").read_text(encoding="utf-8"))
         original, _ = fixture()
         with self.assertRaisesRegex(HistoricalDenied,
