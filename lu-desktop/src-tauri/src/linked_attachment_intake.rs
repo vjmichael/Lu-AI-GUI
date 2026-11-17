@@ -343,4 +343,104 @@ mod tests{
         assert!(model_context(original,&[link]).is_err());
         fs::remove_dir_all(root).unwrap();
     }
+
+    /// End-to-end native file selection boundary (real fixture paths, not
+    /// a UI dialog), actual Reader/decoder, ANSF restart, and verified
+    /// multimodal HTTP serialization. Does not claim model semantics.
+    #[test]
+    fn cp02_mixed_original_documents_and_images_survive_restart_and_reach_verified_payload(){
+        use image::{DynamicImage,ImageBuffer,ImageFormat,Rgb};
+        use std::io::Cursor;
+        let root=std::env::temp_dir().join(next_id("lu-cp02-mixed-"));
+        let originals=root.join("originals");
+        let profile=root.join("profile");
+        fs::create_dir_all(&originals).unwrap();
+        let document=originals.join("日本語.txt");
+        let pdf=originals.join("Report.pdf");
+        let first=originals.join("red.png");
+        let last=originals.join("blue.jpg");
+        let marker="READER_ORIGINAL_88421";
+        fs::write(&document,marker).unwrap();
+        let stream=b"BT /F1 12 Tf 10 10 Td (PDF ORIGINAL 56119) Tj ET";
+        let mut pdf_bytes=b"%PDF-1.4\n1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n3 0 obj\n<< /Type /Page /Parent 2 0 R /Contents 4 0 R >>\nendobj\n".to_vec();
+        pdf_bytes.extend(format!("4 0 obj\n<< /Length {} >>\nstream\n",stream.len()).as_bytes());
+        pdf_bytes.extend(stream);
+        pdf_bytes.extend(b"\nendstream\nendobj\nxref\ntrailer\n<< /Root 1 0 R >>\nstartxref\n0\n%%EOF\n");
+        fs::write(&pdf,&pdf_bytes).unwrap();
+        fn encoded(format:ImageFormat,color:[u8;3])->Vec<u8>{
+            let mut out=Cursor::new(Vec::new());
+            DynamicImage::ImageRgb8(ImageBuffer::from_pixel(32,32,Rgb(color)))
+                .write_to(&mut out,format).unwrap();
+            out.into_inner()
+        }
+        let first_bytes=encoded(ImageFormat::Png,[220,10,10]);
+        let last_bytes=encoded(ImageFormat::Jpeg,[10,10,220]);
+        fs::write(&first,&first_bytes).unwrap();fs::write(&last,&last_bytes).unwrap();
+        let mut links=Vec::new();
+        for (path,selector) in [(&first,""),(&document,""),(&last,""),(&pdf,"page:1")]{
+            links.push(candidate(path,selector.into(),0,String::new()).unwrap().0);
+        }
+        let question="Inspect these originals in order.";
+        let (model_input,images)=model_context(question,&links).unwrap();
+        assert!(model_input.starts_with(question)&&model_input.contains(marker)&&model_input.contains("PDF ORIGINAL 56119"));
+        assert_eq!(images.len(),2);
+        assert_eq!(images[0].bytes,first_bytes);
+        assert_eq!(images[1].bytes,last_bytes);
+        assert!(!model_input.contains(originals.to_str().unwrap()));
+        let gid=next_id("g-");let chat;let other;
+        let refs:Vec<_>=links.iter().map(|a|a.attachment_id.clone()).collect();
+        {
+            let chats=ChatStore::open(&profile).unwrap();
+            let storage=attachment_store::AttachmentStore::open(&profile).unwrap();
+            chat=chats.create_chat().unwrap().chat_id;
+            other=chats.create_chat().unwrap().chat_id;
+            let book=chats.require(&chat).unwrap();
+            book.admit_linked_drafts(&chat,&links).unwrap();
+            let nonce=next_id("s-");
+            let snapshot=serde_json::json!({"submissionId":nonce,"prompt":question,
+                "submitted":question,"imageRefs":[],"linkedRefs":refs,"files":[]}).to_string();
+            book.stage_attachment_ui_submission(&chat,&gid,&snapshot,&[],&refs).unwrap();
+            assert!(chats.require(&other).unwrap().linked_draft(&other).unwrap().is_empty());
+            assert_eq!(book.linked_draft(&chat).unwrap(),links);
+            assert_eq!(fs::read_dir(profile.join("ansf/attachment-objects")).unwrap().count(),0);
+            drop(storage);
+        }
+        {
+            let chats=ChatStore::open(&profile).unwrap();
+            let book=chats.require(&chat).unwrap();
+            assert_eq!(book.image_ui_submission(&chat).unwrap().unwrap().0,gid);
+            assert_eq!(book.linked_draft(&chat).unwrap(),links);
+            chats.append_user_with_attachment_drafts(&chat,&gid,question,&[],&links).unwrap();
+            assert!(book.clear_image_ui_submission(&chat,&gid).unwrap());
+            assert!(book.linked_draft(&chat).unwrap().is_empty());
+        }
+        {
+            let chats=ChatStore::open(&profile).unwrap();
+            let book=chats.require(&chat).unwrap();
+            assert_eq!(chats.trusted_user_turn_text(&chat,&gid).as_deref(),Some(question));
+            let saved=book.saved_linked_manifest(&chat,&gid).unwrap();
+            assert_eq!(saved,links);
+            assert!(chats.require(&other).unwrap().saved_linked_manifest(&other,&gid).is_err());
+            let (actual,actual_images)=model_context(question,&saved).unwrap();
+            assert_eq!(actual,model_input);assert_eq!(actual_images,images);
+            let body=lu_core::multimodal_saved_turn::build_structured_chat_request(&actual,&[],&actual_images,128).unwrap();
+            let receipt=lu_core::multimodal_http::verify_final_image_body(&body,&actual,&[],&actual_images,128).unwrap();
+            assert_eq!(receipt,(2,first_bytes.len()+last_bytes.len()));
+            let json:serde_json::Value=serde_json::from_str(&body).unwrap();
+            let parts=json["messages"][0]["content"].as_array().unwrap();
+            assert_eq!(parts.len(),3);
+            assert_eq!(parts[0]["text"].as_str(),Some(model_input.as_str()));
+            assert_eq!(STANDARD.decode(parts[1]["image_url"]["url"].as_str().unwrap().strip_prefix("data:image/png;base64,").unwrap()).unwrap(),first_bytes);
+            assert_eq!(STANDARD.decode(parts[2]["image_url"]["url"].as_str().unwrap().strip_prefix("data:image/jpeg;base64,").unwrap()).unwrap(),last_bytes);
+            let moved=originals.join("moved.txt");
+            fs::rename(&document,&moved).unwrap();assert!(model_context(question,&saved).is_err());
+            fs::rename(&moved,&document).unwrap();assert!(model_context(question,&saved).is_ok());
+            fs::write(&document,"X".repeat(marker.len())).unwrap();assert!(model_context(question,&saved).is_err());
+            assert_eq!(book.saved_linked_manifest(&chat,&gid).unwrap(),saved);
+            assert_eq!(fs::read_dir(profile.join("ansf/attachment-objects")).unwrap().count(),0);
+            assert_eq!(fs::read_dir(&originals).unwrap().count(),4);
+            assert_eq!(fs::read(&pdf).unwrap(),pdf_bytes);
+        }
+        fs::remove_dir_all(root).unwrap();
+    }
 }
