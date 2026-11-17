@@ -1,13 +1,13 @@
 # Exact-source transport between two existing native CI workflows.
 # This is artifact custody only, NOT a native debugger or release pass.
 [CmdletBinding()]
-param([Parameter(Mandatory=$true)][ValidateSet('Export','Receive')][string]$Mode)
+param([Parameter(Mandatory=$true)][ValidateSet('Export','Receive','SelfTest')][string]$Mode)
 $ErrorActionPreference='Stop'
 $llvmPin='3b5b5c1ec4a3095ab096dd780e84d7ab81f3d7ff'
 $head=(& git rev-parse HEAD).Trim()
-if ($LASTEXITCODE -ne 0 -or $head -notmatch '^[0-9a-f]{40}$' -or
+if ($Mode -ne 'SelfTest' -and ($LASTEXITCODE -ne 0 -or $head -notmatch '^[0-9a-f]{40}$' -or
     $env:GITHUB_REPOSITORY -ne 'vjmichael/Lu-AI-GUI' -or
-    $env:GITHUB_ACTIONS -ne 'true') {
+    $env:GITHUB_ACTIONS -ne 'true')) {
     throw 'DENIED: exact repository/source-bound CI transport required'
 }
 $patcherSha=(Get-FileHash -LiteralPath 'ide/llvm18_owner/apply_llvm18_owner_hook.py' -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -33,12 +33,60 @@ function Inventory([string]$root) {
         }
         if ($file.Length -le 0 -or $file.Length -gt 256MB) { throw 'DENIED: native artifact per-file bound' }
         $total += $file.Length
-        [ordered]@{path=$relative;bytes=$file.Length;sha256=(Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant()}
+        [pscustomobject][ordered]@{path=$relative;bytes=$file.Length;sha256=(Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant()}
     })
     if ($total -gt 512MB) { throw 'DENIED: native artifact total bound' }
     $unique=@($entries | Group-Object -Property { $_.path.ToLowerInvariant() })
     if ($unique.Count -ne $entries.Count) { throw 'DENIED: native artifact case-folded alias' }
     return @($entries | Sort-Object -Property path)
+}
+# A ZIP's traversal order is not its identity. OrderedDictionary on export and
+# PSCustomObject on JSON import can sort differently. Bind each exact ordinal
+# path to its own byte length and hash instead of comparing positions.
+function Assert-Inventory([object[]]$actual,[object[]]$expected) {
+    if ($actual.Count -ne $expected.Count) { throw 'DENIED: native artifact file count changed' }
+    $remaining=[System.Collections.Generic.Dictionary[string,object]]::new([StringComparer]::Ordinal)
+    $folded=[System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+    foreach ($entry in $actual) {
+        if (!$folded.Add($entry.path)) { throw 'DENIED: native artifact case-folded alias' }
+        $remaining.Add($entry.path,$entry)
+    }
+    foreach ($entry in $expected) {
+        if ($entry.path -isnot [string] -or !$remaining.ContainsKey($entry.path)) {
+            throw 'DENIED: native artifact missing, duplicate or changed path'
+        }
+        $measured=$remaining[$entry.path]
+        if (($entry.bytes -isnot [int] -and $entry.bytes -isnot [long]) -or
+            $entry.bytes -ne $measured.bytes) {
+            throw 'DENIED: native artifact length changed'
+        }
+        if ($entry.sha256 -isnot [string] -or $entry.sha256 -cnotmatch '^[0-9a-f]{64}$' -or
+            $entry.sha256 -cne $measured.sha256) {
+            throw 'DENIED: native artifact SHA256 changed'
+        }
+        [void]$remaining.Remove($entry.path)
+    }
+    if ($remaining.Count -ne 0) { throw 'DENIED: native artifact unlisted paths' }
+}
+function RequireInventoryDenial([object[]]$actual,[object[]]$expected) {
+    $denied=$false
+    try { Assert-Inventory $actual $expected } catch { $denied=$true }
+    if (!$denied) { throw 'DENIED: transport negative test accepted altered inventory' }
+}
+if ($Mode -eq 'SelfTest') {
+    $a=[pscustomobject][ordered]@{path='bin/a.exe';bytes=12L;sha256=('a'*64)}
+    $b=[pscustomobject][ordered]@{path='provenance/b.cpp';bytes=20L;sha256=('b'*64)}
+    $actual=@($a,$b)
+    $reordered=@((@($b,$a) | ConvertTo-Json -Depth 3 | ConvertFrom-Json))
+    Assert-Inventory $actual $reordered
+    RequireInventoryDenial $actual @($a)
+    RequireInventoryDenial $actual @($a,$a)
+    RequireInventoryDenial $actual @($a,[pscustomobject]@{path='Provenance/b.cpp';bytes=20L;sha256=('b'*64)})
+    RequireInventoryDenial $actual @($a,[pscustomobject]@{path=$b.path;bytes=21L;sha256=$b.sha256})
+    RequireInventoryDenial $actual @($a,[pscustomobject]@{path=$b.path;bytes=$b.bytes;sha256=('c'*64)})
+    RequireInventoryDenial @($a,[pscustomobject]@{path='BIN/A.EXE';bytes=12L;sha256=$a.sha256}) @($a,$b)
+    Write-Host 'LLVM18_EXACT_INVENTORY_ORDER_AND_TAMPER_SELFTEST=PASS_NOT_NATIVE_ACCEPTANCE'
+    exit 0
 }
 function RequireBundle([string]$root) {
     # Inventory FIRST: no reparse file or root may be parsed or hashed.
@@ -129,13 +177,6 @@ if ($manifest.schema -cne 'lu.ide.llvm18.transport.v1' -or $manifest.repo -cne $
 }
 RequireBundle $root
 $actual=@(Inventory $root)
-$expected=@($manifest.files | Sort-Object -Property path)
-if ($actual.Count -ne $expected.Count) { throw 'DENIED: native artifact file count changed' }
-for ($i=0; $i -lt $actual.Count; $i++) {
-    if ($actual[$i].path -cne $expected[$i].path -or $actual[$i].bytes -ne $expected[$i].bytes -or
-        $actual[$i].sha256 -cne $expected[$i].sha256) {
-        throw 'DENIED: native artifact bytes or paths changed'
-    }
-}
+Assert-Inventory $actual @($manifest.files)
 Add-Content $env:GITHUB_ENV "LU_IDE_WO6_DAP_BUNDLE=$root"
 Write-Host 'LLVM18_EXACT_HEAD_NATIVE_TRANSPORT=VERIFIED_NOT_KERNEL_ACCEPTANCE'

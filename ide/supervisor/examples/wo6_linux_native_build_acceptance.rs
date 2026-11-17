@@ -388,6 +388,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 thread::sleep(Duration::from_millis(30));
             }
             if stopped.is_none() || !threads || !stack {
+                #[cfg(all(
+                    target_arch = "x86_64",
+                    debug_assertions,
+                    feature = "dev045d3-ci-oracle"
+                ))]
+                dap.trace_ci_source_stop_timeout();
+                eprintln!(
+                    "WO6_PROJECT_DEBUG_TIMEOUT phase={:?} stopped={} threads={} stack={}",
+                    dap.phase(),
+                    stopped.is_some(),
+                    threads,
+                    stack
+                );
                 return Err("DENIED: real project debug stop/stack absent".into());
             }
             // Unlike D2's adapter-only PC claim, this requires a genuine

@@ -34,7 +34,7 @@ use windows_sys::Win32::{
         Threading::{
             GetProcessId, GetProcessIdOfThread, OpenProcess, OpenThread,
             QueryFullProcessImageNameW, WaitForSingleObject, PROCESS_QUERY_INFORMATION,
-            PROCESS_QUERY_LIMITED_INFORMATION, THREAD_GET_CONTEXT,
+            PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_SYNCHRONIZE, THREAD_GET_CONTEXT,
             THREAD_QUERY_LIMITED_INFORMATION,
         },
     },
@@ -337,7 +337,7 @@ pub(crate) fn verify_debug_port_and_owned_parent(
     }
     let target = Owned::from_win32(unsafe {
         OpenProcess(
-            PROCESS_QUERY_INFORMATION | PROCESS_QUERY_LIMITED_INFORMATION,
+            PROCESS_QUERY_INFORMATION | PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_SYNCHRONIZE,
             0,
             module.pid,
         )
@@ -454,8 +454,11 @@ fn from_wide(buffer: &[u16]) -> Result<String, SupervisorError> {
     String::from_utf16(&buffer[..end]).map_err(|_| denied())
 }
 fn query_executable(pid: u32) -> Result<(Owned, String), SupervisorError> {
-    let process =
-        Owned::from_win32(unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid) })?;
+    // WaitForSingleObject requires SYNCHRONIZE even with a zero timeout.
+    // Keep the handle query/wait-only; do not request process mutation rights.
+    let process = Owned::from_win32(unsafe {
+        OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_SYNCHRONIZE, 0, pid)
+    })?;
     if unsafe { WaitForSingleObject(process.0, 0) } != WAIT_TIMEOUT {
         return Err(denied());
     }
@@ -654,6 +657,12 @@ pub(crate) fn observe_job_module(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn live_query_handle_has_required_wait_right() {
+        let (process, image) = query_executable(std::process::id()).unwrap();
+        assert!(!image.is_empty());
+        assert_eq!(unsafe { WaitForSingleObject(process.0, 0) }, WAIT_TIMEOUT);
+    }
     #[test]
     fn missing_real_lldb_handle_can_never_attest_event_owner() {
         let fake = WindowsLoadedModuleWitness {

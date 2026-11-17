@@ -364,7 +364,19 @@ impl DapGateway {
             .session
             .ci_configure_fixed_source_breakpoint()
             .map_err(protocol_denied)?;
+        trace_dap("fixed_source_breakpoint_requested");
         self.send(&frame)
+    }
+    #[cfg(all(
+        target_os = "linux",
+        target_arch = "x86_64",
+        debug_assertions,
+        feature = "dev045d3-ci-oracle"
+    ))]
+    pub(crate) fn trace_ci_source_stop_timeout(&mut self) {
+        if let Some(process) = self.process.as_mut() {
+            process.trace_native_fault("fixed_project_source_stop_timeout");
+        }
     }
     pub(crate) fn configuration_needed(&self) -> bool {
         self.session.configuration_needed()

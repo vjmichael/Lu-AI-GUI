@@ -73,6 +73,8 @@ jobs:
             [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path (Join-Path 'ide/llvm18_owner' $script)).Path,[ref]$tokens,[ref]$errors) | Out-Null
             if ($errors.Count -ne 0) { throw 'DENIED: pinned LLVM native script syntax invalid' }
           }
+          & ide/llvm18_owner/Transfer-PinnedOwnerBundle.ps1 -Mode SelfTest
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: exact inventory order/tamper self-test failed before LLVM' }
           & ide/llvm18_owner/Test-PinnedOwnerWindows.ps1 -PreflightOnly
           if ($LASTEXITCODE -ne 0) { throw 'DENIED: original source preflight failed before LLVM' }
       - name: Stage exact reviewed offline Windows SDK and MSVC toolchain

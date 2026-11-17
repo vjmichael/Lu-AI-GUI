@@ -234,6 +234,7 @@ struct LinuxLspProcess {
     stdin: ChildStdin,
     stdout: ChildStdout,
     debug_stderr: Option<ChildStderr>,
+    debug_stderr_reports: usize,
     group: Cgroup,
     released: bool,
 }
@@ -258,6 +259,32 @@ fn kernel_limit_hit(path: &Path, key: &str) -> &'static str {
     }
 }
 impl LinuxLspProcess {
+    // A traced adapter can block on a full stderr pipe before its next DAP
+    // event. Drain a bounded amount per native poll; only fixed diagnostic
+    // categories leave this process, and the report count is bounded.
+    fn drain_debug_stderr(&mut self) {
+        let Some(stderr) = &mut self.debug_stderr else {
+            return;
+        };
+        let fd = stderr.as_raw_fd();
+        for _ in 0..8 {
+            if !poll_fd(fd, libc::POLLIN | libc::POLLHUP, 0).unwrap_or(false) {
+                break;
+            }
+            let mut bytes = [0u8; 2048];
+            let amount = unsafe { libc::read(fd, bytes.as_mut_ptr().cast(), bytes.len()) };
+            if amount <= 0 {
+                break;
+            }
+            if self.debug_stderr_reports < 8 {
+                eprintln!(
+                    "PROTECTED_LINUX_DAP_STDERR_CLASS={}",
+                    classify_dap_child_failure(&bytes[..amount as usize])
+                );
+                self.debug_stderr_reports += 1;
+            }
+        }
+    }
     fn trace_dap_native_failure(&mut self, stage: &'static str) {
         if !cfg!(debug_assertions)
             || std::env::var_os("LU_IDE_E2_NATIVE_TRACE").as_deref()
@@ -348,6 +375,7 @@ impl RestrictedLspProcess for LinuxLspProcess {
         if limit == 0 || limit > 16 * 1024 {
             return Err(io::ErrorKind::InvalidInput.into());
         }
+        self.drain_debug_stderr();
         let timeout = i32::try_from(timeout.as_millis().min(1000)).unwrap_or(1000);
         let fd = self.stdout.as_raw_fd();
         if !poll_fd(fd, libc::POLLIN | libc::POLLHUP, timeout)? {
@@ -548,6 +576,7 @@ pub fn start_linux_lsp(
         stdin,
         stdout,
         debug_stderr,
+        debug_stderr_reports: 0,
         group,
         released: false,
     };
@@ -794,6 +823,7 @@ fn start_linux_dap_inner(
         stdin,
         stdout,
         debug_stderr,
+        debug_stderr_reports: 0,
         group,
         released: false,
     };
@@ -833,8 +863,10 @@ fn start_linux_dap_inner(
 ))]
 pub const WO6_CI_SOURCE_TRAP_RS: &str = concat!(
     "fn main() {\n",
-    "    let value = std::hint::black_box(7u64);\n",
-    "    println!(\"fixed WO6 isolated job {}\", value);\n",
+    // An actual non-inlined machine instruction at the fixed line avoids
+    // accepting a resolved breakpoint on a black_box inline call site.
+    "    unsafe { std::arch::asm!(\"nop\", options(nomem, nostack, preserves_flags)); }\n",
+    "    println!(\"fixed WO6 isolated job\");\n",
     "}\n"
 );
 
@@ -933,6 +965,15 @@ impl LinuxDapSession {
     ))]
     pub fn ci_configure_fixed_source_breakpoint(&mut self) -> Result<(), SupervisorError> {
         self.gateway.ci_configure_fixed_source_breakpoint()
+    }
+    #[cfg(all(
+        target_os = "linux",
+        target_arch = "x86_64",
+        debug_assertions,
+        feature = "dev045d3-ci-oracle"
+    ))]
+    pub fn trace_ci_source_stop_timeout(&mut self) {
+        self.gateway.trace_ci_source_stop_timeout();
     }
     pub fn configuration_needed(&self) -> bool {
         self.gateway.configuration_needed()
