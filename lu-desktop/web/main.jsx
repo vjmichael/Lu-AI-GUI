@@ -4257,6 +4257,13 @@ function App() {
       const result=await invoke('lu_submit_image_turn',{sessionId,chatId:target,prompt:attempt.submitted,
         imageRefs:attempt.snapshot.images.map(i=>i.imageRef),submissionId:attempt.nonce});
       const decision=receiptDecision(attempt,result?.receipt);
+      if(decision==='saved'&&result.outcome==='completed'&&
+         result.diagnosticRef&&result.receipt.generationId===attempt.generationId){
+        // An awaited exact native response is a renderer receipt, not a
+        // DOM paint or durable readback claim. Diagnostics never delay Send.
+        void invoke('lu_cp01_reply_observed',{chatId:target,submissionId:attempt.nonce,
+          generationId:attempt.generationId,diagnosticRef:result.diagnosticRef}).catch(()=>false);
+      }
       if(decision==='saved'){
         await admitSavedImageAttempt(target,attempt,result.receipt);
         if(result.outcome!=='completed'){

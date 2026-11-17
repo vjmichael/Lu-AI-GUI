@@ -238,6 +238,25 @@ fn has_ancestor(
 pub fn localize_normal_turn(
     trace: &proto::DiagnosticTrace,
 ) -> Result<DiagnosticFinding, DiagnosticWireError> {
+    localize_path(trace, NORMAL_TURN)
+}
+
+/// The current desktop persists the original user inside native queue
+/// admission and persists the assistant before returning IPC. These are
+/// deliberately not the ordering of the historical renderer-first route.
+/// Never infer a screen render from a successful host response.
+pub fn localize_transactional_turn(
+    trace: &proto::DiagnosticTrace,
+) -> Result<DiagnosticFinding, DiagnosticWireError> {
+    let path: Vec<_> = [4, 19, 2, 7, 5, 8, 9, 12, 10, 11, 13]
+        .into_iter().map(stage_detail).collect();
+    localize_path(trace, &path)
+}
+
+fn localize_path(
+    trace: &proto::DiagnosticTrace,
+    path: &[StageSpec],
+) -> Result<DiagnosticFinding, DiagnosticWireError> {
     validate_diagnostic_trace(trace)?;
     let attempt = trace.events.last().map(|event| event.attempt).unwrap_or(1);
     let events: Vec<_> = trace
@@ -342,7 +361,7 @@ pub fn localize_normal_turn(
 
     let mut confirmed = "none";
     let mut confirmed_sequence = 0u64;
-    for (index, stage) in NORMAL_TURN.iter().enumerate() {
+    for (index, stage) in path.iter().enumerate() {
         let stage_events: Vec<_> = events
             .iter()
             .filter(|event| event.stage == stage.value && confirms_stage(event))
@@ -359,7 +378,7 @@ pub fn localize_normal_turn(
         let unlinked_checkpoint = !stage_events.is_empty();
         // A later confirmed event with an earlier missing stage means the
         // trace is incomplete or miscorrelated, not a proven skipped action.
-        let later_observed = NORMAL_TURN[index + 1..].iter().any(|next| {
+        let later_observed = path[index + 1..].iter().any(|next| {
             events
                 .iter()
                 .any(|event| event.stage == next.value && confirms_stage(event))

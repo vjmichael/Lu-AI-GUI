@@ -2,6 +2,8 @@
 //! No model prompt, raw paths, private source text, environment dump, or
 //! hypothetical GPU/prefill/token-rate measurements are persisted here.
 use serde::Serialize;
+use crate::causal_diagnostic::{CausalProgress,Checkpoint};
+use lu_core::{diagnostic_contract,diagnostic_localization,wire::proto};
 use std::{
     collections::VecDeque,
     sync::Mutex,
@@ -39,6 +41,12 @@ pub(crate) struct PerfReceipt {
     pub image_stage:Option<&'static str>,
     pub image_failure_code:Option<&'static str>,
     pub image_delivery:Option<lu_core::multimodal_http::ImageDeliveryReceipt>,
+    // Private transient correlation; the exposed finding has only fixed
+    // stage/region/category vocabulary and no trace reference.
+    #[serde(skip)]
+    cp01_trace:Option<CausalProgress>,
+    #[serde(skip_serializing_if="Option::is_none")]
+    pub cp01_finding:Option<diagnostic_localization::DiagnosticFinding>,
     pub queue_wait_ms:Option<u64>,
     pub context_assembly_ms:Option<u64>,
     pub model_dispatch_to_first_chunk_ms:Option<u64>,
@@ -88,6 +96,7 @@ fn base(chat_id:&str,generation_id:&str,route:&str,reason_code:&str,
         model_ref:None,backend_family:None,context_limit_tokens:None,
         queue_published:None,admitted_image_count:None,catalog_reconciliation_required:false,
         image_stage:None,image_failure_code:None,image_delivery:None,
+        cp01_trace:None,cp01_finding:None,
         queue_wait_ms:None,context_assembly_ms:None,
         model_dispatch_to_first_chunk_ms:None,
         turn_to_first_chunk_ms:None,turn_to_first_webview_forward_ms:None,
@@ -104,7 +113,8 @@ pub(crate) struct PerfLedger {
     recent:Mutex<VecDeque<PerfReceipt>>,
 }
 impl PerfLedger{
-    pub fn record(&self,row:PerfReceipt)->Result<(),String>{
+    pub fn record(&self,mut row:PerfReceipt)->Result<(),String>{
+        row.refresh_cp01_finding();
         // Never print raw source content; performance is a diagnostic,
         // not an authority record or proof of verified task completion.
         let mut q=self.recent.lock().map_err(|_|"Perf telemetry lock unavailable")?;
@@ -115,6 +125,25 @@ impl PerfLedger{
     pub fn exact_turn(&self,chat_id:&str,generation_id:&str)->Result<Option<PerfReceipt>,String>{
         let q=self.recent.lock().map_err(|_|"Perf telemetry lock unavailable")?;
         Ok(q.iter().rev().find(|v|v.chat_id==chat_id&&v.generation_id==generation_id).cloned())
+    }
+    pub fn exact_causal_turn(&self,chat_id:&str,generation_id:&str,trace_ref:&str)
+        ->Option<PerfReceipt>{
+        let q=self.recent.try_lock().ok()?;
+        q.iter().rev().find(|row|row.chat_id==chat_id&&row.generation_id==generation_id
+            &&row.cp01_trace.as_ref().is_some_and(|t|t.trace_ref()==trace_ref)).cloned()
+    }
+    // Reports are observational only. Never let a stale attempt mutate a
+    // newer row, and never block inference/cancellation on telemetry.
+    pub fn observe_cp01_reply(&self,chat_id:&str,generation_id:&str,trace_ref:&str)->bool{
+        let Ok(mut q)=self.recent.try_lock() else{return false};
+        let Some(row)=q.iter_mut().rev().find(|row|row.chat_id==chat_id&&
+            row.generation_id==generation_id&&row.terminal_state=="COMPLETED"&&
+            row.cp01_trace.as_ref().is_some_and(|t|t.trace_ref()==trace_ref))
+            else{return false};
+        let Some(trace)=row.cp01_trace.as_mut() else{return false};
+        let accepted=trace.observe(Checkpoint::ReplyObserved);
+        row.refresh_cp01_finding();
+        accepted
     }
     pub fn recent(&self,chat_id:&str,limit:usize)
         ->Result<Vec<PerfReceipt>,String>{
@@ -143,6 +172,25 @@ pub(crate) fn cpu_receipt(
     result
 }
 impl PerfReceipt {
+    fn refresh_cp01_finding(&mut self){
+        self.cp01_finding=self.cp01_trace.as_ref().and_then(|source|{
+            let trace=proto::DiagnosticTrace{
+                protocol_version:diagnostic_contract::DIAGNOSTIC_PROTOCOL_VERSION,
+                trace_ref:source.trace_ref().to_owned(),
+                dropped_events:source.dropped(),
+                events:source.observations().iter().enumerate().map(|(i,event)|
+                    proto::DiagnosticEvent{
+                        sequence:(i+1) as u64,parent_sequence:i as u64,
+                        stage:event.stage,outcome:event.outcome,
+                        // Host receipt time, including receipt of an explicit
+                        // renderer report; never a renderer clock estimate.
+                        elapsed_millis:event.elapsed_ms,clock_domain:2,
+                        failure_code:event.failure_code,attempt:1,clock_epoch:1,
+                    }).collect(),
+            };
+            diagnostic_localization::localize_transactional_turn(&trace).ok()
+        });
+    }
     pub(crate) fn with_engine_start_events(mut self, before:u64,after:u64)->Self{
         self.observed_engine_starts_during_turn=
             Some(after.saturating_sub(before));
@@ -166,6 +214,19 @@ impl ModelTrace{
             row:base(chat_id,generation_id,"MODEL_INFERENCE",
                 "MODEL_REASONING_REQUIRED",model_loaded),
         }
+    }
+    pub fn with_cp01_trace(mut self,trace_ref:String,started:Instant)->Self{
+        self.row.cp01_trace=Some(CausalProgress::new(trace_ref,started));
+        self
+    }
+    pub fn causal_checkpoint(&mut self,stage:Checkpoint){
+        if let Some(trace)=self.row.cp01_trace.as_mut(){trace.observe(stage);}
+    }
+    pub fn causal_model_failed(&mut self){
+        if let Some(trace)=self.row.cp01_trace.as_mut(){trace.model_failed();}
+    }
+    pub fn causal_refused(&mut self){
+        if let Some(trace)=self.row.cp01_trace.as_mut(){trace.refused();}
     }
     pub fn with_background_origin(mut self,background:bool)->Self{
         let label=if background {
@@ -239,6 +300,11 @@ impl ModelTrace{
         self
     }
     pub fn finish(mut self,terminal:&str)->PerfReceipt{
+        if terminal!="COMPLETED"{
+            if let Some(trace)=self.row.cp01_trace.as_mut(){
+                trace.finish_incomplete(terminal=="CANCELLED");
+            }
+        }
         self.row.terminal_state=terminal.into();
         self.row.overall_latency_ms=elapsed_ms(self.started);
         self.row
