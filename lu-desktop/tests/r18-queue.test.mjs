@@ -28,9 +28,10 @@ test('late/mismatched token cannot rewrite an active chat',()=>{
 });
 test('global engine busy no longer blocks submitting in another chat',()=>{
   const send=front.slice(front.indexOf('async function send(e)'),front.indexOf('async function importAttachments'));
-  assert.match(send,/chatBusy/);
+  assert.match(send,/jobsRef.current\[origin\]/);
+  assert.match(send,/pendingSends.current.has\(origin\)/);
   assert.doesNotMatch(send,/if \(busy \|\|/);
-  assert.match(send,/setJobs\(prev => \(\{\.\.\.prev,\[activeId\]/);
+  assert.match(send,/setJobs\(prev=>\(\{\.\.\.prev,\[activeId\]/);
   assert.match(send,/await invoke\('lu_generate'/);
 });
 test('host admission queues before supervisor reserve and binds events to chat IDs',()=>{

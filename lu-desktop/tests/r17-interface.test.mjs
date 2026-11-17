@@ -24,17 +24,23 @@ test('background token stream never leaks into selected chat',()=>{
 test('Windows HTML drag and drop is enabled in WebView',()=>{
   assert.equal(config.app.windows[0].dragDropEnabled,false);
 });
-test('submitting a message clears the composer before awaiting inference',()=>{
+test('submitting an image retains draft until canonical native admission',()=>{
   const start=ui.indexOf('async function send(e)');
-  const section=ui.slice(start,ui.indexOf('async function importAttachments(files)',start));
-  assert.ok(section.indexOf("setPrompt(''); setImages([])") < section.indexOf("await invoke('lu_generate'"));
+  const section=ui.slice(start,ui.indexOf('async function openSavedAttachment(',start));
+  assert.match(section,/snapshotDraft\(readComposerDraft\(origin\)\)/);
+  assert.match(section,/await runImageAttempt\(activeId,attempt/);
+  assert.match(ui,/receiptDecision\(attempt,receipt\)!=='saved'/);
+  assert.match(ui,/writeComposerDraft\(target,clearSubmittedDraft\(old,attempt.snapshot\)\)/);
+  assert.doesNotMatch(section,/setPrompt\(''\); setImages\(\[\]\)/);
 });
-test('cancelled turn does not restore and duplicate the already journaled user prompt',()=>{
-  assert.ok(ui.includes('if (!completed && !cancelled && currentChat.current === activeId'));
+test('cancelled saved turn offers explicit restore, not automatic duplicate submission',()=>{
+  assert.match(ui,/Message stopped\. Your original images are saved/);
+  assert.match(ui,/invoke\('lu_restore_image_turn'/);
+  assert.match(ui,/Keep draft without sending/);
 });
 test('transcript is never forcibly switched on background completion',()=>{
   assert.ok(!ui.includes('switchChatWhenSafe'));
-  assert.ok(ui.includes('if (currentChat.current === activeId)'));
+  assert.match(ui,/if\(currentChat.current===target\)/);
 });
 test('image content is admitted by the native host with strict size caps',()=>{
   assert.ok(host.includes('fn lu_ingest_image_data_url('));

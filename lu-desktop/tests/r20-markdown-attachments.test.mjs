@@ -61,8 +61,8 @@ test('draft attachments survive switching conversations and have remove controls
   assert.ok(ui.includes('setTextFiles(draft.files || [])'));
   assert.ok(ui.includes('aria-label="Draft attachments"'));
   assert.ok(ui.includes('URL.revokeObjectURL'));
-  assert.ok(ui.includes('setImages([]); setTextFiles([]);'));
-  assert.ok(ui.includes('buildSubmittedPrompt(input, textFiles)'));
+  assert.match(ui,/writeComposerDraft\(target,clearSubmittedDraft\(old,attempt.snapshot\)\)/);
+  assert.ok(ui.includes('buildSubmittedPrompt(input, snapshot.files)'));
 });
 test('image thumbnails work under image-only blob CSP without scripting changes',()=>{
   const conf=JSON.parse(readFileSync(new URL('../src-tauri/tauri.conf.json',import.meta.url),'utf8'));

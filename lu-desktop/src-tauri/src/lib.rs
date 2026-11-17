@@ -1886,6 +1886,14 @@ fn lu_image_submission_status(state:State<'_,Arc<DesktopState>>,chat_id:String,s
     ->Result<ImageSubmissionStatus,String>{
     image_submission_status(state.inner(),&chat_id,&submission_id,false)
 }
+/// A human explicitly choosing to keep an unconfirmed draft may fence that
+/// nonce. If admission already committed, return the original receipt
+/// instead. No inference or implicit cancellation of another job.
+#[tauri::command]
+fn lu_stop_image_submission(state:State<'_,Arc<DesktopState>>,chat_id:String,submission_id:String)
+    ->Result<ImageSubmissionStatus,String>{
+    image_submission_status(state.inner(),&chat_id,&submission_id,true)
+}
 #[derive(Serialize)]
 #[serde(rename_all="camelCase")]
 struct ImageSubmissionResult{
@@ -1916,9 +1924,12 @@ async fn lu_submit_image_turn(app:AppHandle,state:State<'_,Arc<DesktopState>>,
 /// Explicitly copy exact ordinary saved images into an EMPTY draft with
 /// new host handles. No inference, permission replay, overwriting a draft,
 /// or persistence of Observe pixels. The original stays immutable.
+#[derive(Serialize)]
+#[serde(rename_all="camelCase")]
+struct RestoredImageDraft{prompt:String,images:Vec<ImageView>}
 #[tauri::command]
 async fn lu_restore_image_turn(state:State<'_,Arc<DesktopState>>,chat_id:String,visible_seq:i64)
-    ->Result<Vec<ImageView>,String>{
+    ->Result<RestoredImageDraft,String>{
     let state=Arc::clone(state.inner());
     tauri::async_runtime::spawn_blocking(move||{
         let _gate=state.attachments.gate.lock().map_err(|_|"Attachment manifest unavailable")?;
@@ -1926,13 +1937,18 @@ async fn lu_restore_image_turn(state:State<'_,Arc<DesktopState>>,chat_id:String,
         if !book.image_draft(&chat_id).map_err(|_|"Draft unavailable")?.is_empty(){
             return Err("Finish or clear the current attachments before restoring a saved message".into())
         }
+        let before=visible_seq.checked_add(1).ok_or("Invalid original message")?;
+        let (rows,_)=book.visible_chat_before(&chat_id,before,1)
+            .map_err(|_|"Original message unavailable")?;
+        let original=rows.into_iter().find(|row|row.seq==visible_seq&&row.role=="user")
+            .ok_or("Original message unavailable")?;
         let saved=book.image_manifest_for_visible_seq(&chat_id,visible_seq)
             .map_err(|_|"Saved attachment manifest unavailable")?;
         if saved.is_empty()||saved.iter().any(|a|a.observed){
             return Err("These images cannot all be restored. Attach a new local capture if needed.".into())
         }
         let mut staged:Vec<ImageAttachment>=Vec::new();
-        let result=(||->Result<Vec<ImageView>,String>{
+        let result=(||->Result<RestoredImageDraft,String>{
             // Verify the complete original manifest before creating copies.
             let originals=saved.iter().map(|a|state.attachments.read(&chat_id,a))
                 .collect::<Result<Vec<_>,_>>()?;
@@ -1943,7 +1959,8 @@ async fn lu_restore_image_turn(state:State<'_,Arc<DesktopState>>,chat_id:String,
                 staged.push(copy);
             }
             book.restore_image_draft(&chat_id,&staged).map_err(|_|"Could not restore saved attachments")?;
-            Ok(staged.iter().map(|a|ImageView::from_attachment(a,true)).collect())
+            Ok(RestoredImageDraft{prompt:original.text,
+                images:staged.iter().map(|a|ImageView::from_attachment(a,true)).collect()})
         })();
         if result.is_err(){
             for a in &staged{
@@ -9635,6 +9652,7 @@ pub fn run() {
             lu_read_image_attachment,
             lu_image_submission_status,
             lu_submit_image_turn,
+            lu_stop_image_submission,
             lu_restore_image_turn,
             lu_load_model,
             lu_load_diagnostics,

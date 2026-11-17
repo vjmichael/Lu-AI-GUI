@@ -987,6 +987,7 @@ function App() {
   const draftMutations=useRef(new Set());
   const [,setSubmissionRevision]=useState(0);
   const [savedImagePreview,setSavedImagePreview]=useState(null);
+  const [submissionNoticeByChat,setSubmissionNoticeByChat]=useState({});
   const savedPreviewSequence=useRef(0);
   const draftText = useRef('');
   const draftImages = useRef([]);
@@ -1016,7 +1017,7 @@ function App() {
   const chatBusy = Boolean(visibleJob);
   const composerKey=chatId||'new';
   const visibleAttempt=pendingSends.current.get(composerKey);
-  const composerLocked=Boolean(visibleAttempt&&!visibleAttempt.admitted);
+  const composerLocked=Boolean(visibleAttempt&&!visibleAttempt.admitted&&!visibleAttempt.settled);
   const composerMutating=draftMutations.current.has(composerKey);
   function refreshComposerState(){setSubmissionRevision(n=>n+1);}
   function readComposerDraft(key){
@@ -1031,7 +1032,12 @@ function App() {
       setPrompt(draft.prompt);setImages(draft.images);setTextFiles(draft.files);
     }
   }
-  function lockedDraft(key){const attempt=pendingSends.current.get(key);return Boolean(attempt&&!attempt.admitted);}
+  function lockedDraft(key){const attempt=pendingSends.current.get(key);return Boolean(attempt&&!attempt.admitted&&!attempt.settled);}
+  function noticeForChat(key,message){
+    setSubmissionNoticeByChat(prev=>{
+      const next={...prev};if(message)next[key]=message;else delete next[key];return next;
+    });
+  }
   function beginDraftMutation(key){
     if(lockedDraft(key)||draftMutations.current.has(key))return false;
     draftMutations.current.add(key);refreshComposerState();return true;
@@ -4141,11 +4147,10 @@ function App() {
     const receipt=await invoke('lu_image_submission_status',{chatId:target,submissionId:attempt.nonce});
     await admitSavedImageAttempt(target,attempt,receipt);
   }
-  async function finishSubmission(target,attempt){
-    if(pendingSends.current.get(target)===attempt){
-      pendingSends.current.delete(target);refreshComposerState();
-    }
-    setJobs(prev=>removeOwnedJob(prev,target,attempt));
+  async function finishSubmission(target,attempt,{preserveJob=false}={}){
+    if(pendingSends.current.get(target)!==attempt)return;
+    attempt.settled=true;refreshComposerState();
+    if(!preserveJob)setJobs(prev=>removeOwnedJob(prev,target,attempt));
     await refreshDraftImages(target).catch(error=>{
       if(currentChat.current===target)setError(String(error));
     });
@@ -4155,6 +4160,9 @@ function App() {
       if(entries&&currentChat.current===target)setHistory(entries);
     }
     await refreshCatalog().catch(error=>{if(currentChat.current===target)setError(String(error));});
+    if(pendingSends.current.get(target)===attempt){
+      pendingSends.current.delete(target);refreshComposerState();
+    }
   }
   async function runImageAttempt(target,attempt,sessionId){
     try{
@@ -4164,7 +4172,7 @@ function App() {
       attempt.generationId=receipt.generationId;
       if(await admitSavedImageAttempt(target,attempt,receipt)){
         // Explicit recheck of a lost RPC never repeats a saved message.
-        await finishSubmission(target,attempt);
+        await finishSubmission(target,attempt,{preserveJob:true});
         if(currentChat.current===target)void reconcileActiveStream(target);
         return;
       }
@@ -4180,13 +4188,15 @@ function App() {
       const decision=receiptDecision(attempt,result?.receipt);
       if(decision==='saved'){
         await admitSavedImageAttempt(target,attempt,result.receipt);
-        if(currentChat.current===target&&result.outcome!=='completed'){
-          setError(result.outcome==='cancelled'?'Message stopped. Your original images are saved. Restore the message to try again.':
-            'Response failed. Your original images are saved. Restore the message to try again.');
-        }
+        if(result.outcome!=='completed'){
+          noticeForChat(target,result.outcome==='cancelled'
+            ?'Message stopped. Your original images are saved. Restore the message to try again.'
+            :'Response failed. Your original images are saved. Restore the message to try again.');
+        }else noticeForChat(target,null);
       }else if(decision==='rejected'){
         // The native refusal fence guarantees this nonce cannot consume the
         // retained editable draft later. Original prompt and files remain.
+        noticeForChat(target,'Message not sent. Your draft is retained.');
         if(currentChat.current===target)setError(result.error||'Message not sent. Your draft is retained.');
       }else{throw Error('Message receipt is not yet confirmed');}
       await finishSubmission(target,attempt);
@@ -4198,7 +4208,7 @@ function App() {
         const receipt=await invoke('lu_image_submission_status',{chatId:target,submissionId:attempt.nonce});
         if(await admitSavedImageAttempt(target,attempt,receipt)){
           if(currentChat.current===target)setError('Your message is saved. Checking for an active response.');
-          await finishSubmission(target,attempt);
+          await finishSubmission(target,attempt,{preserveJob:true});
           if(currentChat.current===target)void reconcileActiveStream(target);
           return;
         }
@@ -4212,6 +4222,25 @@ function App() {
       setJobs(prev=>removeOwnedJob(prev,target,attempt));
       if(currentChat.current===target)setError('Could not confirm whether Lu received this message. Check or retry the same message; your draft has not been discarded.');
     }
+  }
+  async function keepUnconfirmedDraft(){
+    const target=currentChat.current;
+    const attempt=target&&pendingSends.current.get(target);
+    if(!attempt?.uncertain||attempt.checking)return;
+    attempt.checking=true;refreshComposerState();
+    try{
+      const receipt=await invoke('lu_stop_image_submission',{chatId:target,submissionId:attempt.nonce});
+      if(!attempt.generationId)attempt.generationId=receipt.generationId;
+      if(await admitSavedImageAttempt(target,attempt,receipt)){
+        noticeForChat(target,'Your message was already saved. Check the conversation for its response.');
+        await finishSubmission(target,attempt,{preserveJob:true});
+        if(currentChat.current===target)void reconcileActiveStream(target);
+      }else if(receiptDecision(attempt,receipt)==='rejected'){
+        await finishSubmission(target,attempt);
+        noticeForChat(target,'Message not sent. Your draft is retained.');
+      }
+    }catch(error){if(currentChat.current===target)setError(String(error));}
+    finally{attempt.checking=false;refreshComposerState();}
   }
   async function retryUnconfirmedMessage(){
     const target=currentChat.current;
@@ -4289,6 +4318,7 @@ function App() {
     if (usePlanDraft) setPlanDraftNextSend(false);
     if (useBrowserResearch) setBrowserResearchNextSend(false);
     if (useReviewedApp) setReviewedAppNextSend(null);
+    noticeForChat(activeId,null);
     if(currentChat.current===activeId)setError('');
     if(attempt.nonce){
       await runImageAttempt(activeId,attempt,runtime.sessionId??'');
@@ -4359,8 +4389,8 @@ function App() {
       // currently remain in the original text; CP-02 separates those sources.
       const draft=readComposerDraft(target);
       if(!draft.prompt.trim()&&!draft.files.length){
-        writeComposerDraft(target,{...draft,prompt:entry.text,images:restored});
-      }else{writeComposerDraft(target,{...draft,images:restored});}
+        writeComposerDraft(target,{...draft,prompt:restored.prompt,images:restored.images});
+      }else{writeComposerDraft(target,{...draft,images:restored.images});}
       await refreshDraftImages(target);
       if(currentChat.current===target)composerRef.current?.focus();
     }catch(error){if(currentChat.current===target)setError(String(error));}
@@ -6486,10 +6516,16 @@ function App() {
               <button type="button" disabled={composerLocked||composerMutating} onClick={() => {const next=draftFiles.current.filter((_,n)=>n!==i);draftFiles.current=next;setTextFiles(next);}} aria-label={'Remove '+file.name}>×</button>
             </span>)}
           </div>}
+          {submissionNoticeByChat[chatId]&&<div className="submissionNotice" role="status">
+            {submissionNoticeByChat[chatId]}
+            <button type="button" className="subtleButton" onClick={()=>noticeForChat(chatId,null)}>Dismiss</button>
+          </div>}
           {visibleAttempt?.uncertain&&<div className="submissionNotice" role="status">
             Message receipt could not be confirmed. Your draft is retained.
             <button className="subtleButton" type="button" disabled={visibleAttempt.checking}
               onClick={()=>void retryUnconfirmedMessage()}>Check / retry same message</button>
+            <button className="subtleButton" type="button" disabled={visibleAttempt.checking}
+              onClick={()=>void keepUnconfirmedDraft()}>Keep draft without sending</button>
           </div>}
           <textarea ref={composerRef} aria-label="Message Lu" value={prompt} readOnly={composerLocked||composerMutating} onChange={e => {if(lockedDraft(currentChat.current||'new'))return;draftText.current=e.target.value;setPrompt(e.target.value);}} style={{height:composerHeight}} maxLength={16384}
             placeholder={loaded ? 'Message Lu… Paste or drop images and text files' : 'Ask the time, check model status, search this chat or selected workspace'}

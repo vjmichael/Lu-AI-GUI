@@ -20,7 +20,7 @@ export function receiptDecision(attempt,receipt){
   if(!attempt?.generationId||receipt?.generationId!==attempt.generationId)
     return 'uncertain';
   const saved=Number.isSafeInteger(receipt.visibleSeq)&&receipt.visibleSeq>0;
-  if(saved&&receipt.rejected!==true)return 'saved';
+  if(saved&&receipt.rejected===false)return 'saved';
   if(!saved&&receipt.visibleSeq===null&&receipt.rejected===true)return 'rejected';
   return 'uncertain';
 }
