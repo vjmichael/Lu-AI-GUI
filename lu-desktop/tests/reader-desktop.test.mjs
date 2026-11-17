@@ -6,6 +6,7 @@ import {buildSubmittedPrompt} from '../web/attachment_drafts.mjs';
 const ui=readFileSync(new URL('../web/main.jsx',import.meta.url),'utf8');
 const host=readFileSync(new URL('../src-tauri/src/lib.rs',import.meta.url),'utf8');
 const readerHost=readFileSync(new URL('../src-tauri/src/reader_desktop.rs',import.meta.url),'utf8');
+const intake=readFileSync(new URL('../src-tauri/src/linked_attachment_intake.rs',import.meta.url),'utf8');
 const documentInput=readFileSync(new URL('../web/document_attachment_input.mjs',import.meta.url),'utf8');
 
 test('native Reader file selection is host-mediated and file path never supplied by WebView',()=>{
@@ -16,18 +17,18 @@ test('native Reader file selection is host-mediated and file path never supplied
   assert.ok(readerHost.includes('meta.file_type().is_file()'));
   assert.ok(readerHost.includes('read_to_end(&mut bytes)'));
   assert.ok(host.includes('lu_reader_pick_document,'));
-  assert.ok(ui.includes("invoke('lu_reader_pick_document',{"));
-  assert.ok(!ui.includes("invoke('lu_reader_pick_document',{path:"));
+  assert.ok(ui.includes("runNativeAttachmentIntake('lu_pick_linked_files'"));
+  assert.ok(!ui.includes("invoke('lu_pick_linked_files',{path:"));
 });
 test('Reader attachments remain in originating chat and respect the 16k prompt cap',()=>{
   assert.ok(ui.includes("const origin=currentChat.current||'new';"));
   assert.match(ui,/targetChat=await ensureAttachmentChat\(\)/);
   assert.match(ui,/beginDraftMutation\(origin\)/);
-  assert.ok(ui.includes('pendingDrafts.current.set(targetChat,{...old,files:next})'));
-  assert.ok(ui.includes('buildSubmittedPrompt(prior?.prompt'));
-  assert.ok(ui.includes('MAX_TEXT_FILES'));
+  assert.ok(ui.includes('writeComposerDraft(targetChat,draft)'));
+  assert.ok(intake.includes('admit_linked_drafts'));
+  assert.ok(intake.includes('if input.len()>16*1024'));
   assert.ok(documentInput.includes('document.truncated'));
-  assert.ok(ui.includes('documentDraftItem(document)'));
+  assert.ok(host.includes('linked_attachment_intake::model_context(&prompt,&linked)'));
   assert.ok(ui.includes('Read file'));
 });
 
@@ -111,7 +112,7 @@ test('optional scanned-PDF page OCR stays user-selected and fail-closed',()=>{
 
 test('Reader picker and one trusted model tool reuse new RTF/EPUB format adapters',()=>{
   assert.match(readerHost,/"odt","rtf","epub","pdf"/);
-  assert.match(ui,/lu_reader_pick_document/);
+  assert.match(ui,/lu_pick_linked_files/);
   assert.match(host,/lu_reader_ask_document/);
 });
 
@@ -121,7 +122,7 @@ test('Reader desktop exposes source-checked continuation and section selection',
   assert.match(host,/read_selected_bytes\(/);
   assert.match(host,/read_plain_text_window\(/);
   assert.match(documentInput,/sourceSha256:document\.sourceSha256/);
-  assert.match(ui,/expectedSourceSha256:continuation\?\.sourceSha256/);
+  assert.match(ui,/lu_continue_linked_document',\{attachmentId:previous.attachmentId\}/);
   assert.match(ui,/Reader section/);
   assert.match(ui,/Continue Reader at/);
   assert.match(readerHost,/filename\.chars\(\)\.any/);

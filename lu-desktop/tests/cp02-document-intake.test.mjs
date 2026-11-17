@@ -42,18 +42,18 @@ test('full 8 MiB exact payload preserved across base64 chunk boundaries',async()
   const result=await documentFilePayload(file);
   assert.deepEqual(Buffer.from(result.encodedBytes,'base64'),Buffer.from(bytes));
 });
-test('all File-object entrypoints use same native intake and document text cannot open a native intent route',()=>{
+test('native original-file entrypoints share admission and document text cannot open a native intent route',()=>{
   const ui=readFileSync(new URL('../web/main.jsx',import.meta.url),'utf8');
   const host=readFileSync(new URL('../src-tauri/src/lib.rs',import.meta.url),'utf8');
-  assert.match(ui,/accept=\{ATTACHMENT_ACCEPT\}/);
-  assert.match(ui,/invoke\('lu_reader_ingest_document',\{chatId:targetChat,\.\.\.payload\}\)/);
-  assert.match(ui,/void importAttachments\(fileItems\)/);
-  assert.match(ui,/void importAttachments\(event.dataTransfer\?\.files\)/);
-  const importer=ui.slice(ui.indexOf('async function importAttachments'),ui.indexOf('function handlePaste'));
-  assert.doesNotMatch(importer,/file.text\(\)|PDF\/DOCX are not yet supported/);
-  assert.match(host,/reader_attachment_view\(name,bytes,selector,offset,expected\)/);
-  assert.match(host,/reader_attachment_view\(display_name,bytes,String::new\(\),0,String::new\(\)\)/);
-  assert.match(host,/caller.label\(\)!="main"/);
+  const intake=readFileSync(new URL('../src-tauri/src/linked_attachment_intake.rs',import.meta.url),'utf8');
+  assert.match(ui,/runNativeAttachmentIntake\('lu_pick_linked_files'/);
+  assert.match(ui,/runNativeAttachmentIntake\('lu_paste_linked_files'/);
+  assert.match(ui,/runNativeAttachmentIntake\('lu_accept_linked_drop'/);
+  assert.doesNotMatch(ui,/invoke\('lu_reader_ingest_document'|new FileReader\(/);
+  assert.match(intake,/admit_linked_drafts/);
+  assert.match(host,/linked_attachment_intake::model_context\(&prompt,&linked\)/);
+  assert.match(host,/append_user_with_attachment_drafts\(&chat_id,&generation_id,&prompt,&manifest,&linked\)/);
+  assert.match(host,/let document_context=!linked.is_empty\(\)\|\|contains_document_context\(&prompt\)/);
   assert.match(host,/if !document_context \{[\s\S]*?native intent routing from attached document text/);
   assert.match(host,/if origin==GenerationOrigin::Human&&!plan_only&&!document_context/);
   assert.match(host,/if !plan_only&&!document_context/);

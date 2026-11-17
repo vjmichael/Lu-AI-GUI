@@ -11,7 +11,7 @@ const http=read('../../src-tauri/lu-core/src/multimodal_http.rs');
 const perf=read('../src-tauri/src/perf01_telemetry.rs');
 const ui=read('../web/main.jsx');
 test('ordinary image Send reopens canonical manifest and uses the reported image lane',()=>{
-  assert.match(host,/verify_saved_exact\(&state.chats,&chat_id,&gid,&manifest,&images\)/);
+  assert.match(host,/verify_saved_exact\(&state.chats,&chat_id,&gid,&manifest,&images\[\.\.manifest.len\(\)\]\)/);
   assert.match(host,/reserve_generation_images_with_history\(/);
   assert.match(host,/run_reserved_images_reported\(/);
   assert.match(host,/perf_trace.image_delivery\(image_report\)/);

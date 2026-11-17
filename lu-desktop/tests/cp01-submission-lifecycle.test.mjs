@@ -49,8 +49,8 @@ test('native receipt checks, refusal fence and restore remain host scoped',()=>{
   assert.match(host,/authenticated_chat_turn_visible_seq\(&chat_id,&gid\)/);
   assert.match(host,/book.reject_image_submission\(chat_id,&gid\)/);
   assert.match(core,/image_submission_rejected\(tx,chat,turn\)\?/);
-  assert.match(host,/book.restore_image_draft\(&chat_id,&staged\)/);
-  assert.match(host,/stage_image_ui_submission\(&chat_id,&receipt.generation_id/);
+  assert.match(host,/book.restore_linked_draft\(&chat_id,visible_seq,&restored\)/);
+  assert.match(host,/stage_attachment_ui_submission\(&chat_id,&receipt.generation_id/);
   assert.match(core,/unresolved_ui_snapshot_is_exact_and_cannot_be_overwritten_or_cleared/);
   assert.match(host,/restored|RestoredImageDraft/);
 });
@@ -67,4 +67,11 @@ test('rendered lifecycle has explicit recovery and no implicit release or replay
   assert.doesNotMatch(portion,/invoke\('lu_release_image'/);
   assert.match(ui,/aria-label="Saved attachments"/);
   assert.match(ui,/visibleSeq:entry.seq/);
+});
+
+test('linked-document identity distinguishes same-name drafts',()=>{
+  const a={prompt:'Read',images:[],files:[{attachmentId:'link-a',name:'same.pdf'}]};
+  const b={...a,files:[{attachmentId:'link-b',name:'same.pdf'}]};
+  assert.equal(sameSubmittedDraft(a,b),false);
+  assert.equal(clearSubmittedDraft(b,a),b);
 });

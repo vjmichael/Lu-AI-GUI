@@ -302,6 +302,7 @@ impl AnsfStore{
     pub fn append_host_chat_event_with_attachment_drafts(
         &self,session_id:&str,event:&LiveEvent,images:&[ImageAttachment],links:&[LinkedAttachment]
     )->Result<StoredLiveEvent,AnsfError>{
+        crate::ansf_linked_attachments::validate_combined(images,links)?;
         self.append_live_chat_event(session_id,event,LiveOrigin::HostAuthenticated,false,&[],Some(images),Some(links))
     }
     /// Boundary-only migration of old JSONL events. Never authenticates a

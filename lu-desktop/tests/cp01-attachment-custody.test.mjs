@@ -11,8 +11,8 @@ const ui=read('../web/main.jsx');
 test('CP01 native draft authority, order, bound original and queue admission',()=>{
   assert.match(host,/exact_draft_manifest\(state.inner\(\),&chat_id,&image_refs\)/);
   assert.match(host,/manifest.iter\(\).map\(\|a\|&a.attachment_id\).ne\(refs.iter\(\)\)/);
-  assert.match(host,/enqueue_with_class_committing\([\s\S]*?append_user_with_image_draft\(&chat_id,&generation_id,&prompt,&manifest\)/);
-  assert.match(chat,/append_host_chat_event_with_image_draft\(chat_id,&event,manifest\)/);
+  assert.match(host,/enqueue_with_class_committing\([\s\S]*?append_user_with_attachment_drafts\(&chat_id,&generation_id,&prompt,&manifest,&linked\)/);
+  assert.match(chat,/append_host_chat_event_with_attachment_drafts\(chat_id,&event,manifest,linked\)/);
   assert.match(events,/bind_draft\(&tx,session_id,event.user_turn_id/);
   assert.match(core,/UPDATE ansf_image_attachments SET turn_id=\?2/);
   assert.match(core,/saved image attachments are immutable/);
@@ -23,7 +23,7 @@ test('CP01 native external object and cold saved source integrity',()=>{
   assert.match(store,/self.read\(chat,a\)/);
   assert.match(store,/Sha256::digest\(&bytes\)/);
   assert.match(core,/FROM ansf_artifact_links WHERE session_id=\?1 AND entry_id=\?2 AND artifact_id=\?3/);
-  assert.match(host,/verify_saved_exact\(&state.chats,&chat_id,&gid,&manifest,&images\)/);
+  assert.match(host,/verify_saved_exact\(&state.chats,&chat_id,&gid,&manifest,&images\[\.\.manifest.len\(\)\]\)/);
   assert.match(store,/saved_image_manifest\(chat,turn\)/);
   assert.match(store,/Saved image changed while queued/);
 });
@@ -31,7 +31,8 @@ test('CP01 no implicit image release and no private observation byte export',()=
   const send=ui.slice(ui.indexOf('async function send(e)'),ui.indexOf('async function attachReaderDocument('));
   assert.doesNotMatch(send,/invoke\('lu_release_image'/);
   assert.match(ui,/invoke\('lu_release_image',\{chatId:targetChat,imageRef\}\)/);
-  assert.match(ui,/\{chatId:targetChat,dataUrl,displayName:file.name\}/);
+  assert.match(ui,/runNativeAttachmentIntake\('lu_pick_linked_files'/);
+  assert.doesNotMatch(ui,/invoke\('lu_ingest_image_data_url'/);
   assert.match(host,/a\.attachment_id==image_ref&&!a\.observed/);
   assert.match(store,/if a.observed\|\|!matches\(a,p\)/);
   assert.match(store,/approved_observation_never_writes_pixels_and_expires_on_restart/);

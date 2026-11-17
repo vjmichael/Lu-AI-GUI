@@ -62,22 +62,22 @@ test('draft attachments survive switching conversations and have remove controls
   assert.ok(ui.includes('aria-label="Draft attachments"'));
   assert.ok(ui.includes('URL.revokeObjectURL'));
   assert.match(ui,/writeComposerDraft\(target,clearSubmittedDraft\(old,attempt.snapshot\)\)/);
-  assert.ok(ui.includes('buildSubmittedPrompt(input, snapshot.files)'));
+  assert.ok(ui.includes('attachmentSubmissionText(snapshot)'));
 });
 test('image thumbnails work under image-only blob CSP without scripting changes',()=>{
   const conf=JSON.parse(readFileSync(new URL('../src-tauri/tauri.conf.json',import.meta.url),'utf8'));
   const csp=conf.app.security.csp;
   assert.ok(csp.includes("img-src 'self' data: blob:"));
   assert.ok(!csp.includes('unsafe-eval'));
-  assert.ok(ui.includes('URL.createObjectURL(file)'));
+  assert.ok(ui.includes("invoke('lu_read_image_attachment'"));
+  assert.ok(!ui.includes('new FileReader('));
 });
 test('image and text attachment completion is scoped to the originating chat',()=>{
   assert.ok(ui.includes('targetChat=await ensureAttachmentChat()'));
-  assert.ok(ui.includes('{chatId:targetChat,dataUrl,displayName:file.name}'));
-  assert.ok(ui.includes('storeAttachment(\'files\',candidate)'));
-  assert.ok(ui.includes("refreshDraftImages(targetChat,[{...image,previewUrl"));
-  assert.ok(ui.includes("invoke('lu_image_attachments',{chatId:targetChat,visibleSeq:null})"));
-  assert.ok(ui.includes('if (key === (currentChat.current||\'new\'))'));
+  assert.ok(ui.includes('await invoke(command,{chatId:targetChat,...args})'));
+  assert.ok(ui.includes('await refreshDraftImages(targetChat)'));
+  assert.ok(ui.includes("invoke('lu_attachment_draft',{chatId:targetChat})"));
+  assert.ok(ui.includes('writeComposerDraft(targetChat,draft)'));
 });
 test('user authored think tags remain literal user text, not reasoning blocks',()=>{
   assert.ok(ui.includes("if (role === 'user') return <div className=\"messageContent userText\">"));

@@ -640,6 +640,12 @@ impl ChatStore {
     /// reported as a rejected submission (which could duplicate the turn).
     pub(crate) fn append_user_with_image_draft(&self,chat_id:&str,user_turn_id:&str,
         text:&str,manifest:&[ImageAttachment])->Result<bool,String>{
+        self.append_user_with_attachment_drafts(chat_id,user_turn_id,text,manifest,&[])
+    }
+    /// Original human text is persisted; extracted document context never is.
+    pub(crate) fn append_user_with_attachment_drafts(&self,chat_id:&str,user_turn_id:&str,
+        text:&str,manifest:&[ImageAttachment],linked:&[lu_core::ansf_linked_attachments::LinkedAttachment])
+        ->Result<bool,String>{
         if !valid_id(user_turn_id,"g-")||text.is_empty()||text.len()>16*1024{
             return Err("Invalid authenticated human turn".into())
         }
@@ -649,7 +655,7 @@ impl ChatStore {
         let event=LiveEvent{event_id:id("e-"),kind:LiveKind::User,text:text.into(),
             user_turn_id:Some(user_turn_id.into()),legacy_turn_id:None,
             generation_id:None,call_id:None,tool_id:None};
-        let committed=book.append_host_chat_event_with_image_draft(chat_id,&event,manifest)
+        let committed=book.append_host_chat_event_with_attachment_drafts(chat_id,&event,manifest,linked)
             .map_err(to_err)?;
         let catalog_result=(||->Result<(),String>{
             let tx=conn.transaction().map_err(to_err)?;

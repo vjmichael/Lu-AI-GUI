@@ -20,7 +20,7 @@ test('CP01E native transaction uses current order and existing validated DX loca
   assert.match(dx,/localize_path\(trace, NORMAL_TURN\)/);
 });
 test('CP01E original native reply observation is exact-attempt scoped and passive',()=>{
-  const ack=host.slice(host.indexOf('fn lu_cp01_reply_observed('),host.indexOf('/// Explicitly copy exact ordinary saved images'));
+  const ack=host.slice(host.indexOf('fn lu_cp01_reply_observed('),host.indexOf('/// Restore exact saved original-file links'));
   assert.match(ack,/caller.label\(\)!="main"/);
   assert.match(ack,/image_submission_generation\(&chat_id,&submission_id\)\?!=generation_id/);
   assert.match(ack,/authenticated_chat_turn_visible_seq\(&chat_id,&generation_id\)/);

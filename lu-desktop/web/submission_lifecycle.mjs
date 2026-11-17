@@ -13,8 +13,9 @@ export function sameSubmittedDraft(current,original){
     current.images.length===original.images.length&&
     current.images.every((im,i)=>im.imageRef===original.images[i].imageRef)&&
     current.files.length===original.files.length&&
-    current.files.every((f,i)=>f.name===original.files[i].name&&
-      f.size===original.files[i].size&&f.text===original.files[i].text);
+    current.files.every((f,i)=>f.attachmentId||original.files[i].attachmentId
+      ? Boolean(f.attachmentId)&&f.attachmentId===original.files[i].attachmentId
+      : f.name===original.files[i].name&&f.size===original.files[i].size&&f.text===original.files[i].text);
 }
 export function receiptDecision(attempt,receipt){
   if(!attempt?.generationId||receipt?.generationId!==attempt.generationId)

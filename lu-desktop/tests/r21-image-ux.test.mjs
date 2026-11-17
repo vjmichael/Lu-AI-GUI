@@ -6,6 +6,7 @@ import {sniffSupportedImageMime,isPotentialImage,normalizedImageFile} from '../w
 const png=Uint8Array.from([137,80,78,71,13,10,26,10,0,0,0,13]);
 const jpeg=Uint8Array.from([255,216,255,224,0,16,74,70,73,70]);
 const ui=readFileSync(new URL('../web/main.jsx',import.meta.url),'utf8');
+const intake=readFileSync(new URL('../src-tauri/src/linked_attachment_intake.rs',import.meta.url),'utf8');
 const css=readFileSync(new URL('../web/styles.css',import.meta.url),'utf8');
 function fakeFile(header,name,type='image/jpeg'){
  const blob=new Blob([header],{type});
@@ -33,9 +34,9 @@ test('unsupported disguised image fails closed',async()=>{
  await assert.rejects(normalizedImageFile(fakeFile([60,104,116,109,108,62],'malicious.jpg')),/not a supported PNG\/JPEG/);
 });
 test('image attachment normalization happens before host admission',()=>{
- assert.match(ui,/await normalizedImageFile\(file\)/);
- assert.match(ui,/reader\.readAsDataURL\(normalized\.blob\)/);
- assert.match(ui,/invoke\('lu_ingest_image_data_url'/);
+ assert.match(ui,/runNativeAttachmentIntake\('lu_pick_linked_files'/);
+ assert.match(intake,/admit_data_url\(/);
+ assert.doesNotMatch(ui,/invoke\('lu_ingest_image_data_url'|new FileReader\(/);
 });
 test('drop targets the whole Lu shell and not just the composer',()=>{
  assert.match(ui,/className=\{'shell' \+ \(dragActive/);

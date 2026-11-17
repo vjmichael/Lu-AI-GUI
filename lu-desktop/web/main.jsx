@@ -11,9 +11,8 @@ import {explainMemoryProjectionRecovery} from './reviewed_memory_recovery.mjs';
 import { fullEditChangeLines } from './edit_diff.mjs';
 import { MarkdownView } from './markdown_view.jsx';
 import { SavedLinkedAttachments } from './saved_linked_attachments.jsx';
-import {buildSubmittedPrompt, attachmentSummary, MAX_TEXT_FILES} from './attachment_drafts.mjs';
-import {isPotentialImage, normalizedImageFile} from './image_attachment_input.mjs';
-import {ATTACHMENT_ACCEPT, supportedDocumentName, documentFilePayload, documentDraftItem} from './document_attachment_input.mjs';
+import {attachmentSummary} from './attachment_drafts.mjs';
+import {mergeAttachmentDraft,attachmentRefs,attachedRecoveryMatches,attachmentSubmissionText} from './linked_attachment_drafts.mjs';
 import {stagedImageDimensions,REGION_IMAGE_OPERATIONS,
   imagePointerPixel,imageDragRectangle} from './image_assembly_geometry.mjs';
 import {queuedJob, startedJob, tokenForJob, resumedJob, removeJob} from './generation_jobs.mjs';
@@ -34,7 +33,7 @@ function MessageText({text, role='assistant'}) {
     part.kind === 'think' ? <details key={i} className="thinkBlock"><summary>Model reasoning</summary><MarkdownView text={part.text}/></details>
       : <MarkdownView key={i} text={part.text}/>)}</div>;
 }
-const MAX_IMAGE_ATTACHMENT = 8 * 1024 * 1024;
+
 
 
 /**
@@ -980,7 +979,6 @@ function App() {
   const modelMenuRef = useRef(null);
   const requestedChat = useRef(null);
   const dragSize = useRef(null);
-  const fileInput = useRef(null);
   const currentChat = useRef(null);
   const pendingDrafts = useRef(new Map());
   const attachmentChatCreation = useRef(null);
@@ -2583,6 +2581,24 @@ function App() {
   },[history,activeTab]);
 
   useEffect(() => { if(activeTab==='chat')composerRef.current?.focus(); }, [chatId,activeTab]);
+  useEffect(()=>{
+    let alive=true,stop=()=>{};
+    (async()=>{
+      if(activeTab!=='chat'){
+        await invoke('lu_set_linked_drop_target',{chatId:null});return;
+      }
+      const origin=chatId||'new';
+      const unregister=await listen('lu-native-file-drop',event=>{
+        if(!alive||event.payload?.target!==origin||(currentChat.current||'new')!==origin)return;
+        setDragActive(false);
+        void runNativeAttachmentIntake('lu_accept_linked_drop',{token:event.payload.token},origin);
+      });
+      if(!alive){unregister();return;}
+      stop=unregister;
+      await invoke('lu_set_linked_drop_target',{chatId:origin});
+    })().catch(error=>{if(alive)setError(String(error));});
+    return()=>{alive=false;stop();};
+  },[chatId,activeTab]);
   useEffect(() => {
     function onShortcut(event) {
       if (event.defaultPrevented || activeTab!=='chat') return;
@@ -2756,23 +2772,17 @@ function App() {
   async function refreshDraftImages(targetChat,extra=[]) {
     const sequence=(imageRefreshSequence.current.get(targetChat)||0)+1;
     imageRefreshSequence.current.set(targetChat,sequence);
-    const manifest=await invoke('lu_image_attachments',{chatId:targetChat,visibleSeq:null});
+    const native=await invoke('lu_attachment_draft',{chatId:targetChat});
     if(imageRefreshSequence.current.get(targetChat)!==sequence||lockedDraft(targetChat))return null;
-    const visible=targetChat===currentChat.current;
-    const previous=visible?draftImages.current:(pendingDrafts.current.get(targetChat)?.images||[]);
-    const cache=new Map([...previous,...extra].map(im=>[im.imageRef,im]));
-    const next=manifest.map(im=>{
-      const cached=cache.get(im.imageRef);
-      return {...im,...(im.available&&cached?.previewUrl?{previewUrl:cached.previewUrl}:{}),
-        ...(cached?.detectedMimeType?{detectedMimeType:cached.detectedMimeType}:{})};
-    });
-    const currentlyVisible=targetChat===currentChat.current;
-    const old=currentlyVisible
-      ? {prompt:draftText.current,images:draftImages.current,files:draftFiles.current}
-      : pendingDrafts.current.get(targetChat)||{prompt:'',images:[],files:[]};
-    pendingDrafts.current.set(targetChat,{...old,images:next});
-    if(currentlyVisible){draftImages.current=next;setImages(next);}
-    return next;
+    const draft=mergeAttachmentDraft(native,readComposerDraft(targetChat),extra);
+    writeComposerDraft(targetChat,draft);
+    if(currentChat.current===targetChat){
+      const last=draft.files.filter(f=>f.attachmentId).at(-1);
+      setReaderContinuation(last&&last.available?{chatId:targetChat,attachmentId:last.attachmentId,
+        name:last.name,selector:last.selector,sourceSha256:last.sourceSha256,
+        nextOffset:last.nextOffsetChars,sourceTruncated:last.sourceTruncated}:null);
+    }
+    return draft;
   }
 
   function pickImage() {
@@ -2793,7 +2803,8 @@ function App() {
     if(!targetChat||!beginDraftMutation(targetChat))return;
     const image=draftImages.current.find(i=>i.imageRef===imageRef);
     try{
-      await invoke('lu_release_image',{chatId:targetChat,imageRef});
+      if(image?.linked)await invoke('lu_remove_linked_draft',{chatId:targetChat,attachmentId:imageRef});
+      else await invoke('lu_release_image',{chatId:targetChat,imageRef});
       if(currentChat.current===targetChat&&imageViewer?.imageRef===imageRef)setImageViewer(null);
       if(image?.previewUrl){URL.revokeObjectURL(image.previewUrl);previewUrls.current.delete(image.previewUrl);}
       await refreshDraftImages(targetChat);
@@ -4149,8 +4160,8 @@ function App() {
     try{
       const recovery=await invoke('lu_pending_image_submission',{chatId:target});
       if(pendingSends.current.has(target))return;
-      const manifest=await refreshDraftImages(target);
-      if(!recovery||!manifest)return;
+      const draft=await refreshDraftImages(target);
+      if(!recovery||!draft)return;
       const {snapshot,receipt}=recovery;
       const attempt={snapshot:null,submitted:snapshot.submitted,marker:submissionNonce(),
         nonce:snapshot.submissionId,generationId:receipt.generationId,
@@ -4161,12 +4172,12 @@ function App() {
         noticeForChat(target,'Your previous message is saved in this conversation.');
         return;
       }
-      const exact=manifest.length===snapshot.imageRefs.length&&
-        manifest.every((im,i)=>im.imageRef===snapshot.imageRefs[i]);
+      const exact=attachedRecoveryMatches(draft,snapshot);
       const old=readComposerDraft(target);
+      const recoveredFiles=snapshot.linkedRefs?.length?draft.files:snapshot.files;
       // Never replace a newer typed draft during navigation/reload.
-      if(!old.prompt.trim()&&!old.files.length&&exact){
-        writeComposerDraft(target,{prompt:snapshot.prompt,images:manifest,files:snapshot.files});
+      if(!old.prompt.trim()&&exact){
+        writeComposerDraft(target,{prompt:snapshot.prompt,images:draft.images,files:recoveredFiles});
       }
       if(decision==='rejected'){
         await invoke('lu_clear_image_submission',{chatId:target,submissionId:attempt.nonce});
@@ -4174,8 +4185,7 @@ function App() {
           'Your previous message was not sent. Check the current attachments.');
         return;
       }
-      attempt.snapshot={prompt:snapshot.prompt,files:snapshot.files,images:
-        snapshot.imageRefs.map(id=>manifest.find(im=>im.imageRef===id)||{imageRef:id,available:false})};
+      attempt.snapshot={prompt:snapshot.prompt,files:recoveredFiles,images:draft.images};
       attempt.uncertain=true;
       // If another native change occurred, the exact attempt is still
       // recoverable as a check or keep-draft fence, but cannot be resubmitted.
@@ -4250,10 +4260,14 @@ function App() {
   }
   async function runImageAttempt(target,attempt,sessionId){
     try{
+      if(attempt.restoreMismatch)throw Error('Attachments changed. Keep the current draft without sending.');
+      const refs=attachmentRefs(attempt.snapshot);
       const receipt=await invoke('lu_prepare_image_submission',{chatId:target,snapshot:{
         submissionId:attempt.nonce,prompt:attempt.snapshot.prompt,submitted:attempt.submitted,
-        imageRefs:attempt.snapshot.images.map(i=>i.imageRef),
-        files:attempt.snapshot.files.map(f=>({name:f.name,size:f.size,text:f.text,
+        ...refs,
+        // Old unresolved CP-01 snapshots may contain legacy excerpts. New
+        // linked-file snapshots persist only exact original text and IDs.
+        files:refs.linkedRefs.length?[]:attempt.snapshot.files.map(f=>({name:f.name,size:f.size,text:f.text,
           format:f.format,truncated:f.truncated,sourceSha256:f.sourceSha256,
           selector:f.selector,offsetChars:f.offsetChars}))
       }});
@@ -4269,15 +4283,15 @@ function App() {
       if(receiptDecision(attempt,receipt)==='rejected'){
         await finishSubmission(target,attempt);return;
       }
-      if(attempt.restoreMismatch||attempt.snapshot.images.some(im=>im.available===false))
-        throw Error('Images changed or expired. Keep the current draft without sending.');
+      if([...attempt.snapshot.images,...attempt.snapshot.files].some(a=>a.available===false))
+        throw Error('File not available. Keep the current draft without sending.');
       if(!sessionId)throw Error('Load a model before retrying this message');
       attempt.uncertain=false;refreshComposerState();
       setJobs(prev=>prev[target]?.generationId&&prev[target].generationId!==attempt.generationId
         ? prev : ({...prev,[target]:{generationId:attempt.generationId,
           submissionMarker:attempt.marker,phase:'submitting',position:0,text:''}}));
       const result=await invoke('lu_submit_image_turn',{sessionId,chatId:target,prompt:attempt.submitted,
-        imageRefs:attempt.snapshot.images.map(i=>i.imageRef),submissionId:attempt.nonce});
+        ...refs,submissionId:attempt.nonce});
       const decision=receiptDecision(attempt,result?.receipt);
       if(decision==='saved'&&result.outcome==='completed'&&
          result.diagnosticRef&&result.receipt.generationId===attempt.generationId){
@@ -4403,16 +4417,13 @@ function App() {
     if (useReviewedApp && (images.length || textFiles.length || input.length>8192)){
       setError('Reviewed application tools require a text-only question no longer than 8192 characters.');return;
     }
-    let submitted;
+    let submitted,refs;
     try {
-      submitted = buildSubmittedPrompt(input, snapshot.files);
-      if(new TextEncoder().encode(submitted).length>16*1024)throw Error('Message exceeds the 16 KiB text limit');
-    }catch (error) {setError(String(error));return;}
-    if(snapshot.images.some(im=>im.available===false)){
-      setError('Remove or replace unavailable images before sending.');return;
-    }
+      submitted=attachmentSubmissionText(snapshot);
+      refs=attachmentRefs(snapshot);
+    }catch(error){setError(String(error));return;}
     const attempt={snapshot,submitted,marker:submissionNonce(),
-      nonce:snapshot.images.length?submissionNonce():null,generationId:null,
+      nonce:(refs.imageRefs.length||refs.linkedRefs.length)?submissionNonce():null,generationId:null,
       admitted:false,uncertain:false,checking:false};
     pendingSends.current.set(origin,attempt);refreshComposerState();
     let activeId=origin;
@@ -4499,8 +4510,7 @@ function App() {
     }
     try{
       const restored=await invoke('lu_restore_image_turn',{chatId:target,visibleSeq:entry.seq});
-      // Restore the original canonical text. Mixed text-file instructions
-      // currently remain in the original text; CP-02 separates those sources.
+      // Restore the canonical original human text and fresh link IDs only.
       const draft=readComposerDraft(target);
       if(!draft.prompt.trim()&&!draft.files.length){
         writeComposerDraft(target,{...draft,prompt:restored.prompt,images:restored.images});
@@ -4510,155 +4520,61 @@ function App() {
     }catch(error){if(currentChat.current===target)setError(String(error));}
     finally{endDraftMutation(target);}
   }
-  async function attachReaderDocument(continuePrevious=false) {
-    // The local picker is always native and the source is copied into one
-    // immutable snapshot; no document path can be passed by the WebView.
+  // Only a native OS file receipt can admit a new ordinary attachment.
+  // No HTML file reader, arbitrary path invoke or hidden artifact copy.
+  async function runNativeAttachmentIntake(command,args={},dropTarget=null) {
     const origin=currentChat.current||'new';
-    let targetChat=origin;
-    const continuation=continuePrevious?readerContinuation:null;
-    if(continuePrevious&&(!continuation||continuation.chatId!==targetChat||
-       continuation.selector!==readerSelector||
-       continuation.nextOffset===null)){
-      setError('No matching Reader source to continue. Select a fresh file.');return;
-    }
-    if(!beginDraftMutation(origin))return;
-    try {
-      targetChat=await ensureAttachmentChat();
-      if(targetChat!==origin){draftMutations.current.add(targetChat);refreshComposerState();}
-      if(lockedDraft(targetChat))return;
-      const document=await invoke('lu_reader_pick_document',{
-        selector:readerSelector,
-        offsetChars:continuation?.nextOffset??0,
-        expectedSourceSha256:continuation?.sourceSha256??''
-      });
-      if (!document) return;
-      const prior=pendingDrafts.current.get(targetChat);
-      const currentlyVisible=targetChat===(currentChat.current||'new');
-      const previous=prior?.files || (currentlyVisible?draftFiles.current:[]);
-      if(previous.length>=MAX_TEXT_FILES){
-        setError(`You can attach up to ${MAX_TEXT_FILES} documents per message`);
-        return;
-      }
-      const item=documentDraftItem(document);
-      const next=[...previous,item];
-      try{
-        buildSubmittedPrompt(prior?.prompt ||
-          (currentlyVisible?draftText.current:'Attachment') || 'Attachment',next);
-      }catch(error){setError(String(error));return;}
-      const old=prior||{
-        prompt:currentlyVisible?draftText.current:'',
-        images:currentlyVisible?draftImages.current:[],
-        files:previous
-      };
-      pendingDrafts.current.set(targetChat,{...old,files:next});
-      if(currentlyVisible){
-        draftFiles.current=next;
-        setTextFiles(next);
-      }
-      // If the user changed conversations while a native picker was open,
-      // the continuation stays attached to that origin, not to the new chat.
-      setReaderContinuation({
-        chatId:targetChat,name:document.name,
-        selector:document.selector,sourceSha256:document.sourceSha256,
-        nextOffset:document.nextOffsetChars,
-        sourceTruncated:document.sourceTruncated
-      });
-      setError('');
-    }catch(error){
-      if(currentChat.current===targetChat)setError(String(error));
-    }finally{endDraftMutation(origin);if(targetChat!==origin)endDraftMutation(targetChat);}
-  }
-  async function importAttachments(files) {
-    // Serialize image/text intake with same-chat Send, even across a picker
-    // or FileReader await. Other conversations remain independently usable.
-    const origin=currentChat.current||'new';
+    if(dropTarget!==null&&dropTarget!==origin)return;
     if(!beginDraftMutation(origin))return;
     let targetChat=origin;
     try{
-    targetChat=await ensureAttachmentChat();
-    if(targetChat!==origin){draftMutations.current.add(targetChat);refreshComposerState();}
-    if(lockedDraft(targetChat))return;
-    function storeAttachment(kind, value) {
-      const key=targetChat;
-      const old=pendingDrafts.current.get(key) || {
-        prompt: key === (currentChat.current||'new') ? draftText.current : '',
-        images: key === (currentChat.current||'new') ? draftImages.current : [],
-        files: key === (currentChat.current||'new') ? draftFiles.current : []
-      };
-      const next={...old,[kind]:value};
-      pendingDrafts.current.set(key,next);
-      if (key === (currentChat.current||'new')) {
-        if(kind === 'images') {draftImages.current=value;setImages(value);}
-        else {draftFiles.current=value;setTextFiles(value);}
-      }
-    }
-    const items = Array.from(files || []).slice(0, 8);
-    for (const file of items) {
-      if (isPotentialImage(file)) {
-        if (file.size <= 0 || file.size > MAX_IMAGE_ATTACHMENT) {
-          setError(`Image ${file.name} exceeds the 8 MB limit`); continue;
-        }
-        try {
-          const normalized = await normalizedImageFile(file);
-          const dataUrl = await new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = () => resolve(reader.result);
-            reader.onerror = () => reject(Error('Could not read image'));
-            reader.readAsDataURL(normalized.blob);
-          });
-          const image = await invoke('lu_ingest_image_data_url',
-            {chatId:targetChat,dataUrl,displayName:file.name});
-          if (image) {
-            const previewUrl = URL.createObjectURL(file);
-            const previous=pendingDrafts.current.get(targetChat)?.images ||
-              (targetChat === (currentChat.current||'new') ? draftImages.current : []);
-            if (previous.some(p => p.imageRef === image.imageRef&&p.previewUrl)){
-              URL.revokeObjectURL(previewUrl);
-              await refreshDraftImages(targetChat);
-            } else {
-              previewUrls.current.add(previewUrl);
-              await refreshDraftImages(targetChat,[{...image,previewUrl,detectedMimeType:normalized.mimeType}]);
-            }
-          }
-        } catch (error) { setError(String(error)); }
-      } else if (supportedDocumentName(file.name)) {
-        try {
-          const originDraft=readComposerDraft(targetChat);
-          if(originDraft.files.length>=MAX_TEXT_FILES){
-            noticeForChat(targetChat,`You can attach up to ${MAX_TEXT_FILES} documents per message`);continue;
-          }
-          const payload=await documentFilePayload(file);
-          const document=await invoke('lu_reader_ingest_document',{chatId:targetChat,...payload});
-          const nextFile=documentDraftItem(document);
-          const previous=readComposerDraft(targetChat);
-          const candidate=[...previous.files,nextFile];
-          if(candidate.length>MAX_TEXT_FILES){
-            noticeForChat(targetChat,`You can attach up to ${MAX_TEXT_FILES} documents per message`);continue;
-          }
-          buildSubmittedPrompt(previous.prompt || 'Attachment',candidate);
-          storeAttachment('files',candidate);
-          setReaderContinuation({chatId:targetChat,name:document.name,
-            selector:document.selector,sourceSha256:document.sourceSha256,
-            nextOffset:document.nextOffsetChars,sourceTruncated:document.sourceTruncated});
-        } catch(error) {
-          noticeForChat(targetChat,String(error));
-          if(currentChat.current===targetChat)setError(String(error));
-        }
-      } else {
-        noticeForChat(targetChat,`Unsupported attachment ${file.name}. Choose a supported document, PNG or JPEG image.`);
-      }
-    }
+      targetChat=await ensureAttachmentChat();
+      if(targetChat!==origin){draftMutations.current.add(targetChat);refreshComposerState();}
+      if(lockedDraft(targetChat))return;
+      await invoke(command,{chatId:targetChat,...args});
+      await refreshDraftImages(targetChat);
+      if(currentChat.current===targetChat)setError('');
     }catch(error){if(currentChat.current===targetChat)setError(String(error));}
     finally{endDraftMutation(origin);if(targetChat!==origin)endDraftMutation(targetChat);}
   }
+  function pickLinkedFiles(){
+    void runNativeAttachmentIntake('lu_pick_linked_files');
+  }
+  async function attachReaderDocument(continuePrevious=false) {
+    const origin=currentChat.current||'new';
+    if(continuePrevious){
+      const previous=readerContinuation;
+      if(!previous||previous.chatId!==origin||previous.selector!==readerSelector||
+         !previous.attachmentId||previous.nextOffset===null){
+        setError('Choose the original document section first.');return;
+      }
+      await runNativeAttachmentIntake('lu_continue_linked_document',{attachmentId:previous.attachmentId});
+    }else await runNativeAttachmentIntake('lu_pick_linked_files',{selector:readerSelector});
+  }
+  async function removeDocument(file,i){
+    const target=currentChat.current;
+    if(!target||!beginDraftMutation(target))return;
+    try{
+      if(file.attachmentId)await invoke('lu_remove_linked_draft',{chatId:target,attachmentId:file.attachmentId});
+      else{
+        const draft=readComposerDraft(target);
+        writeComposerDraft(target,{...draft,files:draft.files.filter((_,n)=>n!==i)});
+      }
+      await refreshDraftImages(target);
+    }catch(error){if(currentChat.current===target)setError(String(error));}
+    finally{endDraftMutation(target);}
+  }
   function handlePaste(event) {
-    const fileItems = Array.from(event.clipboardData?.items || [])
-      .filter(item => item.kind === 'file').map(item => item.getAsFile()).filter(Boolean);
-    if (fileItems.length) { event.preventDefault(); void importAttachments(fileItems); }
+    const items=Array.from(event.clipboardData?.items||[]);
+    if(items.some(item=>item.kind==='file')||Array.from(event.clipboardData?.types||[]).includes('Files')){
+      event.preventDefault();
+      void runNativeAttachmentIntake('lu_paste_linked_files');
+    }
   }
   function handleDrop(event) {
-    event.preventDefault(); setDragActive(false);
-    void importAttachments(event.dataTransfer?.files);
+    // The native Tauri drop event owns file selection. A synthetic DOM
+    // FileList never conveys a durable original-path grant.
+    event.preventDefault();setDragActive(false);
   }
   function handleAppDrag(event) {
     if (Array.from(event.dataTransfer?.types || []).includes('Files')) {
@@ -4793,13 +4709,16 @@ function App() {
               <span aria-hidden="true">▧</span><span>{im.name}{im.observed?' (local capture expired)':''}</span>
               {!im.observed&&<button type="button" onClick={()=>void openSavedAttachment(entry,im)}>View</button>}
             </span>)}
-            {!entry.attachments.some(im=>im.observed)&&<button type="button" className="subtleButton"
+            {!entry.linkedAttachments?.length&&!entry.attachments.some(im=>im.observed)&&
+              <small>Historical image copy · attach the original file to reuse it.</small>}
+          </div>}
+          {entry.role==='user'&&entry.linkedAttachments?.length>0&&<>
+            <SavedLinkedAttachments key={chatId+':'+entry.seq} chatId={chatId}
+              visibleSeq={entry.seq} attachments={entry.linkedAttachments}/>
+            {!entry.attachments?.length&&<button type="button" className="subtleButton"
               disabled={chatBusy||Boolean(visibleAttempt)||composerMutating||Boolean(prompt.trim()||images.length||textFiles.length)}
               onClick={()=>void restoreSavedMessage(entry)}>Restore message to draft</button>}
-          </div>}
-          {entry.role==='user'&&entry.linkedAttachments?.length>0&&
-            <SavedLinkedAttachments key={chatId+':'+entry.seq} chatId={chatId}
-              visibleSeq={entry.seq} attachments={entry.linkedAttachments}/>}
+          </>}
           {revision?.currentVersion>0&&<small className="messageEditedNotice">
             Human-edited display · revision {revision.currentVersion}.
             Original model input and tool history unchanged.
@@ -6620,14 +6539,14 @@ function App() {
           {(images.length > 0 || textFiles.length > 0) && <div className="attachments" aria-label="Draft attachments">
             {images.map(im => <span key={im.imageRef} className="attachment imageAttachment">
               {im.previewUrl ? <img src={im.previewUrl} alt="Attached image preview"/> : <span aria-hidden="true">▧</span>}
-              <span title={im.name || im.mimeType}>{im.name || im.mimeType}{im.available===false?' (unavailable)':''}{im.detectedMimeType && im.name?.toLowerCase().endsWith('.jpg') && im.detectedMimeType === 'image/png' ? ' (PNG data)' : ''}</span>
+              <span title={im.name || im.mimeType}>{im.name || im.mimeType}{im.available===false?' · File not available':''}{im.name?.toLowerCase().endsWith('.jpg') && im.mimeType === 'image/png' ? ' (PNG data)' : ''}</span>
               {!im.observed&&im.available!==false&&<button type="button" disabled={composerLocked||composerMutating}
                 onClick={()=>void openDraftAttachment(im)} aria-label={'View image '+(im.name||'draft')}>View</button>}
               <button type="button" disabled={composerLocked||composerMutating} onClick={() => void removeImage(im.imageRef)} aria-label="Remove image">×</button>
             </span>)}
-            {textFiles.map((file,i)=><span key={i} className="attachment textAttachment"><span aria-hidden="true">▤</span>
-              <span title={attachmentSummary(file)}>{attachmentSummary(file)}</span>
-              <button type="button" disabled={composerLocked||composerMutating} onClick={() => {const next=draftFiles.current.filter((_,n)=>n!==i);draftFiles.current=next;setTextFiles(next);}} aria-label={'Remove '+file.name}>×</button>
+            {textFiles.map((file,i)=><span key={file.attachmentId||i} className="attachment textAttachment"><span aria-hidden="true">▤</span>
+              <span title={attachmentSummary(file)}>{attachmentSummary(file)}{file.available===false?' · File not available':''}</span>
+              <button type="button" disabled={composerLocked||composerMutating} onClick={()=>void removeDocument(file,i)} aria-label={'Remove '+file.name}>×</button>
             </span>)}
           </div>}
           {submissionNoticeByChat[chatId]&&<div className="submissionNotice" role="status">
@@ -6642,12 +6561,12 @@ function App() {
               onClick={()=>void keepUnconfirmedDraft()}>Keep draft without sending</button>
           </div>}
           <textarea ref={composerRef} aria-label="Message Lu" value={prompt} readOnly={composerLocked||composerMutating} onChange={e => {if(lockedDraft(currentChat.current||'new'))return;draftText.current=e.target.value;setPrompt(e.target.value);}} style={{height:composerHeight}} maxLength={16384}
-            placeholder={loaded ? 'Message Lu… Paste or drop images and text files' : 'Ask the time, check model status, search this chat or selected workspace'}
+            placeholder={loaded ? 'Message Lu… Attach or drop original files' : 'Ask the time, check model status, search this chat or selected workspace'}
             onPaste={handlePaste}
             onKeyDown={e => { if (isSendKey(e)) { e.preventDefault(); e.currentTarget.form?.requestSubmit(); } }}/>
-          <div className="composerFooter"><input ref={fileInput} type="file" className="visuallyHidden" multiple
-              accept={ATTACHMENT_ACCEPT} onChange={e => {void importAttachments(e.target.files);e.target.value='';}}/>
-            <button type="button" className="subtleButton" disabled={composerLocked||composerMutating} onClick={() => fileInput.current?.click()}>+ Attach</button>
+          <div className="composerFooter">
+            <button type="button" className="subtleButton" disabled={composerLocked||composerMutating} onClick={pickLinkedFiles}>+ Attach</button>
+            <button type="button" className="subtleButton" disabled={composerLocked||composerMutating} onClick={()=>void runNativeAttachmentIntake('lu_paste_linked_files')}>Paste files</button>
             {/* Goal and task planning remain host capabilities, not chat controls. */}
             {chatBusy ? <button className="dangerButton" type="button" onClick={cancel}
                 disabled={!visibleJob.generationId || visibleJob.phase==='submitting' || visibleJob.cancelling}>{visibleJob.cancelling ? 'Stopping…' : visibleJob.phase === 'queued' ? 'Cancel queued' : 'Cancel'}</button>

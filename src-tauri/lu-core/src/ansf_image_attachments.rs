@@ -190,13 +190,26 @@ impl AnsfStore{
     /// grant. An unresolved record may not be overwritten by a new attempt.
     pub fn stage_image_ui_submission(&self,chat:&str,turn:&str,snapshot:&str,refs:&[String])
         ->Result<(),AnsfError>{
+        self.stage_attachment_ui_submission(chat,turn,snapshot,refs,&[])
+    }
+    /// One exact recovery slot for old images and original-file links.
+    /// The host serializes only human text and opaque linked identities.
+    pub fn stage_attachment_ui_submission(&self,chat:&str,turn:&str,snapshot:&str,
+        refs:&[String],linked_refs:&[String])->Result<(),AnsfError>{
         if !valid_chat(chat)||!opaque(turn,"g-")||snapshot.is_empty()||snapshot.len()>128*1024||
-            refs.is_empty()||refs.len()>MAX_IMAGES{return Err(AnsfError::InvalidInput)}
-        let mut conn=self.conn.lock().map_err(|_|AnsfError::Locked)?;
-        let tx=conn.transaction()?;
-        if read_manifest(&tx,chat,None)?.iter().map(|a|&a.attachment_id).ne(refs.iter()){
+            (refs.is_empty()&&linked_refs.is_empty())||refs.len()>MAX_IMAGES||linked_refs.len()>8{
             return Err(AnsfError::InvalidInput)
         }
+        let mut conn=self.conn.lock().map_err(|_|AnsfError::Locked)?;
+        let tx=conn.transaction()?;
+        let legacy=read_manifest(&tx,chat,None)?;
+        let linked=crate::ansf_linked_attachments::read_manifest(&tx,chat,None)?;
+        if legacy.iter().map(|a|&a.attachment_id).ne(refs.iter())||
+           linked.iter().map(|a|&a.attachment_id).ne(linked_refs.iter())||
+           image_ui_submission_settled(&tx,chat,turn)?{
+            return Err(AnsfError::InvalidInput)
+        }
+        crate::ansf_linked_attachments::validate_combined(&legacy,&linked)?;
         let previous:Option<(String,String)>=tx.query_row(
             "SELECT turn_id,snapshot FROM ansf_image_ui_submission WHERE session_id=?1",
             [chat],|r|Ok((r.get(0)?,r.get(1)?))).optional()?;
@@ -255,6 +268,8 @@ impl AnsfStore{
         }
         rows.push(a.clone());
         validate_manifest(&rows)?;
+        crate::ansf_linked_attachments::validate_combined(&rows,
+            &crate::ansf_linked_attachments::read_manifest(&tx,chat,None)?)?;
         tx.execute(
             "INSERT INTO ansf_image_attachments
              (session_id,attachment_id,display_name,media_type,bytes,sha256,observed,turn_id)
@@ -274,7 +289,10 @@ impl AnsfStore{
         validate_manifest(rows)?;
         let mut conn=self.conn.lock().map_err(|_|AnsfError::Locked)?;
         let tx=conn.transaction()?;
-        if !read_manifest(&tx,chat,None)?.is_empty(){return Err(AnsfError::InvalidInput)}
+        if !read_manifest(&tx,chat,None)?.is_empty()||
+            !crate::ansf_linked_attachments::read_manifest(&tx,chat,None)?.is_empty(){
+            return Err(AnsfError::InvalidInput)
+        }
         for a in rows{
             tx.execute(
                 "INSERT INTO ansf_image_attachments

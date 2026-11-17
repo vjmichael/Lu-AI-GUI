@@ -10,6 +10,7 @@ const css = readFileSync(new URL('../web/styles.css', import.meta.url), 'utf8');
 const js = readFileSync(new URL('../dist/assets/app.js', import.meta.url), 'utf8');
 const attachmentCore = readFileSync(new URL('../../src-tauri/lu-core/src/ansf_image_attachments.rs', import.meta.url), 'utf8');
 const attachmentStore = readFileSync(new URL('../src-tauri/src/attachment_store.rs', import.meta.url), 'utf8');
+const linkedIntake = readFileSync(new URL('../src-tauri/src/linked_attachment_intake.rs', import.meta.url), 'utf8');
 const lifecycle = readFileSync(new URL('../web/submission_lifecycle.mjs', import.meta.url), 'utf8');
 const send = ui.slice(ui.indexOf('async function send(e)'),ui.indexOf('async function openSavedAttachment'));
 const imageAdmission = ui.slice(ui.indexOf('async function admitSavedImageAttempt'),ui.indexOf('async function acknowledgeImageAttempt'));
@@ -176,14 +177,14 @@ const tests = [
   ['model discovery never imports MMProj as a main model', host.includes('lowered.starts_with("mmproj")')],
   ['switching chats permitted during generation', !ui.includes('if (busy) return;\n    requestedChat.current') && ui.includes('currentChat.current')],
   ['streaming chunks are routed to generating chat', ui.includes('tokenForJob(prev,e.payload)') && host.includes('chat_id: chat_id.clone()')],
-  ['paste/drop attachments routed through bounded host image admission', ui.includes('onPaste={handlePaste}') && ui.includes('onDrop={handleDrop}') && host.includes('fn lu_ingest_image_data_url(')],
+  ['paste/drop attachments routed through bounded original-file admission', ui.includes('onPaste={handlePaste}') && ui.includes('lu-native-file-drop') && ui.includes('lu_paste_linked_files') && ui.includes('lu_accept_linked_drop') && linkedIntake.includes('DragDropEvent::Drop') && !ui.includes("invoke('lu_ingest_image_data_url'")],
   ['quick unload model supported', ui.includes('quickEject') && ui.includes('Unload active model')],
   ['model supplied think blocks rendered', ui.includes('splitModelOutput') && ui.includes('Model reasoning')],
   ['cancellation journal preserves interrupted reply', store.includes('result[i].cancelled=true')],
   ['conversation history carried as typed Protobuf turns',
     host.includes('let history = if origin==GenerationOrigin::Human{') &&
     host.includes('prompt_context::typed_history_for_model(') &&
-    host.includes('&events[..events.len()-1],&prompt,') &&
+    host.includes('&events[..events.len()-1],&attachment_prompt,') &&
     host.includes('&events,&prompt,') &&
     host.includes('loaded_profile.context_tokens,max_new_tokens') &&
     host.includes('let events = state.chats.recent_model_history(&chat_id,64)?') &&
@@ -193,10 +194,10 @@ const tests = [
   ['text attachments are draft metadata rather than textarea insertion',
     ui.includes("setTextFiles(draft.files || [])") &&
     send.includes('const snapshot=snapshotDraft(readComposerDraft(origin));') &&
-    send.includes('buildSubmittedPrompt(input, snapshot.files)') &&
+    send.includes('attachmentSubmissionText(snapshot)') &&
     lifecycle.includes('files:[...draft.files]') &&
     send.includes('prompt:submitted,imageRefs:[]')],
-  ['image previews are scoped with blob CSP only for image sources', ui.includes('URL.createObjectURL(file)') && readFileSync(new URL('../src-tauri/tauri.conf.json', import.meta.url),'utf8').includes("img-src 'self' data: blob:")],
+  ['image previews are scoped with blob CSP only for image sources', ui.includes("invoke('lu_read_image_attachment'") && !ui.includes('new FileReader(') && readFileSync(new URL('../src-tauri/tauri.conf.json', import.meta.url),'utf8').includes("img-src 'self' data: blob:")],
   ['archive review uses supervised native decoding and scoped preview cancellation',
     host.includes('state.archive_reviews.stage_supervised(') &&
     host.includes('fn lu_cancel_archive_preview(') &&

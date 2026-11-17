@@ -67,6 +67,20 @@ fn validate(rows:&[LinkedAttachment])->Result<(),AnsfError>{
     Ok(())
 }
 
+/// Shared total bound across both historical and linked image manifests.
+pub(crate) fn validate_combined(legacy:&[crate::ansf_image_attachments::ImageAttachment],
+    links:&[LinkedAttachment])->Result<(),AnsfError>{
+    validate(links)?;
+    let images=links.iter().filter(|a|a.attachment_id.starts_with("img-"));
+    if legacy.len()+images.clone().count()>crate::multimodal_saved_turn::MAX_IMAGES||
+       legacy.iter().map(|a|a.bytes).sum::<u64>()+
+          images.map(|a|a.bytes).sum::<u64>()>crate::multimodal_saved_turn::MAX_TOTAL_IMAGE_BYTES as u64||
+       legacy.iter().any(|a|links.iter().any(|b|a.attachment_id==b.attachment_id)){
+        return Err(AnsfError::InvalidInput)
+    }
+    Ok(())
+}
+
 pub(crate) fn initialize_linked_attachment_schema(conn:&Connection)->Result<(),AnsfError>{
     conn.execute_batch(
         "CREATE TABLE IF NOT EXISTS ansf_linked_attachments(
@@ -157,16 +171,31 @@ impl AnsfStore{
     /// Only the native host calls this after a real operator selects and
     /// verifies the original source. A duplicate exact section is idempotent.
     pub fn admit_linked_draft(&self,chat:&str,a:&LinkedAttachment)->Result<LinkedAttachment,AnsfError>{
-        if !chat_ok(chat)||!valid(a){return Err(AnsfError::InvalidInput)}
+        self.admit_linked_drafts(chat,std::slice::from_ref(a))?
+            .into_iter().next().ok_or(AnsfError::InvalidInput)
+    }
+    /// Batch admission is atomic. Exact repeated sections resolve to their
+    /// existing identity, while a changed file requires explicit removal.
+    pub fn admit_linked_drafts(&self,chat:&str,candidates:&[LinkedAttachment])
+        ->Result<Vec<LinkedAttachment>,AnsfError>{
+        if !chat_ok(chat)||candidates.is_empty()||candidates.len()>8||
+            candidates.iter().any(|a|!valid(a)){return Err(AnsfError::InvalidInput)}
         let mut conn=self.conn.lock().map_err(|_|AnsfError::Locked)?;let tx=conn.transaction()?;
         let mut rows=read_manifest(&tx,chat,None)?;
-        if let Some(old)=rows.iter().find(|old|old.source_path==a.source_path&&old.selector==a.selector&&
-            old.offset_chars==a.offset_chars&&old.media_type==a.media_type){
-            let mut expected=a.clone();expected.attachment_id=old.attachment_id.clone();
-            if *old==expected{return Ok(old.clone())}
-            return Err(AnsfError::InvalidInput)
+        let legacy=crate::ansf_image_attachments::read_manifest(&tx,chat,None)?;
+        let mut admitted=Vec::new();
+        for a in candidates{
+            if let Some(old)=rows.iter().find(|old|old.source_path==a.source_path&&old.selector==a.selector&&
+                old.offset_chars==a.offset_chars&&old.media_type==a.media_type){
+                let mut expected=a.clone();expected.attachment_id=old.attachment_id.clone();
+                if *old!=expected{return Err(AnsfError::InvalidInput)}
+                admitted.push(old.clone());
+            }else{
+                rows.push(a.clone());validate_combined(&legacy,&rows)?;
+                insert_draft(&tx,chat,a)?;admitted.push(a.clone());
+            }
         }
-        rows.push(a.clone());validate(&rows)?;insert_draft(&tx,chat,a)?;tx.commit()?;Ok(a.clone())
+        tx.commit()?;Ok(admitted)
     }
     /// Metadata-only removal never opens, deletes or moves a filesystem file.
     pub fn remove_linked_draft(&self,chat:&str,id:&str)->Result<bool,AnsfError>{
@@ -174,6 +203,36 @@ impl AnsfStore{
         let conn=self.conn.lock().map_err(|_|AnsfError::Locked)?;
         Ok(conn.execute("DELETE FROM ansf_linked_attachments WHERE session_id=?1 AND attachment_id=?2
             AND turn_id IS NULL",params![chat,id])?==1)
+    }
+    /// Only a host-reverified original saved link batch may be restored.
+    /// Historical copied images are not relabeled as original-file links.
+    pub fn restore_linked_draft(&self,chat:&str,seq:i64,rows:&[LinkedAttachment])->Result<(),AnsfError>{
+        if !chat_ok(chat)||seq<=0||rows.is_empty(){return Err(AnsfError::InvalidInput)}
+        validate(rows)?;
+        let mut conn=self.conn.lock().map_err(|_|AnsfError::Locked)?;let tx=conn.transaction()?;
+        if !read_manifest(&tx,chat,None)?.is_empty()||
+           !crate::ansf_image_attachments::read_manifest(&tx,chat,None)?.is_empty(){
+            return Err(AnsfError::InvalidInput)
+        }
+        let turn:String=tx.query_row("SELECT e.user_turn_id FROM ansf_live_chat_events e
+            JOIN ansf_visible_chat v ON v.first_seq=e.seq AND v.session_id=e.session_id
+            WHERE e.session_id=?1 AND e.seq=?2 AND e.kind='user' AND e.origin='host'
+            AND e.user_turn_id IS NOT NULL",params![chat,seq],|r|r.get(0))?;
+        if !crate::ansf_image_attachments::read_manifest(&tx,chat,Some(&turn))?.is_empty(){
+            return Err(AnsfError::InvalidInput)
+        }
+        let original=read_saved(&tx,chat,&turn)?;
+        if original.len()!=rows.len(){return Err(AnsfError::InvalidInput)}
+        for (old,new) in original.iter().zip(rows){
+            let mut expected=old.clone();expected.attachment_id=new.attachment_id.clone();
+            if &expected!=new||old.attachment_id==new.attachment_id||
+                tx.query_row("SELECT EXISTS(SELECT 1 FROM ansf_image_attachments WHERE attachment_id=?1)",
+                    [&new.attachment_id],|r|r.get::<_,bool>(0))?{
+                return Err(AnsfError::InvalidInput)
+            }
+        }
+        for a in rows{insert_draft(&tx,chat,a)?;}
+        tx.commit()?;Ok(())
     }
     pub fn saved_linked_manifest(&self,chat:&str,turn:&str)->Result<Vec<LinkedAttachment>,AnsfError>{
         let conn=self.conn.lock().map_err(|_|AnsfError::Locked)?;read_saved(&conn,chat,turn)
@@ -261,6 +320,71 @@ mod tests{
         book.append_host_chat_event_with_attachment_drafts("chat-a",&event,&[image.clone()],&[a.clone()]).unwrap();
         assert_eq!(book.saved_image_manifest("chat-a",gid).unwrap(),vec![image]);
         assert_eq!(book.saved_linked_manifest("chat-a",gid).unwrap(),vec![a]);
+        drop(book);let _=std::fs::remove_file(path);
+    }
+    #[test]
+    fn cp02_linked_recovery_and_restore_are_ordered_and_immutable(){
+        let path=db();let a=doc(20);let b=doc(21);let event=turn(22);let next=turn(23);
+        let gid=event.user_turn_id.as_deref().unwrap();let next_gid=next.user_turn_id.as_deref().unwrap();
+        let refs=vec![a.attachment_id.clone(),b.attachment_id.clone()];
+        {
+            let book=AnsfStore::open(&path).unwrap();
+            for chat in ["chat-a","chat-b"]{
+                book.create_session(chat,"ws","Chat").unwrap();book.start_chapter(chat,"Original").unwrap();
+            }
+            book.admit_linked_draft("chat-a",&a).unwrap();book.admit_linked_draft("chat-a",&b).unwrap();
+            assert!(book.stage_attachment_ui_submission("chat-a",gid,"snapshot",&[],&[refs[1].clone(),refs[0].clone()]).is_err());
+            assert!(book.stage_attachment_ui_submission("chat-b",gid,"snapshot",&[],&refs).is_err());
+            book.stage_attachment_ui_submission("chat-a",gid,"snapshot",&[],&refs).unwrap();
+            book.stage_attachment_ui_submission("chat-a",gid,"snapshot",&[],&refs).unwrap();
+            assert!(book.stage_attachment_ui_submission("chat-a",next_gid,"next",&[],&refs).is_err());
+            assert!(!book.clear_image_ui_submission("chat-a",gid).unwrap());
+        }
+        {
+            let book=AnsfStore::open(&path).unwrap();
+            assert_eq!(book.image_ui_submission("chat-a").unwrap(),Some((gid.into(),"snapshot".into())));
+            book.reject_image_submission("chat-a",gid).unwrap();
+            assert!(book.stage_attachment_ui_submission("chat-a",gid,"snapshot",&[],&refs).is_err());
+            book.stage_attachment_ui_submission("chat-a",next_gid,"next",&[],&refs).unwrap();
+            let seq=book.append_host_chat_event_with_attachment_drafts("chat-a",&next,&[],&[a.clone(),b.clone()]).unwrap().seq;
+            assert!(book.clear_image_ui_submission("chat-a",next_gid).unwrap());
+            let mut first=a.clone();first.attachment_id=format!("doc-{:032x}",24);
+            let mut second=b.clone();second.attachment_id=format!("doc-{:032x}",25);
+            assert!(book.restore_linked_draft("chat-b",seq,&[first.clone(),second.clone()]).is_err());
+            assert!(book.restore_linked_draft("chat-a",seq,&[second.clone(),first.clone()]).is_err());
+            assert!(book.linked_draft("chat-a").unwrap().is_empty());
+            book.restore_linked_draft("chat-a",seq,&[first.clone(),second.clone()]).unwrap();
+            assert_eq!(book.linked_draft("chat-a").unwrap(),vec![first,second]);
+            assert_eq!(book.saved_linked_manifest("chat-a",next_gid).unwrap(),vec![a,b]);
+        }
+        let _=std::fs::remove_file(path);
+    }
+    #[test]
+    fn cp02_batch_failure_rolls_back_all_new_links(){
+        let path=db();let book=AnsfStore::open(&path).unwrap();
+        book.create_session("chat-a","ws","Chat").unwrap();book.start_chapter("chat-a","Original").unwrap();
+        let a=doc(1);let b=doc(2);let mut changed=b.clone();changed.sha256="a".repeat(64);
+        assert!(book.admit_linked_drafts("chat-a",&[a.clone(),b.clone(),changed]).is_err());
+        assert!(book.linked_draft("chat-a").unwrap().is_empty());
+        assert_eq!(book.admit_linked_drafts("chat-a",&[a.clone(),b.clone()]).unwrap(),vec![a.clone(),b.clone()]);
+        assert_eq!(book.admit_linked_drafts("chat-a",&[a.clone()]).unwrap(),vec![a]);
+        assert_eq!(book.linked_draft("chat-a").unwrap().len(),2);
+        drop(book);let _=std::fs::remove_file(path);
+    }
+    #[test]
+    fn cp02_combined_image_limit_cannot_be_evaded_with_two_manifests(){
+        use crate::ansf_image_attachments::ImageAttachment;
+        let path=db();let book=AnsfStore::open(&path).unwrap();
+        book.create_session("chat-a","ws","Chat").unwrap();book.start_chapter("chat-a","Original").unwrap();
+        for n in 1..=4u8{
+            let a=ImageAttachment{attachment_id:format!("img-{n:032x}"),display_name:format!("{n}.png"),
+                media_type:"image/png".into(),bytes:32,sha256:format!("{n:064x}"),observed:false};
+            book.admit_draft_image("chat-a",&a).unwrap();
+        }
+        let mut linked=doc(9);linked.attachment_id=format!("img-{:032x}",9);
+        linked.media_type="image/png".into();linked.reader_format=None;linked.excerpt_sha256=None;
+        assert!(book.admit_linked_draft("chat-a",&linked).is_err());
+        assert!(book.linked_draft("chat-a").unwrap().is_empty());
         drop(book);let _=std::fs::remove_file(path);
     }
     #[test]
