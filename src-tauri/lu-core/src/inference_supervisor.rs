@@ -231,6 +231,8 @@ impl<B: InferenceBackend + Send + 'static> TrustedInferenceSupervisor<B> {
         self.attach_projector(model_ref, projector)
     }
     fn session(&self, session_id: &str) -> Result<Arc<Session<B>>, SupervisorError> {
+        // Retire an idle, lost child before admitting a new generation.
+        self.status()?;
         let guard = self.current.lock().map_err(|_| SupervisorError::Poisoned)?;
         let session = guard.as_ref().ok_or(SupervisorError::Unavailable)?;
         if session.session_id != session_id {
@@ -244,6 +246,7 @@ impl<B: InferenceBackend + Send + 'static> TrustedInferenceSupervisor<B> {
         session_id: String,
         request_id: &str,
     ) -> Result<Vec<u8>, SupervisorError> {
+        self.status()?;
         let mut current = self.current.lock().map_err(|_| SupervisorError::Poisoned)?;
         if current.is_some() {
             return Err(SupervisorError::Busy);
@@ -830,29 +833,34 @@ impl<B: InferenceBackend + Send + 'static> TrustedInferenceSupervisor<B> {
         )
     }
     pub fn status(&self) -> Result<SupervisorStatus, SupervisorError> {
-        let current = self.current.lock().map_err(|_| SupervisorError::Poisoned)?;
-        let Some(session) = current.as_ref() else {
-            return Ok(SupervisorStatus {
-                session_id: None,
-                model_ref: None,
-                generation_id: None,
-                phase: EnginePhase::Idle,
-                pid: None,
-            });
-        };
-        let control = session
-            .control
-            .lock()
-            .map_err(|_| SupervisorError::Poisoned)?;
+        fn idle() -> SupervisorStatus {
+            SupervisorStatus { session_id: None, model_ref: None, generation_id: None,
+                phase: EnginePhase::Idle, pid: None }
+        }
+        let mut current = self.current.lock().map_err(|_| SupervisorError::Poisoned)?;
+        let Some(session) = current.as_ref().cloned() else { return Ok(idle()); };
+        let mut control = session.control.lock().map_err(|_| SupervisorError::Poisoned)?;
+        // Never wait for the generation mutex from status or cancellation.
+        // A busy generation keeps its original lease; when it releases that
+        // lease, reconcile actual residency before reporting Ready again.
+        if control.active.is_none() && !control.closing {
+            let resident=match session.engine.try_lock() {
+                Ok(mut engine)=>engine.reconcile_residency(),
+                Err(std::sync::TryLockError::WouldBlock)=>true,
+                Err(std::sync::TryLockError::Poisoned(_))=>return Err(SupervisorError::Poisoned),
+            };
+            if !resident {
+                control.closing=true; // reject any stale Arc's next reservation
+                drop(control);
+                *current=None;
+                return Ok(idle());
+            }
+        }
         Ok(SupervisorStatus {
             session_id: Some(session.session_id.clone()),
             model_ref: Some(session.model_ref.clone()),
             generation_id: control.active.as_ref().map(|a| a.generation_id.clone()),
-            phase: if control.active.is_some() {
-                EnginePhase::Generating
-            } else {
-                EnginePhase::Ready
-            },
+            phase: if control.active.is_some() { EnginePhase::Generating } else { EnginePhase::Ready },
             pid: session.pid,
         })
     }
@@ -889,6 +897,56 @@ mod tests {
             }
             Ok(())
         }
+    }
+    struct LostWorkerBackend { resident: bool }
+    impl InferenceBackend for LostWorkerBackend {
+        fn load(&mut self, _: &AdmittedModel) -> Result<(), String> {
+            self.resident=true; Ok(())
+        }
+        fn model_resident(&mut self)->bool { self.resident }
+        fn unload(&mut self) { self.resident=false; }
+        fn generate(&mut self,_:&GenerationRequest,_:&Cancellation,
+            _:&mut dyn FnMut(TokenChunk)->Result<(),EngineError>)->Result<(),String>{
+            self.resident=false; Err("engine request failed and worker ejected".into())
+        }
+        fn generate_with_images(&mut self,_:&GenerationRequest,_:&[PinnedImage],
+            _:&Cancellation,_:&mut dyn FnMut(TokenChunk)->Result<(),EngineError>)->Result<(),String>{
+            self.resident=false; Err("image request rejected and worker ejected".into())
+        }
+    }
+    #[test]
+    fn failed_worker_is_retired_and_original_model_can_be_reloaded(){
+        let dir=std::env::temp_dir().join(format!("lu-lost-worker-{}-{:?}",std::process::id(),std::thread::current().id()));
+        fs::create_dir_all(&dir).unwrap();
+        let mut f=fs::File::create(dir.join("model.gguf")).unwrap();
+        f.write_all(b"GGUF").unwrap();
+        f.write_all(&3u32.to_le_bytes()).unwrap();
+        f.write_all(&1u64.to_le_bytes()).unwrap();
+        f.write_all(&1u64.to_le_bytes()).unwrap();
+        drop(f);
+        let mut admission=ModelAdmissionManager::new();
+        let model=admission.admit(&dir,"model.gguf").unwrap().clone();
+        let sup=TrustedInferenceSupervisor::new("llama-cpu".into(),4096,
+            vec![("model-1".into(),model)],||Ok(LostWorkerBackend{resident:false})).unwrap();
+        sup.load("model-1","s-1".into(),"load-1").unwrap();
+        // Real host-admitted PNG bytes exercise the image reservation and
+        // bridge. The fixture simulates a rejected request ejecting the worker.
+        // Generate rather than relying on a precomputed PNG fixture's CRC.
+        let mut bytes=Vec::new();
+        image::DynamicImage::ImageRgb8(image::RgbImage::from_pixel(2,2,image::Rgb([255,0,0])))
+            .write_to(&mut std::io::Cursor::new(&mut bytes),image::ImageFormat::Png).unwrap();
+        use base64::Engine as _;
+        let pinned=crate::multimodal_saved_turn::admit_data_url(&format!("data:image/png;base64,{}",base64::engine::general_purpose::STANDARD.encode(&bytes))).unwrap();
+        sup.reserve_generation_images("s-1","g-1","r-1","Describe",64,&[pinned.clone()]).unwrap();
+        assert!(sup.run_reserved_images("s-1","g-1","r-1","Describe".into(),64,vec![pinned],|_|Ok(())).is_err());
+        let status=sup.status().unwrap();
+        assert_eq!(status.phase,EnginePhase::Idle);
+        assert!(status.session_id.is_none() && status.pid.is_none());
+        assert_eq!(sup.reserve_generation("s-1","g-2","r-2","hello",64),Err(SupervisorError::Unavailable));
+        sup.load("model-1","s-2".into(),"load-2").unwrap();
+        assert_eq!(sup.status().unwrap().phase,EnginePhase::Ready);
+        sup.unload("s-2","unload-2").unwrap();
+        drop(sup);fs::remove_dir_all(dir).unwrap();
     }
     #[test]
     fn authorized_model_and_cancellation_without_deadlock() {

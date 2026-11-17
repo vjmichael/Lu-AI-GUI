@@ -2651,7 +2651,7 @@ function App() {
   function loadModel() {
     if (!selectedModel || busy || loaded) return;
     setModelMenuOpen(false);
-    action('Loading GGUF and projector', async () => {
+    action('Loading model', async () => {
       await invoke('lu_load_model', {modelRef: selectedModel});
       await refreshCatalog();
     });
@@ -4020,8 +4020,11 @@ function App() {
   async function send(e) {
     e.preventDefault();
     if (working || chatBusy ||
-        (!runtime.sessionId && !modelFreeClockAllowed) || !prompt.trim()) return;
-    const input = prompt.trim();
+        (!runtime.sessionId && !modelFreeClockAllowed) || (!prompt.trim()&&!images.length)) return;
+    const input = prompt.trim() || (images.length?'Describe the attached image.':'');
+    if(images.length&&!loadedModel?.projectorAttached){
+      setError('VISION_UNAVAILABLE');return;
+    }
     const usePlanDraft=planDraftNextSend;
     const useBrowserResearch=browserResearchNextSend;
     const useReviewedApp=reviewedAppNextSend;
@@ -4058,6 +4061,7 @@ function App() {
     try { submitted = buildSubmittedPrompt(input, textFiles); }
     catch (error) {setError(String(error));return;}
     const submittedImages = [...images];
+    const submittedFiles = [...textFiles];
     const refs = submittedImages.map(i => i.imageRef);
     let activeId = chatId;
     if (!activeId) {
@@ -4147,13 +4151,23 @@ function App() {
         if (currentChat.current===activeId)setError(String(error));
       });
     }
-    if (!completed && !cancelled && currentChat.current === activeId && !draftText.current.trim()) {
-      // Failed submissions remain editable. Already-journaled user turns are
-      // still displayed; the next attempt can be revised by the operator.
-      draftText.current = input;
-      setPrompt(input);
+    let retainedForRetry=false;
+    if (!completed && !cancelled) {
+      // Do not overwrite a newer draft or replay any image turn automatically.
+      // Keep the original pinned images available for a fresh explicit Send.
+      const visible=currentChat.current===activeId;
+      const draft=visible?{prompt:draftText.current,images:draftImages.current,files:draftFiles.current}:pendingDrafts.current.get(activeId);
+      if(draft&&!draft.prompt.trim()&&!draft.images.length&&!draft.files.length){
+        const retry={prompt:input,images:submittedImages,files:submittedFiles};
+        pendingDrafts.current.set(activeId,retry);
+        retainedForRetry=true;
+        if(visible){
+          draftText.current=retry.prompt;draftImages.current=retry.images;draftFiles.current=retry.files;
+          setPrompt(retry.prompt);setImages(retry.images);setTextFiles(retry.files);
+        }
+      }
     }
-    for (const image of submittedImages) {
+    if(!retainedForRetry)for (const image of submittedImages) {
       if (image.previewUrl) {URL.revokeObjectURL(image.previewUrl);previewUrls.current.delete(image.previewUrl);}
       await invoke('lu_release_image', {imageRef:image.imageRef}).catch(() => {});
     }
@@ -4249,9 +4263,7 @@ function App() {
         if (file.size <= 0 || file.size > MAX_IMAGE_ATTACHMENT) {
           setError(`Image ${file.name} exceeds the 8 MB limit`); continue;
         }
-        if (!loadedModel?.projectorAttached) {
-          setError('Load an MMProj-compatible model before attaching images'); continue;
-        }
+        // Attachment admission is independent of model residency; Send checks vision.
         try {
           const normalized = await normalizedImageFile(file);
           const dataUrl = await new Promise((resolve, reject) => {
@@ -4381,21 +4393,17 @@ function App() {
         <div className="chatTitle"><h1>{activeChat?.title && activeChat.title !== 'New chat' ? activeChat.title : 'Chat'}</h1>
           <p>{loaded ? 'Ready to chat' : 'Choose a local model to start'}</p></div>
         <div className="headerControls">
-          {working && activity.startsWith('Loading') && <span className="busyHint" role="status" aria-live="polite"><span className="spinner" aria-hidden="true"></span> Loading model · {modelLoadTrace?.loading&&modelLoadTrace.events?.length ? modelLoadTrace.events[modelLoadTrace.events.length-1].phase.replaceAll('_',' ') : 'Reading model and initializing backend'} · {modelMemorySample?.workingSetRamBytes!=null
-            ? 'RAM process '+(modelMemorySample.workingSetRamBytes/1073741824).toFixed(2)+' GiB'
-            : 'RAM unmeasured'} · {modelMemorySample?.dedicatedGpuBytes!=null
-            ? 'GPU process '+(modelMemorySample.dedicatedGpuBytes/1073741824).toFixed(2)+' GiB'
-            : 'GPU unmeasured'} · Tensor loading % unavailable</span>}
+          {working && activity.startsWith('Loading') && <span className="busyHint" role="status" aria-live="polite"><span className="spinner" aria-hidden="true"></span> Loading model…</span>}
           <div className="modelSwitcherWrap" ref={modelMenuRef}>
             <button className="modelSwitcher" aria-label="Choose a model" onClick={() => setModelMenuOpen(v => !v)} aria-expanded={modelMenuOpen} title="Quick model selection">
               <span className="modelText">{selectModelText}</span> <span>⌄</span></button>
             {modelMenuOpen && <div className="modelMenu">
-              <div className="modelMenuHeading">LOCAL GGUF MODELS <small>Selection does not load</small></div>
+              <div className="modelMenuHeading">LOCAL MODELS</div>
               {models.map(m => <button className="quickModel" key={m.modelRef} onClick={() => { setSelectedModel(m.modelRef); setModelMenuOpen(false); }}>
-                <span>{m.filename}<small>{m.projectorAttached ? 'GGUF + MMProj' : 'GGUF'}{!m.available ? ' · missing file' : ''}</small></span>
+                <span>{m.filename}<small>{m.projectorAttached ? 'Vision companion attached' : 'Text model'}{!m.available ? ' · missing file' : ''}</small></span>
                 {runtime.modelRef === m.modelRef && loaded ? <span className="readyMark">● Loaded</span> : selectedModel === m.modelRef ? '✓' : ''}
               </button>)}
-              {!models.length && <div className="asideHelp">Put GGUF files in Lu's models directory or import them from Settings.</div>}
+              {!models.length && <div className="asideHelp">Import a model or discover one in Models.</div>}
               <div className="modelMenuActions">
                 <button className="primaryButton" disabled={busy || loaded || !selected?.available} onClick={loadModel}>Load selected</button>
                 <button className="subtleButton" onClick={() => {setModelMenuOpen(false);openTab('models');}}>Manage models</button>
@@ -4408,13 +4416,13 @@ function App() {
       </header>
       <div className="transcriptWrap"><div className="messages" ref={transcriptRef}
         style={{backgroundColor:chatAppearance.background,color:textForBackground(chatAppearance.background)}}
-        onScroll={onTranscriptScroll} role="log" aria-live="off" aria-label="Conversation history, cursor paginated">
+        onScroll={onTranscriptScroll} role="log" aria-live="off" aria-label="Conversation history">
         {historyWindow.hasOlder&&<button type="button" className="subtleButton"
           onClick={()=>void loadOlderUiHistory()}>Load older messages</button>}
 
         {!history.length && <div className="welcome"><div className="welcomeSymbol">L</div>
-          <h2>What can I help you build?</h2>
-          <p>Local conversations are saved separately. Start a new chat or choose one from your history.</p></div>}
+          <h2>How can I help you?</h2>
+          <p>Start a conversation or choose one from your history.</p></div>}
         {displayedHistory.map((entry,i) => {
           const revision=displayRevisions[entry.seq];
           const displayText=revision?.currentText??entry.text;
@@ -4462,8 +4470,8 @@ function App() {
                 </button>
                 <button type="button"
                   onClick={()=>setMessageProvenance({entry,revision})}
-                  aria-label="View original, revisions and provenance">
-                  Versions / source
+                  aria-label="View original and previous versions">
+                  Versions
                 </button>
                 <button type="button" onClick={()=>{
                   const target=draftReplyTarget(entry,revision);
@@ -4507,10 +4515,10 @@ function App() {
            : visibleJob.cancelling ? 'Lu · stopping'
            : toolProgressByChat[chatId]?.generationId===visibleJob.generationId
              ? toolProgressByChat[chatId]?.phase==='tool_started'
-               ? 'Lu · using approved native tool'
+               ? 'Lu · working'
                : toolProgressByChat[chatId]?.phase==='tool_returned'
-                 ? 'Lu · checking tool result'
-                 : 'Lu · thinking with tools'
+                 ? 'Lu · checking results'
+                 : 'Lu · thinking'
              : 'Lu · generating'}
           </span>{visibleStream ? <MessageText text={visibleStream}/> : <span className="spinner"/>}
           {turnCapabilitiesByChat[chatId]?.generationId===visibleJob.generationId &&
@@ -4527,8 +4535,7 @@ function App() {
           onClick={event=>event.stopPropagation()}>
           <header><strong>Replay saved message · {messageReplay.role==='user'?'You':'Lu'}</strong>
             <button type="button" autoFocus onClick={()=>setMessageReplay(null)}>Close</button></header>
-          <small>This is an exact saved display replay; it never reruns the AI, calls tools,
-            or restores earlier authority.</small>
+          <small>View the saved message without generating a new answer.</small>
           <MessageText text={messageReplay.text} role={messageReplay.role}/>
           <div className="settingsActions">
             <button type="button" onClick={()=>void copySavedMessage(messageReplay)}>
@@ -4546,8 +4553,7 @@ function App() {
           <header><strong>Correct displayed message #{messageEditor.seq}</strong>
             <button type="button" onClick={()=>setMessageEditor(null)}>Close</button>
           </header>
-          <small>Human display correction only. The immutable ANSF original,
-            previous model input, and all earlier tool permissions remain unchanged.</small>
+          <small>Edit the displayed message. The original is saved separately.</small>
           <label className="messageRevisionEditor">Corrected text
             <textarea autoFocus rows={8} maxLength={16384}
               value={messageEditor.text}
@@ -4556,7 +4562,7 @@ function App() {
               }))}/>
           </label>
           <details className="originalMessageDetails">
-            <summary>View immutable original for comparison</summary>
+            <summary>View original message</summary>
             <pre>{messageEditor.original}</pre>
           </details>
           <div className="settingsActions">
@@ -4581,8 +4587,7 @@ function App() {
             <button type="button" autoFocus
               onClick={()=>setMessageProvenance(null)}>Close</button>
           </header>
-          <small>Authenticated ANSF originals are retained even after a display correction.
-            A human correction is not a new model answer or tool-execution receipt.</small>
+          <small>Compare the original with your edits.</small>
           <div className="settingsActions">
             <button type="button" disabled={revisionActionBusy||!
               correctedMessageFollowUp(messageProvenance.entry,messageProvenance.revision)}
@@ -4594,31 +4599,29 @@ function App() {
                 setLinkedReplyText(prepared.draft);
                 setMessageProvenance(null);
               }}>
-              Prepare human follow-up from correction
+              Create a reply from this edit
             </button>
           </div>
-          <small>This only opens a NEW human reply draft pinned to the current corrected
-            version. Posting it does not trigger inference or inherit earlier approval.</small>
+          <small>A new reply draft opens for you to review.</small>
           <div className="messageProvenanceVersions">
             <section>
-              <strong>Original ANSF text · version 0</strong>
-              <small>SHA-256: {messageProvenance.revision.originalSha256}</small>
+              <strong>Original message</strong>
+              
               <pre>{messageProvenance.revision.originalText}</pre>
             </section>
             {messageProvenance.revision.versions.map(v=>
               <section key={v.version}>
                 <strong>Version {v.version} · human display correction</strong>
-                <small>SHA-256: {v.sha256}</small>
+                
                 <pre>{v.text}</pre>
               </section>
             )}
             {messageProvenance.revision.replyTo&&<section>
-              <strong>Linked reply provenance</strong>
-              <small>Parent ANSF message: #{messageProvenance.revision.replyTo.parentSeq}
+              <strong>Original linked reply</strong>
+              <small>Original message: #{messageProvenance.revision.replyTo.parentSeq}
                 {' '}· pinned version {messageProvenance.revision.replyTo.pinnedParentVersion}
               </small>
-              <small>Parent SHA-256:
-                {' '+messageProvenance.revision.replyTo.pinnedParentSha256}</small>
+              
               <pre>{messageProvenance.revision.replyTo.pinnedParentExcerpt}</pre>
               <small>The parent link never changes when the parent is edited later.</small>
             </section>}
@@ -4632,22 +4635,20 @@ function App() {
           <header><strong>Reply to saved message #{linkedReplyTarget.seq}</strong>
             <button type="button" onClick={()=>setLinkedReplyTarget(null)}>Close</button>
           </header>
-          <small>Target display version {linkedReplyTarget.version} ·
-            pinned SHA-256 {linkedReplyTarget.sha}</small>
+          <small>Reply to version {linkedReplyTarget.version}</small>
           <blockquote className="messagePinnedQuote">
             {linkedReplyTarget.displayText}
           </blockquote>
-          <label className="messageRevisionEditor">New human reply
+          <label className="messageRevisionEditor">Your reply
             <textarea autoFocus rows={6} maxLength={16384}
               value={linkedReplyText} onChange={event=>setLinkedReplyText(event.target.value)}
               placeholder="Write a reply linked to this specific message and version"/>
           </label>
-          <small>Posting writes a new saved human message and a provenance link.
-            It does not send this text to the AI, call tools, or renew old permissions.</small>
+          <small>This saves your reply without sending it to the model.</small>
           <div className="settingsActions">
             <button type="button" disabled={revisionActionBusy||!linkedReplyText.trim()}
               onClick={()=>void postLinkedHumanReply()}>
-              Post linked human reply
+              Save reply
             </button>
             <button type="button" onClick={()=>setLinkedReplyTarget(null)}>Cancel</button>
           </div>
@@ -4665,12 +4666,9 @@ function App() {
         </div>
 
         {wave2FileBusy && <section className="readProposalCard" role="status"
-          aria-live="polite" aria-label="Native file operation in progress">
+          aria-live="polite" aria-label="Working with your files">
           <strong>Native file operation in progress</strong>
-          <small>Lu is handling a native picker, confirmation, bounded document/archiving work,
-            or receipt verification. Byte-level progress is not available in this workflow.
-            No automatic retry occurs if a write is interrupted; inspect File operations or
-            File recovery before taking another action.</small>
+          <small>Follow the requested file selection or approval. If the operation is interrupted, check your files before trying again.</small>
         </section>}
         {error && <div className="error" role="alert"><span>{friendlyError(error)}</span><button onClick={() => setError('')}>Dismiss</button></div>}
         {Object.values(readProposals).filter(proposal => proposal.chatId === chatId).map(proposal =>
@@ -4698,7 +4696,7 @@ function App() {
               <p>{proposal.purpose}</p>
               {proposal.textFileDraft&&<details>
                 <summary>View full model-proposed text (not written)</summary>
-                <strong>Suggested basename: {proposal.textFileDraft.fileName}</strong>
+                <strong>Suggested filename: {proposal.textFileDraft.fileName}</strong>
                 <pre className="editFullText" aria-label="Whole proposed file text">
                   {proposal.textFileDraft.content}
                 </pre>
@@ -4713,7 +4711,7 @@ function App() {
                 <button type="button" className="primaryButton"
                   disabled={working||chatBusy}
                   onClick={()=>void reviewNativeActionProposal(proposal)}>
-                  Review with native controls
+                  Review action
                 </button>
                 <button type="button" className="subtleButton"
                   onClick={()=>void rejectNativeActionProposal(proposal)}>Deny</button>
@@ -4799,8 +4797,7 @@ function App() {
             {(authorityPostureByChat[chatId].originalHostCancelEvents||[]).map(entry=>
               <article className="recoveryProvenanceOperation" key={entry.attemptId}>
                 <strong>{entry.status.replaceAll('_',' ')}</strong>
-                <small>Original cancellation intent: {entry.attemptId}
-                  {' '}· SHA-256 {entry.sourceSha256}</small>
+                
                 {(entry.domains||[]).map(item=>
                   <small key={item.name}>{item.name}: {item.state.replaceAll('_',' ')}</small>)}
                 <small>Original OS custody independently verified: NO ·
@@ -4856,9 +4853,7 @@ function App() {
                 Continue Reader at {readerContinuation?.nextOffset??'unavailable'} characters
               </button>
             </div>
-            <small>Ask Reader is an independent human-requested read-only tool turn;
-              sending the ordinary chat draft never silently selects a document.
-              Each continuation rechecks the original SHA-256 and selector.</small>
+            
           </section>
 
           <section className="readProposalCard" role="region"
@@ -4940,10 +4935,7 @@ function App() {
                 {researchCitationsByChat[chatId+'|'+l.sourceId]&&<div className="nativeOption">
                   <strong>Crossref-backed citation preview · REVIEW REQUIRED</strong>
                   <p>{researchCitationsByChat[chatId+'|'+l.sourceId].bibliography}</p>
-                  <small>Source response SHA-256:
-                    {researchCitationsByChat[chatId+'|'+l.sourceId].catalogResponseSha256}.
-                    Bibliographic identity alone does not verify publication particulars, quotations,
-                    passages, page numbering or factual interpretations.</small>
+                  
                   <textarea readOnly rows={3} aria-label="Reviewed CSL JSON"
                     value={JSON.stringify(researchCitationsByChat[chatId+'|'+l.sourceId].cslJson,null,2)}/>
                   <button onClick={()=>void copyResearchReference(
@@ -5143,8 +5135,8 @@ function App() {
                 <strong>{item.kind.toUpperCase()} · {item.sourceStatus.replaceAll('_',' ')}</strong>
                 <small>Source ID: <code>{item.sourceId}</code></small>
                 <small>Original locator (not a grant): {item.locator}</small>
-                <small>Source SHA-256: {item.sourceSha256}</small>
-                <small>Observed SHA-256: {item.observedSha256}</small>
+                
+                
                 {item.originalExcerpt&&!item.localOnlyPrivate&&
                   <pre className="editFullText" aria-label="Untrusted original Browser excerpt">
                     {item.originalExcerpt}
@@ -5505,8 +5497,8 @@ function App() {
               <strong>{operation.summary} — {operation.state.replaceAll('_',' ')}</strong>
               <code className="writeTarget">{operation.exactTarget}</code>
               <small>Tool: {operation.toolId}</small>
-              <small>Approved SHA-256: {operation.approvedSha256}</small>
-              <small>Effect ID: {operation.effectCallId}</small>
+              
+              
               <small>{operation.assessment}</small>
               {operation.targetIntegrity && operation.targetIntegrity !== 'NOT_RECHECKED' &&
                 <small>Current output integrity: {operation.targetIntegrity}</small>}
@@ -5517,44 +5509,44 @@ function App() {
         </section>}
         {trashReview?.chatId===chatId && <section
           className="readProposalCard editProposalCard" role="group" aria-label="Review reversible file trash">
-          <strong>Move the EXACT selected file into Lu's reversible custody</strong>
-          <small>Native-selected original file:</small>
+          <strong>Move file to a recoverable backup</strong>
+          <small>Original file:</small>
           <code className="writeTarget">{trashReview.source}</code>
-          <small>Lu-generated custody filename, in the same directory:</small>
+          <small>Saved backup name:</small>
           <code className="writeTarget">{trashReview.storedName}</code>
-          <small>{trashReview.bytes} bytes · SHA-256 {trashReview.sha256}</small>
+          <small>{trashReview.bytes} bytes</small>
           <small>The original filename disappears on success. The same bytes are retained
             under a new Lu custody name in the same folder, NOT the system Recycle Bin.
             Restoration requires a separate human approval.</small>
           <label className="editReviewAck">
             <input type="checkbox" checked={trashReviewed}
               onChange={e=>setTrashReviewed(e.target.checked)}/>
-            I reviewed the exact file, checksum, custody filename, and reversible rename.
+            I reviewed the original file, backup name and how to restore it.
           </label>
           <small>An independent native confirmation still controls the write. Interrupted
             actions are never automatically retried.</small>
           <div className="settingsActions">
             <button type="button" className="primaryButton"
               disabled={!trashReviewed || trashBusy}
-              onClick={()=>void confirmNativeTrash()}>Approve trash in native dialog</button>
+              onClick={()=>void confirmNativeTrash()}>Approve removal</button>
             <button type="button" className="subtleButton" disabled={trashBusy}
               onClick={()=>void denyNativeTrash()}>Deny trash</button>
           </div>
         </section>}
         {restoreReview?.chatId===chatId && <section
           className="readProposalCard editProposalCard" role="group" aria-label="Review recorded file restoration">
-          <strong>Restore a journal-verified file to its ORIGINAL filename</strong>
-          <small>Custody ID: {restoreReview.custodyId}</small>
+          <strong>Restore the original file</strong>
+          
           <small>Exact restoration destination:</small>
           <code className="writeTarget">{restoreReview.original}</code>
           <small>Existing custody name: {restoreReview.trashEntry}</small>
-          <small>{restoreReview.bytes} bytes · SHA-256 {restoreReview.sha256}</small>
+          <small>{restoreReview.bytes} bytes</small>
           <small>Lu will never overwrite an existing file. Only a previously applied native
             custody receipt is eligible for restore. This requires a new one-use authorization.</small>
           <label className="editReviewAck">
             <input type="checkbox" checked={restoreReviewed}
               onChange={e=>setRestoreReviewed(e.target.checked)}/>
-            I reviewed the exact restoration destination, verified custody hash, and no-overwrite rule.
+            I reviewed the restoration destination and understand existing files will not be overwritten.
           </label>
           <div className="settingsActions">
             <button type="button" className="primaryButton"
@@ -5567,9 +5559,9 @@ function App() {
         {latestCustodyOutcome?.chatId===chatId && <section className="readProposalCard" role="status">
           <strong>Reversible file operation: {latestCustodyOutcome.state}</strong>
           <small>Original filename: {latestCustodyOutcome.original}</small>
-          <small>{latestCustodyOutcome.bytes} bytes · SHA-256 {latestCustodyOutcome.sha256}</small>
-          <small>Custody ID: {latestCustodyOutcome.custodyId}</small>
-          <small>Native effect receipt: {latestCustodyOutcome.effectCallId}</small>
+          <small>{latestCustodyOutcome.bytes} bytes</small>
+          
+          
         </section>}
         {trashHistoryOpen && chatId && <section className="readProposalCard"
           role="region" aria-label="Durable file custody and recovery">
@@ -5587,9 +5579,9 @@ function App() {
           {trashHistory.map(item=><div key={item.custodyId} className="readProposalCard"
             role="group" aria-label={'Custody for '+item.original}>
             <strong>{item.original} — {item.state.replaceAll('_',' ')}</strong>
-            <small>{item.bytes} bytes · SHA-256 {item.sha256}</small>
+            <small>{item.bytes} bytes</small>
             <small>Observation: {item.observation.replaceAll('_',' ')}</small>
-            <small>Trash receipt: {item.trashEffectId}</small>
+            
             {item.restoreEffectId && <small>Restore receipt: {item.restoreEffectId}</small>}
             {item.restorable ?
               <button type="button" className="primaryButton"
@@ -5611,14 +5603,14 @@ function App() {
           <code className="writeTarget">{fileTransferReview.sourceDisplay}</code>
           <strong>Host-generated new destination (never overwrites)</strong>
           <code className="writeTarget">{fileTransferReview.destinationDisplay}</code>
-          <small>{fileTransferReview.bytes} bytes · source SHA-256: {fileTransferReview.sourceSha256}</small>
+          
           <small>{fileTransferReview.removesOriginal
             ? 'MOVE removes the original name after linking the new one. A failed unlink requires manual reconciliation.'
             : 'COPY keeps the original file unchanged.'}</small>
           <label className="editReviewAck">
             <input type="checkbox" checked={fileTransferReviewed}
               onChange={e=>setFileTransferReviewed(e.target.checked)}/>
-            I reviewed the source, destination, SHA-256 and {fileTransferReview.operation} consequences.
+            I reviewed the source, destination and consequences of this {fileTransferReview.operation}.
           </label>
           <div className="settingsActions">
             <button type="button" className="primaryButton"
@@ -5631,10 +5623,8 @@ function App() {
         {latestFileTransfer?.chatId===chatId && <section className="readProposalCard" role="status">
           <strong>File {latestFileTransfer.operation} complete: {latestFileTransfer.targetName}</strong>
           <code className="writeTarget">{latestFileTransfer.exactDestination}</code>
-          <small>{latestFileTransfer.bytes} bytes · SHA-256: {latestFileTransfer.sha256}</small>
-          <small>{latestFileTransfer.sourceRemoved
-            ? 'Original filename removed.'
-            : 'Original file retained.'} Effect receipt: {latestFileTransfer.effectCallId}</small>
+          <small>{latestFileTransfer.bytes} bytes</small>
+          
         </section>}
         {officeBatchOpen && !officeBatchReview && <section
           className="readProposalCard editProposalCard" role="group"
@@ -5717,8 +5707,8 @@ function App() {
           <code className="writeTarget">{officeBatchReview.sourceDisplay}</code>
           <small>New version destination (never overwritten):</small>
           <code className="writeTarget">{officeBatchReview.destinationDisplay}</code>
-          <small>Original SHA-256: {officeBatchReview.originalSha256}</small>
-          <small>Approved new package SHA-256: {officeBatchReview.revisedSha256}</small>
+          
+          
           <small>{officeBatchReview.changedParts} · {officeBatchReview.revisedBytes} bytes</small>
           <strong>All ordered exact changes</strong>
           {officeBatchReview.changes.map((change,i)=><div key={i} className="readProposalCard">
@@ -5752,8 +5742,8 @@ function App() {
         {latestOfficeBatch?.chatId===chatId && <section className="readProposalCard" role="status">
           <strong>Office multi-edit version created: {latestOfficeBatch.fileName}</strong>
           <code className="writeTarget">{latestOfficeBatch.exactDestination}</code>
-          <small>{latestOfficeBatch.bytesWritten} bytes · SHA-256: {latestOfficeBatch.sha256}</small>
-          <small>Durable journal receipt: {latestOfficeBatch.effectCallId}</small>
+          <small>{latestOfficeBatch.bytesWritten} bytes</small>
+          
         </section>}
         {officeRevisionOpen && !officeRevisionReview && <section
           className="readProposalCard editProposalCard" role="group"
@@ -5821,9 +5811,9 @@ function App() {
           className="readProposalCard editProposalCard"
           role="group" aria-label="Review exact Office document revision">
           <strong>New Office revision; original stays unchanged</strong>
-          <small>Original source (SHA-256 {officeRevisionReview.originalSha256}):</small>
+          <small>Original file</small>
           <code className="writeTarget">{officeRevisionReview.sourceDisplay}</code>
-          <small>New output (SHA-256 {officeRevisionReview.revisedSha256}):</small>
+          <small>New file</small>
           <code className="writeTarget">{officeRevisionReview.destinationDisplay}</code>
           <small>Changed package part: {officeRevisionReview.targetPart}.
             Total revised document size: {officeRevisionReview.revisedBytes} bytes.</small>
@@ -5846,7 +5836,7 @@ function App() {
           <div className="settingsActions">
             <button type="button" className="primaryButton"
               disabled={!officeRevisionReviewed || officeRevisionBusy}
-              onClick={()=>void confirmOfficeRevision()}>Approve new revision in native dialog</button>
+              onClick={()=>void confirmOfficeRevision()}>Approve new version</button>
             <button type="button" className="subtleButton" disabled={officeRevisionBusy}
               onClick={()=>void denyOfficeRevision()}>Deny revision</button>
           </div>
@@ -5854,8 +5844,8 @@ function App() {
         {latestOfficeRevision?.chatId===chatId && <section className="readProposalCard" role="status">
           <strong>Office document revision created: {latestOfficeRevision.targetNewName}</strong>
           <code className="writeTarget">{latestOfficeRevision.exactDestination}</code>
-          <small>{latestOfficeRevision.bytesWritten} bytes · SHA-256 {latestOfficeRevision.sha256}</small>
-          <small>Effect receipt: {latestOfficeRevision.effectCallId}. Original file preserved.</small>
+          <small>{latestOfficeRevision.bytesWritten} bytes</small>
+          
         </section>}
         {documentComposerOpen && !documentCreateReview && <section
           className="readProposalCard editProposalCard" aria-label="Create structured Office document">
@@ -5898,7 +5888,7 @@ function App() {
           <strong>New {documentCreateReview.documentFormat.toUpperCase()} document (no overwrite)</strong>
           <code className="writeTarget">{documentCreateReview.exactDestination}</code>
           <small>{documentCreateReview.bytes} bytes · {documentCreateReview.contentUnits} paragraphs/slides</small>
-          <small>Exact package SHA-256: {documentCreateReview.sha256}</small>
+          
           <strong>Title: {documentCreateReview.title}</strong>
           <small>Review ALL proposed content before confirming:</small>
           <pre className="editFullText" aria-label="All proposed document text">{documentCreateReview.content}</pre>
@@ -5921,8 +5911,8 @@ function App() {
           <strong>Created {latestDocumentCreated.documentFormat.toUpperCase()}:
             {latestDocumentCreated.fileName}</strong>
           <code className="writeTarget">{latestDocumentCreated.exactDestination}</code>
-          <small>{latestDocumentCreated.bytesWritten} bytes · SHA-256: {latestDocumentCreated.sha256}</small>
-          <small>Durable effect receipt: {latestDocumentCreated.effectCallId}</small>
+          <small>{latestDocumentCreated.bytesWritten} bytes</small>
+          
         </section>}
         {archiveBatchReview?.chatId===chatId&&
           <section className="readProposalCard editProposalCard" role="group"
@@ -5933,7 +5923,7 @@ function App() {
             <code className="writeTarget">{archiveBatchReview.groupDisplay}</code>
             <small>{archiveBatchReview.totalFiles} files ·
               {' '}{archiveBatchReview.totalBytes} expanded bytes</small>
-            <small>Entire approved batch SHA-256: {archiveBatchReview.manifestSha256}</small>
+            
             <details open>
               <summary>All archive members and source digests</summary>
               {archiveBatchReview.items.map((item,i)=><div key={i}>
@@ -5974,7 +5964,7 @@ function App() {
             <small>{latestArchiveBatch.archiveCount} sources ·
               {' '}{latestArchiveBatch.totalFiles} files ·
               {' '}{latestArchiveBatch.totalBytes} bytes</small>
-            <small>Verified batch SHA-256: {latestArchiveBatch.manifestSha256}</small>
+            
             <small>Durable effect: {latestArchiveBatch.effectCallId}.
               Original archives preserved.</small>
           </section>}
@@ -5986,7 +5976,7 @@ function App() {
           <strong>Exact destination (new folder only)</strong>
           <code className="writeTarget">{archiveReview.destinationDisplay}</code>
           <small>{archiveReview.files} files · {archiveReview.totalBytes} expanded bytes</small>
-          <small>Entire tree manifest SHA-256: {archiveReview.manifestSha256}</small>
+          
           <details open>
             <summary>Complete archive contents ({archiveReview.entries.length} entries)</summary>
             <pre className="editFullText" aria-label="All archive members">{archiveReview.entries.map((entry,i) =>
@@ -6020,15 +6010,15 @@ function App() {
           <strong>Archive extracted into {latestArchiveExtract.targetFolder}</strong>
           <code className="writeTarget">{latestArchiveExtract.exactDestination}</code>
           <small>{latestArchiveExtract.filesExtracted} verified files · {latestArchiveExtract.bytesExtracted} bytes</small>
-          <small>Manifest SHA-256: {latestArchiveExtract.manifestSha256}</small>
-          <small>Durable effect receipt: {latestArchiveExtract.effectCallId}</small>
+          
+          
         </section>}
         {Object.values(writeProposals).filter(p => p.chatId === chatId).map(proposal =>
           <section key={proposal.proposalId} className="readProposalCard writeProposalCard"
             role="group" aria-label="Review proposed new file">
             <strong>Lu proposes creating a NEW file (no overwrite)</strong>
             <p>{proposal.purpose}</p>
-            <small>Filename: {proposal.fileName} · {proposal.bytes} bytes · SHA-256: {proposal.sha256}</small>
+            <small>Filename: {proposal.fileName} · {proposal.bytes} bytes</small>
             <small>Model-selected text format: {proposal.fileFormat || 'UTF-8 text'}.
               JSON/JSONL receive syntax validation; source-code syntax needs its relevant parser or compiler.</small>
             <small>Review all proposed content before allowing creation:</small>
@@ -6067,9 +6057,9 @@ function App() {
             </> : <>
               <strong>Exact selected target</strong>
               <code className="writeTarget">{proposal.selected.exactTarget}</code>
-              <small>Original: {proposal.selected.originalBytes} bytes, SHA-256: {proposal.selected.originalSha256}</small>
-              <small>Replacement: {proposal.selected.replacementBytes} bytes, SHA-256: {proposal.selected.replacementSha256}</small>
-              <small>Review fingerprint: {proposal.selected.approvalSha256} · Scope: {proposal.selected.risk}</small>
+              
+              
+              <small>Review carefully before approving this change.</small>
               <strong>Complete line-change view</strong>
               <small>Every unchanged line is retained; removed lines begin with −, added lines with +.
                 Large change regions are not minimized. No content is truncated.</small>
@@ -6094,7 +6084,7 @@ function App() {
                   onClick={() => reviewExistingFile(proposal)}>Choose existing file and compare</button> :
                 <button type="button" className="primaryButton"
                   disabled={!editReviewed[proposal.proposalId]}
-                  onClick={() => approveExistingEdit(proposal)}>Review native confirmation and edit</button>}
+                  onClick={() => approveExistingEdit(proposal)}>Review and approve edit</button>}
               <button type="button" className="subtleButton"
                 onClick={() => denyExistingEdit(proposal)}>Deny edit</button>
             </div>
@@ -6102,8 +6092,8 @@ function App() {
         )}
         {latestEdited?.chatId === chatId && <section className="readProposalCard" role="status">
           <strong>Edited {latestEdited.fileName}</strong>
-          <small>Effect receipt: {latestEdited.effectCallId}</small>
-          <small>Before: {latestEdited.originalSha256} · After: {latestEdited.replacementSha256}</small>
+          
+          <small>Original version saved for recovery.</small>
           <button className="folderLink" type="button"
             onClick={() => openEditedFolder(latestEdited.proposalId,latestEdited.chatId)}>
             Open containing folder
@@ -6134,7 +6124,7 @@ function App() {
                   Open containing folder
                 </button>}
               {record.exactTarget && <code className="writeTarget">{record.exactTarget}</code>}
-              <small>SHA-256: {record.sha256}</small>
+              
             </div>
           )}
           <button type="button" className="subtleButton"
@@ -6155,8 +6145,8 @@ function App() {
               <small>Review: {record.approval} · Effect: {record.effect}</small>
               <small>Exact applied edit receipt: {record.receiptVerified ? 'Verified' : 'Not verified'}</small>
               {record.exactTarget && <code className="writeTarget">{record.exactTarget}</code>}
-              <small>Original SHA-256: {record.originalSha256 || 'Not selected'}</small>
-              <small>Replacement SHA-256: {record.replacementSha256}</small>
+              
+              
               <small>Assessment: {(editObservations[record.proposalId]?.assessment || record.assessment)}</small>
               <small>Observed bytes: {(editObservations[record.proposalId]?.observation || record.observation)}
                 (matching bytes alone do not prove who published them)</small>
@@ -6168,8 +6158,8 @@ function App() {
                 <summary>Review verified original for a possible future restore (read-only)</summary>
                 <small>No restore command is issued. This preview requires the exact
                   decoded APPLIED edit receipt, retained original backup and current file.</small>
-                <small>Edited SHA-256: {editObservations[record.proposalId].rollbackPreview.replacementSha256}</small>
-                <small>Original SHA-256: {editObservations[record.proposalId].rollbackPreview.originalSha256}</small>
+                
+                
                 <strong>Complete changes if original were restored</strong>
                 <pre className="editFullText editDiff" aria-label="Proposed restore change lines">{
                   fullEditChangeLines(editObservations[record.proposalId].rollbackPreview.currentText,
@@ -6200,7 +6190,7 @@ function App() {
                     <button className="primaryButton" type="button"
                       disabled={!rollbackReviewed[editObservations[record.proposalId].rollbackReviewId]}
                       onClick={() => confirmRollback(record)}>
-                      Confirm original restore in native dialog
+                      Confirm restore
                     </button>
                     <button className="subtleButton" type="button"
                       onClick={() => denyRollback(record)}>Keep current version</button>
@@ -6232,8 +6222,8 @@ function App() {
               <small>Review: {record.decision} · Restore effect: {record.effect}</small>
               <small>Verified restoration receipt: {record.receiptVerified ? 'Yes' : 'No'}</small>
               <small>Assessment: {record.assessment}</small>
-              <small>Original edit effect: {record.originalEditId}</small>
-              <small>Restore SHA-256: {record.restoredSha256}</small>
+              
+              
               <code className="writeTarget">{record.exactTarget}</code>
             </div>
           )}
@@ -6244,15 +6234,15 @@ function App() {
         </section>}
         {latestRestored?.chatId === chatId && <section className="readProposalCard" role="status">
           <strong>Original version restored: {latestRestored.fileName}</strong>
-          <small>Restored {latestRestored.restoredBytes} bytes · SHA-256: {latestRestored.restoredSha256}</small>
-          <small>New rollback effect: {latestRestored.rollbackEffectId}</small>
+          <small>Restored {latestRestored.restoredBytes} bytes</small>
+          
           <small>The prior edited bytes were retained as a separate rollback backup.</small>
         </section>}
         {!composerCollapsed && <form className={'composer' + (dragActive ? ' dragActive' : '')} onSubmit={send}>
           {(images.length > 0 || textFiles.length > 0) && <div className="attachments" aria-label="Draft attachments">
             {images.map(im => <span key={im.imageRef} className="attachment imageAttachment">
               {im.previewUrl ? <img src={im.previewUrl} alt="Attached image preview"/> : <span aria-hidden="true">▧</span>}
-              <span title={im.name || im.mimeType}>{im.name || im.mimeType}{im.detectedMimeType && im.name?.toLowerCase().endsWith('.jpg') && im.detectedMimeType === 'image/png' ? ' (PNG data)' : ''}</span>
+              <span title={im.name || im.mimeType}>{im.name || im.mimeType}{im.detectedMimeType && im.name?.toLowerCase().endsWith('.jpg') && im.detectedMimeType === 'image/png' ? '' : ''}</span>
               {im.previewUrl && <button type="button" onClick={()=>setImageViewer({imageRef:im.imageRef,zoom:1})} aria-label={'View image '+(im.name||'draft')}>View</button>}
               <button type="button" onClick={() => removeImage(im.imageRef)} aria-label="Remove image">×</button>
             </span>)}
@@ -6262,16 +6252,16 @@ function App() {
             </span>)}
           </div>}
           <textarea ref={composerRef} aria-label="Message Lu" value={prompt} onChange={e => {draftText.current=e.target.value;setPrompt(e.target.value);}} style={{height:composerHeight}} maxLength={16384}
-            placeholder={loaded ? 'Message Lu… Paste or drop images and text files' : 'Ask the time, check model status, search this chat or selected workspace'}
+            placeholder={loaded ? 'Message Lu… Attach images or text files' : 'Choose a model or ask a question'}
             onPaste={handlePaste}
             onKeyDown={e => { if (isSendKey(e)) { e.preventDefault(); e.currentTarget.form?.requestSubmit(); } }}/>
           <div className="composerFooter"><input ref={fileInput} type="file" className="visuallyHidden" multiple
               accept=".png,.jpg,.jpeg,.txt,.md,.csv,.json,.log,.py,.rs,.js,.jsx,.ts,.tsx" onChange={e => {void importAttachments(e.target.files);e.target.value='';}}/>
-            <button type="button" className="subtleButton" disabled={!loaded} onClick={() => fileInput.current?.click()}>+ Attach</button>
+            <button type="button" className="subtleButton" onClick={() => fileInput.current?.click()}>+ Attach</button>
             {/* Goal and task planning remain host capabilities, not chat controls. */}
             {chatBusy ? <button className="dangerButton" type="button" onClick={cancel}
                 disabled={!visibleJob.generationId || visibleJob.cancelling}>{visibleJob.cancelling ? 'Stopping…' : visibleJob.phase === 'queued' ? 'Cancel queued' : 'Cancel'}</button>
-              : <button className="primaryButton" type="submit" disabled={working || (!loaded && !modelFreeClockAllowed) || !prompt.trim()}>Send</button>}
+              : <button className="primaryButton" type="submit" disabled={working || (!loaded && !modelFreeClockAllowed) || (!prompt.trim()&&!images.length)}>Send</button>}
           </div></form>}
       </div>
     </main>
@@ -6280,7 +6270,7 @@ function App() {
       <section className="imageViewerDialog" role="dialog" aria-modal="true"
         aria-label="Image Workspace preview" onClick={e=>e.stopPropagation()}>
         <header>
-          <strong>Image Workspace · original and immutable revision export</strong>
+          <strong>Image viewer and editing</strong>
           <button type="button" aria-label="Close image preview"
             onClick={()=>setImageViewer(null)}>×</button>
         </header>
@@ -6393,24 +6383,10 @@ function App() {
                   </option>)}
                 </select>
               </label>}
-            <small>Unverified OCR · source SHA-256 {ocrObservation.sourceSha256}
-              · text SHA-256 {ocrObservation.textSha256}</small>
-            {ocrObservation.page&&<small>
-              OCR page {ocrObservation.page} · Derived raster SHA-256
-              {' '}{ocrObservation.ocrInputSha256} · renderer SHA-256
-              {' '}{ocrObservation.rasterEngineSha256}
-            </small>}
-            {ocrObservation.region&&<small>
-              Original image OCR region:
-              ({ocrObservation.region.x},{ocrObservation.region.y}),
-              {ocrObservation.region.width} × {ocrObservation.region.height} px;
-              derived PNG SHA-256 {ocrObservation.ocrInputSha256}
-            </small>}
-            <small>Editable OCR review, maximum 12,000 characters.
-              The worker text SHA-256 identifies the uncorrected transcript,
-              not any edits made here.
-              {ocrObservation.text.length>12_000&&
-                ' Longer OCR output was clipped for this draft review.'}</small>
+            
+            {ocrObservation.page&&<small>Page {ocrObservation.page}</small>}
+            
+            
             <textarea rows={5} maxLength={12_000}
               aria-label="Review and correct unverified OCR transcription"
               value={ocrReviewText}
@@ -6563,11 +6539,7 @@ function App() {
                     border:'2px solid #4b9cff',background:'rgba(75,156,255,0.09)'
                   }}/>}
               </div>
-              <small>Volatile native preview ·
-                {imageAssemblyPreview.result.width} × {imageAssemblyPreview.result.height} ·
-                SHA-256 {imageAssemblyPreview.result.revisionSha256}.
-                Drag to select coordinates for your next staged edit.
-                No file saved. Source image remains unchanged.</small>
+              
             </div>}
           <button type="button" disabled={!chatId||!imageViewer?.width||imageExportBusy}
             onClick={()=>void exportImageRevision()}>
@@ -6576,19 +6548,19 @@ function App() {
           {imageExportReceipt&&<small role="status">
             New image version saved: {imageExportReceipt.fileName} ·
             {imageExportReceipt.width} × {imageExportReceipt.height} ·
-            SHA-256 {imageExportReceipt.revisionSha256}. Original retained.
+            Original retained.
           </small>}
           <button type="button" disabled={!chatId||imageHistoryBusy}
             onClick={()=>void loadImageRevisionHistory()}>
             {imageHistoryBusy?'Reading history…':'Review saved revision history'}
           </button>
           {imageHistoryView.chatId===chatId&&
-            <div aria-label="Historical image revision receipts">
+            <div aria-label="Saved image versions">
               <small>Historical exports only. This list does not prove files still exist.
                 Uncertain exports are never automatically retried.</small>
               <ul>{imageHistoryView.rows.map(record=><li key={record.id}>
                 {record.fileName} · {record.width} × {record.height} ·
-                {record.state} · SHA-256 {record.revisionSha256}
+                {formatTaskState(record.state)}
                 {record.parentRevisionId&&<small> · Derived from earlier export
                   {' '}{record.parentRevisionId}</small>}
               </li>)}</ul>
@@ -6612,9 +6584,9 @@ function App() {
             <input type="checkbox" disabled={!chatId}
               checked={Boolean(chatId&&autoBackgroundContinuation)}
               onChange={e=>void changeAutoBackgroundContinuation(e.target.checked)}/>
-            Automatically notify this conversation's AI when a task ends
+            Let Lu follow up when a task ends
           </label>
-          <small>Off by default. When enabled, Lu may start a short AI reply after completion, failure, cancellation, interruption, or timeout. Does not grant tool permissions or load a model.</small>
+          <small>Lu may reply in this conversation when work finishes. This does not approve new actions.</small>
         </div>
         <div className="backgroundScheduleOptions" aria-label="Background scan scheduling">
           <label>When
@@ -6638,7 +6610,7 @@ function App() {
             <select value={backgroundPriority} onChange={e=>setBackgroundPriority(e.target.value)}>
               <option value="background">Low</option>
               <option value="normal">Normal</option>
-              <option value="interactive">High (still resource-limited)</option>
+              <option value="interactive">High</option>
             </select>
           </label>
         </div>
@@ -6693,7 +6665,7 @@ function App() {
             </div>
             {task.priority && <small>Priority: {task.priority}{task.dueUnix ? ' · Due: '+new Date(task.dueUnix*1000).toLocaleString():''}{task.repeatSeconds ? ' · Repeats every '+Math.round(task.repeatSeconds/60)+' min':''}</small>}
             {['INTERRUPTED','FAILED','NEEDS_REVIEW'].includes(task.state) &&
-              <p className="backgroundTaskWarning">Requires review before retrying.</p>}
+              <p className="backgroundTaskWarning">Review before retrying.</p>}
             {task.needsReview && <button className="subtleButton" type="button"
               onClick={()=>void reapproveScheduledTask(task.taskId,task.scopeChatId)}>Reapprove with a selected file…</button>}
             {task.canPause && <button className="subtleButton" type="button"
@@ -6714,9 +6686,9 @@ function App() {
         </div>
         <footer className="backgroundPaneFooter">
           Queued tasks can be paused, resumed or cancelled. Running tasks can be cancelled
-          with native confirmation, but not paused unless their worker supports it.
-          Recovery never automatically replays interrupted work; reapprove using a native file picker.
-          Ordinary progress does not invoke the AI model.
+          with confirmation. Pause is available for supported tasks.
+          Interrupted work requires your approval to restart.
+          Progress updates are automatic.
         </footer>
       </section>}
     </section>}

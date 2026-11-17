@@ -60,6 +60,9 @@ pub trait InferenceBackend {
     fn process_id(&self) -> Option<u32> {
         None
     }
+    /// Process-backed implementations must not report a lost worker as resident.
+    /// In-process backends retain their existing load/unload contract.
+    fn model_resident(&mut self) -> bool { true }
     fn load(&mut self, admitted: &AdmittedModel) -> Result<(), String>;
     fn load_with_projector(
         &mut self,
@@ -123,6 +126,13 @@ impl<B: InferenceBackend> InferenceHost<B> {
     }
     pub fn process_id(&self) -> Option<u32> {
         self.backend.process_id()
+    }
+    pub fn reconcile_residency(&mut self) -> bool {
+        if self.phase == EnginePhase::Ready && !self.backend.model_resident() {
+            self.backend.unload();
+            self.phase = EnginePhase::Idle;
+        }
+        self.phase == EnginePhase::Ready
     }
     pub fn load(&mut self, model: &AdmittedModel) -> Result<(), EngineError> {
         if self.phase != EnginePhase::Idle {
@@ -192,6 +202,7 @@ impl<B: InferenceBackend> InferenceHost<B> {
         );
         self.cancellation=None;
         self.phase=EnginePhase::Ready;
+        self.reconcile_residency();
         if cancel.is_cancelled(){
             self.backend.invalidate_prefix_cache();
             return Err(EngineError::Cancelled);
@@ -228,6 +239,7 @@ impl<B: InferenceBackend> InferenceHost<B> {
         });
         self.cancellation = None;
         self.phase = EnginePhase::Ready;
+        self.reconcile_residency();
         if cancel.is_cancelled() {
             self.backend.invalidate_prefix_cache();
             return Err(EngineError::Cancelled);
@@ -268,6 +280,7 @@ impl<B: InferenceBackend> InferenceHost<B> {
             });
         self.cancellation = None;
         self.phase = EnginePhase::Ready;
+        self.reconcile_residency();
         if cancel.is_cancelled() {
             self.backend.invalidate_prefix_cache();
             return Err(EngineError::Cancelled);

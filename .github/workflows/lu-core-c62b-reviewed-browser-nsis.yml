@@ -188,6 +188,14 @@ jobs:
             if($LASTEXITCODE -ne 0){throw 'Actual Rust browser host rejected pinned review manifest or component'}
             cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib chat_store::tests::human_history_search_includes_current_and_other_books_without_recall_grants -- --exact --nocapture
             if($LASTEXITCODE -ne 0){throw 'Human history search acceptance failed'}
+            cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib prompt_context::tests::vision_history_reserves_image_space_and_omits_interrupted_pairs -- --exact --nocapture
+            if($LASTEXITCODE -ne 0){throw 'Vision history acceptance failed'}
+            cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib inference_supervisor::tests::failed_worker_is_retired_and_original_model_can_be_reloaded -- --exact --nocapture
+            if($LASTEXITCODE -ne 0){throw 'Engine residency recovery acceptance failed'}
+            cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib persistent_llama_backend::tests::authenticated_props_checks_only_actual_vision_modality -- --exact --nocapture
+            if($LASTEXITCODE -ne 0){throw 'Vision modality acceptance failed'}
+            cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib multimodal_http::tests::rejection_categories_are_closed_and_never_echo_engine_text -- --exact --nocapture
+            if($LASTEXITCODE -ne 0){throw 'Bounded vision error classification acceptance failed'}
           }finally{
             [IO.File]::WriteAllText($configPath,$original)
           }

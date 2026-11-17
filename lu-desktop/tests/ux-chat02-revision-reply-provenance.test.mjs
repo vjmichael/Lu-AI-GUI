@@ -82,7 +82,7 @@ test('actual native commands are registered and UI requires separate explicit ac
   assert.match(ui,/messageProvenance\.revision\.originalText/);
   assert.match(ui,/messageProvenance\.revision\.versions\.map/);
   assert.match(ui,/Human-edited display · revision/);
-  assert.match(ui,/Post linked human reply/);
+  assert.match(ui,/Save reply/);
   assert.match(ui,/do not repost automatically/);
   assert.match(ui,/Reconcile saved reply links/);
   assert.match(ui,/Original model input and tool history unchanged/);
@@ -112,9 +112,9 @@ test('display correction can be prepared as an explicit NEW human follow-up, nev
   assert.equal(correctedMessageFollowUp(entry,{...revision,currentSha256:'invalid'}),null);
   assert.equal(correctedMessageFollowUp(entry,{...revision,currentSha256:revision.originalSha256}),null);
   assert.equal(correctedMessageFollowUp(entry,{...revision,currentText:'☕'.repeat(7000)}),null);
-  assert.match(ui,/Prepare human follow-up from correction/);
+  assert.match(ui,/Create a reply from this edit/);
   assert.match(ui,/setLinkedReplyTarget\(\{\.\.\.prepared\.target,chatId\}\)/);
   assert.match(ui,/setLinkedReplyText\(prepared\.draft\)/);
-  assert.match(ui,/Posting it does not trigger inference or inherit earlier approval/);
+  assert.match(ui,/This saves your reply without sending it to the model/);
   assert.doesNotMatch(rust,/run_journaled_observed|Command::new|\.spawn\(/);
 });

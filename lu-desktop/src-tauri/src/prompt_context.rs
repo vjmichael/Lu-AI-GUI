@@ -65,6 +65,33 @@ pub fn typed_history_for_model(
     out
 }
 
+/// Direct image understanding retains recent completed conversational pairs,
+/// never orphaned prior failed user turns or unrelated planning/tool envelopes.
+pub fn typed_history_for_vision(
+    previous:&[ChatMessage],current:&str,context_tokens:u32,output_tokens:u32,image_count:usize
+)->Vec<lu_core::wire::proto::InferenceChatTurn>{
+    let reserve=(image_count.min(4) as u32).saturating_mul(2048);
+    let spare=context_tokens.saturating_sub(reserve).saturating_sub(output_tokens).saturating_sub(1024);
+    let budget=(spare as usize).saturating_mul(2).min(MAX_CONTEXT_BYTES);
+    let mut used=current.len();
+    let mut out=Vec::new();
+    for pair in previous.windows(2).rev(){
+        let (user,assistant)=(&pair[0],&pair[1]);
+        if user.role!="user"||assistant.role!="assistant"||assistant.interrupted
+            ||user.text.trim().is_empty()||assistant.text.trim().is_empty()
+            ||user.text.len()>MAX_HISTORY_ENTRY_BYTES||assistant.text.len()>MAX_HISTORY_ENTRY_BYTES{
+            continue
+        }
+        let size=user.text.len().saturating_add(assistant.text.len());
+        if used.saturating_add(size)>budget {continue}
+        used+=size;
+        out.push(lu_core::wire::proto::InferenceChatTurn{role:assistant.role.clone(),text:assistant.text.clone()});
+        out.push(lu_core::wire::proto::InferenceChatTurn{role:user.role.clone(),text:user.text.clone()});
+        if out.len()>=6{break}
+    }
+    out.reverse();out
+}
+
 /// Unprivileged model-facing proposal hints until the native typed-tool catalog
 /// is carried in inference IPC. The real saved user prompt remains unchanged.
 /// A proposal is text data, NEVER a filesystem action or an authority grant.
@@ -133,6 +160,19 @@ mod tests {
             interrupted,
             cancelled: interrupted,
         }
+    }
+    #[test]
+    fn vision_history_reserves_image_space_and_omits_interrupted_pairs(){
+        let rows=vec![
+            msg("user","completed question",false),msg("assistant","completed answer",false),
+            msg("user","failed question",false),msg("assistant","partial",true),
+            msg("user","unanswered question",false),
+        ];
+        let result=typed_history_for_vision(&rows,"Describe the picture",8192,512,1);
+        assert_eq!(result.len(),2);
+        assert_eq!(result[0].text,"completed question");
+        assert_eq!(result[1].text,"completed answer");
+        assert!(typed_history_for_vision(&rows,"Describe",4096,512,4).is_empty());
     }
     #[test]
     fn native_review_hints_are_only_for_explicit_user_operations(){

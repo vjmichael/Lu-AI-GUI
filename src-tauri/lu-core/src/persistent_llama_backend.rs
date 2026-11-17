@@ -382,6 +382,27 @@ impl PersistentLlamaBackend {
         Err("llama.cpp stream ended without verified idle slot; worker ejected".into())
     }
 
+    // b12005 advertises the actual loaded input modality in authenticated
+    // /props. A registered file and an HTTP healthy response do not prove
+    // that the engine initialized the projector.
+    fn server_vision_enabled(port:u16,api_key:&str)->bool{
+        let address=SocketAddr::from((Ipv4Addr::LOCALHOST,port));
+        let Ok(mut socket)=TcpStream::connect_timeout(&address,Duration::from_secs(1)) else{return false};
+        if socket.set_read_timeout(Some(Duration::from_secs(2))).is_err()||
+            socket.set_write_timeout(Some(Duration::from_secs(1))).is_err(){return false}
+        let request=format!("GET /props HTTP/1.1\r\nHost: 127.0.0.1\r\nAuthorization: Bearer {api_key}\r\nConnection: close\r\n\r\n");
+        if socket.write_all(request.as_bytes()).is_err(){return false}
+        let mut data=Vec::new();
+        const MAX:usize=256*1024;
+        if socket.take((MAX+1) as u64).read_to_end(&mut data).is_err()||data.len()>MAX{return false}
+        let Some(split)=data.windows(4).position(|w|w==b"\r\n\r\n") else{return false};
+        let headers=&data[..split];
+        if !(headers.starts_with(b"HTTP/1.1 200 ")||headers.starts_with(b"HTTP/1.0 200 ")){return false}
+        let Ok(headers)=std::str::from_utf8(headers) else{return false};
+        if headers.to_ascii_lowercase().contains("transfer-encoding:"){return false}
+        serde_json::from_slice::<serde_json::Value>(&data[split+4..]).ok()
+            .and_then(|v|v.pointer("/modalities/vision").and_then(serde_json::Value::as_bool))==Some(true)
+    }
     fn wait_ready(&mut self, deadline: Instant, port: u16) -> Result<(), String> {
         loop {
             if !self.is_running() {
@@ -419,6 +440,7 @@ impl InferenceBackend for PersistentLlamaBackend {
     fn process_id(&self) -> Option<u32> {
         self.pid()
     }
+    fn model_resident(&mut self) -> bool { self.is_running() }
     fn set_trusted_cache_scope(&mut self, scope: Option<&str>) {
         self.next_trusted_cache_scope=scope.map(str::to_owned);
     }
@@ -594,6 +616,10 @@ impl InferenceBackend for PersistentLlamaBackend {
         if !Self::slots_idle(port, &self.config.api_key) {
             self.unload();
             return Err("llama.cpp model load lacks verified idle-slot support".into());
+        }
+        if projector.is_some() && !Self::server_vision_enabled(port,&self.config.api_key) {
+            self.unload();
+            return Err("VISION_UNAVAILABLE: the loaded engine did not enable image input for the companion projector".into());
         }
         Ok(())
     }
@@ -856,6 +882,34 @@ mod tests {
         }
     }
 
+    #[test]
+    fn authenticated_props_checks_only_actual_vision_modality(){
+        for (body,expected) in [
+            (r#"{"modalities":{"vision":true},"model_path":"private"}"#,true),
+            (r#"{"modalities":{"vision":false}}"#,false),
+            (r#"{"modalities":{"audio":true}}"#,false),
+            (r#"{"modalities":{"vision":"true"}}"#,false),
+        ]{
+            let listener=TcpListener::bind((Ipv4Addr::LOCALHOST,0)).unwrap();
+            let port=listener.local_addr().unwrap().port();
+            let fixture=std::thread::spawn(move||{
+                let (mut stream,_)=listener.accept().unwrap();
+                let mut reader=BufReader::new(&mut stream);
+                let mut headers=String::new();
+                loop{
+                    let mut line=String::new();reader.read_line(&mut line).unwrap();
+                    if line=="\r\n"||line.is_empty(){break}
+                    headers.push_str(&line);
+                }
+                assert!(headers.starts_with("GET /props HTTP/1.1"));
+                assert!(headers.contains(&format!("Authorization: Bearer {}","ab".repeat(32))));
+                drop(reader);
+                write!(stream,"HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",body.len(),body).unwrap();
+            });
+            assert_eq!(PersistentLlamaBackend::server_vision_enabled(port,&"ab".repeat(32)),expected);
+            fixture.join().unwrap();
+        }
+    }
     #[test]
     fn image_generation_requires_loaded_mmproj_before_http() {
         let executable = std::env::current_exe().unwrap();

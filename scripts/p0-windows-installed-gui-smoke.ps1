@@ -264,7 +264,7 @@ try{
   $report.settingsTab='PASS_SAME_NATIVE_WINDOW'
   $report.settingsScreenshot=Save-Visible-Desktop 'installed-settings.png'
   $report.activationMethods+=@(Invoke-UIA (Wait-Element $window 'Models' $true) $window)
-  $null=Wait-Element $window 'Installed GGUF' $true
+  $null=Wait-Element $window 'Installed models' $true
   $null=Wait-Element $window 'Discover · Hugging Face' $true
   $report.modelsTab='PASS_SAME_NATIVE_WINDOW'
   $report.modelLibraryScreenshot=Save-Visible-Desktop 'installed-model-library.png'

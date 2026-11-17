@@ -4,7 +4,12 @@ import {invoke} from '@tauri-apps/api/core';
 export const LU_TABS=[['chat','Chat'],['history','History'],['tasks','Tasks'],['models','Models'],['settings','Settings']];
 export function friendlyError(error){
   const message=String(error?.message||error||'');
-  if(/HTTP 400|compatible MMProj|image generation|image request/i.test(message))return 'This model could not read the image. Check that the matching vision projector is loaded, then try again.';
+  if(/CONTEXT_LIMIT/i.test(message))return 'This request is too large for the current model context. Try a smaller image or increase conversation context in Settings.';
+  if(/VISION_UNAVAILABLE|compatible MMProj|no admitted MMProj|projector before image/i.test(message))return 'Load a model with its matching vision companion to read images.';
+  if(/MEDIA_REJECTED/i.test(message))return 'The model could not read this image. Try a different image or format.';
+  if(/TEMPLATE_REJECTED/i.test(message))return 'This model could not process the request. Reload the model and try again.';
+  if(/HTTP 400|image generation|image request/i.test(message))return 'The model rejected the request. Reload the model and try again. Your unsent image is kept if the draft is unchanged.';
+  if(/model session changed|Active inference session changed|No loaded model/i.test(message))return 'The model is no longer loaded. Choose a model and try again.';
   if(/Observe & Learn is active|unscoped network/i.test(message))return 'Internet access is paused while Observe & Learn is active. Stop observation in Settings before searching online.';
   if(/catalog search unavailable|catalog returned|catalog search response/i.test(message))return 'Could not reach the model catalog. Check your connection and try again.';
   if(/InferenceFailed|Bridge\(|Engine\(|Backend\(/i.test(message))return 'The model could not complete this request. Try again or reload the model.';

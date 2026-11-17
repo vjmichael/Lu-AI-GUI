@@ -83,6 +83,50 @@ fn read_line_bounded(
     }
 }
 
+// Parse only a bounded JSON error and emit a closed category. Never expose
+// model/server-supplied text, file paths, prompt, pixels or API token.
+fn rejected_request_category(body:&[u8])->&'static str{
+    let Ok(value)=serde_json::from_slice::<serde_json::Value>(body) else{return "UNCLASSIFIED"};
+    let message=value.pointer("/error/message").and_then(serde_json::Value::as_str).unwrap_or("");
+    let kind=value.pointer("/error/type").and_then(serde_json::Value::as_str).unwrap_or("");
+    if matches!(kind,"exceed_context_size"|"context_length_exceeded")
+        ||message.contains("exceeds the available context size")
+        ||message.contains("larger than the max context size"){
+        "CONTEXT_LIMIT"
+    }else if message.contains("image input is not supported"){
+        "VISION_UNAVAILABLE"
+    }else if message.contains("Invalid uri-encoded base64 value")||
+        message.contains("Invalid base64 value")||message.contains("failed to decode mtmd chunk")||
+        message.contains("failed to process mtmd chunk"){
+        "MEDIA_REJECTED"
+    }else if message.contains("chat template")||message.contains("chat_template")||
+        message.contains("role alternation")||message.contains("roles must alternate"){
+        "TEMPLATE_REJECTED"
+    }else{"UNCLASSIFIED"}
+}
+fn bounded_rejection_category(reader:&mut impl Read,cancelled:&impl Fn()->bool,deadline:Instant)->&'static str{
+    let deadline=deadline.min(Instant::now()+Duration::from_secs(1));
+    let mut total=0usize;let mut length=None;
+    loop{
+        let Ok(line)=read_line_bounded(reader,MAX_HEADER_BYTES,cancelled,deadline) else{return "UNCLASSIFIED"};
+        total=total.saturating_add(line.len());
+        if total>MAX_HEADER_BYTES{return "UNCLASSIFIED"}
+        if line==b"\r\n"||line==b"\n"{break}
+        let Ok(header)=std::str::from_utf8(&line) else{return "UNCLASSIFIED"};
+        if let Some((name,value))=header.split_once(':'){
+            if name.eq_ignore_ascii_case("transfer-encoding"){return "UNCLASSIFIED"}
+            if name.eq_ignore_ascii_case("content-length"){
+                if length.is_some(){return "UNCLASSIFIED"}
+                length=value.trim().parse::<usize>().ok();
+            }
+        }
+    }
+    let Some(length)=length.filter(|n|*n>0&&*n<=8192) else{return "UNCLASSIFIED"};
+    let mut body=vec![0u8;length];
+    if read_exact_bounded(reader,&mut body,cancelled,deadline).is_err(){return "UNCLASSIFIED"}
+    rejected_request_category(&body)
+}
+
 fn next_frame(events: &mut Vec<u8>) -> Option<Vec<u8>> {
     let lf = events.windows(2).position(|w| w == b"\n\n").map(|p| (p, 2));
     let crlf = events
@@ -189,14 +233,15 @@ fn stream_chat_frames(
     let mut reader = BufReader::new(socket);
     let status = read_line_bounded(&mut reader, MAX_HEADER_BYTES, &cancelled, deadline)?;
     if !status.starts_with(b"HTTP/1.1 200 ") && !status.starts_with(b"HTTP/1.0 200 ") {
-        // No engine response body, request content, image bytes, or credentials
-        // cross this error boundary. HTTP status alone identifies the class.
+        // HTTP status and a closed classification from a bounded error body.
+        // No raw response, request content, image bytes or credentials leave.
         let code = std::str::from_utf8(&status)
             .ok()
             .and_then(|line| line.split_whitespace().nth(1))
             .filter(|v| v.len() == 3 && v.bytes().all(|b| b.is_ascii_digit()))
             .unwrap_or("unknown");
-        return Err(format!("llama.cpp chat request rejected (HTTP {code}); verify matching GGUF/MMProj, chat-template support and engine diagnostics"));
+        let category=bounded_rejection_category(&mut reader,&cancelled,deadline);
+        return Err(format!("llama.cpp chat request rejected (HTTP {code}; {category})"));
     }
     let mut header_total = status.len();
     let mut chunked = false;
@@ -502,6 +547,25 @@ mod tests {
             |_| Ok(())
         )
         .is_err());
+    }
+    #[test]
+    fn rejection_categories_are_closed_and_never_echo_engine_text(){
+        for (message,expected) in [
+            ("image input is not supported - hint: private C:/secret","VISION_UNAVAILABLE"),
+            ("request (700 tokens) exceeds the available context size (400 tokens)","CONTEXT_LIMIT"),
+            ("failed to process mtmd chunk; private image content","MEDIA_REJECTED"),
+            ("chat template failed for private prompt","TEMPLATE_REJECTED"),
+            ("do not reveal private image content","UNCLASSIFIED"),
+        ]{
+            let body=serde_json::json!({"error":{"message":message,"type":"invalid_request_error"}}).to_string();
+            let response=format!("HTTP/1.1 400 Bad Request\r\nContent-Length: {}\r\n\r\n{}",body.len(),body);
+            let (port,handle)=fixture(response.into_bytes(),true);
+            let err=generate_image_chat_stream(port,&"ab".repeat(32),&turn(),32,
+                Duration::from_secs(5),||false,|_|Ok(())).unwrap_err();
+            handle.join().unwrap();
+            assert!(err.contains(expected));
+            assert!(!err.contains("private"));
+        }
     }
     #[test]
     fn rejection_exposes_only_status_not_server_supplied_text() {

@@ -31,21 +31,21 @@ test('one main window presents Settings and Models tabs; fixed legacy roots reta
   assert.deepEqual(capability.windows,['main','settings','model-library','task-list']);
   assert.match(windows,/aria-label="Lu settings"/);
   assert.match(windows,/aria-label="Model Library"/);
-  assert.match(windows,/Model-specific settings/);
-  assert.match(windows,/Lu runtime/);
+  assert.match(windows,/Model settings/);
+  assert.match(windows,/Processing/);
   assert.match(windows,/Tools & permissions/);
-  assert.match(windows,/Browser & research/);
+  assert.match(windows,/Web browsing/);
   assert.match(windows,/\['memory','Memory'\]/);
-  assert.match(windows,/Privacy & Observe/);
+  assert.match(windows,/Privacy/);
   assert.match(windows,/Hugging Face/);
-  assert.match(windows,/No registered local GGUF models/);
+  assert.match(windows,/No local models yet/);
 });
 
 test('Observe & Learn and configuration are mounted only in an independent native Settings root',()=>{
   const windows=readFileSync(new URL('../web/native_windows.jsx',import.meta.url),'utf8');
   assert.match(windows,/invoke\('lu_observe_'\+action,\{chatId\}\)/);
   assert.match(windows,/lu_observe_forget_notes/);
-  assert.match(windows,/Request native consent/);
+  assert.match(windows,/Start Observe & Learn/);
   assert.match(windows,/OFF by default/);
   assert.doesNotMatch(ui,/chatToolsDrawer|settingsBackdrop|modelLibraryOpen&&/);
   assert.match(ui,/window\.location\.search/);
@@ -85,15 +85,14 @@ test('model-proposed Office and document drafts remain inert until separate nati
 
 test('fake elapsed timer is absent; actual memory loading percent remains explicitly unverified',()=>{
   assert.doesNotMatch(ui,/modelLoadSeconds|s elapsed/);
-  assert.match(ui,/Tensor loading % unavailable/);
-  assert.match(ui,/workingSetRamBytes/);
-  assert.match(ui,/dedicatedGpuBytes/);
+  assert.match(ui,/Loading model…/);
+  assert.doesNotMatch(ui,/Tensor loading % unavailable|RAM unmeasured|GPU unmeasured/);
 });
 
 test('ordinary human chat turns inject a fresh non-authoritative native device time observation',()=>{
   // PERF-01 P2 preserves the fresh native clock as a trailing, noncached
   // observation. It must still be added only for the original human origin.
-  assert.match(rust,/if origin==GenerationOrigin::Human \{\s*let clock=host_clock::fresh_local_clock_context\(\);\s*model_prompt\.push_str\(&clock\);\s*cache_only_clock_suffix=Some\(clock\);/);
+  assert.match(rust,/if origin==GenerationOrigin::Human && images\.is_empty\(\) \{\s*let clock=host_clock::fresh_local_clock_context\(\);/); assert.match(rust,/model_prompt\.push_str\(&clock\)/); assert.match(rust,/cache_only_clock_suffix=Some\(host_suffix\)/);
   assert.match(rust,/model_prompt\.strip_prefix\(&prompt\)==Some\(clock\.as_str\(\)\)/);
   assert.match(clock,/fn GetLocalTime\(/);
   assert.match(clock,/UTC Unix epoch seconds:/);

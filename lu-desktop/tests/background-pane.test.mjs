@@ -24,7 +24,7 @@ test('pane provides operator state, history, and accessibility',()=>{
   assert.ok(ui.includes('role="progressbar"'));
   assert.ok(ui.includes('aria-valuenow={task.progress}'));
   assert.ok(ui.includes('INTERRUPTED'));
-  assert.ok(ui.includes('Requires review before retrying.'));
+  assert.ok(ui.includes('Review before retrying.'));
   assert.ok(ui.includes('task.canCancel &&'));
   assert.ok(host.includes('fn lu_background_cancel('));
   assert.ok(host.includes('scheduler.cancel_owned(&task_id,&chat_id)'));
@@ -72,7 +72,7 @@ test('explicit native opt-in is required before Lu can proactively ask the model
   assert.ok(host.includes('state.background_tasks.pending_notices_for_workspace(&chat_id,1)'));
   assert.ok(ui.includes("invoke('lu_background_auto_continue'"));
   assert.ok(ui.includes('checked={Boolean(chatId&&autoBackgroundContinuation)}'));
-  assert.ok(ui.includes('Automatically notify this conversation'));
+  assert.ok(ui.includes('Let Lu follow up when a task ends'));
   assert.ok(ui.includes("listen('lu-generation-finish'"));
   assert.ok(ui.includes('loadLatestUiHistory(finishedChat)'));
   assert.ok(ui.includes("listen('lu-generation-finish'"));

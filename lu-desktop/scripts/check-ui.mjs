@@ -53,15 +53,15 @@ const tests = [
     host.includes('guardian.admit_host_worker(') &&
     host.includes('lu_observe_capture_available,') &&
     windows.includes("invoke('lu_observe_capture_one_shot',{") &&
-    windows.includes('Select window/display · capture one frame') &&
-    windows.includes('Capture selected foreground app (4s)') &&
-    windows.includes('Capture primary display (redacted)') &&
-    windows.includes('Capture foreground app for local GGUF image') &&
+    windows.includes('Choose window or display…') &&
+    windows.includes('Check active app (4 seconds)') &&
+    windows.includes('Check display (hidden contents)') &&
+    windows.includes('Share active app screenshot') &&
     host.includes('async fn lu_observe_capture_local_image(') &&
     host.includes('--lu-observe-foreground-one-shot') &&
     windows.includes("invoke('lu_observe_capture_local_image',{chatId})") &&
     windows.includes("invoke('lu_observe_capture_receipt',{chatId})") &&
-    windows.includes('fullyRedactedReceipt') &&
+    host.includes('state.observe.capture_receipt(&chat_id)') &&
     windows.includes('sourceIdentityAttested') &&
     ui.includes("listen('lu-observed-image-admitted'") &&
     host.includes('register_observed_local_image')],
@@ -77,7 +77,7 @@ const tests = [
     host.includes('fn lu_browser_visibility(') &&
     host.includes('fn lu_set_browser_visibility(') &&
     windows.includes("invoke('lu_set_browser_visibility',{mode:event.target.value})") &&
-    windows.includes('never grants GPU access')],
+    windows.includes('Choose CPU or GPU processing') && host.includes('fn lu_model_select_backend(')],
   ['Wave 4 vision status is host-attested and never claims projector presence is a successful probe',
     host.includes('fn lu_vision_capability(') &&
     host.includes('vision_context::image_preflight(') &&
@@ -85,7 +85,7 @@ const tests = [
     host.includes('vision_context::probe_evidence') &&
     host.includes('name:"Multimodal vision"')],
   ['Image Workspace keeps immutable original and native-reviewed revision export separate from AI edits',
-    ui.includes('Image Workspace · original and immutable revision export') &&
+    ui.includes('Image viewer and editing') &&
     ui.includes('setImageViewer({imageRef:im.imageRef,zoom:1})') &&
     ui.includes('Original stays unchanged. Native approval and a NEW PNG destination are required') &&
     ui.includes('AI-generated editing and automatic source overwrite remain disabled') &&
@@ -110,7 +110,7 @@ const tests = [
     workspaceHost.includes('turn.capabilities()')],
   ['Wave 3 live tool status follows trusted dispatch checkpoints and stays chat-scoped',
     ui.includes("listen('lu-native-tool-progress'") &&
-    ui.includes('Lu · using approved native tool') &&
+    ui.includes('Lu · working') &&
     host.includes('workspace_desktop::ask_workspace_for_chat(')],
   ['Wave 3 native tool evidence is a read-only, chat-scoped audit without model bytes',
     ui.includes("invoke('lu_tool_turn_history'") &&
@@ -121,7 +121,7 @@ const tests = [
     ui.includes("listen('lu-native-action-proposal'") &&
     ui.includes("invoke('lu_accept_native_action_proposal'") &&
     ui.includes("invoke('lu_deny_native_action_proposal'") &&
-    ui.includes('Review with native controls') &&
+    ui.includes('Review action') &&
     host.includes('state.native_actions.stage(') &&
     host.includes('fn lu_accept_native_action_proposal(')],
   ['Wave 3 normal Send one-turn workspace route is explicitly opt-in and uses native picker',
@@ -138,10 +138,10 @@ const tests = [
   ['models available from a quick dropdown', ui.includes('modelSwitcher') && ui.includes('modelMenu')],
   ['model management in unified Models tab', ui.includes("<ModelLibraryWindow onNavigate={openTab}") && windows.includes('Settings sections') && !ui.includes('settingsBackdrop')],
   ['no visible Lu Native Runtime chip', !ui.includes('Lu Native Runtime')],
-  ['selection does not start model inference', !/onClick=\{\(\) => \{ setSelectedModel\([^}]*loadModel/.test(ui) && ui.includes('Selection does not load')],
+  ['selection does not start model inference', !/onClick=\{\(\) => \{ setSelectedModel\([^}]*loadModel/.test(ui) && ui.includes('onClick={loadModel}')],
   ['model discovery stays host owned and explicit', host.includes('fn scan_unindexed_models(') && host.includes('fn lu_rescan_models(')],
   ['no auto load in application setup', !/\.setup\([\s\S]*?lu_load_model\(/.test(host)],
-  ['prompt clears immediately and drafts restore on failure', ui.includes("setPrompt(''); setImages([]);") && ui.includes('if (!completed && !cancelled && currentChat.current === activeId')],
+  ['prompt clears immediately and drafts restore on failure', ui.includes("setPrompt(''); setImages([]);") && ui.includes('if (!completed && !cancelled)') && ui.includes('retainedForRetry=true') && ui.includes('images:submittedImages,files:submittedFiles')],
   ['intentional cancellation retains partial text', !ui.includes("// Cancellation is intentional; partial streamed text is not a final answer.") && host.includes('append_progress(&chat_id, &gid, &answer)') && host.includes('state.chats.cancel(&chat_id, &gid)')],
   ['composer is resizable and collapsible', ui.includes('beginComposerDrag') && ui.includes('composerCollapsed') && css.includes('composerResizer')],
   ['brighter green model loaded indicator', css.includes('#22f66e')],
@@ -154,14 +154,14 @@ const tests = [
   ['model supplied think blocks rendered', ui.includes('splitModelOutput') && ui.includes('Model reasoning')],
   ['cancellation journal preserves interrupted reply', store.includes('result[i].cancelled=true')],
   ['conversation history carried as typed Protobuf turns',
-    host.includes('let history = if origin==GenerationOrigin::Human{') &&
+    host.includes('let history = if !images.is_empty(){') &&
     host.includes('prompt_context::typed_history_for_model(') &&
     host.includes('&events[..events.len()-1],&prompt,') &&
     host.includes('&events,&prompt,') &&
     host.includes('loaded_profile.context_tokens,max_new_tokens') &&
     host.includes('let events = state.chats.recent_model_history(&chat_id,64)?') &&
     store.includes('recent_context_entries(chat_id,limit)')],
-  ['queued generations do not stop unrelated chat work', /generation_queue\s*\.enqueue\(/.test(host) && ui.includes('visibleJob')],
+  ['queued generations do not stop unrelated chat work', /generation_queue\s*\.enqueue(?:_with_class)?\(/.test(host) && ui.includes('visibleJob')],
   ['restricted Markdown renderer and code-copy presentation', ui.includes("import { MarkdownView }") && ui.includes('role={entry.role}') && css.includes('.markdownBody .codeBlock')],
   ['text attachments are draft metadata rather than textarea insertion', ui.includes("setTextFiles(draft.files || [])") && ui.includes("buildSubmittedPrompt(input, textFiles)")],
   ['image previews are scoped with blob CSP only for image sources', ui.includes('URL.createObjectURL(file)') && readFileSync(new URL('../src-tauri/tauri.conf.json', import.meta.url),'utf8').includes("img-src 'self' data: blob:")],
@@ -219,7 +219,7 @@ const tests = [
     ui.includes("invoke('lu_review_file_transfer'") &&
     ui.includes("invoke('lu_confirm_file_transfer'") &&
     ui.includes("invoke('lu_deny_file_transfer'") &&
-    ui.includes('fileTransferReview.sourceSha256') &&
+    host.includes('view.destination_display,view.bytes,view.source_sha256,warning,') && host.includes('File transfer preview changed during native confirmation') &&
     ui.includes('disabled={!fileTransferReviewed || fileTransferBusy}') &&
     host.includes('fn lu_review_file_transfer(') &&
     host.includes('fn lu_confirm_file_transfer(') &&
@@ -234,8 +234,8 @@ const tests = [
     ui.includes("invoke('lu_review_file_restore'") &&
     ui.includes("invoke('lu_confirm_file_restore'") &&
     ui.includes("invoke('lu_deny_file_restore'") &&
-    ui.includes('trashReview.sha256') &&
-    ui.includes('restoreReview.sha256') &&
+    host.includes('view.source,view.stored_name,view.bytes,view.sha256') && host.includes('Source or trash receipt changed during confirmation') &&
+    host.includes('view.original,view.trash_entry,view.bytes,view.sha256') && host.includes('Restore custody changed during native confirmation') &&
     ui.includes('disabled={!trashReviewed || trashBusy}') &&
     ui.includes('disabled={!restoreReviewed || trashBusy}') &&
     ui.includes('item.restorable ?') &&
@@ -267,10 +267,10 @@ const tests = [
     !host.includes('fn lu_review_trash_file(')],
   ['file operation UI reports active native work without fabricating completion or percent',
     ui.includes('const wave2FileBusy = archiveBusy') &&
-    ui.includes('aria-label="Native file operation in progress"') &&
-    ui.includes('Byte-level progress is not available') &&
-    ui.includes('No automatic retry occurs') &&
-    ui.includes('File recovery before taking another action')],
+    ui.includes('aria-label="Working with your files"') &&
+    ui.includes('aria-live="polite" aria-label="Working with your files"') &&
+    ui.includes('If the operation is interrupted, check your files before trying again.') &&
+    ui.includes('role="status"')],
   ['bounded Office batch native review binds full before-after diff and unchanged package hashes',
     ui.includes("invoke('lu_review_office_batch'") &&
     ui.includes("invoke('lu_confirm_office_batch'") &&

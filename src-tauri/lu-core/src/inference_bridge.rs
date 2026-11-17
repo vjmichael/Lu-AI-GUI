@@ -88,6 +88,9 @@ impl<B: InferenceBackend> InferenceBridge<B> {
     pub fn phase(&self) -> EnginePhase {
         self.host.phase()
     }
+    pub fn reconcile_residency(&mut self) -> bool {
+        self.host.reconcile_residency()
+    }
     pub fn process_id(&self) -> Option<u32> {
         self.host.process_id()
     }

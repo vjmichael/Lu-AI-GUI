@@ -45,3 +45,13 @@ test('installed oracle demands real same HWND and all five tabs',()=>{
  assert.match(smoke,/UIAutomationClient/);
  assert.match(smoke,/CopyFromScreen/);
 });
+
+test('ordinary model, message and history surfaces hide implementation details',()=>{
+ assert.doesNotMatch(ui,/Tensor loading % unavailable|Original ANSF text · version 0|Versions \/ source|Goal memory · not set/);
+ assert.match(ui,/Loading model…/);
+ assert.match(settings,/invoke\('lu_unload_model',\{sessionId:runtime\.sessionId\}\)/);
+ assert.match(ui,/retainedForRetry=true/);
+ assert.match(ui,/images:submittedImages,files:submittedFiles/);
+ assert.match(tabs,/VISION_UNAVAILABLE/);
+ assert.match(tabs,/CONTEXT_LIMIT/);
+});
