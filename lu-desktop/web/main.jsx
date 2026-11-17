@@ -4,6 +4,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { listen } from '@tauri-apps/api/event';
 import { splitModelOutput } from './response_view.mjs';
+import {deliveryCandidate} from './causal_delivery.mjs';
 // Host classifies original user intent; no frontend filesystem routing.
 import {explainToolOutcome,explainReviewedContinuation} from './reviewed_tool_feedback.mjs';
 import {explainMemoryProjectionRecovery} from './reviewed_memory_recovery.mjs';
@@ -986,6 +987,7 @@ function App() {
   const submissionHistorySequence=useRef(new Map());
   const navigationSequence=useRef(0);
   const pendingSends=useRef(new Map());
+  const pendingDelivery=useRef(new Map());
   const draftMutations=useRef(new Set());
   const [,setSubmissionRevision]=useState(0);
   const [savedImagePreview,setSavedImagePreview]=useState(null);
@@ -2546,6 +2548,20 @@ function App() {
     else el.scrollTop = restoredScrollTop(stored, el.scrollHeight, el.clientHeight);
     setAtBottom(followOutput.current);
   }, [chatId,activeTab]);
+  // Actual React DOM commit, not proof of compositor paint. The final
+  // saved row reconciles a live stream even if some token events were lost.
+  useLayoutEffect(()=>{
+    const el=transcriptRef.current;
+    if(!el||activeTab!=='chat'||currentChat.current!==chatId)return;
+    for(const [ref,witness] of pendingDelivery.current){
+      const hasCommittedNode=Boolean(el.querySelector(
+        '[data-ansf-seq="'+witness.assistantSeq+'"].assistant'));
+      if(!deliveryCandidate({witness,chatId,activeTab,currentChat:currentChat.current,
+          job:visibleJob,entries:displayedHistory,hasCommittedNode}))continue;
+      pendingDelivery.current.delete(ref);
+      void invoke('lu_cp01_reply_observed',{...witness}).catch(()=>false);
+    }
+  });
   useLayoutEffect(() => {
     const el = transcriptRef.current;
     if (!el || activeTab!=='chat' || !followOutput.current || pendingPrepend.current) return;
@@ -4261,8 +4277,13 @@ function App() {
          result.diagnosticRef&&result.receipt.generationId===attempt.generationId){
         // An awaited exact native response is a renderer receipt, not a
         // DOM paint or durable readback claim. Diagnostics never delay Send.
-        void invoke('lu_cp01_reply_observed',{chatId:target,submissionId:attempt.nonce,
-          generationId:attempt.generationId,diagnosticRef:result.diagnosticRef}).catch(()=>false);
+        const witness={chatId:target,submissionId:attempt.nonce,
+          generationId:attempt.generationId,diagnosticRef:result.diagnosticRef};
+        if(Number.isSafeInteger(result.assistantSeq)&&result.assistantSeq>0){
+          pendingDelivery.current.set(result.diagnosticRef,{...witness,assistantSeq:result.assistantSeq});
+          while(pendingDelivery.current.size>64)pendingDelivery.current.delete(pendingDelivery.current.keys().next().value);
+        }
+        void invoke('lu_cp01_reply_observed',{...witness,assistantSeq:null}).catch(()=>false);
       }
       if(decision==='saved'){
         await admitSavedImageAttempt(target,attempt,result.receipt);

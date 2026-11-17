@@ -679,6 +679,16 @@ export function SettingsWindow({onNavigate,active=true}={}){
           {onNavigate&&<button className="primaryButton" onClick={()=>onNavigate('history')}>Open History</button>}
         </Section>}
         {section==='privacy'&&<Section title="Privacy & Observe">
+          <div className="nativeOption">
+            <strong>Troubleshooting</strong>
+            <p>Lu keeps a small local record of response progress and failure categories without saving conversation text or images in that record. Nothing is uploaded.</p>
+            <button type="button" disabled={busy} onClick={()=>void act('Troubleshooting report copied. Share only if you choose.',async()=>{
+              const report=await invoke('lu_cp01_diagnostic_report');
+              if(report===null)return null;
+              await navigator.clipboard.writeText(JSON.stringify(report,null,2));
+              return report;
+            })}>Copy troubleshooting report…</button>
+          </div>
           <p>Observe & Learn is OFF by default. Enabling it requires both existing native OS confirmations. Observation never grants general network egress.</p>
           <label className="nativeField">Conversation to observe
             <select value={chatId} onChange={e=>setChatId(e.target.value)}>
