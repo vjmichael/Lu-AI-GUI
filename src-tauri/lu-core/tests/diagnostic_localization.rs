@@ -331,3 +331,53 @@ fn unrelated_failure_must_not_borrow_a_different_branch_clock() {
         EvidenceStrength::InsufficientEvidence
     );
 }
+
+
+// The production CP01 adapter follows the current native transaction order.
+// These Protobuf fixtures do not claim native execution or a painted frame.
+fn transactional_trace() -> proto::DiagnosticTrace {
+    let mut trace = all_success();
+    trace.events = [4, 19, 2, 7, 5, 8, 9, 12, 10].iter().enumerate()
+        .map(|(i, stage)| proto::DiagnosticEvent {
+            sequence: (i + 1) as u64,
+            parent_sequence: i as u64,
+            stage: *stage,
+            outcome: if matches!(*stage, 4 | 7 | 8) { 1 } else { 2 },
+            elapsed_millis: (i + 1) as u64,
+            clock_domain: 2,
+            failure_code: 0,
+            attempt: 1,
+            clock_epoch: 1,
+        }).collect();
+    trace
+}
+#[test]
+fn current_transaction_host_commit_does_not_prove_renderer_receipt_or_paint() {
+    use lu_core::diagnostic_localization::localize_transactional_turn;
+    let mut trace = transactional_trace();
+    trace.events.pop();
+    let host = localize_transactional_turn(&trace).unwrap();
+    assert_eq!(host.confirmed_until, "assistant_saved");
+    assert_eq!(host.first_unconfirmed, "native_ipc_returned");
+    assert_eq!(host.evidence_strength, EvidenceStrength::BoundedToNextStage);
+    let reply = localize_transactional_turn(&transactional_trace()).unwrap();
+    assert_eq!(reply.confirmed_until, "native_ipc_returned");
+    assert_eq!(reply.first_unconfirmed, "stream_closed");
+    assert_eq!(reply.evidence_strength, EvidenceStrength::BoundedToNextStage);
+}
+#[test]
+fn current_transaction_model_failure_and_lost_evidence_are_not_success() {
+    use lu_core::diagnostic_localization::localize_transactional_turn;
+    let mut trace = transactional_trace();
+    trace.events.truncate(7);
+    let event = trace.events.last_mut().unwrap();
+    event.outcome = 3;
+    event.failure_code = 1;
+    let failure = localize_transactional_turn(&trace).unwrap();
+    assert_eq!(failure.confirmed_until, "model_loop_entered");
+    assert_eq!(failure.first_unconfirmed, "model_loop_returned");
+    assert_eq!(failure.evidence_strength, EvidenceStrength::ObservedFailure);
+    trace.dropped_events = 1;
+    assert_eq!(localize_transactional_turn(&trace).unwrap().evidence_strength,
+        EvidenceStrength::InsufficientEvidence);
+}
