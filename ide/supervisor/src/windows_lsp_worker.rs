@@ -103,9 +103,12 @@ fn stage_bundle(
     recipe_id: &str,
     expected: &str,
 ) -> Result<(), SupervisorError> {
-    if native_lsp_bundle_digest(root, recipe_id)? != expected {
-        return Err(SupervisorError::WrongProjectOrSource);
-    }
+    // Both native callers already rehash the original exact bundle before
+    // profile creation. Do not repeat that full read after approval:
+    // publish_into_native_parent hashes every copied byte through pinned
+    // handles and independently reads the target back. Its seal and the
+    // final path-bound recipe digest below must BOTH equal the approved pin.
+    // No change to the one-shot 60-second grant or its consumption point.
     let parent = local.parent().ok_or_else(denied)?;
     let name = local.file_name().ok_or_else(denied)?;
     let (_, hash) = publish_into_native_parent(

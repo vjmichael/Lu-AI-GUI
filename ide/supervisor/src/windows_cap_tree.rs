@@ -17,7 +17,7 @@ use cap_std::fs::{Dir, OpenOptions};
 use sha2::{Digest, Sha256};
 use std::{
     collections::HashMap,
-    ffi::OsStr,
+    ffi::{OsStr, OsString},
     fs::{self, File},
     io::{Read, Write},
     os::windows::{
@@ -28,7 +28,10 @@ use std::{
 };
 use windows_sys::Win32::{
     Foundation::HANDLE,
-    Storage::FileSystem::{GetFileInformationByHandle, BY_HANDLE_FILE_INFORMATION},
+    Storage::FileSystem::{
+        GetFileInformationByHandle, GetFileInformationByHandleEx, BY_HANDLE_FILE_INFORMATION,
+        FILE_BASIC_INFO, FileBasicInfo,
+    },
 };
 
 const MAX_DEPTH: usize = 48;
@@ -133,7 +136,10 @@ fn checked_child_dir(parent: &Dir, name: &OsStr) -> Result<Dir, SupervisorError>
     }
     // No ambient pathname here. cap_std resolves relative to parent handle.
     let child = parent.open_dir(name).map_err(|_| denied())?;
-    if !child.dir_metadata().map_err(|_| denied())?.is_dir() {
+    let opened = child.dir_metadata().map_err(|_| denied())?;
+    if !opened.is_dir()
+        || opened.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
+    {
         return Err(denied());
     }
     // A concurrent replacement either failed to rename the pinned parent,
@@ -258,6 +264,57 @@ fn prove_closed_compiler_aliases(
     }
     Ok(accepted)
 }
+// NTFS directory membership can change even when its rooted handle cannot
+// be renamed. Never certify an enumeration that silently missed an entry
+// during a child-rename race. Read the metadata from the pinned handle, not
+// an ambient path, and confirm the sorted membership again before sealing.
+fn directory_generation(dir: &Dir) -> Result<(i64, i64), SupervisorError> {
+    let mut info = FILE_BASIC_INFO::default();
+    if unsafe {
+        GetFileInformationByHandleEx(
+            dir.as_raw_handle() as HANDLE,
+            FileBasicInfo,
+            (&mut info as *mut FILE_BASIC_INFO).cast(),
+            std::mem::size_of::<FILE_BASIC_INFO>() as u32,
+        )
+    } == 0
+    {
+        return Err(denied());
+    }
+    if info.FileAttributes & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
+        return Err(denied());
+    }
+    Ok((info.LastWriteTime, info.ChangeTime))
+}
+
+fn sorted_names(dir: &Dir) -> Result<Vec<OsString>, SupervisorError> {
+    let mut names = dir
+        .entries()
+        .map_err(|_| denied())?
+        .map(|entry| entry.map(|item| item.file_name()).map_err(|_| denied()))
+        .collect::<Result<Vec<_>, _>>()?;
+    names.sort();
+    if names.windows(2).any(|pair| pair[0] == pair[1]) {
+        return Err(denied());
+    }
+    Ok(names)
+}
+
+fn verify_directory_generation(
+    dir: &Dir,
+    generation: (i64, i64),
+    names: &[OsString],
+) -> Result<(), SupervisorError> {
+    if directory_generation(dir)? != generation
+        || sorted_names(dir)? != names
+        || directory_generation(dir)? != generation
+    {
+        acceptance_tree_denial("directory_membership_changed_during_seal");
+        return Err(denied());
+    }
+    Ok(())
+}
+
 fn visit(
     source: &Dir,
     output: Option<&Dir>,
@@ -273,14 +330,10 @@ fn visit(
     if depth > MAX_DEPTH {
         return Err(denied());
     }
-    let mut names = source
-        .entries()
-        .map_err(|_| denied())?
-        .map(|entry| entry.map(|item| item.file_name()).map_err(|_| denied()))
-        .collect::<Result<Vec<_>, _>>()?;
+    let generation = directory_generation(source)?;
     // Same deterministic depth-first ordering as the D7B PowerShell lock.
-    names.sort();
-    for name in names {
+    let names = sorted_names(source)?;
+    for name in names.iter().cloned() {
         clean_name(&name)?;
         let metadata = source.symlink_metadata(&name).map_err(|_| denied())?;
         if metadata.file_type().is_symlink()
@@ -386,7 +439,7 @@ fn visit(
             return Err(denied());
         }
     }
-    Ok(())
+    verify_directory_generation(source, generation, &names)
 }
 
 /// Live, capability-rooted *metadata* quota check for a tree that Cargo is
@@ -740,6 +793,29 @@ mod tests {
         )
         .is_err());
         assert!(!parent.join("job-junction").exists());
+        fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn immutable_directory_generation_rejects_changed_membership() {
+        let base = std::env::temp_dir().join(format!(
+            "lu-cap-generation-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir(&base).unwrap();
+        let pinned = safe_root(&base).unwrap();
+        let generation = directory_generation(&pinned).unwrap();
+        let names = sorted_names(&pinned).unwrap();
+        // Stable empty directories remain valid; a newly introduced member
+        // may never be silently omitted from an immutable seal.
+        verify_directory_generation(&pinned, generation, &names).unwrap();
+        fs::write(base.join("new.txt"), b"new member").unwrap();
+        assert!(verify_directory_generation(&pinned, generation, &names).is_err());
+        drop(pinned);
         fs::remove_dir_all(base).unwrap();
     }
 
