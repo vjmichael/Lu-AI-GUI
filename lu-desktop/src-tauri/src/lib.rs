@@ -5,6 +5,7 @@
 mod chat_store;
 mod ansf_migration;
 mod attachment_store;
+mod linked_attachment_file;
 mod memory_desktop;
 mod file_scan_worker;
 pub use file_scan_worker::run_file_scan_worker;
@@ -6966,6 +6967,78 @@ async fn lu_reader_ingest_document(
 fn contains_document_context(prompt:&str)->bool{
     prompt.contains("[Attached text file:")||prompt.contains("[/Attached text file]")
 }
+/// A private stored path is only resolved from an exact original manifest.
+/// No user/model/frontend path argument, fallback search or object copy.
+fn verified_linked_bytes(link:&lu_core::ansf_linked_attachments::LinkedAttachment)
+    ->Result<Vec<u8>,String>{
+    let opened=linked_attachment_file::open_original(std::path::Path::new(&link.source_path),Some(link.bytes))
+        .map_err(|e|e.message().to_owned())?;
+    if opened.path.to_str()!=Some(link.source_path.as_str())||
+       format!("{:x}",Sha256::digest(&opened.bytes))!=link.sha256{
+        return Err(linked_attachment_file::LinkFailure::Changed.message().into())
+    }
+    Ok(opened.bytes)
+}
+#[derive(Serialize)]
+#[serde(rename_all="camelCase")]
+struct LinkedAttachmentAvailability{
+    attachment_id:String,
+    name:String,
+    available:bool,
+}
+/// Read only metadata and availability for an original human saved message.
+/// This is intentionally lazy; no whole-history filesystem crawling.
+#[tauri::command]
+async fn lu_linked_attachment_status(caller:tauri::WebviewWindow,
+    state:State<'_,Arc<DesktopState>>,chat_id:String,visible_seq:i64)
+    ->Result<Vec<LinkedAttachmentAvailability>,String>{
+    if caller.label()!="main"{return Err("File not available in this window.".into())}
+    let state=Arc::clone(state.inner());
+    tauri::async_runtime::spawn_blocking(move||{
+        let book=state.chats.require(&chat_id)?;
+        let links=book.linked_manifest_for_visible_seq(&chat_id,visible_seq)
+            .map_err(|_|"File not available in this conversation.")?;
+        Ok(links.iter().map(|link|LinkedAttachmentAvailability{
+            attachment_id:link.attachment_id.clone(),name:link.display_name.clone(),
+            available:verified_linked_bytes(link).is_ok()
+        }).collect())
+    }).await.map_err(|_|"File not available.")?
+}
+/// Read the original only on an exact saved attachment click. A missing
+/// source is an explicit error, never a cached excerpt or a copy fallback.
+/// Only bounded inert document text or already validated image data returns.
+#[tauri::command]
+async fn lu_read_linked_attachment(caller:tauri::WebviewWindow,
+    state:State<'_,Arc<DesktopState>>,chat_id:String,visible_seq:i64,attachment_id:String)
+    ->Result<serde_json::Value,String>{
+    if caller.label()!="main"{return Err("File not available in this window.".into())}
+    let state=Arc::clone(state.inner());
+    tauri::async_runtime::spawn_blocking(move||{
+        let book=state.chats.require(&chat_id)?;
+        let links=book.linked_manifest_for_visible_seq(&chat_id,visible_seq)
+            .map_err(|_|"File not available in this conversation.")?;
+        let link=links.iter().find(|a|a.attachment_id==attachment_id)
+            .ok_or("File not available in this message.")?;
+        let bytes=verified_linked_bytes(link)?;
+        if link.reader_format.is_some(){
+            let view=reader_attachment_view(link.display_name.clone(),bytes,link.selector.clone(),
+                link.offset_chars,link.sha256.clone())?;
+            let digest=format!("{:x}",Sha256::digest(view.text.as_bytes()));
+            if link.reader_format.as_deref()!=Some(view.format.as_str())||
+               link.excerpt_sha256.as_deref()!=Some(digest.as_str()){
+                return Err("File not available. The saved document section no longer matches.".into())
+            }
+            Ok(serde_json::json!({"kind":"document","document":view}))
+        }else{
+            let data_url=format!("data:{};base64,{}",link.media_type,STANDARD.encode(bytes));
+            let pinned=admit_data_url(&data_url).map_err(|_|"File not available. Image validation failed.")?;
+            if pinned.mime_type!=link.media_type||format!("{:x}",Sha256::digest(&pinned.bytes))!=link.sha256{
+                return Err("File not available. Image identity changed.".into())
+            }
+            Ok(serde_json::json!({"kind":"image","dataUrl":data_url}))
+        }
+    }).await.map_err(|_|"File not available.")?
+}
 #[tauri::command]
 fn lu_background_tasks(
     state:State<'_,Arc<DesktopState>>,chat_id:String
@@ -10121,6 +10194,8 @@ pub fn run() {
             lu_background_reapprove,
             lu_reader_pick_document,
             lu_reader_ingest_document,
+            lu_linked_attachment_status,
+            lu_read_linked_attachment,
             lu_reader_ask_document,
             lu_workspace_ask_directory,
             lu_reviewed_app_ask,
@@ -10287,6 +10362,28 @@ mod tests {
         fs::write(root.join("local.gguf"),b"invalid contents").unwrap();
         assert!(!inspect_registered_model(&root,&model).load_allowed);
         fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn cp02_linked_original_never_falls_back_after_same_length_replace_or_move(){
+        let root=std::env::temp_dir().join(next_id("lu-link-reopen-"));
+        std::fs::create_dir(&root).unwrap();
+        let path=root.join("source.txt");std::fs::write(&path,b"original").unwrap();
+        let path=path.canonicalize().unwrap();
+        let link=lu_core::ansf_linked_attachments::LinkedAttachment{
+            attachment_id:next_id("doc-"),display_name:"source.txt".into(),
+            media_type:"application/octet-stream".into(),bytes:8,
+            sha256:format!("{:x}",Sha256::digest(b"original")),
+            source_path:path.to_str().unwrap().into(),reader_format:Some("PlainText".into()),
+            selector:String::new(),offset_chars:0,
+            excerpt_sha256:Some(format!("{:x}",Sha256::digest(b"original"))),
+        };
+        assert_eq!(verified_linked_bytes(&link).unwrap(),b"original");
+        std::fs::write(&path,b"changed!").unwrap();
+        assert!(verified_linked_bytes(&link).unwrap_err().contains("changed"));
+        std::fs::rename(&path,root.join("moved.txt")).unwrap();
+        assert!(verified_linked_bytes(&link).unwrap_err().contains("File not available"));
+        assert_eq!(std::fs::read_dir(&root).unwrap().count(),1);
+        std::fs::remove_dir_all(&root).unwrap();
     }
     #[test]
     fn cp02_reader_attachment_extracts_unicode_and_pins_continuation(){
