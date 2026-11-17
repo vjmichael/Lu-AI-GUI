@@ -1,3 +1,5 @@
+[CmdletBinding()]
+param([switch]$PreflightOnly)
 $ErrorActionPreference='Stop'
 $features='dap-transport,protected-recovery-service,dev046c-ci-control,dev046d-native-dialog'
 cargo test --manifest-path ide/supervisor/Cargo.toml --features $features --lib windows_event_owner
@@ -9,7 +11,7 @@ cargo test --manifest-path ide/supervisor/Cargo.toml --features $features --lib 
 if ($LASTEXITCODE -ne 0) { throw 'DENIED: one-use debugger receipt/replay/restart inventory tests failed' }
 cargo test --manifest-path ide/supervisor/Cargo.toml --features $features --lib debug_control_dispatch
 if ($LASTEXITCODE -ne 0) { throw 'DENIED: independent new stop step outcome tests failed' }
-cargo test --manifest-path ide/host/Cargo.toml --features 'dev046c-ci-control' --lib dap_session
+cargo test --manifest-path ide/host/Cargo.toml --features 'dev046c-ci-control,dev045d4c-ci-oracle' --lib dap_session
 if ($LASTEXITCODE -ne 0) { throw 'DENIED: native DAP step/breakpoint reply and source-denial tests failed' }
 cargo fmt --manifest-path ide/supervisor/Cargo.toml -- --check
 if ($LASTEXITCODE -ne 0) { throw 'DENIED: consolidated supervisor rustfmt contract failed' }
@@ -48,6 +50,10 @@ $parseErrors=$null
 if ($parseErrors.Count -ne 0) { throw 'DENIED: physical human acceptance fixture PowerShell syntax invalid' }
 cargo build --manifest-path ide/supervisor/Cargo.toml --features $features --bin windows_recovery_service --bin windows_null_service_bootstrap --example wo6_native_dap_acceptance
 if ($LASTEXITCODE -ne 0) { throw 'DENIED: native Rust protected host compile failed' }
+if ($PreflightOnly) {
+  Write-Host 'DEV045D5_ALL_ORIGINAL_SOURCE_PREFLIGHT=PASS_NOT_NATIVE_ACCEPTANCE'
+  return
+}
 $svc=(Resolve-Path 'ide/supervisor/target/debug/windows_recovery_service.exe').Path
 $hostExe=(Resolve-Path 'ide/supervisor/target/debug/examples/wo6_native_dap_acceptance.exe').Path
 $bootstrap=(Resolve-Path 'ide/supervisor/target/debug/windows_null_service_bootstrap.exe').Path

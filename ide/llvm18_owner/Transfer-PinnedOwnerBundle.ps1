@@ -15,6 +15,10 @@ $bundleName='lu-verified-owner-bundle'
 $manifestName='lu-owner-llvm18-transport.json'
 function Inventory([string]$root) {
     if (!(Test-Path -LiteralPath $root -PathType Container)) { throw 'DENIED: native bundle missing' }
+    $rootItem=Get-Item -LiteralPath $root -Force
+    if ($rootItem.Attributes -band [IO.FileAttributes]::ReparsePoint) {
+        throw 'DENIED: native artifact root reparse point'
+    }
     $all=@(Get-ChildItem -LiteralPath $root -Recurse -Force)
     if ($all.Count -gt 1000 -or @($all | Where-Object { $_.Attributes -band [IO.FileAttributes]::ReparsePoint }).Count -ne 0) {
         throw 'DENIED: native artifact inventory bounds or reparse point'
@@ -32,21 +36,36 @@ function Inventory([string]$root) {
         [ordered]@{path=$relative;bytes=$file.Length;sha256=(Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant()}
     })
     if ($total -gt 512MB) { throw 'DENIED: native artifact total bound' }
+    $unique=@($entries | Group-Object -Property { $_.path.ToLowerInvariant() })
+    if ($unique.Count -ne $entries.Count) { throw 'DENIED: native artifact case-folded alias' }
     return @($entries | Sort-Object -Property path)
 }
 function RequireBundle([string]$root) {
-    foreach ($relative in @('bin/lldb-dap.exe','bin/llvm-symbolizer.exe','debuggee/wo6-selftest.exe','provenance/Process.inc','fin04-owner-provenance.json')) {
+    # Inventory FIRST: no reparse file or root may be parsed or hashed.
+    [void](Inventory $root)
+    foreach ($relative in @('bin/lldb-dap.exe','bin/llvm-symbolizer.exe','debuggee/wo6-selftest.exe','provenance/Process.inc','provenance/DebuggerThread.cpp','provenance/ProgressEvent.h','fin04-owner-provenance.json')) {
         if (!(Test-Path -LiteralPath (Join-Path $root $relative) -PathType Leaf)) { throw 'DENIED: pinned native artifact incomplete' }
     }
     $source=Get-Content -LiteralPath (Join-Path $root 'provenance/Process.inc') -Raw
-    if (!$source.Contains('LU_LLVM18_FIXED_DAP_IMAGE_LEAF_USED') -or !$source.Contains('Error != ERROR_ACCESS_DENIED')) {
+    if (!$source.Contains('LU_LLVM18_FIXED_DAP_IMAGE_LEAF_USED') -or
+        !$source.Contains('Error != ERROR_ACCESS_DENIED') -or
+        !$source.Contains('(!Dap && !Symbolizer)')) {
         throw 'DENIED: reviewed native startup repair absent from artifact'
     }
     $native=Get-Content -LiteralPath (Join-Path $root 'fin04-owner-provenance.json') -Raw | ConvertFrom-Json
     $binarySha=(Get-FileHash -LiteralPath (Join-Path $root 'bin/lldb-dap.exe') -Algorithm SHA256).Hash.ToLowerInvariant()
-    if ($native.upstreamCommit -cne $llvmPin -or $native.patcherSha256 -cne $patcherSha -or
-        $native.lldbDapExeSha256 -cne $binarySha -or !$native.observerOnly -or
-        $native.productionDebuggerActions -or $native.replayAuthorized) {
+    $headerSha=(Get-FileHash -LiteralPath 'ide/llvm18_owner/LuIdeOwnerEvent.h' -Algorithm SHA256).Hash.ToLowerInvariant()
+    $threadSha=(Get-FileHash -LiteralPath (Join-Path $root 'provenance/DebuggerThread.cpp') -Algorithm SHA256).Hash.ToLowerInvariant()
+    $progressSha=(Get-FileHash -LiteralPath (Join-Path $root 'provenance/ProgressEvent.h') -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($native.schema -cne 'lu.ide.fin04.first-party-lldb-owner.v1' -or
+        $native.upstreamCommit -cne $llvmPin -or $native.patcherSha256 -cne $patcherSha -or
+        $native.headerSha256 -cne $headerSha -or
+        $native.patchedDebuggerThreadSha256 -cne $threadSha -or
+        $native.patchedProgressEventHeaderSha256 -cne $progressSha -or
+        $native.lldbDapExeSha256 -cne $binarySha -or
+        $native.observerOnly -isnot [bool] -or !$native.observerOnly -or
+        $native.productionDebuggerActions -isnot [bool] -or $native.productionDebuggerActions -or
+        $native.replayAuthorized -isnot [bool] -or $native.replayAuthorized) {
         throw 'DENIED: first-party native provenance or observer policy mismatch'
     }
 }
@@ -95,7 +114,12 @@ New-Item -ItemType Directory -Path $dest | Out-Null
 if ($LASTEXITCODE -ne 0) { throw 'DENIED: native candidate artifact download failed' }
 $mp=Join-Path $dest $manifestName
 $root=Join-Path $dest $bundleName
-if (!(Test-Path -LiteralPath $mp -PathType Leaf) -or (Get-Item -LiteralPath $mp).Length -gt 1MB) { throw 'DENIED: native transport manifest invalid' }
+if (!(Test-Path -LiteralPath $mp -PathType Leaf)) { throw 'DENIED: native transport manifest invalid' }
+$manifestMeta=Get-Item -LiteralPath $mp -Force
+if ($manifestMeta.Length -gt 1MB -or $manifestMeta.Length -eq 0 -or
+    ($manifestMeta.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+    throw 'DENIED: native transport manifest invalid'
+}
 $manifest=Get-Content -LiteralPath $mp -Raw | ConvertFrom-Json
 if ($manifest.schema -cne 'lu.ide.llvm18.transport.v1' -or $manifest.repo -cne $env:GITHUB_REPOSITORY -or
     $manifest.head -cne $head -or $manifest.llvmCommit -cne $llvmPin -or

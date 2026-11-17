@@ -349,7 +349,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 for event in dap.poll().map_err(|e| e.code())? {
                     match event {
                         DapEvent::ConfigurationRequested => {
-                            dap.configuration_done().map_err(|e| e.code())?
+                            // Configuration is driven below after all
+                            // correlated events have been processed.
                         }
                         DapEvent::Stopped { thread_id } => stopped = Some(thread_id),
                         DapEvent::ThreadsReceived => threads = true,
@@ -359,6 +360,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         }
                         _ => {}
                     }
+                }
+                #[cfg(all(
+                    target_arch = "x86_64",
+                    debug_assertions,
+                    feature = "dev045d3-ci-oracle"
+                ))]
+                if dap.ci_source_breakpoint_needed() {
+                    dap.ci_configure_fixed_source_breakpoint()
+                        .map_err(|e| e.code())?;
+                }
+                if dap.configuration_needed() {
+                    dap.configuration_done().map_err(|e| e.code())?;
                 }
                 if stopped.is_some() && !requested_threads && dap.phase() == DapPhase::Stopped {
                     dap.threads().map_err(|e| e.code())?;
@@ -387,6 +400,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 &supervisor, &debug_job.job_id, &debugger_plan, &target,
             ).map_err(|_| "DENIED: protected Linux stopped-PC, cgroup, build/debug receipts or independent DWARF line mapping failed")?;
             if !stopped_witness.independent_line_table_verified
+                || !stopped_witness.kernel.kernel_register_pc_verified
+                || stopped_witness.source_relative_path != "src/main.rs"
+                || stopped_witness.source_line != 2
                 || stopped_witness.installed_app_accepted
                 || stopped_witness.debugger_job_id != debug_job.job_id
                 || stopped_witness.debugger_plan_sha256 != debug_job.plan_sha256

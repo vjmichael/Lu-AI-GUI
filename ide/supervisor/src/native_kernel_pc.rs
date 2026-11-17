@@ -20,10 +20,16 @@ fn denied() -> SupervisorError {
     SupervisorError::NoContainment
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct KernelLoadedImage {
     // Kept exclusively in the native host; never serialized into WebView.
     pub pid: u32,
+    pub thread_id: u32,
+    pub tracer_pid: u32,
+    pub process_start_ticks: u64,
+    pub thread_start_ticks: u64,
+    pub tracer_start_ticks: u64,
+    pub kernel_register_pc_verified: bool,
     pub instruction_address: u64,
     pub load_bias: u64,
     pub binary_sha256: String,
@@ -125,16 +131,126 @@ fn start_ticks(pid: u32) -> Result<u64, SupervisorError> {
         .parse::<u64>()
         .map_err(|_| denied())
 }
-fn tracing_stop(pid: u32) -> Result<bool, SupervisorError> {
-    let data = fs::read_to_string(format!("/proc/{pid}/status")).map_err(|_| denied())?;
-    let state = data
-        .lines()
-        .find_map(|line| line.strip_prefix("State:"))
-        .ok_or_else(denied)?
-        .trim_start();
-    // Only a kernel ptrace tracing stop, never a generic SIGSTOP.
-    Ok(state.starts_with("t "))
+// The documented /proc task syscall interface reports "-1 SP PC"
+// for a blocked task that is not in a system call. Require a real
+// ptrace stop and the expected tracer, never a running/syscall sample.
+// This is read-only: no PTRACE_ATTACH, new capabilities or signal injection.
+fn parse_stopped_syscall(text: &str) -> Option<u64> {
+    let mut fields = text.split_whitespace();
+    if fields.next()? != "-1" {
+        return None;
+    }
+    let parse = |word: &str| u64::from_str_radix(word.strip_prefix("0x")?, 16).ok();
+    let stack = parse(fields.next()?)?;
+    let pc = parse(fields.next()?)?;
+    if stack == 0 || pc == 0 || fields.next().is_some() {
+        return None;
+    }
+    Some(pc)
 }
+
+fn read_proc_bounded(path: &Path, limit: u64) -> Result<String, SupervisorError> {
+    let mut text = String::new();
+    File::open(path)
+        .map_err(|_| denied())?
+        .take(limit + 1)
+        .read_to_string(&mut text)
+        .map_err(|_| denied())?;
+    if text.len() as u64 > limit {
+        return Err(denied());
+    }
+    Ok(text)
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct TracedThread {
+    tid: u32,
+    tracer_tid: u32,
+    thread_start: u64,
+    tracer_start: u64,
+    pc: u64,
+}
+
+fn status_field<'a>(text: &'a str, field: &str) -> Option<&'a str> {
+    let mut matches = text.lines().filter_map(|line| line.strip_prefix(field));
+    let value = matches.next()?.trim();
+    if matches.next().is_some() {
+        return None;
+    }
+    Some(value)
+}
+
+fn trace_sample(
+    group: &Path,
+    pid: u32,
+    tid: u32,
+    namespace_tid: u64,
+    server: &Path,
+) -> Result<Option<TracedThread>, SupervisorError> {
+    let task = std::path::PathBuf::from(format!("/proc/{pid}/task/{tid}"));
+    let status = read_proc_bounded(&task.join("status"), 16 * 1024)?;
+    let namespace = status_field(&status, "NSpid:")
+        .and_then(|field| field.split_whitespace().last())
+        .and_then(|field| field.parse::<u64>().ok())
+        .ok_or_else(denied)?;
+    if namespace != namespace_tid {
+        return Ok(None);
+    }
+    if !status_field(&status, "State:").is_some_and(|state| state.starts_with("t "))
+        || status_field(&status, "Tgid:").and_then(|value| value.parse::<u32>().ok()) != Some(pid)
+        || status_field(&status, "Pid:").and_then(|value| value.parse::<u32>().ok()) != Some(tid)
+    {
+        return Err(denied());
+    }
+    let tracer_tid = status_field(&status, "TracerPid:")
+        .and_then(|value| value.parse::<u32>().ok())
+        .filter(|value| *value != 0 && *value != tid)
+        .ok_or_else(denied)?;
+    let tracer_status =
+        read_proc_bounded(Path::new(&format!("/proc/{tracer_tid}/status")), 16 * 1024)?;
+    let tracer_group = status_field(&tracer_status, "Tgid:")
+        .and_then(|value| value.parse::<u32>().ok())
+        .filter(|value| *value != 0 && *value != pid)
+        .ok_or_else(denied)?;
+    if !member(group, tracer_group)? || !member(group, pid)? {
+        return Err(denied());
+    }
+    let trusted_server = fs::symlink_metadata(server).map_err(|_| denied())?;
+    let observed_server = fs::metadata(format!("/proc/{tracer_tid}/exe")).map_err(|_| denied())?;
+    // The release root was already measured before launch, and will be
+    // remeasured after the independent line reader. Require its exact inode.
+    if !trusted_server.is_file()
+        || trusted_server.file_type().is_symlink()
+        || trusted_server.uid() != 0
+        || trusted_server.mode() & 0o022 != 0
+        || trusted_server.dev() != observed_server.dev()
+        || trusted_server.ino() != observed_server.ino()
+        || trusted_server.len() != observed_server.len()
+    {
+        return Err(denied());
+    }
+    let thread_start = start_ticks(tid)?;
+    let tracer_start = start_ticks(tracer_tid)?;
+    let pc = parse_stopped_syscall(&read_proc_bounded(&task.join("syscall"), 256)?)
+        .ok_or_else(denied)?;
+    let again = read_proc_bounded(&task.join("status"), 16 * 1024)?;
+    if !status_field(&again, "State:").is_some_and(|state| state.starts_with("t "))
+        || status_field(&again, "TracerPid:").and_then(|value| value.parse::<u32>().ok())
+            != Some(tracer_tid)
+        || start_ticks(tid)? != thread_start
+        || start_ticks(tracer_tid)? != tracer_start
+    {
+        return Err(denied());
+    }
+    Ok(Some(TracedThread {
+        tid,
+        tracer_tid,
+        thread_start,
+        tracer_start,
+        pc,
+    }))
+}
+
 fn member(dir: &Path, pid: u32) -> Result<bool, SupervisorError> {
     let data = fs::read_to_string(dir.join("cgroup.procs")).map_err(|_| denied())?;
     if data.len() > MAX_CGROUP_PROCS {
@@ -188,28 +304,62 @@ fn pid_mapping(
     Ok(found)
 }
 fn verify_pid(
+    group: &Path,
     pid: u32,
     expected_binary: &Path,
     sha: &str,
     pc: u64,
+    namespace_tid: u64,
+    server: &Path,
 ) -> Result<Option<KernelLoadedImage>, SupervisorError> {
-    let first = start_ticks(pid)?;
-    if !tracing_stop(pid)? {
-        return Ok(None);
+    // Discover the actual stopped namespace TID first. Do not require
+    // /proc/PID/exe access to unrelated Bubblewrap/launcher processes.
+    let mut selected = None;
+    let tasks = match fs::read_dir(format!("/proc/{pid}/task")) {
+        Ok(tasks) => tasks,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(_) => return Err(denied()),
+    };
+    for (index, entry) in tasks.enumerate() {
+        if index >= 128 {
+            return Err(denied());
+        }
+        let entry = entry.map_err(|_| denied())?;
+        let tid = entry
+            .file_name()
+            .to_str()
+            .and_then(|name| name.parse::<u32>().ok())
+            .ok_or_else(denied)?;
+        if let Some(sample) = trace_sample(group, pid, tid, namespace_tid, server)? {
+            if selected.replace(sample).is_some() {
+                return Err(denied());
+            }
+        }
     }
+    let Some(sample) = selected else {
+        return Ok(None);
+    };
     let original = fs::metadata(expected_binary).map_err(|_| denied())?;
     let exe_path = std::path::PathBuf::from(format!("/proc/{pid}/exe"));
     let current = fs::metadata(&exe_path).map_err(|_| denied())?;
+    let first = start_ticks(pid)?;
     if original.dev() != current.dev()
         || original.ino() != current.ino()
         || original.len() != current.len()
+        || hash_bounded(&exe_path)? != sha
+        || sample.pc != pc
     {
-        return Ok(None);
-    }
-    if hash_bounded(&exe_path)? != sha {
         return Err(denied());
     }
-    let image = fs::read(expected_binary).map_err(|_| denied())?;
+    let mut image = Vec::new();
+    File::open(expected_binary)
+        .map_err(|_| denied())?
+        .take(MAX_EXECUTABLE + 1)
+        .read_to_end(&mut image)
+        .map_err(|_| denied())?;
+    if image.len() as u64 > MAX_EXECUTABLE {
+        return Err(denied());
+    }
     if image.len() as u64 != original.len() {
         return Err(denied());
     }
@@ -218,12 +368,21 @@ fn verify_pid(
         return Ok(None);
     };
     // Protect against PID reuse / ELF remapping / scope change during read.
-    if first != start_ticks(pid)? || !tracing_stop(pid)? {
+    if first != start_ticks(pid)?
+        || trace_sample(group, pid, sample.tid, namespace_tid, server)?.as_ref() != Some(&sample)
+        || pid_mapping(pid, &original, sample.pc, &image)? != Some(load_bias)
+    {
         return Err(denied());
     }
     Ok(Some(KernelLoadedImage {
         pid,
-        instruction_address: pc,
+        thread_id: sample.tid,
+        tracer_pid: sample.tracer_tid,
+        process_start_ticks: first,
+        thread_start_ticks: sample.thread_start,
+        tracer_start_ticks: sample.tracer_start,
+        kernel_register_pc_verified: true,
+        instruction_address: sample.pc,
         load_bias,
         binary_sha256: sha.to_owned(),
         kernel_exe_inode_verified: true,
@@ -260,6 +419,8 @@ pub(crate) fn observe_linux_project_pc(
     expected_binary: &Path,
     expected_sha256: &str,
     pc: u64,
+    namespace_tid: u64,
+    server: &Path,
 ) -> Result<KernelLoadedImage, SupervisorError> {
     if !job_id.starts_with("job-")
         || job_id.len() != 36
@@ -267,6 +428,8 @@ pub(crate) fn observe_linux_project_pc(
         || group.file_name().and_then(|v| v.to_str()) != Some(format!("lu-ide-{job_id}").as_str())
         || !group.starts_with("/sys/fs/cgroup/")
         || !expected_binary.is_absolute()
+        || !server.is_absolute()
+        || namespace_tid == 0
         || pc == 0
         || expected_sha256.len() != 64
         || !expected_sha256
@@ -287,7 +450,15 @@ pub(crate) fn observe_linux_project_pc(
     let mut result: Option<KernelLoadedImage> = None;
     for line in processes.lines() {
         let pid = line.parse::<u32>().map_err(|_| denied())?;
-        if let Some(witness) = verify_pid(pid, expected_binary, expected_sha256, pc)? {
+        if let Some(witness) = verify_pid(
+            group,
+            pid,
+            expected_binary,
+            expected_sha256,
+            pc,
+            namespace_tid,
+            server,
+        )? {
             if result.is_some() {
                 return Err(denied());
             }
@@ -309,6 +480,117 @@ pub(crate) fn observe_linux_project_pc(
     }
     Ok(witness)
 }
+#[cfg(all(debug_assertions, feature = "dev045d3-ci-oracle"))]
+fn run_bounded_symbolizer(command: &mut std::process::Command) -> Result<Vec<u8>, SupervisorError> {
+    run_bounded_reader(command, std::time::Duration::from_secs(6))
+}
+
+#[cfg(all(debug_assertions, feature = "dev045d3-ci-oracle"))]
+fn run_bounded_reader(
+    command: &mut std::process::Command,
+    timeout: std::time::Duration,
+) -> Result<Vec<u8>, SupervisorError> {
+    use std::{
+        os::{fd::AsRawFd, unix::process::CommandExt},
+        process::Stdio,
+        time::{Duration, Instant},
+    };
+    const LIMIT: usize = 8192;
+    fn set_nonblocking(fd: std::os::fd::RawFd) -> Result<(), SupervisorError> {
+        let flags = unsafe { libc::fcntl(fd, libc::F_GETFL) };
+        if flags < 0 || unsafe { libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK) } < 0 {
+            return Err(denied());
+        }
+        Ok(())
+    }
+    fn drain(stream: &mut impl Read, data: &mut Vec<u8>) -> Result<bool, SupervisorError> {
+        let mut buffer = [0u8; 1024];
+        loop {
+            match stream.read(&mut buffer) {
+                Ok(0) => return Ok(true),
+                Ok(n) => {
+                    if data.len() + n > LIMIT {
+                        return Err(denied());
+                    }
+                    data.extend_from_slice(&buffer[..n]);
+                }
+                Err(ref error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                    return Ok(false)
+                }
+                Err(ref error) if error.kind() == std::io::ErrorKind::Interrupted => {
+                    return Ok(false)
+                }
+                Err(_) => return Err(denied()),
+            }
+        }
+    }
+    let mut child = command
+        .process_group(0)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|_| denied())?;
+    // Observe exit without reaping: retain the original PID/group identity
+    // until pipes close so a leaked descendant writer cannot evade cleanup.
+    let pid = child.id() as libc::pid_t;
+    let exited = || -> Result<bool, SupervisorError> {
+        let mut info: libc::siginfo_t = unsafe { std::mem::zeroed() };
+        let rc = unsafe {
+            libc::waitid(
+                libc::P_PID,
+                pid as libc::id_t,
+                &mut info,
+                libc::WEXITED | libc::WNOHANG | libc::WNOWAIT,
+            )
+        };
+        if rc != 0 {
+            return Err(denied());
+        }
+        Ok(unsafe { info.si_pid() } == pid)
+    };
+    let result = (|| {
+        let mut stdout = child.stdout.take().ok_or_else(denied)?;
+        let mut stderr = child.stderr.take().ok_or_else(denied)?;
+        set_nonblocking(stdout.as_raw_fd())?;
+        set_nonblocking(stderr.as_raw_fd())?;
+        let (mut out, mut err) = (Vec::new(), Vec::new());
+        let deadline = Instant::now() + timeout;
+        loop {
+            let out_eof = drain(&mut stdout, &mut out)?;
+            let err_eof = drain(&mut stderr, &mut err)?;
+            if exited()? && out_eof && err_eof {
+                return if out.is_empty() || !err.is_empty() {
+                    Err(denied())
+                } else {
+                    Ok(out)
+                };
+            }
+            if Instant::now() >= deadline {
+                return Err(denied());
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    })();
+    // Recheck ownership before signaling either a live reader or the
+    // still-unreaped group leader. No signal on an uncertain/recycled PID.
+    exited()?;
+    // The root-owned reader never needs descendants. Kill any surviving
+    // writer in the original group before releasing its PID identity.
+    if unsafe { libc::kill(-pid, libc::SIGKILL) } != 0 {
+        // Reap an already-exited child even if group termination failed.
+        if exited()? {
+            let _ = child.wait();
+        }
+        return Err(denied());
+    }
+    let status = child.wait().map_err(|_| denied())?;
+    if result.is_err() || !status.success() {
+        return Err(denied());
+    }
+    result
+}
+
 /// A separately authenticated, fixed-purpose LLVM reader. Strictly a
 /// debug/CI-only native oracle, never launched from an AI/WebView command.
 /// A production signed app must provide a reviewed offline resource and
@@ -341,6 +623,7 @@ pub(crate) fn verify_independent_dwarf_line_for_ci(
         || !witness.kernel.kernel_exe_inode_verified
         || !witness.kernel.kernel_rx_vma_verified
         || !witness.kernel.kernel_tracing_stop_verified
+        || !witness.kernel.kernel_register_pc_verified
         || witness.source_line == 0
     {
         return Err(denied());
@@ -348,21 +631,17 @@ pub(crate) fn verify_independent_dwarf_line_for_ci(
     let binary = target.root.join(target.confined_relative_binary());
     let pc = format!("0x{:x}", witness.kernel.instruction_address);
     let slide = format!("--adjust-vma=0x{:x}", witness.kernel.load_bias);
-    let response = Command::new(tool)
+    let mut command = Command::new(tool);
+    command
         .arg(format!("--obj={}", binary.display()))
         .arg("--output-style=JSON")
         .arg("--functions=none")
         .arg("--no-inlines")
         .arg(slide)
         .arg(&pc)
-        .env_clear()
-        .output()
-        .map_err(|_| denied())?;
-    if !response.status.success() || response.stdout.len() > 8192 || response.stderr.len() > 8192 {
-        return Err(denied());
-    }
-    let parsed: serde_json::Value =
-        serde_json::from_slice(&response.stdout).map_err(|_| denied())?;
+        .env_clear();
+    let response = run_bounded_symbolizer(&mut command)?;
+    let parsed: serde_json::Value = serde_json::from_slice(&response).map_err(|_| denied())?;
     let entries = parsed.as_array().ok_or_else(denied)?;
     if entries.len() != 1
         || entries[0].get("Address").and_then(|v| v.as_str()) != Some(pc.as_str())
@@ -415,6 +694,42 @@ mod tests {
         assert_eq!(executable_slide(&elf, 0x401000, 0x1000), Some(0));
         assert!(executable_slide(&[0; 64], 0x400000, 0).is_none());
     }
+    #[cfg(all(debug_assertions, feature = "dev045d3-ci-oracle"))]
+    #[test]
+    fn bounded_reader_denies_oversize_timeout_and_failed_status() {
+        use std::{process::Command, time::Duration};
+        let mut good = Command::new("/usr/bin/printf");
+        good.arg("fixed");
+        assert_eq!(
+            run_bounded_reader(&mut good, Duration::from_secs(1)).unwrap(),
+            b"fixed"
+        );
+        let mut large = Command::new("/usr/bin/printf");
+        large.arg("x".repeat(8193));
+        assert!(run_bounded_reader(&mut large, Duration::from_secs(1)).is_err());
+        let mut slow = Command::new("/usr/bin/sleep");
+        slow.arg("1");
+        assert!(run_bounded_reader(&mut slow, Duration::from_millis(100)).is_err());
+        let mut failed = Command::new("/usr/bin/false");
+        assert!(run_bounded_reader(&mut failed, Duration::from_secs(1)).is_err());
+    }
+    #[test]
+    fn syscall_register_witness_only_accepts_non_syscall_stopped_shape() {
+        assert_eq!(
+            parse_stopped_syscall("-1 0x7fff0010 0x401123\n"),
+            Some(0x401123)
+        );
+        for invalid in [
+            "running",
+            "-1 0x0 0x401123",
+            "-1 0x7fff 0x0",
+            "0 0x1 0x2 0x3 0x4 0x5 0x6 0x7 0x8",
+            "-1 0x7fff 0x401123 trailing",
+            "-1 0x7fff",
+        ] {
+            assert_eq!(parse_stopped_syscall(invalid), None);
+        }
+    }
     #[test]
     fn untrusted_group_or_missing_custody_is_denied_before_any_pid() {
         assert!(observe_linux_project_pc(
@@ -423,6 +738,8 @@ mod tests {
             Path::new("/tmp/foreign"),
             &"0".repeat(64),
             0x401000,
+            1,
+            Path::new("/tmp/foreign-server"),
         )
         .is_err());
     }

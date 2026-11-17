@@ -817,6 +817,7 @@ fn start_linux_dap_inner(
         gateway,
         project_debuggee,
         native_cgroup_dir,
+        reviewed_bundle: release_root.to_path_buf(),
         native_job_id: job_id.to_owned(),
         native_plan_sha256: plan_hash,
         source_input: PublishedInput {
@@ -832,8 +833,8 @@ fn start_linux_dap_inner(
 ))]
 pub const WO6_CI_SOURCE_TRAP_RS: &str = concat!(
     "fn main() {\n",
-    "    unsafe { core::arch::asm!(\"int3\", \"nop\", \"nop\", options(nomem, nostack)); }\n",
-    "    println!(\"fixed WO6 isolated job\");\n",
+    "    let value = std::hint::black_box(7u64);\n",
+    "    println!(\"fixed WO6 isolated job {}\", value);\n",
     "}\n"
 );
 
@@ -842,6 +843,7 @@ pub struct LinuxDapSession {
     gateway: crate::dap_transport::DapGateway,
     project_debuggee: Option<String>,
     native_cgroup_dir: PathBuf,
+    reviewed_bundle: PathBuf,
     native_job_id: String,
     native_plan_sha256: String,
     source_input: PublishedInput,
@@ -869,8 +871,8 @@ impl LinuxDapSession {
         feature = "dev045d3-ci-oracle"
     ))]
     pub fn launch_wo6_ci_source_trap(&mut self) -> Result<(), SupervisorError> {
-        // The normal ELF entry stop can occur in the loader, with no source
-        // line. This fixed test has a real INT3 in its immutable Rust source.
+        // The first ELF loader stop cannot supply a Rust source line.
+        // Require a compiler-resolved fixed line before configurationDone.
         // Verify every fixture file before the existing launch grant is used.
         const FIXTURE: [(&str, &str); 4] = [
             (
@@ -913,6 +915,24 @@ impl LinuxDapSession {
         &mut self,
     ) -> Result<Vec<lu_ide_workspace::dap_session::DapEvent>, SupervisorError> {
         self.gateway.poll()
+    }
+    #[cfg(all(
+        target_os = "linux",
+        target_arch = "x86_64",
+        debug_assertions,
+        feature = "dev045d3-ci-oracle"
+    ))]
+    pub fn ci_source_breakpoint_needed(&self) -> bool {
+        self.gateway.ci_source_breakpoint_needed()
+    }
+    #[cfg(all(
+        target_os = "linux",
+        target_arch = "x86_64",
+        debug_assertions,
+        feature = "dev045d3-ci-oracle"
+    ))]
+    pub fn ci_configure_fixed_source_breakpoint(&mut self) -> Result<(), SupervisorError> {
+        self.gateway.ci_configure_fixed_source_breakpoint()
     }
     pub fn configuration_needed(&self) -> bool {
         self.gateway.configuration_needed()
@@ -1043,12 +1063,23 @@ impl LinuxDapSession {
         #[cfg(all(debug_assertions, feature = "dev045d3-ci-oracle"))]
         eprintln!("DEV045D3_KERNEL_LINE_GATE=native_dap_source_line_correlated");
         let binary = target.root.join(target.confined_relative_binary());
+        let namespace_tid = self
+            .gateway
+            .stopped_thread()
+            .ok_or(SupervisorError::NoContainment)?;
+        if native_lsp_bundle_digest(&self.reviewed_bundle, "dap_lldb_project")?
+            != plan.toolchain_sha256
+        {
+            return Err(SupervisorError::WrongProjectOrSource);
+        }
         let kernel = observe_linux_project_pc(
             &self.native_cgroup_dir,
             job_id,
             &binary,
             &target.binary.binary_sha256,
             pc,
+            namespace_tid,
+            &self.reviewed_bundle.join("bin/lldb-server"),
         )?;
         #[cfg(all(debug_assertions, feature = "dev045d3-ci-oracle"))]
         eprintln!("DEV045D3_KERNEL_LINE_GATE=kernel_cgroup_stopped_pc_verified");
@@ -1108,6 +1139,17 @@ impl LinuxDapSession {
             #[cfg(all(debug_assertions, feature = "dev045d3-ci-oracle"))]
             eprintln!("DEV045D3_KERNEL_LINE_GATE=independent_llvm_dwarf_line_begin");
             crate::native_kernel_pc::verify_independent_dwarf_line_for_ci(&mut witness, target)?;
+            // Independent lookup is not permission to accept a stale stop.
+            let now = self.verify_stopped_project_image(supervisor, job_id, plan, target)?;
+            if now.kernel != witness.kernel
+                || now.debug_running_receipt_sha256 != witness.debug_running_receipt_sha256
+                || now.build_terminal_receipt_sha256 != witness.build_terminal_receipt_sha256
+                || now.source_file_sha256 != witness.source_file_sha256
+                || now.source_relative_path != witness.source_relative_path
+                || now.source_line != witness.source_line
+            {
+                return Err(SupervisorError::NoContainment);
+            }
             #[cfg(all(debug_assertions, feature = "dev045d3-ci-oracle"))]
             eprintln!("DEV045D3_KERNEL_LINE_GATE=independent_llvm_dwarf_line_verified");
             Ok(witness)

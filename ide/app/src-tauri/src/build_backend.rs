@@ -3,6 +3,7 @@
 //! Only the platform's existing D3 restricted Cargo worker may run. Each real
 //! run requires an exact reviewed release toolchain and FRESH native OS dialog.
 #![cfg(all(feature = "native-build", any(windows, target_os = "linux")))]
+use crate::test_case_evidence::{reported_cases, TestCaseReport};
 use lu_ide_execution_supervisor::{
     debug_binary_witness::{audit_debug_binary_candidate, DebugBinaryWitness},
     debug_symbol_verification::{verify_build_debug_symbols, DebugSymbolWitness},
@@ -22,7 +23,6 @@ use lu_ide_execution_supervisor::{
     },
 };
 use lu_ide_workspace::IdeWorkspaceRegistry;
-use crate::test_case_evidence::{reported_cases, TestCaseReport};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use std::{
@@ -67,17 +67,18 @@ const MULTILANG_RECIPES: [&str; 4] = [
 ];
 fn multilang_base_recipe(recipe: &str) -> &str {
     lu_ide_execution_supervisor::exact_framework_case(recipe)
-        .map(|(base, _, _)| base).unwrap_or(recipe)
+        .map(|(base, _, _)| base)
+        .unwrap_or(recipe)
 }
 /// INT03: An explicit reviewed profile binds exactly one saved manifest,
 /// never a caller-submitted path, script, shell argument or toolchain.
 fn profile_manifest(recipe: &str) -> Option<&'static str> {
     match recipe {
         "rust_check" | "rust_build" | "rust_tests" => Some("Cargo.toml"),
-        id if lu_ide_execution_supervisor::rust_exact_case_name(id).is_some()=>
-            Some("Cargo.toml"),
-        id if lu_ide_execution_supervisor::exact_framework_case(id).is_some() =>
-            profile_manifest(multilang_base_recipe(id)),
+        id if lu_ide_execution_supervisor::rust_exact_case_name(id).is_some() => Some("Cargo.toml"),
+        id if lu_ide_execution_supervisor::exact_framework_case(id).is_some() => {
+            profile_manifest(multilang_base_recipe(id))
+        }
         "lu_ide_host_tests" => Some("ide/host/Cargo.toml"),
         "python_pytest" => Some("pyproject.toml"),
         "js_tests" => Some("package.json"),
@@ -200,7 +201,7 @@ fn native_package_consent(app: &AppHandle, message: String, requested: &AtomicBo
 
 #[cfg(feature = "native-multilang")]
 fn multilang_release_pin(recipe_id: &str) -> Option<&'static str> {
-    let recipe_id=multilang_base_recipe(recipe_id);
+    let recipe_id = multilang_base_recipe(recipe_id);
     #[cfg(windows)]
     {
         match recipe_id {
@@ -332,7 +333,6 @@ fn installation(app: &AppHandle) -> Result<Installation, String> {
     }
 }
 
-
 /// INT05-E: provenance of the *actually rehashed installed bytes*. Neither
 /// a compile-time digest alone nor project metadata is installation proof.
 /// Publisher, package version and license closure are intentionally unknown.
@@ -355,10 +355,16 @@ fn runtime_provenance(
     declared_pin: Option<&str>,
 ) -> RuntimeProvenance {
     let pin = approved_pin(declared_pin).ok().map(str::to_owned);
-    let matched = observed.as_ref().zip(pin.as_ref())
-        .is_some_and(|(bytes, expected)| bytes == expected &&
-            bytes.len() == 64 && bytes.bytes()
-                .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase()));
+    let matched = observed
+        .as_ref()
+        .zip(pin.as_ref())
+        .is_some_and(|(bytes, expected)| {
+            bytes == expected
+                && bytes.len() == 64
+                && bytes
+                    .bytes()
+                    .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
+        });
     RuntimeProvenance {
         profile_id,
         observed_sha256: if matched { observed } else { None },
@@ -388,7 +394,7 @@ pub struct MultilangProfileReadiness {
 
 #[cfg(feature = "native-multilang")]
 fn installation_multilang(app: &AppHandle, recipe_id: &str) -> Result<Installation, String> {
-    let recipe_id=multilang_base_recipe(recipe_id);
+    let recipe_id = multilang_base_recipe(recipe_id);
     if !MULTILANG_RECIPES.contains(&recipe_id) {
         return Err("DEV03_RECIPE_DENIED".into());
     }
@@ -603,34 +609,41 @@ impl NativeBuildRuntime {
         })
     }
     pub fn status(&self, app: &AppHandle, project_id: &str) -> Result<BuildStatus, String> {
-        let installed_cargo=installation(app);
+        let installed_cargo = installation(app);
         // Host OS admission is a different fact from the resource hash.
         // A normal Linux WebView process is not automatically a delegated
         // systemd service: it must not advertise a launchable worker.
-        #[cfg(target_os="linux")]
-        let native_os_ready=lu_ide_execution_supervisor::linux_worker
-            ::native_delegated_host_readiness().is_ok();
+        #[cfg(target_os = "linux")]
+        let native_os_ready =
+            lu_ide_execution_supervisor::linux_worker::native_delegated_host_readiness().is_ok();
         #[cfg(windows)]
-        let native_os_ready=true; // Windows service + Job validated per job.
-        let cargo_provenance = runtime_provenance("rust_cargo",
-            installed_cargo.as_ref().ok()
-                .map(|bundle|bundle.toolchain_sha256.clone()),PINNED_CARGO);
-        let availability=if native_os_ready{installed_cargo}
-            else{Err("FIN02_LINUX_DELEGATED_HOST_NOT_ADMITTED".into())};
+        let native_os_ready = true; // Windows service + Job validated per job.
+        let cargo_provenance = runtime_provenance(
+            "rust_cargo",
+            installed_cargo
+                .as_ref()
+                .ok()
+                .map(|bundle| bundle.toolchain_sha256.clone()),
+            PINNED_CARGO,
+        );
+        let availability = if native_os_ready {
+            installed_cargo
+        } else {
+            Err("FIN02_LINUX_DELEGATED_HOST_NOT_ADMITTED".into())
+        };
         let multilang_ready: Vec<MultilangProfileReadiness> = MULTILANG_RECIPES
             .iter()
             .map(|&profile_id| {
                 #[cfg(feature = "native-multilang")]
-                let result: Result<Installation, String> =
-                    if !native_os_ready {
-                        Err("FIN02_LINUX_DELEGATED_HOST_NOT_ADMITTED".into())
-                    } else if profile_id == "uv_sync_offline" && cfg!(windows) {
-                        // A valid hash cannot substitute for Windows source
-                        // AppContainer ACL acceptance: fail closed.
-                        Err("IDE053_WINDOWS_WORKSPACE_ACL_NOT_ACCEPTED".into())
-                    } else {
-                        installation_multilang(app, profile_id)
-                    };
+                let result: Result<Installation, String> = if !native_os_ready {
+                    Err("FIN02_LINUX_DELEGATED_HOST_NOT_ADMITTED".into())
+                } else if profile_id == "uv_sync_offline" && cfg!(windows) {
+                    // A valid hash cannot substitute for Windows source
+                    // AppContainer ACL acceptance: fail closed.
+                    Err("IDE053_WINDOWS_WORKSPACE_ACL_NOT_ACCEPTED".into())
+                } else {
+                    installation_multilang(app, profile_id)
+                };
                 #[cfg(not(feature = "native-multilang"))]
                 let result: Result<Installation, String> =
                     Err("DEV03_OPTIN_FEATURE_DISABLED".into());
@@ -638,8 +651,14 @@ impl NativeBuildRuntime {
                 let pin = multilang_release_pin(profile_id);
                 #[cfg(not(feature = "native-multilang"))]
                 let pin = None;
-                let provenance = runtime_provenance(profile_id,
-                    result.as_ref().ok().map(|bundle|bundle.toolchain_sha256.clone()),pin);
+                let provenance = runtime_provenance(
+                    profile_id,
+                    result
+                        .as_ref()
+                        .ok()
+                        .map(|bundle| bundle.toolchain_sha256.clone()),
+                    pin,
+                );
                 MultilangProfileReadiness {
                     provenance,
                     profile_id,
@@ -658,8 +677,10 @@ impl NativeBuildRuntime {
             .collect();
         let locked = self.store.lock().map_err(|_| "BUILD_HOST_UNAVAILABLE")?;
         let global_worker_busy = locked.current.is_some();
-        let active_in_another_project = locked.current
-            .as_ref().is_some_and(|v| v.project_id != project_id);
+        let active_in_another_project = locked
+            .current
+            .as_ref()
+            .is_some_and(|v| v.project_id != project_id);
         let current = locked
             .current
             .as_ref()
@@ -686,24 +707,24 @@ impl NativeBuildRuntime {
         // This uses the full original durable journal, not the truncated
         // selected-project presentation. No foreign job ID is published.
         let global_custody =
-            lu_ide_execution_supervisor::observe_global_custody(&durable,project_id);
-        let unresolved_global_marker=crate::global_native_custody
-            ::global_custody_unresolved(&self.global_custody_profile)?;
-        let other=crate::global_native_custody::sibling_rows(
-            &self.global_custody_profile,"build")?;
-        let other_custody=lu_ide_execution_supervisor
-            ::observe_global_custody(&other,project_id);
-        let global_recovery_required = global_custody.recovery_required ||
-            other_custody.recovery_required || unresolved_global_marker;
+            lu_ide_execution_supervisor::observe_global_custody(&durable, project_id);
+        let unresolved_global_marker =
+            crate::global_native_custody::global_custody_unresolved(&self.global_custody_profile)?;
+        let other =
+            crate::global_native_custody::sibling_rows(&self.global_custody_profile, "build")?;
+        let other_custody = lu_ide_execution_supervisor::observe_global_custody(&other, project_id);
+        let global_recovery_required = global_custody.recovery_required
+            || other_custody.recovery_required
+            || unresolved_global_marker;
         // A durable nonterminal job is busy even after a lost desktop
         // process handle; never imply global idleness from local store only.
-        let global_worker_busy = global_worker_busy ||
-            unresolved_global_marker ||
-            global_custody.worker_busy_or_unreconciled ||
-            other_custody.worker_busy_or_unreconciled;
-        let active_in_another_project = active_in_another_project ||
-            global_custody.active_in_another_project ||
-            other_custody.active_in_another_project;
+        let global_worker_busy = global_worker_busy
+            || unresolved_global_marker
+            || global_custody.worker_busy_or_unreconciled
+            || other_custody.worker_busy_or_unreconciled;
+        let active_in_another_project = active_in_another_project
+            || global_custody.active_in_another_project
+            || other_custody.active_in_another_project;
         // Serialize only exact project-scoped immutable journal identifiers.
         // Do not reconstruct a BuildRunView or invent a successful native exit
         // code after restart: the original runtime receipt is authoritative.
@@ -774,10 +795,10 @@ impl NativeBuildRuntime {
             }
         }
         let cargo_ready = availability.is_ok();
-        let any_native_profile_ready = cargo_ready ||
-            multilang_ready.iter().any(|profile| {
-                profile.profile_id != "uv_sync_offline" && profile.ready
-            });
+        let any_native_profile_ready = cargo_ready
+            || multilang_ready
+                .iter()
+                .any(|profile| profile.profile_id != "uv_sync_offline" && profile.ready);
         Ok(BuildStatus {
             ready: any_native_profile_ready,
             cargo_ready,
@@ -791,7 +812,9 @@ impl NativeBuildRuntime {
             } else if any_native_profile_ready {
                 "BUILD_MULTILANG_RELEASE_PINS_VERIFIED_ADMISSION_PER_JOB".into()
             } else {
-                availability.err().unwrap_or_else(|| "BUILD_NATIVE_RUNTIME_ABSENT".into())
+                availability
+                    .err()
+                    .unwrap_or_else(|| "BUILD_NATIVE_RUNTIME_ABSENT".into())
             },
             description: "Pinned resources are not execution proof. Native Job/cgroup \
                 admission, human approval and terminal OS cleanup are checked for each job.",
@@ -938,24 +961,36 @@ impl NativeBuildRuntime {
         expected_manifest_sha256: &str,
     ) -> Result<BuildRunView, String> {
         let manifest = profile_manifest(recipe_id).ok_or("INT03_PROFILE_NOT_ALLOWLISTED")?;
-        if !VALID_RECIPES.contains(&recipe_id) &&
-            !(cfg!(feature = "native-multilang") &&
-              MULTILANG_RECIPES.contains(&recipe_id)) {
+        if !VALID_RECIPES.contains(&recipe_id)
+            && !(cfg!(feature = "native-multilang") && MULTILANG_RECIPES.contains(&recipe_id))
+        {
             return Err("INT03_NATIVE_ADAPTER_UNAVAILABLE".into());
         }
-        if expected_manifest_sha256.len() != 64 ||
-            !expected_manifest_sha256.bytes().all(|b| b.is_ascii_hexdigit()) {
+        if expected_manifest_sha256.len() != 64
+            || !expected_manifest_sha256
+                .bytes()
+                .all(|b| b.is_ascii_hexdigit())
+        {
             return Err("INT03_MANIFEST_SHA_INVALID".into());
         }
-        let saved = registry.preview_source_file(project_id, manifest)
+        let saved = registry
+            .preview_source_file(project_id, manifest)
             .map_err(|_| "INT03_MANIFEST_NOT_REGISTERED")?;
-        if saved.project_id != project_id ||
-            saved.relative_path != manifest ||
-            saved.revision != expected_manifest_sha256 {
+        if saved.project_id != project_id
+            || saved.relative_path != manifest
+            || saved.revision != expected_manifest_sha256
+        {
             return Err("INT03_DISCOVERED_MANIFEST_STALE".into());
         }
-        self.run_with_review(app, registry, project_id, recipe_id, None,
-            Some(expected_manifest_sha256),None)
+        self.run_with_review(
+            app,
+            registry,
+            project_id,
+            recipe_id,
+            None,
+            Some(expected_manifest_sha256),
+            None,
+        )
     }
 
     /// Only the separately named native package entrypoint can choose the
@@ -1003,77 +1038,114 @@ impl NativeBuildRuntime {
     /// choose a fixed, offline OS-contained exact-case recipe. CTest exact
     /// execution remains gated on real compiled-test enumeration.
     pub fn run_selected_framework_case(
-        &self, app:&AppHandle, registry:&IdeWorkspaceRegistry,
-        project_id:&str, relative_path:&str, case_name:&str,
-        expected_source_revision:&str, expected_manifest_sha256:&str,
-    )->Result<BuildRunView,String>{
-        if !cfg!(feature="native-multilang"){
+        &self,
+        app: &AppHandle,
+        registry: &IdeWorkspaceRegistry,
+        project_id: &str,
+        relative_path: &str,
+        case_name: &str,
+        expected_source_revision: &str,
+        expected_manifest_sha256: &str,
+    ) -> Result<BuildRunView, String> {
+        if !cfg!(feature = "native-multilang") {
             return Err("FIN04H_MULTILANG_OS_WORKER_DISABLED".into());
         }
-        let source=registry.inspect_test_symbol_candidates(project_id,relative_path)
+        let source = registry
+            .inspect_test_symbol_candidates(project_id, relative_path)
             .map_err(str::to_owned)?;
-        if source.project_id!=project_id ||
-           !matches!(source.language,"python"|"javascript") ||
-           source.source_revision!=expected_source_revision ||
-           !source.symbols.iter().any(|row|row.name==case_name &&
-                row.candidate_only && !row.executable_test_verified) {
+        if source.project_id != project_id
+            || !matches!(source.language, "python" | "javascript")
+            || source.source_revision != expected_source_revision
+            || !source.symbols.iter().any(|row| {
+                row.name == case_name && row.candidate_only && !row.executable_test_verified
+            })
+        {
             return Err("FIN04H_SAVED_CASE_STALE_OR_UNKNOWN".into());
         }
-        let prefix=if source.language=="python" {
+        let prefix = if source.language == "python" {
             "pytest_exact_case:"
-        } else {"node_exact_case:"};
-        let recipe_id=format!("{prefix}{relative_path}::{case_name}");
-        let (framework, exact_path, exact_name)=
+        } else {
+            "node_exact_case:"
+        };
+        let recipe_id = format!("{prefix}{relative_path}::{case_name}");
+        let (framework, exact_path, exact_name) =
             lu_ide_execution_supervisor::exact_framework_case(&recipe_id)
-            .ok_or("FIN04H_EXACT_RECIPE_DENIED")?;
-        if exact_path!=relative_path || exact_name!=case_name {
+                .ok_or("FIN04H_EXACT_RECIPE_DENIED")?;
+        if exact_path != relative_path || exact_name != case_name {
             return Err("FIN04H_SOURCE_RECIPE_MISMATCH".into());
         }
-        let manifest_path=profile_manifest(framework)
-            .ok_or("FIN04H_FRAMEWORK_MANIFEST_UNAVAILABLE")?;
-        let manifest=registry.preview_source_file(project_id,manifest_path)
-            .map_err(|_|"FIN04H_MANIFEST_NOT_SAVED")?;
-        if manifest.project_id!=project_id ||
-           manifest.relative_path!=manifest_path ||
-           manifest.revision!=expected_manifest_sha256 {
+        let manifest_path =
+            profile_manifest(framework).ok_or("FIN04H_FRAMEWORK_MANIFEST_UNAVAILABLE")?;
+        let manifest = registry
+            .preview_source_file(project_id, manifest_path)
+            .map_err(|_| "FIN04H_MANIFEST_NOT_SAVED")?;
+        if manifest.project_id != project_id
+            || manifest.relative_path != manifest_path
+            || manifest.revision != expected_manifest_sha256
+        {
             return Err("FIN04H_ORIGINAL_MANIFEST_STALE".into());
         }
-        self.run_with_review(app,registry,project_id,&recipe_id,None,
+        self.run_with_review(
+            app,
+            registry,
+            project_id,
+            &recipe_id,
+            None,
             Some(expected_manifest_sha256),
-            Some((relative_path.to_owned(),expected_source_revision.to_owned())))
+            Some((
+                relative_path.to_owned(),
+                expected_source_revision.to_owned(),
+            )),
+        )
     }
 
     /// FIN04: one native-discovered saved Rust test name, sealed with Cargo
     /// and original test source SHA, executed only under a fresh OS approval.
     pub fn run_selected_rust_case(
-        &self,app:&AppHandle,registry:&IdeWorkspaceRegistry,
-        project_id:&str,relative_path:&str,case_name:&str,
-        expected_source_revision:&str,expected_manifest_sha256:&str
-    )->Result<BuildRunView,String>{
-        let source=registry.inspect_test_symbol_candidates(project_id,relative_path)
+        &self,
+        app: &AppHandle,
+        registry: &IdeWorkspaceRegistry,
+        project_id: &str,
+        relative_path: &str,
+        case_name: &str,
+        expected_source_revision: &str,
+        expected_manifest_sha256: &str,
+    ) -> Result<BuildRunView, String> {
+        let source = registry
+            .inspect_test_symbol_candidates(project_id, relative_path)
             .map_err(str::to_owned)?;
-        if source.project_id!=project_id ||
-           source.language!="rust" ||
-           source.source_revision!=expected_source_revision ||
-           relative_path.starts_with("ide/host/") ||
-           !source.symbols.iter().any(|row|row.name==case_name &&
-               row.candidate_only && !row.executable_test_verified){
+        if source.project_id != project_id
+            || source.language != "rust"
+            || source.source_revision != expected_source_revision
+            || relative_path.starts_with("ide/host/")
+            || !source.symbols.iter().any(|row| {
+                row.name == case_name && row.candidate_only && !row.executable_test_verified
+            })
+        {
             return Err("FIN04_SELECTED_SAVED_TEST_STALE_OR_UNKNOWN".into());
         }
-        let recipe_id=format!("rust_exact_case:{case_name}");
-        if lu_ide_execution_supervisor::rust_exact_case_name(&recipe_id)
-            !=Some(case_name){
+        let recipe_id = format!("rust_exact_case:{case_name}");
+        if lu_ide_execution_supervisor::rust_exact_case_name(&recipe_id) != Some(case_name) {
             return Err("FIN04_SELECTED_TEST_NAME_INVALID".into());
         }
-        let manifest=registry.preview_source_file(project_id,"Cargo.toml")
-            .map_err(|_|"FIN04_TEST_CARGO_MANIFEST_MISSING")?;
-        if manifest.project_id!=project_id ||
-           manifest.revision!=expected_manifest_sha256{
+        let manifest = registry
+            .preview_source_file(project_id, "Cargo.toml")
+            .map_err(|_| "FIN04_TEST_CARGO_MANIFEST_MISSING")?;
+        if manifest.project_id != project_id || manifest.revision != expected_manifest_sha256 {
             return Err("FIN04_TEST_MANIFEST_STALE".into());
         }
-        self.run_with_review(app,registry,project_id,&recipe_id,None,
+        self.run_with_review(
+            app,
+            registry,
+            project_id,
+            &recipe_id,
+            None,
             Some(expected_manifest_sha256),
-            Some((relative_path.to_owned(),expected_source_revision.to_owned())))
+            Some((
+                relative_path.to_owned(),
+                expected_source_revision.to_owned(),
+            )),
+        )
     }
 
     fn run_with_review(
@@ -1084,12 +1156,13 @@ impl NativeBuildRuntime {
         recipe_id: &str,
         reviewed: Option<ReviewedPackageSync>,
         expected_profile_sha: Option<&str>,
-        selected_case_source:Option<(String,String)>,
+        selected_case_source: Option<(String, String)>,
     ) -> Result<BuildRunView, String> {
-        if (lu_ide_execution_supervisor::rust_exact_case_name(recipe_id).is_some() ||
-            lu_ide_execution_supervisor::exact_framework_case(recipe_id).is_some())
-           && selected_case_source.is_none(){
-           return Err("FIN04_RUST_EXACT_CASE_NOT_NATIVE_REVIEWED".into());
+        if (lu_ide_execution_supervisor::rust_exact_case_name(recipe_id).is_some()
+            || lu_ide_execution_supervisor::exact_framework_case(recipe_id).is_some())
+            && selected_case_source.is_none()
+        {
+            return Err("FIN04_RUST_EXACT_CASE_NOT_NATIVE_REVIEWED".into());
         }
         if recipe_id == "uv_sync_offline" {
             #[cfg(feature = "native-package-uv")]
@@ -1104,22 +1177,22 @@ impl NativeBuildRuntime {
         // Refuse known busy journals BEFORE creating the profile-wide marker.
         // The exclusive create_new still serializes the final admission, and
         // the original journals are rechecked while it is held.
-        crate::global_native_custody::preflight_global_idle(
-            &self.global_custody_profile,"build")?;
-        let mut global_fence=crate::global_native_custody::GlobalAdmissionFence
-            ::acquire(&self.global_custody_profile,"build")?;
-        let own_before=self.supervisor.inspect()
-            .map_err(|e|e.code().to_owned())?;
+        crate::global_native_custody::preflight_global_idle(&self.global_custody_profile, "build")?;
+        let mut global_fence = crate::global_native_custody::GlobalAdmissionFence::acquire(
+            &self.global_custody_profile,
+            "build",
+        )?;
+        let own_before = self.supervisor.inspect().map_err(|e| e.code().to_owned())?;
         if crate::global_native_custody::durable_busy(&own_before) {
-            let after=self.supervisor.inspect().map_err(|e|e.code().to_owned())?;
-            global_fence.release_before_prepare_if_unchanged(&own_before,&after)?;
+            let after = self.supervisor.inspect().map_err(|e| e.code().to_owned())?;
+            global_fence.release_before_prepare_if_unchanged(&own_before, &after)?;
             return Err("FIN01_BUILD_JOURNAL_STILL_OWNS_CUSTODY".into());
         }
-        let sibling=crate::global_native_custody::sibling_rows(
-            &self.global_custody_profile,"build")?;
+        let sibling =
+            crate::global_native_custody::sibling_rows(&self.global_custody_profile, "build")?;
         if crate::global_native_custody::durable_busy(&sibling) {
-            let after=self.supervisor.inspect().map_err(|e|e.code().to_owned())?;
-            global_fence.release_before_prepare_if_unchanged(&own_before,&after)?;
+            let after = self.supervisor.inspect().map_err(|e| e.code().to_owned())?;
+            global_fence.release_before_prepare_if_unchanged(&own_before, &after)?;
             return Err("FIN01_DEBUG_OR_LSP_JOURNAL_STILL_OWNS_CUSTODY".into());
         }
         let cancel = Arc::new(NativeCancel::default());
@@ -1129,8 +1202,8 @@ impl NativeBuildRuntime {
             let mut locked = self.store.lock().map_err(|_| "BUILD_HOST_UNAVAILABLE")?;
             if locked.current.is_some() {
                 drop(locked);
-                let after=self.supervisor.inspect().map_err(|e|e.code().to_owned())?;
-                global_fence.release_before_prepare_if_unchanged(&own_before,&after)?;
+                let after = self.supervisor.inspect().map_err(|e| e.code().to_owned())?;
+                global_fence.release_before_prepare_if_unchanged(&own_before, &after)?;
                 return Err("BUILD_ANOTHER_JOB_ACTIVE".into());
             }
             locked.last_output = None;
@@ -1167,16 +1240,25 @@ impl NativeBuildRuntime {
         // can be journaled Cancelled without a kernel worker cleanup proof.
         // AdmissionPending/Running/Uncertain are NEVER classified no-worker.
         if result.is_err() {
-            let current_id=self.store.lock()
-                .map_err(|_|"BUILD_HOST_UNAVAILABLE")?
-                .current.as_ref().and_then(|a|a.job_id.clone());
-            if let Some(id)=current_id {
-                let state=self.supervisor.inspect().map_err(|e|e.code().to_owned())?
-                    .into_iter().find(|j|j.job_id==id)
+            let current_id = self
+                .store
+                .lock()
+                .map_err(|_| "BUILD_HOST_UNAVAILABLE")?
+                .current
+                .as_ref()
+                .and_then(|a| a.job_id.clone());
+            if let Some(id) = current_id {
+                let state = self
+                    .supervisor
+                    .inspect()
+                    .map_err(|e| e.code().to_owned())?
+                    .into_iter()
+                    .find(|j| j.job_id == id)
                     .ok_or("FIN01_BUILD_ORIGINAL_JOB_MISSING")?;
-                if matches!(state.phase,JobPhase::Prepared|JobPhase::Authorized) {
-                    self.supervisor.cancel_before_start(&id)
-                        .map_err(|e|e.code().to_owned())?;
+                if matches!(state.phase, JobPhase::Prepared | JobPhase::Authorized) {
+                    self.supervisor
+                        .cancel_before_start(&id)
+                        .map_err(|e| e.code().to_owned())?;
                 }
             }
         }
@@ -1202,16 +1284,17 @@ impl NativeBuildRuntime {
         }
         // Do not release admission on merely returning from a worker.
         // Both durable journals must have terminal, reconciled custody.
-        let own=self.supervisor.inspect().map_err(|e|e.code().to_owned());
-        let sibling=crate::global_native_custody::sibling_rows(
-            &self.global_custody_profile,"build");
-        let release=match (own,sibling){
-            (Ok(own),Ok(sibling))=>
-                global_fence.release_if_terminal(&own,&sibling),
-            _=>Err("FIN01_GLOBAL_TERMINAL_PROOF_UNAVAILABLE".into()),
+        let own = self.supervisor.inspect().map_err(|e| e.code().to_owned());
+        let sibling =
+            crate::global_native_custody::sibling_rows(&self.global_custody_profile, "build");
+        let release = match (own, sibling) {
+            (Ok(own), Ok(sibling)) => global_fence.release_if_terminal(&own, &sibling),
+            _ => Err("FIN01_GLOBAL_TERMINAL_PROOF_UNAVAILABLE".into()),
         };
-        if let Err(reason)=release {
-            if result.is_ok(){return Err(reason);}
+        if let Err(reason) = release {
+            if result.is_ok() {
+                return Err(reason);
+            }
         }
         result
     }
@@ -1226,13 +1309,18 @@ impl NativeBuildRuntime {
         output: &Arc<LiveOutput>,
         reviewed: Option<&ReviewedPackageSync>,
         expected_profile_sha: Option<&str>,
-        selected_case_source:Option<&(String,String)>,
+        selected_case_source: Option<&(String, String)>,
     ) -> Result<BuildRunView, String> {
         // No Build/Test start may overlap an unresolved OS process tree.
         // A green recipe listing, cached editor plan or new approval dialog
         // is not proof that a previous native worker was reaped.
-        if self.supervisor.inspect().map_err(|e| e.code().to_owned())?
-            .iter().any(|job| job.requires_reconciliation) {
+        if self
+            .supervisor
+            .inspect()
+            .map_err(|e| e.code().to_owned())?
+            .iter()
+            .any(|job| job.requires_reconciliation)
+        {
             return Err("INT03_PRIOR_KERNEL_RECONCILIATION_REQUIRED".into());
         }
         #[cfg(feature = "native-multilang")]
@@ -1281,34 +1369,38 @@ impl NativeBuildRuntime {
         if let Some(expected) = expected_profile_sha {
             // Rebind the user-selected saved source revision to bytes
             // independently rehashed in the immutable native worker input.
-            if input.seal.manifest_relative_path != profile_manifest(recipe_id)
-                    .ok_or("INT03_PROFILE_NOT_ALLOWLISTED")? ||
-                input.seal.manifest_sha256 != expected {
+            if input.seal.manifest_relative_path
+                != profile_manifest(recipe_id).ok_or("INT03_PROFILE_NOT_ALLOWLISTED")?
+                || input.seal.manifest_sha256 != expected
+            {
                 return Err("INT03_FROZEN_MANIFEST_MISMATCH".into());
             }
         }
-        if let Some((relative,revision))=selected_case_source {
-            if (lu_ide_execution_supervisor::rust_exact_case_name(recipe_id).is_none() &&
-                lu_ide_execution_supervisor::exact_framework_case(recipe_id).is_none())
-                || relative.len()>1024
+        if let Some((relative, revision)) = selected_case_source {
+            if (lu_ide_execution_supervisor::rust_exact_case_name(recipe_id).is_none()
+                && lu_ide_execution_supervisor::exact_framework_case(recipe_id).is_none())
+                || relative.len() > 1024
                 || relative.starts_with('/')
-                || relative.contains(':') || relative.contains('\\')
-                || relative.split('/').any(|p|p.is_empty()||p=="."||p=="..")
-                || revision.len()!=64
-                || !revision.bytes().all(|c|c.is_ascii_hexdigit()){
+                || relative.contains(':')
+                || relative.contains('\\')
+                || relative
+                    .split('/')
+                    .any(|p| p.is_empty() || p == "." || p == "..")
+                || revision.len() != 64
+                || !revision.bytes().all(|c| c.is_ascii_hexdigit())
+            {
                 return Err("FIN04_SELECTED_CASE_SOURCE_DENIED".into());
             }
-            let path=input.root.join(relative);
-            let info=fs::symlink_metadata(&path)
-                .map_err(|_|"FIN04_FROZEN_TEST_SOURCE_MISSING")?;
-            if !info.is_file() || info.file_type().is_symlink() ||
-                info.len()>512*1024 {
+            let path = input.root.join(relative);
+            let info =
+                fs::symlink_metadata(&path).map_err(|_| "FIN04_FROZEN_TEST_SOURCE_MISSING")?;
+            if !info.is_file() || info.file_type().is_symlink() || info.len() > 512 * 1024 {
                 return Err("FIN04_FROZEN_TEST_SOURCE_UNTRUSTED".into());
             }
-            let data=fs::read(&path)
-                .map_err(|_|"FIN04_FROZEN_TEST_SOURCE_READ_FAILED")?;
-            if data.len() as u64!=info.len() ||
-               format!("{:x}",Sha256::digest(&data))!=*revision{
+            let data = fs::read(&path).map_err(|_| "FIN04_FROZEN_TEST_SOURCE_READ_FAILED")?;
+            if data.len() as u64 != info.len()
+                || format!("{:x}", Sha256::digest(&data)) != *revision
+            {
                 return Err("FIN04_FROZEN_SOURCE_DIFFERS_FROM_TEST_REVIEW".into());
             }
         }
@@ -1497,13 +1589,16 @@ impl NativeBuildRuntime {
                     .map_err(|_| SupervisorError::WrongProjectOrSource)?;
             }
             if let Some(expected) = expected_profile_sha {
-                let manifest = profile_manifest(recipe_id)
-                    .ok_or(SupervisorError::InvalidApproval)?;
-                let fresh = registry.preview_source_file(project_id, manifest)
+                let manifest =
+                    profile_manifest(recipe_id).ok_or(SupervisorError::InvalidApproval)?;
+                let fresh = registry
+                    .preview_source_file(project_id, manifest)
                     .map_err(|_| SupervisorError::WrongProjectOrSource)?;
-                if fresh.project_id != project_id ||
-                   fresh.relative_path != manifest || fresh.revision != expected ||
-                   input.seal.manifest_sha256 != expected {
+                if fresh.project_id != project_id
+                    || fresh.relative_path != manifest
+                    || fresh.revision != expected
+                    || input.seal.manifest_sha256 != expected
+                {
                     return Err(SupervisorError::WrongProjectOrSource);
                 }
             }
@@ -1813,21 +1908,33 @@ impl NativeBuildRuntime {
             .map_err(|_| "BUILD_HOST_UNAVAILABLE")?
             .debug_target = private_debug_target;
         let test_case_evidence = if matches!(
-            recipe_id, "rust_tests" | "lu_ide_host_tests" |
-                "python_pytest" | "js_tests" | "cpp_cmake_build"
-        ) || lu_ide_execution_supervisor::rust_exact_case_name(recipe_id).is_some()
-          || lu_ide_execution_supervisor::exact_framework_case(recipe_id).is_some() {
+            recipe_id,
+            "rust_tests" | "lu_ide_host_tests" | "python_pytest" | "js_tests" | "cpp_cmake_build"
+        ) || lu_ide_execution_supervisor::rust_exact_case_name(
+            recipe_id,
+        )
+        .is_some()
+            || lu_ide_execution_supervisor::exact_framework_case(recipe_id).is_some()
+        {
             // The ORIGINAL native worker returned its terminal result. Output
             // is still project-controlled, so these are reported observations.
-            let native_terminated = matches!(
-                native.summary.phase, JobPhase::Completed | JobPhase::Failed
-            ) && !evidence.requires_reconciliation &&
-                exit_code.is_some() && !native.timed_out;
+            let native_terminated =
+                matches!(native.summary.phase, JobPhase::Completed | JobPhase::Failed)
+                    && !evidence.requires_reconciliation
+                    && exit_code.is_some()
+                    && !native.timed_out;
             Some(reported_cases(
-                registry, &input, &output.bounded_native_snapshot(),
-                project_id, &prepared.job_id, recipe_id,
-                &prepared.plan_sha256, &evidence.terminal_receipt_hash,
-                &head, &plan.toolchain_sha256, native_terminated,
+                registry,
+                &input,
+                &output.bounded_native_snapshot(),
+                project_id,
+                &prepared.job_id,
+                recipe_id,
+                &prepared.plan_sha256,
+                &evidence.terminal_receipt_hash,
+                &head,
+                &plan.toolchain_sha256,
+                native_terminated,
             ))
         } else {
             None
@@ -2124,81 +2231,113 @@ impl NativeBuildRuntime {
         plan_sha256: &str,
         case_id: &str,
     ) -> Result<TestTargetReview, String> {
-        if !job_id.starts_with("job-") || job_id.len()!=36 ||
-           !job_id[4..].bytes().all(|b| b.is_ascii_hexdigit()) ||
-           plan_sha256.len()!=64 ||
-           !plan_sha256.bytes().all(|b| b.is_ascii_hexdigit()) ||
-           !case_id.starts_with("case_") || case_id.len()!=69 ||
-           !case_id[5..].bytes().all(|b| b.is_ascii_hexdigit()) {
+        if !job_id.starts_with("job-")
+            || job_id.len() != 36
+            || !job_id[4..].bytes().all(|b| b.is_ascii_hexdigit())
+            || plan_sha256.len() != 64
+            || !plan_sha256.bytes().all(|b| b.is_ascii_hexdigit())
+            || !case_id.starts_with("case_")
+            || case_id.len() != 69
+            || !case_id[5..].bytes().all(|b| b.is_ascii_hexdigit())
+        {
             return Err("INT03E_TARGET_IDENTITY_DENIED".into());
         }
         // There is deliberately NO path in this request. The only source
         // identity comes from the original receipt-linked in-memory report.
-        let locked=self.store.lock().map_err(|_| "INT03E_JOB_STATE_UNAVAILABLE")?;
-        let observed=locked.recent.get(job_id)
-            .cloned().ok_or("INT03E_ORIGINAL_CURRENT_PROCESS_RESULT_MISSING")?;
+        let locked = self
+            .store
+            .lock()
+            .map_err(|_| "INT03E_JOB_STATE_UNAVAILABLE")?;
+        let observed = locked
+            .recent
+            .get(job_id)
+            .cloned()
+            .ok_or("INT03E_ORIGINAL_CURRENT_PROCESS_RESULT_MISSING")?;
         drop(locked); // Native journal and disk rechecks cannot hold the UI job lock.
-        if observed.project_id!=project_id || observed.plan_sha256!=plan_sha256 ||
-           observed.requires_reconciliation ||
-           !matches!(observed.phase.as_str(),"completed"|"failed") {
+        if observed.project_id != project_id
+            || observed.plan_sha256 != plan_sha256
+            || observed.requires_reconciliation
+            || !matches!(observed.phase.as_str(), "completed" | "failed")
+        {
             return Err("INT03E_JOB_NOT_RECONCILED_OR_SCOPE_CHANGED".into());
         }
-        let report=observed.test_case_evidence.as_ref()
+        let report = observed
+            .test_case_evidence
+            .as_ref()
             .ok_or("INT03E_NO_STRUCTURED_TEST_CASES")?;
-        if report.project_id!=project_id ||
-           report.job_id!=job_id || report.plan_sha256!=plan_sha256 ||
-           report.terminal_receipt_sha256!=observed.terminal_receipt_sha256 ||
-           report.input_snapshot_sha256!=observed.input_snapshot_sha256 ||
-           report.toolchain_sha256!=observed.toolchain_sha256 ||
-           report.manifest_sha256!=observed.manifest_sha256 ||
-           report.evidence_state!="native_terminal_framework_reported_not_assertion_verified" {
+        if report.project_id != project_id
+            || report.job_id != job_id
+            || report.plan_sha256 != plan_sha256
+            || report.terminal_receipt_sha256 != observed.terminal_receipt_sha256
+            || report.input_snapshot_sha256 != observed.input_snapshot_sha256
+            || report.toolchain_sha256 != observed.toolchain_sha256
+            || report.manifest_sha256 != observed.manifest_sha256
+            || report.evidence_state != "native_terminal_framework_reported_not_assertion_verified"
+        {
             return Err("INT03E_ORIGINAL_RECEIPT_SCOPE_DENIED".into());
         }
-        let case=report.cases.iter().find(|row|row.case_id==case_id)
+        let case = report
+            .cases
+            .iter()
+            .find(|row| row.case_id == case_id)
             .ok_or("INT03E_CASE_ID_NOT_RECORDED")?;
-        if case.status!="reported_fail" {
+        if case.status != "reported_fail" {
             return Err("INT03E_ONLY_FAILING_CASES_HAVE_TARGETS".into());
         }
-        let source=case.source.as_ref().ok_or("INT03E_NO_SOURCE_ANCHOR")?;
-        let durable=self.supervisor.inspect().map_err(|e|e.code().to_owned())?
-            .into_iter().find(|row|row.job_id==job_id)
+        let source = case.source.as_ref().ok_or("INT03E_NO_SOURCE_ANCHOR")?;
+        let durable = self
+            .supervisor
+            .inspect()
+            .map_err(|e| e.code().to_owned())?
+            .into_iter()
+            .find(|row| row.job_id == job_id)
             .ok_or("INT03E_ORIGINAL_SUPERVISOR_JOB_MISSING")?;
-        if durable.project_id!=project_id ||
-           durable.plan_sha256!=plan_sha256 ||
-           durable.requires_reconciliation ||
-           !matches!(durable.phase,JobPhase::Completed|JobPhase::Failed) {
+        if durable.project_id != project_id
+            || durable.plan_sha256 != plan_sha256
+            || durable.requires_reconciliation
+            || !matches!(durable.phase, JobPhase::Completed | JobPhase::Failed)
+        {
             return Err("INT03E_DURABLE_NATIVE_JOB_CHANGED".into());
         }
-        let history=self.supervisor.receipt_history(job_id)
-            .map_err(|e|e.code().to_owned())?;
-        let last=history.last().ok_or("INT03E_TERMINAL_RECEIPT_MISSING")?;
-        if last.entry_hash!=report.terminal_receipt_sha256 ||
-           last.body.project_id!=project_id ||
-           last.body.plan_sha256!=plan_sha256 ||
-           !matches!(last.body.phase,JobPhase::Completed|JobPhase::Failed) {
+        let history = self
+            .supervisor
+            .receipt_history(job_id)
+            .map_err(|e| e.code().to_owned())?;
+        let last = history.last().ok_or("INT03E_TERMINAL_RECEIPT_MISSING")?;
+        if last.entry_hash != report.terminal_receipt_sha256
+            || last.body.project_id != project_id
+            || last.body.plan_sha256 != plan_sha256
+            || !matches!(last.body.phase, JobPhase::Completed | JobPhase::Failed)
+        {
             return Err("INT03E_TERMINAL_RECEIPT_MISMATCH".into());
         }
         // Verify an exact native-registered saved-file digest again *now*.
         // If disk drifted or registry switched projects, no navigation.
-        let saved=registry.preview_source_file(project_id,&source.relative_path)
+        let saved = registry
+            .preview_source_file(project_id, &source.relative_path)
             .map_err(|_| "INT03E_SAVED_SOURCE_NOT_AVAILABLE")?;
-        if saved.project_id!=project_id ||
-           saved.relative_path!=source.relative_path ||
-           saved.revision!=source.disk_sha256 {
+        if saved.project_id != project_id
+            || saved.relative_path != source.relative_path
+            || saved.revision != source.disk_sha256
+        {
             return Err("INT03E_SAVED_SOURCE_CHANGED".into());
         }
-        if source.line==0 || source.line as usize > saved.text.lines().count().max(1) {
+        if source.line == 0 || source.line as usize > saved.text.lines().count().max(1) {
             return Err("INT03E_SOURCE_POSITION_STALE".into());
         }
         Ok(TestTargetReview {
-            project_id:project_id.to_owned(),job_id:job_id.to_owned(),
-            plan_sha256:plan_sha256.to_owned(),
-            terminal_receipt_sha256:report.terminal_receipt_sha256.clone(),
-            case_id:case_id.to_owned(),relative_path:source.relative_path.clone(),
-            disk_sha256:source.disk_sha256.clone(),line:source.line,
-            character_utf16:source.character_utf16,
-            saved_source_verified:true,
-            test_assertion_independently_verified:false,task_accepted:false,
+            project_id: project_id.to_owned(),
+            job_id: job_id.to_owned(),
+            plan_sha256: plan_sha256.to_owned(),
+            terminal_receipt_sha256: report.terminal_receipt_sha256.clone(),
+            case_id: case_id.to_owned(),
+            relative_path: source.relative_path.clone(),
+            disk_sha256: source.disk_sha256.clone(),
+            line: source.line,
+            character_utf16: source.character_utf16,
+            saved_source_verified: true,
+            test_assertion_independently_verified: false,
+            task_accepted: false,
         })
     }
 
@@ -2319,18 +2458,21 @@ mod dev035_native_lifecycle_tests {
     #[test]
     fn provenance_never_promotes_an_unverified_bundle_or_publisher() {
         let digest = "a".repeat(64);
-        let valid = runtime_provenance("rust_cargo", Some(digest.clone()),Some(&digest));
-        assert_eq!(valid.provenance_state,
-            "installed_bytes_match_compile_time_release_pin");
-        assert_eq!(valid.observed_sha256.as_deref(),Some(digest.as_str()));
-        assert_eq!(valid.license_evidence,"not_independently_verified");
+        let valid = runtime_provenance("rust_cargo", Some(digest.clone()), Some(&digest));
+        assert_eq!(
+            valid.provenance_state,
+            "installed_bytes_match_compile_time_release_pin"
+        );
+        assert_eq!(valid.observed_sha256.as_deref(), Some(digest.as_str()));
+        assert_eq!(valid.license_evidence, "not_independently_verified");
         assert!(!valid.execution_authorized);
-        let forged = runtime_provenance("rust_cargo",Some("b".repeat(64)),
-            Some(&digest));
+        let forged = runtime_provenance("rust_cargo", Some("b".repeat(64)), Some(&digest));
         assert!(forged.observed_sha256.is_none());
-        assert_eq!(forged.provenance_state,
-            "unavailable_or_not_independently_verified");
-        let unpinned = runtime_provenance("python_pytest",Some(digest),None);
+        assert_eq!(
+            forged.provenance_state,
+            "unavailable_or_not_independently_verified"
+        );
+        let unpinned = runtime_provenance("python_pytest", Some(digest), None);
         assert!(unpinned.observed_sha256.is_none());
     }
     #[test]

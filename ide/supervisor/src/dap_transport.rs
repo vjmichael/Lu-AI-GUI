@@ -76,6 +76,10 @@ impl DapGateway {
     pub(crate) fn phase(&self) -> DapPhase {
         self.session.phase()
     }
+    #[cfg(target_os = "linux")]
+    pub(crate) fn stopped_thread(&self) -> Option<u64> {
+        self.session.stopped_thread()
+    }
     /// Read-only native inspection after a correlated stackTrace; adapter
     /// supplied coordinates are untrusted until an independent symbol oracle.
     pub(crate) fn source_candidate(
@@ -309,15 +313,56 @@ impl DapGateway {
         self.send(&frame)
     }
     #[cfg(all(
+        windows,
+        target_arch = "x86_64",
+        debug_assertions,
+        feature = "dev045d4c-ci-oracle"
+    ))]
+    pub(crate) fn launch_windows_ci_source_trap(
+        &mut self,
+        target: &str,
+    ) -> Result<(), SupervisorError> {
+        let frame = self
+            .session
+            .launch_windows_ci_source_trap(target)
+            .map_err(protocol_denied)?;
+        self.send(&frame)
+    }
+    #[cfg(all(
         target_os = "linux",
         target_arch = "x86_64",
         debug_assertions,
         feature = "dev045d3-ci-oracle"
     ))]
-    pub(crate) fn launch_wo6_ci_source_trap(&mut self, target: &str) -> Result<(), SupervisorError> {
+    pub(crate) fn launch_wo6_ci_source_trap(
+        &mut self,
+        target: &str,
+    ) -> Result<(), SupervisorError> {
         let frame = self
             .session
             .launch_wo6_ci_source_trap(target)
+            .map_err(protocol_denied)?;
+        self.send(&frame)
+    }
+    #[cfg(all(
+        target_os = "linux",
+        target_arch = "x86_64",
+        debug_assertions,
+        feature = "dev045d3-ci-oracle"
+    ))]
+    pub(crate) fn ci_source_breakpoint_needed(&self) -> bool {
+        self.session.ci_source_breakpoint_needed()
+    }
+    #[cfg(all(
+        target_os = "linux",
+        target_arch = "x86_64",
+        debug_assertions,
+        feature = "dev045d3-ci-oracle"
+    ))]
+    pub(crate) fn ci_configure_fixed_source_breakpoint(&mut self) -> Result<(), SupervisorError> {
+        let frame = self
+            .session
+            .ci_configure_fixed_source_breakpoint()
             .map_err(protocol_denied)?;
         self.send(&frame)
     }

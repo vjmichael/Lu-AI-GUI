@@ -8,9 +8,9 @@ compile_error!("DEV-04.6D native dialog must not ship in release or signed NSIS 
 #[cfg(all(feature = "dev046d-native-dialog", not(windows)))]
 compile_error!("DEV-04.6D native dialog is Windows only");
 
-#[cfg(all(feature="fin04w2-c4-desktop",not(all(windows,debug_assertions))))]
+#[cfg(all(feature = "fin04w2-c4-desktop", not(all(windows, debug_assertions))))]
 compile_error!("FIN-04W2-C4 native menu is Windows debug-only; never release or other OS");
-#[cfg(all(windows,debug_assertions,feature="fin04w2-c4-desktop"))]
+#[cfg(all(windows, debug_assertions, feature = "fin04w2-c4-desktop"))]
 mod fin04w2_c4_desktop;
 
 #[cfg(all(feature = "native-build", any(windows, target_os = "linux")))]
@@ -23,14 +23,24 @@ mod terminal_broker;
 // Test-case observations depend on the opt-in native supervisor's durable
 // live-output and input snapshot types. Default desktop has no process
 // execution capability and must not unconditionally link that crate.
-#[cfg(all(any(windows,target_os="linux"),feature="native-build"))]
-mod test_case_evidence;
-#[cfg(all(any(windows, target_os = "linux"), any(feature = "native-build", feature = "native-debug", feature = "native-lsp")))]
+#[cfg(all(
+    any(windows, target_os = "linux"),
+    any(
+        feature = "native-build",
+        feature = "native-debug",
+        feature = "native-lsp"
+    )
+))]
 mod global_native_custody;
+#[cfg(all(any(windows, target_os = "linux"), feature = "native-build"))]
+mod test_case_evidence;
 use std::{
     collections::HashMap,
     path::PathBuf,
-    sync::{Arc, Mutex, atomic::{AtomicU8, Ordering}},
+    sync::{
+        atomic::{AtomicU8, Ordering},
+        Arc, Mutex,
+    },
 };
 
 use lu_ide_workspace::{
@@ -42,14 +52,17 @@ use lu_ide_workspace::{
 };
 use serde::Serialize;
 use tauri::{AppHandle, Manager, State};
-use tauri_plugin_dialog::{DialogExt,MessageDialogButtons};
+use tauri_plugin_dialog::{DialogExt, MessageDialogButtons};
 
 /// In-memory one-use lifetime of an OS-confirmed partial stage.
 #[derive(Default)]
 struct PartialStageSessions(Mutex<HashMap<String, Arc<AtomicU8>>>);
 impl PartialStageSessions {
     fn begin(&self, project_id: &str) -> Result<Arc<AtomicU8>, String> {
-        let mut sessions = self.0.lock().map_err(|_| "G06B_STAGE_SESSION_UNAVAILABLE")?;
+        let mut sessions = self
+            .0
+            .lock()
+            .map_err(|_| "G06B_STAGE_SESSION_UNAVAILABLE")?;
         if sessions.contains_key(project_id) {
             return Err("G06B_STAGE_ANOTHER_OPERATION_ACTIVE".into());
         }
@@ -58,11 +71,18 @@ impl PartialStageSessions {
         Ok(token)
     }
     fn end(&self, project_id: &str) {
-        if let Ok(mut sessions) = self.0.lock() { sessions.remove(project_id); }
+        if let Ok(mut sessions) = self.0.lock() {
+            sessions.remove(project_id);
+        }
     }
     fn cancel(&self, project_id: &str) -> Result<&'static str, String> {
-        let sessions = self.0.lock().map_err(|_| "G06B_STAGE_SESSION_UNAVAILABLE")?;
-        let control = sessions.get(project_id).ok_or("G06B_STAGE_NOT_IN_PROGRESS")?;
+        let sessions = self
+            .0
+            .lock()
+            .map_err(|_| "G06B_STAGE_SESSION_UNAVAILABLE")?;
+        let control = sessions
+            .get(project_id)
+            .ok_or("G06B_STAGE_NOT_IN_PROGRESS")?;
         if lu_ide_workspace::git_partial_stage::request_partial_stage_cancel(control) {
             Ok("cancel_requested_before_index_publication")
         } else {
@@ -70,7 +90,6 @@ impl PartialStageSessions {
         }
     }
 }
-
 
 #[derive(Default)]
 struct Fin05ManifestMutationGate(Mutex<()>);
@@ -296,7 +315,8 @@ async fn ide_git_preview_batch(
 ) -> Result<lu_ide_workspace::git_batch_review::ReviewedGitBatch, String> {
     let registry = Arc::clone(state.inner());
     tauri::async_runtime::spawn_blocking(move || {
-        registry.preview_reviewed_git_batch(&project_id, &relative_paths)
+        registry
+            .preview_reviewed_git_batch(&project_id, &relative_paths)
             .map_err(str::to_owned)
     })
     .await
@@ -310,7 +330,8 @@ async fn ide_git_verify_batch_review(
 ) -> Result<lu_ide_workspace::git_batch_review::ReviewedGitBatch, String> {
     let registry = Arc::clone(state.inner());
     tauri::async_runtime::spawn_blocking(move || {
-        registry.revalidate_reviewed_git_batch(&expected)
+        registry
+            .revalidate_reviewed_git_batch(&expected)
             .map_err(str::to_owned)
     })
     .await
@@ -327,7 +348,8 @@ async fn ide_git_preview_hunks(
 ) -> Result<lu_ide_workspace::git_hunk_review::ReviewedHunkPlan, String> {
     let registry = Arc::clone(state.inner());
     tauri::async_runtime::spawn_blocking(move || {
-        registry.preview_reviewed_git_hunks(&project_id, &relative_path)
+        registry
+            .preview_reviewed_git_hunks(&project_id, &relative_path)
             .map_err(str::to_owned)
     })
     .await
@@ -344,7 +366,8 @@ async fn ide_git_select_reviewed_hunks(
 ) -> Result<lu_ide_workspace::git_hunk_review::ReviewedHunkSelection, String> {
     let registry = Arc::clone(state.inner());
     tauri::async_runtime::spawn_blocking(move || {
-        registry.select_reviewed_git_hunks(&expected, &selected_ids)
+        registry
+            .select_reviewed_git_hunks(&expected, &selected_ids)
             .map_err(str::to_owned)
     })
     .await
@@ -466,8 +489,12 @@ async fn ide_git_partial_stage_recovery(
 ) -> Result<lu_ide_workspace::git_partial_stage::PartialStageRecovery, String> {
     let registry = Arc::clone(state.inner());
     tauri::async_runtime::spawn_blocking(move || {
-        registry.inspect_partial_stage_recovery(&project_id).map_err(str::to_owned)
-    }).await.map_err(|_| "G06B_STAGE_RECOVERY_HOST_UNAVAILABLE".to_owned())?
+        registry
+            .inspect_partial_stage_recovery(&project_id)
+            .map_err(str::to_owned)
+    })
+    .await
+    .map_err(|_| "G06B_STAGE_RECOVERY_HOST_UNAVAILABLE".to_owned())?
 }
 
 /// Read-only reactivation of an independently verified staged-hunk
@@ -479,9 +506,12 @@ async fn ide_git_restore_reviewed_stage_receipt(
 ) -> Result<lu_ide_workspace::git_partial_stage::PartialStageReceipt, String> {
     let registry = Arc::clone(state.inner());
     tauri::async_runtime::spawn_blocking(move || {
-        registry.restore_verified_partial_stage_receipt(&project_id)
+        registry
+            .restore_verified_partial_stage_receipt(&project_id)
             .map_err(str::to_owned)
-    }).await.map_err(|_| "G06B_STAGE_RESTORE_HOST_UNAVAILABLE".to_owned())?
+    })
+    .await
+    .map_err(|_| "G06B_STAGE_RESTORE_HOST_UNAVAILABLE".to_owned())?
 }
 
 /// Separate from staging: a reviewed staged-hunk index alone cannot
@@ -497,10 +527,12 @@ async fn ide_git_preview_reviewed_commit(
 ) -> Result<lu_ide_workspace::git_reviewed_commit::ReviewedCommitPlan, String> {
     let registry = Arc::clone(state.inner());
     tauri::async_runtime::spawn_blocking(move || {
-        registry.preview_reviewed_partial_commit(
-            &stage, mode, &message, &author_name, &author_email)
+        registry
+            .preview_reviewed_partial_commit(&stage, mode, &message, &author_name, &author_email)
             .map_err(str::to_owned)
-    }).await.map_err(|_| "G06B_COMMIT_PREVIEW_HOST_UNAVAILABLE".to_owned())?
+    })
+    .await
+    .map_err(|_| "G06B_COMMIT_PREVIEW_HOST_UNAVAILABLE".to_owned())?
 }
 
 fn perform_reviewed_commit_with_os_approval(
@@ -510,14 +542,20 @@ fn perform_reviewed_commit_with_os_approval(
     required_mode: lu_ide_workspace::git_reviewed_commit::ReviewedCommitMode,
     cancel: Arc<AtomicU8>,
 ) -> Result<lu_ide_workspace::git_reviewed_commit::ReviewedCommitReceipt, String> {
-    use tauri_plugin_dialog::MessageDialogButtons;
     use lu_ide_workspace::git_reviewed_commit::ReviewedCommitMode;
+    use tauri_plugin_dialog::MessageDialogButtons;
     if expected.mode != required_mode {
         return Err("G06B_COMMIT_MODE_NOT_AUTHORIZED".into());
     }
-    let fresh = registry.preview_reviewed_partial_commit(
-        &expected.stage, expected.mode.clone(), &expected.message,
-        &expected.author_name, &expected.author_email).map_err(str::to_owned)?;
+    let fresh = registry
+        .preview_reviewed_partial_commit(
+            &expected.stage,
+            expected.mode.clone(),
+            &expected.message,
+            &expected.author_name,
+            &expected.author_email,
+        )
+        .map_err(str::to_owned)?;
     if fresh != expected {
         return Err("G06B_COMMIT_REVIEW_CHANGED".into());
     }
@@ -525,7 +563,10 @@ fn perform_reviewed_commit_with_os_approval(
         return Err("G06B_COMMIT_CANCELLED_BEFORE_CONSENT".into());
     }
     let mode_label = if required_mode == ReviewedCommitMode::Amend {
-        "REWRITE LAST LOCAL COMMIT" } else { "CREATE NEW LOCAL COMMIT" };
+        "REWRITE LAST LOCAL COMMIT"
+    } else {
+        "CREATE NEW LOCAL COMMIT"
+    };
     let allowed = app.dialog().message(format!(
         "{}?\n\nProject: {}\nBranch: {}\nCurrent HEAD: {}\nNext parent: {}\nFile: {}\nStaged tree: {}\nIndex SHA-256: {}\nPlan SHA-256: {}\nAuthor: {} <{}>\nMessage: {}\n\nThis approval is one-use. No hook, Git CLI, network, push, or source edit.",
         mode_label, fresh.stage.project_id, fresh.branch_ref,
@@ -539,7 +580,9 @@ fn perform_reviewed_commit_with_os_approval(
         } else { "Create this exact commit".into() },
         "Deny / Cancel".into(),
       )).blocking_show();
-    if !allowed { return Err("G06B_COMMIT_HUMAN_DENIED".into()); }
+    if !allowed {
+        return Err("G06B_COMMIT_HUMAN_DENIED".into());
+    }
     if required_mode == ReviewedCommitMode::Amend {
         // History rewrite is an independently acknowledged destructive act,
         // not an implied side effect of the ordinary commit approval.
@@ -550,12 +593,15 @@ fn perform_reviewed_commit_with_os_approval(
           .buttons(MessageDialogButtons::OkCancelCustom(
             "Rewrite exact local HEAD".into(), "Deny / Cancel".into()
           )).blocking_show();
-        if !rewrite { return Err("G06B_AMEND_HUMAN_DENIED".into()); }
+        if !rewrite {
+            return Err("G06B_AMEND_HUMAN_DENIED".into());
+        }
     }
     if cancel.load(Ordering::SeqCst) != 0 {
         return Err("G06B_COMMIT_CANCELLED_AFTER_CONSENT".into());
     }
-    registry.execute_approved_reviewed_commit(&fresh, &cancel)
+    registry
+        .execute_approved_reviewed_commit(&fresh, &cancel)
         .map_err(str::to_owned)
 }
 
@@ -573,8 +619,15 @@ async fn ide_git_commit_selected_hunks(
     let cancel = sessions.begin(&project_id)?;
     let result = tauri::async_runtime::spawn_blocking(move || {
         perform_reviewed_commit_with_os_approval(
-            app, registry, expected, ReviewedCommitMode::Create, cancel)
-    }).await.map_err(|_| "G06B_COMMIT_HOST_INTERRUPTED".to_owned());
+            app,
+            registry,
+            expected,
+            ReviewedCommitMode::Create,
+            cancel,
+        )
+    })
+    .await
+    .map_err(|_| "G06B_COMMIT_HOST_INTERRUPTED".to_owned());
     sessions.end(&project_id);
     result?
 }
@@ -593,8 +646,15 @@ async fn ide_git_amend_reviewed_commit(
     let cancel = sessions.begin(&project_id)?;
     let result = tauri::async_runtime::spawn_blocking(move || {
         perform_reviewed_commit_with_os_approval(
-            app, registry, expected, ReviewedCommitMode::Amend, cancel)
-    }).await.map_err(|_| "G06B_AMEND_HOST_INTERRUPTED".to_owned());
+            app,
+            registry,
+            expected,
+            ReviewedCommitMode::Amend,
+            cancel,
+        )
+    })
+    .await
+    .map_err(|_| "G06B_AMEND_HOST_INTERRUPTED".to_owned());
     sessions.end(&project_id);
     result?
 }
@@ -615,9 +675,12 @@ async fn ide_git_inspect_commit_recovery(
 ) -> Result<lu_ide_workspace::git_reviewed_commit::ReviewedCommitRecovery, String> {
     let registry = Arc::clone(state.inner());
     tauri::async_runtime::spawn_blocking(move || {
-        registry.inspect_reviewed_commit_recovery(&project_id)
+        registry
+            .inspect_reviewed_commit_recovery(&project_id)
             .map_err(str::to_owned)
-    }).await.map_err(|_| "G06B_COMMIT_RECOVERY_HOST_UNAVAILABLE".to_owned())?
+    })
+    .await
+    .map_err(|_| "G06B_COMMIT_RECOVERY_HOST_UNAVAILABLE".to_owned())?
 }
 
 /// Separate physical OS approval to reconcile a journal, never a hidden
@@ -901,9 +964,12 @@ async fn ide_read_git_file_history(
 ) -> Result<lu_ide_workspace::git_file_history::GitFileHistoryEvidence, String> {
     let registry = Arc::clone(state.inner());
     tauri::async_runtime::spawn_blocking(move || {
-        registry.inspect_git_file_history(&project_id, &relative_path)
+        registry
+            .inspect_git_file_history(&project_id, &relative_path)
             .map_err(str::to_owned)
-    }).await.map_err(|_| "G06A_HISTORY_HOST_UNAVAILABLE".to_owned())?
+    })
+    .await
+    .map_err(|_| "G06A_HISTORY_HOST_UNAVAILABLE".to_owned())?
 }
 
 /// Read-only local refs, safe remote aliases and Git health; no URLs,
@@ -915,9 +981,12 @@ async fn ide_read_git_refs_health(
 ) -> Result<lu_ide_workspace::git_refs_health::GitRefsAndHealthEvidence, String> {
     let registry = Arc::clone(state.inner());
     tauri::async_runtime::spawn_blocking(move || {
-        registry.inspect_git_refs_health(&project_id)
+        registry
+            .inspect_git_refs_health(&project_id)
             .map_err(str::to_owned)
-    }).await.map_err(|_| "G06A_REFS_HOST_UNAVAILABLE".to_owned())?
+    })
+    .await
+    .map_err(|_| "G06A_REFS_HOST_UNAVAILABLE".to_owned())?
 }
 
 /// G06C-01: registered-project-only read-only local branch operation review.
@@ -942,56 +1011,61 @@ async fn ide_git_review_branch_operation(
 
 #[tauri::command]
 async fn ide_read_local_stash_inventory(
- state:State<'_,Arc<IdeWorkspaceRegistry>>,project_id:String,
-)->Result<lu_ide_workspace::git_stash_inventory::StashInventory,String>{
- let registry=Arc::clone(state.inner());
- tauri::async_runtime::spawn_blocking(move||
-  registry.read_local_stash_metadata(&project_id))
-  .await.map_err(|_|"FIN03_STASH_READ_THREAD_UNAVAILABLE".to_owned())?
-  .map_err(str::to_owned)
+    state: State<'_, Arc<IdeWorkspaceRegistry>>,
+    project_id: String,
+) -> Result<lu_ide_workspace::git_stash_inventory::StashInventory, String> {
+    let registry = Arc::clone(state.inner());
+    tauri::async_runtime::spawn_blocking(move || registry.read_local_stash_metadata(&project_id))
+        .await
+        .map_err(|_| "FIN03_STASH_READ_THREAD_UNAVAILABLE".to_owned())?
+        .map_err(str::to_owned)
 }
 
 /// FIN-03G: immutable native Git-object review. This does not grant
 /// OS authority, apply or drop a stash, revert a commit, or alter local refs.
 #[tauri::command]
 async fn ide_git_preview_local_mutation_impact(
- state:State<'_,Arc<IdeWorkspaceRegistry>>,
- project_id:String,
- kind:lu_ide_workspace::git_fin03_operation_preview::Fin03ImpactKind,
- commit_sha:Option<String>,stash_index:Option<usize>,
-)->Result<lu_ide_workspace::git_fin03_operation_preview::Fin03ImpactReview,String>{
- let registry=Arc::clone(state.inner());
- tauri::async_runtime::spawn_blocking(move||
-  registry.review_fin03_local_impact(
-   &project_id,kind,commit_sha.as_deref(),stash_index))
-  .await.map_err(|_|"FIN03G_REVIEW_TASK_INTERRUPTED".to_owned())?
-  .map_err(str::to_owned)
+    state: State<'_, Arc<IdeWorkspaceRegistry>>,
+    project_id: String,
+    kind: lu_ide_workspace::git_fin03_operation_preview::Fin03ImpactKind,
+    commit_sha: Option<String>,
+    stash_index: Option<usize>,
+) -> Result<lu_ide_workspace::git_fin03_operation_preview::Fin03ImpactReview, String> {
+    let registry = Arc::clone(state.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        registry.review_fin03_local_impact(&project_id, kind, commit_sha.as_deref(), stash_index)
+    })
+    .await
+    .map_err(|_| "FIN03G_REVIEW_TASK_INTERRUPTED".to_owned())?
+    .map_err(str::to_owned)
 }
 
 /// FIN-03: one reviewed staged file -> unstaged source, Git index ONLY.
 /// No caller-provided Git commands, paths, OS approval tokens or ref writes.
 #[tauri::command]
 async fn ide_git_review_single_unstage(
- state:State<'_,Arc<IdeWorkspaceRegistry>>,project_id:String,
-)->Result<lu_ide_workspace::git_reviewed_unstage::ReviewedUnstage,String>{
- let registry=Arc::clone(state.inner());
- tauri::async_runtime::spawn_blocking(move||
-    registry.review_single_staged_unstage(&project_id))
-    .await.map_err(|_|"FIN03_UNSTAGE_REVIEW_THREAD_INTERRUPTED".to_owned())?
-    .map_err(str::to_owned)
+    state: State<'_, Arc<IdeWorkspaceRegistry>>,
+    project_id: String,
+) -> Result<lu_ide_workspace::git_reviewed_unstage::ReviewedUnstage, String> {
+    let registry = Arc::clone(state.inner());
+    tauri::async_runtime::spawn_blocking(move || registry.review_single_staged_unstage(&project_id))
+        .await
+        .map_err(|_| "FIN03_UNSTAGE_REVIEW_THREAD_INTERRUPTED".to_owned())?
+        .map_err(str::to_owned)
 }
 #[tauri::command]
 async fn ide_git_execute_single_unstage(
- app:AppHandle,state:State<'_,Arc<IdeWorkspaceRegistry>>,
- sessions:State<'_,Arc<PartialStageSessions>>,
- expected:lu_ide_workspace::git_reviewed_unstage::ReviewedUnstage,
-)->Result<lu_ide_workspace::git_reviewed_unstage::UnstageReceipt,String>{
- let registry=Arc::clone(state.inner());
- let sessions=Arc::clone(sessions.inner());
- let project_id=expected.project_id.clone();
- let cancel=sessions.begin(&project_id)?;
- let unstage_session_id=project_id.clone();
- let result=tauri::async_runtime::spawn_blocking(move||{
+    app: AppHandle,
+    state: State<'_, Arc<IdeWorkspaceRegistry>>,
+    sessions: State<'_, Arc<PartialStageSessions>>,
+    expected: lu_ide_workspace::git_reviewed_unstage::ReviewedUnstage,
+) -> Result<lu_ide_workspace::git_reviewed_unstage::UnstageReceipt, String> {
+    let registry = Arc::clone(state.inner());
+    let sessions = Arc::clone(sessions.inner());
+    let project_id = expected.project_id.clone();
+    let cancel = sessions.begin(&project_id)?;
+    let unstage_session_id = project_id.clone();
+    let result=tauri::async_runtime::spawn_blocking(move||{
     let fresh=registry.review_single_staged_unstage(&project_id)
        .map_err(str::to_owned)?;
     if fresh.review_sha256!=expected.review_sha256 ||
@@ -1019,34 +1093,37 @@ async fn ide_git_execute_single_unstage(
     registry.execute_approved_single_unstage(&fresh,&cancel)
         .map_err(str::to_owned)
  }).await.map_err(|_|"FIN03_UNSTAGE_HOST_INTERRUPTED".to_owned());
-  sessions.end(&unstage_session_id);
- result?
+    sessions.end(&unstage_session_id);
+    result?
 }
 
 #[tauri::command]
 async fn ide_git_review_one_file_stash(
- state:State<'_,Arc<IdeWorkspaceRegistry>>,project_id:String,
-)->Result<lu_ide_workspace::git_reviewed_stash_save::ReviewedStashSave,String>{
- let reg=Arc::clone(state.inner());
- tauri::async_runtime::spawn_blocking(move||
-  reg.review_one_file_stash_save(&project_id))
-  .await.map_err(|_|"FIN03_STASH_REVIEW_TASK_INTERRUPTED".to_owned())?
-  .map_err(str::to_owned)
+    state: State<'_, Arc<IdeWorkspaceRegistry>>,
+    project_id: String,
+) -> Result<lu_ide_workspace::git_reviewed_stash_save::ReviewedStashSave, String> {
+    let reg = Arc::clone(state.inner());
+    tauri::async_runtime::spawn_blocking(move || reg.review_one_file_stash_save(&project_id))
+        .await
+        .map_err(|_| "FIN03_STASH_REVIEW_TASK_INTERRUPTED".to_owned())?
+        .map_err(str::to_owned)
 }
 #[tauri::command]
 async fn ide_git_execute_one_file_stash(
- app:AppHandle,state:State<'_,Arc<IdeWorkspaceRegistry>>,
- sessions:State<'_,Arc<PartialStageSessions>>,
- project_id:String,expected_review_sha256:String,
-)->Result<lu_ide_workspace::git_reviewed_stash_save::ReviewedStashReceipt,String>{
- if !cfg!(feature="fin03-reviewed-stash"){
-  return Err("FIN03_STASH_NATIVE_ACCEPTANCE_REQUIRED".into());
- }
- let registry=Arc::clone(state.inner());
- let sessions=Arc::clone(sessions.inner());
- let cancel=sessions.begin(&project_id)?;
- let project_for_session=project_id.clone();
- let result=tauri::async_runtime::spawn_blocking(move||{
+    app: AppHandle,
+    state: State<'_, Arc<IdeWorkspaceRegistry>>,
+    sessions: State<'_, Arc<PartialStageSessions>>,
+    project_id: String,
+    expected_review_sha256: String,
+) -> Result<lu_ide_workspace::git_reviewed_stash_save::ReviewedStashReceipt, String> {
+    if !cfg!(feature = "fin03-reviewed-stash") {
+        return Err("FIN03_STASH_NATIVE_ACCEPTANCE_REQUIRED".into());
+    }
+    let registry = Arc::clone(state.inner());
+    let sessions = Arc::clone(sessions.inner());
+    let cancel = sessions.begin(&project_id)?;
+    let project_for_session = project_id.clone();
+    let result=tauri::async_runtime::spawn_blocking(move||{
   let reviewed=registry.review_one_file_stash_save(&project_id)
    .map_err(str::to_owned)?;
   if reviewed.review_sha256!=expected_review_sha256 ||
@@ -1065,45 +1142,48 @@ async fn ide_git_execute_one_file_stash(
   registry.execute_reviewed_one_file_stash_save(&reviewed,&cancel)
    .map_err(str::to_owned)
  }).await.map_err(|_|"FIN03_STASH_NATIVE_TASK_INTERRUPTED".to_owned());
- sessions.end(&project_for_session);
- result?
+    sessions.end(&project_for_session);
+    result?
 }
 #[tauri::command]
 async fn ide_git_one_file_stash_recovery(
- state:State<'_,Arc<IdeWorkspaceRegistry>>,project_id:String,
-)->Result<bool,String>{
- let reg=Arc::clone(state.inner());
- tauri::async_runtime::spawn_blocking(move||
-  reg.one_file_stash_recovery_required(&project_id))
-  .await.map_err(|_|"FIN03_STASH_RECOVERY_TASK_INTERRUPTED".to_owned())?
-  .map_err(str::to_owned)
+    state: State<'_, Arc<IdeWorkspaceRegistry>>,
+    project_id: String,
+) -> Result<bool, String> {
+    let reg = Arc::clone(state.inner());
+    tauri::async_runtime::spawn_blocking(move || reg.one_file_stash_recovery_required(&project_id))
+        .await
+        .map_err(|_| "FIN03_STASH_RECOVERY_TASK_INTERRUPTED".to_owned())?
+        .map_err(str::to_owned)
 }
 
 #[tauri::command]
 async fn ide_git_review_single_file_restore(
- state:State<'_,Arc<IdeWorkspaceRegistry>>,project_id:String,
-)->Result<lu_ide_workspace::git_reviewed_restore::SingleFileRestoreReview,String>{
- let registry=Arc::clone(state.inner());
- tauri::async_runtime::spawn_blocking(move||
-  registry.review_single_file_restore(&project_id))
-  .await.map_err(|_|"FIN03_RESTORE_REVIEW_THREAD_INTERRUPTED".to_owned())?
-  .map_err(str::to_owned)
+    state: State<'_, Arc<IdeWorkspaceRegistry>>,
+    project_id: String,
+) -> Result<lu_ide_workspace::git_reviewed_restore::SingleFileRestoreReview, String> {
+    let registry = Arc::clone(state.inner());
+    tauri::async_runtime::spawn_blocking(move || registry.review_single_file_restore(&project_id))
+        .await
+        .map_err(|_| "FIN03_RESTORE_REVIEW_THREAD_INTERRUPTED".to_owned())?
+        .map_err(str::to_owned)
 }
 #[tauri::command]
 async fn ide_git_execute_single_file_restore(
- app:AppHandle,state:State<'_,Arc<IdeWorkspaceRegistry>>,
- sessions:State<'_,Arc<PartialStageSessions>>,
- expected:lu_ide_workspace::git_reviewed_restore::SingleFileRestoreReview,
-)->Result<lu_ide_workspace::git_reviewed_restore::SingleFileRestoreReceipt,String>{
- if !cfg!(feature="fin03-reviewed-restore") {
-  return Err("FIN03_RESTORE_OPT_IN_AND_NATIVE_ACCEPTANCE_REQUIRED".into());
- }
- let registry=Arc::clone(state.inner());
- let sessions=Arc::clone(sessions.inner());
- let id=expected.project_id.clone();
- let cancel=sessions.begin(&id)?;
- let restore_session_id=id.clone();
- let result=tauri::async_runtime::spawn_blocking(move||{
+    app: AppHandle,
+    state: State<'_, Arc<IdeWorkspaceRegistry>>,
+    sessions: State<'_, Arc<PartialStageSessions>>,
+    expected: lu_ide_workspace::git_reviewed_restore::SingleFileRestoreReview,
+) -> Result<lu_ide_workspace::git_reviewed_restore::SingleFileRestoreReceipt, String> {
+    if !cfg!(feature = "fin03-reviewed-restore") {
+        return Err("FIN03_RESTORE_OPT_IN_AND_NATIVE_ACCEPTANCE_REQUIRED".into());
+    }
+    let registry = Arc::clone(state.inner());
+    let sessions = Arc::clone(sessions.inner());
+    let id = expected.project_id.clone();
+    let cancel = sessions.begin(&id)?;
+    let restore_session_id = id.clone();
+    let result=tauri::async_runtime::spawn_blocking(move||{
   let fresh=registry.review_single_file_restore(&id).map_err(str::to_owned)?;
   if fresh.review_sha256!=expected.review_sha256 ||
      expected.operation_authorized || expected.source_files_modified ||
@@ -1121,40 +1201,46 @@ async fn ide_git_execute_single_file_restore(
   }
   registry.execute_approved_single_file_restore(&fresh,&cancel).map_err(str::to_owned)
  }).await.map_err(|_|"FIN03_RESTORE_HOST_INTERRUPTED".to_owned());
-  sessions.end(&restore_session_id);
- result?
+    sessions.end(&restore_session_id);
+    result?
 }
 #[tauri::command]
 async fn ide_git_single_file_restore_recovery(
- state:State<'_,Arc<IdeWorkspaceRegistry>>,project_id:String,
-)->Result<bool,String>{
- let registry=Arc::clone(state.inner());
- tauri::async_runtime::spawn_blocking(move||
-  registry.single_file_restore_recovery_required(&project_id))
-  .await.map_err(|_|"FIN03_RESTORE_RECOVERY_READ_INTERRUPTED".to_owned())?
-  .map_err(str::to_owned)
+    state: State<'_, Arc<IdeWorkspaceRegistry>>,
+    project_id: String,
+) -> Result<bool, String> {
+    let registry = Arc::clone(state.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        registry.single_file_restore_recovery_required(&project_id)
+    })
+    .await
+    .map_err(|_| "FIN03_RESTORE_RECOVERY_READ_INTERRUPTED".to_owned())?
+    .map_err(str::to_owned)
 }
 
 #[tauri::command]
 async fn ide_git_inspect_unstage_recovery(
- state:State<'_,Arc<IdeWorkspaceRegistry>>,project_id:String,
-)->Result<Option<&'static str>,String>{
- let registry=Arc::clone(state.inner());
- tauri::async_runtime::spawn_blocking(move||
-   registry.inspect_unstage_interrupted(&project_id))
-   .await.map_err(|_|"FIN03_UNSTAGE_RECOVERY_READ_INTERRUPTED".to_owned())?
-   .map_err(str::to_owned)
+    state: State<'_, Arc<IdeWorkspaceRegistry>>,
+    project_id: String,
+) -> Result<Option<&'static str>, String> {
+    let registry = Arc::clone(state.inner());
+    tauri::async_runtime::spawn_blocking(move || registry.inspect_unstage_interrupted(&project_id))
+        .await
+        .map_err(|_| "FIN03_UNSTAGE_RECOVERY_READ_INTERRUPTED".to_owned())?
+        .map_err(str::to_owned)
 }
 #[tauri::command]
 async fn ide_git_reconcile_unstage_recovery(
- app:AppHandle,state:State<'_,Arc<IdeWorkspaceRegistry>>,
- sessions:State<'_,Arc<PartialStageSessions>>,project_id:String,
-)->Result<&'static str,String>{
- let registry=Arc::clone(state.inner());
- let sessions=Arc::clone(sessions.inner());
- let token=sessions.begin(&project_id)?;
- let recovery_session_id=project_id.clone();
- let result=tauri::async_runtime::spawn_blocking(move||{
+    app: AppHandle,
+    state: State<'_, Arc<IdeWorkspaceRegistry>>,
+    sessions: State<'_, Arc<PartialStageSessions>>,
+    project_id: String,
+) -> Result<&'static str, String> {
+    let registry = Arc::clone(state.inner());
+    let sessions = Arc::clone(sessions.inner());
+    let token = sessions.begin(&project_id)?;
+    let recovery_session_id = project_id.clone();
+    let result=tauri::async_runtime::spawn_blocking(move||{
    let state=registry.inspect_unstage_interrupted(&project_id)
        .map_err(str::to_owned)?;
    if state!=Some("manual_reconciliation_required") ||
@@ -1173,8 +1259,8 @@ async fn ide_git_reconcile_unstage_recovery(
    registry.reconcile_unstage_interrupted(&project_id)
       .map_err(str::to_owned)
  }).await.map_err(|_|"FIN03_UNSTAGE_RECOVERY_THREAD_INTERRUPTED".to_owned());
-  sessions.end(&recovery_session_id);
- result?
+    sessions.end(&recovery_session_id);
+    result?
 }
 /// G06C-02: read-only merge plan. No ref writes or user-approved grant.
 #[tauri::command]
@@ -1202,8 +1288,12 @@ async fn ide_git_inspect_native_conflicts(
 ) -> Result<lu_ide_workspace::git_conflict_inventory::NativeConflictInventory, String> {
     let registry = Arc::clone(state.inner());
     tauri::async_runtime::spawn_blocking(move || {
-        registry.inspect_native_git_conflicts(&project_id).map_err(str::to_owned)
-    }).await.map_err(|_| "G06D01_NATIVE_INSPECTION_HOST_UNAVAILABLE".to_owned())?
+        registry
+            .inspect_native_git_conflicts(&project_id)
+            .map_err(str::to_owned)
+    })
+    .await
+    .map_err(|_| "G06D01_NATIVE_INSPECTION_HOST_UNAVAILABLE".to_owned())?
 }
 
 /// 6D-03: source-bound native proposal, explicitly NO execution authority.
@@ -1217,11 +1307,19 @@ async fn ide_git_review_conflict_resolution(
     candidate_text: String,
 ) -> Result<lu_ide_workspace::git_conflict_resolution::ConflictResolutionReview, String> {
     let registry = Arc::clone(state.inner());
-    tauri::async_runtime::spawn_blocking(move || registry
-        .review_native_conflict_resolution(&project_id, &relative_path,
-            &inventory_sha256, &index_sha256, &candidate_text)
-        .map_err(str::to_owned))
-        .await.map_err(|_| "G06D03_REVIEW_HOST_INTERRUPTED".to_owned())?
+    tauri::async_runtime::spawn_blocking(move || {
+        registry
+            .review_native_conflict_resolution(
+                &project_id,
+                &relative_path,
+                &inventory_sha256,
+                &index_sha256,
+                &candidate_text,
+            )
+            .map_err(str::to_owned)
+    })
+    .await
+    .map_err(|_| "G06D03_REVIEW_HOST_INTERRUPTED".to_owned())?
 }
 
 /// 6D-04: protected application requires a FRESH separate native OS dialog.
@@ -1281,9 +1379,13 @@ async fn ide_git_inspect_conflict_recovery(
     project_id: String,
 ) -> Result<lu_ide_workspace::git_conflict_resolution::ProtectedResolutionRecovery, String> {
     let registry = Arc::clone(state.inner());
-    tauri::async_runtime::spawn_blocking(move ||
-        registry.inspect_protected_conflict_recovery(&project_id).map_err(str::to_owned))
-        .await.map_err(|_| "G06D04_RECOVERY_HOST_INTERRUPTED".to_owned())?
+    tauri::async_runtime::spawn_blocking(move || {
+        registry
+            .inspect_protected_conflict_recovery(&project_id)
+            .map_err(str::to_owned)
+    })
+    .await
+    .map_err(|_| "G06D04_RECOVERY_HOST_INTERRUPTED".to_owned())?
 }
 
 /// Receipt-only reconciliation: separate OS consent, no Git writes or retry.
@@ -1332,9 +1434,9 @@ async fn ide_git_verify_divergent_merge(
 ) -> Result<lu_ide_workspace::git_divergent_verify::VerifiedDivergentMerge, String> {
     let registry = Arc::clone(state.inner());
     tauri::async_runtime::spawn_blocking(move || {
-        registry.verify_divergent_merge_result(
-            &project_id, &selected_branch, &evidence_sha256,
-        ).map_err(str::to_owned)
+        registry
+            .verify_divergent_merge_result(&project_id, &selected_branch, &evidence_sha256)
+            .map_err(str::to_owned)
     })
     .await
     .map_err(|_| "G06C03B_PREVIEW_HOST_UNAVAILABLE".to_owned())?
@@ -1351,7 +1453,8 @@ async fn ide_git_execute_divergent_merge(
     selected_branch: String,
     evidence_sha256: String,
     result_sha256: String,
-) -> Result<lu_ide_workspace::git_protected_divergent_merge::ApprovedDivergentMergeReceipt, String> {
+) -> Result<lu_ide_workspace::git_protected_divergent_merge::ApprovedDivergentMergeReceipt, String>
+{
     use tauri_plugin_dialog::MessageDialogButtons;
     let registry = Arc::clone(state.inner());
     let sessions = Arc::clone(sessions.inner());
@@ -1393,8 +1496,12 @@ async fn ide_git_inspect_divergent_recovery(
 ) -> Result<lu_ide_workspace::git_protected_divergent_merge::DivergentMergeRecovery, String> {
     let registry = Arc::clone(state.inner());
     tauri::async_runtime::spawn_blocking(move || {
-        registry.inspect_protected_divergent_recovery(&project_id).map_err(str::to_owned)
-    }).await.map_err(|_| "G06C03B_RECOVERY_HOST_UNAVAILABLE".to_owned())?
+        registry
+            .inspect_protected_divergent_recovery(&project_id)
+            .map_err(str::to_owned)
+    })
+    .await
+    .map_err(|_| "G06C03B_RECOVERY_HOST_UNAVAILABLE".to_owned())?
 }
 
 #[tauri::command]
@@ -1498,7 +1605,9 @@ async fn ide_git_inspect_protected_merge_recovery(
 ) -> Result<lu_ide_workspace::git_protected_merge::ProtectedMergeRecovery, String> {
     let registry = Arc::clone(state.inner());
     tauri::async_runtime::spawn_blocking(move || {
-        registry.inspect_protected_merge_recovery(&project_id).map_err(str::to_owned)
+        registry
+            .inspect_protected_merge_recovery(&project_id)
+            .map_err(str::to_owned)
     })
     .await
     .map_err(|_| "G06C03_RECOVERY_HOST_UNAVAILABLE".to_owned())?
@@ -1561,7 +1670,8 @@ async fn ide_git_review_rebase_cherry_pick(
 ) -> Result<lu_ide_workspace::git_rebase_cherry_plan::ReviewedReplayPlan, String> {
     let registry = Arc::clone(state.inner());
     tauri::async_runtime::spawn_blocking(move || {
-        registry.review_local_rebase_cherry_pick(&project_id, operation, &selected_branch)
+        registry
+            .review_local_rebase_cherry_pick(&project_id, operation, &selected_branch)
             .map_err(str::to_owned)
     })
     .await
@@ -1578,7 +1688,8 @@ async fn ide_git_preview_isolated_replay(
 ) -> Result<lu_ide_workspace::git_replay_quarantine::ProspectiveReplayResult, String> {
     let registry = Arc::clone(state.inner());
     tauri::async_runtime::spawn_blocking(move || {
-        registry.preview_prospective_replay(&project_id, operation, &selected_branch)
+        registry
+            .preview_prospective_replay(&project_id, operation, &selected_branch)
             .map_err(str::to_owned)
     })
     .await
@@ -1651,10 +1762,15 @@ async fn ide_git_execute_cherry_pick(
     evidence_sha256: String,
 ) -> Result<lu_ide_workspace::git_protected_replay::ApprovedReplayReceipt, String> {
     g06c04_execute_with_native_consent(
-        app, Arc::clone(state.inner()), Arc::clone(sessions.inner()),
-        project_id, selected_branch, evidence_sha256,
+        app,
+        Arc::clone(state.inner()),
+        Arc::clone(sessions.inner()),
+        project_id,
+        selected_branch,
+        evidence_sha256,
         lu_ide_workspace::git_rebase_cherry_plan::ReplayReviewKind::CherryPickLocalTip,
-    ).await
+    )
+    .await
 }
 /// 6C-04D: separate native OS consent explicitly warns about history rewrite.
 #[tauri::command]
@@ -1667,10 +1783,15 @@ async fn ide_git_execute_rebase(
     evidence_sha256: String,
 ) -> Result<lu_ide_workspace::git_protected_replay::ApprovedReplayReceipt, String> {
     g06c04_execute_with_native_consent(
-        app, Arc::clone(state.inner()), Arc::clone(sessions.inner()),
-        project_id, selected_branch, evidence_sha256,
+        app,
+        Arc::clone(state.inner()),
+        Arc::clone(sessions.inner()),
+        project_id,
+        selected_branch,
+        evidence_sha256,
         lu_ide_workspace::git_rebase_cherry_plan::ReplayReviewKind::RebaseCurrentOntoLocal,
-    ).await
+    )
+    .await
 }
 
 #[tauri::command]
@@ -1688,9 +1809,12 @@ async fn ide_git_inspect_replay_recovery(
 ) -> Result<lu_ide_workspace::git_protected_replay::ReplayRecovery, String> {
     let registry = Arc::clone(state.inner());
     tauri::async_runtime::spawn_blocking(move || {
-        registry.inspect_protected_replay_recovery(&project_id)
+        registry
+            .inspect_protected_replay_recovery(&project_id)
             .map_err(str::to_owned)
-    }).await.map_err(|_| "G06C04_REPLAY_RECOVERY_HOST_INTERRUPTED".to_owned())?
+    })
+    .await
+    .map_err(|_| "G06C04_REPLAY_RECOVERY_HOST_INTERRUPTED".to_owned())?
 }
 
 #[tauri::command]
@@ -1755,9 +1879,9 @@ async fn ide_read_github_pull_requests(
     project_id: String,
 ) -> Result<lu_ide_workspace::github_pull_review::GitHubPullInspection, String> {
     let registry = Arc::clone(state.inner());
-    tauri::async_runtime::spawn_blocking(move ||
-        registry.inspect_github_pull_requests(&project_id))
-        .await.map_err(|_| "G06E01_PR_REVIEW_HOST_UNAVAILABLE".to_owned())
+    tauri::async_runtime::spawn_blocking(move || registry.inspect_github_pull_requests(&project_id))
+        .await
+        .map_err(|_| "G06E01_PR_REVIEW_HOST_UNAVAILABLE".to_owned())
 }
 
 /// FIN-03: one explicit, read-only, same-HEAD public review inspection.
@@ -1768,20 +1892,25 @@ async fn ide_read_github_review_state(
     number: u64,
 ) -> Result<lu_ide_workspace::github_review_state::ReviewStateEvidence, String> {
     let registry = Arc::clone(state.inner());
-    tauri::async_runtime::spawn_blocking(move ||
-        registry.inspect_github_review_state(&project_id,number))
-        .await.map_err(|_| "G06E02_REVIEW_HOST_UNAVAILABLE".to_owned())
+    tauri::async_runtime::spawn_blocking(move || {
+        registry.inspect_github_review_state(&project_id, number)
+    })
+    .await
+    .map_err(|_| "G06E02_REVIEW_HOST_UNAVAILABLE".to_owned())
 }
 /// FIN-03: public branch rule metadata is not complete policy or authorization.
 #[tauri::command]
 async fn ide_read_github_branch_rules(
     state: State<'_, Arc<IdeWorkspaceRegistry>>,
-    project_id: String,number:u64,
-)->Result<lu_ide_workspace::github_branch_rules::BranchRulesEvidence,String>{
-    let native=Arc::clone(state.inner());
-    tauri::async_runtime::spawn_blocking(move||
-        native.inspect_github_branch_rules(&project_id,number))
-        .await.map_err(|_|"FIN03_RULE_INSPECTION_UNAVAILABLE".to_owned())
+    project_id: String,
+    number: u64,
+) -> Result<lu_ide_workspace::github_branch_rules::BranchRulesEvidence, String> {
+    let native = Arc::clone(state.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        native.inspect_github_branch_rules(&project_id, number)
+    })
+    .await
+    .map_err(|_| "FIN03_RULE_INSPECTION_UNAVAILABLE".to_owned())
 }
 /// Explicit read-only public GitHub Actions receipts for the exact local HEAD.
 #[tauri::command]
@@ -1972,24 +2101,28 @@ async fn ide_debug_status(app: AppHandle, project_id: String) -> Result<serde_js
 /// or WebView-provided process ID, command, witness, path or consent.
 #[tauri::command]
 async fn ide_debug_action_os_recovery(
-    app:AppHandle,
-    state:State<'_,Arc<IdeWorkspaceRegistry>>,
-    project_id:String,
-)->Result<serde_json::Value,String>{
-    #[cfg(all(feature="native-debug",any(windows,target_os="linux")))]
+    app: AppHandle,
+    state: State<'_, Arc<IdeWorkspaceRegistry>>,
+    project_id: String,
+) -> Result<serde_json::Value, String> {
+    #[cfg(all(feature = "native-debug", any(windows, target_os = "linux")))]
     {
-        state.trusted_native_worker_root(&project_id)
-            .map_err(|_|"FIN04REC_PROJECT_NOT_REGISTERED")?;
-        let runtime=app.try_state::<Arc<debug_backend::NativeDebugRuntime>>()
+        state
+            .trusted_native_worker_root(&project_id)
+            .map_err(|_| "FIN04REC_PROJECT_NOT_REGISTERED")?;
+        let runtime = app
+            .try_state::<Arc<debug_backend::NativeDebugRuntime>>()
             .ok_or("FIN04REC_NATIVE_SUPERVISOR_UNAVAILABLE")?;
-        let runtime=Arc::clone(runtime.inner());
-        let result=tauri::async_runtime::spawn_blocking(move||{
-            let original=runtime.inspect_control_evidence(&project_id)?;
-            if original.original_action_files_checked==0 ||
-                !original.global_unresolved_action_required {
+        let runtime = Arc::clone(runtime.inner());
+        let result = tauri::async_runtime::spawn_blocking(move || {
+            let original = runtime.inspect_control_evidence(&project_id)?;
+            if original.original_action_files_checked == 0
+                || !original.global_unresolved_action_required
+            {
                 return Err("FIN04REC_NO_SELECTED_PROJECT_ORIGINAL_ACTION".into());
             }
-            let approved=app.dialog()
+            let approved = app
+                .dialog()
                 .message(format!(
                     "Independently inspect interrupted native debugger action OS custody?\n\n\
                     Registered project: {project_id}\n\
@@ -2016,13 +2149,15 @@ async fn ide_debug_action_os_recovery(
                 return Err("FIN04REC_OPERATOR_DECLINED".into());
             }
             runtime.record_action_os_recovery(&project_id)
-        }).await.map_err(|_|"FIN04REC_NATIVE_TASK_INTERRUPTED".to_owned())??;
+        })
+        .await
+        .map_err(|_| "FIN04REC_NATIVE_TASK_INTERRUPTED".to_owned())??;
         return serde_json::to_value(result)
-            .map_err(|_|"FIN04REC_RECEIPT_SERIALIZATION_DENIED".into());
+            .map_err(|_| "FIN04REC_RECEIPT_SERIALIZATION_DENIED".into());
     }
-    #[cfg(not(all(feature="native-debug",any(windows,target_os="linux"))))]
+    #[cfg(not(all(feature = "native-debug", any(windows, target_os = "linux"))))]
     {
-        let _=(app,state,project_id);
+        let _ = (app, state, project_id);
         Err("FIN04REC_NATIVE_OS_SUPERVISOR_NOT_INSTALLED".into())
     }
 }
@@ -2030,28 +2165,32 @@ async fn ide_debug_action_os_recovery(
 /// accept an action token, OS witness boolean, PID, DAP command or path.
 #[tauri::command]
 async fn ide_debug_control_evidence(
- app:AppHandle,
- state:State<'_,Arc<IdeWorkspaceRegistry>>,
- project_id:String,
-)->Result<serde_json::Value,String>{
- #[cfg(all(feature="native-debug",any(windows,target_os="linux")))]
- {
-  state.trusted_native_worker_root(&project_id)
-   .map_err(|_|"FIN04_PROJECT_NOT_REGISTERED_OR_CLOSED")?;
-  let backend=app.try_state::<Arc<debug_backend::NativeDebugRuntime>>()
-   .ok_or("FIN04_NATIVE_DEBUG_SUPERVISOR_UNAVAILABLE")?;
-  let backend=Arc::clone(backend.inner());
-  let inventory=tauri::async_runtime::spawn_blocking(move||
-   backend.inspect_control_evidence(&project_id))
-   .await.map_err(|_|"FIN04_ACTION_EVIDENCE_TASK_INTERRUPTED".to_owned())??;
-  return serde_json::to_value(inventory)
-   .map_err(|_|"FIN04_ACTION_EVIDENCE_SERIALIZATION_FAILED".into());
- }
- #[cfg(not(all(feature="native-debug",any(windows,target_os="linux"))))]
- {
-  let _=(app,state,project_id);
-  Err("FIN04_NATIVE_DEBUG_EVIDENCE_NOT_INSTALLED".into())
- }
+    app: AppHandle,
+    state: State<'_, Arc<IdeWorkspaceRegistry>>,
+    project_id: String,
+) -> Result<serde_json::Value, String> {
+    #[cfg(all(feature = "native-debug", any(windows, target_os = "linux")))]
+    {
+        state
+            .trusted_native_worker_root(&project_id)
+            .map_err(|_| "FIN04_PROJECT_NOT_REGISTERED_OR_CLOSED")?;
+        let backend = app
+            .try_state::<Arc<debug_backend::NativeDebugRuntime>>()
+            .ok_or("FIN04_NATIVE_DEBUG_SUPERVISOR_UNAVAILABLE")?;
+        let backend = Arc::clone(backend.inner());
+        let inventory = tauri::async_runtime::spawn_blocking(move || {
+            backend.inspect_control_evidence(&project_id)
+        })
+        .await
+        .map_err(|_| "FIN04_ACTION_EVIDENCE_TASK_INTERRUPTED".to_owned())??;
+        return serde_json::to_value(inventory)
+            .map_err(|_| "FIN04_ACTION_EVIDENCE_SERIALIZATION_FAILED".into());
+    }
+    #[cfg(not(all(feature = "native-debug", any(windows, target_os = "linux"))))]
+    {
+        let _ = (app, state, project_id);
+        Err("FIN04_NATIVE_DEBUG_EVIDENCE_NOT_INSTALLED".into())
+    }
 }
 /// INT-04: original terminated, independently journal-matched native
 /// debugger session may supply only a read-only source-navigation proposal.
@@ -2089,38 +2228,43 @@ async fn ide_debug_review_stopped_source(
 /// stopped-source review, never a live owner or executable adapter command.
 #[tauri::command]
 async fn ide_debug_review_control_candidate(
- app:AppHandle,state:State<'_,Arc<IdeWorkspaceRegistry>>,
- project_id:String,job_id:String,plan_sha256:String,
- kind:String,
-)->Result<serde_json::Value,String>{
- #[cfg(all(feature="native-debug",any(windows,target_os="linux")))]
- {
-  let kind=match kind.as_str(){
-   "step_over"=>debug_backend::DebugControlReviewKind::StepOver,
-   "step_into"=>debug_backend::DebugControlReviewKind::StepInto,
-   "step_out"=>debug_backend::DebugControlReviewKind::StepOut,
-   "breakpoint_at_reviewed_line"=>
-     debug_backend::DebugControlReviewKind::BreakpointAtReviewedLine,
-   "inspect_reviewed_frame"=>
-     debug_backend::DebugControlReviewKind::InspectReviewedFrame,
-   _=>return Err("FIN04_UNKNOWN_READ_ONLY_CONTROL_KIND".into()),
-  };
-  let registry=Arc::clone(state.inner());
-  let runtime=app.try_state::<Arc<debug_backend::NativeDebugRuntime>>()
-   .ok_or("FIN04_NATIVE_DEBUG_SUPERVISOR_UNAVAILABLE")?;
-  let runtime=Arc::clone(runtime.inner());
-  let review=tauri::async_runtime::spawn_blocking(move||
-   runtime.review_control_candidate(
-    &registry,&project_id,&job_id,&plan_sha256,kind))
-    .await.map_err(|_|"FIN04_CONTROL_REVIEW_INTERRUPTED".to_owned())??;
-  return serde_json::to_value(review)
-   .map_err(|_|"FIN04_CONTROL_REVIEW_SERIALIZATION_FAILED".into());
- }
- #[cfg(not(all(feature="native-debug",any(windows,target_os="linux"))))]
- {
-  let _=(app,state,project_id,job_id,plan_sha256,kind);
-  Err("FIN04_NATIVE_DEBUG_CONTROL_REVIEW_UNAVAILABLE".into())
- }
+    app: AppHandle,
+    state: State<'_, Arc<IdeWorkspaceRegistry>>,
+    project_id: String,
+    job_id: String,
+    plan_sha256: String,
+    kind: String,
+) -> Result<serde_json::Value, String> {
+    #[cfg(all(feature = "native-debug", any(windows, target_os = "linux")))]
+    {
+        let kind = match kind.as_str() {
+            "step_over" => debug_backend::DebugControlReviewKind::StepOver,
+            "step_into" => debug_backend::DebugControlReviewKind::StepInto,
+            "step_out" => debug_backend::DebugControlReviewKind::StepOut,
+            "breakpoint_at_reviewed_line" => {
+                debug_backend::DebugControlReviewKind::BreakpointAtReviewedLine
+            }
+            "inspect_reviewed_frame" => debug_backend::DebugControlReviewKind::InspectReviewedFrame,
+            _ => return Err("FIN04_UNKNOWN_READ_ONLY_CONTROL_KIND".into()),
+        };
+        let registry = Arc::clone(state.inner());
+        let runtime = app
+            .try_state::<Arc<debug_backend::NativeDebugRuntime>>()
+            .ok_or("FIN04_NATIVE_DEBUG_SUPERVISOR_UNAVAILABLE")?;
+        let runtime = Arc::clone(runtime.inner());
+        let review = tauri::async_runtime::spawn_blocking(move || {
+            runtime.review_control_candidate(&registry, &project_id, &job_id, &plan_sha256, kind)
+        })
+        .await
+        .map_err(|_| "FIN04_CONTROL_REVIEW_INTERRUPTED".to_owned())??;
+        return serde_json::to_value(review)
+            .map_err(|_| "FIN04_CONTROL_REVIEW_SERIALIZATION_FAILED".into());
+    }
+    #[cfg(not(all(feature = "native-debug", any(windows, target_os = "linux"))))]
+    {
+        let _ = (app, state, project_id, job_id, plan_sha256, kind);
+        Err("FIN04_NATIVE_DEBUG_CONTROL_REVIEW_UNAVAILABLE".into())
+    }
 }
 #[tauri::command]
 async fn ide_debug_run_fixture(
@@ -2192,46 +2336,56 @@ async fn ide_debug_run_project(
 /// is accepted from the renderer.
 #[tauri::command]
 async fn ide_debug_review_release_action(
-    app:AppHandle,
-    registry:State<'_,Arc<IdeWorkspaceRegistry>>,
-    project_id:String,kind:String,
-)->Result<serde_json::Value,String>{
-    #[cfg(all(windows,feature="fin04-release-event-observer",
-        feature="native-project-debug"))]
+    app: AppHandle,
+    registry: State<'_, Arc<IdeWorkspaceRegistry>>,
+    project_id: String,
+    kind: String,
+) -> Result<serde_json::Value, String> {
+    #[cfg(all(
+        windows,
+        feature = "fin04-release-event-observer",
+        feature = "native-project-debug"
+    ))]
     {
-        let action=match kind.as_str(){
-            "stepOver"=>debug_backend::ReviewedNativeAction::StepOver,
-            "breakpointAtVerifiedLine"=>
-                debug_backend::ReviewedNativeAction::SameLineBreakpoint,
-            _=>return Err("FIN04R_REVIEW_KIND_UNSUPPORTED".into()),
+        let action = match kind.as_str() {
+            "stepOver" => debug_backend::ReviewedNativeAction::StepOver,
+            "breakpointAtVerifiedLine" => debug_backend::ReviewedNativeAction::SameLineBreakpoint,
+            _ => return Err("FIN04R_REVIEW_KIND_UNSUPPORTED".into()),
         };
-        let debug=app.try_state::<Arc<debug_backend::NativeDebugRuntime>>()
+        let debug = app
+            .try_state::<Arc<debug_backend::NativeDebugRuntime>>()
             .ok_or("FIN04R_DEBUG_HOST_UNAVAILABLE")?;
-        let builds=app.try_state::<Arc<build_backend::NativeBuildRuntime>>()
+        let builds = app
+            .try_state::<Arc<build_backend::NativeBuildRuntime>>()
             .ok_or("FIN04R_BUILD_PROVENANCE_UNAVAILABLE")?;
-        let debug=Arc::clone(debug.inner());
-        let builds=Arc::clone(builds.inner());
-        let registry=Arc::clone(registry.inner());
-        let witness=tauri::async_runtime::spawn_blocking(move||{
-            let target=builds.native_project_debug_target(&project_id)?;
-            debug.run_project_release_review(
-                &app,&registry,&project_id,target,action)
-        }).await.map_err(|_|"FIN04R_REVIEW_NATIVE_THREAD_INTERRUPTED".to_owned())??;
-        if witness.operation_outcome_code!=
-            Some("release_one_use_human_review_revoked_no_dispatch") ||
-           witness.operation_receipt_sha256.is_none() ||
-           !witness.release_owner_source_line_verified ||
-           witness.release_owner_control_authorized ||
-           witness.installed_app_accepted {
+        let debug = Arc::clone(debug.inner());
+        let builds = Arc::clone(builds.inner());
+        let registry = Arc::clone(registry.inner());
+        let witness = tauri::async_runtime::spawn_blocking(move || {
+            let target = builds.native_project_debug_target(&project_id)?;
+            debug.run_project_release_review(&app, &registry, &project_id, target, action)
+        })
+        .await
+        .map_err(|_| "FIN04R_REVIEW_NATIVE_THREAD_INTERRUPTED".to_owned())??;
+        if witness.operation_outcome_code
+            != Some("release_one_use_human_review_revoked_no_dispatch")
+            || witness.operation_receipt_sha256.is_none()
+            || !witness.release_owner_source_line_verified
+            || witness.release_owner_control_authorized
+            || witness.installed_app_accepted
+        {
             return Err("FIN04R_REVIEW_RECEIPT_OR_PROTECTED_PDB_MISSING".into());
         }
         return serde_json::to_value(witness)
-            .map_err(|_|"FIN04R_REVIEW_EVIDENCE_SERIALIZATION_DENIED".into());
+            .map_err(|_| "FIN04R_REVIEW_EVIDENCE_SERIALIZATION_DENIED".into());
     }
-    #[cfg(not(all(windows,feature="fin04-release-event-observer",
-        feature="native-project-debug")))]
+    #[cfg(not(all(
+        windows,
+        feature = "fin04-release-event-observer",
+        feature = "native-project-debug"
+    )))]
     {
-        let _=(app,registry,project_id,kind);
+        let _ = (app, registry, project_id, kind);
         Err("FIN04R_RELEASE_ACTION_REVIEW_NOT_INSTALLED".into())
     }
 }
@@ -2416,14 +2570,21 @@ async fn ide_debug_reconcile(
 /// This command only clears the exact stale admission marker after fresh
 /// Windows Job Object or delegated Linux cgroup checks and durable receipts.
 #[tauri::command]
-async fn ide_fin01_clear_stale_marker(app:AppHandle)
- ->Result<serde_json::Value,String>{
- #[cfg(all(any(windows,target_os="linux"),
-   any(feature="native-build",feature="native-debug",feature="native-lsp")))]
- {
-  let profile=app.path().app_data_dir()
-   .map_err(|_|"FIN01_PROFILE_UNAVAILABLE")?;
-  return tauri::async_runtime::spawn_blocking(move||{
+async fn ide_fin01_clear_stale_marker(app: AppHandle) -> Result<serde_json::Value, String> {
+    #[cfg(all(
+        any(windows, target_os = "linux"),
+        any(
+            feature = "native-build",
+            feature = "native-debug",
+            feature = "native-lsp"
+        )
+    ))]
+    {
+        let profile = app
+            .path()
+            .app_data_dir()
+            .map_err(|_| "FIN01_PROFILE_UNAVAILABLE")?;
+        return tauri::async_runtime::spawn_blocking(move||{
    let consent=app.dialog().message(
     "Reconcile the previous FIN-01 global admission marker?\n\nThis is NOT a new worker grant. The native host will re-read all original job journals, verify the previous owner exited, and query actual Windows Job Objects or the Linux delegated cgroup-v2 hierarchy. If anything is missing, busy or uncertain, the marker stays blocked. No project code will run or be retried.")
     .title("Lu IDE · Verify global OS custody")
@@ -2437,32 +2598,57 @@ async fn ide_fin01_clear_stale_marker(app:AppHandle)
    serde_json::to_value(witness)
     .map_err(|_|"FIN01_GLOBAL_KERNEL_RECEIPT_UNSERIALIZABLE".to_owned())
   }).await.map_err(|_|"FIN01_KERNEL_RECOVERY_TASK_INTERRUPTED".to_owned())?;
- }
- #[cfg(not(all(any(windows,target_os="linux"),
-   any(feature="native-build",feature="native-debug",feature="native-lsp"))))]
- {
-  let _=app;
-  Err("FIN01_NATIVE_KERNEL_RECOVERY_UNAVAILABLE".into())
- }
+    }
+    #[cfg(not(all(
+        any(windows, target_os = "linux"),
+        any(
+            feature = "native-build",
+            feature = "native-debug",
+            feature = "native-lsp"
+        )
+    )))]
+    {
+        let _ = app;
+        Err("FIN01_NATIVE_KERNEL_RECOVERY_UNAVAILABLE".into())
+    }
 }
 #[tauri::command]
-async fn ide_fin01_recovery_assessment(app:AppHandle)
- ->Result<serde_json::Value,String>{
- #[cfg(all(any(windows,target_os="linux"),any(feature="native-build",feature="native-debug",feature="native-lsp")))]
- {
-  let profile=app.path().app_data_dir()
-   .map_err(|_|"FIN01_PROFILE_UNAVAILABLE")?;
-  return tauri::async_runtime::spawn_blocking(move||
-    crate::global_native_custody::assess_global_recovery(&profile))
-   .await.map_err(|_|"FIN01_RECOVERY_ASSESSMENT_INTERRUPTED".to_owned())?
-   .and_then(|value|serde_json::to_value(value)
-     .map_err(|_|"FIN01_RECOVERY_ASSESSMENT_SERIALIZATION_FAILED".to_owned()));
- }
- #[cfg(not(all(any(windows,target_os="linux"),any(feature="native-build",feature="native-debug",feature="native-lsp"))))]
- {
-  let _=app;
-  Err("FIN01_NATIVE_SUPERVISORS_NOT_INSTALLED".into())
- }
+async fn ide_fin01_recovery_assessment(app: AppHandle) -> Result<serde_json::Value, String> {
+    #[cfg(all(
+        any(windows, target_os = "linux"),
+        any(
+            feature = "native-build",
+            feature = "native-debug",
+            feature = "native-lsp"
+        )
+    ))]
+    {
+        let profile = app
+            .path()
+            .app_data_dir()
+            .map_err(|_| "FIN01_PROFILE_UNAVAILABLE")?;
+        return tauri::async_runtime::spawn_blocking(move || {
+            crate::global_native_custody::assess_global_recovery(&profile)
+        })
+        .await
+        .map_err(|_| "FIN01_RECOVERY_ASSESSMENT_INTERRUPTED".to_owned())?
+        .and_then(|value| {
+            serde_json::to_value(value)
+                .map_err(|_| "FIN01_RECOVERY_ASSESSMENT_SERIALIZATION_FAILED".to_owned())
+        });
+    }
+    #[cfg(not(all(
+        any(windows, target_os = "linux"),
+        any(
+            feature = "native-build",
+            feature = "native-debug",
+            feature = "native-lsp"
+        )
+    )))]
+    {
+        let _ = app;
+        Err("FIN01_NATIVE_SUPERVISORS_NOT_INSTALLED".into())
+    }
 }
 
 #[tauri::command]
@@ -2622,8 +2808,7 @@ async fn ide_build_review_test_target(
         let native = Arc::clone(runtime.inner());
         let registry = Arc::clone(registry.inner());
         let result = tauri::async_runtime::spawn_blocking(move || {
-            native.review_test_case_target(
-                &registry,&project_id,&job_id,&plan_sha256,&case_id)
+            native.review_test_case_target(&registry, &project_id, &job_id, &plan_sha256, &case_id)
         })
         .await
         .map_err(|_| "INT03E_REVIEW_THREAD_UNAVAILABLE")??;
@@ -2632,7 +2817,7 @@ async fn ide_build_review_test_target(
     }
     #[cfg(not(all(feature = "native-build", any(windows, target_os = "linux"))))]
     {
-        let _=(app,registry,project_id,job_id,plan_sha256,case_id);
+        let _ = (app, registry, project_id, job_id, plan_sha256, case_id);
         Err("INT03E_NATIVE_EVIDENCE_UNAVAILABLE".into())
     }
 }
@@ -2653,16 +2838,28 @@ async fn ide_build_run_profile(
         let native = Arc::clone(runtime.inner());
         let registry = Arc::clone(registry.inner());
         let result = tauri::async_runtime::spawn_blocking(move || {
-            native.run_profile(&app, &registry, &project_id,
-                &recipe_id, &expected_manifest_sha256)
+            native.run_profile(
+                &app,
+                &registry,
+                &project_id,
+                &recipe_id,
+                &expected_manifest_sha256,
+            )
         })
         .await
         .map_err(|_| "INT03_NATIVE_EXECUTION_TASK_UNAVAILABLE")??;
-        return serde_json::to_value(result).map_err(|_| "INT03_RECEIPT_SERIALIZATION_DENIED".into());
+        return serde_json::to_value(result)
+            .map_err(|_| "INT03_RECEIPT_SERIALIZATION_DENIED".into());
     }
     #[cfg(not(all(feature = "native-build", any(windows, target_os = "linux"))))]
     {
-        let _ = (app, registry, project_id, recipe_id, expected_manifest_sha256);
+        let _ = (
+            app,
+            registry,
+            project_id,
+            recipe_id,
+            expected_manifest_sha256,
+        );
         Err("INT03_PROTECTED_RUNTIME_UNAVAILABLE".into())
     }
 }
@@ -2672,28 +2869,56 @@ async fn ide_build_run_profile(
 /// CTest source macros do not grant executable exact-test authority.
 #[tauri::command]
 async fn ide_run_protected_framework_test_case(
-    app:AppHandle,registry:State<'_,Arc<IdeWorkspaceRegistry>>,
-    project_id:String,relative_path:String,case_name:String,
-    expected_source_revision:String,expected_manifest_sha256:String
-)->Result<serde_json::Value,String>{
-    #[cfg(all(feature="native-build",feature="native-multilang",any(windows,target_os="linux")))]
+    app: AppHandle,
+    registry: State<'_, Arc<IdeWorkspaceRegistry>>,
+    project_id: String,
+    relative_path: String,
+    case_name: String,
+    expected_source_revision: String,
+    expected_manifest_sha256: String,
+) -> Result<serde_json::Value, String> {
+    #[cfg(all(
+        feature = "native-build",
+        feature = "native-multilang",
+        any(windows, target_os = "linux")
+    ))]
     {
-        let runtime=app.try_state::<Arc<build_backend::NativeBuildRuntime>>()
+        let runtime = app
+            .try_state::<Arc<build_backend::NativeBuildRuntime>>()
             .ok_or("FIN04H_PROTECTED_BUILD_HOST_UNAVAILABLE")?;
-        let runtime=Arc::clone(runtime.inner());
-        let registry=Arc::clone(registry.inner());
-        let result=tauri::async_runtime::spawn_blocking(move||
-            runtime.run_selected_framework_case(&app,&registry,&project_id,
-                &relative_path,&case_name,&expected_source_revision,
-                &expected_manifest_sha256))
-            .await.map_err(|_|"FIN04H_PROTECTED_TEST_THREAD_INTERRUPTED".to_owned())??;
+        let runtime = Arc::clone(runtime.inner());
+        let registry = Arc::clone(registry.inner());
+        let result = tauri::async_runtime::spawn_blocking(move || {
+            runtime.run_selected_framework_case(
+                &app,
+                &registry,
+                &project_id,
+                &relative_path,
+                &case_name,
+                &expected_source_revision,
+                &expected_manifest_sha256,
+            )
+        })
+        .await
+        .map_err(|_| "FIN04H_PROTECTED_TEST_THREAD_INTERRUPTED".to_owned())??;
         return serde_json::to_value(result)
-            .map_err(|_|"FIN04H_TEST_RECEIPT_SERIALIZATION_DENIED".into());
+            .map_err(|_| "FIN04H_TEST_RECEIPT_SERIALIZATION_DENIED".into());
     }
-    #[cfg(not(all(feature="native-build",feature="native-multilang",any(windows,target_os="linux"))))]
+    #[cfg(not(all(
+        feature = "native-build",
+        feature = "native-multilang",
+        any(windows, target_os = "linux")
+    )))]
     {
-        let _=(app,registry,project_id,relative_path,case_name,
-            expected_source_revision,expected_manifest_sha256);
+        let _ = (
+            app,
+            registry,
+            project_id,
+            relative_path,
+            case_name,
+            expected_source_revision,
+            expected_manifest_sha256,
+        );
         Err("FIN04H_OS_FRAMEWORK_WORKER_NOT_INSTALLED".into())
     }
 }
@@ -2701,30 +2926,50 @@ async fn ide_run_protected_framework_test_case(
 /// OS process, exact libtest name filter and a separate native user grant.
 #[tauri::command]
 async fn ide_run_protected_rust_test_case(
- app:AppHandle,registry:State<'_,Arc<IdeWorkspaceRegistry>>,
- project_id:String,relative_path:String,case_name:String,
- expected_source_revision:String,expected_manifest_sha256:String
-)->Result<serde_json::Value,String>{
- #[cfg(all(feature="native-build",any(windows,target_os="linux")))]
- {
-    let runtime=app.try_state::<Arc<build_backend::NativeBuildRuntime>>()
-        .ok_or("FIN04_PROTECTED_BUILD_HOST_UNAVAILABLE")?;
-    let runtime=Arc::clone(runtime.inner());
-    let registry=Arc::clone(registry.inner());
-    let result=tauri::async_runtime::spawn_blocking(move||
-        runtime.run_selected_rust_case(&app,&registry,&project_id,
-          &relative_path,&case_name,&expected_source_revision,
-          &expected_manifest_sha256))
-        .await.map_err(|_|"FIN04_PROTECTED_TEST_THREAD_INTERRUPTED".to_owned())??;
-    return serde_json::to_value(result)
-        .map_err(|_|"FIN04_TEST_RECEIPT_SERIALIZATION_DENIED".into());
- }
- #[cfg(not(all(feature="native-build",any(windows,target_os="linux"))))]
- {
-   let _=(app,registry,project_id,relative_path,case_name,
-      expected_source_revision,expected_manifest_sha256);
-   Err("FIN04_OS_TEST_WORKER_NOT_INSTALLED".into())
- }
+    app: AppHandle,
+    registry: State<'_, Arc<IdeWorkspaceRegistry>>,
+    project_id: String,
+    relative_path: String,
+    case_name: String,
+    expected_source_revision: String,
+    expected_manifest_sha256: String,
+) -> Result<serde_json::Value, String> {
+    #[cfg(all(feature = "native-build", any(windows, target_os = "linux")))]
+    {
+        let runtime = app
+            .try_state::<Arc<build_backend::NativeBuildRuntime>>()
+            .ok_or("FIN04_PROTECTED_BUILD_HOST_UNAVAILABLE")?;
+        let runtime = Arc::clone(runtime.inner());
+        let registry = Arc::clone(registry.inner());
+        let result = tauri::async_runtime::spawn_blocking(move || {
+            runtime.run_selected_rust_case(
+                &app,
+                &registry,
+                &project_id,
+                &relative_path,
+                &case_name,
+                &expected_source_revision,
+                &expected_manifest_sha256,
+            )
+        })
+        .await
+        .map_err(|_| "FIN04_PROTECTED_TEST_THREAD_INTERRUPTED".to_owned())??;
+        return serde_json::to_value(result)
+            .map_err(|_| "FIN04_TEST_RECEIPT_SERIALIZATION_DENIED".into());
+    }
+    #[cfg(not(all(feature = "native-build", any(windows, target_os = "linux"))))]
+    {
+        let _ = (
+            app,
+            registry,
+            project_id,
+            relative_path,
+            case_name,
+            expected_source_revision,
+            expected_manifest_sha256,
+        );
+        Err("FIN04_OS_TEST_WORKER_NOT_INSTALLED".into())
+    }
 }
 #[tauri::command]
 async fn ide_build_start(
@@ -2845,30 +3090,39 @@ async fn ide_discover_conventional_tests(
 #[tauri::command]
 async fn ide_inspect_saved_test_symbols(
     registry: State<'_, Arc<IdeWorkspaceRegistry>>,
-    project_id:String,relative_path:String,
-)->Result<lu_ide_workspace::conventional_tests::TestSymbolInspection,String>{
-    let registry=Arc::clone(registry.inner());
-    tauri::async_runtime::spawn_blocking(move||
-        registry.inspect_test_symbol_candidates(&project_id,&relative_path))
-        .await.map_err(|_|"FIN04_SYMBOL_READER_UNAVAILABLE".to_owned())?
-        .map_err(str::to_owned)
+    project_id: String,
+    relative_path: String,
+) -> Result<lu_ide_workspace::conventional_tests::TestSymbolInspection, String> {
+    let registry = Arc::clone(registry.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        registry.inspect_test_symbol_candidates(&project_id, &relative_path)
+    })
+    .await
+    .map_err(|_| "FIN04_SYMBOL_READER_UNAVAILABLE".to_owned())?
+    .map_err(str::to_owned)
 }
 
 /// FIN-05B: exact vcpkg declaration diff, no file write or package process.
 #[tauri::command]
 async fn ide_preview_exact_vcpkg_manifest_edit(
     registry: State<'_, Arc<IdeWorkspaceRegistry>>,
-    project_id:String,
-    request:lu_ide_workspace::package_preview::PackagePreviewRequest,
-    expected_preview_sha256:String,
-    expected_evidence_fingerprint:String,
-)->Result<lu_ide_workspace::package_manifest_edits::VcpkgManifestEdit,String>{
-    let native=Arc::clone(registry.inner());
-    tauri::async_runtime::spawn_blocking(move||
-        native.prepare_exact_vcpkg_edit(&project_id,request,
-            &expected_preview_sha256,&expected_evidence_fingerprint))
-        .await.map_err(|_|"FIN05_VCPKG_REVIEW_THREAD_UNAVAILABLE".to_owned())?
-        .map_err(str::to_owned)
+    project_id: String,
+    request: lu_ide_workspace::package_preview::PackagePreviewRequest,
+    expected_preview_sha256: String,
+    expected_evidence_fingerprint: String,
+) -> Result<lu_ide_workspace::package_manifest_edits::VcpkgManifestEdit, String> {
+    let native = Arc::clone(registry.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        native.prepare_exact_vcpkg_edit(
+            &project_id,
+            request,
+            &expected_preview_sha256,
+            &expected_evidence_fingerprint,
+        )
+    })
+    .await
+    .map_err(|_| "FIN05_VCPKG_REVIEW_THREAD_UNAVAILABLE".to_owned())?
+    .map_err(str::to_owned)
 }
 
 /// FIN-05C: one user-confirmed source-manifest replacement. This is not
@@ -2876,63 +3130,92 @@ async fn ide_preview_exact_vcpkg_manifest_edit(
 /// process arguments, source bytes, URLs or human approval from the WebView.
 #[tauri::command]
 async fn ide_apply_reviewed_vcpkg_manifest_edit(
-    app:AppHandle,
-    registry:State<'_,Arc<IdeWorkspaceRegistry>>,
-    gate:State<'_,Arc<Fin05ManifestMutationGate>>,
-    project_id:String,
-    request:lu_ide_workspace::package_preview::PackagePreviewRequest,
-    expected_preview_sha256:String,
-    expected_evidence_fingerprint:String,
-    expected_original_revision:String,
-    expected_proposed_revision:String,
-)->Result<serde_json::Value,String>{
-    let registry=Arc::clone(registry.inner());
-    let gate=Arc::clone(gate.inner());
-    tauri::async_runtime::spawn_blocking(move||{
-        let _one_use=gate.0.try_lock()
-            .map_err(|_|"FIN05_MANIFEST_EDIT_ALREADY_ACTIVE".to_owned())?;
-        let before=registry.prepare_exact_vcpkg_edit(
-            &project_id,request.clone(),&expected_preview_sha256,
-            &expected_evidence_fingerprint).map_err(str::to_owned)?;
-        if before.expected_revision!=expected_original_revision ||
-            before.proposed_revision!=expected_proposed_revision ||
-            before.process_started || before.files_modified ||
-            before.execution_authorized || before.packages_installed {
+    app: AppHandle,
+    registry: State<'_, Arc<IdeWorkspaceRegistry>>,
+    gate: State<'_, Arc<Fin05ManifestMutationGate>>,
+    project_id: String,
+    request: lu_ide_workspace::package_preview::PackagePreviewRequest,
+    expected_preview_sha256: String,
+    expected_evidence_fingerprint: String,
+    expected_original_revision: String,
+    expected_proposed_revision: String,
+) -> Result<serde_json::Value, String> {
+    let registry = Arc::clone(registry.inner());
+    let gate = Arc::clone(gate.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        let _one_use = gate
+            .0
+            .try_lock()
+            .map_err(|_| "FIN05_MANIFEST_EDIT_ALREADY_ACTIVE".to_owned())?;
+        let before = registry
+            .prepare_exact_vcpkg_edit(
+                &project_id,
+                request.clone(),
+                &expected_preview_sha256,
+                &expected_evidence_fingerprint,
+            )
+            .map_err(str::to_owned)?;
+        if before.expected_revision != expected_original_revision
+            || before.proposed_revision != expected_proposed_revision
+            || before.process_started
+            || before.files_modified
+            || before.execution_authorized
+            || before.packages_installed
+        {
             return Err("FIN05_SAVED_MANIFEST_CHANGED_REVIEW_AGAIN".to_owned());
         }
         // Native dialog, no web-granted boolean, bounded 30-second refusal.
-        let (sender,receiver)=std::sync::mpsc::sync_channel(1);
+        let (sender, receiver) = std::sync::mpsc::sync_channel(1);
         app.dialog()
             .message(format!(
                 "Approve ONE vcpkg.json dependency declaration edit?\n\
                  Operation: {}\nDependency: {}\n\
                  Source: {}\nProposed SHA-256: {}\n\
                  This changes ONLY vcpkg.json. No packages are installed.",
-                 before.operation,before.dependency_name,
-                 before.expected_revision,before.proposed_revision))
+                before.operation,
+                before.dependency_name,
+                before.expected_revision,
+                before.proposed_revision
+            ))
             .title("Lu IDE · review and save package declaration")
             .buttons(MessageDialogButtons::OkCancelCustom(
-                "Approve this exact file edit".into(),"Decline".into()))
-            .show(move|confirmed|{let _=sender.try_send(confirmed);});
-        let allowed=receiver.recv_timeout(std::time::Duration::from_secs(30))
+                "Approve this exact file edit".into(),
+                "Decline".into(),
+            ))
+            .show(move |confirmed| {
+                let _ = sender.try_send(confirmed);
+            });
+        let allowed = receiver
+            .recv_timeout(std::time::Duration::from_secs(30))
             .unwrap_or(false);
         if !allowed {
             return Err("FIN05_HUMAN_DECLINED_OR_MODAL_TIMED_OUT".to_owned());
         }
         // Fresh native package evidence AND original source revision after
         // dialog, immediately before the already revision-checked save.
-        let fresh=registry.prepare_exact_vcpkg_edit(
-            &project_id,request,&expected_preview_sha256,
-            &expected_evidence_fingerprint).map_err(str::to_owned)?;
-        if fresh.expected_revision!=before.expected_revision ||
-            fresh.proposed_revision!=before.proposed_revision ||
-            fresh.preview_sha256!=before.preview_sha256 ||
-            fresh.evidence_fingerprint!=before.evidence_fingerprint {
+        let fresh = registry
+            .prepare_exact_vcpkg_edit(
+                &project_id,
+                request,
+                &expected_preview_sha256,
+                &expected_evidence_fingerprint,
+            )
+            .map_err(str::to_owned)?;
+        if fresh.expected_revision != before.expected_revision
+            || fresh.proposed_revision != before.proposed_revision
+            || fresh.preview_sha256 != before.preview_sha256
+            || fresh.evidence_fingerprint != before.evidence_fingerprint
+        {
             return Err("FIN05_EDIT_CHANGED_DURING_NATIVE_CONSENT".to_owned());
         }
-        let saved=registry.save_source_file(&project_id,"vcpkg.json",
-            &fresh.expected_revision,&fresh.proposed_text)
-            .map_err(|e|e.code().to_owned())?;
+        let saved = registry
+            .save_source_file(
+                &project_id,
+                "vcpkg.json",
+                &fresh.expected_revision,
+                &fresh.proposed_text,
+            )
+            .map_err(|e| e.code().to_owned())?;
         Ok(serde_json::json!({
             "projectId":project_id,"relativePath":"vcpkg.json",
             "previousRevision":fresh.expected_revision,
@@ -2944,7 +3227,9 @@ async fn ide_apply_reviewed_vcpkg_manifest_edit(
             "lockfileResolved":false,"installedAppAccepted":false,
             "executionAuthorizedByManifestEdit":false
         }))
-    }).await.map_err(|_|"FIN05_MANIFEST_EDIT_THREAD_UNAVAILABLE".to_owned())?
+    })
+    .await
+    .map_err(|_| "FIN05_MANIFEST_EDIT_THREAD_UNAVAILABLE".to_owned())?
 }
 
 /// IDE-05.1 manager-of-managers read-only detection. The WebView supplies
@@ -3110,8 +3395,8 @@ async fn ide_lsp_runtime_state(app: AppHandle) -> String {
     {
         if let Some(state) = app.try_state::<Arc<lsp_backend::NativeLspRuntime>>() {
             let native = Arc::clone(state.inner());
-            return tauri::async_runtime::spawn_blocking(move ||
-                native.poll_status().to_owned()).await
+            return tauri::async_runtime::spawn_blocking(move || native.poll_status().to_owned())
+                .await
                 .unwrap_or_else(|_| "reconciliation_required".into());
         }
     }
@@ -3122,19 +3407,24 @@ async fn ide_lsp_runtime_state(app: AppHandle) -> String {
 async fn ide_lsp_worker_status(app: AppHandle) -> LanguageWorkerStatus {
     #[cfg(all(any(windows, target_os = "linux"), feature = "native-lsp"))]
     {
-        let native = app.try_state::<Arc<lsp_backend::NativeLspRuntime>>()
+        let native = app
+            .try_state::<Arc<lsp_backend::NativeLspRuntime>>()
             .map(|state| Arc::clone(state.inner()));
         let (supported, semantic, providers, phase) =
             tauri::async_runtime::spawn_blocking(move || {
                 if let Some(native) = native {
-                    (lsp_backend::installed_languages(&app),
-                     lsp_backend::installed_semantic_languages(&app),
-                     lsp_backend::installed_provider_ids(&app),
-                     native.poll_status())
+                    (
+                        lsp_backend::installed_languages(&app),
+                        lsp_backend::installed_semantic_languages(&app),
+                        lsp_backend::installed_provider_ids(&app),
+                        native.poll_status(),
+                    )
                 } else {
                     (Vec::new(), Vec::new(), Vec::new(), "unavailable")
                 }
-            }).await.unwrap_or_default();
+            })
+            .await
+            .unwrap_or_default();
         if phase == "reconciliation_required" {
             return LanguageWorkerStatus {
                 ready: false,
@@ -3209,15 +3499,18 @@ async fn ide_lsp_open_document(
 ) -> Result<serde_json::Value, String> {
     #[cfg(all(any(windows, target_os = "linux"), feature = "native-lsp"))]
     {
-        let state = app.try_state::<Arc<lsp_backend::NativeLspRuntime>>()
+        let state = app
+            .try_state::<Arc<lsp_backend::NativeLspRuntime>>()
             .ok_or("LSP_NATIVE_WORKER_UNAVAILABLE")?;
         let native = Arc::clone(state.inner());
         let registry = Arc::clone(registry.inner());
         let typed = serde_json::from_value::<lsp_backend::LspRequest>(request)
             .map_err(|_| "LSP_INVALID_REQUEST")?;
-        return tauri::async_runtime::spawn_blocking(move ||
-            native.open_document(&registry, typed)).await
-            .map_err(|_| "LSP_NATIVE_THREAD_UNAVAILABLE".to_owned())?;
+        return tauri::async_runtime::spawn_blocking(move || {
+            native.open_document(&registry, typed)
+        })
+        .await
+        .map_err(|_| "LSP_NATIVE_THREAD_UNAVAILABLE".to_owned())?;
     }
     #[cfg(not(all(any(windows, target_os = "linux"), feature = "native-lsp")))]
     {
@@ -3226,19 +3519,17 @@ async fn ide_lsp_open_document(
     }
 }
 #[tauri::command]
-async fn ide_lsp_close_document(
-    app: AppHandle,
-    request: serde_json::Value,
-) -> Result<(), String> {
+async fn ide_lsp_close_document(app: AppHandle, request: serde_json::Value) -> Result<(), String> {
     #[cfg(all(any(windows, target_os = "linux"), feature = "native-lsp"))]
     {
-        let state = app.try_state::<Arc<lsp_backend::NativeLspRuntime>>()
+        let state = app
+            .try_state::<Arc<lsp_backend::NativeLspRuntime>>()
             .ok_or("LSP_NATIVE_WORKER_UNAVAILABLE")?;
         let native = Arc::clone(state.inner());
         let typed = serde_json::from_value::<lsp_backend::LspRequest>(request)
             .map_err(|_| "LSP_INVALID_REQUEST")?;
-        return tauri::async_runtime::spawn_blocking(move ||
-            native.close_document(typed)).await
+        return tauri::async_runtime::spawn_blocking(move || native.close_document(typed))
+            .await
             .map_err(|_| "LSP_NATIVE_THREAD_UNAVAILABLE".to_owned())?;
     }
     #[cfg(not(all(any(windows, target_os = "linux"), feature = "native-lsp")))]
@@ -3329,12 +3620,13 @@ async fn ide_lsp_project_diagnostics(
 ) -> Result<serde_json::Value, String> {
     #[cfg(all(any(windows, target_os = "linux"), feature = "native-lsp"))]
     {
-        let state = app.try_state::<Arc<lsp_backend::NativeLspRuntime>>()
+        let state = app
+            .try_state::<Arc<lsp_backend::NativeLspRuntime>>()
             .ok_or("LSP_NATIVE_WORKER_UNAVAILABLE")?;
         let native = Arc::clone(state.inner());
         let registry = Arc::clone(registry.inner());
-        return tauri::async_runtime::spawn_blocking(move ||
-            native.project_diagnostics(&registry)).await
+        return tauri::async_runtime::spawn_blocking(move || native.project_diagnostics(&registry))
+            .await
             .map_err(|_| "LSP_NATIVE_THREAD_UNAVAILABLE".to_owned())?;
     }
     #[cfg(not(all(any(windows, target_os = "linux"), feature = "native-lsp")))]
@@ -3365,40 +3657,51 @@ async fn ide_lsp_stop_session(app: AppHandle) -> Result<(), String> {
 /// FIN-01D: discover ONLY this registered project's original interrupted
 /// LSP job IDs. Never a worker handle, execution token, source or foreign job.
 #[tauri::command]
-async fn ide_lsp_recoverable_jobs(app:AppHandle,project_id:String)
-    ->Result<Vec<String>,String>{
-    #[cfg(all(any(windows,target_os="linux"),feature="native-lsp"))]
+async fn ide_lsp_recoverable_jobs(
+    app: AppHandle,
+    project_id: String,
+) -> Result<Vec<String>, String> {
+    #[cfg(all(any(windows, target_os = "linux"), feature = "native-lsp"))]
     {
-        let native=app.try_state::<Arc<lsp_backend::NativeLspRuntime>>()
+        let native = app
+            .try_state::<Arc<lsp_backend::NativeLspRuntime>>()
             .ok_or("FIN01_LSP_NATIVE_SUPERVISOR_MISSING")?;
-        let native=Arc::clone(native.inner());
-        return tauri::async_runtime::spawn_blocking(move||
-            native.recoverable_jobs(&project_id))
-            .await.map_err(|_|"FIN01_LSP_RECOVERY_READ_INTERRUPTED".to_owned())?;
+        let native = Arc::clone(native.inner());
+        return tauri::async_runtime::spawn_blocking(move || native.recoverable_jobs(&project_id))
+            .await
+            .map_err(|_| "FIN01_LSP_RECOVERY_READ_INTERRUPTED".to_owned())?;
     }
-    #[cfg(not(all(any(windows,target_os="linux"),feature="native-lsp")))]
+    #[cfg(not(all(any(windows, target_os = "linux"), feature = "native-lsp")))]
     {
-        let _=(app,project_id);
+        let _ = (app, project_id);
         Err("FIN01_LSP_NATIVE_SUPERVISOR_NOT_INSTALLED".into())
     }
 }
 /// This requires its own physical native OS dialog and independently reaps
 /// an exact original cgroup/Windows Job. It cannot clear the global fence.
 #[tauri::command]
-async fn ide_lsp_reconcile(app:AppHandle,project_id:String,job_id:String)
-    ->Result<String,String>{
-    #[cfg(all(any(windows,target_os="linux"),feature="native-lsp"))]
+async fn ide_lsp_reconcile(
+    app: AppHandle,
+    project_id: String,
+    job_id: String,
+) -> Result<String, String> {
+    #[cfg(all(any(windows, target_os = "linux"), feature = "native-lsp"))]
     {
-        let native=app.try_state::<Arc<lsp_backend::NativeLspRuntime>>()
+        let native = app
+            .try_state::<Arc<lsp_backend::NativeLspRuntime>>()
             .ok_or("FIN01_LSP_NATIVE_SUPERVISOR_MISSING")?;
-        let native=Arc::clone(native.inner());
-        return tauri::async_runtime::spawn_blocking(move||
-            native.reconcile(&app,&project_id,&job_id).map(str::to_owned))
-            .await.map_err(|_|"FIN01_LSP_RECOVERY_TASK_INTERRUPTED".to_owned())?;
+        let native = Arc::clone(native.inner());
+        return tauri::async_runtime::spawn_blocking(move || {
+            native
+                .reconcile(&app, &project_id, &job_id)
+                .map(str::to_owned)
+        })
+        .await
+        .map_err(|_| "FIN01_LSP_RECOVERY_TASK_INTERRUPTED".to_owned())?;
     }
-    #[cfg(not(all(any(windows,target_os="linux"),feature="native-lsp")))]
+    #[cfg(not(all(any(windows, target_os = "linux"), feature = "native-lsp")))]
     {
-        let _=(app,project_id,job_id);
+        let _ = (app, project_id, job_id);
         Err("FIN01_LSP_NATIVE_SUPERVISOR_NOT_INSTALLED".into())
     }
 }
@@ -3409,7 +3712,6 @@ async fn ide_lsp_reconcile(app:AppHandle,project_id:String,job_id:String)
 async fn ide_list_language_servers() -> Vec<lu_ide_workspace::lsp::LanguageServerDescriptor> {
     lu_ide_workspace::lsp::available_servers().to_vec()
 }
-
 
 /// FIN-02: compile-time feature inventory only; not runtime readiness,
 /// worker authority, installer approval, or proof of installed resources.
@@ -3662,9 +3964,12 @@ async fn ide_quick_open_source_paths(
 ) -> Result<lu_ide_workspace::quick_open::QuickOpenResult, String> {
     let registry = Arc::clone(state.inner());
     tauri::async_runtime::spawn_blocking(move || {
-        registry.quick_open_source_paths(&project_id, &query)
+        registry
+            .quick_open_source_paths(&project_id, &query)
             .map_err(|error| error.code().to_owned())
-    }).await.map_err(|_| "INT01E_QUICK_OPEN_TASK_UNAVAILABLE".to_owned())?
+    })
+    .await
+    .map_err(|_| "INT01E_QUICK_OPEN_TASK_UNAVAILABLE".to_owned())?
 }
 
 /// IDE-INT01E: independently re-enumerate one directory for a sorted page.
@@ -3678,9 +3983,12 @@ async fn ide_list_source_directory_page(
 ) -> Result<lu_ide_workspace::quick_open::DirectoryPage, String> {
     let registry = Arc::clone(state.inner());
     tauri::async_runtime::spawn_blocking(move || {
-        registry.list_source_directory_page(&project_id, &relative_dir, after.as_deref())
+        registry
+            .list_source_directory_page(&project_id, &relative_dir, after.as_deref())
             .map_err(|error| error.code().to_owned())
-    }).await.map_err(|_| "INT01E_DIRECTORY_PAGE_TASK_UNAVAILABLE".to_owned())?
+    })
+    .await
+    .map_err(|_| "INT01E_DIRECTORY_PAGE_TASK_UNAVAILABLE".to_owned())?
 }
 
 /// B3: registered project, bounded literal saved-source search.
@@ -3863,21 +4171,35 @@ async fn ide_draft_discard(
 #[tauri::command]
 async fn ide_move_source_file(
     state: State<'_, Arc<IdeWorkspaceRegistry>>,
-    project_id: String, source_path: String, destination_path: String,
+    project_id: String,
+    source_path: String,
+    destination_path: String,
     expected_revision: String,
     ledger: State<'_, Arc<DevelopmentLedger>>,
 ) -> Result<lu_ide_workspace::source_file_transactions::FileOperationReceipt, String> {
     let registry = Arc::clone(state.inner());
     let ledger = Arc::clone(ledger.inner());
     tauri::async_runtime::spawn_blocking(move || {
-        let receipt = registry.move_source_file(
-            &project_id, &source_path, &destination_path, &expected_revision,
-        ).map_err(|error| error.code().to_owned())?;
-        observe(&ledger, &project_id, "source.move",
+        let receipt = registry
+            .move_source_file(
+                &project_id,
+                &source_path,
+                &destination_path,
+                &expected_revision,
+            )
+            .map_err(|error| error.code().to_owned())?;
+        observe(
+            &ledger,
+            &project_id,
+            "source.move",
             "File moved without replacing another file",
-            Some(&receipt.revision), receipt.current_relative_path.as_deref());
+            Some(&receipt.revision),
+            receipt.current_relative_path.as_deref(),
+        );
         Ok(receipt)
-    }).await.map_err(|_| "SOURCE_MOVE_TASK_UNAVAILABLE".to_owned())?
+    })
+    .await
+    .map_err(|_| "SOURCE_MOVE_TASK_UNAVAILABLE".to_owned())?
 }
 
 /// Project-local durable trash is a recoverable file-only action, not delete.
@@ -3885,47 +4207,69 @@ async fn ide_move_source_file(
 #[tauri::command]
 async fn ide_trash_source_file(
     state: State<'_, Arc<IdeWorkspaceRegistry>>,
-    project_id: String, source_path: String, expected_revision: String,
+    project_id: String,
+    source_path: String,
+    expected_revision: String,
     ledger: State<'_, Arc<DevelopmentLedger>>,
 ) -> Result<lu_ide_workspace::source_file_transactions::FileOperationReceipt, String> {
     let registry = Arc::clone(state.inner());
     let ledger = Arc::clone(ledger.inner());
     tauri::async_runtime::spawn_blocking(move || {
-        let receipt = registry.trash_source_file(
-            &project_id, &source_path, &expected_revision,
-        ).map_err(|error| error.code().to_owned())?;
-        observe(&ledger, &project_id, "source.trash",
+        let receipt = registry
+            .trash_source_file(&project_id, &source_path, &expected_revision)
+            .map_err(|error| error.code().to_owned())?;
+        observe(
+            &ledger,
+            &project_id,
+            "source.trash",
             "File placed in project-local recoverable trash",
-            Some(&receipt.revision), Some(&receipt.original_relative_path));
+            Some(&receipt.revision),
+            Some(&receipt.original_relative_path),
+        );
         Ok(receipt)
-    }).await.map_err(|_| "SOURCE_TRASH_TASK_UNAVAILABLE".to_owned())?
+    })
+    .await
+    .map_err(|_| "SOURCE_TRASH_TASK_UNAVAILABLE".to_owned())?
 }
 #[tauri::command]
 async fn ide_list_trashed_sources(
-    state: State<'_, Arc<IdeWorkspaceRegistry>>, project_id: String,
+    state: State<'_, Arc<IdeWorkspaceRegistry>>,
+    project_id: String,
 ) -> Result<Vec<lu_ide_workspace::source_file_transactions::TrashedFile>, String> {
     let registry = Arc::clone(state.inner());
     tauri::async_runtime::spawn_blocking(move || {
-        registry.list_trashed_source_files(&project_id)
+        registry
+            .list_trashed_source_files(&project_id)
             .map_err(|error| error.code().to_owned())
-    }).await.map_err(|_| "SOURCE_TRASH_LIST_TASK_UNAVAILABLE".to_owned())?
+    })
+    .await
+    .map_err(|_| "SOURCE_TRASH_LIST_TASK_UNAVAILABLE".to_owned())?
 }
 #[tauri::command]
 async fn ide_restore_source_file(
     state: State<'_, Arc<IdeWorkspaceRegistry>>,
-    project_id: String, token: String,
+    project_id: String,
+    token: String,
     ledger: State<'_, Arc<DevelopmentLedger>>,
 ) -> Result<lu_ide_workspace::source_file_transactions::FileOperationReceipt, String> {
     let registry = Arc::clone(state.inner());
     let ledger = Arc::clone(ledger.inner());
     tauri::async_runtime::spawn_blocking(move || {
-        let receipt = registry.restore_source_file(&project_id, &token)
+        let receipt = registry
+            .restore_source_file(&project_id, &token)
             .map_err(|error| error.code().to_owned())?;
-        observe(&ledger, &project_id, "source.restore",
+        observe(
+            &ledger,
+            &project_id,
+            "source.restore",
             "File restored exclusively from project-local trash",
-            Some(&receipt.revision), receipt.current_relative_path.as_deref());
+            Some(&receipt.revision),
+            receipt.current_relative_path.as_deref(),
+        );
         Ok(receipt)
-    }).await.map_err(|_| "SOURCE_RESTORE_TASK_UNAVAILABLE".to_owned())?
+    })
+    .await
+    .map_err(|_| "SOURCE_RESTORE_TASK_UNAVAILABLE".to_owned())?
 }
 
 /// Human-only native filesystem creation; the parent is an already-open,
@@ -3946,9 +4290,12 @@ async fn ide_create_source_entry(
             .create_source_entry(&project_id, &relative_dir, &name, &kind)
             .map_err(|error| error.code().to_owned())?;
         observe(
-            &ledger, &project_id, "source.create",
+            &ledger,
+            &project_id,
+            "source.create",
             "Empty source entry created through native project capability",
-            created.revision.as_deref(), Some(&created.relative_path),
+            created.revision.as_deref(),
+            Some(&created.relative_path),
         );
         Ok(created)
     })
@@ -4091,7 +4438,6 @@ async fn ide_discard_proposal(
     .map_err(|_| "INBOX_TASK_UNAVAILABLE".to_owned())?
 }
 
-
 // IDE-INT05-D: optional typed interactive terminal, never a general shell.
 // Every command is consumed once inside the native, project-bound session.
 // Only the existing fixed D3 runner can launch code; it still requires fresh
@@ -4102,7 +4448,8 @@ async fn ide_terminal_open(
     sessions: State<'_, Arc<terminal_broker::TerminalSessions>>,
     project_id: String,
 ) -> Result<terminal_broker::TerminalSessionView, String> {
-    registry.verify_open_source_project(&project_id)
+    registry
+        .verify_open_source_project(&project_id)
         .map_err(|_| "INT05D_REGISTERED_PROJECT_REQUIRED")?;
     sessions.open(&project_id).map_err(str::to_owned)
 }
@@ -4117,9 +4464,11 @@ async fn ide_terminal_submit(
     line: String,
     expected_manifest_sha256: Option<String>,
 ) -> Result<terminal_broker::TerminalReply, String> {
-    registry.verify_open_source_project(&project_id)
+    registry
+        .verify_open_source_project(&project_id)
         .map_err(|_| "INT05D_REGISTERED_PROJECT_REQUIRED")?;
-    let action = sessions.consume(&project_id, &session_id, sequence, &line)
+    let action = sessions
+        .consume(&project_id, &session_id, sequence, &line)
         .map_err(str::to_owned)?;
     use terminal_broker::{TerminalAction, TerminalReply};
     let (kind, message, value) = match action {
@@ -4135,80 +4484,104 @@ async fn ide_terminal_submit(
             }
             let registry = Arc::clone(registry.inner());
             let project = project_id.clone();
-            let report = tauri::async_runtime::spawn_blocking(move ||
-                registry.inspect_package_managers(&project).map_err(str::to_owned))
-                .await.map_err(|_|"INT05D_PACKAGE_INSPECTION_UNAVAILABLE")??;
-            ("packages", "Native read-only manifest inspection; no package manager executed.",
-                Some(serde_json::to_value(report).map_err(|_|"INT05D_SERIALIZE_DENIED")?))
+            let report = tauri::async_runtime::spawn_blocking(move || {
+                registry
+                    .inspect_package_managers(&project)
+                    .map_err(str::to_owned)
+            })
+            .await
+            .map_err(|_| "INT05D_PACKAGE_INSPECTION_UNAVAILABLE")??;
+            (
+                "packages",
+                "Native read-only manifest inspection; no package manager executed.",
+                Some(serde_json::to_value(report).map_err(|_| "INT05D_SERIALIZE_DENIED")?),
+            )
         }
         TerminalAction::Status | TerminalAction::Toolchains => {
             if expected_manifest_sha256.is_some() {
                 return Err("INT05D_UNEXPECTED_MANIFEST_IDENTITY".into());
             }
-            #[cfg(all(feature="native-build",any(windows,target_os="linux")))]
+            #[cfg(all(feature = "native-build", any(windows, target_os = "linux")))]
             {
-                let native = app.try_state::<Arc<build_backend::NativeBuildRuntime>>()
+                let native = app
+                    .try_state::<Arc<build_backend::NativeBuildRuntime>>()
                     .ok_or("INT05D_NATIVE_SUPERVISOR_NOT_INSTALLED")?;
                 let native = Arc::clone(native.inner());
-                let app_copy=app.clone();
-                let project=project_id.clone();
-                let status=tauri::async_runtime::spawn_blocking(move ||
-                    native.status(&app_copy,&project))
-                    .await.map_err(|_|"INT05D_NATIVE_STATUS_UNAVAILABLE")??;
-                ("status", "Native runtime and recovery status; readiness is not execution approval.",
-                    Some(serde_json::to_value(status).map_err(|_|"INT05D_SERIALIZE_DENIED")?))
+                let app_copy = app.clone();
+                let project = project_id.clone();
+                let status = tauri::async_runtime::spawn_blocking(move || {
+                    native.status(&app_copy, &project)
+                })
+                .await
+                .map_err(|_| "INT05D_NATIVE_STATUS_UNAVAILABLE")??;
+                (
+                    "status",
+                    "Native runtime and recovery status; readiness is not execution approval.",
+                    Some(serde_json::to_value(status).map_err(|_| "INT05D_SERIALIZE_DENIED")?),
+                )
             }
-            #[cfg(not(all(feature="native-build",any(windows,target_os="linux"))))]
+            #[cfg(not(all(feature = "native-build", any(windows, target_os = "linux"))))]
             {
-                ("status","Protected native toolchains are not installed; execution denied.",None)
+                (
+                    "status",
+                    "Protected native toolchains are not installed; execution denied.",
+                    None,
+                )
             }
         }
         TerminalAction::Run(recipe) => {
-            let sha=expected_manifest_sha256.ok_or("INT05D_REVIEWED_MANIFEST_REQUIRED")?;
-            #[cfg(all(feature="native-build",any(windows,target_os="linux")))]
+            let sha = expected_manifest_sha256.ok_or("INT05D_REVIEWED_MANIFEST_REQUIRED")?;
+            #[cfg(all(feature = "native-build", any(windows, target_os = "linux")))]
             {
-                registry.trusted_native_worker_root(&project_id)
-                    .map_err(|_|"INT05D_PROJECT_WORKER_SCOPE_DENIED")?;
-                let native=app.try_state::<Arc<build_backend::NativeBuildRuntime>>()
+                registry
+                    .trusted_native_worker_root(&project_id)
+                    .map_err(|_| "INT05D_PROJECT_WORKER_SCOPE_DENIED")?;
+                let native = app
+                    .try_state::<Arc<build_backend::NativeBuildRuntime>>()
                     .ok_or("INT05D_NATIVE_SUPERVISOR_NOT_INSTALLED")?;
-                let native=Arc::clone(native.inner());
-                let registry=Arc::clone(registry.inner());
-                let project=project_id.clone();
-                let app_copy=app.clone();
+                let native = Arc::clone(native.inner());
+                let registry = Arc::clone(registry.inner());
+                let project = project_id.clone();
+                let app_copy = app.clone();
                 // The exact recipe comes ONLY from the enum above; the SHA is
                 // rehashed natively and one-use consent happens in run_profile.
-                let completed=tauri::async_runtime::spawn_blocking(move ||
-                    native.run_profile(&app_copy,&registry,&project,recipe,&sha))
-                    .await.map_err(|_|"INT05D_RUN_WORKER_UNAVAILABLE")??;
+                let completed = tauri::async_runtime::spawn_blocking(move || {
+                    native.run_profile(&app_copy, &registry, &project, recipe, &sha)
+                })
+                .await
+                .map_err(|_| "INT05D_RUN_WORKER_UNAVAILABLE")??;
                 ("native_job_result","Native worker returned; inspect its original terminal receipt and cleanup evidence.",
                     Some(serde_json::to_value(completed).map_err(|_|"INT05D_SERIALIZE_DENIED")?))
             }
-            #[cfg(not(all(feature="native-build",any(windows,target_os="linux"))))]
+            #[cfg(not(all(feature = "native-build", any(windows, target_os = "linux"))))]
             {
-                let _=(app,registry,recipe,sha);
-                return Err("INT05D_PROTECTED_NATIVE_RUNNER_NOT_INSTALLED".into())
+                let _ = (app, registry, recipe, sha);
+                return Err("INT05D_PROTECTED_NATIVE_RUNNER_NOT_INSTALLED".into());
             }
         }
         TerminalAction::Cancel(job) => {
             if expected_manifest_sha256.is_some() {
                 return Err("INT05D_UNEXPECTED_MANIFEST_IDENTITY".into());
             }
-            #[cfg(all(feature="native-build",any(windows,target_os="linux")))]
+            #[cfg(all(feature = "native-build", any(windows, target_os = "linux")))]
             {
-                let native=app.try_state::<Arc<build_backend::NativeBuildRuntime>>()
+                let native = app
+                    .try_state::<Arc<build_backend::NativeBuildRuntime>>()
                     .ok_or("INT05D_NATIVE_SUPERVISOR_NOT_INSTALLED")?;
-                let receipt=native.cancel(&project_id,job.as_deref())?;
+                let receipt = native.cancel(&project_id, job.as_deref())?;
                 ("cancellation_requested","Cancellation requested, NOT yet confirmed. Native OS-tree cleanup must be verified.",
                     Some(serde_json::json!({"nativeRequest":receipt})))
             }
-            #[cfg(not(all(feature="native-build",any(windows,target_os="linux"))))]
+            #[cfg(not(all(feature = "native-build", any(windows, target_os = "linux"))))]
             {
-                let _=(app,job);
-                return Err("INT05D_PROTECTED_NATIVE_RUNNER_NOT_INSTALLED".into())
+                let _ = (app, job);
+                return Err("INT05D_PROTECTED_NATIVE_RUNNER_NOT_INSTALLED".into());
             }
         }
     };
-    Ok(TerminalReply::new(project_id,session_id,sequence,kind,message,value))
+    Ok(TerminalReply::new(
+        project_id, session_id, sequence, kind, message, value,
+    ))
 }
 
 pub fn run() {
@@ -4272,7 +4645,7 @@ pub fn run() {
                 Err(code) => eprintln!("IDE LSP remains disabled: {code}"),
             }
 
-            #[cfg(all(windows,debug_assertions,feature="fin04w2-c4-desktop"))]
+            #[cfg(all(windows, debug_assertions, feature = "fin04w2-c4-desktop"))]
             fin04w2_c4_desktop::install(app)?;
             Ok(())
         })

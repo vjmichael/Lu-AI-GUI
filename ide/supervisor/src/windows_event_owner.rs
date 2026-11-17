@@ -45,6 +45,19 @@ pub(crate) struct OwnerEvent {
     pub exception_address: u64,
     pub continue_status: u32,
 }
+impl OwnerEvent {
+    /// The original x64 software-breakpoint event may precede LLDB's
+    /// rewind to its exact exception address. No generic +/-1 tolerance.
+    pub(crate) fn matches_sampled_rip(&self, rip: u64) -> bool {
+        rip != 0
+            && (self.rip == rip
+                || (self.first_chance == 1
+                    && self.exception_code == 0x8000_0003
+                    && self.exception_address == rip
+                    && rip.checked_add(1) == Some(self.rip)))
+    }
+}
+
 pub(crate) fn decode(
     bytes: &[u8],
     original_nonce: &[u8; 16],
@@ -137,7 +150,7 @@ impl OwnerEventLedger {
             || event.kind != RECEIVED
             || event.pid != pid
             || event.tid != tid
-            || event.rip != rip
+            || !event.matches_sampled_rip(rip)
         {
             return Err(denied());
         }
@@ -156,6 +169,7 @@ pub(crate) fn persist_native_owner_receipt(
     plan_sha256: &str,
     running_receipt_sha256: &str,
     event: &OwnerEvent,
+    sampled_rip: u64,
 ) -> Result<String, SupervisorError> {
     use sha2::{Digest, Sha256};
     if !root.is_absolute()
@@ -169,18 +183,23 @@ pub(crate) fn persist_native_owner_receipt(
             .bytes()
             .all(|b| b.is_ascii_hexdigit())
         || event.kind != RECEIVED
+        || !event.matches_sampled_rip(sampled_rip)
     {
         return Err(denied());
     }
+    use std::os::windows::fs::MetadataExt;
     let directory = fs::symlink_metadata(root).map_err(|_| denied())?;
-    if !directory.is_dir() || directory.file_type().is_symlink() {
+    if !directory.is_dir()
+        || directory.file_type().is_symlink()
+        || directory.file_attributes() & 0x400 != 0
+    {
         return Err(denied());
     }
     let filename = format!("lu-owner-{job_id}-{:016x}.receipt", event.seq);
     let file = root.join(filename);
     let body = format!(
-        "lu-owner-v1\n{job_id}\n{plan_sha256}\n{running_receipt_sha256}\n\
-         {}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n",
+        "lu-owner-v2\n{job_id}\n{plan_sha256}\n{running_receipt_sha256}\n\
+         {}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{sampled_rip}\n",
         event.seq,
         event.pid,
         event.tid,
@@ -209,12 +228,72 @@ pub(crate) fn persist_native_owner_receipt(
     Ok(hash)
 }
 
+/// Reopen a hash-verified historical receipt only. V1 used a raw event RIP;
+/// V2 additionally records the independently sampled stopped RIP. Neither
+/// schema grants a live stop, command, or replay token after restart.
+pub(crate) fn verify_persisted_owner_receipt(
+    text: &str,
+    job_id: &str,
+    seq: u64,
+) -> Result<(), SupervisorError> {
+    let bad = || SupervisorError::JournalCorrupt;
+    if !text.ends_with('\n') || text.len() > 1024 || text.contains('\r') {
+        return Err(bad());
+    }
+    let fields: Vec<_> = text.lines().collect();
+    let version = fields.first().copied().ok_or_else(bad)?;
+    let length = match version {
+        "lu-owner-v1" => 12,
+        "lu-owner-v2" => 13,
+        _ => return Err(bad()),
+    };
+    if fields.len() != length || fields[1] != job_id {
+        return Err(bad());
+    }
+    if fields[2..4]
+        .iter()
+        .any(|value| value.len() != 64 || !value.bytes().all(|byte| byte.is_ascii_hexdigit()))
+        || fields[4].parse::<u64>().ok() != Some(seq)
+    {
+        return Err(bad());
+    }
+    let event = OwnerEvent {
+        seq,
+        kind: RECEIVED,
+        pid: fields[5].parse().map_err(|_| bad())?,
+        tid: fields[6].parse().map_err(|_| bad())?,
+        owner_tid: fields[7].parse().map_err(|_| bad())?,
+        exception_code: fields[8].parse().map_err(|_| bad())?,
+        first_chance: fields[9].parse().map_err(|_| bad())?,
+        rip: fields[10].parse().map_err(|_| bad())?,
+        exception_address: fields[11].parse().map_err(|_| bad())?,
+        continue_status: 0,
+    };
+    if event.pid == 0
+        || event.tid == 0
+        || event.owner_tid == 0
+        || event.rip == 0
+        || event.exception_address == 0
+        || event.first_chance != 1
+        || !matches!(event.exception_code, 0x8000_0003 | 0x8000_0004)
+    {
+        return Err(bad());
+    }
+    if version == "lu-owner-v2" {
+        let sampled = fields[12].parse::<u64>().map_err(|_| bad())?;
+        if !event.matches_sampled_rip(sampled) {
+            return Err(bad());
+        }
+    }
+    Ok(())
+}
+
 /// The read endpoint is moved exactly once into a native reader thread.
 /// It is not passed to AppContainer or the debuggee. A full queue closes the
 /// pipe, forcing the pinned LLDB hook to fail closed rather than blocking
 /// the UI actor or accepting dropped event evidence.
 pub(crate) struct OwnerSideband {
-    pub(crate) receiver: std::sync::mpsc::Receiver<Result<OwnerEvent, ()>>,
+    pub(crate) receiver: std::sync::mpsc::Receiver<Result<Option<OwnerEvent>, ()>>,
     pub(crate) ledger: OwnerEventLedger,
 }
 pub(crate) fn start_owner_pipe_reader(
@@ -223,7 +302,7 @@ pub(crate) fn start_owner_pipe_reader(
 ) -> Result<OwnerSideband, SupervisorError> {
     use std::{sync::mpsc, thread};
     use windows_sys::Win32::{
-        Foundation::{CloseHandle, HANDLE, INVALID_HANDLE_VALUE},
+        Foundation::{CloseHandle, GetLastError, ERROR_BROKEN_PIPE, HANDLE, INVALID_HANDLE_VALUE},
         Storage::FileSystem::ReadFile,
     };
     let handle = raw as HANDLE;
@@ -252,9 +331,10 @@ pub(crate) fn start_owner_pipe_reader(
                         )
                     };
                     if ok == 0 || n == 0 {
-                        if have != 0 {
-                            let _ = tx.try_send(Err(()));
-                        }
+                        // A disconnected reader is not kernel EOF.
+                        let clean_eof =
+                            ok == 0 && unsafe { GetLastError() } == ERROR_BROKEN_PIPE && have == 0;
+                        let _ = tx.try_send(if clean_eof { Ok(None) } else { Err(()) });
                         unsafe {
                             CloseHandle(handle);
                         }
@@ -267,7 +347,13 @@ pub(crate) fn start_owner_pipe_reader(
                     let _ = tx.try_send(Err(()));
                     break;
                 }
-                let parsed = decode(&wire, &nonce).map_err(|_| ());
+                let parsed = match decode(&wire, &nonce) {
+                    Ok(event) => Ok(Some(event)),
+                    Err(_) => {
+                        let _ = tx.try_send(Err(()));
+                        break;
+                    }
+                };
                 if tx.try_send(parsed).is_err() {
                     break;
                 }
@@ -297,14 +383,14 @@ impl OwnerSideband {
                 .receiver
                 .recv_timeout(std::time::Duration::from_millis(750))
             {
-                Ok(Ok(record)) => self.ledger.observe(record)?,
+                Ok(Ok(Some(record))) => self.ledger.observe(record)?,
                 _ => return Err(denied()),
             }
         }
         loop {
             match self.receiver.try_recv() {
-                Ok(Ok(event)) => self.ledger.observe(event)?,
-                Ok(Err(())) => return Err(denied()),
+                Ok(Ok(Some(event))) => self.ledger.observe(event)?,
+                Ok(Ok(None)) | Ok(Err(())) => return Err(denied()),
                 Err(TryRecvError::Empty) => return Ok(()),
                 Err(TryRecvError::Disconnected) => return Err(denied()),
             }
@@ -324,10 +410,11 @@ impl OwnerSideband {
                 return Err(denied());
             }
             match self.receiver.recv_timeout(remaining) {
-                Ok(Ok(record)) => self.ledger.observe(record)?,
-                Ok(Err(())) => return Err(denied()),
-                Err(RecvTimeoutError::Disconnected) => return Ok(()),
-                Err(RecvTimeoutError::Timeout) => return Err(denied()),
+                Ok(Ok(Some(record))) => self.ledger.observe(record)?,
+                Ok(Ok(None)) => return Ok(()),
+                Ok(Err(()))
+                | Err(RecvTimeoutError::Disconnected)
+                | Err(RecvTimeoutError::Timeout) => return Err(denied()),
             }
         }
     }
@@ -352,8 +439,9 @@ impl OwnerSideband {
                 return Err(denied());
             }
             match self.receiver.recv_timeout(left) {
-                Ok(Ok(event)) => self.ledger.observe(event)?,
-                Ok(Err(()))
+                Ok(Ok(Some(event))) => self.ledger.observe(event)?,
+                Ok(Ok(None))
+                | Ok(Err(()))
                 | Err(RecvTimeoutError::Disconnected)
                 | Err(RecvTimeoutError::Timeout) => return Err(denied()),
             }
@@ -444,6 +532,70 @@ mod tests {
         assert_eq!(ledger.matching_stop(55, 75, 0x140001123).unwrap().seq, 1);
         ledger.observe(record(1, CONTINUED)).unwrap();
         assert!(ledger.matching_stop(55, 75, 0x140001123).is_err());
+    }
+    #[test]
+    fn breakpoint_adjustment_requires_exact_first_chance_exception() {
+        let mut event = record(1, RECEIVED);
+        assert!(event.matches_sampled_rip(event.exception_address));
+        assert!(!event.matches_sampled_rip(event.exception_address - 1));
+        event.exception_code = 0x8000_0004;
+        assert!(!event.matches_sampled_rip(event.exception_address));
+        event.exception_code = 0x8000_0003;
+        event.first_chance = 0;
+        assert!(!event.matches_sampled_rip(event.exception_address));
+    }
+    #[test]
+    fn historical_receipt_newlines_and_sampled_rip_are_exact() {
+        let job = "job-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let h = "a".repeat(64);
+        let event = record(1, RECEIVED);
+        let text = format!(
+            "lu-owner-v2\n{job}\n{h}\n{h}\n1\n55\n75\n90\n{}\n1\n{}\n{}\n{}\n",
+            event.exception_code, event.rip, event.exception_address, event.exception_address
+        );
+        assert!(verify_persisted_owner_receipt(&text, job, 1).is_ok());
+        assert!(verify_persisted_owner_receipt(&text.replace('\n', "\\n"), job, 1).is_err());
+        assert!(verify_persisted_owner_receipt(&text, job, 2).is_err());
+        let v1 = text
+            .strip_suffix(&format!("{}\n", event.exception_address))
+            .unwrap()
+            .replacen("lu-owner-v2", "lu-owner-v1", 1);
+        assert!(verify_persisted_owner_receipt(&v1, job, 1).is_ok());
+        let wrong = format!("{v1}{}\n", event.exception_address - 1).replacen(
+            "lu-owner-v1",
+            "lu-owner-v2",
+            1,
+        );
+        assert!(verify_persisted_owner_receipt(&wrong, job, 1).is_err());
+    }
+    #[test]
+    fn crash_cleanup_requires_explicit_kernel_eof_not_reader_disconnection() {
+        use std::sync::mpsc::sync_channel;
+        let (tx, rx) = sync_channel(1);
+        drop(tx);
+        let mut lost = OwnerSideband {
+            receiver: rx,
+            ledger: OwnerEventLedger::default(),
+        };
+        assert!(lost.expect_pipe_eof_after_lldb_crash().is_err());
+
+        let (tx, rx) = sync_channel(1);
+        tx.try_send(Err(())).unwrap();
+        drop(tx);
+        let mut failed = OwnerSideband {
+            receiver: rx,
+            ledger: OwnerEventLedger::default(),
+        };
+        assert!(failed.expect_pipe_eof_after_lldb_crash().is_err());
+
+        let (tx, rx) = sync_channel(1);
+        tx.try_send(Ok(None)).unwrap();
+        drop(tx);
+        let mut witnessed = OwnerSideband {
+            receiver: rx,
+            ledger: OwnerEventLedger::default(),
+        };
+        assert!(witnessed.expect_pipe_eof_after_lldb_crash().is_ok());
     }
     #[test]
     fn rejects_truncation_unknown_kind_and_status() {

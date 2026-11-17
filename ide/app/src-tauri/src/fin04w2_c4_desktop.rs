@@ -13,8 +13,7 @@ use crate::{
 use lu_ide_execution_supervisor::{
     project_debug_target::SealedProjectDebugTarget,
     snapshot::{publish_input, retire_input, verify_input},
-    windows_fin04w2_c2_host,
-    JobPhase, JobPlan, Supervisor,
+    windows_fin04w2_c2_host, JobPhase, JobPlan, Supervisor,
 };
 use lu_ide_workspace::{wire::proto::ProjectView, IdeWorkspaceRegistry};
 use serde_json::json;
@@ -26,7 +25,8 @@ use std::{
     sync::{Arc, Mutex},
 };
 use tauri::{
-    menu::{Menu, MenuItem, Submenu}, App, AppHandle, Manager,
+    menu::{Menu, MenuItem, Submenu},
+    App, AppHandle, Manager,
 };
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons};
 
@@ -36,9 +36,13 @@ const CANCEL_ID: &str = "lu.ide.fin04w2.c4.cancel.native";
 const C4_SERVICE_NAME: &str = "windows_fin04w2_debugger_service.exe";
 const COMPILED_SERVICE_PIN: Option<&str> = option_env!("LU_IDE_FIN04W2_C4_SCM_SHA256");
 
-fn denied(code: &'static str) -> String { code.into() }
+fn denied(code: &'static str) -> String {
+    code.into()
+}
 fn sha(v: &str, n: usize) -> bool {
-    v.len() == n && v.bytes().all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
+    v.len() == n
+        && v.bytes()
+            .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
 }
 fn selected_native_project(rows: &[ProjectView]) -> Result<String, String> {
     // No WebView-supplied project ID or path. Multiple open projects require
@@ -57,33 +61,49 @@ fn forbidden_automated_session() -> Result<(), String> {
     if std::env::var_os("CI").is_some()
         || std::env::var_os("GITHUB_ACTIONS").is_some()
         || std::env::var_os("LU_FIN04W2_NATIVE_FIXTURE_ROOT").is_some()
-    { Err(denied("FIN04C4_AUTOMATED_APPROVAL_FORBIDDEN")) }
-    else { Ok(()) }
+    {
+        Err(denied("FIN04C4_AUTOMATED_APPROVAL_FORBIDDEN"))
+    } else {
+        Ok(())
+    }
 }
 fn hash_regular_file(path: &Path) -> Result<String, String> {
     use std::os::windows::fs::MetadataExt;
     let meta = fs::symlink_metadata(path).map_err(|_| denied("FIN04C4_PINNED_IMAGE_MISSING"))?;
-    if !path.is_absolute() || !meta.is_file() || meta.file_type().is_symlink()
-        || meta.file_attributes() & 0x400 != 0 || meta.len() == 0
-        || meta.len() > 256 * 1024 * 1024 {
+    if !path.is_absolute()
+        || !meta.is_file()
+        || meta.file_type().is_symlink()
+        || meta.file_attributes() & 0x400 != 0
+        || meta.len() == 0
+        || meta.len() > 256 * 1024 * 1024
+    {
         return Err(denied("FIN04C4_PINNED_IMAGE_UNTRUSTED"));
     }
     let mut f = File::open(path).map_err(|_| denied("FIN04C4_PINNED_IMAGE_UNREADABLE"))?;
     let mut hash = Sha256::new();
     let mut buf = [0u8; 64 * 1024];
     loop {
-        let n = f.read(&mut buf).map_err(|_| denied("FIN04C4_PINNED_IMAGE_UNREADABLE"))?;
-        if n == 0 { break; }
+        let n = f
+            .read(&mut buf)
+            .map_err(|_| denied("FIN04C4_PINNED_IMAGE_UNREADABLE"))?;
+        if n == 0 {
+            break;
+        }
         hash.update(&buf[..n]);
     }
     Ok(format!("{:x}", hash.finalize()))
 }
 fn pinned_service(app: &AppHandle) -> Result<(PathBuf, String), String> {
     let pinned = COMPILED_SERVICE_PIN.ok_or("FIN04C4_SERVICE_BUILD_PIN_ABSENT")?;
-    if !sha(pinned, 64) { return Err(denied("FIN04C4_SERVICE_BUILD_PIN_INVALID")); }
-    let path = app.path().resource_dir()
+    if !sha(pinned, 64) {
+        return Err(denied("FIN04C4_SERVICE_BUILD_PIN_INVALID"));
+    }
+    let path = app
+        .path()
+        .resource_dir()
         .map_err(|_| denied("FIN04C4_SERVICE_RESOURCE_UNAVAILABLE"))?
-        .join("recovery").join(C4_SERVICE_NAME);
+        .join("recovery")
+        .join(C4_SERVICE_NAME);
     if hash_regular_file(&path)? != pinned {
         return Err(denied("FIN04C4_SERVICE_IMAGE_HASH_MISMATCH"));
     }
@@ -98,40 +118,53 @@ fn original_plan(
     stage: &Path,
 ) -> Result<JobPlan, String> {
     forbidden_automated_session()?;
-    if selected_native_project(&registry.projects().map_err(|_| denied("FIN04C4_PROJECT_LIST_UNAVAILABLE"))?)?
-        != project_id { return Err(denied("FIN04C4_ACTIVE_PROJECT_CHANGED")); }
+    if selected_native_project(
+        &registry
+            .projects()
+            .map_err(|_| denied("FIN04C4_PROJECT_LIST_UNAVAILABLE"))?,
+    )? != project_id
+    {
+        return Err(denied("FIN04C4_ACTIVE_PROJECT_CHANGED"));
+    }
     let current = builds.native_project_debug_target(project_id)?;
     if !Arc::ptr_eq(&current, target) {
         return Err(denied("FIN04C4_ORIGINAL_BUILD_TARGET_REPLACED"));
     }
-    target.verify().map_err(|_| denied("FIN04C4_ORIGINAL_BINARY_OR_SYMBOLS_CHANGED"))?;
-    let root = registry.trusted_native_worker_root(project_id)
+    target
+        .verify()
+        .map_err(|_| denied("FIN04C4_ORIGINAL_BINARY_OR_SYMBOLS_CHANGED"))?;
+    let root = registry
+        .trusted_native_worker_root(project_id)
         .map_err(|_| denied("FIN04C4_REGISTERED_ROOT_UNAVAILABLE"))?;
     let git = registry.inspect_git_worktree(project_id);
-    if git.state != "local_repository_inspected" || git.worktree != "clean"
-        || git.truncated {
+    if git.state != "local_repository_inspected" || git.worktree != "clean" || git.truncated {
         return Err(denied("FIN04C4_GIT_STATE_UNTRUSTED"));
     }
     let head = git.local_head.ok_or("FIN04C4_SOURCE_HEAD_MISSING")?;
-    if !sha(&head, 40) || target.lineage.project_id != project_id
+    if !sha(&head, 40)
+        || target.lineage.project_id != project_id
         || target.lineage.source_head != head
         || !target.lineage.build_successfully_completed
         || target.lineage.requires_reconciliation
-        || !sha(&target.lineage.build_toolchain_sha256, 64) {
+        || !sha(&target.lineage.build_toolchain_sha256, 64)
+    {
         return Err(denied("FIN04C4_COMPLETED_BUILD_OR_SOURCE_MISMATCH"));
     }
     // A live Git HEAD is not an input snapshot. Re-copy and independently
     // rehash the actual registered project before AND after the OS dialog.
-    let snapshot = publish_input(&root, stage, "rust_check")
-        .map_err(|e| e.code().to_owned())?;
+    let snapshot = publish_input(&root, stage, "rust_check").map_err(|e| e.code().to_owned())?;
     let seal_result = verify_input(&snapshot)
         .map_err(|e| e.code().to_owned())
         .and_then(|()| {
             if snapshot.seal.source_sha256 != target.lineage.source_snapshot_sha256
-                || snapshot.seal.manifest_sha256 != target.lineage.manifest_sha256 {
+                || snapshot.seal.manifest_sha256 != target.lineage.manifest_sha256
+            {
                 return Err(denied("FIN04C4_SOURCE_SNAPSHOT_CHANGED_AFTER_BUILD"));
             }
-            Ok((snapshot.seal.source_sha256.clone(), snapshot.seal.manifest_sha256.clone()))
+            Ok((
+                snapshot.seal.source_sha256.clone(),
+                snapshot.seal.manifest_sha256.clone(),
+            ))
         });
     // The snapshot is evidence only; the C2 worker never runs this source.
     // Retire even if its content check failed. No private path leaves Tauri.
@@ -163,7 +196,11 @@ struct Pending {
     sealed_build: Arc<SealedProjectDebugTarget>,
     global_fence: GlobalAdmissionFence,
 }
-enum LocalState { Empty, Working, Prepared(Pending) }
+enum LocalState {
+    Empty,
+    Working,
+    Prepared(Pending),
+}
 struct C4Gate {
     original: Supervisor,
     profile: PathBuf,
@@ -173,19 +210,26 @@ struct C4Gate {
 }
 impl C4Gate {
     fn open(app: &AppHandle) -> Result<Self, String> {
-        let base = app.path().app_data_dir()
+        let base = app
+            .path()
+            .app_data_dir()
             .map_err(|_| denied("FIN04C4_PRIVATE_PROFILE_MISSING"))?;
         let stage = base.join("fin04w2-c4-staged");
         fs::create_dir_all(&stage).map_err(|_| denied("FIN04C4_PRIVATE_STAGE_UNAVAILABLE"))?;
         let journal = base.join("fin04w2-c4-original.jsonl");
         Ok(Self {
-            original: Supervisor::open(journal.clone())
-                .map_err(|e| e.code().to_owned())?,
-            profile: base, journal, stage, state: Mutex::new(LocalState::Empty),
+            original: Supervisor::open(journal.clone()).map_err(|e| e.code().to_owned())?,
+            profile: base,
+            journal,
+            stage,
+            state: Mutex::new(LocalState::Empty),
         })
     }
     fn begin(&self) -> Result<(), String> {
-        let mut locked = self.state.lock().map_err(|_| denied("FIN04C4_NATIVE_GATE_POISONED"))?;
+        let mut locked = self
+            .state
+            .lock()
+            .map_err(|_| denied("FIN04C4_NATIVE_GATE_POISONED"))?;
         if !matches!(*locked, LocalState::Empty) {
             return Err(denied("FIN04C4_PREVIOUS_JOB_STILL_OWNED"));
         }
@@ -193,7 +237,9 @@ impl C4Gate {
         Ok(())
     }
     fn prepare(
-        &self, app: &AppHandle, registry: &IdeWorkspaceRegistry,
+        &self,
+        app: &AppHandle,
+        registry: &IdeWorkspaceRegistry,
         builds: &NativeBuildRuntime,
     ) -> Result<String, String> {
         self.begin()?;
@@ -204,31 +250,46 @@ impl C4Gate {
             forbidden_automated_session()?;
             // FIN-01's global cross-process marker serializes C4 with every
             // build/debug/LSP worker. No C4-specific permission bypass.
-            global_native_custody::preflight_global_idle(&self.profile,"debug")?;
-            let baseline=global_native_custody::domain_rows(&self.profile,"debug")?;
-            fence=Some(GlobalAdmissionFence::acquire(&self.profile,"debug")?);
-            normal_debug_before=Some(baseline);
-            if global_native_custody::durable_busy(
-                &global_native_custody::domain_rows(&self.profile,"debug")?
-            ) || global_native_custody::durable_busy(
-                &global_native_custody::sibling_rows(&self.profile,"debug")?
-            ) {
+            global_native_custody::preflight_global_idle(&self.profile, "debug")?;
+            let baseline = global_native_custody::domain_rows(&self.profile, "debug")?;
+            fence = Some(GlobalAdmissionFence::acquire(&self.profile, "debug")?);
+            normal_debug_before = Some(baseline);
+            if global_native_custody::durable_busy(&global_native_custody::domain_rows(
+                &self.profile,
+                "debug",
+            )?) || global_native_custody::durable_busy(&global_native_custody::sibling_rows(
+                &self.profile,
+                "debug",
+            )?) {
                 return Err(denied("FIN04C4_GLOBAL_WORKER_ALREADY_ACTIVE"));
             }
             // A recovered interrupted C2 admission must not silently issue
             // another job. Manual independent native recovery is required.
-            if self.original.inspect().map_err(|e| e.code().to_owned())?
-                .iter().any(|x| x.requires_reconciliation
-                    || !matches!(x.phase, JobPhase::Completed | JobPhase::Cancelled | JobPhase::Denied))
+            if self
+                .original
+                .inspect()
+                .map_err(|e| e.code().to_owned())?
+                .iter()
+                .any(|x| {
+                    x.requires_reconciliation
+                        || !matches!(
+                            x.phase,
+                            JobPhase::Completed | JobPhase::Cancelled | JobPhase::Denied
+                        )
+                })
             {
                 return Err(denied("FIN04C4_PREVIOUS_NATIVE_JOB_UNRECONCILED"));
             }
             let project = selected_native_project(
-                &registry.projects().map_err(|_| denied("FIN04C4_PROJECT_LIST_UNAVAILABLE"))?
+                &registry
+                    .projects()
+                    .map_err(|_| denied("FIN04C4_PROJECT_LIST_UNAVAILABLE"))?,
             )?;
             let target = builds.native_project_debug_target(&project)?;
             let plan = original_plan(app, registry, builds, &project, &target, &self.stage)?;
-            let prepared = self.original.prepare(plan.clone())
+            let prepared = self
+                .original
+                .prepare(plan.clone())
                 .map_err(|e| e.code().to_owned())?;
             prepared_id = Some(prepared.job_id.clone());
             // This proposal is NOT the protected SCM config or creator consent.
@@ -252,20 +313,38 @@ impl C4Gate {
                 "binarySha256":target.binary.binary_sha256,
                 "symbolsSha256":target.symbols.symbols_sha256,
             });
-            let path = self.stage.join(format!("{}.prepared.json", prepared.job_id));
-            let mut f = OpenOptions::new().write(true).create_new(true)
-                .open(&path).map_err(|_| denied("FIN04C4_PRIVATE_PROPOSAL_WRITE_DENIED"))?;
-            f.write_all(&serde_json::to_vec_pretty(&manifest)
-                .map_err(|_| denied("FIN04C4_PRIVATE_PROPOSAL_SERIALIZE_DENIED"))?)
+            let path = self
+                .stage
+                .join(format!("{}.prepared.json", prepared.job_id));
+            let mut f = OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&path)
                 .map_err(|_| denied("FIN04C4_PRIVATE_PROPOSAL_WRITE_DENIED"))?;
-            f.sync_all().map_err(|_| denied("FIN04C4_PRIVATE_PROPOSAL_FSYNC_DENIED"))?;
-            fence.as_ref().ok_or("FIN04C4_GLOBAL_FENCE_UNAVAILABLE")?
+            f.write_all(
+                &serde_json::to_vec_pretty(&manifest)
+                    .map_err(|_| denied("FIN04C4_PRIVATE_PROPOSAL_SERIALIZE_DENIED"))?,
+            )
+            .map_err(|_| denied("FIN04C4_PRIVATE_PROPOSAL_WRITE_DENIED"))?;
+            f.sync_all()
+                .map_err(|_| denied("FIN04C4_PRIVATE_PROPOSAL_FSYNC_DENIED"))?;
+            fence
+                .as_ref()
+                .ok_or("FIN04C4_GLOBAL_FENCE_UNAVAILABLE")?
                 .marker_owner_intact()?;
-            Ok(Pending {project_id:project,job_id:prepared.job_id,
-                plan_sha256:prepared.plan_sha256,plan,sealed_build:target,
-                global_fence:fence.take().ok_or("FIN04C4_GLOBAL_FENCE_UNAVAILABLE")?})
+            Ok(Pending {
+                project_id: project,
+                job_id: prepared.job_id,
+                plan_sha256: prepared.plan_sha256,
+                plan,
+                sealed_build: target,
+                global_fence: fence.take().ok_or("FIN04C4_GLOBAL_FENCE_UNAVAILABLE")?,
+            })
         })();
-        let mut state = self.state.lock().map_err(|_| denied("FIN04C4_NATIVE_GATE_POISONED"))?;
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| denied("FIN04C4_NATIVE_GATE_POISONED"))?;
         match candidate {
             Ok(pending) => {
                 let display = format!(
@@ -282,11 +361,15 @@ impl C4Gate {
                     if prepared_id.is_some() {
                         self.release_after_original_terminal(&mut owner)
                     } else if let Some(before) = normal_debug_before {
-                        global_native_custody::domain_rows(&self.profile,"debug")
-                            .and_then(|after|
-                                owner.release_before_prepare_if_unchanged(&before,&after))
-                    } else { Err(denied("FIN04C4_GLOBAL_FENCE_BASELINE_MISSING")) }
-                } else { Ok(()) };
+                        global_native_custody::domain_rows(&self.profile, "debug").and_then(
+                            |after| owner.release_before_prepare_if_unchanged(&before, &after),
+                        )
+                    } else {
+                        Err(denied("FIN04C4_GLOBAL_FENCE_BASELINE_MISSING"))
+                    }
+                } else {
+                    Ok(())
+                };
                 *state = LocalState::Empty;
                 release?;
                 Err(code)
@@ -294,20 +377,27 @@ impl C4Gate {
         }
     }
     fn release_after_original_terminal(
-        &self, fence: &mut GlobalAdmissionFence,
+        &self,
+        fence: &mut GlobalAdmissionFence,
     ) -> Result<(), String> {
-        let mut owned=self.original.inspect().map_err(|e|e.code().to_owned())?;
-        owned.extend(global_native_custody::domain_rows(&self.profile,"debug")?);
-        let siblings=global_native_custody::sibling_rows(&self.profile,"debug")?;
-        fence.release_if_terminal(&owned,&siblings)
+        let mut owned = self.original.inspect().map_err(|e| e.code().to_owned())?;
+        owned.extend(global_native_custody::domain_rows(&self.profile, "debug")?);
+        let siblings = global_native_custody::sibling_rows(&self.profile, "debug")?;
+        fence.release_if_terminal(&owned, &siblings)
     }
     fn approve(
-        &self, app: &AppHandle, registry: &IdeWorkspaceRegistry,
-        builds: &NativeBuildRuntime, window: &tauri::WebviewWindow,
+        &self,
+        app: &AppHandle,
+        registry: &IdeWorkspaceRegistry,
+        builds: &NativeBuildRuntime,
+        window: &tauri::WebviewWindow,
     ) -> Result<String, String> {
         forbidden_automated_session()?;
         let mut pending = {
-            let mut state = self.state.lock().map_err(|_| denied("FIN04C4_NATIVE_GATE_POISONED"))?;
+            let mut state = self
+                .state
+                .lock()
+                .map_err(|_| denied("FIN04C4_NATIVE_GATE_POISONED"))?;
             match std::mem::replace(&mut *state, LocalState::Working) {
                 LocalState::Prepared(p) => p,
                 previous => {
@@ -318,9 +408,10 @@ impl C4Gate {
         };
         let result = (|| {
             pending.global_fence.marker_owner_intact()?;
-            if global_native_custody::durable_busy(
-                &global_native_custody::sibling_rows(&self.profile,"debug")?
-            ) {
+            if global_native_custody::durable_busy(&global_native_custody::sibling_rows(
+                &self.profile,
+                "debug",
+            )?) {
                 return Err(denied("FIN04C4_SIBLING_BECAME_ACTIVE"));
             }
             if window.label() != "main" {
@@ -328,30 +419,57 @@ impl C4Gate {
             }
             // Obtain the genuine Tauri-owned native Win32 handle in trusted
             // Rust. No HWND or execution path is accepted from JavaScript.
-            let owner = window.hwnd().map_err(|_| denied("FIN04C4_NATIVE_HWND_UNAVAILABLE"))?;
+            let owner = window
+                .hwnd()
+                .map_err(|_| denied("FIN04C4_NATIVE_HWND_UNAVAILABLE"))?;
             let (service, service_sha) = pinned_service(app)?;
-            let proposed = original_plan(app,registry,builds,
-                &pending.project_id,&pending.sealed_build,&self.stage)?;
+            let proposed = original_plan(
+                app,
+                registry,
+                builds,
+                &pending.project_id,
+                &pending.sealed_build,
+                &self.stage,
+            )?;
             if proposed != pending.plan {
                 return Err(denied("FIN04C4_PRE_DIALOG_PLAN_MISMATCH"));
             }
             windows_fin04w2_c2_host::run_fixed_after_visible_native_consent(
-                &self.original,&pending.job_id,&pending.plan,
+                &self.original,
+                &pending.job_id,
+                &pending.plan,
                 owner.0.cast(),
                 || {
-                    pending.global_fence.marker_owner_intact()
-                        .map_err(|_|lu_ide_execution_supervisor::SupervisorError::NoContainment)?;
-                    original_plan(app,registry,builds,
-                        &pending.project_id,&pending.sealed_build,&self.stage)
-                        .map_err(|_|lu_ide_execution_supervisor::SupervisorError::WrongProjectOrSource)
+                    pending
+                        .global_fence
+                        .marker_owner_intact()
+                        .map_err(|_| lu_ide_execution_supervisor::SupervisorError::NoContainment)?;
+                    original_plan(
+                        app,
+                        registry,
+                        builds,
+                        &pending.project_id,
+                        &pending.sealed_build,
+                        &self.stage,
+                    )
+                    .map_err(|_| lu_ide_execution_supervisor::SupervisorError::WrongProjectOrSource)
                 },
-                &service,&service_sha,
-            ).map_err(|e| e.code().to_owned())?;
-            let rows = self.original.receipt_history(&pending.job_id)
+                &service,
+                &service_sha,
+            )
+            .map_err(|e| e.code().to_owned())?;
+            let rows = self
+                .original
+                .receipt_history(&pending.job_id)
                 .map_err(|e| e.code().to_owned())?;
             let finish = self.original.inspect().map_err(|e| e.code().to_owned())?;
-            if rows.len()!=6 || !finish.iter().any(|j|j.job_id==pending.job_id
-                && j.phase==JobPhase::Completed && !j.requires_reconciliation) {
+            if rows.len() != 6
+                || !finish.iter().any(|j| {
+                    j.job_id == pending.job_id
+                        && j.phase == JobPhase::Completed
+                        && !j.requires_reconciliation
+                })
+            {
                 return Err(denied("FIN04C4_ORIGINAL_SIX_DURABLE_PHASES_UNVERIFIED"));
             }
             Ok(format!("Harmless C2 native job {} completed under original SCM/Job receipts. This is NOT LLDB, W2-D or installed-release acceptance.", pending.job_id))
@@ -360,19 +478,25 @@ impl C4Gate {
         // manufacture an Authorized receipt. After admission uncertainty,
         // C2's original recovery guard quarantines and refuses replay.
         if result.is_err() {
-            if self.original.inspect().ok().is_some_and(|rows| rows.iter().any(
-                |j| j.job_id == pending.job_id && j.phase == JobPhase::Prepared
-            )) {
+            if self.original.inspect().ok().is_some_and(|rows| {
+                rows.iter()
+                    .any(|j| j.job_id == pending.job_id && j.phase == JobPhase::Prepared)
+            }) {
                 let _ = self.original.cancel_before_start(&pending.job_id);
             }
         }
-        let release=self.release_after_original_terminal(&mut pending.global_fence);
-        if let Ok(mut guard) = self.state.lock() { *guard = LocalState::Empty; }
+        let release = self.release_after_original_terminal(&mut pending.global_fence);
+        if let Ok(mut guard) = self.state.lock() {
+            *guard = LocalState::Empty;
+        }
         release?;
         result
     }
-    fn cancel(&self) -> Result<String,String> {
-        let mut state = self.state.lock().map_err(|_| denied("FIN04C4_NATIVE_GATE_POISONED"))?;
+    fn cancel(&self) -> Result<String, String> {
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| denied("FIN04C4_NATIVE_GATE_POISONED"))?;
         let mut pending = match std::mem::replace(&mut *state, LocalState::Working) {
             LocalState::Prepared(p) => p,
             previous => {
@@ -380,28 +504,53 @@ impl C4Gate {
                 return Err(denied("FIN04C4_NO_PREPARED_NATIVE_JOB"));
             }
         };
-        let result = self.original.cancel_before_start(&pending.job_id)
+        let result = self
+            .original
+            .cancel_before_start(&pending.job_id)
             .map_err(|e| e.code().to_owned())
-            .map(|_| format!("Prepared native job {} cancelled. It can never be approved or replayed.", pending.job_id));
-        let release=self.release_after_original_terminal(&mut pending.global_fence);
+            .map(|_| {
+                format!(
+                    "Prepared native job {} cancelled. It can never be approved or replayed.",
+                    pending.job_id
+                )
+            });
+        let release = self.release_after_original_terminal(&mut pending.global_fence);
         *state = LocalState::Empty;
         release?;
         result
     }
 }
 pub fn install(app: &App) -> tauri::Result<()> {
-    let prepare = MenuItem::with_id(app,PREPARE_ID,
-        "Prepare sealed harmless SCM test (no execution)",true,None::<&str>)?;
-    let approve = MenuItem::with_id(app,APPROVE_ID,
-        "Approve prepared harmless SCM test (native OS dialog)",true,None::<&str>)?;
-    let cancel = MenuItem::with_id(app,CANCEL_ID,
-        "Cancel prepared harmless SCM test",true,None::<&str>)?;
-    let submenu = Submenu::with_items(app,"Native safety test (developer only)",true,
-        &[&prepare,&approve,&cancel])?;
-    let menu = Menu::with_items(app,&[&submenu])?;
+    let prepare = MenuItem::with_id(
+        app,
+        PREPARE_ID,
+        "Prepare sealed harmless SCM test (no execution)",
+        true,
+        None::<&str>,
+    )?;
+    let approve = MenuItem::with_id(
+        app,
+        APPROVE_ID,
+        "Approve prepared harmless SCM test (native OS dialog)",
+        true,
+        None::<&str>,
+    )?;
+    let cancel = MenuItem::with_id(
+        app,
+        CANCEL_ID,
+        "Cancel prepared harmless SCM test",
+        true,
+        None::<&str>,
+    )?;
+    let submenu = Submenu::with_items(
+        app,
+        "Native safety test (developer only)",
+        true,
+        &[&prepare, &approve, &cancel],
+    )?;
+    let menu = Menu::with_items(app, &[&submenu])?;
     app.set_menu(menu)?;
-    let gate = Arc::new(C4Gate::open(app.handle())
-        .map_err(std::io::Error::other)?);
+    let gate = Arc::new(C4Gate::open(app.handle()).map_err(std::io::Error::other)?);
     app.manage(gate);
     app.on_menu_event(|app,event| {
         let action = if event.id() == PREPARE_ID {0}
@@ -438,25 +587,38 @@ pub fn install(app: &App) -> tauri::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    fn project(active:bool,available:bool,id:&str)->ProjectView {
-        ProjectView { project_id:id.into(),display_name:"Local".into(),
-            active,available }
+    fn project(active: bool, available: bool, id: &str) -> ProjectView {
+        ProjectView {
+            project_id: id.into(),
+            display_name: "Local".into(),
+            active,
+            available,
+        }
     }
-    #[test] fn no_renderer_selected_project_and_no_ambiguous_active_project() {
-        let p="ide-0123456789abcdef0123456789abcdef";
-        let q="ide-fedcba9876543210fedcba9876543210";
+    #[test]
+    fn no_renderer_selected_project_and_no_ambiguous_active_project() {
+        let p = "ide-0123456789abcdef0123456789abcdef";
+        let q = "ide-fedcba9876543210fedcba9876543210";
         assert!(selected_native_project(&[]).is_err());
-        assert_eq!(selected_native_project(&[project(true,true,p)]).unwrap(),p);
-        assert!(selected_native_project(&[project(true,true,p),project(true,true,q)]).is_err());
-        assert!(selected_native_project(&[project(true,false,p)]).is_err());
-        assert!(selected_native_project(&[project(true,true,p),project(true,false,q)]).is_err());
-        assert!(selected_native_project(&[project(true,true,"../fake")]).is_err());
+        assert_eq!(
+            selected_native_project(&[project(true, true, p)]).unwrap(),
+            p
+        );
+        assert!(
+            selected_native_project(&[project(true, true, p), project(true, true, q)]).is_err()
+        );
+        assert!(selected_native_project(&[project(true, false, p)]).is_err());
+        assert!(
+            selected_native_project(&[project(true, true, p), project(true, false, q)]).is_err()
+        );
+        assert!(selected_native_project(&[project(true, true, "../fake")]).is_err());
     }
-    #[test] fn service_pin_requires_real_compiled_sha_and_known_fixed_filename() {
-        assert!(!sha("not-a-hash",64));
-        assert!(!sha(&"A".repeat(64),64));
-        assert!(sha(&"a".repeat(64),64));
-        assert_eq!(C4_SERVICE_NAME,"windows_fin04w2_debugger_service.exe");
-        assert_ne!(PREPARE_ID,APPROVE_ID);
+    #[test]
+    fn service_pin_requires_real_compiled_sha_and_known_fixed_filename() {
+        assert!(!sha("not-a-hash", 64));
+        assert!(!sha(&"A".repeat(64), 64));
+        assert!(sha(&"a".repeat(64), 64));
+        assert_eq!(C4_SERVICE_NAME, "windows_fin04w2_debugger_service.exe");
+        assert_ne!(PREPARE_ID, APPROVE_ID);
     }
 }

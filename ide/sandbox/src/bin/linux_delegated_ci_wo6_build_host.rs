@@ -50,11 +50,21 @@ fn run() -> Result<(), &'static str> {
     if !result.success() {
         return Err("real kernel cgroup delegation denied");
     }
-    let result = Command::new(&fixture)
+    let source_stop = matches!(
+        first.to_str(),
+        Some("--project-debug" | "--project-debug-cancel")
+    );
+    let mut command = Command::new(&fixture);
+    command
         .arg(first)
         .env_clear()
         .env("HOME", "/tmp")
-        .env("LANG", "C")
+        .env("LANG", "C");
+    if source_stop {
+        // Only the fixed disposable host enables the existing redacted stages.
+        command.env("LU_IDE_E2_NATIVE_TRACE", "1");
+    }
+    let result = command
         .status()
         .map_err(|_| "native Cargo fixed fixture spawn failed")?;
     if !result.success() {

@@ -67,6 +67,14 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'DENIED: consolidated host rustfmt contract failed before LLVM build' }
           python -m unittest discover -s ide/llvm18_owner -p test_pinned_chrono_overlay.py -v
           if ($LASTEXITCODE -ne 0) { throw 'DENIED: exact pinned LLVM source overlay contract failed' }
+          foreach ($script in @('Build-PinnedOwnerWindows.ps1','Test-PinnedOwnerWindows.ps1','Transfer-PinnedOwnerBundle.ps1')) {
+            $tokens=$null
+            $errors=$null
+            [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path (Join-Path 'ide/llvm18_owner' $script)).Path,[ref]$tokens,[ref]$errors) | Out-Null
+            if ($errors.Count -ne 0) { throw 'DENIED: pinned LLVM native script syntax invalid' }
+          }
+          & ide/llvm18_owner/Test-PinnedOwnerWindows.ps1 -PreflightOnly
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: original source preflight failed before LLVM' }
       - name: Stage exact reviewed offline Windows SDK and MSVC toolchain
         shell: pwsh
         run: |

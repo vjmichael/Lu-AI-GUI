@@ -131,11 +131,12 @@ pub struct DapSession {
     initialized_event: bool,
     launch_sent: bool,
     configuration_done_sent: bool,
+    #[cfg(all(target_os = "linux", debug_assertions, feature = "dev045d3-ci-oracle"))]
+    ci_source_stop: Option<bool>,
     // Ephemeral, untrusted adapter coordinates; NEVER a symbol-line proof.
     last_source_candidate: Option<SourceLineCandidate>,
     #[cfg(feature = "dev046c-ci-control")]
     ci_control: Option<CiControlPending>,
-    #[cfg(feature = "dev046c-ci-control")]
     last_stopped_thread: Option<u64>,
     #[cfg(feature = "dev046c-ci-control")]
     ci_variable_probe: Option<CiVariableProbe>,
@@ -155,10 +156,11 @@ impl DapSession {
             initialized_event: false,
             launch_sent: false,
             configuration_done_sent: false,
+            #[cfg(all(target_os = "linux", debug_assertions, feature = "dev045d3-ci-oracle"))]
+            ci_source_stop: None,
             last_source_candidate: None,
             #[cfg(feature = "dev046c-ci-control")]
             ci_control: None,
-            #[cfg(feature = "dev046c-ci-control")]
             last_stopped_thread: None,
             #[cfg(feature = "dev046c-ci-control")]
             ci_variable_probe: None,
@@ -172,15 +174,28 @@ impl DapSession {
     pub fn source_candidate(&self) -> Option<&SourceLineCandidate> {
         self.last_source_candidate.as_ref()
     }
+    /// Untrusted adapter thread identity; native code must correlate it
+    /// with the kernel's actual stopped task in the owned PID namespace.
+    pub fn stopped_thread(&self) -> Option<u64> {
+        if self.phase == DapPhase::Stopped {
+            self.last_stopped_thread
+        } else {
+            None
+        }
+    }
     fn fail(&mut self, why: DapError) -> DapError {
         self.phase = DapPhase::Quarantined;
         self.input.clear();
         self.pending.clear();
+        #[cfg(all(target_os = "linux", debug_assertions, feature = "dev045d3-ci-oracle"))]
+        {
+            self.ci_source_stop = None;
+        }
         self.last_source_candidate = None;
+        self.last_stopped_thread = None;
         #[cfg(feature = "dev046c-ci-control")]
         {
             self.ci_control = None;
-            self.last_stopped_thread = None;
             self.ci_variable_probe = None;
         }
         why
@@ -260,6 +275,16 @@ impl DapSession {
     /// This builds DAP bytes ONLY; actual authority resides in the D3 plan
     /// with an exact sealed build target digest and native OS containment.
     pub fn launch_verified_project(&mut self, program: &str) -> Result<Vec<u8>, DapError> {
+        self.launch_verified_project_entry(program, true)
+    }
+
+    // Normal project launches retain stopOnEntry=true. Only the fixed
+    // native CI fixture below may run past the loader.
+    fn launch_verified_project_entry(
+        &mut self,
+        program: &str,
+        stop_at_entry: bool,
+    ) -> Result<Vec<u8>, DapError> {
         if self.phase != DapPhase::Ready {
             return Err(DapError::InvalidPhase);
         }
@@ -301,7 +326,7 @@ impl DapSession {
         let frame = self.request(
             "launch",
             json!({
-                "program":program,"stopOnEntry":true,"noDebug":false,
+                "program":program,"stopOnEntry":stop_at_entry,"noDebug":false,
                 "disableASLR":false,"disableSTDIO":true,
                 "args":[],"env":{},"runInTerminal":false
             }),
@@ -311,10 +336,26 @@ impl DapSession {
         Ok(frame)
     }
 
-    /// Disposable WO6 fixture only: let the already-approved sealed program
-    /// reach its own x86-64 source-level trap. The normal project launch
-    /// remains stopOnEntry=true. No breakpoint, continue, shell, or custom
-    /// command is sent; the native supervisor must verify the exact fixture.
+    #[cfg(all(
+        windows,
+        target_arch = "x86_64",
+        debug_assertions,
+        feature = "dev045d4c-ci-oracle"
+    ))]
+    pub fn launch_windows_ci_source_trap(&mut self, program: &str) -> Result<Vec<u8>, DapError> {
+        if std::path::Path::new(program)
+            .file_name()
+            .and_then(|name| name.to_str())
+            != Some("dev045b_acceptance.exe")
+        {
+            return Err(DapError::InvalidMessage);
+        }
+        self.launch_verified_project_entry(program, false)
+    }
+
+    /// Disposable WO6 fixture only: a fixed, compiler-resolved source
+    /// breakpoint is required before configurationDone can resume the
+    /// already-approved sealed program. Ordinary project launch is unchanged.
     #[cfg(all(
         target_os = "linux",
         target_arch = "x86_64",
@@ -341,14 +382,55 @@ impl DapSession {
             }),
         )?;
         self.launch_sent = true;
+        self.ci_source_stop = Some(false);
         self.phase = DapPhase::Launching;
         Ok(frame)
+    }
+
+    #[cfg(all(
+        target_os = "linux",
+        target_arch = "x86_64",
+        debug_assertions,
+        feature = "dev045d3-ci-oracle"
+    ))]
+    pub fn ci_source_breakpoint_needed(&self) -> bool {
+        self.ci_source_stop == Some(false)
+            && self.initialized_event
+            && self.phase == DapPhase::Ready
+            && !self.configuration_done_sent
+            && self.pending.is_empty()
+    }
+
+    #[cfg(all(
+        target_os = "linux",
+        target_arch = "x86_64",
+        debug_assertions,
+        feature = "dev045d3-ci-oracle"
+    ))]
+    pub fn ci_configure_fixed_source_breakpoint(&mut self) -> Result<Vec<u8>, DapError> {
+        if !self.ci_source_breakpoint_needed() {
+            return Err(DapError::InvalidPhase);
+        }
+        // Fixed path and line, no caller-provided expression, condition,
+        // breakpoint location, PID, or general debugger command.
+        self.request(
+            "setBreakpoints",
+            json!({
+                "source":{"path":"/workspace/src/main.rs"},
+                "breakpoints":[{"line":2}],
+                "sourceModified":false
+            }),
+        )
     }
 
     /// Read-only pending signal for adapters that emit initialized immediately
     /// after the response (even before the fixed launch is sent). The trusted
     /// native host may examine this after launch; no DAP instruction is sent.
     pub fn configuration_needed(&self) -> bool {
+        #[cfg(all(target_os = "linux", debug_assertions, feature = "dev045d3-ci-oracle"))]
+        if self.ci_source_stop == Some(false) {
+            return false;
+        }
         self.launch_sent
             && self.initialized_event
             && !self.configuration_done_sent
@@ -381,10 +463,15 @@ impl DapSession {
         if self.phase != DapPhase::Stopped || thread_id == 0 || thread_id > MAX_SEQ {
             return Err(DapError::InvalidPhase);
         }
-        // Native D6/Group 4 variable and step controls may never query a
-        // different thread's frame while reviewing this exact stopped owner.
+        // Never exchange the stopped task for another thread's source.
+        // Synthetic protocol fixtures may construct a phase without a
+        // stopped event, but the native witness requires the actual event.
         #[cfg(feature = "dev046c-ci-control")]
         if self.last_stopped_thread != Some(thread_id) {
+            return Err(DapError::InvalidPhase);
+        }
+        #[cfg(not(feature = "dev046c-ci-control"))]
+        if self.last_stopped_thread.is_some_and(|id| id != thread_id) {
             return Err(DapError::InvalidPhase);
         }
         // A new, independently correlated stack invalidates prior coordinates.
@@ -797,13 +884,14 @@ impl DapSession {
                         // stack reply may a source-coordinate review begin.
                         // The original source and symbol hashes still require
                         // independent native verification before any line claim.
-                        self.last_source_candidate = frames
+                        // Validate all frames, but only frame zero can
+                        // describe the actual stopped instruction. Never
+                        // substitute a caller when the loader has no source.
+                        let validated = frames
                             .iter()
                             .map(candidate_from_dap_frame)
-                            .collect::<Result<Vec<_>, _>>()?
-                            .into_iter()
-                            .flatten()
-                            .next();
+                            .collect::<Result<Vec<_>, _>>()?;
+                        self.last_source_candidate = validated.into_iter().next().flatten();
                         Ok(Some(DapEvent::StackTraceReceived))
                     }
                     #[cfg(feature = "dev046c-ci-control")]
@@ -917,6 +1005,30 @@ impl DapSession {
                         active.response_ack = true;
                         Ok(None)
                     }
+                    #[cfg(all(
+                        target_os = "linux",
+                        debug_assertions,
+                        feature = "dev045d3-ci-oracle"
+                    ))]
+                    "setBreakpoints"
+                        if self.ci_source_stop == Some(false)
+                            && self.phase == DapPhase::Ready
+                            && !self.configuration_done_sent =>
+                    {
+                        let points = obj
+                            .get("body")
+                            .and_then(|body| body.get("breakpoints"))
+                            .and_then(Value::as_array)
+                            .ok_or(DapError::InvalidMessage)?;
+                        if points.len() != 1
+                            || points[0].get("verified") != Some(&Value::Bool(true))
+                            || points[0].get("line").and_then(Value::as_u64) != Some(2)
+                        {
+                            return Err(DapError::InvalidMessage);
+                        }
+                        self.ci_source_stop = Some(true);
+                        Ok(None)
+                    }
                     #[cfg(feature = "dev046c-ci-control")]
                     "setBreakpoints" if self.phase == DapPhase::Stopped => {
                         let active = self.ci_control.as_mut().ok_or(DapError::InvalidPhase)?;
@@ -992,8 +1104,29 @@ impl DapSession {
                                     control.new_stop = true;
                                 }
                             }
-                            self.last_stopped_thread = Some(thread_id);
                         }
+                        // A delayed old stack reply cannot be evidence for
+                        // a different stop, even if it uses the same thread.
+                        if self.pending.values().any(|kind| *kind == "stackTrace") {
+                            return Err(DapError::InvalidPhase);
+                        }
+                        #[cfg(all(
+                            target_os = "linux",
+                            debug_assertions,
+                            feature = "dev045d3-ci-oracle"
+                        ))]
+                        if self.ci_source_stop.is_some()
+                            && (self.ci_source_stop != Some(true)
+                                || !self.configuration_done_sent
+                                || obj
+                                    .get("body")
+                                    .and_then(|body| body.get("reason"))
+                                    .and_then(Value::as_str)
+                                    != Some("breakpoint"))
+                        {
+                            return Err(DapError::InvalidMessage);
+                        }
+                        self.last_stopped_thread = Some(thread_id);
                         // A new stop invalidates the previous frame/source
                         // and its scoped variables, even on the same thread.
                         self.last_source_candidate = None;
@@ -1005,11 +1138,14 @@ impl DapSession {
                         Ok(Some(DapEvent::Stopped { thread_id }))
                     }
                     "continued" if matches!(self.phase, DapPhase::Ready | DapPhase::Stopped) => {
+                        if self.pending.values().any(|kind| *kind == "stackTrace") {
+                            return Err(DapError::InvalidPhase);
+                        }
                         self.phase = DapPhase::Ready;
                         self.last_source_candidate = None;
+                        self.last_stopped_thread = None;
                         #[cfg(feature = "dev046c-ci-control")]
                         {
-                            self.last_stopped_thread = None;
                             self.ci_variable_probe = None;
                         }
                         Ok(Some(DapEvent::Continued))
@@ -1020,10 +1156,10 @@ impl DapSession {
                         self.phase = DapPhase::Terminated;
                         self.pending.clear();
                         self.last_source_candidate = None;
+                        self.last_stopped_thread = None;
                         #[cfg(feature = "dev046c-ci-control")]
                         {
                             self.ci_control = None;
-                            self.last_stopped_thread = None;
                             self.ci_variable_probe = None;
                         }
                         Ok(Some(DapEvent::Terminated))
@@ -1503,6 +1639,35 @@ mod tests {
             );
         }
     }
+    #[cfg(all(
+        windows,
+        target_arch = "x86_64",
+        debug_assertions,
+        feature = "dev045d4c-ci-oracle"
+    ))]
+    #[test]
+    fn windows_ci_source_trap_keeps_regular_entry_and_denies_other_targets() {
+        let mut fixed = DapSession::new();
+        fixed.phase = DapPhase::Ready;
+        assert!(fixed
+            .launch_windows_ci_source_trap(r"C:\Temp\debug-target\debug\foreign.exe")
+            .is_err());
+        assert!(fixed
+            .launch_windows_ci_source_trap(r"C:\Temp\dev045b_acceptance.exe")
+            .is_err());
+        let path = r"C:\Temp\debug-target\debug\dev045b_acceptance.exe";
+        let wire = fixed.launch_windows_ci_source_trap(path).unwrap();
+        assert!(std::str::from_utf8(&wire)
+            .unwrap()
+            .contains(r#""stopOnEntry":false"#));
+        let mut ordinary = DapSession::new();
+        ordinary.phase = DapPhase::Ready;
+        let wire = ordinary.launch_verified_project(path).unwrap();
+        assert!(std::str::from_utf8(&wire)
+            .unwrap()
+            .contains(r#""stopOnEntry":true"#));
+    }
+
     #[cfg(windows)]
     #[test]
     fn native_appcontainer_project_path_can_launch_but_foreign_windows_paths_cannot() {
@@ -1559,12 +1724,75 @@ mod tests {
             session.launch_wo6_ci_source_trap(exact).unwrap_err(),
             DapError::InvalidPhase
         );
+        session
+            .receive(&framed(json!({
+                "seq": 3, "type": "response", "request_seq": 1,
+                "command": "launch", "success": true
+            })))
+            .unwrap();
+        session
+            .receive(&framed(
+                json!({"seq":4,"type":"event","event":"initialized"}),
+            ))
+            .unwrap();
+        assert!(!session.configuration_needed());
+        assert!(session.ci_source_breakpoint_needed());
+        let wire = session.ci_configure_fixed_source_breakpoint().unwrap();
+        assert!(std::str::from_utf8(&wire)
+            .unwrap()
+            .contains("/workspace/src/main.rs"));
+        assert!(!session.ci_source_breakpoint_needed());
+        assert!(session.configuration_done().is_err());
+        session
+            .receive(&framed(json!({
+                "seq": 5, "type": "response", "request_seq": 2,
+                "command": "setBreakpoints", "success": true,
+                "body": {"breakpoints":[{"verified":true,"line":2}]}
+            })))
+            .unwrap();
+        assert!(session.configuration_needed());
+        session.configuration_done().unwrap();
         let mut normal = DapSession::new();
         normal.phase = DapPhase::Ready;
+        assert!(normal.ci_configure_fixed_source_breakpoint().is_err());
         let normal_wire = normal.launch_verified_project(exact).unwrap();
         assert!(std::str::from_utf8(&normal_wire)
             .unwrap()
             .contains(r#""stopOnEntry":true"#));
+    }
+
+    #[cfg(all(
+        target_os = "linux",
+        target_arch = "x86_64",
+        debug_assertions,
+        feature = "dev045d3-ci-oracle"
+    ))]
+    #[test]
+    fn ci_source_breakpoint_denies_unverified_or_relocated_line() {
+        for (verified, line) in [(false, 2), (true, 3)] {
+            let mut session = DapSession::new();
+            session.phase = DapPhase::Ready;
+            session.initialized_event = true;
+            session
+                .launch_wo6_ci_source_trap("/debug-target/debug/wo6_native_acceptance")
+                .unwrap();
+            session
+                .receive(&framed(json!({
+                    "seq": 2, "type": "response", "request_seq": 1,
+                    "command": "launch", "success": true
+                })))
+                .unwrap();
+            session.ci_configure_fixed_source_breakpoint().unwrap();
+            assert!(session
+                .receive(&framed(json!({
+                    "seq": 3, "type": "response", "request_seq": 2,
+                    "command": "setBreakpoints", "success": true,
+                    "body": {"breakpoints":[{"verified":verified,"line":line}]}
+                })))
+                .is_err());
+            assert_eq!(session.phase(), DapPhase::Quarantined);
+            assert!(!session.configuration_needed());
+        }
     }
 
     #[test]
@@ -2025,6 +2253,24 @@ mod tests {
             .unwrap(),
             vec![DapEvent::StackTraceReceived]
         );
+        assert!(s.source_candidate().is_none());
+    }
+
+    #[test]
+    fn dev045d_unmapped_top_frame_cannot_borrow_a_source_from_its_caller() {
+        let mut s = DapSession::new();
+        s.phase = DapPhase::Stopped;
+        s.pending.insert(1, "stackTrace");
+        s.receive(&framed(json!({
+            "seq": 2, "type": "response", "request_seq": 1,
+            "command": "stackTrace", "success": true,
+            "body": {"stackFrames": [
+                {"id": 1, "line": 0},
+                {"id": 2, "line": 4, "source": {"path": "/workspace/src/main.rs"},
+                 "instructionPointerReference": "0x401000"}
+            ]}
+        })))
+        .unwrap();
         assert!(s.source_candidate().is_none());
     }
 

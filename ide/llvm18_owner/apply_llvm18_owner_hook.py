@@ -21,8 +21,9 @@ DAP_PROGRESS_HEADER = "lldb/tools/lldb-dap/ProgressEvent.h"
 
 # Windows InitLLVM normalizes the loaded exe's complete DOS path. Protected
 # LLDB and clangd both fail before the first protocol response; GetLongPathNameW
-# can require forbidden ancestor enumeration. Repair only our fixed debugger
-# leaf, without granting filesystem rights or accepting a new image identity.
+# can require forbidden ancestor enumeration. Repair only the exact measured
+# LLDB and symbolizer leaves, without granting filesystem rights or accepting
+# a new image identity.
 WINDOWS_PROCESS_SOURCE = "llvm/lib/Support/Windows/Process.inc"
 WINDOWS_PROCESS_ORIGINAL = r'''  Length = GetLongPathNameW(ModuleName, ModuleName, MAX_PATH);
   if (Length == 0)
@@ -43,22 +44,32 @@ WINDOWS_PROCESS_REPAIRED = r'''  wchar_t LongModuleName[MAX_PATH];
     // A restricted token can execute a sealed file without being allowed
     // to enumerate all ancestor directories. GetModuleFileNameW already
     // supplied the actual loaded image name; use it only for the exact
-    // non-8.3 LLDB-DAP leaf Lu launches, and only for ACCESS_DENIED.
+    // non-8.3 LLDB-DAP and symbolizer leaves Lu launches, only for ACCESS_DENIED.
     const wchar_t *Leaf = ModuleName;
     for (const wchar_t *P = ModuleName; *P; ++P)
       if (*P == L'\\' || *P == L'/')
         Leaf = P + 1;
-    if (Error != ERROR_ACCESS_DENIED ||
-        ::CompareStringOrdinal(Leaf, -1, L"lldb-dap.exe", -1, TRUE) !=
-            CSTR_EQUAL)
+    const bool Dap = ::CompareStringOrdinal(Leaf, -1, L"lldb-dap.exe", -1,
+                                             TRUE) == CSTR_EQUAL;
+    const bool Symbolizer = ::CompareStringOrdinal(
+        Leaf, -1, L"llvm-symbolizer.exe", -1, TRUE) == CSTR_EQUAL;
+    if (Error != ERROR_ACCESS_DENIED || (!Dap && !Symbolizer))
       return mapWindowsError(Error);
     ResolvedName = ModuleName;
     LongLength = Length;
-    // Fixed marker only: no path, token, or user data.
-    ::OutputDebugStringW(L"LU_LLVM18_FIXED_DAP_IMAGE_LEAF_USED");
+    // Fixed marker only: no path, token, or user data. Emit on the already
+    // inherited stderr handle, never a new file, pipe, or permission grant.
+    if (Dap) {
+      static constexpr char Marker[] = "LU_LLVM18_FIXED_DAP_IMAGE_LEAF_USED\n";
+      DWORD Written = 0;
+      ::WriteFile(::GetStdHandle(STD_ERROR_HANDLE), Marker,
+                  static_cast<DWORD>(sizeof(Marker) - 1), &Written, nullptr);
+      ::OutputDebugStringW(L"LU_LLVM18_FIXED_DAP_IMAGE_LEAF_USED");
+    }
   }
-  if (LongLength > MAX_PATH) {
-    // Preserve the original hard bound and all unrelated failure cases.
+  if (LongLength >= MAX_PATH) {
+    // Success excludes the terminating NUL; a return equal to the
+    // buffer size is not a valid complete string length.
     return mapWindowsError(ERROR_INSUFFICIENT_BUFFER);
   }
 

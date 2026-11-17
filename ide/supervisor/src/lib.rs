@@ -752,9 +752,7 @@ impl Supervisor {
             return Err(SupervisorError::JournalCorrupt);
         }
         let text = std::str::from_utf8(&content).map_err(|_| SupervisorError::JournalCorrupt)?;
-        if !text.starts_with(&format!("lu-owner-v1\\n{job_id}\\n")) {
-            return Err(SupervisorError::JournalCorrupt);
-        }
+        crate::windows_event_owner::verify_persisted_owner_receipt(text, job_id, seq)?;
         Ok(())
     }
     /// Reopen an individual source-debug action journal after a real Job

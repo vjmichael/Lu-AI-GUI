@@ -19,7 +19,9 @@ $processSource=Join-Path $root 'llvm/lib/Support/Windows/Process.inc'
 $processText=Get-Content -LiteralPath $processSource -Raw
 if (!$processText.Contains('LU_LLVM18_FIXED_DAP_IMAGE_LEAF_USED') -or
     !$processText.Contains('Error != ERROR_ACCESS_DENIED') -or
-    !$processText.Contains('L"lldb-dap.exe", -1, TRUE')) {
+    !$processText.Contains('L"lldb-dap.exe", -1,') -or
+    !$processText.Contains('L"llvm-symbolizer.exe", -1, TRUE') -or
+    !$processText.Contains('(!Dap && !Symbolizer)')) {
   throw 'DENIED: reviewed AppContainer-compatible LLVM executable-leaf repair absent'
 }
 $out=Join-Path $env:RUNNER_TEMP 'lu-llvm18-owner-native'
@@ -77,7 +79,7 @@ $utf8NoBom=New-Object System.Text.UTF8Encoding($false)
 [System.IO.File]::WriteAllText(
   $provenanceFile,($ownerProvenance | ConvertTo-Json -Depth 3),$utf8NoBom
 )
-$lock=[ordered]@{schema='lu-ide-d5-ci-only-v1'; llvmCommit=$expected; lldbSha256=(Get-FileHash (Join-Path $bin 'lldb-dap.exe') -Algorithm SHA256).Hash; sourceSha256=(Get-FileHash (Join-Path $root 'lldb/source/Plugins/Process/Windows/Common/DebuggerThread.cpp') -Algorithm SHA256).Hash; releaseApproved=$false}
+$lock=[ordered]@{schema='lu-ide-d5-ci-only-v1'; llvmCommit=$expected; lldbSha256=(Get-FileHash (Join-Path $bin 'lldb-dap.exe') -Algorithm SHA256).Hash; sourceSha256=(Get-FileHash (Join-Path $root 'lldb/source/Plugins/Process/Windows/Common/DebuggerThread.cpp') -Algorithm SHA256).Hash; windowsProcessSourceSha256=(& $sha256 $processSource); releaseApproved=$false}
 $lock | ConvertTo-Json | Set-Content (Join-Path $env:RUNNER_TEMP 'lu-owner-llvm18-lock.json')
 Add-Content $env:GITHUB_ENV "LU_IDE_WO6_DAP_BUNDLE=$bundle"
 Write-Host 'DEV045D5_NATIVE_PATCHED_LLDB_COMPILE=PASS_NOT_INSTALLED_ACCEPTANCE'
