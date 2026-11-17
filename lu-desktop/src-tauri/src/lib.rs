@@ -5466,6 +5466,14 @@ async fn generate_internal(
             .map_err(|_|"Submission lookup unavailable")?{
             return Err("This submission was refused. Start a new message after checking the draft.".into())
         }
+        let (staged_id,payload)=book.image_ui_submission(&chat_id)
+            .map_err(|_|"Message recovery unavailable")?.ok_or("Prepare the image message before sending")?;
+        let staged:ImageUiSnapshot=serde_json::from_str(&payload).map_err(|_|"Message recovery invalid")?;
+        staged.validate()?;
+        if staged_id!=generation_id||Some(staged.submission_id.as_str())!=submission_id.as_deref()||
+           staged.submitted!=prompt||staged.image_refs!=image_refs{
+            return Err("The prepared message changed. Check the current draft.".into())
+        }
     }
     let request_id = next_id("req-");
     let observed_engine_starts_before=state.engine_start_events.load(Ordering::Relaxed);

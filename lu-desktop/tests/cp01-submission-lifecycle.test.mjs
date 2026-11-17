@@ -50,12 +50,17 @@ test('native receipt checks, refusal fence and restore remain host scoped',()=>{
   assert.match(host,/book.reject_image_submission\(chat_id,&gid\)/);
   assert.match(core,/image_submission_rejected\(tx,chat,turn\)\?/);
   assert.match(host,/book.restore_image_draft\(&chat_id,&staged\)/);
+  assert.match(host,/stage_image_ui_submission\(&chat_id,&receipt.generation_id/);
+  assert.match(core,/unresolved_ui_snapshot_is_exact_and_cannot_be_overwritten_or_cleared/);
   assert.match(host,/restored|RestoredImageDraft/);
 });
 test('rendered lifecycle has explicit recovery and no implicit release or replay',()=>{
   const ui=read('../web/main.jsx');
   const portion=ui.slice(ui.indexOf('async function admitSavedImageAttempt'),ui.indexOf('async function attachReaderDocument'));
   assert.match(portion,/invoke\('lu_submit_image_turn'/);
+  assert.match(ui,/invoke\('lu_prepare_image_submission'/);
+  assert.match(ui,/invoke\('lu_pending_image_submission'/);
+  assert.match(ui,/invoke\('lu_clear_image_submission'/);
   assert.match(portion,/submissionId:attempt.nonce/);
   assert.match(portion,/invoke\('lu_stop_image_submission'/);
   assert.match(portion,/invoke\('lu_restore_image_turn'/);

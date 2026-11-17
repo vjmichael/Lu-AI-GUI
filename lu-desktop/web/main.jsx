@@ -2353,7 +2353,8 @@ function App() {
     setChatId(id);
     setHistory(entries);
     setError('');
-    if(!lockedDraft(id))void refreshDraftImages(id).catch(error=>{
+    if(!pendingSends.current.has(id))void recoverImageSubmission(id);
+    else if(!lockedDraft(id))void refreshDraftImages(id).catch(error=>{
       if(currentChat.current===id)setError(String(error));
     });
     void reconcileActiveStream(id);
@@ -4115,6 +4116,50 @@ function App() {
       setJobs(prev=>removeJob(prev,activeId));
     }
   }
+  // Recovery reads the original durable Send snapshot and exact receipt.
+  // No inference or tool action happens when a conversation is reopened.
+  async function recoverImageSubmission(target){
+    if(pendingSends.current.has(target)||!beginDraftMutation(target))return;
+    try{
+      const recovery=await invoke('lu_pending_image_submission',{chatId:target});
+      if(pendingSends.current.has(target))return;
+      const manifest=await refreshDraftImages(target);
+      if(!recovery||!manifest)return;
+      const {snapshot,receipt}=recovery;
+      const attempt={snapshot:null,submitted:snapshot.submitted,marker:submissionNonce(),
+        nonce:snapshot.submissionId,generationId:receipt.generationId,
+        admitted:false,uncertain:false,checking:false};
+      const decision=receiptDecision(attempt,receipt);
+      if(decision==='saved'){
+        await invoke('lu_clear_image_submission',{chatId:target,submissionId:attempt.nonce});
+        noticeForChat(target,'Your previous message is saved in this conversation.');
+        return;
+      }
+      const exact=manifest.length===snapshot.imageRefs.length&&
+        manifest.every((im,i)=>im.imageRef===snapshot.imageRefs[i]);
+      const old=readComposerDraft(target);
+      // Never replace a newer typed draft during navigation/reload.
+      if(!old.prompt.trim()&&!old.files.length&&exact){
+        writeComposerDraft(target,{prompt:snapshot.prompt,images:manifest,files:snapshot.files});
+      }
+      if(decision==='rejected'){
+        await invoke('lu_clear_image_submission',{chatId:target,submissionId:attempt.nonce});
+        noticeForChat(target,exact?'Your previous message was not sent. The draft is retained.':
+          'Your previous message was not sent. Check the current attachments.');
+        return;
+      }
+      attempt.snapshot={prompt:snapshot.prompt,files:snapshot.files,images:
+        snapshot.imageRefs.map(id=>manifest.find(im=>im.imageRef===id)||{imageRef:id,available:false})};
+      attempt.uncertain=true;
+      // If another native change occurred, the exact attempt is still
+      // recoverable as a check or keep-draft fence, but cannot be resubmitted.
+      attempt.restoreMismatch=!exact;
+      pendingSends.current.set(target,attempt);refreshComposerState();
+    }catch(error){
+      if(currentChat.current===target)setError('Draft recovery unavailable: '+String(error));
+    }finally{endDraftMutation(target);}
+  }
+
   // Native original receipt, not a queue event or text comparison, consumes
   // the submitted composer. Acknowledgment during a run permits a next draft
   // without allowing another Send in the same conversation.
@@ -4151,6 +4196,8 @@ function App() {
     if(pendingSends.current.get(target)!==attempt)return;
     attempt.settled=true;refreshComposerState();
     if(!preserveJob)setJobs(prev=>removeOwnedJob(prev,target,attempt));
+    if(attempt.nonce)await invoke('lu_clear_image_submission',{chatId:target,submissionId:attempt.nonce})
+      .catch(()=>false);
     await refreshDraftImages(target).catch(error=>{
       if(currentChat.current===target)setError(String(error));
     });
@@ -4166,7 +4213,11 @@ function App() {
   }
   async function runImageAttempt(target,attempt,sessionId){
     try{
-      const receipt=await invoke('lu_image_submission_status',{chatId:target,submissionId:attempt.nonce});
+      const receipt=await invoke('lu_prepare_image_submission',{chatId:target,snapshot:{
+        submissionId:attempt.nonce,prompt:attempt.snapshot.prompt,submitted:attempt.submitted,
+        imageRefs:attempt.snapshot.images.map(i=>i.imageRef),
+        files:attempt.snapshot.files.map(f=>({name:f.name,size:f.size,text:f.text}))
+      }});
       if(pendingSends.current.get(target)!==attempt)return;
       if(attempt.generationId&&attempt.generationId!==receipt.generationId)throw Error('Message identity changed');
       attempt.generationId=receipt.generationId;
@@ -4179,10 +4230,13 @@ function App() {
       if(receiptDecision(attempt,receipt)==='rejected'){
         await finishSubmission(target,attempt);return;
       }
+      if(attempt.restoreMismatch||attempt.snapshot.images.some(im=>im.available===false))
+        throw Error('Images changed or expired. Keep the current draft without sending.');
       if(!sessionId)throw Error('Load a model before retrying this message');
       attempt.uncertain=false;refreshComposerState();
-      setJobs(prev=>({...prev,[target]:{generationId:attempt.generationId,
-        submissionMarker:attempt.marker,phase:'submitting',position:0,text:''}}));
+      setJobs(prev=>prev[target]?.generationId&&prev[target].generationId!==attempt.generationId
+        ? prev : ({...prev,[target]:{generationId:attempt.generationId,
+          submissionMarker:attempt.marker,phase:'submitting',position:0,text:''}}));
       const result=await invoke('lu_submit_image_turn',{sessionId,chatId:target,prompt:attempt.submitted,
         imageRefs:attempt.snapshot.images.map(i=>i.imageRef),submissionId:attempt.nonce});
       const decision=receiptDecision(attempt,result?.receipt);
@@ -4292,8 +4346,10 @@ function App() {
       setError('Reviewed application tools require a text-only question no longer than 8192 characters.');return;
     }
     let submitted;
-    try { submitted = buildSubmittedPrompt(input, snapshot.files); }
-    catch (error) {setError(String(error));return;}
+    try {
+      submitted = buildSubmittedPrompt(input, snapshot.files);
+      if(new TextEncoder().encode(submitted).length>16*1024)throw Error('Message exceeds the 16 KiB text limit');
+    }catch (error) {setError(String(error));return;}
     if(snapshot.images.some(im=>im.available===false)){
       setError('Remove or replace unavailable images before sending.');return;
     }
@@ -4355,8 +4411,8 @@ function App() {
     }
   }
   async function openSavedAttachment(entry,im){
-    const target=currentChat.current;
-    if(!target||im.observed)return;
+    const target=chatId;
+    if(!target||target!==currentChat.current||im.observed)return;
     const request=++savedPreviewSequence.current;
     try{
       const url=await invoke('lu_read_image_attachment',{chatId:target,imageRef:im.imageRef,visibleSeq:entry.seq});
@@ -4378,8 +4434,8 @@ function App() {
     }catch(error){if(currentChat.current===target)setError(String(error));}
   }
   async function restoreSavedMessage(entry){
-    const target=currentChat.current;
-    if(!target||pendingSends.current.has(target)||jobsRef.current[target]||
+    const target=chatId;
+    if(!target||target!==currentChat.current||pendingSends.current.has(target)||jobsRef.current[target]||
        !emptyDraft(readComposerDraft(target))||!beginDraftMutation(target)){
       setError('Finish or clear the current draft before restoring a saved message.');return;
     }
@@ -6522,7 +6578,7 @@ function App() {
           </div>}
           {visibleAttempt?.uncertain&&<div className="submissionNotice" role="status">
             Message receipt could not be confirmed. Your draft is retained.
-            <button className="subtleButton" type="button" disabled={visibleAttempt.checking}
+            <button className="subtleButton" type="button" disabled={visibleAttempt.checking||visibleAttempt.restoreMismatch}
               onClick={()=>void retryUnconfirmedMessage()}>Check / retry same message</button>
             <button className="subtleButton" type="button" disabled={visibleAttempt.checking}
               onClick={()=>void keepUnconfirmedDraft()}>Keep draft without sending</button>
