@@ -2057,7 +2057,9 @@ fn lu_cp01_reply_observed(caller:tauri::WebviewWindow,state:State<'_,Arc<Desktop
         b.is_ascii_digit()||(b'a'..=b'f').contains(&b)){return Ok(false)}
     if image_submission_generation(&chat_id,&submission_id)?!=generation_id{return Ok(false)}
     // Read the canonical original user receipt; this is not a new grant.
-    if image_submission_status(state.inner(),&chat_id,&submission_id,false)?.visible_seq.is_none(){
+    let book=state.chats.require(&chat_id)?;
+    if book.authenticated_chat_turn_visible_seq(&chat_id,&generation_id)
+        .map_err(|_|"Diagnostic receipt unavailable")?.is_none(){
         return Ok(false)
     }
     Ok(state.perf01.observe_cp01_reply(&chat_id,&generation_id,&diagnostic_ref))

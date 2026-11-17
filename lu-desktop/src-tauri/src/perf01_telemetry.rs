@@ -128,7 +128,7 @@ impl PerfLedger{
     }
     pub fn exact_causal_turn(&self,chat_id:&str,generation_id:&str,trace_ref:&str)
         ->Option<PerfReceipt>{
-        let q=self.recent.try_lock().ok()?;
+        let q=self.recent.lock().ok()?;
         q.iter().rev().find(|row|row.chat_id==chat_id&&row.generation_id==generation_id
             &&row.cp01_trace.as_ref().is_some_and(|t|t.trace_ref()==trace_ref)).cloned()
     }

@@ -37,7 +37,7 @@ test('backend faults do not count as completed semantic inference or expose engi
   assert.match(http,/CP01_IMAGE_NO_VISIBLE_ANSWER/);
   assert.match(http,/CP01_IMAGE_BACKEND_EVENT/);
   assert.match(perf,/CP01_IMAGE_INSUFFICIENT_BACKEND_EVIDENCE/);
-  assert.match(host,/exact_turn\(&chat_id,&gid\)/);
+  assert.match(host,/exact_causal_turn\(&chat_id,&gid,&diagnostic_ref\)/);
   assert.match(ui,/result.error\|\|'Response failed\.'/);
 });
 test('genuine saved image oracle requires two singles and two differently ordered four-image turns',()=>{
