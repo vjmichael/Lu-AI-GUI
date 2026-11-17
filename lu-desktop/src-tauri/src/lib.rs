@@ -5597,15 +5597,7 @@ async fn generate_internal(
             // a text-only model request. Keep the original admitted order.
             if !manifest.is_empty(){perf_trace.image_stage("SAVED_IMAGE_READBACK");}
             if origin==GenerationOrigin::Human{
-                let original=state.chats.require(&chat_id)?.saved_image_manifest(&chat_id,&gid)
-                    .map_err(|_|"Saved attachment manifest unavailable")?;
-                if original!=manifest{return Err("Saved attachment manifest changed".into())}
-                if original.len()!=images.len(){return Err("Saved image membership changed".into())}
-                for (a,pinned) in original.iter().zip(&images){
-                    if &state.attachments.read(&chat_id,a)?!=pinned{
-                        return Err("Saved image changed while queued".into())
-                    }
-                }
+                state.attachments.verify_saved_exact(&state.chats,&chat_id,&gid,&manifest,&images)?;
             }
             if !manifest.is_empty(){perf_trace.image_stage("CONTEXT_ASSEMBLY");}
             let events = state.chats.recent_model_history(&chat_id,64)?;

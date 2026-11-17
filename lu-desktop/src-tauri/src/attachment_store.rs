@@ -143,6 +143,21 @@ impl AttachmentStore{
         if !matches(a,&p){return Err("Saved image failed identity validation".into())}
         Ok(p)
     }
+    /// Shared ordinary-Send dispatch readback: retrieve the exact original
+    /// manifest and independently reopen every byte object in saved order.
+    /// No text-only downgrade, resorting or lookup by current draft.
+    pub(crate) fn verify_saved_exact(&self,chats:&crate::chat_store::ChatStore,
+        chat:&str,turn:&str,expected:&[ImageAttachment],pinned:&[PinnedImage]
+    )->Result<(),String>{
+        let original=chats.require(chat)?.saved_image_manifest(chat,turn)
+            .map_err(|_|"Saved attachment manifest unavailable")?;
+        if original.as_slice()!=expected{return Err("Saved attachment manifest changed".into())}
+        if original.len()!=pinned.len(){return Err("Saved image membership changed".into())}
+        for (a,p) in original.iter().zip(pinned){
+            if &self.read(chat,a)?!=p{return Err("Saved image changed while queued".into())}
+        }
+        Ok(())
+    }
     pub(crate) fn reject_live_observed_digest(&self,p:&PinnedImage)->Result<(),String>{
         let observed=self.observed.lock().map_err(|_|"Local observation unavailable")?;
         if observed.values().any(|(_,source)|source.sha256==p.sha256){
@@ -222,6 +237,124 @@ mod tests{
         DynamicImage::ImageRgb8(ImageBuffer::from_pixel(2,2,Rgb([19,81,207])))
             .write_to(&mut bytes,ImageFormat::Png).unwrap();
         admit_data_url(&format!("data:image/png;base64,{}",STANDARD.encode(bytes.into_inner()))).unwrap()
+    }
+    /// Real opt-in native host acceptance. The UI itself is separately
+    /// exercised in CP-01F. This never downloads/starts arbitrary files:
+    /// the operator supplies reviewed expected digests and canonical model
+    /// directory. No fake server, external API, or answer hint is used.
+    #[test]
+    #[ignore="requires independently checksum-pinned local llama.cpp, GGUF and matching MMProj"]
+    fn actual_cp01_saved_one_and_four_images_reach_supervised_mmproj(){
+        use lu_core::{
+            inference_supervisor::TrustedInferenceSupervisor,
+            persistent_llama_backend::{PersistentEngineConfig,PersistentLlamaBackend},
+            model_admission::ModelAdmissionManager,
+            mmproj_admission::admit_projector,
+            projector_identity::projector_filename_for_model,
+            inference_wire::decode_frame,wire::proto,
+        };
+        use crate::generation_queue::{GenerationQueue,TurnClass};
+        use rand::{seq::SliceRandom,rngs::OsRng};
+        use std::{num::NonZeroUsize,sync::Arc,time::Duration};
+        fn env(key:&str)->String{std::env::var(key).unwrap_or_else(|_|panic!("missing reviewed {key}"))}
+        fn verified(path:&Path,expected:&str)->[u8;32]{
+            let expected=crate::decode_sha(expected).expect("trusted expected SHA-256");
+            assert!(fs::symlink_metadata(path).unwrap().file_type().is_file());
+            let mut file=fs::File::open(path).unwrap();
+            let mut hash=Sha256::new();let mut buf=[0u8;64*1024];
+            loop{let n=file.read(&mut buf).unwrap();if n==0{break}hash.update(&buf[..n]);}
+            let actual:[u8;32]=hash.finalize().into();
+            assert_eq!(actual,expected,"reviewed file identity mismatch");actual
+        }
+        let root=std::path::PathBuf::from(env("LU_CP01_MODEL_DIR"));
+        let model_name=env("LU_CP01_MODEL_FILE");
+        let model_ref=env("LU_CP01_MODEL_REF");
+        let projector_name=projector_filename_for_model(&model_ref).unwrap();
+        let engine=std::path::PathBuf::from(env("LU_CP01_ENGINE"));
+        let engine_sha=verified(&engine,&env("LU_CP01_ENGINE_SHA256"));
+        let mut manager=ModelAdmissionManager::new();
+        let model=manager.admit(&root,&model_name).unwrap().clone();
+        let projector=admit_projector(&root,&projector_name).unwrap();
+        verified(model.path(),&env("LU_CP01_MODEL_SHA256"));
+        verified(projector.path(),&env("LU_CP01_MMPROJ_SHA256"));
+        let context=8192;
+        let sup=TrustedInferenceSupervisor::new("llama-cpu".into(),context,
+            vec![(model_ref.clone(),model)],move||{
+                PersistentLlamaBackend::new(PersistentEngineConfig{
+                    executable:engine.clone(),expected_sha256:engine_sha,
+                    threads:NonZeroUsize::new(4).unwrap(),context_tokens:context,
+                    startup_timeout:Duration::from_secs(600),request_timeout:Duration::from_secs(600),
+                    api_key:crate::next_id("").repeat(2),load_observer:None,
+                })
+            }).unwrap();
+        sup.attach_projector(&model_ref,projector).unwrap();
+        let session=crate::next_id("s-");
+        sup.load(&model_ref,session.clone(),"cp01-load").unwrap();
+        assert!(sup.status().unwrap().pid.is_some(),"actual owned child required");
+        let profile=std::env::temp_dir().join(crate::next_id("lu-cp01-real-"));
+        let chats=crate::chat_store::ChatStore::open(&profile).unwrap();
+        let store=AttachmentStore::open(&profile).unwrap();
+        let queue=Arc::new(GenerationQueue::default());
+        let colors=[("red",[245,9,9]),("blue",[9,9,245]),
+            ("green",[9,200,9]),("yellow",[245,230,9])];
+        let mut order=[0usize,1,2,3];order.shuffle(&mut OsRng);
+        let mut rotated=order;rotated.rotate_left(1);
+        let sets=vec![vec![order[0]],vec![order[1]],order.to_vec(),rotated.to_vec()];
+        let prompt="Look at each attached image in attachment order. Reply only with the dominant color of each image, using red, blue, green or yellow. Separate the color words with commas.";
+        for indexes in sets{
+            let chat=chats.create_chat().unwrap().chat_id;
+            let book=chats.require(&chat).unwrap();
+            let turn=crate::next_id("g-");let request=crate::next_id("req-");
+            let mut manifest=Vec::new();let mut images=Vec::new();
+            for i in &indexes{
+                let mut bytes=Cursor::new(Vec::new());
+                DynamicImage::ImageRgb8(ImageBuffer::from_pixel(256,256,Rgb(colors[*i].1)))
+                    .write_to(&mut bytes,ImageFormat::Png).unwrap();
+                let image=admit_data_url(&format!("data:image/png;base64,{}",STANDARD.encode(bytes.into_inner()))).unwrap();
+                let a=AttachmentStore::metadata(crate::next_id("img-"),"sample.png",&image,false);
+                store.write_new(&chat,&a,&image).unwrap();
+                book.admit_draft_image(&chat,&a).unwrap();
+                manifest.push(a);images.push(image);
+            }
+            let (ticket,_)=queue.enqueue_with_class_committing(&session,&chat,&turn,
+                TurnClass::Foreground,||chats.append_user_with_image_draft(&chat,&turn,prompt,&manifest)
+                    .map(|_|())).unwrap();
+            ticket.wait_for_slot().unwrap();
+            store.verify_saved_exact(&chats,&chat,&turn,&manifest,&images).unwrap();
+            sup.reserve_generation_images_with_history(&session,&turn,&request,prompt,96,&images,&[]).unwrap();
+            let bytes:usize=images.iter().map(|p|p.bytes.len()).sum();
+            let mut text=String::new();let mut report=None;
+            sup.run_reserved_images_reported(&session,&turn,&request,prompt.into(),96,images,vec![],|wire|{
+                let frame=decode_frame(&wire).unwrap();
+                if let Some(proto::inference_frame::Body::Event(event))=frame.body{
+                    if let Some(proto::inference_event::Kind::TextChunk(chunk))=event.kind{
+                        assert!(text.len()+chunk.text.len()<=2048);
+                        text.push_str(&chunk.text);
+                    }
+                }
+                Ok(())
+            },&mut report).expect("actual supervised GGUF/MMProj inference failed");
+            let report=report.expect("actual persistent backend receipt required");
+            assert_eq!(report.image_count,indexes.len());assert_eq!(report.decoded_bytes,bytes);
+            assert!(report.payload_verified&&report.upload_completed&&report.visible_answer&&
+                report.stream_completed&&report.worker_idle_verified);
+            assert!(report.failure_code.is_none());
+            let words=text.split(|c:char|!c.is_ascii_alphabetic()).filter(|s|!s.is_empty())
+                .map(str::to_ascii_lowercase).collect::<Vec<_>>();
+            let expected=indexes.iter().map(|i|colors[*i].0.to_owned()).collect::<Vec<_>>();
+            println!("CP01_REAL_IMAGE count={} expected={expected:?} actual={words:?} receipt={report:?}",
+                indexes.len());
+            assert_eq!(words,expected,"actual model must identify every pixel-only color IN ORDER");
+            ticket.commit_completed(&session,||{
+                chats.append_progress(&chat,&turn,&text)?;
+                chats.complete(&chat,&turn)
+            }).unwrap();
+            assert_eq!(book.saved_image_manifest(&chat,&turn).unwrap(),manifest);
+            drop(ticket);
+        }
+        sup.unload(&session,"cp01-unload").unwrap();
+        drop(store);drop(chats);
+        fs::remove_dir_all(profile).unwrap();
     }
     #[test]
     fn durable_bytes_are_scope_bound_and_revalidated(){
