@@ -839,9 +839,41 @@ try {
           @('Local commit message','WO9 installed reviewed Git source'),
           @('Author name','WO9 Native Acceptance'),
           @('Author email','wo9@localhost.invalid'))) {
+        # WebView2 UIA SetValue may change the provider's displayed value
+        # without dispatching the physical input events React needs. Use
+        # actual foreground keyboard input and verify the native value.
         $edit=Find-Control $pair[0] 'Edit' 20
-        $edit.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern).SetValue($pair[1])
+        if (!$edit.Current.IsEnabled -or !$edit.Current.IsKeyboardFocusable) {
+          Deny 'wo9_commit_input_unavailable'
+        }
+        $hwnd=$proc.MainWindowHandle
+        if ($hwnd -eq [IntPtr]::Zero) { Deny 'wo9_commit_window_unavailable' }
+        [void][P04NativeWebViewWindows]::SetForegroundWindow($hwnd)
+        if ([P04NativeWebViewWindows]::GetForegroundWindow() -ne $hwnd) {
+          Deny 'wo9_commit_window_not_foreground'
+        }
+        $edit.SetFocus()
+        [System.Windows.Forms.SendKeys]::SendWait('^a')
+        [System.Windows.Forms.SendKeys]::SendWait($pair[1])
+        $deadline=(Get-Date).AddSeconds(8)
+        $verified=$false
+        do {
+          $fresh=Find-Control $pair[0] 'Edit' 2
+          $value=$fresh.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern).Current.Value
+          if ($value -ceq $pair[1]) { $verified=$true; break }
+          Start-Sleep -Milliseconds 200
+        } while ((Get-Date) -lt $deadline)
+        if (!$verified) { Deny 'wo9_commit_input_readback_mismatch' }
       }
+      # Do not enable the button programmatically. Wait only for the actual
+      # installed application's ordinary input and staging gates to settle.
+      $deadline=(Get-Date).AddSeconds(12)
+      do {
+        $confirm=Find-Control 'Confirm separate local commit' 'Button' 2
+        if ($confirm.Current.IsEnabled) { break }
+        Start-Sleep -Milliseconds 200
+      } while ((Get-Date) -lt $deadline)
+      if (!$confirm.Current.IsEnabled) { Deny 'button_disabled_Confirm_separate_local_commit' }
       Click 'Confirm separate local commit'
       Confirm-NativeOneUseDialog 'Confirm local Git commit' 'Commit exact staged file'
       Require 'Local commit'

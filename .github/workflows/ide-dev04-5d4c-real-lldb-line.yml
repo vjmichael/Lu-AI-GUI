@@ -63,7 +63,7 @@ jobs:
           host=Path('ide/supervisor/src/windows_lsp_worker.rs').read_text()
           fixture=Path('ide/supervisor/examples/wo6_native_dap_acceptance.rs').read_text()
           workflow=Path('.github/workflows/ide-wo6-native-os-acceptance.yml').read_text()
-          assert 'dev045d4c-ci-oracle = ["dap-transport", "protected-recovery-service"]' in cargo
+          assert 'dev045d4c-ci-oracle = ["dap-transport", "protected-recovery-service", "lu-ide-workspace/dev045d4c-ci-oracle"]' in cargo
           # The original spawned LLVM reader remains CI/debug-only, but
           # observation-only FIN04 release evidence is now a separate opt-in
           # module scope. Require both exact gates, never infer DAP control.
