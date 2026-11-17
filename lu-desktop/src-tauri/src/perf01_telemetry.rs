@@ -36,6 +36,9 @@ pub(crate) struct PerfReceipt {
     pub queue_published:Option<bool>,
     pub catalog_reconciliation_required:bool,
     pub admitted_image_count:Option<u32>,
+    pub image_stage:Option<&'static str>,
+    pub image_failure_code:Option<&'static str>,
+    pub image_delivery:Option<lu_core::multimodal_http::ImageDeliveryReceipt>,
     pub queue_wait_ms:Option<u64>,
     pub context_assembly_ms:Option<u64>,
     pub model_dispatch_to_first_chunk_ms:Option<u64>,
@@ -84,6 +87,7 @@ fn base(chat_id:&str,generation_id:&str,route:&str,reason_code:&str,
         observed_engine_starts_since_host_start:None,
         model_ref:None,backend_family:None,context_limit_tokens:None,
         queue_published:None,admitted_image_count:None,catalog_reconciliation_required:false,
+        image_stage:None,image_failure_code:None,image_delivery:None,
         queue_wait_ms:None,context_assembly_ms:None,
         model_dispatch_to_first_chunk_ms:None,
         turn_to_first_chunk_ms:None,turn_to_first_webview_forward_ms:None,
@@ -107,6 +111,10 @@ impl PerfLedger{
         q.push_back(row);
         while q.len()>MAX_RECEIPTS{q.pop_front();}
         Ok(())
+    }
+    pub fn exact_turn(&self,chat_id:&str,generation_id:&str)->Result<Option<PerfReceipt>,String>{
+        let q=self.recent.lock().map_err(|_|"Perf telemetry lock unavailable")?;
+        Ok(q.iter().rev().find(|v|v.chat_id==chat_id&&v.generation_id==generation_id).cloned())
     }
     pub fn recent(&self,chat_id:&str,limit:usize)
         ->Result<Vec<PerfReceipt>,String>{
@@ -181,6 +189,28 @@ impl ModelTrace{
     pub fn admission_publication(&mut self,published:bool,image_count:usize){
         self.row.queue_published=Some(published);
         self.row.admitted_image_count=Some(image_count.min(u32::MAX as usize) as u32);
+    }
+    pub fn image_stage(&mut self,stage:&'static str){self.row.image_stage=Some(stage);}
+    pub fn image_failure(&mut self,code:&'static str){self.row.image_failure_code=Some(code);}
+    pub fn finalize_image_outcome(&mut self,phase:&str){
+        if phase=="completed"{return}
+        if phase=="cancelled"{self.row.image_failure_code=Some("CP01_IMAGE_CANCELLED");return}
+        if self.row.image_failure_code.is_none(){
+            self.row.image_failure_code=Some(match self.row.image_stage{
+                Some("QUEUE_ADMISSION")=>"CP01_IMAGE_QUEUE_FAILED",
+                Some("SAVED_IMAGE_READBACK")=>"CP01_IMAGE_SAVED_SOURCE_FAILED",
+                Some("CONTEXT_ASSEMBLY")=>"CP01_IMAGE_CONTEXT_FAILED",
+                Some("EXACT_IMAGE_RESERVATION")=>"CP01_IMAGE_RESERVATION_FAILED",
+                Some("ORIGINAL_RESPONSE_COMMIT"|"ORIGINAL_RESPONSE_SAVED")=>"CP01_IMAGE_JOURNAL_FAILED",
+                _=>"CP01_IMAGE_INSUFFICIENT_BACKEND_EVIDENCE",
+            });
+        }
+    }
+    pub fn image_delivery(&mut self,receipt:Option<lu_core::multimodal_http::ImageDeliveryReceipt>){
+        if let Some(r)=receipt.as_ref(){
+            self.row.image_failure_code=r.failure_code;
+        }
+        self.row.image_delivery=receipt;
     }
     pub fn queued(&mut self){self.queue_entered=Instant::now();}
     pub fn acquired_slot(&mut self){

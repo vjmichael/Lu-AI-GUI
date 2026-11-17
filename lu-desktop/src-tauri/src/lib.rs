@@ -1993,7 +1993,9 @@ async fn lu_submit_image_turn(app:AppHandle,state:State<'_,Arc<DesktopState>>,
     session_id:String,chat_id:String,prompt:String,image_refs:Vec<String>,
     submission_id:String)->Result<ImageSubmissionResult,String>{
     let owner=Arc::clone(state.inner());
-    image_submission_generation(&chat_id,&submission_id)?;
+    let gid=image_submission_generation(&chat_id,&submission_id)?;
+    let started=std::time::Instant::now();
+    let count=image_refs.len();
     if image_refs.is_empty(){return Err("An image submission requires an image".into())}
     let result=lu_generate(app,state,session_id,chat_id.clone(),prompt,image_refs,
         512,Some(false),Some(false),Some(submission_id.clone())).await;
@@ -2001,7 +2003,33 @@ async fn lu_submit_image_turn(app:AppHandle,state:State<'_,Arc<DesktopState>>,
     let (outcome,error)=match result{
         Ok(_)=>("completed",None),
         Err(error) if error.contains("Cancelled")||error.contains("Canceled")=>("cancelled",None),
-        Err(error)=>("failed",Some(error)),
+        Err(error)=>{
+            let observed=owner.perf01.exact_turn(&chat_id,&gid).ok().flatten();
+            let code=observed.as_ref().and_then(|r|r.image_failure_code);
+            if observed.is_none()&&receipt.rejected{
+                // No dispatch evidence exists: distinguish an early native
+                // refusal from a model/backend failure without guessing.
+                let mut trace=perf01_telemetry::ModelTrace::new(&chat_id,&gid,started,
+                    owner.supervisor.status().is_ok_and(|s|s.session_id.is_some()));
+                trace.image_stage("BEFORE_QUEUE");
+                trace.image_failure("CP01_IMAGE_ADMISSION_REFUSED");
+                trace.admission_publication(false,count);
+                let _=owner.perf01.record(trace.finish("ADMISSION_NOT_PUBLISHED"));
+            }
+            let message=code.map(lu_core::multimodal_http::image_failure_message)
+                .unwrap_or(if receipt.visible_seq.is_some(){
+                    "The saved image response did not complete. Check the loaded model and try again."
+                }else{
+                    // Original admission errors are host-owned, but may
+                    // carry storage details; expose only known safe reasons.
+                    if error.contains("MMProj"){"Load a compatible image-capable model before sending."}
+                    else if error.contains("session"){"The model session changed. Load the model and try again."}
+                    else if error.contains("image")||error.contains("attachment")||error.contains("Attachment"){
+                        "Check that all draft images are available and try again."
+                    }else{"The message was not admitted. Check the draft and model."}
+                });
+            ("failed",Some(message.to_owned()))
+        },
     };
     Ok(ImageSubmissionResult{receipt,outcome,error})
 }
@@ -5498,6 +5526,7 @@ async fn generate_internal(
     ).with_model(runtime.model_ref.clone())
         .with_background_origin(origin==GenerationOrigin::BackgroundTerminal);
     perf_trace.queued();
+    if !images.is_empty(){perf_trace.image_stage("QUEUE_ADMISSION");}
     let supervisor = Arc::clone(&state.supervisor);
     // CP-01A: publish a human queue reservation only after its bounded
     // original journal write succeeds. Background authorization/history reads
@@ -5527,6 +5556,7 @@ async fn generate_internal(
             // A rejected publication does NOT establish whether an underlying
             // canonical event committed before a derived catalog write failed.
             perf_trace.admission_publication(false, images.len());
+            if !images.is_empty(){perf_trace.image_failure("CP01_IMAGE_ADMISSION_REFUSED");}
             let _ = state.perf01.record(perf_trace.finish("ADMISSION_NOT_PUBLISHED"));
             return Err(error);
         }
@@ -5565,6 +5595,7 @@ async fn generate_internal(
             // Verify canonical binding and external bytes again after queue
             // wait; an altered/missing object can never silently degrade into
             // a text-only model request. Keep the original admitted order.
+            if !manifest.is_empty(){perf_trace.image_stage("SAVED_IMAGE_READBACK");}
             if origin==GenerationOrigin::Human{
                 let original=state.chats.require(&chat_id)?.saved_image_manifest(&chat_id,&gid)
                     .map_err(|_|"Saved attachment manifest unavailable")?;
@@ -5576,6 +5607,7 @@ async fn generate_internal(
                     }
                 }
             }
+            if !manifest.is_empty(){perf_trace.image_stage("CONTEXT_ASSEMBLY");}
             let events = state.chats.recent_model_history(&chat_id,64)?;
             // ANSF performs one indexed bounded CURRENT-REVISION source read; it does not load
             // the complete human-visible conversation into inference context.
@@ -6127,6 +6159,7 @@ async fn generate_internal(
                 return Err("model session changed while queued".into());
             }
             perf_trace.context_ready();
+            if !manifest.is_empty(){perf_trace.image_stage("EXACT_IMAGE_RESERVATION");}
             if images.is_empty() {
                 supervisor
                     .reserve_generation_with_history(
@@ -6175,6 +6208,7 @@ async fn generate_internal(
                 },
             );
             perf_trace.dispatched();
+            if !manifest.is_empty(){perf_trace.image_stage("BACKEND_DISPATCH");}
             let mut answer = String::new();
             let mut last_checkpoint = std::time::Instant::now();
             let mut last_checkpoint_bytes = 0usize;
@@ -6201,6 +6235,7 @@ async fn generate_internal(
                 }
                 Ok(())
             };
+            let mut image_report=None;
             let mut result = if images.is_empty() {
                 supervisor.run_reserved_with_history(
                     &sid,
@@ -6212,7 +6247,7 @@ async fn generate_internal(
                     emit,
                 )
             } else {
-                supervisor.run_reserved_images_with_history(
+                supervisor.run_reserved_images_reported(
                     &sid,
                     &gid,
                     &rid,
@@ -6221,8 +6256,14 @@ async fn generate_internal(
                     images,
                     history,
                     emit,
+                    &mut image_report,
                 )
             };
+            if !manifest.is_empty(){
+                // Actual verified backend receipt, never infer upload or
+                // output from an earlier host reservation alone.
+                perf_trace.image_delivery(image_report);
+            }
             // Drain a subthreshold final chunk after the original native
             // inference call. On cancellation, the queue refuses any further
             // UI chunks; the outer failure path still saves prior partials.
@@ -6237,6 +6278,7 @@ async fn generate_internal(
             }
             match result {
                 Ok(()) => {
+                    if !manifest.is_empty(){perf_trace.image_stage("ORIGINAL_RESPONSE_COMMIT");}
                     // Final original ANSF publication has a definite order
                     // against native Stop. No completed stream can be
                     // committed after its generation was cancelled.
@@ -6252,6 +6294,7 @@ async fn generate_internal(
                         let _=supervisor.invalidate_prefix_cache(&sid);
                     }
                     saved?;
+                    if !manifest.is_empty(){perf_trace.image_stage("ORIGINAL_RESPONSE_SAVED");}
                     if plan_only{
                         let result=plan_source.as_ref()
                             .ok_or_else(||"Original plan identity unavailable".to_string())
@@ -6445,6 +6488,7 @@ async fn generate_internal(
             Err(_) => "failed",
         };
         let observed_engine_starts_after=state.engine_start_events.load(Ordering::Relaxed);
+        if !manifest.is_empty(){perf_trace.finalize_image_outcome(phase);}
         let _=state.perf01.record(perf_trace
             .with_engine_start_events(
                 observed_engine_starts_before,observed_engine_starts_after

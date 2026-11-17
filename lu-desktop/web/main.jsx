@@ -4262,7 +4262,7 @@ function App() {
         if(result.outcome!=='completed'){
           noticeForChat(target,result.outcome==='cancelled'
             ?'Message stopped. Your original images are saved. Restore the message to try again.'
-            :'Response failed. Your original images are saved. Restore the message to try again.');
+            :((result.error||'Response failed.')+' Your original images are saved. Restore the message to try again.'));
         }else{
           noticeForChat(target,null);
           if(currentChat.current===target){

@@ -82,6 +82,23 @@ pub fn image_failure_code(error:&str)->&'static str{
     }else{"CP01_IMAGE_BACKEND_FAILED"}
 }
 
+pub fn image_failure_message(code:&str)->&'static str{
+    match code{
+        "CP01_IMAGE_PROJECTOR_MISSING"=>"Load a compatible image-capable model before sending.",
+        "CP01_IMAGE_ENGINE_UNAVAILABLE"|"CP01_IMAGE_WORKER_STOP_UNVERIFIED"=>
+            "The local model stopped or its state could not be verified. Reload the model before trying again.",
+        "CP01_IMAGE_BACKEND_REJECTED"=>"The local model rejected this image request. Check that its matching projector is loaded.",
+        "CP01_IMAGE_NO_VISIBLE_ANSWER"=>"The local model produced no visible answer. Check model and projector compatibility.",
+        "CP01_IMAGE_OUTPUT_LIMIT"=>"The model reached its output limit before completing the image response.",
+        "CP01_IMAGE_TIMEOUT"=>"The image response timed out. Reload the model if needed and try again.",
+        "CP01_IMAGE_SAVED_SOURCE_FAILED"|"CP01_IMAGE_PAYLOAD_MISMATCH"=>
+            "The original image data could not be verified. Check or replace the affected images.",
+        "CP01_IMAGE_JOURNAL_FAILED"=>"The response could not be confirmed saved. Check the conversation before retrying.",
+        "CP01_IMAGE_CANCELLED"=>"The message was stopped.",
+        _=>"The local image response did not complete. Check the loaded model and try again.",
+    }
+}
+
 /// Independently decode the final serialized body after sampling/cache
 /// options have been applied. Exact membership, order, MIME, bytes and
 /// digest must agree with the native originals. No remote URL is accepted.

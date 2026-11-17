@@ -890,7 +890,10 @@ mod tests {
             &Cancellation::default(),
             &mut |_| Ok(()),
         );
-        assert!(result.unwrap_err().contains("MMProj"));
+        assert_eq!(result.unwrap_err(),"CP01_IMAGE_PROJECTOR_MISSING");
+        let receipt=backend.take_image_delivery_receipt().unwrap();
+        assert_eq!(receipt.failure_code,Some("CP01_IMAGE_PROJECTOR_MISSING"));
+        assert!(!receipt.payload_verified&&!receipt.upload_completed);
     }
     #[test]
     fn observer_receives_only_phase_and_pid() {
