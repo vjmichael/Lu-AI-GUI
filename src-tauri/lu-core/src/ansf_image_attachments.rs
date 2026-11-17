@@ -70,6 +70,11 @@ pub(crate) fn initialize_image_attachment_schema(conn:&Connection)->Result<(),An
             turn_id TEXT NOT NULL,
             PRIMARY KEY(session_id,turn_id)
          );
+         CREATE TABLE IF NOT EXISTS ansf_image_ui_submission(
+            session_id TEXT PRIMARY KEY REFERENCES ansf_sessions(id),
+            turn_id TEXT NOT NULL,
+            snapshot TEXT NOT NULL CHECK(length(snapshot)<=131072)
+         );
          CREATE INDEX IF NOT EXISTS ansf_image_attachment_manifest
            ON ansf_image_attachments(session_id,turn_id,seq);
          CREATE TRIGGER IF NOT EXISTS ansf_image_saved_no_update
@@ -153,6 +158,12 @@ fn image_submission_rejected(conn:&Connection,chat:&str,turn:&str)->Result<bool,
         "SELECT EXISTS(SELECT 1 FROM ansf_image_submission_rejections WHERE session_id=?1 AND turn_id=?2)",
         params![chat,turn],|r|r.get(0))?)
 }
+fn image_ui_submission_settled(conn:&Connection,chat:&str,turn:&str)->Result<bool,AnsfError>{
+    if image_submission_rejected(conn,chat,turn)?{return Ok(true)}
+    Ok(conn.query_row("SELECT EXISTS(SELECT 1 FROM ansf_live_chat_events
+        WHERE session_id=?1 AND kind='user' AND origin='host' AND user_turn_id=?2)",
+        params![chat,turn],|r|r.get(0))?)
+}
 impl AnsfStore{
     pub fn image_submission_rejected(&self,chat:&str,turn:&str)->Result<bool,AnsfError>{
         let conn=self.conn.lock().map_err(|_|AnsfError::Locked)?;
@@ -173,6 +184,55 @@ impl AnsfStore{
             VALUES(?1,?2)",params![chat,turn])?;
         tx.commit()?;
         Ok(true)
+    }
+    /// A bounded UI recovery record for a human's explicit image Send. It
+    /// is not a model-context source, an original user event, or an authority
+    /// grant. An unresolved record may not be overwritten by a new attempt.
+    pub fn stage_image_ui_submission(&self,chat:&str,turn:&str,snapshot:&str,refs:&[String])
+        ->Result<(),AnsfError>{
+        if !valid_chat(chat)||!opaque(turn,"g-")||snapshot.is_empty()||snapshot.len()>128*1024||
+            refs.is_empty()||refs.len()>MAX_IMAGES{return Err(AnsfError::InvalidInput)}
+        let mut conn=self.conn.lock().map_err(|_|AnsfError::Locked)?;
+        let tx=conn.transaction()?;
+        if read_manifest(&tx,chat,None)?.iter().map(|a|&a.attachment_id).ne(refs.iter()){
+            return Err(AnsfError::InvalidInput)
+        }
+        let previous:Option<(String,String)>=tx.query_row(
+            "SELECT turn_id,snapshot FROM ansf_image_ui_submission WHERE session_id=?1",
+            [chat],|r|Ok((r.get(0)?,r.get(1)?))).optional()?;
+        if let Some((old,payload))=previous{
+            if old==turn{
+                if payload==snapshot{return Ok(())}
+                return Err(AnsfError::InvalidInput)
+            }
+            if !image_ui_submission_settled(&tx,chat,&old)?{
+                return Err(AnsfError::InvalidInput)
+            }
+        }
+        tx.execute(
+            "INSERT INTO ansf_image_ui_submission(session_id,turn_id,snapshot) VALUES(?1,?2,?3)
+             ON CONFLICT(session_id) DO UPDATE SET turn_id=excluded.turn_id,snapshot=excluded.snapshot",
+            params![chat,turn,snapshot])?;
+        tx.commit()?;
+        Ok(())
+    }
+    pub fn image_ui_submission(&self,chat:&str)->Result<Option<(String,String)>,AnsfError>{
+        if !valid_chat(chat){return Err(AnsfError::InvalidInput)}
+        let conn=self.conn.lock().map_err(|_|AnsfError::Locked)?;
+        Ok(conn.query_row("SELECT turn_id,snapshot FROM ansf_image_ui_submission WHERE session_id=?1",
+            [chat],|r|Ok((r.get(0)?,r.get(1)?))).optional()?)
+    }
+    /// Clear only the exact settled UI record. An unknown outcome must
+    /// survive host/WebView restart; a late cleanup cannot clear a new Send.
+    pub fn clear_image_ui_submission(&self,chat:&str,turn:&str)->Result<bool,AnsfError>{
+        if !valid_chat(chat)||!opaque(turn,"g-"){return Err(AnsfError::InvalidInput)}
+        let mut conn=self.conn.lock().map_err(|_|AnsfError::Locked)?;
+        let tx=conn.transaction()?;
+        if !image_ui_submission_settled(&tx,chat,turn)?{return Ok(false)}
+        let changed=tx.execute("DELETE FROM ansf_image_ui_submission WHERE session_id=?1 AND turn_id=?2",
+            params![chat,turn])?;
+        tx.commit()?;
+        Ok(changed==1)
     }
     pub fn image_draft(&self,chat:&str)->Result<Vec<ImageAttachment>,AnsfError>{
         let conn=self.conn.lock().map_err(|_|AnsfError::Locked)?;
@@ -325,6 +385,28 @@ mod tests{
         let mut bad=image(4);bad.attachment_id="../escape".into();
         assert!(book.admit_draft_image("chat",&bad).is_err());
         assert_eq!(book.image_draft("chat").unwrap(),vec![a,b]);
+    }
+    #[test]
+    fn unresolved_ui_snapshot_is_exact_and_cannot_be_overwritten_or_cleared(){
+        let book=AnsfStore::in_memory().unwrap();
+        book.create_session("chat","ws","Chat").unwrap();
+        book.start_chapter("chat","Original").unwrap();
+        let a=image(1);let e=turn(5);let e2=turn(6);
+        let gid=e.user_turn_id.as_deref().unwrap();
+        let other=e2.user_turn_id.as_deref().unwrap();
+        book.admit_draft_image("chat",&a).unwrap();
+        let refs=vec![a.attachment_id.clone()];
+        book.stage_image_ui_submission("chat",gid,"first",&refs).unwrap();
+        book.stage_image_ui_submission("chat",gid,"first",&refs).unwrap();
+        assert!(book.stage_image_ui_submission("chat",gid,"changed",&refs).is_err());
+        assert!(book.stage_image_ui_submission("chat",other,"new",&refs).is_err());
+        assert!(!book.clear_image_ui_submission("chat",gid).unwrap());
+        assert_eq!(book.image_ui_submission("chat").unwrap(),Some((gid.into(),"first".into())));
+        book.reject_image_submission("chat",gid).unwrap();
+        book.stage_image_ui_submission("chat",other,"new",&refs).unwrap();
+        assert!(!book.clear_image_ui_submission("chat",gid).unwrap());
+        book.append_host_chat_event_with_image_draft("chat",&e2,&[a]).unwrap();
+        assert!(book.clear_image_ui_submission("chat",other).unwrap());
     }
     #[test]
     fn refused_submission_cannot_later_consume_a_draft(){

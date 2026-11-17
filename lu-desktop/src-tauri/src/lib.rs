@@ -1862,6 +1862,10 @@ struct ImageSubmissionStatus{
 fn image_submission_status(state:&DesktopState,chat_id:&str,submission_id:&str,settle_failure:bool)
     ->Result<ImageSubmissionStatus,String>{
     let _gate=state.attachments.gate.lock().map_err(|_|"Attachment manifest unavailable")?;
+    image_submission_status_locked(state,chat_id,submission_id,settle_failure)
+}
+fn image_submission_status_locked(state:&DesktopState,chat_id:&str,submission_id:&str,settle_failure:bool)
+    ->Result<ImageSubmissionStatus,String>{
     let gid=image_submission_generation(chat_id,submission_id)?;
     let book=state.chats.require(&chat_id)?;
     let original=book.authenticated_chat_turn_visible_seq(&chat_id,&gid)
@@ -1885,6 +1889,70 @@ fn image_submission_status(state:&DesktopState,chat_id:&str,submission_id:&str,s
 fn lu_image_submission_status(state:State<'_,Arc<DesktopState>>,chat_id:String,submission_id:String)
     ->Result<ImageSubmissionStatus,String>{
     image_submission_status(state.inner(),&chat_id,&submission_id,false)
+}
+#[derive(Clone,Serialize,Deserialize)]
+#[serde(rename_all="camelCase",deny_unknown_fields)]
+struct ImageUiTextFile{name:String,size:u64,text:String}
+#[derive(Clone,Serialize,Deserialize)]
+#[serde(rename_all="camelCase",deny_unknown_fields)]
+struct ImageUiSnapshot{
+    submission_id:String,
+    prompt:String,
+    submitted:String,
+    image_refs:Vec<String>,
+    files:Vec<ImageUiTextFile>,
+}
+impl ImageUiSnapshot{
+    fn validate(&self)->Result<(),String>{
+        if self.prompt.trim().is_empty()||self.prompt.len()>16*1024||
+           self.submitted.trim().is_empty()||self.submitted.len()>16*1024||
+           self.image_refs.is_empty()||self.image_refs.len()>4||self.files.len()>4||
+           self.image_refs.iter().any(|id|!lu_core::ansf_image_attachments::valid_attachment_id(id))||
+           self.files.iter().any(|f|f.name.len()>256||f.size>64*1024||f.text.len()>64*1024){
+            return Err("Invalid message recovery snapshot".into())
+        }
+        Ok(())
+    }
+}
+#[derive(Serialize)]
+#[serde(rename_all="camelCase")]
+struct ImageUiRecovery{snapshot:ImageUiSnapshot,receipt:ImageSubmissionStatus}
+/// Record ONLY a human-submitted recovery snapshot. Ordinary unsent draft
+/// editing is not auto-persisted here. Text-file bodies are existing bounded
+/// draft data, never new file grants or generated model/source authority.
+#[tauri::command]
+fn lu_prepare_image_submission(state:State<'_,Arc<DesktopState>>,chat_id:String,snapshot:ImageUiSnapshot)
+    ->Result<ImageSubmissionStatus,String>{
+    snapshot.validate()?;
+    let _gate=state.attachments.gate.lock().map_err(|_|"Attachment manifest unavailable")?;
+    let receipt=image_submission_status_locked(state.inner(),&chat_id,&snapshot.submission_id,false)?;
+    if receipt.visible_seq.is_none()&&!receipt.rejected{
+        let payload=serde_json::to_string(&snapshot).map_err(|_|"Message recovery snapshot unavailable")?;
+        state.chats.require(&chat_id)?.stage_image_ui_submission(&chat_id,&receipt.generation_id,
+            &payload,&snapshot.image_refs).map_err(|_|"Existing message recovery needs attention")?;
+    }
+    Ok(receipt)
+}
+#[tauri::command]
+fn lu_pending_image_submission(state:State<'_,Arc<DesktopState>>,chat_id:String)
+    ->Result<Option<ImageUiRecovery>,String>{
+    let _gate=state.attachments.gate.lock().map_err(|_|"Attachment manifest unavailable")?;
+    let book=state.chats.require(&chat_id)?;
+    let Some((gid,payload))=book.image_ui_submission(&chat_id)
+        .map_err(|_|"Message recovery snapshot unavailable")? else{return Ok(None)};
+    let snapshot:ImageUiSnapshot=serde_json::from_str(&payload).map_err(|_|"Invalid message recovery snapshot")?;
+    snapshot.validate()?;
+    let receipt=image_submission_status_locked(state.inner(),&chat_id,&snapshot.submission_id,false)?;
+    if gid!=receipt.generation_id{return Err("Message recovery identity changed".into())}
+    Ok(Some(ImageUiRecovery{snapshot,receipt}))
+}
+#[tauri::command]
+fn lu_clear_image_submission(state:State<'_,Arc<DesktopState>>,chat_id:String,submission_id:String)
+    ->Result<bool,String>{
+    let _gate=state.attachments.gate.lock().map_err(|_|"Attachment manifest unavailable")?;
+    let gid=image_submission_generation(&chat_id,&submission_id)?;
+    state.chats.require(&chat_id)?.clear_image_ui_submission(&chat_id,&gid)
+        .map_err(|_|"Message recovery cleanup unavailable".into())
 }
 /// A human explicitly choosing to keep an unconfirmed draft may fence that
 /// nonce. If admission already committed, return the original receipt
@@ -9651,6 +9719,9 @@ pub fn run() {
             lu_image_attachments,
             lu_read_image_attachment,
             lu_image_submission_status,
+            lu_prepare_image_submission,
+            lu_pending_image_submission,
+            lu_clear_image_submission,
             lu_submit_image_turn,
             lu_stop_image_submission,
             lu_restore_image_turn,
