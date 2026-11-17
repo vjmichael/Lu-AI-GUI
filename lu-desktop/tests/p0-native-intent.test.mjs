@@ -8,7 +8,7 @@ test('explicit local Windows folder requests enter existing native picker, never
   assert.equal(routeExplicitLocalFolderRequest('Please navigate to C:\\Users\\Example\\Downloads\\SingleGalaxy'),true);
   assert.equal(routeExplicitLocalFolderRequest('Inspect C:\\Projects\\Lu'),true);
   assert.equal(routeExplicitLocalFolderRequest('Browse \\\\server\\share\\folder'),true);
-  assert.match(ui,/readOnlyWorkspace: useWorkspaceTools/);
+  assert.match(ui,/readOnlyWorkspace:\s*useWorkspaceTools/);
   const host=readFileSync(new URL('../src-tauri/src/lib.rs',import.meta.url),'utf8');
   assert.match(ui,/const useWorkspaceTools=workspaceToolsNextSend;/);
   assert.doesNotMatch(ui,/routeExplicitLocalFolderRequest\(input\)/);
@@ -39,7 +39,7 @@ test('unloaded model can use only the exact native-clock utility on ordinary Sen
   }
   const host=readFileSync(new URL('../src-tauri/src/lib.rs',import.meta.url),'utf8');
   assert.match(ui,/modelFreeClockAllowed/);
-  assert.match(ui,/sessionId: runtime\.sessionId \?\? ''/);
+  assert.match(ui,/sessionId:\s*runtime\.sessionId\s*\?\?\s*''/);
   assert.match(host,/current\.session_id\.is_none\(\)/);
   assert.match(host,/host_clock::explicit_current_time_request\(&prompt\)/);
 });

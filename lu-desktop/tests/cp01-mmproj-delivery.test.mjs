@@ -48,3 +48,14 @@ test('genuine saved image oracle requires two singles and two differently ordere
   assert.match(store,/report.worker_idle_verified/);
   assert.match(store,/LU_CP01_MMPROJ_SHA256/);
 });
+
+test('native image telemetry survives ownership transfer without cloning original image bytes',()=>{
+  const generation=host.slice(host.indexOf('async fn generate_internal('),host.indexOf('fn validate_reader_attachment_request'));
+  const transfer=generation.indexOf('supervisor.run_reserved_images_reported(');
+  assert.ok(transfer>0);
+  assert.match(generation.slice(0,transfer),/let has_images = !images.is_empty\(\);/);
+  const after=generation.slice(transfer);
+  assert.match(after,/if has_images\{[\s\S]*?perf_trace.image_delivery\(image_report\)/);
+  assert.match(after,/if has_images\{perf_trace.finalize_image_outcome\(phase\);\}/);
+  assert.doesNotMatch(after,/images\.is_empty\(\)|images\.clone\(\)/);
+});

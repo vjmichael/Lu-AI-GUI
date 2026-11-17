@@ -27,7 +27,7 @@ test('M2 native commands are registered and not a general tool interface',()=>{
   assert.match(memory,/chats\.append_goal_memory_event\(chat_id,event\)/);
   assert.match(memory,/project_goal_events\(&records\)/);
   assert.match(chat,/append_native_goal_record\(chat_id,&event\)/);
-  assert.match(host,/recent_model_history\(&chat_id,32\)/);
+  assert.match(host,/recent_model_history\(&chat_id,64\)/);
   assert.match(host,/model_context\(&goal_context\)/);
   assert.doesNotMatch(memory,/ExecuteCode|NetworkWrite|grant\(/);
 });

@@ -33,12 +33,17 @@ jobs:
           test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
           printf '%s\n' "$SOURCE_SHA" > cp02-evidence/source-sha.txt
           node scripts/verify-source-tree.mjs | tee cp02-evidence/source-lock.log
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
       - name: Execute all frontend regression tests
         if: steps.source.outcome == 'success'
         shell: bash
         run: |
           set -euo pipefail
           npm --prefix lu-desktop ci
+          # Compile the real production scanner harness before its Node E2E tests.
+          cargo build --locked --manifest-path lu-desktop/tests/native-file-scan/Cargo.toml 2>&1 | tee cp02-evidence/scanner-build.log
           npm --prefix lu-desktop run test:ui 2>&1 | tee cp02-evidence/frontend-tests.log
           grep -Eq '^# pass [1-9][0-9]*$' cp02-evidence/frontend-tests.log
           grep -Eq '^# fail 0$' cp02-evidence/frontend-tests.log

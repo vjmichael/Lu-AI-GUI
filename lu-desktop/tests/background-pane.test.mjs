@@ -74,7 +74,8 @@ test('explicit native opt-in is required before Lu can proactively ask the model
   assert.ok(ui.includes('checked={Boolean(chatId&&autoBackgroundContinuation)}'));
   assert.ok(ui.includes('Automatically notify this conversation'));
   assert.ok(ui.includes("listen('lu-generation-finish'"));
-  assert.ok(ui.includes('loadLatestUiHistory(finishedChat)'));
+  assert.match(ui,/if\(currentChat.current===finishedChat\)\{\s*void refreshSubmissionHistory\(finishedChat\)/);
+  assert.match(ui,/async function refreshSubmissionHistory\(target\)[\s\S]*?invoke\('lu_history_window',\{chatId:target,[\s\S]*?navigation!==navigationSequence.current/);
   assert.ok(ui.includes("listen('lu-generation-finish'"));
 });
 test('host overview has no checkpoint or output path fields',()=>{

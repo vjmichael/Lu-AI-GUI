@@ -12,7 +12,8 @@ test('single Send enters native host routing; reviewed application still needs O
   // P0-WIN-CHAT intentionally unmounted the legacy specialist buttons.
   // The ordinary Send routes through lu_generate and the native host
   // classifies the original human request. No JS text can be a tool grant.
-  assert.match(ui,/Native tools enter through the original human chat and per-turn OS approvals/);
+  assert.match(ui,/user requests are classified by the native lu_generate host/);
+  assert.match(ui,/Renderer heuristics never choose a tool scope/);
   assert.match(ui,/invoke\('lu_generate',\s*\{/);
   assert.match(ui,/invoke\('lu_reviewed_app_ask',\s*\{/);
   assert.match(desktop,/blocking_pick_file\(\)/);

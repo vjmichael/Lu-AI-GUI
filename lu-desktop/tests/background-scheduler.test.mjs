@@ -64,10 +64,12 @@ test('P02 tasks can be queued, prioritized, delayed, repeated and safely cancell
   assert.match(host,/fn lu_background_queue_control\(/);
   assert.match(host,/fn lu_background_guardian_status\(/);
   assert.match(ui,/backgroundScheduleOptions/);
-  assert.match(ui,/lu_background_guardian_status/);
+  assert.match(host,/lu_background_guardian_status,/);
+  assert.match(ui,/invoke\('lu_background_tasks',\{chatId:scopeChatId\}\)/);
+  assert.doesNotMatch(ui,/invoke\('lu_background_guardian_status'/);
   assert.match(ui,/changeQueuedBackgroundState/);
   assert.match(ui,/NEEDS_REVIEW/);
-  assert.match(css,/\.backgroundGuardianStatus/);
+  assert.match(ui,/aria-label="Background Tasks"/);
 });
 test('P02 final output is not fabricated and real terminal handoff stays in TaskStore',()=>{
   assert.match(core,/TaskState::Completed=>Some\("COMPLETED"\)/);
@@ -86,8 +88,9 @@ test('P02 live host pressure probes reduce admission and unsafe GPU stays off',(
   assert.match(host,/background_pressure\.sample\(\)/);
   assert.match(host,/observed_available_ram_mib/);
   assert.match(host,/observed_cpu_busy_percent/);
-  assert.match(ui,/observedAvailableRamMib/);
-  assert.match(ui,/observedCpuBusyPercent/);
+  assert.match(host,/observed_available_ram_mib:observed\.available_ram_mib/);
+  assert.match(host,/observed_cpu_busy_percent:observed\.cpu_busy_percent/);
+  assert.doesNotMatch(ui,/observedAvailableRamMib|observedCpuBusyPercent/);
   assert.match(core,/gpu:0,vram_mib:0/);
 });
 test('P02 owner-scope reapproval cannot auto-reuse old executor or input file',()=>{

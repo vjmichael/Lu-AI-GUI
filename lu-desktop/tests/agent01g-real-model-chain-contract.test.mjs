@@ -9,7 +9,7 @@ const host=readFileSync(new URL('../src-tauri/src/reviewed_app_desktop.rs',impor
 
 test('the pinned actual GGUF model is required, never scripted into success',()=>{
   assert.match(native,/async fn agent01g_genuine_gguf_requires_fresh_ansf_review_native_git_oracle_and_restart/);
-  assert.match(native,/let mut model=GenuineGgufStep\{raw_replies:vec!\[\]\}/);
+  assert.match(native,/let mut model=GenuineGgufStep\{raw_replies:vec!\[\],first_tool_mode:"required"\}/);
   assert.match(native,/session\.run_journaled_observed\(/);
   assert.match(native,/report\.host_routed_calls,0/);
   assert.match(native,/report\.tool_calls,1/);

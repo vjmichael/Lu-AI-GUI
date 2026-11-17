@@ -89,7 +89,7 @@ test('reviewed execution rechecks real OS custody before native picker and befor
   const broker=readFileSync(new URL('../src-tauri/src/reviewed_app_desktop.rs',import.meta.url),'utf8');
   const checks=broker.match(/require_fresh_child_os_custody_before_worker\(/g)||[];
   assert.equal(checks.length,2);
-  assert.match(broker,/require_fresh_child_os_custody_before_worker\([\s\S]*?Ok\(active\.original_human_turn_id\)/);
+  assert.match(broker,/let selection=reviewed_step_selection\(\s*&active\.original_human_turn_id,revision,&live\.revision_sha256,selected\s*\)\?;[\s\S]*?require_fresh_child_os_custody_before_worker\(\s*host,chat,plan,&active\.original_human_turn_id\s*\)\?;\s*Ok\(selection\)/);
   assert.match(broker,/require_fresh_child_os_custody_before_worker\([\s\S]*?let owner=next_id\("h-"\)/);
   const recovery=readFileSync(new URL('../src-tauri/src/agent_recovery_desktop.rs',import.meta.url),'utf8');
   assert.match(recovery,/status!="REVIEW_FIRST_STEP_ONLY"/);

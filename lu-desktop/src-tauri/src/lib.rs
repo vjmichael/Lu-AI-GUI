@@ -5688,6 +5688,9 @@ async fn generate_internal(
     let sid = session_id.clone();
     let gid = generation_id.clone();
     let rid = request_id.clone();
+    // The inference worker consumes the pinned byte vector. Retain only its
+    // presence flag for post-transfer delivery and terminal diagnostics.
+    let has_images = !images.is_empty();
     tauri::async_runtime::spawn_blocking(move || {
         let outcome = (|| -> Result<String, String> {
             ticket.wait_for_slot()?;
@@ -6378,7 +6381,7 @@ async fn generate_internal(
             }else if !ticket.cancelled(){
                 perf_trace.causal_model_failed();
             }
-            if !images.is_empty(){
+            if has_images{
                 // Actual verified backend receipt, never infer upload or
                 // output from an earlier host reservation alone.
                 perf_trace.image_delivery(image_report);
@@ -6397,7 +6400,7 @@ async fn generate_internal(
             }
             match result {
                 Ok(()) => {
-                    if !images.is_empty(){perf_trace.image_stage("ORIGINAL_RESPONSE_COMMIT");}
+                    if has_images{perf_trace.image_stage("ORIGINAL_RESPONSE_COMMIT");}
                     // Final original ANSF publication has a definite order
                     // against native Stop. No completed stream can be
                     // committed after its generation was cancelled.
@@ -6414,7 +6417,7 @@ async fn generate_internal(
                     }
                     saved?;
                     perf_trace.causal_checkpoint(CausalCheckpoint::AssistantSaved);
-                    if !images.is_empty(){perf_trace.image_stage("ORIGINAL_RESPONSE_SAVED");}
+                    if has_images{perf_trace.image_stage("ORIGINAL_RESPONSE_SAVED");}
                     if plan_only{
                         let result=plan_source.as_ref()
                             .ok_or_else(||"Original plan identity unavailable".to_string())
@@ -6608,7 +6611,7 @@ async fn generate_internal(
             Err(_) => "failed",
         };
         let observed_engine_starts_after=state.engine_start_events.load(Ordering::Relaxed);
-        if !images.is_empty(){perf_trace.finalize_image_outcome(phase);}
+        if has_images{perf_trace.finalize_image_outcome(phase);}
         let _=state.perf01.record(perf_trace
             .with_engine_start_events(
                 observed_engine_starts_before,observed_engine_starts_after

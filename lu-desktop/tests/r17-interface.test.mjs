@@ -4,6 +4,9 @@ import { splitModelOutput, streamForChat } from '../web/response_view.mjs';
 import {readFileSync} from 'node:fs';
 const ui = readFileSync(new URL('../web/main.jsx', import.meta.url),'utf8');
 const host = readFileSync(new URL('../src-tauri/src/lib.rs', import.meta.url),'utf8');
+const intake = readFileSync(new URL('../src-tauri/src/linked_attachment_intake.rs',import.meta.url),'utf8');
+const pathGuard = readFileSync(new URL('../src-tauri/src/linked_attachment_file.rs',import.meta.url),'utf8');
+const multimodal = readFileSync(new URL('../../src-tauri/lu-core/src/multimodal_saved_turn.rs',import.meta.url),'utf8');
 const config = JSON.parse(readFileSync(new URL('../src-tauri/tauri.conf.json', import.meta.url),'utf8'));
 
 test('thinking spans produce an isolated, collapsible part',() => {
@@ -21,8 +24,12 @@ test('background token stream never leaks into selected chat',()=>{
   assert.equal(streamForChat({chatId:'chat-A',text:'private response'},'chat-B'),'');
   assert.equal(streamForChat({chatId:'chat-A',text:'private response'},'chat-A'),'private response');
 });
-test('Windows HTML drag and drop is enabled in WebView',()=>{
-  assert.equal(config.app.windows[0].dragDropEnabled,false);
+test('Windows native path drop is enabled and bound to a one-use chat receipt',()=>{
+  assert.equal(config.app.windows[0].dragDropEnabled,true);
+  assert.match(intake,/DragDropEvent::Drop\{paths/);
+  assert.match(intake,/receipt\.token!=token/);
+  assert.match(intake,/guard\.pending\.take\(\)/);
+  assert.match(ui,/lu-native-file-drop/);
 });
 test('submitting an image retains draft until canonical native admission',()=>{
   const start=ui.indexOf('async function send(e)');
@@ -43,9 +50,12 @@ test('transcript is never forcibly switched on background completion',()=>{
   assert.match(ui,/if\(currentChat.current===target\)/);
 });
 test('image content is admitted by the native host with strict size caps',()=>{
-  assert.ok(host.includes('fn lu_ingest_image_data_url('));
-  assert.ok(host.includes('admit_data_url(&data_url)'));
-  assert.ok(host.includes('data_url.len() > 11 * 1024 * 1024'));
+  assert.match(pathGuard,/MAX_LINKED_FILE_BYTES:u64=8\*1024\*1024/);
+  assert.match(pathGuard,/before\.len\(\)>MAX_LINKED_FILE_BYTES/);
+  assert.match(intake,/admit_data_url\(/);
+  assert.match(multimodal,/bytes\.len\(\) > MAX_IMAGE_BYTES/);
+  assert.match(host,/images.iter\(\).map\(\|a\|a.bytes.len\(\)\).sum::<usize>\(\)>lu_core::multimodal_saved_turn::MAX_TOTAL_IMAGE_BYTES/);
+  assert.doesNotMatch(ui,/invoke\('lu_ingest_image_data_url'/);
 });
 test('no unconditional model auto-load path',()=>{
   assert.ok(!ui.includes('lu_load_model\', {modelRef: models[0]'));
