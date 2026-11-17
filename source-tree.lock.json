@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "2ecdd18a8955e10130afdf765a2f3431f44909ef",
+  "sourceCommitBeforeLock": "ba437215e4b73d746ee74428425ff39f411180a6",
   "trackedFileCount": 1101,
   "files": [
     {
@@ -101,7 +101,7 @@
     },
     {
       "path": ".github/workflows/lu-cp02-grouped-native.yml",
-      "blob": "a5a795eb49fdbb6ef4254b65a4e5422f212f720f"
+      "blob": "30574d406559f97a6493f4737b7fcb881ace78b7"
     },
     {
       "path": ".github/workflows/lu-development-ledger.yml",
@@ -753,7 +753,7 @@
     },
     {
       "path": "docs/LU_DEVELOPMENT_LEDGER.md",
-      "blob": "3bbbd93742e693bc38c6245ff6a4ad90c53e8008"
+      "blob": "9927f5e98f9310905cd5b995424b977a0ac339ed"
     },
     {
       "path": "docs/LU_E1_NATIVE_EVIDENCE_20261107.md",
@@ -1553,7 +1553,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/lib.rs",
-      "blob": "eeb1a9dcdc9d1631d031de2f322e4a6a98cc9a2d"
+      "blob": "0387636ac7a29e8088575d781e7c7d8ce3a1381e"
     },
     {
       "path": "lu-desktop/src-tauri/src/linked_attachment_file.rs",
@@ -1801,7 +1801,7 @@
     },
     {
       "path": "lu-desktop/tests/agent01f-model-plan-ingress.test.mjs",
-      "blob": "ede9d9cd6afaa51b0cf284d122252b0fc94b6453"
+      "blob": "17b44d9c35403ece0a06a3e37ce4fa5f38b52d25"
     },
     {
       "path": "lu-desktop/tests/agent01g-approved-step-integration.test.mjs",
@@ -1813,7 +1813,7 @@
     },
     {
       "path": "lu-desktop/tests/agent01g-real-model-chain-contract.test.mjs",
-      "blob": "d4dbc203a6c6d4da3018a371635ab797f487447c"
+      "blob": "5eb67793543c21df328f324cc9135365f335d010"
     },
     {
       "path": "lu-desktop/tests/agent01h-next-step-preview.test.mjs",
@@ -1837,15 +1837,15 @@
     },
     {
       "path": "lu-desktop/tests/agent01l-os-custody.test.mjs",
-      "blob": "5cf627d1733aad28f473cda173c0056dce4db1da"
+      "blob": "9ac28f72720c048320c475d8b1be35472d591a60"
     },
     {
       "path": "lu-desktop/tests/background-pane.test.mjs",
-      "blob": "26f6bf7041b6b9ab3836c1474bb012fcbef1057c"
+      "blob": "83d8bdd981ed76d697623cd279fa472e112fe663"
     },
     {
       "path": "lu-desktop/tests/background-scheduler.test.mjs",
-      "blob": "499e10f4a58288e07a7b267bf31ae8f622cfcca3"
+      "blob": "1c57ce8d5d59b5798447ba2dd73e5d76f85494be"
     },
     {
       "path": "lu-desktop/tests/background-worker-e2e.test.mjs",
@@ -1901,7 +1901,7 @@
     },
     {
       "path": "lu-desktop/tests/cp01-mmproj-delivery.test.mjs",
-      "blob": "d36953920ec03294506ce9d594dc665a354fe2f0"
+      "blob": "44836777694e867fca1f5ec2891ac034ea8d2795"
     },
     {
       "path": "lu-desktop/tests/cp01-submission-lifecycle.test.mjs",
@@ -1941,7 +1941,7 @@
     },
     {
       "path": "lu-desktop/tests/m2-ansf-memory.test.mjs",
-      "blob": "05cb5fb7fb29961ce239c19aa4014f2cc63bdcae"
+      "blob": "2fc03003b0ffd25a487e65a91de1b2b9ddeb6c73"
     },
     {
       "path": "lu-desktop/tests/m3-ansf-recall.test.mjs",
@@ -2001,7 +2001,7 @@
     },
     {
       "path": "lu-desktop/tests/memory-loop01-agent-handoff.test.mjs",
-      "blob": "2012b5878eb76d0625e5b410ea6836f61273095c"
+      "blob": "76e152477c7b63e610e848609bfafca221efd7fc"
     },
     {
       "path": "lu-desktop/tests/memory-loop02-real-qwen-contract.test.mjs",
@@ -2097,7 +2097,7 @@
     },
     {
       "path": "lu-desktop/tests/p0-native-intent.test.mjs",
-      "blob": "5e7e79ab0c0006cc5259218dd3c486c9e5f7991d"
+      "blob": "c6e4e2e0401c7e1d056a70aa3d903fcc85b0e70a"
     },
     {
       "path": "lu-desktop/tests/p0-native-window-separation.test.mjs",
@@ -2105,7 +2105,7 @@
     },
     {
       "path": "lu-desktop/tests/p0-physical-ux-contract.test.mjs",
-      "blob": "df786bc9674e86829805b84fbd3143c8f401fa3a"
+      "blob": "1177ec7e14609c76d2fdb1f4b1d8ff3364330753"
     },
     {
       "path": "lu-desktop/tests/p0-qwen38-radeon-handoff.test.mjs",
@@ -2125,11 +2125,11 @@
     },
     {
       "path": "lu-desktop/tests/p0-sec06-consolidated.test.mjs",
-      "blob": "311bc8db53484d703362b22e6b113ebb0812e959"
+      "blob": "e2c420d9cd095eaceb4f2150739ed61a5d42a93d"
     },
     {
       "path": "lu-desktop/tests/p03-ai-ops.test.mjs",
-      "blob": "26d007b29e6a91be129a3ddb2161a099ec829a24"
+      "blob": "a97c9e6caeb5219602e2e2975fc187c144ec205e"
     },
     {
       "path": "lu-desktop/tests/p06-observe-privacy.test.mjs",
@@ -2157,7 +2157,7 @@
     },
     {
       "path": "lu-desktop/tests/perf01-cpu-first.test.mjs",
-      "blob": "ba59b37a6276f2b2ce51cec0e33bf5b725c25e73"
+      "blob": "c41fca5eda8f8659b1ad840f79f23d97a03d65f9"
     },
     {
       "path": "lu-desktop/tests/perf01-p0d-closeout.test.mjs",
@@ -2169,7 +2169,7 @@
     },
     {
       "path": "lu-desktop/tests/perf01-p4-interactive-priority.test.mjs",
-      "blob": "402b110c48e91db8f8d860aafbdab68031fcc51c"
+      "blob": "3a990c4b9f2bb0a5944c7866e9cc1b7bd98eeb9d"
     },
     {
       "path": "lu-desktop/tests/phase2-agent-replan.test.mjs",
@@ -2185,7 +2185,7 @@
     },
     {
       "path": "lu-desktop/tests/r17-interface.test.mjs",
-      "blob": "ebbaf4afe904acc8d41e9b0c10b4377bcdbdf3f3"
+      "blob": "ddd8ac39560d6a52902a27c6f0b165f59e3d045d"
     },
     {
       "path": "lu-desktop/tests/r18-queue.test.mjs",
@@ -2193,7 +2193,7 @@
     },
     {
       "path": "lu-desktop/tests/r19-desktop-ux.test.mjs",
-      "blob": "c96b60bd7d2c59f8bd0321f8a0cee9104c678649"
+      "blob": "de765dbbd0d3fd4b63147f5a5940373b01dbd9f7"
     },
     {
       "path": "lu-desktop/tests/r20-markdown-attachments.test.mjs",
@@ -2229,7 +2229,7 @@
     },
     {
       "path": "lu-desktop/tests/reviewed-app-desktop.test.mjs",
-      "blob": "5231e67cfe9a5dce6bc0486941c3cd505d6385cd"
+      "blob": "280d8d63acb8516c135a3f089c223a7cade69d05"
     },
     {
       "path": "lu-desktop/tests/reviewed-task-continuity.test.mjs",
