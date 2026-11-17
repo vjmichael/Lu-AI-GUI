@@ -152,7 +152,7 @@ fn read_saved(conn:&Connection,chat:&str,turn:&str)->Result<Vec<ImageAttachment>
     }
     Ok(manifest)
 }
-fn image_submission_rejected(conn:&Connection,chat:&str,turn:&str)->Result<bool,AnsfError>{
+pub(crate) fn image_submission_rejected(conn:&Connection,chat:&str,turn:&str)->Result<bool,AnsfError>{
     if !valid_chat(chat)||!opaque(turn,"g-"){return Err(AnsfError::InvalidInput)}
     Ok(conn.query_row(
         "SELECT EXISTS(SELECT 1 FROM ansf_image_submission_rejections WHERE session_id=?1 AND turn_id=?2)",

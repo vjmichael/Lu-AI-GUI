@@ -8,6 +8,7 @@ use rusqlite::{params,Connection,OptionalExtension};
 use crate::ansf::{AnsfError,AnsfStore,Entry};
 use crate::ansf_artifact_links::{ArtifactLink,insert_artifact_link};
 use crate::ansf_image_attachments::{ImageAttachment,bind_draft};
+use crate::ansf_linked_attachments::{LinkedAttachment,bind_linked_draft};
 
 /// Metadata for an immutable external object that the host has independently
 /// admitted, staged and verified. This is never a path, file handle or grant.
@@ -277,7 +278,7 @@ impl AnsfStore{
     /// imported transcripts or generic MCP calls.
     pub fn append_host_chat_event(&self,session_id:&str,event:&LiveEvent)
         ->Result<StoredLiveEvent,AnsfError>{
-        self.append_live_chat_event(session_id,event,LiveOrigin::HostAuthenticated,false,&[],None)
+        self.append_live_chat_event(session_id,event,LiveOrigin::HostAuthenticated,false,&[],None,None)
     }
 
     /// Commit an authenticated original user event and its exact external
@@ -287,24 +288,32 @@ impl AnsfStore{
     pub fn append_host_chat_event_with_artifacts(
         &self,session_id:&str,event:&LiveEvent,artifacts:&[NewTurnArtifact]
     )->Result<StoredLiveEvent,AnsfError>{
-        self.append_live_chat_event(session_id,event,LiveOrigin::HostAuthenticated,false,artifacts,None)
+        self.append_live_chat_event(session_id,event,LiveOrigin::HostAuthenticated,false,artifacts,None,None)
     }
     /// Original event, ordered image manifest and ordinary artifact links
     /// commit together. The native caller has verified the external bytes.
     pub fn append_host_chat_event_with_image_draft(
         &self,session_id:&str,event:&LiveEvent,expected:&[ImageAttachment]
     )->Result<StoredLiveEvent,AnsfError>{
-        self.append_live_chat_event(session_id,event,LiveOrigin::HostAuthenticated,false,&[],Some(expected))
+        self.append_live_chat_event(session_id,event,LiveOrigin::HostAuthenticated,false,&[],Some(expected),Some(&[]))
+    }
+    /// Bind the original event, legacy image manifest and metadata-only
+    /// original-file links in the same SQLite transaction. No copied bytes.
+    pub fn append_host_chat_event_with_attachment_drafts(
+        &self,session_id:&str,event:&LiveEvent,images:&[ImageAttachment],links:&[LinkedAttachment]
+    )->Result<StoredLiveEvent,AnsfError>{
+        self.append_live_chat_event(session_id,event,LiveOrigin::HostAuthenticated,false,&[],Some(images),Some(links))
     }
     /// Boundary-only migration of old JSONL events. Never authenticates a
     /// historical User record, even if its source contains a generation ID.
     /// Exact replay is idempotent; same ID with changed content fails.
     pub fn import_legacy_chat_event(&self,session_id:&str,event:&LiveEvent)
         ->Result<StoredLiveEvent,AnsfError>{
-        self.append_live_chat_event(session_id,event,LiveOrigin::LegacyObserved,true,&[],None)
+        self.append_live_chat_event(session_id,event,LiveOrigin::LegacyObserved,true,&[],None,None)
     }
     fn append_live_chat_event(&self,session_id:&str,event:&LiveEvent,
-        origin:LiveOrigin,idempotent:bool,artifacts:&[NewTurnArtifact],draft:Option<&[ImageAttachment]>)->Result<StoredLiveEvent,AnsfError>{
+        origin:LiveOrigin,idempotent:bool,artifacts:&[NewTurnArtifact],draft:Option<&[ImageAttachment]>,
+        linked:Option<&[LinkedAttachment]>)->Result<StoredLiveEvent,AnsfError>{
         if !valid_session(session_id){return Err(AnsfError::InvalidInput)}
         event.validate(origin)?;
         if !artifacts.is_empty() {
@@ -317,7 +326,7 @@ impl AnsfStore{
                 return Err(AnsfError::InvalidInput)
             }
         }
-        if draft.is_some() && (origin!=LiveOrigin::HostAuthenticated ||
+        if (draft.is_some()||linked.is_some()) && (origin!=LiveOrigin::HostAuthenticated ||
             event.kind!=LiveKind::User || event.user_turn_id.is_none() || !artifacts.is_empty()){
             return Err(AnsfError::InvalidInput)
         }
@@ -412,6 +421,10 @@ impl AnsfStore{
         }
         if let Some(expected)=draft{
             bind_draft(&tx,session_id,event.user_turn_id.as_deref().ok_or(AnsfError::InvalidInput)?,
+                source_entry_id.ok_or(AnsfError::InvalidInput)?,expected)?;
+        }
+        if let Some(expected)=linked{
+            bind_linked_draft(&tx,session_id,event.user_turn_id.as_deref().ok_or(AnsfError::InvalidInput)?,
                 source_entry_id.ok_or(AnsfError::InvalidInput)?,expected)?;
         }
         // A bounded display index points to the actual original event text.
