@@ -284,7 +284,7 @@ mod tests{
                     executable:engine.clone(),expected_sha256:engine_sha,
                     threads:NonZeroUsize::new(4).unwrap(),context_tokens:context,
                     startup_timeout:Duration::from_secs(600),request_timeout:Duration::from_secs(600),
-                    api_key:crate::next_id("").repeat(2),load_observer:None,
+                    api_key:format!("{}{}",crate::next_id(""),crate::next_id("")),load_observer:None,
                 })
             }).unwrap();
         sup.attach_projector(&model_ref,projector).unwrap();

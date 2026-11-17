@@ -23,8 +23,9 @@ test('CP01 native external object and cold saved source integrity',()=>{
   assert.match(store,/self.read\(chat,a\)/);
   assert.match(store,/Sha256::digest\(&bytes\)/);
   assert.match(core,/FROM ansf_artifact_links WHERE session_id=\?1 AND entry_id=\?2 AND artifact_id=\?3/);
-  assert.match(host,/saved_image_manifest\(&chat_id,&gid\)/);
-  assert.match(host,/Saved image changed while queued/);
+  assert.match(host,/verify_saved_exact\(&state.chats,&chat_id,&gid,&manifest,&images\)/);
+  assert.match(store,/saved_image_manifest\(chat,turn\)/);
+  assert.match(store,/Saved image changed while queued/);
 });
 test('CP01 no implicit image release and no private observation byte export',()=>{
   const send=ui.slice(ui.indexOf('async function send(e)'),ui.indexOf('async function attachReaderDocument('));

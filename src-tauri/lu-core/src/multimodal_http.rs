@@ -113,6 +113,7 @@ pub fn verify_final_image_body(body:&str,prompt:&str,history:&[crate::inference_
     }
     let json:serde_json::Value=serde_json::from_str(body).map_err(|_|mismatch())?;
     if json["stream"]!=true||json["max_tokens"]!=max_new_tokens||
+        json.get("cache_prompt").is_some_and(|v|v.as_bool()!=Some(false))||
         json["chat_template_kwargs"]["enable_thinking"]!=false||json["reasoning_effort"]!="none"{
         return Err(mismatch())
     }
@@ -441,13 +442,14 @@ pub fn generate_verified_image_body(
     mut on_text:impl FnMut(String)->Result<(),String>,receipt:&mut ImageDeliveryReceipt,
 )->Result<(),String>{
     *receipt=ImageDeliveryReceipt::new();
-    let result=(||{
+    let result=(||->Result<(),String>{
         let(count,bytes)=verify_final_image_body(body,prompt,history,images,max_new_tokens)?;
         receipt.image_count=count;receipt.decoded_bytes=bytes;receipt.payload_verified=true;
         let mut uploaded=false;
         let mut visible=false;
         let result=stream_chat_frames(port,api_key,body,timeout,cancelled,||uploaded=true,|frame|{
             let text=std::str::from_utf8(frame).map_err(|_|"CP01_IMAGE_BACKEND_EVENT")?;
+            let mut clipped=false;
             // Inspect the finish reason even when content is null or nonempty.
             // Never interpret a backend error/limit as successful termination.
             if let Some(data)=text.lines().find_map(|line|line.strip_prefix("data: ")){
@@ -459,21 +461,25 @@ pub fn generate_verified_image_body(
                         .and_then(|v|v.first()).and_then(|v|v.get("finish_reason")).filter(|v|!v.is_null()){
                         match reason.as_str(){
                             Some("stop")=>(),
-                            Some("length")=>return Err("CP01_IMAGE_OUTPUT_LIMIT".into()),
+                            Some("length")=>clipped=true,
                             _=>return Err("CP01_IMAGE_BACKEND_EVENT".into()),
                         }
                     }
                 }
             }
-            match parse_chat_sse_frame(frame).map_err(|_|"CP01_IMAGE_BACKEND_EVENT")?{
+            let disposition=match parse_chat_sse_frame(frame).map_err(|_|"CP01_IMAGE_BACKEND_EVENT")?{
                 ChatEvent::Text(part)=>{
-                    if !part.trim().is_empty(){visible=true;}
-                    on_text(part)?;Ok(FrameDisposition::Continue)
+                    let nonempty=!part.trim().is_empty();
+                    on_text(part)?;
+                    visible|=nonempty;
+                    FrameDisposition::Continue
                 },
                 ChatEvent::Done if text.lines().any(|line|line.trim_end()=="data: [DONE]")=>
-                    Ok(FrameDisposition::Done),
-                _=>Ok(FrameDisposition::Continue),
-            }
+                    FrameDisposition::Done,
+                _=>FrameDisposition::Continue,
+            };
+            if clipped{return Err("CP01_IMAGE_OUTPUT_LIMIT".into())}
+            Ok(disposition)
         });
         receipt.upload_completed=uploaded;receipt.visible_answer=visible;
         result?;

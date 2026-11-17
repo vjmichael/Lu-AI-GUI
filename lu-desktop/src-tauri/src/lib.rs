@@ -6131,8 +6131,12 @@ async fn generate_internal(
                     model_prompt.push_str(&ambient);
                     host_suffix.push_str(&ambient);
                 }
-                model_prompt.push_str(&clock);
-                host_suffix.push_str(&clock);
+                // Keep the approved image question intact and within the
+                // inference wire cap even when it already fills the budget.
+                if images.is_empty()||model_prompt.len().saturating_add(clock.len())<=16*1024{
+                    model_prompt.push_str(&clock);
+                    host_suffix.push_str(&clock);
+                }
                 // Preserve the existing plain-chat cached prefix; only fresh
                 // observations are part of the separate trailing suffix.
                 cache_only_clock_suffix=Some(host_suffix);
