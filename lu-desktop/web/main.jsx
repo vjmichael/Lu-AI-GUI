@@ -983,6 +983,8 @@ function App() {
   const pendingDrafts = useRef(new Map());
   const attachmentChatCreation = useRef(null);
   const imageRefreshSequence = useRef(new Map());
+  const submissionHistorySequence=useRef(new Map());
+  const navigationSequence=useRef(0);
   const pendingSends=useRef(new Map());
   const draftMutations=useRef(new Set());
   const [,setSubmissionRevision]=useState(0);
@@ -2217,11 +2219,12 @@ function App() {
     return list.chats;
   }
   const MAX_VISIBLE_CHAT_ROWS=MAX_HISTORY_ROWS;
-  async function loadLatestUiHistory(id){
+  async function loadLatestUiHistory(id,navigation=null){
     const page=await invoke('lu_history_window',{
       chatId:id,cursor:null,direction:'older',limit:64
     });
-    if(requestedChat.current===id||currentChat.current===id){
+    if((navigation===null||navigationSequence.current===navigation)&&
+       (requestedChat.current===id||currentChat.current===id)){
       setHistoryWindow({
         older:page.nextCursor,hasOlder:page.hasMore,hasNewer:false
       });
@@ -2230,7 +2233,7 @@ function App() {
   }
   // Reopen the original source near its remembered stable-ID cursor rather
   // than applying stale absolute pixel offsets to a different loaded window.
-  async function loadRememberedUiHistory(id){
+  async function loadRememberedUiHistory(id,navigation=null){
     const remembered=scrollByChat.current.get(id);
     const anchor=remembered?.anchor;
     if(!remembered?.follow&&Number.isSafeInteger(anchor?.seq)&&anchor.seq>0){
@@ -2242,7 +2245,7 @@ function App() {
           chatId:id,cursor:anchor.seq,direction:'newer',limit:1
         })
       ]);
-      if(requestedChat.current===id){
+      if(requestedChat.current===id&&(navigation===null||navigationSequence.current===navigation)){
         setHistoryWindow({
           older:page.nextCursor,hasOlder:page.hasMore,
           hasNewer:newer.entries.length>0
@@ -2250,7 +2253,7 @@ function App() {
       }
       return page.entries;
     }
-    return loadLatestUiHistory(id);
+    return loadLatestUiHistory(id,navigation);
   }
   async function loadOlderUiHistory(){
     const id=currentChat.current;
@@ -2327,6 +2330,7 @@ function App() {
     }
   }
   async function switchChat(id) {
+    const navigation=++navigationSequence.current;
     if (currentChat.current !== id) {
       // Capture the outgoing reading position before the asynchronous read.
       const el = transcriptRef.current;
@@ -2339,8 +2343,8 @@ function App() {
       });
     }
     requestedChat.current = id;
-    const entries = await loadRememberedUiHistory(id);
-    if (requestedChat.current !== id) return;
+    const entries = await loadRememberedUiHistory(id,navigation);
+    if(requestedChat.current!==id||navigationSequence.current!==navigation)return;
     currentChat.current = id;
     savedPreviewSequence.current++;setSavedImagePreview(null);setImageViewer(null);
     const draft = pendingDrafts.current.get(id) || {prompt:'',images:[],files:[]};
@@ -2478,10 +2482,8 @@ function App() {
         ?removeJob(prev,finishedChat):prev);
       // Native auto turns aren't initiated by a WebView invoke. Read their
       // journaled assistant output, including after a background tab switch.
-      if (currentChat.current===finishedChat){
-        loadLatestUiHistory(finishedChat)
-          .then(items=>{if(alive&&currentChat.current===finishedChat)setHistory(items);})
-          .catch(()=>{});
+      if(currentChat.current===finishedChat){
+        void refreshSubmissionHistory(finishedChat).catch(()=>{});
       }
     }).then(fn=>{if(alive)stopFinished=fn;else fn();});
     listen('lu-background-terminal', e => {
@@ -2703,17 +2705,19 @@ function App() {
     if(currentChat.current)return currentChat.current;
     if(attachmentChatCreation.current)return attachmentChatCreation.current;
     const requestAtStart=requestedChat.current;
+    const navigationAtStart=navigationSequence.current;
     const creation=(async()=>{
       const created=await invoke('lu_new_chat');
       const id=created.chatId;
-      const stillNew=!currentChat.current&&requestedChat.current===requestAtStart;
+      const stillNew=!currentChat.current&&requestedChat.current===requestAtStart&&
+        navigationSequence.current===navigationAtStart;
       const original=stillNew
         ? {prompt:draftText.current,images:draftImages.current,files:draftFiles.current}
         : pendingDrafts.current.get('new')||{prompt:'',images:[],files:[]};
       pendingDrafts.current.set(id,original);
       pendingDrafts.current.delete('new');
       if(stillNew){
-        currentChat.current=id;requestedChat.current=id;setChatId(id);
+        navigationSequence.current++;currentChat.current=id;requestedChat.current=id;setChatId(id);
         setHistoryWindow({older:null,hasOlder:false,hasNewer:false});setHistory([]);
       }
       void refreshChats().catch(()=>{});
@@ -4160,6 +4164,17 @@ function App() {
     }finally{endDraftMutation(target);}
   }
 
+  async function refreshSubmissionHistory(target){
+    if(currentChat.current!==target)return;
+    const navigation=navigationSequence.current;
+    const sequence=(submissionHistorySequence.current.get(target)||0)+1;
+    submissionHistorySequence.current.set(target,sequence);
+    const page=await invoke('lu_history_window',{chatId:target,cursor:null,direction:'older',limit:64});
+    if(currentChat.current!==target||navigation!==navigationSequence.current||
+       submissionHistorySequence.current.get(target)!==sequence)return;
+    setHistoryWindow({older:page.nextCursor,hasOlder:page.hasMore,hasNewer:false});
+    setHistory(page.entries);
+  }
   // Native original receipt, not a queue event or text comparison, consumes
   // the submitted composer. Acknowledgment during a run permits a next draft
   // without allowing another Send in the same conversation.
@@ -4173,10 +4188,7 @@ function App() {
       refreshComposerState();
       if(currentChat.current===target)setImageViewer(null);
       await refreshDraftImages(target).catch(()=>null);
-      if(currentChat.current===target){
-        const entries=await loadLatestUiHistory(target).catch(()=>null);
-        if(entries&&currentChat.current===target)setHistory(entries);
-      }
+      if(currentChat.current===target)await refreshSubmissionHistory(target).catch(()=>{});
       // Release only ephemeral renderer preview URLs, never native bytes.
       for(const im of attempt.snapshot.images){
         if(im.previewUrl?.startsWith('blob:')&&!readComposerDraft(target).images.some(a=>a.previewUrl===im.previewUrl)){
@@ -4190,11 +4202,15 @@ function App() {
     const attempt=pendingSends.current.get(target);
     if(!attempt?.nonce||attempt.generationId!==generationId||attempt.admitted)return;
     const receipt=await invoke('lu_image_submission_status',{chatId:target,submissionId:attempt.nonce});
-    await admitSavedImageAttempt(target,attempt,receipt);
+    if(await admitSavedImageAttempt(target,attempt,receipt)&&attempt.uncertain){
+      attempt.uncertain=false;refreshComposerState();
+      await finishSubmission(target,attempt,{preserveJob:true});
+      if(currentChat.current===target)void reconcileActiveStream(target);
+    }
   }
   async function finishSubmission(target,attempt,{preserveJob=false}={}){
-    if(pendingSends.current.get(target)!==attempt)return;
-    attempt.settled=true;refreshComposerState();
+    if(pendingSends.current.get(target)!==attempt||attempt.finishing)return;
+    attempt.finishing=true;attempt.settled=true;refreshComposerState();
     if(!preserveJob)setJobs(prev=>removeOwnedJob(prev,target,attempt));
     if(attempt.nonce)await invoke('lu_clear_image_submission',{chatId:target,submissionId:attempt.nonce})
       .catch(()=>false);
@@ -4202,10 +4218,9 @@ function App() {
       if(currentChat.current===target)setError(String(error));
     });
     await refreshChats().catch(error=>{if(currentChat.current===target)setError(String(error));});
-    if(currentChat.current===target){
-      const entries=await loadLatestUiHistory(target).catch(error=>{setError(String(error));return null;});
-      if(entries&&currentChat.current===target)setHistory(entries);
-    }
+    if(currentChat.current===target)await refreshSubmissionHistory(target).catch(error=>{
+      if(currentChat.current===target)setError(String(error));
+    });
     await refreshCatalog().catch(error=>{if(currentChat.current===target)setError(String(error));});
     if(pendingSends.current.get(target)===attempt){
       pendingSends.current.delete(target);refreshComposerState();
@@ -4216,7 +4231,9 @@ function App() {
       const receipt=await invoke('lu_prepare_image_submission',{chatId:target,snapshot:{
         submissionId:attempt.nonce,prompt:attempt.snapshot.prompt,submitted:attempt.submitted,
         imageRefs:attempt.snapshot.images.map(i=>i.imageRef),
-        files:attempt.snapshot.files.map(f=>({name:f.name,size:f.size,text:f.text}))
+        files:attempt.snapshot.files.map(f=>({name:f.name,size:f.size,text:f.text,
+          format:f.format,truncated:f.truncated,sourceSha256:f.sourceSha256,
+          selector:f.selector,offsetChars:f.offsetChars}))
       }});
       if(pendingSends.current.get(target)!==attempt)return;
       if(attempt.generationId&&attempt.generationId!==receipt.generationId)throw Error('Message identity changed');
@@ -4246,7 +4263,14 @@ function App() {
           noticeForChat(target,result.outcome==='cancelled'
             ?'Message stopped. Your original images are saved. Restore the message to try again.'
             :'Response failed. Your original images are saved. Restore the message to try again.');
-        }else noticeForChat(target,null);
+        }else{
+          noticeForChat(target,null);
+          if(currentChat.current===target){
+            const samples=await invoke('lu_perf01_recent',{chatId:target,limit:1}).catch(()=>[]);
+            if(samples.length&&currentChat.current===target)
+              setPerfLatestByChat(prev=>({...prev,[target]:samples[0]}));
+          }
+        }
       }else if(decision==='rejected'){
         // The native refusal fence guarantees this nonce cannot consume the
         // retained editable draft later. Original prompt and files remain.
@@ -4455,14 +4479,19 @@ function App() {
   async function attachReaderDocument(continuePrevious=false) {
     // The local picker is always native and the source is copied into one
     // immutable snapshot; no document path can be passed by the WebView.
-    const targetChat=currentChat.current||'new';
+    const origin=currentChat.current||'new';
+    let targetChat=origin;
     const continuation=continuePrevious?readerContinuation:null;
     if(continuePrevious&&(!continuation||continuation.chatId!==targetChat||
        continuation.selector!==readerSelector||
        continuation.nextOffset===null)){
       setError('No matching Reader source to continue. Select a fresh file.');return;
     }
+    if(!beginDraftMutation(origin))return;
     try {
+      targetChat=await ensureAttachmentChat();
+      if(targetChat!==origin){draftMutations.current.add(targetChat);refreshComposerState();}
+      if(lockedDraft(targetChat))return;
       const document=await invoke('lu_reader_pick_document',{
         selector:readerSelector,
         offsetChars:continuation?.nextOffset??0,
@@ -4516,8 +4545,8 @@ function App() {
       });
       setError('');
     }catch(error){
-      setError(String(error));
-    }
+      if(currentChat.current===targetChat)setError(String(error));
+    }finally{endDraftMutation(origin);if(targetChat!==origin)endDraftMutation(targetChat);}
   }
   async function importAttachments(files) {
     // Serialize image/text intake with same-chat Send, even across a picker

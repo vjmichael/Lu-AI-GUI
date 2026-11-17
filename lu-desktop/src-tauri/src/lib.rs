@@ -1892,7 +1892,19 @@ fn lu_image_submission_status(state:State<'_,Arc<DesktopState>>,chat_id:String,s
 }
 #[derive(Clone,Serialize,Deserialize)]
 #[serde(rename_all="camelCase",deny_unknown_fields)]
-struct ImageUiTextFile{name:String,size:u64,text:String}
+struct ImageUiTextFile{
+    name:String,size:u64,text:String,
+    #[serde(default,skip_serializing_if="Option::is_none")]
+    format:Option<String>,
+    #[serde(default,skip_serializing_if="Option::is_none")]
+    truncated:Option<bool>,
+    #[serde(default,skip_serializing_if="Option::is_none")]
+    source_sha256:Option<String>,
+    #[serde(default,skip_serializing_if="Option::is_none")]
+    selector:Option<String>,
+    #[serde(default,skip_serializing_if="Option::is_none")]
+    offset_chars:Option<u64>,
+}
 #[derive(Clone,Serialize,Deserialize)]
 #[serde(rename_all="camelCase",deny_unknown_fields)]
 struct ImageUiSnapshot{
@@ -1908,7 +1920,11 @@ impl ImageUiSnapshot{
            self.submitted.trim().is_empty()||self.submitted.len()>16*1024||
            self.image_refs.is_empty()||self.image_refs.len()>4||self.files.len()>4||
            self.image_refs.iter().any(|id|!lu_core::ansf_image_attachments::valid_attachment_id(id))||
-           self.files.iter().any(|f|f.name.len()>256||f.size>64*1024||f.text.len()>64*1024){
+           self.files.iter().any(|f|f.name.len()>256||f.text.len()>64*1024||
+               f.format.as_ref().is_some_and(|v|v.len()>64)||
+               f.source_sha256.as_ref().is_some_and(|v|v.len()!=64||
+                   !v.bytes().all(|b|b.is_ascii_digit()||(b'a'..=b'f').contains(&b)))||
+               f.selector.as_ref().is_some_and(|v|v.len()>1024)){
             return Err("Invalid message recovery snapshot".into())
         }
         Ok(())
@@ -10073,6 +10089,15 @@ mod tests {
         fs::write(root.join("local.gguf"),b"invalid contents").unwrap();
         assert!(!inspect_registered_model(&root,&model).load_allowed);
         fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn image_submission_nonce_is_chat_bound_and_rejects_bad_shape(){
+        let nonce=next_id("s-");
+        let a=next_id("c-");let b=next_id("c-");
+        let first=image_submission_generation(&a,&nonce).unwrap();
+        assert_eq!(first,image_submission_generation(&a,&nonce).unwrap());
+        assert_ne!(first,image_submission_generation(&b,&nonce).unwrap());
+        assert!(image_submission_generation(&a,"arbitrary").is_err());
     }
     #[test]
     fn host_attachment_handle_is_opaque_and_not_a_content_digest() {
