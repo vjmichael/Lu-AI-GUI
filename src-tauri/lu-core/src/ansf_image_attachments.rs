@@ -100,7 +100,7 @@ pub(crate) fn read_manifest(conn:&Connection,chat:&str,turn:Option<&str>)
 /// renderer refs nor a concurrent change can silently omit/reorder an image.
 pub(crate) fn bind_draft(tx:&Transaction<'_>,chat:&str,turn:&str,entry:i64,
     expected:&[ImageAttachment])->Result<(),AnsfError>{
-    if !opaque(turn,"g-")||entry<=0||read_manifest(tx,chat,None)?!=expected{
+    if !opaque(turn,"g-")||entry<=0||read_manifest(tx,chat,None)?.as_slice()!=expected{
         return Err(AnsfError::InvalidInput)
     }
     for a in expected{

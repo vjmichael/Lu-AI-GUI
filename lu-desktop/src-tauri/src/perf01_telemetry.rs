@@ -34,6 +34,7 @@ pub(crate) struct PerfReceipt {
     pub context_limit_tokens:Option<u32>,
     // Actual scheduler publication, not a claim of SQLite cross-store atomicity.
     pub queue_published:Option<bool>,
+    pub catalog_reconciliation_required:bool,
     pub admitted_image_count:Option<u32>,
     pub queue_wait_ms:Option<u64>,
     pub context_assembly_ms:Option<u64>,
@@ -82,7 +83,7 @@ fn base(chat_id:&str,generation_id:&str,route:&str,reason_code:&str,
         observed_engine_starts_during_turn:None,
         observed_engine_starts_since_host_start:None,
         model_ref:None,backend_family:None,context_limit_tokens:None,
-        queue_published:None,admitted_image_count:None,
+        queue_published:None,admitted_image_count:None,catalog_reconciliation_required:false,
         queue_wait_ms:None,context_assembly_ms:None,
         model_dispatch_to_first_chunk_ms:None,
         turn_to_first_chunk_ms:None,turn_to_first_webview_forward_ms:None,
@@ -176,6 +177,7 @@ impl ModelTrace{
     pub fn cache_scope_admitted(&mut self,admitted:bool){
         self.row.cache_scope_admitted=Some(admitted);
     }
+    pub fn catalog_reconciliation_required(&mut self){self.row.catalog_reconciliation_required=true;}
     pub fn admission_publication(&mut self,published:bool,image_count:usize){
         self.row.queue_published=Some(published);
         self.row.admitted_image_count=Some(image_count.min(u32::MAX as usize) as u32);

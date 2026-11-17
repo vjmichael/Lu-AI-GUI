@@ -6,6 +6,7 @@
 //! Book/Library indexing and chapter/page tools remain independently reusable.
 use lu_core::{
     ansf::AnsfStore,
+    ansf_image_attachments::ImageAttachment,
     ansf_library::{AnsfLibrary,BookIndex,ChapterIndex},
     ansf_goals::{GoalEvent,GoalSnapshot,project_goal_events},
     ansf_live_chat::{LiveEvent,LiveKind,StoredLiveEvent,VisibleChatMessage},
@@ -612,6 +613,38 @@ impl ChatStore {
             return Err("invalid authenticated human turn".into())
         }
         self.append(chat_id,LiveKind::User,text,Some(user_turn_id),None,None,None)
+    }
+    /// Canonical chat + image draft binding is a single book transaction.
+    /// Once it commits, a separate derived catalog failure must not be
+    /// reported as a rejected submission (which could duplicate the turn).
+    pub(crate) fn append_user_with_image_draft(&self,chat_id:&str,user_turn_id:&str,
+        text:&str,manifest:&[ImageAttachment])->Result<bool,String>{
+        if !valid_id(user_turn_id,"g-")||text.is_empty()||text.len()>16*1024{
+            return Err("Invalid authenticated human turn".into())
+        }
+        let mut conn=self.catalog.lock().map_err(to_err)?;
+        if !Self::known(&conn,chat_id)?{return Err("Unknown chat".into())}
+        let book=self.ansf_book(chat_id)?;
+        let event=LiveEvent{event_id:id("e-"),kind:LiveKind::User,text:text.into(),
+            user_turn_id:Some(user_turn_id.into()),legacy_turn_id:None,
+            generation_id:None,call_id:None,tool_id:None};
+        let committed=book.append_host_chat_event_with_image_draft(chat_id,&event,manifest)
+            .map_err(to_err)?;
+        let catalog_result=(||->Result<(),String>{
+            let tx=conn.transaction().map_err(to_err)?;
+            let title:String=text.chars().take(65).collect();
+            tx.execute("UPDATE ansf_desktop_chats SET title=?2 WHERE chat_id=?1 AND title='New chat'",
+                params![chat_id,title]).map_err(to_err)?;
+            let seq=bump_seq(&tx)?;
+            tx.execute("UPDATE ansf_desktop_chats SET updated_seq=?2,last_event_seq=?3 WHERE chat_id=?1",
+                params![chat_id,seq as i64,committed.seq]).map_err(to_err)?;
+            tx.commit().map_err(to_err)?;
+            Ok(())
+        })();
+        // A false result means original event is committed but the cached
+        // activity index needs the existing restart reconciliation.
+        if catalog_result.is_err(){eprintln!("LU_CP01_CATALOG_RECONCILIATION_REQUIRED");}
+        Ok(catalog_result.is_ok())
     }
     pub fn append_reader_user(&self,chat_id:&str,generation_id:&str,
         text:&str)->Result<(),String>{

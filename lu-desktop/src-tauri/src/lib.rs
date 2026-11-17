@@ -4,6 +4,7 @@
 #[path = "ansf_chat_store.rs"]
 mod chat_store;
 mod ansf_migration;
+mod attachment_store;
 mod memory_desktop;
 mod file_scan_worker;
 pub use file_scan_worker::run_file_scan_worker;
@@ -103,7 +104,8 @@ use lu_core::{
     mmproj_admission::admit_projector,
     model_admission::ModelAdmissionManager,
     model_import::{import_selected_gguf, import_selected_projector},
-    multimodal_saved_turn::{admit_data_url, PinnedImage, MAX_TOTAL_IMAGE_BYTES},
+    multimodal_saved_turn::{admit_data_url, PinnedImage},
+    ansf_image_attachments::ImageAttachment,
     persistent_llama_backend::{PersistentEngineConfig, PersistentLlamaBackend, SamplingProfile},
     projector_identity::projector_filename_for_model,
     wire::proto,
@@ -683,6 +685,16 @@ struct RuntimeView {
 struct ImageView {
     image_ref: String,
     mime_type: String,
+    name: String,
+    size: u64,
+    observed: bool,
+    available: bool,
+}
+impl ImageView{
+    fn from_attachment(a:&ImageAttachment,available:bool)->Self{
+        Self{image_ref:a.attachment_id.clone(),mime_type:a.media_type.clone(),
+            name:a.display_name.clone(),size:a.bytes,observed:a.observed,available}
+    }
 }
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -769,10 +781,9 @@ struct DesktopState {
     effects: lu_core::journal::EffectJournal,
     read_approval_ledger: lu_core::read_approval_ledger::ReadApprovalLedger,
     catalog: Mutex<Vec<StoredModel>>,
-    images: Mutex<HashMap<String, PinnedImage>>,
-    /// Opaque image refs derived from user-approved OS observation are
-    /// permanently tainted while registered, and remain chat-bound.
-    observed_image_owners: Mutex<HashMap<String,String>>,
+    // Canonical manifests live inside ANSF; this host-only store owns
+    // external immutable bytes and memory-only Observe frames.
+    attachments: attachment_store::AttachmentStore,
     generation_queue: Arc<GenerationQueue>,
     /// Last observed native P4 scheduler decision. This is a view only;
     /// neither UI nor the model may approve a background process with it.
@@ -1027,6 +1038,8 @@ impl DesktopState {
             );
         }
         let chats=ChatStore::open(&root)?;
+        let attachments=attachment_store::AttachmentStore::open(&root)?;
+        attachments.reconcile_orphans(&chats);
         // A per-turn ledger is not a chat message. Match its generation ID to
         // a trusted original ANSF user turn, then persist the interrupted
         // marker in that chat only. Completed turns are never rewritten.
@@ -1355,8 +1368,7 @@ impl DesktopState {
             effects,
             read_approval_ledger: approvals,
             catalog: Mutex::new(models),
-            images: Mutex::new(HashMap::new()),
-            observed_image_owners: Mutex::new(HashMap::new()),
+            attachments,
             generation_queue: Arc::new(GenerationQueue::default()),
             interactive_admission_reason:Mutex::new(None),
             load_trace,
@@ -1614,26 +1626,77 @@ async fn lu_attach_projector(
     .await
     .map_err(|e| e.to_string())?
 }
-/// Admit bytes explicitly supplied through a user paste or drop gesture.
-/// This path never resolves a WebView-supplied filesystem location. The shared
-/// Lu Core image admission checks canonical base64, actual image structure,
-/// dimensions, MIME, and bounded decoded byte size.
+/// Admit bytes explicitly supplied through a user paste/drop. The native
+/// host binds the decoded bytes to one exact existing conversation draft;
+/// the renderer cannot select a path or reuse another chat's handle.
 #[tauri::command]
 fn lu_ingest_image_data_url(
     state: State<'_, Arc<DesktopState>>,
-    data_url: String,
+    chat_id:String,
+    data_url:String,
+    display_name:Option<String>,
 ) -> Result<ImageView, String> {
-    // Check the encoded payload size before running any allocation-heavy decode.
     if data_url.len() > 11 * 1024 * 1024 || !data_url.starts_with("data:image/") {
-        return Err("unsupported or oversized image attachment".into());
+        return Err("Unsupported or oversized image attachment".into());
     }
-    let pinned =
-        admit_data_url(&data_url).map_err(|error| format!("image admission: {error:?}"))?;
-    register_image(state.inner(), pinned)
+    state.chats.require(&chat_id)?;
+    let pinned=admit_data_url(&data_url).map_err(|_|"Image could not be decoded")?;
+    register_draft_image(state.inner(),&chat_id,display_name.as_deref().unwrap_or("Image"),pinned,false)
 }
 
-/// Atomically register one admitted OBSERVE_LEARN PNG with the same locks as
-/// ordinary image refs, so no consumer can see it before its taint is bound.
+fn register_draft_image(state:&Arc<DesktopState>,chat_id:&str,display_name:&str,
+    pinned:PinnedImage,observed:bool)->Result<ImageView,String>{
+    let _gate=state.attachments.gate.lock().map_err(|_|"Attachment manifest unavailable")?;
+    let book=state.chats.require(chat_id)?;
+    if !observed{state.attachments.reject_live_observed_digest(&pinned)?;}
+    let candidate=attachment_store::AttachmentStore::metadata(
+        next_id("img-"),display_name,&pinned,observed);
+    let prior=book.image_draft(chat_id).map_err(|_|"Attachment manifest unavailable")?;
+    if let Some(existing)=prior.iter().find(|a|a.sha256==candidate.sha256){
+        if existing.observed!=observed||existing.bytes!=candidate.bytes||
+            existing.media_type!=candidate.media_type{
+            return Err("Attachment provenance or identity changed".into())
+        }
+        if observed{
+            state.attachments.register_observed(chat_id,existing,pinned)?;
+        }else{
+            state.attachments.read(chat_id,existing)?;
+        }
+        return Ok(ImageView::from_attachment(existing,true))
+    }
+    if prior.len()>=lu_core::multimodal_saved_turn::MAX_IMAGES||
+        prior.iter().map(|a|a.bytes).sum::<u64>().saturating_add(candidate.bytes)>
+            lu_core::multimodal_saved_turn::MAX_TOTAL_IMAGE_BYTES as u64{
+        return Err("A message can contain up to four images totaling 16 MB".into())
+    }
+    if observed{
+        state.attachments.register_observed(chat_id,&candidate,pinned)?;
+    }else{
+        state.attachments.write_new(chat_id,&candidate,&pinned)?;
+    }
+    let admitted=book.admit_draft_image(chat_id,&candidate);
+    match admitted{
+        Ok(saved) if saved==candidate=>Ok(ImageView::from_attachment(&saved,true)),
+        other=>{
+            // Only a proven absence permits cleanup. A database error after
+            // possible commit is an uncertain admission; keep bytes for
+            // reconciliation and let the exact draft read establish outcome.
+            if matches!(book.image_attachment_exists(chat_id,&candidate.attachment_id),Ok(false)){
+                if observed{state.attachments.release_observed(chat_id,&candidate.attachment_id);}
+                else{let _=state.attachments.remove_unreferenced(chat_id,&candidate.attachment_id);}
+            }
+            if let Ok(saved)=other{
+                if saved.observed==observed&&state.attachments.read(chat_id,&saved).is_ok(){
+                    return Ok(ImageView::from_attachment(&saved,true))
+                }
+            }
+            Err("Image admission could not be confirmed; refresh the draft before retrying".into())
+        }
+    }
+}
+
+/// A separately approved Observe frame uses the same ordered manifest,
+/// but the bytes remain local, memory-only and unavailable after restart.
 fn register_observed_local_image(
     state:&Arc<DesktopState>,chat_id:&str,
     observed:lu_core::native_observe_image_admission::LocalObservedImage
@@ -1644,55 +1707,16 @@ fn register_observed_local_image(
         observed.provenance.gate(Destination::RemoteModel).is_ok(){
         return Err("Native observed image cannot be declassified".into());
     }
-    let pinned=observed.pinned;
-    let mut images=state.images.lock().map_err(|_|"Image registry unavailable")?;
-    if images.len()>=4&&!images.contains_key(&pinned.image_ref){
-        return Err("four image limit".into());
-    }
-    let total=images.values().map(|image|image.bytes.len()).sum::<usize>();
-    if !images.contains_key(&pinned.image_ref)
-        &&total.saturating_add(pinned.bytes.len())>MAX_TOTAL_IMAGE_BYTES{
-        return Err("total image size limit".into());
-    }
-    let mut owners=state.observed_image_owners.lock()
-        .map_err(|_|"Observed image ownership unavailable")?;
-    if owners.get(&pinned.image_ref).is_some_and(|owner|owner!=chat_id){
-        return Err("Observed image belongs to another conversation".into());
-    }
-    let view=ImageView{
-        image_ref:pinned.image_ref.clone(),
-        mime_type:pinned.mime_type.into(),
-    };
-    owners.insert(pinned.image_ref.clone(),chat_id.to_owned());
-    images.insert(pinned.image_ref.clone(),pinned);
-    Ok(view)
-}
-fn register_image(state: &Arc<DesktopState>, pinned: PinnedImage) -> Result<ImageView, String> {
-    let mut images = state.images.lock().map_err(|_| "image registry poisoned")?;
-    if images.len() >= 4 && !images.contains_key(&pinned.image_ref) {
-        return Err("four image limit".into());
-    }
-    let total = images
-        .values()
-        .map(|image| image.bytes.len())
-        .sum::<usize>();
-    if !images.contains_key(&pinned.image_ref) && total + pinned.bytes.len() > MAX_TOTAL_IMAGE_BYTES
-    {
-        return Err("total image size limit".into());
-    }
-    let view = ImageView {
-        image_ref: pinned.image_ref.clone(),
-        mime_type: pinned.mime_type.into(),
-    };
-    images.insert(pinned.image_ref.clone(), pinned);
-    Ok(view)
+    register_draft_image(state,chat_id,"Approved local observation",observed.pinned,true)
 }
 
 #[tauri::command]
 async fn lu_pick_image(
     app: AppHandle,
     state: State<'_, Arc<DesktopState>>,
+    chat_id:String,
 ) -> Result<Option<ImageView>, String> {
+    state.chats.require(&chat_id)?;
     let state = Arc::clone(state.inner());
     tauri::async_runtime::spawn_blocking(move || {
         let file = app
@@ -1702,6 +1726,7 @@ async fn lu_pick_image(
             .blocking_pick_file();
         let Some(file) = file else { return Ok(None) };
         let path = file.into_path().map_err(|e| e.to_string())?;
+        let display=path.file_name().and_then(|v|v.to_str()).unwrap_or("Image").to_owned();
         let mut f = File::open(path).map_err(|e| e.to_string())?;
         let size = f.metadata().map_err(|e| e.to_string())?.len();
         if size == 0 || size > 8 * 1024 * 1024 {
@@ -1721,32 +1746,85 @@ async fn lu_pick_image(
         };
         let pinned = admit_data_url(&format!("data:{mime};base64,{}", STANDARD.encode(bytes)))
             .map_err(|e| format!("image admission: {e:?}"))?;
-        Ok(Some(register_image(&state, pinned)?))
+        Ok(Some(register_draft_image(&state,&chat_id,&display,pinned,false)?))
     })
     .await
     .map_err(|e| e.to_string())?
 }
-/// Releases an image selected through the trusted host picker. In-flight
-/// generations own cloned pinned bytes, so clearing a UI selection cannot
-/// invalidate a running request or grant access to another image.
+/// Remove only an exact draft row. A stale renderer release after Send
+/// cannot mutate a saved original or delete its external bytes.
 #[tauri::command]
-fn lu_release_image(
-    state: State<'_, Arc<DesktopState>>,
-    image_ref: String,
-) -> Result<bool, String> {
-    if image_ref.len() != 36
-        || !image_ref.starts_with("img-")
-        || !image_ref[4..]
-            .bytes()
-            .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
-    {
-        return Err("invalid image reference".into());
+fn lu_release_image(state:State<'_,Arc<DesktopState>>,chat_id:String,image_ref:String)
+    ->Result<bool,String>{
+    let _gate=state.attachments.gate.lock().map_err(|_|"Attachment manifest unavailable")?;
+    let book=state.chats.require(&chat_id)?;
+    let Some(a)=book.image_draft(&chat_id).map_err(|_|"Attachment manifest unavailable")?
+        .into_iter().find(|a|a.attachment_id==image_ref) else{return Ok(false)};
+    if !book.remove_draft_image(&chat_id,&image_ref).map_err(|_|"Attachment removal unavailable")?{
+        return Ok(false)
     }
-    let mut images = state.images.lock().map_err(|_| "image registry poisoned")?;
-    let mut owners=state.observed_image_owners.lock()
-        .map_err(|_|"Observed image ownership unavailable")?;
-    owners.remove(&image_ref);
-    Ok(images.remove(&image_ref).is_some())
+    if a.observed{state.attachments.release_observed(&chat_id,&image_ref);}
+    else if state.attachments.remove_unreferenced(&chat_id,&image_ref).is_err(){
+        // Draft deletion is committed. Restart reconciliation can remove the
+        // now unreferenced object; never present it as a retained attachment.
+        eprintln!("LU_CP01_ATTACHMENT_CLEANUP_PENDING");
+    }
+    Ok(true)
+}
+
+fn draft_manifest(state:&DesktopState,chat:&str)->Result<Vec<ImageAttachment>,String>{
+    state.chats.require(chat)?.image_draft(chat).map_err(|_|"Attachment manifest unavailable".into())
+}
+fn exact_draft_manifest(state:&DesktopState,chat:&str,refs:&[String])
+    ->Result<Vec<ImageAttachment>,String>{
+    let manifest=draft_manifest(state,chat)?;
+    if manifest.iter().map(|a|&a.attachment_id).ne(refs.iter()){
+        return Err("Attachments changed. Refresh the draft before sending.".into())
+    }
+    Ok(manifest)
+}
+fn resolve_draft_image(state:&DesktopState,chat:&str,id:&str)->Result<PinnedImage,String>{
+    let _gate=state.attachments.gate.lock().map_err(|_|"Attachment manifest unavailable")?;
+    let a=draft_manifest(state,chat)?.into_iter().find(|a|a.attachment_id==id)
+        .ok_or("Image is not attached to this conversation")?;
+    state.attachments.read(chat,&a)
+}
+
+/// Exact-chat metadata for draft or immutable history. A missing/corrupt
+/// object is explicitly unavailable, not silently omitted. No arbitrary
+/// filesystem address or model grant is provided.
+#[tauri::command]
+fn lu_image_attachments(state:State<'_,Arc<DesktopState>>,chat_id:String,visible_seq:Option<i64>)
+    ->Result<Vec<ImageView>,String>{
+    let _gate=state.attachments.gate.lock().map_err(|_|"Attachment manifest unavailable")?;
+    let book=state.chats.require(&chat_id)?;
+    let manifest=match visible_seq{
+        Some(seq)=>book.image_manifest_for_visible_seq(&chat_id,seq),
+        None=>book.image_draft(&chat_id),
+    }.map_err(|_|"Attachment manifest unavailable")?;
+    Ok(manifest.iter().map(|a|{
+        let available=if a.observed{
+            visible_seq.is_none()&&state.attachments.observed_available(&chat_id,a)
+        }else{state.attachments.read(&chat_id,a).is_ok()};
+        ImageView::from_attachment(a,available)
+    }).collect())
+}
+
+/// Reopen only ordinary image bytes already owned by this exact draft or
+/// original visible message. Observe bytes are NEVER serialized to WebView.
+#[tauri::command]
+fn lu_read_image_attachment(state:State<'_,Arc<DesktopState>>,chat_id:String,
+    image_ref:String,visible_seq:Option<i64>)->Result<String,String>{
+    let _gate=state.attachments.gate.lock().map_err(|_|"Attachment manifest unavailable")?;
+    let book=state.chats.require(&chat_id)?;
+    let manifest=match visible_seq{
+        Some(seq)=>book.image_manifest_for_visible_seq(&chat_id,seq),
+        None=>book.image_draft(&chat_id),
+    }.map_err(|_|"Attachment manifest unavailable")?;
+    let a=manifest.iter().find(|a|a.attachment_id==image_ref&&!a.observed)
+        .ok_or("Image is not available in this conversation")?;
+    let p=state.attachments.read(&chat_id,a)?;
+    Ok(format!("data:{};base64,{}",p.mime_type,STANDARD.encode(p.bytes)))
 }
 
 /// A diagnostic snapshot can be polled while the blocking engine load runs.
@@ -2224,10 +2302,7 @@ async fn lu_ocr_read_attached_image(
     let Some(expected_data)=option_env!("LU_OCR_ENG_SHA256") else{
         return Err("Reviewed OCR language data is not bundled in this build".into());
     };
-    let source=state.images.lock()
-        .map_err(|_|"Image registry unavailable")?
-        .get(&image_ref).cloned()
-        .ok_or("Original image is no longer admitted")?;
+    let source=resolve_draft_image(state.inner(),&chat_id,&image_ref)?;
     let source_sha=format!("{:x}",Sha256::digest(&source.bytes));
     if source_sha!=source.sha256.iter()
         .map(|byte|format!("{byte:02x}")).collect::<String>(){
@@ -2248,10 +2323,8 @@ async fn lu_ocr_read_attached_image(
           )).blocking_show()
     }).await.map_err(|_|"Native attached-image OCR consent unavailable")?;
     if !approved{return Ok(None);}
-    let still_admitted=state.images.lock()
-        .map_err(|_|"Image registry unavailable")?
-        .get(&image_ref).is_some_and(|current|
-            current.sha256==source.sha256&&current.bytes==source.bytes);
+    let still_admitted=resolve_draft_image(state.inner(),&chat_id,&image_ref)
+        .is_ok_and(|current|current.sha256==source.sha256&&current.bytes==source.bytes);
     if !still_admitted{return Err("Image detached or changed during OCR approval".into());}
     let resources=app.path().resource_dir()
         .map_err(|_|"OCR resource directory unavailable")?;
@@ -2298,8 +2371,7 @@ async fn lu_ocr_read_attached_region(
     if width==0||height==0||u64::from(width)*u64::from(height)>32_000_000{
         return Err("Select a bounded original-image OCR rectangle".into())
     }
-    let source=state.images.lock().map_err(|_|"Image registry unavailable")?
-        .get(&image_ref).cloned().ok_or("Image no longer admitted")?;
+    let source=resolve_draft_image(state.inner(),&chat_id,&image_ref)?;
     let digest=format!("{:x}",Sha256::digest(&source.bytes));
     if digest!=source.sha256.iter().map(|b|format!("{b:02x}")).collect::<String>(){
         return Err("Original image digest changed".into())
@@ -2318,9 +2390,8 @@ async fn lu_ocr_read_attached_region(
          )).blocking_show()
     }).await.map_err(|_|"Native image-region OCR consent unavailable")?;
     if !approved{return Ok(None)}
-    let unchanged=state.images.lock().map_err(|_|"Image registry unavailable")?
-        .get(&image_ref).is_some_and(|now|
-            now.sha256==source.sha256&&now.bytes==source.bytes);
+    let unchanged=resolve_draft_image(state.inner(),&chat_id,&image_ref)
+        .is_ok_and(|now|now.sha256==source.sha256&&now.bytes==source.bytes);
     if !unchanged{return Err("Original image detached or changed".into())}
     let resources=app.path().resource_dir()
         .map_err(|_|"OCR resource directory unavailable")?;
@@ -3725,10 +3796,7 @@ async fn lu_image_workspace_preview(
     if steps.is_empty()||steps.len()>12{
         return Err("Image preview requires 1–12 staged steps".into());
     }
-    let source=state.images.lock()
-        .map_err(|_|"Image registry unavailable")?
-        .get(&image_ref).cloned()
-        .ok_or("Image attachment is no longer admitted")?;
+    let source=resolve_draft_image(state.inner(),&chat_id,&image_ref)?;
     tauri::async_runtime::spawn_blocking(move||
         image_workspace_desktop::preview_revision_plan(&source,&steps)
     ).await.map_err(|_|"Native image preview worker unavailable".to_string())?
@@ -3748,8 +3816,7 @@ async fn lu_image_workspace_export(
     use lu_core::native_image_revision::ImageRevisionOperation as Operation;
     state.chats.history(&chat_id)
         .map_err(|_|"Choose a conversation for image export")?;
-    let source=state.images.lock().map_err(|_|"Image registry unavailable")?
-        .get(&image_ref).cloned().ok_or("Image attachment is no longer admitted")?;
+    let source=resolve_draft_image(state.inner(),&chat_id,&image_ref)?;
     let edit=match operation.as_str(){
         "crop"=>Operation::Crop{
             x:x.ok_or("Crop requires an X coordinate")?,
@@ -4712,6 +4779,13 @@ async fn lu_generate(
     read_only_workspace: Option<bool>,
     plan_only: Option<bool>,
 ) -> Result<String, String> {
+    // A renderer cannot convert an attached turn into a text-only native
+    // route by withholding or reordering references. A later edit belongs
+    // to the next draft; the inference path rechecks at actual admission.
+    {
+        let _gate=state.attachments.gate.lock().map_err(|_|"Attachment manifest unavailable")?;
+        exact_draft_manifest(state.inner(),&chat_id,&image_refs)?;
+    }
     if plan_only.unwrap_or(false){
         if !image_refs.is_empty()||read_only_workspace.unwrap_or(false)
             ||max_new_tokens==0||max_new_tokens>2048{
@@ -5112,29 +5186,18 @@ async fn generate_internal(
     origin:GenerationOrigin,
     plan_only:bool,
 )->Result<String,String>{
+    let (manifest,images,mut perf_trace,supervisor,generation_id,request_id,
+        observed_engine_starts_before,ticket,position) = {
+    let _gate=state.attachments.gate.lock().map_err(|_|"Attachment manifest unavailable")?;
     let perf_turn_start=std::time::Instant::now();
-    let images: Vec<PinnedImage> = {
-        let registered = state.images.lock().map_err(|_| "image registry poisoned")?;
-        let observed=state.observed_image_owners.lock()
-            .map_err(|_|"Observed image provenance unavailable")?;
-        let mut resolved = Vec::new();
-        let mut seen = HashSet::new();
-        for id in &image_refs {
-            if !seen.insert(id) {
-                return Err("duplicate image reference".into());
-            }
-            if let Some(owner)=observed.get(id){
-                if owner!=&chat_id{
-                    return Err("Observed image cannot cross conversation boundary".into());
-                }
-                lu_core::native_observe_egress::DataProvenance::OBSERVE_LEARN
-                    .gate(lu_core::native_observe_egress::Destination::LocalInference)
-                    .map_err(str::to_owned)?;
-            }
-            resolved.push(registered.get(id).ok_or("unknown image reference")?.clone());
-        }
-        resolved
+    let manifest=if origin==GenerationOrigin::Human{
+        exact_draft_manifest(&state,&chat_id,&image_refs)?
+    }else{
+        if !image_refs.is_empty(){return Err("Background turns cannot consume a human draft".into())}
+        Vec::new()
     };
+    let images:Vec<PinnedImage>=manifest.iter().map(|a|state.attachments.read(&chat_id,a))
+        .collect::<Result<_,_>>()?;
     if prompt.trim().is_empty()
         || prompt.len() > 16 * 1024
         || max_new_tokens == 0
@@ -5174,7 +5237,10 @@ async fn generate_internal(
     let admission = match origin {
         GenerationOrigin::Human => state.generation_queue.enqueue_with_class_committing(
             &session_id, &chat_id, &generation_id, TurnClass::Foreground,
-            || state.chats.append_user_with_turn_id(&chat_id,&generation_id,&prompt)),
+            || state.chats.append_user_with_image_draft(&chat_id,&generation_id,&prompt,&manifest)
+                .map(|catalog_synced|{
+                    if !catalog_synced{perf_trace.catalog_reconciliation_required();}
+                })),
         GenerationOrigin::BackgroundTerminal => state.generation_queue.enqueue_with_class(
             &session_id, &chat_id, &generation_id, TurnClass::Background),
     };
@@ -5202,6 +5268,9 @@ async fn generate_internal(
         }
         state.chats.history(&chat_id)?;
     }
+    (manifest,images,perf_trace,supervisor,generation_id,request_id,
+        observed_engine_starts_before,ticket,position)
+    };
     let queued = GenerationEvent {
         chat_id: chat_id.clone(),
         generation_id: generation_id.clone(),
@@ -5218,6 +5287,19 @@ async fn generate_internal(
             perf_trace.acquired_slot();
             if ticket.cancelled() {
                 return Err("Cancelled while queued".into());
+            }
+            // Verify canonical binding and external bytes again after queue
+            // wait; an altered/missing object can never silently degrade into
+            // a text-only model request. Keep the original admitted order.
+            if origin==GenerationOrigin::Human{
+                let original=state.chats.require(&chat_id)?.saved_image_manifest(&chat_id,&gid)
+                    .map_err(|_|"Saved attachment manifest unavailable")?;
+                if original!=manifest{return Err("Saved attachment manifest changed".into())}
+                for (a,pinned) in original.iter().zip(&images){
+                    if state.attachments.read(&chat_id,a)?!=*pinned{
+                        return Err("Saved image changed while queued".into())
+                    }
+                }
             }
             let events = state.chats.recent_model_history(&chat_id,64)?;
             // ANSF performs one indexed bounded CURRENT-REVISION source read; it does not load
@@ -6076,6 +6158,11 @@ async fn generate_internal(
             // Queued cancellation may happen before a stream exists; record
             // an explicit terminal event without fabricating assistant text.
             let _ = state.chats.cancel(&chat_id, &gid);
+        }
+        // Consumed observations were retained only for this original native
+        // generation. Ordinary saved objects remain durable on every result.
+        for a in &manifest{
+            if a.observed{state.attachments.release_observed(&chat_id,&a.attachment_id);}
         }
         let phase = match &outcome {
             Ok(_) => "completed",
@@ -9378,6 +9465,8 @@ pub fn run() {
             lu_pick_image,
             lu_ingest_image_data_url,
             lu_release_image,
+            lu_image_attachments,
+            lu_read_image_attachment,
             lu_load_model,
             lu_load_diagnostics,
             lu_load_memory_sample,
@@ -9720,12 +9809,10 @@ mod tests {
         fs::remove_dir_all(root).unwrap();
     }
     #[test]
-    fn host_image_reference_matches_core_pinned_identity() {
-        // Core's image digest uses its first 16 bytes (32 hex chars) and
-        // the host prefix `img-` contributes 4 characters, total 36.
-        let path = "img-0123456789abcdef0123456789abcdef";
-        assert_eq!(path.len(), 36);
-        assert!(path.starts_with("img-"));
+    fn host_attachment_handle_is_opaque_and_not_a_content_digest() {
+        let a=next_id("img-");let b=next_id("img-");
+        assert_ne!(a,b);
+        assert!(lu_core::ansf_image_attachments::valid_attachment_id(&a));
     }
     #[test]
     fn decodes_pinned_engine_digest() {
