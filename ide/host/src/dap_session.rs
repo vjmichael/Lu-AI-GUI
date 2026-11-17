@@ -311,6 +311,40 @@ impl DapSession {
         Ok(frame)
     }
 
+    /// Disposable WO6 fixture only: let the already-approved sealed program
+    /// reach its own x86-64 source-level trap. The normal project launch
+    /// remains stopOnEntry=true. No breakpoint, continue, shell, or custom
+    /// command is sent; the native supervisor must verify the exact fixture.
+    #[cfg(all(
+        target_os = "linux",
+        target_arch = "x86_64",
+        debug_assertions,
+        feature = "dev045d3-ci-oracle"
+    ))]
+    pub fn launch_wo6_ci_source_trap(&mut self, program: &str) -> Result<Vec<u8>, DapError> {
+        if self.phase != DapPhase::Ready {
+            return Err(DapError::InvalidPhase);
+        }
+        if !matches!(
+            program,
+            "/debug-target/debug/wo6_native_acceptance"
+                | "/debug-target/target/debug/wo6_native_acceptance"
+        ) {
+            return Err(DapError::InvalidMessage);
+        }
+        let frame = self.request(
+            "launch",
+            json!({
+                "program":program,"stopOnEntry":false,"noDebug":false,
+                "disableASLR":false,"disableSTDIO":true,
+                "args":[],"env":{},"runInTerminal":false
+            }),
+        )?;
+        self.launch_sent = true;
+        self.phase = DapPhase::Launching;
+        Ok(frame)
+    }
+
     /// Read-only pending signal for adapters that emit initialized immediately
     /// after the response (even before the fixed launch is sent). The trusted
     /// native host may examine this after launch; no DAP instruction is sent.
@@ -1493,6 +1527,46 @@ mod tests {
             .unwrap();
         assert!(String::from_utf8(frame).unwrap().contains("stopOnEntry"));
     }
+    #[cfg(all(
+        target_os = "linux",
+        target_arch = "x86_64",
+        debug_assertions,
+        feature = "dev045d3-ci-oracle"
+    ))]
+    #[test]
+    fn ci_source_trap_launch_is_exact_and_regular_launch_still_stops_at_entry() {
+        let mut session = DapSession::new();
+        session.phase = DapPhase::Ready;
+        for wrong in [
+            "/workspace/wo6_native_acceptance",
+            "/debug-target/debug/another",
+            "/debug-target/debug/deps/wo6_native_acceptance",
+            "/debug-target/debug/../wo6_native_acceptance",
+        ] {
+            assert_eq!(
+                session.launch_wo6_ci_source_trap(wrong).unwrap_err(),
+                DapError::InvalidMessage
+            );
+        }
+        let exact = "/debug-target/target/debug/wo6_native_acceptance";
+        let wire = session.launch_wo6_ci_source_trap(exact).unwrap();
+        let json = std::str::from_utf8(&wire).unwrap();
+        assert!(json.contains(r#""stopOnEntry":false"#));
+        assert!(json.contains(r#""disableASLR":false"#));
+        assert!(json.contains(r#""disableSTDIO":true"#));
+        assert!(json.contains(r#""runInTerminal":false"#));
+        assert_eq!(
+            session.launch_wo6_ci_source_trap(exact).unwrap_err(),
+            DapError::InvalidPhase
+        );
+        let mut normal = DapSession::new();
+        normal.phase = DapPhase::Ready;
+        let normal_wire = normal.launch_verified_project(exact).unwrap();
+        assert!(std::str::from_utf8(&normal_wire)
+            .unwrap()
+            .contains(r#""stopOnEntry":true"#));
+    }
+
     #[test]
     fn only_fixed_native_fixture_can_be_launched_and_response_is_correlated() {
         let mut session = DapSession::new();

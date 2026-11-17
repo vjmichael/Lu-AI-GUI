@@ -4,6 +4,8 @@ on:
     paths:
       - 'ide/supervisor/**'
       - 'ide/sandbox/**'
+      - 'ide/llvm18_owner/**'
+      - '.github/workflows/ide-dev04-5d5-owner-event-native.yml'
       - 'ide/app/src-tauri/src/build_backend.rs'
       - 'ide/app/web/protected_job_lifecycle.js'
       - 'ide/app/web/main.jsx'
@@ -20,7 +22,13 @@ jobs:
     # Windows 2022 runner image, not by Windows 2025's newer VS image.
     # Never loosen New-PinnedWindowsToolchain.ps1 to accept an unreviewed SDK.
     runs-on: windows-2022
-    timeout-minutes: 60
+    # Reuse the exact-head pinned LLVM build rather than rebuilding it or
+    # pretending the runner's unmodified LLVM is AppContainer-compatible.
+    # Only this consumer job may read the source workflow's artifacts.
+    permissions:
+      contents: read
+      actions: read
+    timeout-minutes: 180
     steps:
       - uses: actions/checkout@v4
         with:
@@ -139,6 +147,16 @@ jobs:
           # SCM, normal/cancel, PE/PDB or kernel-ownership assertions.
           python ide/supervisor/fixtures/debug/probe_windows_dap_initialize.py --compare-private-environment
           if ($LASTEXITCODE -ne 0) { Write-Host 'PROTECTED_WO6_PRIVATE_ENV_COMPARE=DIAGNOSTIC_FAILED_NOT_NATIVE_ACCEPTANCE' }
+      - name: Admit the same-head source-pinned LLDB for real protected WO6
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Above stock runner probes are retained as diagnostics, not native
+          # acceptance. The original protected normal/cancel/PE/PDB and all
+          # independent SCM/Job assertions below use the reviewed repaired
+          # artifact. No binary from another source head is admitted.
+          & ide/llvm18_owner/Transfer-PinnedOwnerBundle.ps1 -Mode Receive
       - name: Prepare exact offline MSVC and SDK for DEV-04.5B project build
         shell: pwsh
         run: |
@@ -429,6 +447,7 @@ jobs:
           # Preserve the historical Linux-worker-only build without a debugger oracle.
           cargo build --manifest-path ide/supervisor/Cargo.toml --features linux-worker --example wo6_linux_native_build_acceptance
           if [ $? -ne 0 ]; then echo 'DENIED: WO6 historical Linux native build failed'; exit 2; fi
+          cargo test --manifest-path ide/host/Cargo.toml --features dev045d3-ci-oracle --lib ci_source_trap_launch
           cargo build --manifest-path ide/supervisor/Cargo.toml --features 'linux-worker,dap-transport,dev045d3-ci-oracle' --example wo6_linux_native_build_acceptance
       - name: Real isolated Cargo check, test and cancellation with kernel receipts
         shell: bash

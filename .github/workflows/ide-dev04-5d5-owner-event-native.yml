@@ -57,6 +57,16 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'DENIED: real Windows host owner-event compile failed' }
           cargo check --release --manifest-path ide/supervisor/Cargo.toml --features 'dap-transport,protected-recovery-service'
           if ($LASTEXITCODE -ne 0) { throw 'DENIED: Windows regular release compile regressed' }
+      - name: Fail fast on existing formatting and exact overlay contracts before LLVM
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          cargo fmt --manifest-path ide/supervisor/Cargo.toml -- --check
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: consolidated supervisor rustfmt contract failed before LLVM build' }
+          cargo fmt --manifest-path ide/host/Cargo.toml -- --check
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: consolidated host rustfmt contract failed before LLVM build' }
+          python -m unittest discover -s ide/llvm18_owner -p test_pinned_chrono_overlay.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: exact pinned LLVM source overlay contract failed' }
       - name: Stage exact reviewed offline Windows SDK and MSVC toolchain
         shell: pwsh
         run: |
@@ -78,6 +88,19 @@ jobs:
         run: |
           & ide/llvm18_owner/Build-PinnedOwnerWindows.ps1
           if ($LASTEXITCODE -ne 0) { throw 'DENIED: modified LLVM18 LLDB Windows build failed' }
+      - name: Produce exact-head native bundle transport manifest (not acceptance)
+        shell: pwsh
+        run: |
+          & ide/llvm18_owner/Transfer-PinnedOwnerBundle.ps1 -Mode Export
+      - name: Publish measured LLVM18 bundle for original WO6 native acceptance
+        uses: actions/upload-artifact@v4
+        with:
+          name: dev045d5-native-bundle-${{ github.event.pull_request.head.sha || github.sha }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/lu-verified-owner-bundle
+            ${{ runner.temp }}/lu-owner-llvm18-transport.json
+          if-no-files-found: error
+          compression-level: 0
       - name: Real SCM/AppContainer owner stop, PE/PDB, cancellation and journal restart
         shell: pwsh
         run: |

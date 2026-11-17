@@ -39,6 +39,9 @@ class PinnedChronoOverlayTests(TestCase):
         progress = root / overlay.DAP_PROGRESS_HEADER
         progress.parent.mkdir(parents=True)
         progress.write_text(progress_source, encoding="utf-8")
+        process = root / overlay.WINDOWS_PROCESS_SOURCE
+        process.parent.mkdir(parents=True)
+        process.write_text(overlay.WINDOWS_PROCESS_ORIGINAL, encoding="utf-8")
         return cpp, progress
 
     def test_one_direct_include_and_original_event_hook(self):
@@ -63,6 +66,22 @@ class PinnedChronoOverlayTests(TestCase):
             self.assertIn("lu_ide_owner::OnContinued(dbe, continued);", cpp.read_text())
             self.assertEqual((root / overlay.HEADER).read_bytes(),
                              Path(overlay.__file__).with_name("LuIdeOwnerEvent.h").read_bytes())
+
+    def test_native_path_repair_is_dap_only_and_preserves_unrelated_denials(self):
+        original = overlay.WINDOWS_PROCESS_ORIGINAL
+        patched = overlay.patch_windows_process(original)
+        self.assertIn("::GetLongPathNameW(ModuleName, LongModuleName, MAX_PATH)", patched)
+        self.assertIn("Error != ERROR_ACCESS_DENIED", patched)
+        self.assertIn('L"lldb-dap.exe", -1, TRUE', patched)
+        self.assertIn("CSTR_EQUAL", patched)
+        self.assertIn("return mapWindowsError(Error);", patched)
+        self.assertIn("return mapWindowsError(ERROR_INSUFFICIENT_BUFFER);", patched)
+        self.assertIn("UTF16ToUTF8(ResolvedName, LongLength, Filename)", patched)
+        self.assertNotIn("SetNamedSecurityInfo", patched)
+        with self.assertRaisesRegex(RuntimeError, "upstream LLDB source anchor changed"):
+            overlay.patch_windows_process(original.replace("GetLongPathNameW", "Changed"))
+        with self.assertRaisesRegex(RuntimeError, "upstream LLDB source anchor changed"):
+            overlay.patch_windows_process(original + original)
 
     def test_changed_upstream_header_denied(self):
         with TemporaryDirectory() as directory:

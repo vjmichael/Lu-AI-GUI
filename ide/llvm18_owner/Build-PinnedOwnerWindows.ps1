@@ -15,6 +15,13 @@ $overlaySource=(Get-Content -LiteralPath $sourceBeforeBuild -Raw).Replace("`r",'
 if (!$overlaySource.Contains("#ifndef NOMINMAX`n#define NOMINMAX 1`n#endif`n#include <winsock2.h>`n#include `"DebuggerThread.h`"")) {
   throw 'DENIED: pinned LLVM WinSock-first NOMINMAX include invariant absent'
 }
+$processSource=Join-Path $root 'llvm/lib/Support/Windows/Process.inc'
+$processText=Get-Content -LiteralPath $processSource -Raw
+if (!$processText.Contains('LU_LLVM18_FIXED_DAP_IMAGE_LEAF_USED') -or
+    !$processText.Contains('Error != ERROR_ACCESS_DENIED') -or
+    !$processText.Contains('L"lldb-dap.exe", -1, TRUE')) {
+  throw 'DENIED: reviewed AppContainer-compatible LLVM executable-leaf repair absent'
+}
 $out=Join-Path $env:RUNNER_TEMP 'lu-llvm18-owner-native'
 $flags=@('-S',(Join-Path $root 'llvm'),'-B',$out,'-G','Visual Studio 17 2022','-A','x64','-DLLVM_ENABLE_PROJECTS=clang;lldb','-DLLVM_TARGETS_TO_BUILD=X86','-DLLDB_ENABLE_PYTHON=OFF','-DLLDB_ENABLE_CURSES=OFF','-DLLVM_ENABLE_ZLIB=OFF','-DLLVM_ENABLE_LIBXML2=OFF','-DLLVM_INCLUDE_TESTS=OFF','-DLLDB_INCLUDE_TESTS=OFF')
 & cmake @flags
@@ -49,6 +56,7 @@ $provenanceDirectory=Join-Path $bundle 'provenance'
 New-Item -ItemType Directory -Force $provenanceDirectory | Out-Null
 Copy-Item -LiteralPath $patched -Destination (Join-Path $provenanceDirectory 'DebuggerThread.cpp')
 Copy-Item -LiteralPath $progress -Destination (Join-Path $provenanceDirectory 'ProgressEvent.h')
+Copy-Item -LiteralPath $processSource -Destination (Join-Path $provenanceDirectory 'Process.inc')
 $sha256={ param([string]$p) (Get-FileHash -LiteralPath $p -Algorithm SHA256).Hash.ToLowerInvariant() }
 $ownerProvenance=[ordered]@{
   schema='lu.ide.fin04.first-party-lldb-owner.v1'

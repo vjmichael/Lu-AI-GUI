@@ -154,7 +154,10 @@ mod native_stderr_classification_tests {
             classify_pipe_error(&io::Error::from_raw_os_error(5)),
             "host_pipe_access_denied"
         );
-        assert_eq!(classify_pipe_error(&io::Error::from_raw_os_error(6)), "invalid_pipe_handle");
+        assert_eq!(
+            classify_pipe_error(&io::Error::from_raw_os_error(6)),
+            "invalid_pipe_handle"
+        );
         assert_eq!(
             classify_pipe_error(&io::Error::from_raw_os_error(87)),
             "invalid_pipe_parameter"

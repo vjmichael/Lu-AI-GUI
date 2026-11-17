@@ -825,6 +825,18 @@ fn start_linux_dap_inner(
         },
     })
 }
+#[cfg(all(
+    target_arch = "x86_64",
+    debug_assertions,
+    feature = "dev045d3-ci-oracle"
+))]
+pub const WO6_CI_SOURCE_TRAP_RS: &str = concat!(
+    "fn main() {\n",
+    "    unsafe { core::arch::asm!(\"int3\", \"nop\", \"nop\", options(nomem, nostack)); }\n",
+    "    println!(\"fixed WO6 isolated job\");\n",
+    "}\n"
+);
+
 #[cfg(feature = "dap-transport")]
 pub struct LinuxDapSession {
     gateway: crate::dap_transport::DapGateway,
@@ -849,6 +861,50 @@ impl LinuxDapSession {
             .as_deref()
             .ok_or(SupervisorError::InvalidPlan)?;
         self.gateway.launch_verified_project(target)
+    }
+    #[cfg(all(
+        target_os = "linux",
+        target_arch = "x86_64",
+        debug_assertions,
+        feature = "dev045d3-ci-oracle"
+    ))]
+    pub fn launch_wo6_ci_source_trap(&mut self) -> Result<(), SupervisorError> {
+        // The normal ELF entry stop can occur in the loader, with no source
+        // line. This fixed test has a real INT3 in its immutable Rust source.
+        // Verify every fixture file before the existing launch grant is used.
+        const FIXTURE: [(&str, &str); 4] = [
+            (
+                "Cargo.toml",
+                "[package]\nname=\"wo6_native_acceptance\"\nversion=\"0.1.0\"\nedition=\"2021\"\n",
+            ),
+            (
+                "Cargo.lock",
+                "version = 3\n\n[[package]]\nname = \"wo6_native_acceptance\"\nversion = \"0.1.0\"\n",
+            ),
+            (
+                "src/lib.rs",
+                "#[cfg(test)] mod tests { #[test] fn fixed_pass() { assert_eq!(2+2,4); } }\n",
+            ),
+            ("src/main.rs", WO6_CI_SOURCE_TRAP_RS),
+        ];
+        if self.source_input.seal.file_count != FIXTURE.len()
+            || self.source_input.seal.manifest_relative_path != "Cargo.toml"
+        {
+            return Err(SupervisorError::WrongProjectOrSource);
+        }
+        verify_input(&self.source_input).map_err(|_| SupervisorError::WrongProjectOrSource)?;
+        for (relative, expected) in FIXTURE {
+            let bytes = std::fs::read(self.source_input.root.join(relative))
+                .map_err(|_| SupervisorError::WrongProjectOrSource)?;
+            if bytes.as_slice() != expected.as_bytes() {
+                return Err(SupervisorError::WrongProjectOrSource);
+            }
+        }
+        let target = self
+            .project_debuggee
+            .as_deref()
+            .ok_or(SupervisorError::InvalidPlan)?;
+        self.gateway.launch_wo6_ci_source_trap(target)
     }
     pub fn phase(&self) -> lu_ide_workspace::dap_session::DapPhase {
         self.gateway.phase()

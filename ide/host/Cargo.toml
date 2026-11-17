@@ -9,6 +9,8 @@ description = "Standalone Lu IDE workspace project registry"
 
 [features]
 default = []
+# Linux x86-64 disposable native source-trap acceptance, never a release route.
+dev045d3-ci-oracle = []
 # Source-only, disposable protected Windows native acceptance. No Tauri
 # control route or released debugger execution rights.
 dev046c-ci-control = []

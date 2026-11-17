@@ -81,10 +81,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         source.join("src/lib.rs"),
         "#[cfg(test)] mod tests { #[test] fn fixed_pass() { assert_eq!(2+2,4); } }\n",
     )?;
-    fs::write(
-        source.join("src/main.rs"),
-        "fn main(){ println!(\"fixed WO6 isolated job\"); }\n",
-    )?;
+    // Keep the ordinary Cargo check/test/build source unchanged. Only the
+    // fixed source-line CI scenario must run far enough to trap in the real
+    // Rust source, instead of falsely mapping the initial dynamic-loader PC.
+    #[cfg(all(
+        target_arch = "x86_64",
+        debug_assertions,
+        feature = "dev045d3-ci-oracle"
+    ))]
+    let main_source = if project_debug {
+        lu_ide_execution_supervisor::linux_worker::lsp_native::WO6_CI_SOURCE_TRAP_RS
+    } else {
+        "fn main(){ println!(\"fixed WO6 isolated job\"); }\n"
+    };
+    #[cfg(not(all(
+        target_arch = "x86_64",
+        debug_assertions,
+        feature = "dev045d3-ci-oracle"
+    )))]
+    let main_source = "fn main(){ println!(\"fixed WO6 isolated job\"); }\n";
+    fs::write(source.join("src/main.rs"), main_source)?;
     let input = publish_input(&source, &stage, recipe).map_err(|e| e.code())?;
     let digest = installed_toolchain_digest().map_err(|e| e.code())?;
     let plan = JobPlan {
@@ -311,6 +327,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             target
                 .verify()
                 .map_err(|_| "DENIED: target changed before launch")?;
+            #[cfg(all(
+                target_arch = "x86_64",
+                debug_assertions,
+                feature = "dev045d3-ci-oracle"
+            ))]
+            dap.launch_wo6_ci_source_trap().map_err(|e| e.code())?;
+            #[cfg(not(all(
+                target_arch = "x86_64",
+                debug_assertions,
+                feature = "dev045d3-ci-oracle"
+            )))]
             dap.launch_project_target().map_err(|e| e.code())?;
             if dap.configuration_needed() {
                 dap.configuration_done().map_err(|e| e.code())?;
