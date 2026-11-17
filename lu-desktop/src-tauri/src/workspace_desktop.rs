@@ -166,6 +166,111 @@ pub(crate) async fn cpu_search_workspace_for_chat(
     }).await.map_err(|_|"Native CPU workspace scan interrupted")?
 }
 
+/// CP-03A: lexical candidate from the original human text, not permission.
+/// Preserve the exact Unicode spelling and spaces. A candidate is only a
+/// starting point for the existing native chooser; no model/attachment text
+/// or discovery result can enter this function as a new authority source.
+/// Unquoted paths consume the entire tail: never guess a trailing clause or
+/// silently shorten an absent path to its parent.
+fn explicit_workspace_path(prompt:&str)->Option<&str>{
+    let input=prompt.trim();
+    if input.is_empty()||input.len()>8192||input.chars().any(char::is_control)
+        ||input.contains("[Attached text file:")||input.contains("<|")
+        ||input.contains(char::from(96)){return None}
+    let lower=input.to_ascii_lowercase();
+    let (input,lower)=if lower.starts_with("please "){
+        (&input[7..],&lower[7..])
+    }else{(input,lower.as_str())};
+    let is_absolute_spelling=|p:&str|{
+        let b=p.as_bytes();
+        p.starts_with('/')||p.starts_with(r"\\")||
+            (b.len()>=2&&b[0].is_ascii_alphabetic()&&b[1]==b':')
+    };
+    fn extract_tail(tail:&str)->Option<&str>{
+        let tail=tail.trim();
+        if let Some(rest)=tail.strip_prefix('"'){
+            let path=rest.strip_suffix('"')?;
+            if path.contains('"'){return None}
+            Some(path)
+        }else if tail.contains('"'){None}else{Some(tail)}
+    }
+    for prefix in ["open ","navigate to ","go to ","browse ","inspect ",
+        "list ","look in ","explore "]{
+        if lower.starts_with(prefix){
+            if let Some(path)=extract_tail(&input[prefix.len()..]){
+                if is_absolute_spelling(path){return Some(path)}
+            }
+        }
+    }
+    if !["search ","find ","read ","list ","show ","inspect ","summarize ",
+        "compare ","extract ","review ","analyze "].iter().any(|p|lower.starts_with(p)){
+        return None
+    }
+    // Multiple absolute candidates are ambiguous. Only a single terminal
+    // explicit scope introduced by a preposition is accepted here.
+    let mut found=None;
+    for marker in [" in "," within "," under "," from "]{
+        for (offset,_) in lower.match_indices(marker){
+            if let Some(path)=extract_tail(&input[offset+marker.len()..]){
+                if is_absolute_spelling(path){
+                    if found.is_some(){return None}
+                    found=Some(path);
+                }
+            }
+        }
+    }
+    found
+}
+
+/// Validate before offering a suggested picker location, and again after
+/// it returns. This is a preflight, NOT a race-proof directory handle.
+/// The picker still provides consent and the existing per-turn grant applies.
+/// No relative paths, drive-relative paths, network namespaces, symlink or
+/// reparse ancestors, wildcard expansion, or parent fallback.
+fn inspect_explicit_workspace_path(path:&Path)->Result<PathBuf,String>{
+    // Reuse the CP-02 local original-path lexical restrictions, including
+    // the Windows local-drive check and namespace/alternate-stream refusal.
+    if !crate::linked_attachment_file::safe_absolute_path(path){
+        return Err("Enter an exact absolute local folder path.".into())
+    }
+    for parent in path.ancestors(){
+        if parent.as_os_str().is_empty(){break}
+        if !is_real_directory(parent){
+            return Err("The requested folder is unavailable or contains a link. No access granted.".into())
+        }
+    }
+    path.canonicalize().map_err(|_|"The requested folder is unavailable.".into())
+}
+
+/// A suggested path never becomes a grant. The user confirms it in the
+/// existing native folder chooser. If the path was explicit, selecting a
+/// different folder is a refusal, not permission to search elsewhere.
+async fn choose_read_workspace(app:&AppHandle,prompt:&str,git_mode:bool)
+    ->Result<Option<PathBuf>,String>{
+    let suggested=if !git_mode&&explicit_read_workspace_request(prompt){
+        explicit_workspace_path(prompt).map(PathBuf::from)
+    }else{None};
+    let chooser=app.clone();
+    tauri::async_runtime::spawn_blocking(move||{
+        let expected=suggested.as_deref().map(inspect_explicit_workspace_path).transpose()?;
+        let mut picker=chooser.dialog().file();
+        if let Some(path)=suggested.as_ref(){
+            picker=picker.set_directory(path.clone());
+        }
+        let Some(selected)=picker.blocking_pick_folder() else{return Ok(None)};
+        let root=selected.into_path().map_err(|_|"Invalid native workspace selection")?;
+        if let Some(expected)=expected{
+            let selected=inspect_explicit_workspace_path(&root)?;
+            let requested=inspect_explicit_workspace_path(suggested.as_deref()
+                .ok_or("Original folder request unavailable")?)?;
+            if selected!=expected||requested!=expected{
+                return Err("The selected folder differs from the requested folder. No access granted.".into())
+            }
+        }
+        Ok(Some(root))
+    }).await.map_err(|_|"Workspace picker unavailable")?
+}
+
 /// Normal Send can request only a boolean, not a directory or capability.
 /// The same native picker and authenticated workspace turn are reused.
 /// Host-side discovery only; a match opens an OS picker, never a grant.
@@ -188,7 +293,7 @@ pub(crate) fn explicit_read_workspace_request(prompt:&str)->bool{
         .iter().any(|s|lower.contains(s)){
         return false
     }
-    if explicit_navigation_to_windows_folder(text){return true}
+    if explicit_workspace_path(text).is_some()||explicit_navigation_to_windows_folder(text){return true}
     let scoped=["workspace","folder","directory","project"];
     let request=[
         "list files","list the files","list my files","show files",
@@ -340,12 +445,7 @@ async fn ask_scoped_read_for_chat(
     if status.session_id.as_deref()!=Some(session_id.as_str()){
         return Err("Loaded model session changed".into())
     }
-    let chooser=app.clone();
-    let selected=tauri::async_runtime::spawn_blocking(move||{
-        chooser.dialog().file().blocking_pick_folder()
-    }).await.map_err(|_|"Workspace picker unavailable")?;
-    let Some(selected)=selected else {return Ok(None)};
-    let root=selected.into_path().map_err(|_|"Invalid workspace folder selection")?;
+    let Some(root)=choose_read_workspace(&app,&prompt,git_mode).await? else{return Ok(None)};
     let git_executable=if git_mode{Some(trusted_git_executable()?)}else{None};
     // OS picker is the authority source; reject symlinks and Windows reparse.
     if !is_real_directory(&root) {
@@ -602,6 +702,57 @@ mod tests {
                        r"How to navigate to C:\Users",r"Delete C:\Users\Example"]{
             assert!(!explicit_read_workspace_request(prompt),"{prompt}");
         }
+    }
+    #[test]
+    fn cp03_exact_original_path_preserves_spaces_unicode_and_platform_spelling(){
+        for (prompt,path) in [
+            (r#"Open C:\Users\Example\日本語 Folder"#,r"C:\Users\Example\日本語 Folder"),
+            (r#"Please navigate to "D:\Projects\Lu AI""#,r"D:\Projects\Lu AI"),
+            ("Browse /home/operator/Research Notes","/home/operator/Research Notes"),
+            (r#"Find PDFs in "D:\Research Notes""#,r"D:\Research Notes"),
+            ("Search documents in /home/operator/notes","/home/operator/notes"),
+            (r"Browse \\server\share",r"\\server\share"),
+            (r"Open C:relative",r"C:relative"),
+        ]{
+            assert_eq!(explicit_workspace_path(prompt),Some(path),"{prompt}");
+            assert!(explicit_read_workspace_request(prompt),"{prompt}");
+        }
+    }
+    #[test]
+    fn cp03_never_guesses_relative_or_trailing_text_or_elevates_source_commands(){
+        for prompt in ["Open relative/folder","Explain /etc","Open [Attached text file: x]",
+            "Open /one\nOpen /two","Find PDFs in \"/one\" and in \"/two\"",
+            "Open \"/one\" then /two","Open `/one`"]{
+            assert_eq!(explicit_workspace_path(prompt),None,"{prompt}");
+        }
+        for prompt in ["Do not open /etc","Delete files in /etc",
+            "Read files in /etc without tools","How to browse /etc"]{
+            assert!(!explicit_read_workspace_request(prompt),"{prompt}");
+        }
+        assert_eq!(explicit_workspace_path("Open /missing and list files"),
+            Some("/missing and list files"));
+    }
+    #[test]
+    fn cp03_exact_directory_preflight_refuses_missing_relative_and_file(){
+        let dir=std::env::temp_dir().join(next_id("lu-cp03-dir-"));
+        fs::create_dir(&dir).unwrap();
+        let dir=dir.canonicalize().unwrap();
+        let unicode=dir.join("Research 日本語 Notes");
+        fs::create_dir(&unicode).unwrap();
+        assert_eq!(inspect_explicit_workspace_path(&unicode).unwrap(),unicode.canonicalize().unwrap());
+        assert!(inspect_explicit_workspace_path(&dir.join("missing")).is_err());
+        assert!(inspect_explicit_workspace_path(Path::new("relative")).is_err());
+        let file=dir.join("file.txt");fs::write(&file,b"original").unwrap();
+        assert!(inspect_explicit_workspace_path(&file).is_err());
+        #[cfg(unix)]{
+            let alias=dir.join("alias");
+            std::os::unix::fs::symlink(&unicode,&alias).unwrap();
+            assert!(inspect_explicit_workspace_path(&alias).is_err());
+            fs::create_dir(unicode.join("child")).unwrap();
+            assert!(inspect_explicit_workspace_path(&alias.join("child")).is_err());
+        }
+        assert_eq!(fs::read(&file).unwrap(),b"original");
+        fs::remove_dir_all(dir).unwrap();
     }
     #[test]
     fn ordinary_explicit_workspace_question_can_offer_native_picker_without_toolbar(){

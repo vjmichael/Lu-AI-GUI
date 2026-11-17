@@ -38,7 +38,7 @@ fn same_file_state(a:&Metadata,b:&Metadata)->bool{
     }
     true
 }
-fn safe_absolute_path(path:&Path)->bool{
+pub(crate) fn safe_absolute_path(path:&Path)->bool{
     if !path.is_absolute()||path.to_str().is_none_or(|s|s.len()>16*1024||s.chars().any(char::is_control))||
        path.components().any(|c|matches!(c,Component::ParentDir|Component::CurDir)){
         return false
