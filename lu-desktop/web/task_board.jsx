@@ -1,6 +1,7 @@
 import React,{useEffect,useMemo,useState} from 'react';
 import {invoke} from '@tauri-apps/api/core';
 import {NativeWindowFrame} from './native_windows.jsx';
+import {friendlyError} from './unified_tabs.jsx';
 import {FILTERS,taskKind,taskStatus,reconciledTaskStatus,canRequestPositiveWholeTask,shownTasks,taskGroups,movedOrder} from './task_board_model.mjs';
 
 const errorText=e=>String(e?.message||e||'Native task list unavailable');
@@ -8,7 +9,7 @@ const correction=t=>({
   summary:t.summary,description:t.description,priority:t.priority,
   blockedBy:t.blockedBy,acceptanceCriteria:t.acceptanceCriteria,reason:''
 });
-export function TaskBoardWindow(){
+export function TaskBoardWindow({onNavigate}={}){
   const [boards,setBoards]=useState([]);
   const [registerId,setRegisterId]=useState('');
   const [filter,setFilter]=useState('All');
@@ -365,8 +366,41 @@ export function TaskBoardWindow(){
       });
     });
   }
-  return <NativeWindowFrame title="Project Tasks"
-    subtitle="Human-reviewed plans · original evidence · no model execution">
+  if(onNavigate)return <NativeWindowFrame onNavigate={onNavigate} title="Project plans" subtitle="Review and manage your work">
+    <div className="nativeModelContent" aria-label="Project plans">
+      <div className="nativeChoiceRow">
+        <button className="subtleButton" disabled={busy} onClick={()=>void act('Projects refreshed.',reload)}>Refresh projects</button>
+        {current&&<button className="primaryButton" disabled={busy||current.reviewCurrent} onClick={()=>void approve()}>Review plan…</button>}
+      </div>
+      {error&&<p role="alert" className="nativeError">{friendlyError(error)}</p>}
+      {notice&&<p role="status" className="nativeNotice">Updated.</p>}
+      {!boards.length&&<p>No saved project plans yet.</p>}
+      {boards.length>0&&<div className="nativeChoiceRow">
+        {boards.map((board,index)=><button type="button" key={board.board.registerId} aria-pressed={current?.board.registerId===board.board.registerId} onClick={()=>setRegisterId(board.board.registerId)}>
+          Project {index+1} · {board.tasks.length} tasks
+        </button>)}
+      </div>}
+      {current&&<><h2>{current.reviewCurrent?'Reviewed plan':'Draft plan'}</h2>
+        <label className="nativeField">Search tasks<input type="search" value={search} onChange={e=>setSearch(e.target.value)}/></label>
+        {shown.map(task=><article className="nativeOption" key={task.taskId}>
+          <button className="subtleButton" type="button" onClick={()=>void selectTask(task)}>{task.summary}</button>
+          <p>{task.needsHumanReconciliation?'Needs review':task.independentlyVerifiedRequirement?'Requirement checked; completion not confirmed':task.observedStatus==='BROKEN'?'Needs repair':'Not yet verified'}</p>
+          <div className="nativeChoiceRow">
+            <button type="button" disabled={busy||Boolean(search.trim())||all[0]?.taskId===task.taskId} onClick={()=>void reorder(task,-1)}>Move up</button>
+            <button type="button" disabled={busy||Boolean(search.trim())||all.at(-1)?.taskId===task.taskId} onClick={()=>void reorder(task,1)}>Move down</button>
+          </div>
+        </article>)}
+        {active&&<section className="nativeOption"><h2>{active.summary}</h2><p>{active.description}</p>
+          <p><strong>Completion requirement:</strong> {active.acceptanceCriteria}</p>
+          {active.blockedBy&&<p><strong>Blocked by:</strong> {active.blockedBy}</p>}
+          <button type="button" disabled={busy||!current.reviewCurrent||active.needsHumanReconciliation} onClick={()=>void prepareAgentPlan()}>Prepare a reviewed plan…</button>
+          <button type="button" disabled={busy} onClick={()=>void exportPlan()}>Export plan…</button>
+        </section>}
+      </>}
+    </div>
+  </NativeWindowFrame>;
+  return <NativeWindowFrame onNavigate={onNavigate} title="Project Tasks"
+    subtitle={onNavigate?"Review and manage project plans":"Human-reviewed plans · original evidence · no model execution"}>
     <div className="plan06Layout" aria-label="Project task list">
       <header className="plan06Toolbar">
         <label>Project / task register

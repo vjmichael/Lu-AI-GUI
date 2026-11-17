@@ -15,10 +15,12 @@ test('secondary Tauri windows have fixed native labels/paths and cannot open arb
   assert.match(rust,/asset:"index.html"/);
   assert.doesNotMatch(rust,/index\.html\?lu-window=/);
   assert.match(rust,/fn lu_close_aux_window\(caller:tauri::WebviewWindow\)/);
-  assert.deepEqual(cap.windows,['main','settings','model-library']);
+  assert.deepEqual(cap.windows,['main','settings','model-library','task-list']);
 });
-test('native windows mount instead of Chat App and keep distinct focus, no background worker effects',()=>{
+test('legacy roots remain fixed; primary interface uses unified tabs',()=>{
   assert.match(chat,/getCurrentWindow\(\)\.label/);
+  assert.match(chat,/className="luTopTabs"/);
+  assert.match(chat,/hidden=\{activeTab!=='chat'\}/);
   assert.match(chat,/window\.__TAURI_INTERNALS__/);
   assert.match(chat,/luWindow==='settings'\?<SettingsWindow\/>/);
   assert.match(chat,/luWindow==='model-library'\?<ModelLibraryWindow\/>:\s*luWindow==='task-list'\?<TaskBoardWindow\/>:<App\/>/);

@@ -12,9 +12,9 @@ test('background pane uses local persistent host task query, not model monitorin
   assert.ok(host.includes('fn lu_background_tasks('));
   assert.ok(host.includes('state.background_tasks.dashboard_for_workspace(&chat_id,100)'));
   assert.ok(host.includes('lu_background_tasks,'));
-  assert.ok(ui.includes("invoke('lu_background_tasks',{chatId})"));
+  assert.ok(ui.includes("invoke('lu_background_tasks',{chatId:scopeChatId})"));
   assert.ok(ui.includes('setInterval(refresh,2500)'));
-  assert.ok(ui.includes("await invoke('lu_background_cancel', {taskId,chatId})"));
+  assert.ok(ui.includes("await invoke('lu_background_cancel', {taskId,chatId:scopeChatId})"));
 });
 test('pane provides operator state, history, and accessibility',()=>{
   assert.ok(ui.includes('Background Tasks'));
@@ -43,7 +43,7 @@ test('real native file-scan worker connects the system picker to the pane',()=>{
   assert.ok(host.includes('scheduler.enqueue_host_plan(plan,options)'));
   assert.ok(ui.includes("await invoke('lu_background_scan_file',{"));
   assert.ok(ui.includes('Scan media file…'));
-  assert.ok(ui.includes('Native SHA-256 integrity scan'));
+  assert.ok(ui.includes('Check a selected file.'));
   assert.ok(css.includes('.backgroundScanLaunch'));
 });
 test('Lu host pushes end notifications without model polling, and routes them into the next chat turn',()=>{

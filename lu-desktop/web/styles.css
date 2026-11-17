@@ -652,3 +652,33 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .plan07ReviewHistory{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(290px,100%),1fr));gap:8px;max-height:17vh;overflow:auto;margin-top:10px}
 .plan07ReviewHistory article{border:1px solid #4f6a80;border-radius:6px;padding:10px;background:#20364a}
 .plan07ReviewHistory article strong{font-size:12px;overflow-wrap:anywhere}
+
+/* C6.4 unified application tabs: chat remains mounted when hidden. */
+.luTabShell{height:100vh;display:flex;flex-direction:column;overflow:hidden;background:#151e2b}
+.luTabShell [hidden]{display:none!important}
+.luTopTabs{flex:none;display:flex;align-items:center;gap:5px;padding:7px 12px;background:#0e1621;border-bottom:1px solid #34495e;overflow-x:auto}
+.luTopTabs button{white-space:nowrap;padding:10px 18px;border:1px solid transparent;background:transparent;color:#b5c9dd;border-radius:7px;font-size:14px;cursor:pointer}
+.luTopTabs button[aria-current=page]{background:#30465e;color:#fff;border-color:#4f6d8d}
+.luTopTabs button:last-child{margin-left:auto}
+.luTabShell>.shell{height:auto;min-height:0;flex:1}
+.luTabShell .sidebar{padding-top:16px}
+.luTabShell .newChatButton{margin-top:8px;margin-bottom:12px}
+.luTabPage{flex:1;min-height:0;min-width:0;overflow:hidden;display:flex;flex-direction:column}
+.luTabPage>.nativeWindowRoot{height:100%;flex:1;min-height:0}
+.simpleHistory{width:min(920px,100%);margin:auto;box-sizing:border-box;padding:24px;overflow:auto;height:100%;color:#e0e9f4}
+.simpleHistory h1{margin:0;font-size:25px}.simpleHistory h2{font-size:16px;margin:24px 0 12px}
+.simpleHistory header p{color:#a3b7ce;margin:6px 0 15px}
+.simpleHistorySearch{display:flex;gap:10px;align-items:center}
+.simpleHistorySearch input{flex:1;min-width:0;padding:12px;border-radius:8px;background:#192a3d;border:1px solid #46617d;color:#e5efff}
+.historyResult{display:block;text-align:left;width:100%;background:#1e2e41;color:#e1edf7;padding:16px;margin:10px 0;border:1px solid #354d65;border-radius:10px;overflow-wrap:anywhere}
+.historyResult p{white-space:pre-wrap}.historyResult span,.historyResult small{display:block;color:#adc5df;margin-top:7px}
+.historyReading{padding:20px;background:#1b2a3a;border:1px solid #46617d;border-radius:10px; margin:18px 0}
+.historyReading header{display:flex;justify-content:space-between;align-items:start}
+.historyOriginal{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.6}
+.taskTabNavigation{display:flex;gap:8px;padding:12px 20px;border-bottom:1px solid #35495f}
+.taskTabNavigation button{border:1px solid #435d78;border-radius:7px;background:#1b3047;color:#dce9fa;padding:8px 12px}
+.taskTabNavigation button[aria-pressed=true]{background:#375e85}
+.taskTabPage .backgroundPane.tabTasks{flex:1;width:100%;min-height:0;height:auto;box-shadow:none;border:0}
+.taskTabPage>.nativeWindowRoot{flex:1;height:auto;min-height:0}
+.taskTabPage .backgroundPaneList{padding:16px clamp(18px,5vw,80px)}
+@media(max-width:760px){.luTopTabs button{padding:9px 10px;font-size:12px}.simpleHistory{padding:14px}}

@@ -15,12 +15,12 @@ test('physical alpha preserves model load, queue, eject and conversation',()=>{
   assert.match(ui,/Message Lu/);
 });
 
-test('one gear launches native Settings; Model Library and chat are distinct Tauri roots',()=>{
+test('one main window presents Settings and Models tabs; fixed legacy roots retained',()=>{
   const windows=readFileSync(new URL('../web/native_windows.jsx',import.meta.url),'utf8');
   const capability=JSON.parse(readFileSync(new URL('../src-tauri/capabilities/default.json',import.meta.url),'utf8'));
-  assert.match(ui,/className="quietSettings" title="Settings"/);
-  assert.match(ui,/invoke\('lu_open_aux_window',\{kind:'settings'\}\)/);
-  assert.match(ui,/invoke\('lu_open_aux_window',\{kind:'model-library'\}\)/);
+  assert.match(ui,/className="luTopTabs"/);
+  assert.match(ui,/<SettingsWindow onNavigate=\{openTab\}/);
+  assert.match(ui,/<ModelLibraryWindow onNavigate=\{openTab\}/);
   assert.match(ui,/luWindow==='settings'\?<SettingsWindow\/>/);
   assert.match(ui,/luWindow==='model-library'\?<ModelLibraryWindow\/>/);
   assert.match(rust,/fn lu_open_aux_window\(/);
@@ -28,14 +28,14 @@ test('one gear launches native Settings; Model Library and chat are distinct Tau
   assert.match(rust,/WebviewUrl::App\(spec\.asset\.into\(\)\)/);
   assert.match(ui,/getCurrentWindow\(\)\.label/);
   assert.doesNotMatch(rust,/index\.html\?lu-window=/);
-  assert.deepEqual(capability.windows,['main','settings','model-library']);
+  assert.deepEqual(capability.windows,['main','settings','model-library','task-list']);
   assert.match(windows,/aria-label="Lu settings"/);
   assert.match(windows,/aria-label="Model Library"/);
   assert.match(windows,/Model-specific settings/);
   assert.match(windows,/Lu runtime/);
   assert.match(windows,/Tools & permissions/);
   assert.match(windows,/Browser & research/);
-  assert.match(windows,/Memory & ANSF/);
+  assert.match(windows,/\['memory','Memory'\]/);
   assert.match(windows,/Privacy & Observe/);
   assert.match(windows,/Hugging Face/);
   assert.match(windows,/No registered local GGUF models/);

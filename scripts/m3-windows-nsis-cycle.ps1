@@ -212,7 +212,7 @@ try{
         throw 'Installed UI smoke exceeded 180 seconds'
       }
       $record.installedUiSmoke=if($child.ExitCode -eq 0){
-        'PASS_INSTALLED_NATIVE_WINDOW_AND_BOTH_DIALOGS'
+        'PASS_INSTALLED_UNIFIED_TABS'
       }else{'FAIL_INSTALLED_UI_EVIDENCE'}
     }catch{
       $record.installedUiSmoke='FAIL_INSTALLED_UI_WORKER'
@@ -285,7 +285,7 @@ try{
   Write-Output 'No cleanup of uncertain installation state is attempted'
 }
 if($record.packageRemoval -ne 'PASS_BINARIES_ABSENT'){exit 2}
-if($ExerciseInstalledGui -and $record.installedUiSmoke -ne 'PASS_INSTALLED_NATIVE_WINDOW_AND_BOTH_DIALOGS'){exit 3}
+if($ExerciseInstalledGui -and $record.installedUiSmoke -ne 'PASS_INSTALLED_UNIFIED_TABS'){exit 3}
 # Without explicit success, a prior native command's LASTEXITCODE survives
 # the script call and falsely marks a verified lifecycle receipt as failure.
 exit 0

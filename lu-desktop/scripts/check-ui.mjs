@@ -18,7 +18,7 @@ const tests = [
     css.includes('.imageRevisionForm')],
   ['Background task view is scoped to an existing selected chat before querying SQLite',
     host.includes('dashboard_for_workspace(&chat_id,100)') &&
-    ui.includes("invoke('lu_background_tasks',{chatId})")],
+    ui.includes("invoke('lu_background_tasks',{chatId:scopeChatId})")],
   ['Runtime Environment diagnostics never claim unproven vision or GPU inference',
     host.includes('fn lu_environment_status(') &&
     host.includes('environment_context::runtime_view(')],
@@ -106,7 +106,7 @@ const tests = [
     host.includes('workspace_desktop::ask_workspace_for_chat(')],
   ['Wave 3 tool discovery comes from the actual authorized native registry, never from model names',
     ui.includes("listen('lu-native-turn-capabilities'") &&
-    ui.includes('Read-only native tools for this turn') &&
+    ui.includes('Using approved tools') &&
     workspaceHost.includes('turn.capabilities()')],
   ['Wave 3 live tool status follows trusted dispatch checkpoints and stays chat-scoped',
     ui.includes("listen('lu-native-tool-progress'") &&
@@ -136,7 +136,7 @@ const tests = [
   ['new chats and conversation history are host-owned', ui.includes("invoke('lu_new_chat')") && ui.includes("invoke('lu_chats')") && host.includes('fn lu_new_chat(')],
   ['one-level folders and favorites are durable', ui.includes("invoke('lu_new_folder'") && ui.includes("invoke('lu_favorite_chat'") && store.includes('pub fn favorite(')],
   ['models available from a quick dropdown', ui.includes('modelSwitcher') && ui.includes('modelMenu')],
-  ['model management only in Settings', ui.includes("kind:'settings'") && windows.includes('Settings sections') && !ui.includes('settingsBackdrop')],
+  ['model management in unified Models tab', ui.includes("<ModelLibraryWindow onNavigate={openTab}") && windows.includes('Settings sections') && !ui.includes('settingsBackdrop')],
   ['no visible Lu Native Runtime chip', !ui.includes('Lu Native Runtime')],
   ['selection does not start model inference', !/onClick=\{\(\) => \{ setSelectedModel\([^}]*loadModel/.test(ui) && ui.includes('Selection does not load')],
   ['model discovery stays host owned and explicit', host.includes('fn scan_unindexed_models(') && host.includes('fn lu_rescan_models(')],

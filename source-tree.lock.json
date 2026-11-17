@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "37f85c73e8e62fa35dc05b3ae18a0c8fcb1f225d",
-  "trackedFileCount": 1067,
+  "sourceCommitBeforeLock": "48250a2e3280b3292e5ef1596c3d38c41a142961",
+  "trackedFileCount": 1069,
   "files": [
     {
       "path": ".github/pull_request_template.md",
@@ -77,7 +77,7 @@
     },
     {
       "path": ".github/workflows/lu-core-c6-hosted-dual-nsis.yml",
-      "blob": "ec19d3607b49b848d68d509f8e18b5db6b275596"
+      "blob": "f626ea658f6a9f5d87cb762e45d7ae57648dd476"
     },
     {
       "path": ".github/workflows/lu-core-c62a-windows-browser-candidate.yml",
@@ -85,7 +85,7 @@
     },
     {
       "path": ".github/workflows/lu-core-c62b-reviewed-browser-nsis.yml",
-      "blob": "b28a95e18822013331df10ea83e723ea8e4aecff"
+      "blob": "5b0a27f4b165a00d4b6e6953b7e8b6187961fdea"
     },
     {
       "path": ".github/workflows/lu-core-c62t-browser-review-transport.yml",
@@ -265,7 +265,7 @@
     },
     {
       "path": ".github/workflows/lu-repo01-full-source.yml",
-      "blob": "9b90ea693403be6c0f207297c9eae150b818abda"
+      "blob": "ca0beaff77d68058f2ac9ed7db9ae1fac895d4cb"
     },
     {
       "path": ".github/workflows/lu-tools-01-05-integration.yml",
@@ -713,7 +713,7 @@
     },
     {
       "path": "docs/LU_DEVELOPMENT_LEDGER.md",
-      "blob": "2a04cc8f629d2577ad5091f495f8c66c6ecdaf3d"
+      "blob": "938cc608d13af13b8a3b4593274d72b56779ef2f"
     },
     {
       "path": "docs/LU_E1_NATIVE_EVIDENCE_20261107.md",
@@ -1297,7 +1297,7 @@
     },
     {
       "path": "lu-desktop/scripts/check-ui.mjs",
-      "blob": "3d0c4c3543b82c6dbd65e35615b9eeb41bb70e76"
+      "blob": "1ccc40aa32a8ebedafda4b5a009089f64f711b30"
     },
     {
       "path": "lu-desktop/scripts/lu-desktop.manifest",
@@ -1401,7 +1401,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/ansf_chat_store.rs",
-      "blob": "46968c208ef01a1962ac7e3de0a66124552e88ff"
+      "blob": "b8f9052f024cc5c3b655faa3df2e197b6c8d5ce2"
     },
     {
       "path": "lu-desktop/src-tauri/src/ansf_migration.rs",
@@ -1501,7 +1501,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/lib.rs",
-      "blob": "c9a17b5972a24e0c54415bb39398b2f1f107aebb"
+      "blob": "a0d863cf966408a37e9a05161715ec4851e49b47"
     },
     {
       "path": "lu-desktop/src-tauri/src/load_trace.rs",
@@ -1741,7 +1741,7 @@
     },
     {
       "path": "lu-desktop/tests/agent01f-model-plan-ingress.test.mjs",
-      "blob": "2efee0b364cf99b8829f66243b90ebfd17534cdf"
+      "blob": "ede9d9cd6afaa51b0cf284d122252b0fc94b6453"
     },
     {
       "path": "lu-desktop/tests/agent01g-approved-step-integration.test.mjs",
@@ -1781,7 +1781,7 @@
     },
     {
       "path": "lu-desktop/tests/background-pane.test.mjs",
-      "blob": "6c8ebc1debab976bb42062a5d4a65fa9212ded94"
+      "blob": "26f6bf7041b6b9ab3836c1474bb012fcbef1057c"
     },
     {
       "path": "lu-desktop/tests/background-scheduler.test.mjs",
@@ -1820,6 +1820,10 @@
       "blob": "edafe79988852529ddda839264a53977f9c7f6ec"
     },
     {
+      "path": "lu-desktop/tests/c64-unified-tabs.test.mjs",
+      "blob": "677c8674744777cfee63e4224b96adef9a8e3a6b"
+    },
+    {
       "path": "lu-desktop/tests/core01d-normal-chat-boundary.test.mjs",
       "blob": "9ed26570e7ef79e865cf8ebfb12c1b1c7253bc30"
     },
@@ -1845,11 +1849,11 @@
     },
     {
       "path": "lu-desktop/tests/m2-ansf-memory.test.mjs",
-      "blob": "7b0aab6af2792d00c3e77f9e61e25d14e67e195c"
+      "blob": "05cb5fb7fb29961ce239c19aa4014f2cc63bdcae"
     },
     {
       "path": "lu-desktop/tests/m3-ansf-recall.test.mjs",
-      "blob": "34ec198f7d1ebaceedadd7e8df233bc986696570"
+      "blob": "e5b1315f6f2a8efb54695b1f7a427ba71d8e7794"
     },
     {
       "path": "lu-desktop/tests/m3-asset-resume.test.mjs",
@@ -1865,7 +1869,7 @@
     },
     {
       "path": "lu-desktop/tests/m3-history-pane.test.mjs",
-      "blob": "d74027b3e6a67b6f2a15e2813dea20786eacf40f"
+      "blob": "aca4c1d06118d0c8b051bee350f430d41c073fff"
     },
     {
       "path": "lu-desktop/tests/m3-local-embedding.test.mjs",
@@ -1989,11 +1993,11 @@
     },
     {
       "path": "lu-desktop/tests/p0-hf-transfer-transaction.test.mjs",
-      "blob": "a3b644215827d8c1d72812b4567e2e66f724ed8a"
+      "blob": "7ddc137a1193f065b2d85068b1daffb3de07c013"
     },
     {
       "path": "lu-desktop/tests/p0-installed-gui-smoke.test.mjs",
-      "blob": "8618fb25b0382b1390955d33460b884bcb2f5f2e"
+      "blob": "a9f0f1ecd63ce1c47e061033ef09ad8c8ae01c66"
     },
     {
       "path": "lu-desktop/tests/p0-memory-telemetry.test.mjs",
@@ -2005,11 +2009,11 @@
     },
     {
       "path": "lu-desktop/tests/p0-native-window-separation.test.mjs",
-      "blob": "5f826475969b64a48238b78b153ada36e360bcc1"
+      "blob": "ecc78b03586680c8ed4cbe9150b3b5be2a5e9626"
     },
     {
       "path": "lu-desktop/tests/p0-physical-ux-contract.test.mjs",
-      "blob": "eaa01cb0e3c3a8d30457ad2e1f78aaf9f248ade9"
+      "blob": "df786bc9674e86829805b84fbd3143c8f401fa3a"
     },
     {
       "path": "lu-desktop/tests/p0-qwen38-radeon-handoff.test.mjs",
@@ -2249,7 +2253,7 @@
     },
     {
       "path": "lu-desktop/web/main.jsx",
-      "blob": "9ed1ef0e0b3a6ae19859a1bfac529d7262d6fc15"
+      "blob": "2c4549dea2a3b388a3714cbf18a96f7c040b60f2"
     },
     {
       "path": "lu-desktop/web/markdown_view.jsx",
@@ -2273,7 +2277,7 @@
     },
     {
       "path": "lu-desktop/web/native_windows.jsx",
-      "blob": "148cd3010e34eab089603b0d001cf4170a6f7472"
+      "blob": "bb4e68f7f90c8cb6649e89453959a67708e0cf10"
     },
     {
       "path": "lu-desktop/web/response_view.mjs",
@@ -2289,15 +2293,19 @@
     },
     {
       "path": "lu-desktop/web/styles.css",
-      "blob": "3a28ae9743a528e89cb708d25fbd57f486a1d987"
+      "blob": "db546bd9675878b25818fadc533d2943682a3c7c"
     },
     {
       "path": "lu-desktop/web/task_board.jsx",
-      "blob": "b510b9bec37f3c44be2c50bf2aea07874fc5bff7"
+      "blob": "0df822423e6e4ec96c0081991946c1125dc996fd"
     },
     {
       "path": "lu-desktop/web/task_board_model.mjs",
       "blob": "4c1addc87051cdf13e95914edfacdf4316d83231"
+    },
+    {
+      "path": "lu-desktop/web/unified_tabs.jsx",
+      "blob": "b5a056cc03effa9313512fe5872e15a5e6ddb83c"
     },
     {
       "path": "scripts/build-agent01g-physical-windows-nsis.ps1",
@@ -2389,7 +2397,7 @@
     },
     {
       "path": "scripts/lu-c6-hosted-physical-contract.test.mjs",
-      "blob": "44c0ff95e3402ac8103696fb42113c995451707b"
+      "blob": "d77727f03186a445cf55c37fe0cff91142c2e77d"
     },
     {
       "path": "scripts/lu-c62-browser-bundle-source.test.mjs",
@@ -2401,7 +2409,7 @@
     },
     {
       "path": "scripts/lu-c62b-reviewed-browser-contract.test.mjs",
-      "blob": "d7bb51ef38f009c5beb9ef729a538aa5a1fddda6"
+      "blob": "321a09bd352c4010e7218f43af0da5a43362e6da"
     },
     {
       "path": "scripts/lu-ci-group-policy.mjs",
@@ -2497,7 +2505,7 @@
     },
     {
       "path": "scripts/m3-windows-nsis-cycle.ps1",
-      "blob": "82490aec3801c18ac5a82057a62e5c51a1b5a8a8"
+      "blob": "757073a9d86a5ca06871614712fe81688fe84c23"
     },
     {
       "path": "scripts/m4-windows-installed-memory-acceptance.ps1",
@@ -2521,7 +2529,7 @@
     },
     {
       "path": "scripts/p0-windows-installed-gui-smoke.ps1",
-      "blob": "2cab5dcf6658f36a97ec7c39a61f8108b550568e"
+      "blob": "7df54cb168576bacf825885c963699add77457ed"
     },
     {
       "path": "scripts/p02-native-windows-evidence.ps1",

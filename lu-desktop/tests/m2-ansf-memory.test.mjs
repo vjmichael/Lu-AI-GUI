@@ -10,14 +10,13 @@ const live=read('../../src-tauri/lu-core/src/ansf_live_chat.rs');
 const nativeGoals=read('../../src-tauri/lu-core/src/ansf_goal_records.rs');
 const core=read('../../src-tauri/lu-core/src/ansf_goals.rs');
 const prompt=read('../src-tauri/src/prompt_context.rs');
-test('M2 clarification belongs to a real non-chat UI with all explicit choices',()=>{
-  assert.match(front,/aria-label="Conversation goal and clarifications"/);
-  assert.match(front,/m2Answer\(q\.questionId,'yes'\)/);
-  assert.match(front,/m2Answer\(q\.questionId,'no'\)/);
-  assert.match(front,/m2Answer\(q\.questionId,'not_now'\)/);
-  assert.match(front,/Optional comment/);
-  assert.match(front,/maxLength=\{1024\}/);
+test('M2 goal memory stays on the host without visible engineering controls',()=>{
+  assert.doesNotMatch(front,/className="m2MemoryPane"/);
+  assert.doesNotMatch(front,/activeChatRef/);
+  assert.match(front,/currentChat\.current===target/);
   assert.match(front,/lu_m2_answer_question/);
+  assert.match(front,/lu_m2_set_goal/);
+  assert.match(core,/GoalEventKind::RespondQuestion/);
 });
 test('M2 native commands are registered and not a general tool interface',()=>{
   for(const name of ['lu_m2_goal_context','lu_m2_set_goal',

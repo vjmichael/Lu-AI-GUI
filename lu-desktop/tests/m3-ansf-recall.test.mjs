@@ -36,5 +36,5 @@ test('M3 human recall and original-source navigation stay in independent pane',(
   assert.match(pane,/Read full original/);
   assert.match(pane,/ansf:v1:/);
   assert.doesNotMatch(pane,/\b(setChatId|setHistory|setPrompt|switchChat)\s*\(/);
-  assert.match(ui,/historyPaneOpen&&chatId&&<AnsfHistoryPane/);
+  assert.match(ui,/<HistoryTab chats=\{chats\} onOpenChat=\{openHistoryChat\}/);
 });

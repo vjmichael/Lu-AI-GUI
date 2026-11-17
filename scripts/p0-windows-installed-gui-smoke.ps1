@@ -19,13 +19,17 @@ if(-not(Test-Path -LiteralPath $InstalledExe -PathType Leaf) -or
 if(Test-Path -LiteralPath $EvidenceDir){throw 'UI evidence path must not already exist'}
 $null=New-Item -ItemType Directory -Path $EvidenceDir
 $report=[ordered]@{
-  schema='lu-p0-real-windows-installed-ui-smoke-v1'
+  schema='lu-c64-real-windows-unified-tabs-smoke-v1'
   installedExeSha256=$ExpectedSha256.ToLowerInvariant()
   nativeWindow='NOT_TESTED'
   uiAutomationProcessIdentity='NOT_TESTED'
   singleSettingsEntry='NOT_TESTED'
-  independentSettingsWindow='NOT_TESTED'
-  independentModelLibrary='NOT_TESTED'
+  settingsTab='NOT_TESTED'
+  modelsTab='NOT_TESTED'
+  historyTab='NOT_TESTED'
+  tasksTab='NOT_TESTED'
+  chatTabReturned='NOT_TESTED'
+  noAuxiliaryWindows='NOT_TESTED'
   settingsScreenshot='NOT_TESTED'
   modelLibraryScreenshot='NOT_TESTED'
   genuineGgufInference='NOT_TESTED'
@@ -236,6 +240,7 @@ try{
     throw 'Genuine UIA window does not belong to the installed Lu process'
   }
   $report.uiAutomationProcessIdentity='PASS_EXACT_OS_PROCESS'
+  try{$window.SetFocus()}catch{Write-Warning ('Installed main-window focus unavailable: '+$_.Exception.Message)}
   $settings=Wait-Element $window 'Settings' $true
   $all=$window.FindAll(
     [System.Windows.Automation.TreeScope]::Descendants,
@@ -253,26 +258,46 @@ try{
   if($settingsButtons -ne 1){throw "Expected exactly one Settings button; observed $settingsButtons"}
   $report.singleSettingsEntry='PASS_ONLY_TOP_RIGHT_GEAR'
   $report.activationMethods+=@(Invoke-UIA $settings $window)
-  $settingsWindow=Wait-NativeWindow 'Lu — Settings'
-  # The window HWND exists before Chromium exposes its accessibility subtree.
-  # Focus only the already independently verified installed process/window;
-  # do not synthesize a DOM or treat focus as a pass.
-  try{$settingsWindow.SetFocus()}catch{Write-Warning ('Installed Settings focus unavailable: '+$_.Exception.Message)}
-  $null=Wait-Element $settingsWindow 'General & appearance' $true
-  $null=Wait-Element $settingsWindow 'Tools & permissions' $true
-  $report.independentSettingsWindow='PASS_DISTINCT_NATIVE_TAURI_SETTINGS_WINDOW'
+  # Genuine accessibility controls in the SAME verified installed Win32 window.
+  $null=Wait-Element $window 'General & appearance' $true
+  $null=Wait-Element $window 'Tools & permissions' $true
+  $report.settingsTab='PASS_SAME_NATIVE_WINDOW'
   $report.settingsScreenshot=Save-Visible-Desktop 'installed-settings.png'
-  $report.activationMethods+=@(Invoke-UIA (Wait-Element $settingsWindow 'Close settings' $true) $settingsWindow)
-  $report.activationMethods+=@(Invoke-UIA (Wait-Element $window 'Choose a model' $true) $window)
-  $report.activationMethods+=@(Invoke-UIA (Wait-Element $window 'Manage models' $true) $window)
-  $modelsWindow=Wait-NativeWindow 'Lu — Model Library'
-  try{$modelsWindow.SetFocus()}catch{Write-Warning ('Installed Model Library focus unavailable: '+$_.Exception.Message)}
-  $null=Wait-Element $modelsWindow 'Installed GGUF' $true
-  $null=Wait-Element $modelsWindow 'Discover · Hugging Face' $true
-  $report.independentModelLibrary='PASS_DISTINCT_NATIVE_TAURI_MODEL_LIBRARY_WINDOW'
+  $report.activationMethods+=@(Invoke-UIA (Wait-Element $window 'Models' $true) $window)
+  $null=Wait-Element $window 'Installed GGUF' $true
+  $null=Wait-Element $window 'Discover · Hugging Face' $true
+  $report.modelsTab='PASS_SAME_NATIVE_WINDOW'
   $report.modelLibraryScreenshot=Save-Visible-Desktop 'installed-model-library.png'
-  $report.activationMethods+=@(Invoke-UIA (Wait-Element $modelsWindow 'Close model library' $true) $modelsWindow)
-  $report.result='PASS_INSTALLED_NATIVE_WINDOW_AND_BOTH_DIALOGS'
+  $report.activationMethods+=@(Invoke-UIA (Wait-Element $window 'History' $true) $window)
+  $null=Wait-Element $window 'Search all conversations'
+  $report.historyTab='PASS_SAME_NATIVE_WINDOW'
+  $report.activationMethods+=@(Invoke-UIA (Wait-Element $window 'Tasks' $true) $window)
+  $null=Wait-Element $window 'Background work' $true
+  $null=Wait-Element $window 'Project plans' $true
+  $report.tasksTab='PASS_SAME_NATIVE_WINDOW'
+  $report.activationMethods+=@(Invoke-UIA (Wait-Element $window 'Chat' $true) $window)
+  $null=Wait-Element $window 'Choose a model' $true
+  $null=Wait-Element $window 'New Chat' $true
+  $report.chatTabReturned='PASS_SAME_NATIVE_WINDOW'
+  $process.Refresh()
+  if($process.MainWindowHandle -ne [IntPtr]$window.Current.NativeWindowHandle){
+    throw 'Main installed window was replaced during tab navigation'
+  }
+  $top=[System.Windows.Automation.AutomationElement]::RootElement.FindAll(
+    [System.Windows.Automation.TreeScope]::Children,
+    [System.Windows.Automation.Condition]::TrueCondition
+  )
+  foreach($candidate in $top){
+    if($candidate.Current.ProcessId -eq $process.Id -and
+       $candidate.Current.ControlType -eq [System.Windows.Automation.ControlType]::Window -and
+       $candidate.Current.NativeWindowHandle -ne 0 -and
+       $candidate.Current.NativeWindowHandle -ne $window.Current.NativeWindowHandle -and
+       -not $candidate.Current.IsOffscreen){
+      throw 'Unexpected independent Lu window during tab navigation'
+    }
+  }
+  $report.noAuxiliaryWindows='PASS_ONE_INSTALLED_WINDOW'
+  $report.result='PASS_INSTALLED_UNIFIED_TABS'
 }catch{
   $report.errors=@($report.errors)+@($_.Exception.Message)
   Write-Warning ('Genuine installed UI smoke is NOT ACCEPTED: '+$_.Exception.Message)
@@ -293,5 +318,5 @@ try{
   }
   $report|ConvertTo-Json -Depth 6|Set-Content -LiteralPath (Join-Path $EvidenceDir 'p0-installed-ui.json') -Encoding UTF8
 }
-if($report.result -ne 'PASS_INSTALLED_NATIVE_WINDOW_AND_BOTH_DIALOGS'){exit 2}
+if($report.result -ne 'PASS_INSTALLED_UNIFIED_TABS'){exit 2}
 exit 0

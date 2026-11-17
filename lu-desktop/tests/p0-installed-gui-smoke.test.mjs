@@ -11,7 +11,7 @@ test('actual installed GUI uses OS window, process identity, UIA and screen capt
   assert.match(script,/ProcessId/);
   assert.match(script,/UIAutomationClient/);
   assert.match(script,/CopyFromScreen/);
-  assert.match(script,/PASS_INSTALLED_NATIVE_WINDOW_AND_BOTH_DIALOGS/);
+  assert.match(script,/PASS_INSTALLED_UNIFIED_TABS/);
   assert.match(script,/Save-UIA-Failure/);
   assert.match(script,/inspectedCount/);
   assert.match(script,/failed-/);
@@ -25,11 +25,11 @@ test('GUI smoke is independent from strict real install-uninstall/AppData and on
   assert.match(cycle,/ExerciseInstalledGui -and \$record\.installedUiSmoke/);
   assert.match(workflow,/LU_PR_NUMBER/);
   assert.match(workflow,/ExerciseInstalledGui:\$verifyUi/);
-  assert.match(ui,/className="quietSettings" title="Settings" aria-label="Settings"/);
+  assert.match(ui,/className="luTopTabs"/);
   assert.match(ui,/className="modelSwitcher" aria-label="Choose a model"/);
 });
 
-test('distinct real Tauri windows activate through supported UIA or verified physical OS click',()=>{
+test('unified tabs in a real Tauri window activate through supported UIA or verified physical OS click',()=>{
   assert.match(script,/TryGetCurrentPattern\(\[System\.Windows\.Automation\.InvokePattern\]::Pattern/);
   // The optional legacy provider type does not exist on every current
   // PowerShell/.NET UIAutomationClient runtime. Its absence must NOT
@@ -41,10 +41,12 @@ test('distinct real Tauri windows activate through supported UIA or verified phy
   assert.match(script,/WebView clickable point not within reviewed installed native window/);
   assert.match(script,/SetCursorPos/);
   assert.match(script,/activationMethods/);
-  assert.match(script,/Wait-NativeWindow 'Lu — Settings'/);
-  assert.match(script,/Wait-NativeWindow 'Lu — Model Library'/);
+  assert.match(script,/Wait-Element \$window 'Settings' \$true/);
+  assert.match(script,/Wait-Element \$window 'Models' \$true/);
+  assert.match(script,/Wait-Element \$window 'History' \$true/);
+  assert.match(script,/Wait-Element \$window 'Tasks' \$true/);
   assert.match(script,/NativeWindowHandle/);
-  assert.match(script,/PASS_DISTINCT_NATIVE_TAURI_SETTINGS_WINDOW/);
-  assert.match(script,/PASS_DISTINCT_NATIVE_TAURI_MODEL_LIBRARY_WINDOW/);
+  assert.match(script,/PASS_SAME_NATIVE_WINDOW/);
+  assert.match(script,/PASS_ONE_INSTALLED_WINDOW/);
   assert.doesNotMatch(script,/PASS_NATIVE_WEBVIEW_DIALOG/);
 });

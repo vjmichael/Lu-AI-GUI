@@ -33,6 +33,7 @@ jobs:
             lu-desktop/tests/browser-native-authorization.test.mjs \
             lu-desktop/tests/p0-browser-bundle.test.mjs \
             lu-desktop/tests/p0-browser-real-ci-gate.test.mjs
+          node --test lu-desktop/tests/c64-unified-tabs.test.mjs
           node --test tests/lu-browser-worker.test.mjs
   native-windows-installed-reviewed-browser:
     needs: original-source-and-review
@@ -185,6 +186,8 @@ jobs:
             $conf|ConvertTo-Json -Depth 32|Set-Content -LiteralPath $configPath -Encoding utf8
             cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib native_browser_host::tests::c62_reviewed_runtime_exact_bytes_and_compiled_manifest -- --ignored --exact --nocapture
             if($LASTEXITCODE -ne 0){throw 'Actual Rust browser host rejected pinned review manifest or component'}
+            cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib chat_store::tests::human_history_search_includes_current_and_other_books_without_recall_grants -- --exact --nocapture
+            if($LASTEXITCODE -ne 0){throw 'Human history search acceptance failed'}
           }finally{
             [IO.File]::WriteAllText($configPath,$original)
           }
@@ -194,7 +197,7 @@ jobs:
           if($LASTEXITCODE -ne 0){
             throw 'Native Rust test did not restore the source Tauri configuration'
           }
-      - name: Genuine hosted Windows install / browser bytes / UI windows / uninstall / AppData preservation
+      - name: Genuine hosted Windows install / browser bytes / unified tabs / uninstall / AppData preservation
         shell: pwsh
         timeout-minutes: 24
         run: |
@@ -224,12 +227,12 @@ jobs:
              $r.installedRealEngine -ne 'PASS_SHA256' -or
              $r.installedVulkanEngine -ne 'PASS_SHA256' -or
              $r.installedReviewedBrowser -ne 'PASS_EXACT_BROWSER_FILES_AND_REAL_BUNDLED_NODE' -or
-             $r.installedUiSmoke -ne 'PASS_INSTALLED_NATIVE_WINDOW_AND_BOTH_DIALOGS' -or
+             $r.installedUiSmoke -ne 'PASS_INSTALLED_UNIFIED_TABS' -or
              $r.profilePreservation -ne 'PASS_UNTOUCHED_APPDATA_SENTINEL' -or
              $r.packageRemoval -ne 'PASS_BINARIES_ABSENT'){
             throw 'Original installed browser/GUI/NSIS exact assertions incomplete'
           }
-          'Real hosted installed browser payload, native Rust positive, UI windows and uninstall: PASS; owner physical model/browser approval separate.' >> $env:GITHUB_STEP_SUMMARY
+          'Real hosted installed browser payload, native Rust positive, unified tabs and uninstall: PASS; owner physical model/browser approval separate.' >> $env:GITHUB_STEP_SUMMARY
       - name: Preserve real current native NSIS with reviewed browser and original OS receipts
         if: always()
         uses: actions/upload-artifact@v4

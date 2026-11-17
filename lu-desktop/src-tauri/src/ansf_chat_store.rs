@@ -791,6 +791,31 @@ impl ChatStore {
     /// No parallel raw transcript cache, no new memory DB, no model-selected
     /// filesystem path, no inherited turn/tool authorization. SQLite FTS runs
     /// inside each source book; final content is read from the original.
+    /// Human history search, separate from model recall. Includes the active
+    /// chat and every profile conversation via bounded pages. No tool authority.
+    pub fn search_history_page(&self,query:&str,offset:usize)
+        ->Result<(Vec<RecallHit>,Option<usize>),String>{
+        if query.trim().is_empty()||query.chars().count()>200||offset>100_000{
+            return Err("Invalid history search bounds".into())
+        }
+        let terms:Vec<String>=query.split(|c:char|!c.is_alphanumeric())
+            .filter(|s|!s.is_empty()).take(12).map(|s|format!("\"{}\"",s)).collect();
+        if terms.is_empty(){return Ok((vec![],None))}
+        let fts=terms.join(" AND ");
+        let (chats,_)=self.list()?;
+        let through=offset.saturating_add(12);
+        let mut hits=Vec::new();
+        for chat in chats.iter().skip(offset).take(12){
+            let book=self.require(&chat.chat_id)?;
+            for entry in book.search_current_messages(&chat.chat_id,&fts,8).map_err(to_err)?{
+                if matches!(entry.role.as_str(),"user"|"assistant"){
+                    hits.push(as_recall_hit(&entry,&chat.title,480)?);
+                }
+            }
+        }
+        Ok((hits,if through<chats.len(){Some(through)}else{None}))
+    }
+
     pub fn recall_for_turn(&self,active_chat:&str,query:&str)
         ->Result<Vec<RecallHit>,String>{
         self.require(active_chat)?;
@@ -1708,6 +1733,23 @@ mod tests{
         std::env::temp_dir().join(format!("lu-ansf-desktop-{}-{}",
             std::process::id(),SystemTime::now()
                 .duration_since(UNIX_EPOCH).unwrap().as_nanos()))
+    }
+    #[test]
+    fn human_history_search_includes_current_and_other_books_without_recall_grants(){
+        let root=tmp();
+        let chats=ChatStore::open(&root).unwrap();
+        let first=chats.create_chat().unwrap().chat_id;
+        let second=chats.create_chat().unwrap().chat_id;
+        chats.append_user_with_turn_id(&first,&format!("g-{}","a".repeat(32)),"Milk and bread").unwrap();
+        chats.append_user_with_turn_id(&second,&format!("g-{}","b".repeat(32)),"Milk and butter").unwrap();
+        let (hits,next)=chats.search_history_page("milk",0).unwrap();
+        assert!(next.is_none());
+        assert!(hits.iter().any(|hit|hit.source_chat_id==first));
+        assert!(hits.iter().any(|hit|hit.source_chat_id==second));
+        let (empty,_)=chats.search_history_page("milk nonexistentword",0).unwrap();
+        assert!(empty.is_empty());
+        assert!(chats.search_history_page(&"x".repeat(201),0).is_err());
+        drop(chats);fs::remove_dir_all(root).unwrap();
     }
     #[test]
     fn sec03_revoke_before_completion_denies_old_turn_but_not_fresh_approval(){

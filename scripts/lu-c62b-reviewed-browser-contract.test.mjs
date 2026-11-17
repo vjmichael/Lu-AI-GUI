@@ -85,7 +85,7 @@ test('browser is actually installed, independently rehashed, and removed without
  assert.doesNotMatch(m3,/\$item\.FullName\.Substring\(\$root\.Length\)/);
  assert.match(m3,/PASS_EXACT_BROWSER_FILES_AND_REAL_BUNDLED_NODE/);
  assert.match(m3,/PASS_UNTOUCHED_APPDATA_SENTINEL/);
- assert.match(wf,/PASS_INSTALLED_NATIVE_WINDOW_AND_BOTH_DIALOGS/);
+ assert.match(wf,/PASS_INSTALLED_UNIFIED_TABS/);
  assert.match(wf,/PASS_BINARIES_ABSENT/);
 });
 

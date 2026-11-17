@@ -17,13 +17,14 @@ test('Read original ANSF entries through bounded stable backward cursor',()=>{
   assert.match(host,/fn lu_m3_history_page\(/);
   assert.match(host,/fn lu_m3_source_text_page\(/);
 });
-test('History browser is a genuinely independent overlay, not active transcript navigation',()=>{
+test('legacy history reader remains read-only; unified History tab handles explicit navigation',()=>{
   const pane=jsx.slice(jsx.indexOf('function AnsfHistoryPane('),jsx.indexOf('function App() {'));
   assert.match(pane,/Independent ANSF history browser/);
   assert.match(pane,/lu_m3_history_page/);
   assert.match(pane,/lu_m3_source_text_page/);
   assert.doesNotMatch(pane,/\b(setChatId|setHistory|setPrompt|setImages|switchChat)\s*\(/);
-  assert.match(jsx,/\{historyPaneOpen&&chatId&&<AnsfHistoryPane/);
+  assert.match(jsx,/<HistoryTab chats=\{chats\} onOpenChat=\{openHistoryChat\}/);
+  assert.doesNotMatch(jsx,/<AnsfHistoryPane activeChatId=/);
   assert.doesNotMatch(jsx,/aria-label="ANSF memory recall"/);
   assert.match(css,/position:fixed;top:0;right:0;bottom:0/);
 });

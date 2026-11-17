@@ -18,7 +18,7 @@ test("C6 heavy source + native packaging is manual-only and exact-SHA bound",()=
   assert.match(workflow,/scripts\/m3-windows-nsis-cycle\.ps1/);
   assert.match(workflow,/ExerciseInstalledGui=\$true/);
   assert.match(workflow,/ExpectedVulkanSha256/);
-  assert.match(workflow,/PASS_INSTALLED_NATIVE_WINDOW_AND_BOTH_DIALOGS/);
+  assert.match(workflow,/PASS_INSTALLED_UNIFIED_TABS/);
   assert.match(workflow,/PASS_UNTOUCHED_APPDATA_SENTINEL/);
   assert.match(workflow,/actions\/upload-artifact@v4/);
   assert.doesNotMatch(workflow,/continue-on-error: true/);

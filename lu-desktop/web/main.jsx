@@ -22,6 +22,7 @@ import {parseHumanReplanOutline,humanReplanDefaultOutline,REPLAN_REASONS} from '
 import {SettingsWindow,ModelLibraryWindow} from './native_windows.jsx';
 import {isHostCurrentTimeQuestion,isHostCpuChatLookup,isHostModelStatusQuestion,isHostCpuWorkspaceLookup,isHostCpuChatCountsQuestion} from './native_intent.mjs';
 import {TaskBoardWindow} from './task_board.jsx';
+import {LU_TABS,HistoryTab,friendlyError,formatTaskState,taskName} from './unified_tabs.jsx';
 
 function MessageText({text, role='assistant'}) {
   if (role === 'user') return <div className="messageContent userText">{text}</div>;
@@ -683,6 +684,22 @@ function AnsfHistoryPane({activeChatId,chats,onClose}){
 }
 
 function App() {
+  const [activeTab,setActiveTab]=useState('chat');
+  const [visitedTabs,setVisitedTabs]=useState(['chat']);
+  const [taskView,setTaskView]=useState('background');
+  function openTab(tab){
+    if(!LU_TABS.some(([id])=>id===tab))return;
+    if(activeTab==='chat'&&tab!=='chat'&&transcriptRef.current){
+      const el=transcriptRef.current;
+      scrollByChat.current.set(currentChat.current||'new',{top:el.scrollTop,
+        follow:followOutput.current,anchor:captureHistoryAnchor(el)});
+    }
+    setVisitedTabs(old=>old.includes(tab)?old:[...old,tab]);
+    setActiveTab(tab);
+  }
+  async function openHistoryChat(id){
+    try{await switchChat(id);openTab('chat');}catch(error){setError(String(error));openTab('chat');}
+  }
   const [models, setModels] = useState([]);
   const [selectedModel, setSelectedModel] = useState('');
   const [modelSearch, setModelSearch] = useState('');
@@ -703,10 +720,8 @@ function App() {
   const [m2GoalDraft,setM2GoalDraft]=useState('');
   const [m2QuestionDraft,setM2QuestionDraft]=useState('');
   const [m2Comments,setM2Comments]=useState({});
-  const [m2PanelOpen,setM2PanelOpen]=useState(false);
   const [m2Busy,setM2Busy]=useState(false);
 
-  const [historyPaneOpen,setHistoryPaneOpen]=useState(false);
   const [history, setHistory] = useState([]);
   // UX-CHAT01: per-chat decoration state does not enter model context.
   const [messageDecorationsByChat,setMessageDecorationsByChat]=useState({});
@@ -860,9 +875,12 @@ function App() {
   const [rollbackHistory, setRollbackHistory] = useState([]);
   const [latestRestored, setLatestRestored] = useState(null);
   const [latestEdited, setLatestEdited] = useState(null);
-  const [backgroundPaneOpen,setBackgroundPaneOpen] = useState(false);
+  const backgroundPaneOpen=activeTab==='tasks';
+  const [downloadTasks,setDownloadTasks]=useState([]);
+  const [taskChatLimit,setTaskChatLimit]=useState(12);
+  const taskRefreshVersion=useRef(0);
+  const taskRefreshPending=useRef(false);
   const [backgroundTasks,setBackgroundTasks] = useState([]);
-  const [backgroundGuardian,setBackgroundGuardian] = useState(null);
   const [backgroundDelay,setBackgroundDelay] = useState('0');
   const [backgroundRepeat,setBackgroundRepeat] = useState('0');
   const [backgroundPriority,setBackgroundPriority] = useState('normal');
@@ -1815,7 +1833,7 @@ function App() {
         setCaptureTaskId(id);
         setCaptureLocalTaskId(localImage?id:null);
         setCaptureReceipt(null);
-        setBackgroundPaneOpen(true);
+        openTab('tasks');
       }
     }catch(e){setError(String(e));}
     finally{setCaptureStarting(false);}
@@ -1828,7 +1846,7 @@ function App() {
     try{
       const image=await invoke('lu_observe_capture_local_image',{chatId:activeChat});
       if(!image)throw new Error('No completed local frame available; inspect the native receipt first.');
-      if(activeChatRef.current!==activeChat){
+      if(currentChat.current!==activeChat){
         await invoke('lu_release_image',{imageRef:image.imageRef});
         return;
       }
@@ -2044,9 +2062,9 @@ function App() {
       setBackgroundError(String(error));
     }
   }
-  async function cancelBackgroundTask(taskId) {
+  async function cancelBackgroundTask(taskId,scopeChatId=chatId) {
     try {
-      await invoke('lu_background_cancel', {taskId,chatId});
+      await invoke('lu_background_cancel', {taskId,chatId:scopeChatId});
       await refreshBackgroundTasks();
     } catch (error) {
       // Native dialog denial and races against completion are not success.
@@ -2056,37 +2074,42 @@ function App() {
       }
     }
   }
-  async function reapproveScheduledTask(taskId){
-    if(!chatId)return;
+  async function reapproveScheduledTask(taskId,scopeChatId=chatId){
+    if(!scopeChatId)return;
     try{
-      const newId=await invoke('lu_background_reapprove',{chatId,reviewTaskId:taskId});
+      const newId=await invoke('lu_background_reapprove',{chatId:scopeChatId,reviewTaskId:taskId});
       if(newId)await refreshBackgroundTasks();
     }catch(error){
       setBackgroundError(String(error));
     }
   }
-  async function changeQueuedBackgroundState(taskId,action){
-    if(!chatId)return;
+  async function changeQueuedBackgroundState(taskId,action,scopeChatId=chatId){
+    if(!scopeChatId)return;
     try{
-      await invoke('lu_background_queue_control',{chatId,taskId,action});
+      await invoke('lu_background_queue_control',{chatId:scopeChatId,taskId,action});
       await refreshBackgroundTasks();
     }catch(error){
       setBackgroundError(String(error));
     }
   }
   async function refreshBackgroundTasks() {
+    if(taskRefreshPending.current)return;
+    taskRefreshPending.current=true;
+    const version=++taskRefreshVersion.current;
     try {
-      if(!chatId){setBackgroundTasks([]);setBackgroundGuardian(null);return;}
-      const [items,guardian]=await Promise.all([
-        invoke('lu_background_tasks',{chatId}),
-        invoke('lu_background_guardian_status',{chatId})
-      ]);
-      setBackgroundTasks(Array.isArray(items)?items:[]);
-      setBackgroundGuardian(guardian||null);
-      setBackgroundError('');
+      const scopes=[...new Set([chatId,...chats.slice(0,taskChatLimit).map(c=>c.chatId)].filter(Boolean))];
+      const byScope=await Promise.allSettled(scopes.map(async scopeChatId=>{
+        const items=await invoke('lu_background_tasks',{chatId:scopeChatId});
+        return (Array.isArray(items)?items:[]).map(task=>({...task,scopeChatId}));
+      }));
+      const transfers=await invoke('lu_model_transfer_recent').catch(()=>null);
+      if(version!==taskRefreshVersion.current)return;
+      setBackgroundTasks(byScope.flatMap(r=>r.status==='fulfilled'?r.value:[]));
+      if(Array.isArray(transfers))setDownloadTasks(transfers);
+      setBackgroundError(byScope.some(r=>r.status==='rejected')||transfers===null?'Some tasks could not be refreshed. Try Refresh.':'');
     } catch (error) {
-      setBackgroundError(String(error));
-    }
+      if(version===taskRefreshVersion.current)setBackgroundError(friendlyError(error));
+    }finally{taskRefreshPending.current=false;}
   }
   useEffect(()=>{
     if (!backgroundPaneOpen) return undefined;
@@ -2096,8 +2119,8 @@ function App() {
     // UI polling queries Lu's local store, not the model or a worker.
     // Future host event pushes can replace this lightweight refresh.
     const timer=setInterval(refresh,2500);
-    return ()=>{alive=false;clearInterval(timer);};
-  },[backgroundPaneOpen,chatId]);
+    return ()=>{alive=false;clearInterval(timer);taskRefreshVersion.current++;};
+  },[backgroundPaneOpen,chatId,chats,taskChatLimit]);
 
   // M2 state is reloaded from the native ANSF+chat-journal reconciliation
   // for every conversation; no model event or localStorage confers authority.
@@ -2109,10 +2132,10 @@ function App() {
     setM2QuestionDraft('');
     if(!chatId)return ()=>{alive=false;};
     invoke('lu_m2_goal_context',{chatId}).then(view=>{
-      if(!alive||activeChatRef.current!==chatId)return;
+      if(!alive||currentChat.current!==chatId)return;
       setM2Context({...view,chatId});
       setM2GoalDraft(view.goal||'');
-    }).catch(error=>{if(alive&&activeChatRef.current===chatId)
+    }).catch(error=>{if(alive&&currentChat.current===chatId)
       setError('Goal memory could not be reconciled: '+String(error));});
     return ()=>{alive=false;};
   },[chatId]);
@@ -2122,7 +2145,7 @@ function App() {
     const target=chatId;setM2Busy(true);setError('');
     try{
       const view=await invoke('lu_m2_set_goal',{chatId:target,goal:m2GoalDraft});
-      if(activeChatRef.current===target){
+      if(currentChat.current===target){
         setM2Context({...view,chatId:target});
         setM2GoalDraft(view.goal);
         setActivity('Goal saved in ANSF-backed memory');
@@ -2136,7 +2159,7 @@ function App() {
     const target=chatId;setM2Busy(true);setError('');
     try{
       const view=await invoke('lu_m2_open_question',{chatId:target,question:m2QuestionDraft});
-      if(activeChatRef.current===target){
+      if(currentChat.current===target){
         setM2Context({...view,chatId:target});
         setM2QuestionDraft('');
       }
@@ -2151,7 +2174,7 @@ function App() {
       const view=await invoke('lu_m2_answer_question',{
         chatId:target,questionId,choice,comment:comment||null
       });
-      if(activeChatRef.current===target){
+      if(currentChat.current===target){
         setM2Context({...view,chatId:target});
         setM2Comments(old=>({...old,[questionId]:''}));
         setActivity(choice==='not_now'?'Clarification deferred; no answer or permission inferred'
@@ -2280,7 +2303,7 @@ function App() {
     if (currentChat.current !== id) {
       // Capture the outgoing reading position before the asynchronous read.
       const el = transcriptRef.current;
-      if (el) scrollByChat.current.set(currentChat.current || 'new', {
+      if (el && el.clientHeight>0) scrollByChat.current.set(currentChat.current || 'new', {
         top: el.scrollTop, follow: followOutput.current,
         anchor: captureHistoryAnchor(el)
       });
@@ -2455,7 +2478,7 @@ function App() {
   // Remember independent scroll positions when switching conversations.
   function onTranscriptScroll() {
     const el = transcriptRef.current;
-    if (!el) return;
+    if (!el || activeTab!=='chat') return;
     const follow = nearTranscriptBottom(el);
     followOutput.current = follow;
     scrollByChat.current.set(currentChat.current || 'new', {top: el.scrollTop, follow});
@@ -2480,31 +2503,31 @@ function App() {
   }
   useLayoutEffect(() => {
     const el = transcriptRef.current;
-    if (!el) return;
+    if (!el || activeTab!=='chat') return;
     const stored = scrollByChat.current.get(chatId || 'new');
     followOutput.current = stored?.follow ?? true;
     if(stored?.anchor&&!stored.follow)restoreHistoryAnchor(el,stored.anchor);
     else el.scrollTop = restoredScrollTop(stored, el.scrollHeight, el.clientHeight);
     setAtBottom(followOutput.current);
-  }, [chatId]);
+  }, [chatId,activeTab]);
   useLayoutEffect(() => {
     const el = transcriptRef.current;
-    if (!el || !followOutput.current || pendingPrepend.current) return;
+    if (!el || activeTab!=='chat' || !followOutput.current || pendingPrepend.current) return;
     el.scrollTop = el.scrollHeight;
-  }, [history, visibleStream, chatId]);
+  }, [history, visibleStream, chatId,activeTab]);
   useLayoutEffect(()=>{
     const el=transcriptRef.current;
     const pending=pendingPrepend.current;
-    if(!el||!pending)return;
+    if(!el||!pending||activeTab!=='chat')return;
     if(pending.chatId===currentChat.current)restoreHistoryAnchor(el,pending.anchor);
     followOutput.current=false;
     pendingPrepend.current=null;
-  },[history]);
+  },[history,activeTab]);
 
-  useEffect(() => { composerRef.current?.focus(); }, [chatId]);
+  useEffect(() => { if(activeTab==='chat')composerRef.current?.focus(); }, [chatId,activeTab]);
   useEffect(() => {
     function onShortcut(event) {
-      if (event.defaultPrevented) return;
+      if (event.defaultPrevented || activeTab!=='chat') return;
       if (isSearchKey(event)) {
         event.preventDefault(); setChatQuery(''); searchRef.current?.focus();
       } else if (isNewChatKey(event)) {
@@ -2518,7 +2541,7 @@ function App() {
     }
     document.addEventListener('keydown', onShortcut);
     return () => document.removeEventListener('keydown', onShortcut);
-  }, [modelMenuOpen]);
+  }, [modelMenuOpen,activeTab]);
   useEffect(() => {
     if (!modelMenuOpen) return;
     function onOutside(event) {
@@ -4305,17 +4328,20 @@ function App() {
       <option value="">—</option>{folders.map(f => <option key={f.folderId} value={f.folderId}>{f.name}</option>)}
     </select>
   </div>;
-  return <div className={'shell' + (dragActive ? ' appDragActive' : '')}
+  return <div className="luTabShell">
+    <nav className="luTopTabs" aria-label="Lu navigation">
+      {LU_TABS.map(([id,label])=><button type="button" key={id} aria-current={activeTab===id?'page':undefined} className={id==='settings'?'quietSettings':''} title={label} aria-label={label} onClick={()=>openTab(id)}>{id==='settings'?'⚙ Settings':label}{id==='tasks'&&backgroundTerminalNotice?' •':''}</button>)}
+    </nav>
+    <div hidden={activeTab!=='chat'} className={'shell' + (dragActive ? ' appDragActive' : '')}
     onDragEnter={handleAppDrag}
     onDragOver={handleAppDrag}
     onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget)) setDragActive(false); }}
     onDrop={handleDrop}>
     <aside className="sidebar">
-      <div className="brand"><div className="brandMark">L</div><div><strong>Lu</strong><small>Independent desktop</small></div></div>
-      <button className="newChatButton" onClick={newChat}><span>＋</span> New Chat</button>
       <div className="chatSearchRow"><span aria-hidden="true">⌕</span><input ref={searchRef} type="search"
         value={chatQuery} onChange={e => setChatQuery(e.target.value)} placeholder="Search chats"
         aria-label="Search conversations" title="Search conversations (Ctrl+K)"/></div>
+      <button className="newChatButton" aria-label="New Chat" onClick={newChat}><span>＋</span> New Chat</button>
       <div className="chatSidebarContent">
         {chatQuery.trim() ? <section className="chatSection"><h3>SEARCH RESULTS · {matchingChats.length}</h3>
           {matchingChats.map(renderChat)}
@@ -4344,18 +4370,16 @@ function App() {
         {/* Background receipts remain in the conversation on demand; no dashboard button. */}
       </div>
     </aside>
-    {historyPaneOpen&&chatId&&<AnsfHistoryPane activeChatId={chatId}
-      chats={chats} onClose={()=>setHistoryPaneOpen(false)}/>}
     <main className="workspace">
       {backgroundTerminalNotice && <button type="button"
         className="backgroundGlobalNotice"
-        onClick={()=>{setBackgroundPaneOpen(true);setBackgroundFilter('all');}}>
-        <span>Background task ended: <strong>{backgroundTerminalNotice.state}</strong></span>
+        onClick={()=>{openTab('tasks');setBackgroundFilter('all');}}>
+        <span>Background task ended: <strong>{formatTaskState(backgroundTerminalNotice.state)}</strong></span>
         <small>Open Tasks for details</small>
       </button>}
       <header className="topbar">
         <div className="chatTitle"><h1>{activeChat?.title && activeChat.title !== 'New chat' ? activeChat.title : 'Chat'}</h1>
-          <p>{loaded ? 'Ready to chat · local model' : 'Choose a local GGUF to start'}</p></div>
+          <p>{loaded ? 'Ready to chat' : 'Choose a local model to start'}</p></div>
         <div className="headerControls">
           {working && activity.startsWith('Loading') && <span className="busyHint" role="status" aria-live="polite"><span className="spinner" aria-hidden="true"></span> Loading model · {modelLoadTrace?.loading&&modelLoadTrace.events?.length ? modelLoadTrace.events[modelLoadTrace.events.length-1].phase.replaceAll('_',' ') : 'Reading model and initializing backend'} · {modelMemorySample?.workingSetRamBytes!=null
             ? 'RAM process '+(modelMemorySample.workingSetRamBytes/1073741824).toFixed(2)+' GiB'
@@ -4374,86 +4398,19 @@ function App() {
               {!models.length && <div className="asideHelp">Put GGUF files in Lu's models directory or import them from Settings.</div>}
               <div className="modelMenuActions">
                 <button className="primaryButton" disabled={busy || loaded || !selected?.available} onClick={loadModel}>Load selected</button>
-                <button className="subtleButton" onClick={() => {setModelMenuOpen(false);void invoke('lu_open_aux_window',{kind:'model-library'}).catch(error=>setError(String(error)));}}>Manage models</button>
+                <button className="subtleButton" onClick={() => {setModelMenuOpen(false);openTab('models');}}>Manage models</button>
               </div>
               {loaded && <button className="subtleButton full" disabled={busy} onClick={() => {setModelMenuOpen(false);unloadModel();}}>⏏ Unload active model</button>}
             </div>}
           </div>
           {loaded && <button className="quickEject" disabled={busy} title="Unload active model" onClick={unloadModel}>⏏</button>}
-          <button type="button" className="subtleButton" title="Open independent ANSF history"
-            disabled={!chatId} aria-expanded={historyPaneOpen}
-            onClick={()=>setHistoryPaneOpen(v=>!v)}>History library</button>
-          <button type="button" className="subtleButton" title="Open independently reviewed project task list"
-            onClick={()=>void invoke('lu_open_aux_window',{kind:'task-list'}).catch(error=>setError(String(error)))}>
-            Project tasks
-          </button>
-          <button className="quietSettings" title="Settings" aria-label="Settings"
-            onClick={()=>void invoke('lu_open_aux_window',{kind:'settings'}).catch(error=>setError(String(error)))}>⚙</button>
         </div>
       </header>
-      {chatId&&<section className="m2MemoryPane" aria-label="Conversation goal and clarifications">
-        <header className="m2MemoryHeader">
-          <strong>Goal memory {m2Context?.goal?'· '+m2Context.goal.slice(0,75):'· not set'}</strong>
-          <button type="button" className="subtleButton" aria-expanded={m2PanelOpen}
-            onClick={()=>setM2PanelOpen(v=>!v)}>
-            {m2PanelOpen?'Hide goal details':'Goal & questions'}
-            {m2Context?.questions?.some(q=>q.status==='pending'||q.status==='deferred')
-              ?' · needs your input':''}
-          </button>
-        </header>
-        {m2PanelOpen&&<div className="m2MemoryBody">
-          <small>This is your chat's persistent task context, not an application permission.
-            Only an actual user action can change it. Lu will reuse confirmed answers
-            when constructing subsequent local-model context.</small>
-          <form onSubmit={m2SetGoal}>
-            <label>Current goal
-              <textarea rows={2} maxLength={4096} value={m2GoalDraft}
-                placeholder="What are we trying to accomplish?"
-                onChange={event=>setM2GoalDraft(event.target.value)}/>
-            </label>
-            <button type="submit" disabled={m2Busy||!m2GoalDraft.trim()||
-                m2GoalDraft===m2Context?.goal}>Save goal</button>
-          </form>
-          {m2Context?.goalId&&<form onSubmit={m2OpenQuestion}>
-            <label>Stage a clarification for the user
-              <input maxLength={1024} value={m2QuestionDraft}
-                placeholder="A yes or no decision to clarify the current goal"
-                onChange={event=>setM2QuestionDraft(event.target.value)}/>
-            </label>
-            <button type="submit" disabled={m2Busy||!m2QuestionDraft.trim()}>
-              Add clarification
-            </button>
-            <small>In M2, questions are user-reviewed. Automatic model-proposed question
-              cards are not enabled yet.</small>
-          </form>}
-          {(m2Context?.questions||[]).slice(-12).map(q=><section key={q.questionId}
-            className="m2QuestionCard" aria-label="Goal clarification">
-            <strong>{q.question}</strong>
-            <small>{q.status==='deferred'?'Not now · you can answer later':
-              q.status==='answered'?'Answered: '+q.choice:q.status==='superseded'
-              ?'Superseded by a revised goal':'Awaiting an answer'}</small>
-            {['pending','deferred'].includes(q.status)&&<>
-              <label>Optional comment
-                <textarea rows={2} maxLength={1024} value={m2Comments[q.questionId]||''}
-                  onChange={e=>setM2Comments(old=>({...old,[q.questionId]:e.target.value}))}
-                  placeholder="Add details to your answer"/>
-              </label>
-              <div className="m2QuestionChoices">
-                <button type="button" disabled={m2Busy} onClick={()=>void m2Answer(q.questionId,'yes')}>Yes</button>
-                <button type="button" disabled={m2Busy} onClick={()=>void m2Answer(q.questionId,'no')}>No</button>
-                <button type="button" className="subtleButton" disabled={m2Busy}
-                  onClick={()=>void m2Answer(q.questionId,'not_now')}>Not now</button>
-              </div>
-            </>}
-            {q.status==='answered'&&q.comment&&<small>Your comment: {q.comment}</small>}
-          </section>)}
-        </div>}
-      </section>}
       <div className="transcriptWrap"><div className="messages" ref={transcriptRef}
         style={{backgroundColor:chatAppearance.background,color:textForBackground(chatAppearance.background)}}
         onScroll={onTranscriptScroll} role="log" aria-live="off" aria-label="Conversation history, cursor paginated">
         {historyWindow.hasOlder&&<button type="button" className="subtleButton"
-          onClick={()=>void loadOlderUiHistory()}>Load older ANSF page</button>}
+          onClick={()=>void loadOlderUiHistory()}>Load older messages</button>}
 
         {!history.length && <div className="welcome"><div className="welcomeSymbol">L</div>
           <h2>What can I help you build?</h2>
@@ -4543,7 +4500,7 @@ function App() {
             </button>
           </div>}
         {historyWindow.hasNewer&&<button type="button" className="subtleButton"
-          onClick={()=>void loadNewerUiHistory()}>Load newer ANSF page</button>}
+          onClick={()=>void loadNewerUiHistory()}>Load newer messages</button>}
         {visibleJob && <div className="message assistant streaming"><span className="messageRole" role="status" aria-live="polite" aria-atomic="true">
           {visibleJob.phase === 'queued' ? `Lu · queued${visibleJob.position ? ' (#' + visibleJob.position + ')' : ''}`
            : visibleJob.phase === 'submitting' ? 'Lu · submitting'
@@ -4557,8 +4514,7 @@ function App() {
              : 'Lu · generating'}
           </span>{visibleStream ? <MessageText text={visibleStream}/> : <span className="spinner"/>}
           {turnCapabilitiesByChat[chatId]?.generationId===visibleJob.generationId &&
-            <small>Read-only native tools for this turn: {turnCapabilitiesByChat[chatId].tools
-              .map(tool=>tool.publicName).join(', ')}</small>}
+            <small>Using approved tools</small>}
         </div>}
       </div>
         {!atBottom && <button type="button" className="jumpLatest" onClick={jumpToLatest}
@@ -4716,7 +4672,7 @@ function App() {
             No automatic retry occurs if a write is interrupted; inspect File operations or
             File recovery before taking another action.</small>
         </section>}
-        {error && <div className="error" role="alert"><span>{error}</span><button onClick={() => setError('')}>Dismiss</button></div>}
+        {error && <div className="error" role="alert"><span>{friendlyError(error)}</span><button onClick={() => setError('')}>Dismiss</button></div>}
         {Object.values(readProposals).filter(proposal => proposal.chatId === chatId).map(proposal =>
           <section key={proposal.proposalId} className="readProposalCard" role="group"
             aria-label="Model proposed file read">
@@ -6312,26 +6268,7 @@ function App() {
           <div className="composerFooter"><input ref={fileInput} type="file" className="visuallyHidden" multiple
               accept=".png,.jpg,.jpeg,.txt,.md,.csv,.json,.log,.py,.rs,.js,.jsx,.ts,.tsx" onChange={e => {void importAttachments(e.target.files);e.target.value='';}}/>
             <button type="button" className="subtleButton" disabled={!loaded} onClick={() => fileInput.current?.click()}>+ Attach</button>
-            <label className="planDraftOptIn">
-              <input type="checkbox" aria-label="Draft plan with Lu"
-                checked={planDraftNextSend}
-                disabled={!loaded || working || chatBusy || images.length>0 || textFiles.length>0}
-                onChange={e=>setPlanDraftNextSend(e.target.checked)}/>
-              Draft plan with Lu — no tools will run
-            </label>
-            {/* Legacy specialist controls retained temporarily for compatibility, but no longer mounted. Native tools enter through the original human chat and per-turn OS approvals. */}
-            {perfLatestByChat[chatId] && <small className="hostPerfLatest"
-              aria-label="Latest host-observed performance receipt"
-              title="Measured by Lu host; missing token/GPU metrics are unverified, not zero.">
-              {perfLatestByChat[chatId].route==='CPU_DETERMINISTIC'?'CPU exact':'GGUF model'}
-              {' · '}{perfLatestByChat[chatId].overallLatencyMs} ms
-              {perfLatestByChat[chatId].queueWaitMs!=null
-                ?' · queue '+perfLatestByChat[chatId].queueWaitMs+' ms':''}
-              {perfLatestByChat[chatId].modelDispatchToFirstChunkMs!=null
-                ?' · first text '+perfLatestByChat[chatId].modelDispatchToFirstChunkMs+' ms':''}
-              {' · '}{perfLatestByChat[chatId].terminalState}
-            </small>}
-            
+            {/* Goal and task planning remain host capabilities, not chat controls. */}
             {chatBusy ? <button className="dangerButton" type="button" onClick={cancel}
                 disabled={!visibleJob.generationId || visibleJob.cancelling}>{visibleJob.cancelling ? 'Stopping…' : visibleJob.phase === 'queued' ? 'Cancel queued' : 'Cancel'}</button>
               : <button className="primaryButton" type="submit" disabled={working || (!loaded && !modelFreeClockAllowed) || !prompt.trim()}>Send</button>}
@@ -6660,14 +6597,15 @@ function App() {
       </section>
     </div>}
     {dragActive && <div className="appDropHint" role="status" aria-live="polite">Drop image or text files to attach to this conversation</div>}
-    {backgroundPaneOpen && <div className="backgroundPaneBackdrop" role="presentation"
-      onClick={()=>setBackgroundPaneOpen(false)}>
-      <aside className="backgroundPane" role="dialog" aria-modal="true"
-        aria-label="Background Tasks" onClick={e=>e.stopPropagation()}>
+    </div>
+    {visitedTabs.includes('history')&&<section className="luTabPage" hidden={activeTab!=='history'}><HistoryTab chats={chats} onOpenChat={openHistoryChat}/></section>}
+    {visitedTabs.includes('settings')&&<section className="luTabPage" hidden={activeTab!=='settings'}><SettingsWindow onNavigate={openTab} active={activeTab==='settings'}/></section>}
+    {visitedTabs.includes('models')&&<section className="luTabPage" hidden={activeTab!=='models'}><ModelLibraryWindow onNavigate={openTab} active={activeTab==='models'}/></section>}
+    {visitedTabs.includes('tasks')&&<section className="luTabPage taskTabPage" hidden={activeTab!=='tasks'}>
+      <div className="taskTabNavigation"><button type="button" aria-pressed={taskView==='background'} onClick={()=>setTaskView('background')}>Background work</button><button type="button" aria-pressed={taskView==='projects'} onClick={()=>setTaskView('projects')}>Project plans</button></div>
+      {taskView==='projects'?<TaskBoardWindow onNavigate={openTab}/>:<section className="backgroundPane tabTasks" aria-label="Background Tasks">
         <header className="backgroundPaneHeader">
-          <div><h2>Background Tasks</h2><small>Monitored by Lu — no model polling</small></div>
-          <button className="quietIcon" aria-label="Close Background Tasks"
-            onClick={()=>setBackgroundPaneOpen(false)}>×</button>
+          <div><h2>Background Tasks</h2><small>Manage running, queued and completed work.</small></div>
         </header>
         <div className="backgroundContinuationPreference">
           <label>
@@ -6704,36 +6642,15 @@ function App() {
             </select>
           </label>
         </div>
-        {backgroundGuardian && <div className="backgroundGuardianStatus" role="status">
-          <strong>Resource Guardian</strong>
-          <span>Queued: {backgroundGuardian.queued} · Running: {backgroundGuardian.running} · Paused: {backgroundGuardian.paused}</span>
-          <span>Workers: {backgroundGuardian.workerUsed}/{backgroundGuardian.workerCapacity} · CPU slots: {backgroundGuardian.cpuUsed}/{backgroundGuardian.cpuCapacity} · RAM reservation: {backgroundGuardian.ramUsedMib}/{backgroundGuardian.ramCapacityMib} MiB</span>
-          <small>{backgroundGuardian.observedAvailableRamMib==null?'Physical RAM probe unavailable':('Physical RAM available: '+backgroundGuardian.observedAvailableRamMib+' MiB')}{backgroundGuardian.observedCpuBusyPercent==null?'':' · CPU busy '+backgroundGuardian.observedCpuBusyPercent+'%'}</small>
-          <small>GPU tasks stay disabled without verified backend VRAM availability. CPU/RAM admission reacts to host pressure; reservations are not actual per-worker consumption.</small>
-          <small>Interactive model: {backgroundGuardian.activeModelGenerationClass||'no active turn'}
-            {' '}· Waiting human: {backgroundGuardian.waitingForegroundGenerations??0}
-            {' '}· Waiting automatic: {backgroundGuardian.waitingBackgroundGenerations??0}</small>
-          <small>New background worker launches: {
-            backgroundGuardian.newBackgroundAdmissionDeferred===null ||
-            backgroundGuardian.newBackgroundAdmissionDeferred===undefined
-              ?'not yet sampled'
-              :backgroundGuardian.newBackgroundAdmissionDeferred?'deferred':'eligible'}
-            {' '}· Host reason: {String(backgroundGuardian.interactiveAdmissionReason||
-              'UNMEASURED').replaceAll('_',' ').toLowerCase()}.</small>
-          <small>This is Lu's conservative launch policy, not actual
-            GPU/VRAM allocation or proof that an already-running worker paused.
-            Existing workers retain cancellation and restart custody.</small>
-        </div>}
         <div className="backgroundScanLaunch">
           <button type="button" className="primaryButton"
             onClick={()=>void startMediaFileScan()}>
             Scan media file…
           </button>
-          <small>Native SHA-256 integrity scan · queued by Lu. Recurring scans require new authorization after app restart.</small>
+          <small>Check a selected file. Recurring checks require approval after restart.</small>
         </div>
         {backgroundTerminalNotice && <div className="backgroundTerminalBanner" role="status">
-          <strong>Task ended: {backgroundTerminalNotice.state}</strong>
-          <span>{backgroundTerminalNotice.taskId}</span>
+          <strong>Task ended: {formatTaskState(backgroundTerminalNotice.state)}</strong>
           <button type="button" className="quietIcon"
             aria-label="Dismiss terminal notification"
             onClick={()=>setBackgroundTerminalNotice(null)}>×</button>
@@ -6748,15 +6665,24 @@ function App() {
           <button className="subtleButton" onClick={()=>void refreshBackgroundTasks()}
             aria-label="Refresh background tasks">Refresh</button>
         </div>
-        {backgroundError && <p className="backgroundPaneError" role="alert">{backgroundError}</p>}
+        {backgroundError && <p className="backgroundPaneError" role="alert">{backgroundError==='Some tasks could not be refreshed. Try Refresh.'?backgroundError:friendlyError(backgroundError)}</p>}
         <div className="backgroundPaneList" aria-live="off">
+          {Object.entries(jobs).map(([id,job])=><article className="backgroundTask" key={'generation-'+id}>
+            <strong>{chats.find(c=>c.chatId===id)?.title||'Conversation'}</strong>
+            <p>{job.phase==='queued'?'Message queued':'Generating a reply'}</p>
+            <button type="button" className="subtleButton" onClick={()=>void openHistoryChat(id)}>Open chat</button>
+          </article>)}
+          {downloadTasks.filter(t=>backgroundFilter==='all'||['REVIEWED','RUNNING','INTERRUPTED_REVIEW_REQUIRED'].includes(t.state)).map(t=><article className="backgroundTask" key={t.transferId}>
+            <strong>{t.filename}</strong><p>{formatTaskState(t.state)} · Model download</p>
+            <div className="backgroundTaskProgress" role="progressbar" aria-label="Download progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={t.totalBytes?Math.min(100,Math.floor(100*t.receivedBytes/t.totalBytes)):0}><span style={{width:(t.totalBytes?Math.min(100,Math.floor(100*t.receivedBytes/t.totalBytes)):0)+'%'}}/></div>
+            <button className="subtleButton" type="button" onClick={()=>openTab('models')}>Manage downloads</button>
+          </article>)}
           {shownBackgroundTasks.map(task=><article className="backgroundTask" key={task.taskId}>
             <div className="backgroundTaskHeading">
-              <strong title={task.taskId}>{task.taskId}</strong>
-              <span className={'backgroundTaskStatus state-'+task.state.toLowerCase()}>{task.state}</span>
+              <strong>{taskName(task)}</strong>
+              <span className={'backgroundTaskStatus state-'+task.state.toLowerCase()}>{formatTaskState(task.state)}</span>
             </div>
-            {task.workspaceId && <small>Workspace: {task.workspaceId}</small>}
-            <p>{task.detail || 'No progress details yet'}</p>
+            <small>{chats.find(c=>c.chatId===task.scopeChatId)?.title||'Conversation'}</small>
             <div className="backgroundTaskProgress" role="progressbar"
               aria-label={'Progress for '+task.taskId} aria-valuemin={0}
               aria-valuemax={100} aria-valuenow={task.progress}>
@@ -6769,18 +6695,19 @@ function App() {
             {['INTERRUPTED','FAILED','NEEDS_REVIEW'].includes(task.state) &&
               <p className="backgroundTaskWarning">Requires review before retrying.</p>}
             {task.needsReview && <button className="subtleButton" type="button"
-              onClick={()=>void reapproveScheduledTask(task.taskId)}>Reapprove with a selected file…</button>}
+              onClick={()=>void reapproveScheduledTask(task.taskId,task.scopeChatId)}>Reapprove with a selected file…</button>}
             {task.canPause && <button className="subtleButton" type="button"
-              onClick={()=>void changeQueuedBackgroundState(task.taskId,'pause')}>Pause queued</button>}
+              onClick={()=>void changeQueuedBackgroundState(task.taskId,'pause',task.scopeChatId)}>Pause queued</button>}
             {task.canResume && <button className="subtleButton" type="button"
-              onClick={()=>void changeQueuedBackgroundState(task.taskId,'resume')}>Resume queued</button>}
+              onClick={()=>void changeQueuedBackgroundState(task.taskId,'resume',task.scopeChatId)}>Resume queued</button>}
             {task.canCancel && <button className="backgroundTaskCancel" type="button"
-              onClick={()=>void cancelBackgroundTask(task.taskId)}>
+              onClick={()=>void cancelBackgroundTask(task.taskId,task.scopeChatId)}>
               Cancel task…
             </button>}
 
           </article>)}
-          {!shownBackgroundTasks.length && !backgroundError &&
+          {chats.length>taskChatLimit&&<button type="button" className="subtleButton" onClick={()=>setTaskChatLimit(n=>n+12)}>Show tasks from more conversations</button>}
+          {!shownBackgroundTasks.length && !Object.keys(jobs).length && !downloadTasks.some(t=>backgroundFilter==='all'||['REVIEWED','RUNNING','INTERRUPTED_REVIEW_REQUIRED'].includes(t.state)) && !backgroundError &&
             <p className="backgroundPaneEmpty">
               {backgroundFilter==='active'?'No active background tasks.':'No background task history yet.'}
             </p>}
@@ -6791,8 +6718,8 @@ function App() {
           Recovery never automatically replays interrupted work; reapprove using a native file picker.
           Ordinary progress does not invoke the AI model.
         </footer>
-      </aside>
-    </div>}
+      </section>}
+    </section>}
       </div>;
 }
 

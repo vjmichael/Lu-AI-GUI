@@ -447,8 +447,8 @@ async fn lu_model_provider_review(
         host.research.model_provider_review(&repo_id,&revision)
     ).await.map_err(|_|"Model provider review worker stopped")?
 }
-/// P05 reviewed immutable Hugging Face transfer. Only the Model Library
-/// native window can ask. The host independently re-fetches the provider
+/// P05 reviewed immutable Hugging Face transfer. The native main window
+/// now contains the Models tab; the legacy model-library window is also admitted. The host independently re-fetches the provider
 /// SHA, size and license, then shows a fresh OS confirmation. Model output,
 /// WebView metadata, imported files and untrusted URLs are NOT grants.
 #[tauri::command]
@@ -457,7 +457,7 @@ async fn lu_model_transfer_start(
     state:State<'_,Arc<DesktopState>>,
     repo_id:String,revision:String,filename:String,sha256:String,bytes:u64,
 )->Result<Option<model_transfer_desktop::ModelTransferView>,String>{
-    if caller.label()!="model-library"{
+    if !matches!(caller.label(),"main"|"model-library"){
         return Err("Only the native Model Library may request model downloads".into())
     }
     let owner=Arc::clone(state.inner());
@@ -517,7 +517,7 @@ async fn lu_model_transfer_resume(
     app:AppHandle,caller:tauri::WebviewWindow,
     state:State<'_,Arc<DesktopState>>,transfer_id:String
 )->Result<Option<model_transfer_desktop::ModelTransferView>,String>{
-    if caller.label()!="model-library"{
+    if !matches!(caller.label(),"main"|"model-library"){
         return Err("Only Model Library may resume an HF transfer".into())
     }
     let owner=Arc::clone(state.inner());
@@ -567,7 +567,7 @@ async fn lu_model_transfer_resume(
 fn lu_model_transfer_cancel(
     caller:tauri::WebviewWindow,state:State<'_,Arc<DesktopState>>,transfer_id:String
 )->Result<bool,String>{
-    if caller.label()!="model-library"{
+    if !matches!(caller.label(),"main"|"model-library"){
         return Err("Only native Model Library may cancel transfers".into())
     }
     state.model_transfers.cancel(&transfer_id)
@@ -576,7 +576,7 @@ fn lu_model_transfer_cancel(
 fn lu_model_transfer_status(
     caller:tauri::WebviewWindow,state:State<'_,Arc<DesktopState>>,transfer_id:String
 )->Result<model_transfer_desktop::ModelTransferView,String>{
-    if caller.label()!="model-library"{
+    if !matches!(caller.label(),"main"|"model-library"){
         return Err("HF transfer details are available only inside Model Library".into())
     }
     state.model_transfers.status(&transfer_id)
@@ -587,7 +587,7 @@ fn lu_model_transfer_status(
 fn lu_model_transfer_ready(
     caller:tauri::WebviewWindow,state:State<'_,Arc<DesktopState>>
 )->Result<bool,String>{
-    if caller.label()!="model-library"{
+    if !matches!(caller.label(),"main"|"model-library"){
         return Err("Only Model Library may inspect transfer readiness".into())
     }
     Ok(state.research.available())
@@ -596,7 +596,7 @@ fn lu_model_transfer_ready(
 fn lu_model_transfer_recent(
     caller:tauri::WebviewWindow,state:State<'_,Arc<DesktopState>>
 )->Result<Vec<model_transfer_desktop::ModelTransferView>,String>{
-    if caller.label()!="model-library"{
+    if !matches!(caller.label(),"main"|"model-library"){
         return Err("HF transfer history is available only inside Model Library".into())
     }
     state.model_transfers.recent(16)
@@ -605,7 +605,7 @@ fn lu_model_transfer_recent(
 async fn lu_model_transfer_verify(
     caller:tauri::WebviewWindow,state:State<'_,Arc<DesktopState>>,transfer_id:String
 )->Result<model_transfer_desktop::ModelTransferView,String>{
-    if caller.label()!="model-library"{
+    if !matches!(caller.label(),"main"|"model-library"){
         return Err("Only native Model Library may verify a published model".into())
     }
     let manager=Arc::clone(&state.model_transfers);
@@ -4321,6 +4321,22 @@ fn lu_m4_read_beliefs(
     )
 }
 
+#[derive(Serialize)]
+#[serde(rename_all="camelCase")]
+struct HumanHistorySearchPage{
+    hits:Vec<chat_store::RecallHit>,
+    next_offset:Option<usize>,
+}
+#[tauri::command]
+async fn lu_history_search(
+    state:State<'_,Arc<DesktopState>>,query:String,offset:usize
+)->Result<HumanHistorySearchPage,String>{
+    let owner=Arc::clone(state.inner());
+    tauri::async_runtime::spawn_blocking(move||{
+        let (hits,next_offset)=owner.chats.search_history_page(&query,offset)?;
+        Ok(HumanHistorySearchPage{hits,next_offset})
+    }).await.map_err(|_|"History search unavailable")?
+}
 #[tauri::command]
 fn lu_m3_history_page(
     state:State<'_,Arc<DesktopState>>,
@@ -9497,6 +9513,7 @@ pub fn run() {
             memory_desktop::lu_m2_answer_question,
             lu_m3_recall,
             lu_m3_read_source,
+            lu_history_search,
             lu_m3_history_page,
             lu_m3_embedding_enable,
             lu_m3_embedding_disable,

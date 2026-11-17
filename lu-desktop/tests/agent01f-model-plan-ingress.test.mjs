@@ -11,7 +11,7 @@ test('explicit user opt-in reaches the existing loaded GGUF generation path',()=
   assert.match(host,/agent_plan_admission::planning_prompt/);
   assert.match(host,/supervisor\.run_reserved_with_history/);
   assert.match(web,/planOnly:\s*usePlanDraft/);
-  assert.match(web,/Draft plan with Lu/);
+  assert.doesNotMatch(web,/aria-label="Draft plan with Lu"/);
 });
 test('model plan bytes are parsed only after a complete original model turn',()=>{
   assert.match(host,/state\.chats\.complete\(&chat_id,\s*&gid\)\?/);
@@ -25,7 +25,7 @@ test('planning cannot become implicit native tool or application authority',()=>
   assert.match(host,/if !plan_only/);
   assert.match(admission,/NOT_AUTHORIZED_FOR_EXECUTION/);
   assert.doesNotMatch(admission,/Command::new|\.spawn\(|run_journaled_observed\(/);
-  assert.match(web,/no tools will run/);
+  assert.match(web,/Goal and task planning remain host capabilities/);
 });
 test('model planner always uses host verified current ANSF goal and fails closed on contradictions',()=>{
   assert.match(admission,/project_goal_events\(&chats\.memory_events\(chat\)\?\)/);

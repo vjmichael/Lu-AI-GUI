@@ -36,7 +36,9 @@ test('native operator grants each original/resumed transfer and recovery never a
   assert.match(host,/fn lu_model_transfer_resume/);
   assert.match(host,/fn lu_model_transfer_cancel/);
   assert.match(host,/fn lu_model_transfer_verify/);
-  assert.match(host,/caller\.label\(\)!="model-library"/);
+  assert.match(host,/!matches!\(caller\.label\(\),"main"\|"model-library"\)/);
+  assert.match(host,/owner\.observe\.deny_unscoped_network_while_observing\(\)\?/);
+  assert.match(host,/HF immutable model digest or metadata changed/);
   assert.match(host,/model_provider_review/);
   assert.match(host,/blocking_show\(\)/);
   assert.match(desktop,/pub fn execute_reviewed/);

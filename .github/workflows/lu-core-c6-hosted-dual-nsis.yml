@@ -144,7 +144,7 @@ jobs:
              $r.installedRealEngine -ne 'PASS_SHA256' -or
              $r.installedVulkanEngine -ne 'PASS_SHA256' -or
              $r.installedResearchClient -ne 'PASS_SHA256' -or
-             $r.installedUiSmoke -ne 'PASS_INSTALLED_NATIVE_WINDOW_AND_BOTH_DIALOGS' -or
+             $r.installedUiSmoke -ne 'PASS_INSTALLED_UNIFIED_TABS' -or
              $r.profilePreservation -ne 'PASS_UNTOUCHED_APPDATA_SENTINEL' -or
              $r.packageRemoval -ne 'PASS_BINARIES_ABSENT'){
             throw 'Original installed/native source/window/uninstall assertions are not all positive'
