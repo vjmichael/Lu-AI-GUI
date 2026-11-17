@@ -75,6 +75,14 @@ test('browser is actually installed, independently rehashed, and removed without
  assert.match(m3,/Installed Browser manifest differs from independently approved SHA/);
  assert.match(m3,/Installed Browser symlink in reviewed component parent/);
  assert.match(m3,/Installed Browser unexpected file/);
+ assert.match(m3,/\$verifiedPaths=\[System\.Collections\.Generic\.HashSet\[string\]\]::new\(\[StringComparer\]::OrdinalIgnoreCase\)/);
+ assert.match(m3,/if\(-not \$verifiedPaths\.Add\(\$fi\.FullName\)\)/);
+ assert.match(m3,/Installed Browser duplicate physical component/);
+ assert.match(m3,/\$verifiedPaths\.Count -ne \$seen\.Count/);
+ assert.match(m3,/if\(\$actual\.Count -ne \(\$seen\.Count\+1\)\)/);
+ assert.match(m3,/\$item\.FullName -ine \$mi\.FullName -and -not \$verifiedPaths\.Contains\(\$item\.FullName\)/);
+ assert.match(m3,/GetRelativePath\(\$root,\$item\.FullName\)/);
+ assert.doesNotMatch(m3,/\$item\.FullName\.Substring\(\$root\.Length\)/);
  assert.match(m3,/PASS_EXACT_BROWSER_FILES_AND_REAL_BUNDLED_NODE/);
  assert.match(m3,/PASS_UNTOUCHED_APPDATA_SENTINEL/);
  assert.match(wf,/PASS_INSTALLED_NATIVE_WINDOW_AND_BOTH_DIALOGS/);

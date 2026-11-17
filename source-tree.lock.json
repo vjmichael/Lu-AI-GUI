@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "c6156f509c3c1956c7479266bea938afe51ace0c",
+  "sourceCommitBeforeLock": "37f85c73e8e62fa35dc05b3ae18a0c8fcb1f225d",
   "trackedFileCount": 1067,
   "files": [
     {
@@ -265,7 +265,7 @@
     },
     {
       "path": ".github/workflows/lu-repo01-full-source.yml",
-      "blob": "cd2d71d94ccc2122fd4ff71100a315f2f2d5ed2a"
+      "blob": "9b90ea693403be6c0f207297c9eae150b818abda"
     },
     {
       "path": ".github/workflows/lu-tools-01-05-integration.yml",
@@ -713,7 +713,7 @@
     },
     {
       "path": "docs/LU_DEVELOPMENT_LEDGER.md",
-      "blob": "d63880fd6c2554bc32273fab2600f1df8ba1cd6d"
+      "blob": "2a04cc8f629d2577ad5091f495f8c66c6ecdaf3d"
     },
     {
       "path": "docs/LU_E1_NATIVE_EVIDENCE_20261107.md",
@@ -2401,7 +2401,7 @@
     },
     {
       "path": "scripts/lu-c62b-reviewed-browser-contract.test.mjs",
-      "blob": "54c8b0555aafabd711f83fa041264d13688bb188"
+      "blob": "d7bb51ef38f009c5beb9ef729a538aa5a1fddda6"
     },
     {
       "path": "scripts/lu-ci-group-policy.mjs",
@@ -2497,7 +2497,7 @@
     },
     {
       "path": "scripts/m3-windows-nsis-cycle.ps1",
-      "blob": "b4e8395ec67398129acce0c4e2094f683e4a06ba"
+      "blob": "82490aec3801c18ac5a82057a62e5c51a1b5a8a8"
     },
     {
       "path": "scripts/m4-windows-installed-memory-acceptance.ps1",

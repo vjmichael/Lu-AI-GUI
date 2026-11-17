@@ -138,6 +138,10 @@ try{
       throw 'Invalid reviewed browser metadata'
     }
     $seen=[System.Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    # Windows can return a physical installed file with path casing/formatting
+    # different from the manifest's slash-separated form. Independently bind
+    # each approved byte-verified manifest entry to ONE installed file identity.
+    $verifiedPaths=[System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
     foreach($f in @($m.files)){
       $rel=[string]$f.path
       if($rel -cnotmatch '^[a-zA-Z0-9._ -]+(/[a-zA-Z0-9._ -]+)*$' -or
@@ -160,6 +164,12 @@ try{
          (Get-FileHash -LiteralPath $fp -Algorithm SHA256).Hash.ToLowerInvariant() -cne $f.sha256){
         throw 'Installed Browser component hash/size/file-kind mismatch'
       }
+      if(-not $verifiedPaths.Add($fi.FullName)){
+        throw 'Installed Browser duplicate physical component'
+      }
+    }
+    if($verifiedPaths.Count -ne $seen.Count -or $verifiedPaths.Contains($mi.FullName)){
+      throw 'Installed Browser physical inventory alias'
     }
     foreach($need in @('chrome.exe','node.exe','lu_browser_worker.mjs',
                         'node_modules/playwright/index.mjs','node_modules/playwright-core/index.mjs')){
@@ -169,9 +179,13 @@ try{
     if($actual.Count -ne ($seen.Count+1)){throw 'Installed Browser file count mismatch'}
     foreach($item in $actual){
       if(($item.Attributes -band [IO.FileAttributes]::ReparsePoint)){throw 'Untrusted Browser file link'}
-      $name=$item.FullName.Substring($root.Length).TrimStart('\').Replace('\','/')
-      if($name -cne 'manifest.json' -and -not $seen.Contains($name)){
-        throw 'Installed Browser unexpected file'
+      # Every manifest file was SHA-256/size/kind verified above, and the
+      # installed full paths were proven unique. Check the actual on-disk
+      # inventory against those verified identities rather than re-parsing
+      # Win32 path spelling into a separate untrusted relative-path string.
+      if($item.FullName -ine $mi.FullName -and -not $verifiedPaths.Contains($item.FullName)){
+        $relative=[IO.Path]::GetRelativePath($root,$item.FullName)
+        throw ('Installed Browser unexpected file: '+$relative)
       }
     }
     & (Join-Path $root 'node.exe') --version
