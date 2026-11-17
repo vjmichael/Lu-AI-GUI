@@ -5168,31 +5168,42 @@ async fn generate_internal(
         .with_background_origin(origin==GenerationOrigin::BackgroundTerminal);
     perf_trace.queued();
     let supervisor = Arc::clone(&state.supervisor);
-    // Admission is bounded and host-owned: at most one active/pending turn
-    // per conversation and eight turns total for this loaded model session.
-    let (ticket, position) =
-        state
-            .generation_queue
-            .enqueue_with_class(&session_id, &chat_id, &generation_id,
-                match origin {
-                    GenerationOrigin::Human => TurnClass::Foreground,
-                    GenerationOrigin::BackgroundTerminal => TurnClass::Background,
-                })?;
-    // Durable user journal before acknowledgment, including queued prompts.
-    // Ticket drop releases the queue on any error before worker dispatch.
-    if origin==GenerationOrigin::Human{
-        state.chats.append_user_with_turn_id(&chat_id,&generation_id,&prompt)?;
-    }else{
-        // Native auto-continuation can only run for a previously granted
-        // conversation with a still-unacknowledged terminal task event.
-        if !state.background_tasks.auto_continue_enabled(&chat_id)
-            .map_err(|_|"Background continuation policy unavailable")?
-          ||state.background_tasks.pending_notices_for_workspace(&chat_id,1)
-            .map_err(|_|"Background notification store unavailable")?.is_empty(){
-            return Err("No authorized pending background completion".into());
+    // Admission is bounded and host-owned. Queue publication becomes
+    // visible only after the original journal/continuation checks succeed.
+    let admission = state.generation_queue.enqueue_with_class_committing(
+        &session_id, &chat_id, &generation_id,
+        match origin {
+            GenerationOrigin::Human => TurnClass::Foreground,
+            GenerationOrigin::BackgroundTerminal => TurnClass::Background,
+        },
+        || {
+            if origin==GenerationOrigin::Human{
+                state.chats.append_user_with_turn_id(&chat_id,&generation_id,&prompt)?;
+            }else{
+                // Retain the existing background authorization checks.
+                if !state.background_tasks.auto_continue_enabled(&chat_id)
+                    .map_err(|_|"Background continuation policy unavailable")?
+                  ||state.background_tasks.pending_notices_for_workspace(&chat_id,1)
+                    .map_err(|_|"Background notification store unavailable")?.is_empty(){
+                    return Err("No authorized pending background completion".into());
+                }
+                state.chats.history(&chat_id)?;
+            }
+            Ok(())
+        });
+    let (ticket, position) = match admission {
+        Ok(value) => {
+            perf_trace.admission_publication(true, images.len());
+            value
         }
-        state.chats.history(&chat_id)?;
-    }
+        Err(error) => {
+            // A rejected publication does NOT establish whether an underlying
+            // canonical event committed before a derived catalog write failed.
+            perf_trace.admission_publication(false, images.len());
+            let _ = state.perf01.record(perf_trace.finish("ADMISSION_NOT_PUBLISHED"));
+            return Err(error);
+        }
+    };
     let queued = GenerationEvent {
         chat_id: chat_id.clone(),
         generation_id: generation_id.clone(),
@@ -5216,10 +5227,13 @@ async fn generate_internal(
             // With at most one turn per chat pending, the last user event is
             // this submission. Read history *after* waiting so later turns
             // use completed previous replies, but never duplicate ourselves.
-            if origin==GenerationOrigin::Human && !events
-                .last()
-                .is_some_and(|m| m.role == "user" && m.text == prompt)
-            {
+            if origin==GenerationOrigin::Human && (
+                state.chats.latest_authenticated_user_turn_id(&chat_id).as_deref()
+                    != Some(gid.as_str())
+                || state.chats.trusted_user_turn_text(&chat_id,&gid).as_deref()
+                    != Some(prompt.as_str())
+                || !events.last().is_some_and(|m| m.role == "user" && m.text == prompt)
+            ) {
                 return Err("conversation changed during queued generation".into());
             }
             // The host's loaded-model identity is rechecked AFTER the

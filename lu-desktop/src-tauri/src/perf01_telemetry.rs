@@ -32,6 +32,9 @@ pub(crate) struct PerfReceipt {
     pub model_ref:Option<String>,
     pub backend_family:Option<String>,
     pub context_limit_tokens:Option<u32>,
+    // Actual scheduler publication, not a claim of SQLite cross-store atomicity.
+    pub queue_published:Option<bool>,
+    pub admitted_image_count:Option<u32>,
     pub queue_wait_ms:Option<u64>,
     pub context_assembly_ms:Option<u64>,
     pub model_dispatch_to_first_chunk_ms:Option<u64>,
@@ -79,6 +82,7 @@ fn base(chat_id:&str,generation_id:&str,route:&str,reason_code:&str,
         observed_engine_starts_during_turn:None,
         observed_engine_starts_since_host_start:None,
         model_ref:None,backend_family:None,context_limit_tokens:None,
+        queue_published:None,admitted_image_count:None,
         queue_wait_ms:None,context_assembly_ms:None,
         model_dispatch_to_first_chunk_ms:None,
         turn_to_first_chunk_ms:None,turn_to_first_webview_forward_ms:None,
@@ -171,6 +175,10 @@ impl ModelTrace{
     }
     pub fn cache_scope_admitted(&mut self,admitted:bool){
         self.row.cache_scope_admitted=Some(admitted);
+    }
+    pub fn admission_publication(&mut self,published:bool,image_count:usize){
+        self.row.queue_published=Some(published);
+        self.row.admitted_image_count=Some(image_count.min(u32::MAX as usize) as u32);
     }
     pub fn queued(&mut self){self.queue_entered=Instant::now();}
     pub fn acquired_slot(&mut self){

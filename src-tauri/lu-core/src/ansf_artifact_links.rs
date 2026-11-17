@@ -6,7 +6,7 @@
 //! A host resolves an opaque artifact ID and supplies an already-open file
 //! handle for bounded presence and integrity checking.
 use crate::ansf::{AnsfError,AnsfStore};
-use rusqlite::{params,Connection,OptionalExtension};
+use rusqlite::{params,Connection,OptionalExtension,Transaction};
 use sha2::{Digest,Sha256};
 use std::{fs::File,io::{Read,Seek,SeekFrom}};
 
@@ -84,9 +84,19 @@ impl AnsfStore {
     /// Duplicate replay is idempotent but an altered reference is refused.
     /// This function never opens, copies, downloads or executes an artifact.
     pub fn append_artifact_link(&self,link:&ArtifactLink)->Result<(),AnsfError>{
-        if !validate(link){return Err(AnsfError::InvalidInput)}
         let mut conn=self.conn.lock().map_err(|_|AnsfError::Locked)?;
         let tx=conn.transaction()?;
+        insert_artifact_link(&tx,link)?;
+        tx.commit()?;
+        Ok(())
+    }
+}
+
+/// Shared transaction primitive: caller owns the original event transaction.
+/// Existing callers keep their normal standalone append semantics.
+pub(crate) fn insert_artifact_link(tx:&Transaction<'_>,link:&ArtifactLink)
+    ->Result<(),AnsfError>{
+        if !validate(link){return Err(AnsfError::InvalidInput)}
         let actual_session:Option<String>=tx.query_row(
             "SELECT session_id FROM ansf_entries WHERE id=?1",
             [link.entry_id],
@@ -121,9 +131,9 @@ impl AnsfStore {
                     link.display_name,link.media_type,
                     link.expected_bytes.map(|n|n as i64),link.expected_sha256],
         )?;
-        tx.commit()?;
         Ok(())
-    }
+}
+impl AnsfStore {
     /// Only returns metadata and opaque IDs. The trusted host independently
     /// authorizes and probes the referenced external object when needed.
     pub fn artifact_links_for_entry(

@@ -6,6 +6,18 @@
 //! The host owns identity issuance, profile/ownership validation and dispatch.
 use rusqlite::{params,Connection,OptionalExtension};
 use crate::ansf::{AnsfError,AnsfStore,Entry};
+use crate::ansf_artifact_links::{ArtifactLink,insert_artifact_link};
+
+/// Metadata for an immutable external object that the host has independently
+/// admitted, staged and verified. This is never a path, file handle or grant.
+#[derive(Debug,Clone,PartialEq,Eq)]
+pub struct NewTurnArtifact {
+    pub artifact_id:String,
+    pub display_name:String,
+    pub media_type:String,
+    pub expected_bytes:u64,
+    pub expected_sha256:String,
+}
 
 pub const MAX_LIVE_TEXT_BYTES:usize=2*1024*1024;
 pub const MAX_LIVE_EVENTS_PAGE:usize=100;
@@ -264,19 +276,39 @@ impl AnsfStore{
     /// imported transcripts or generic MCP calls.
     pub fn append_host_chat_event(&self,session_id:&str,event:&LiveEvent)
         ->Result<StoredLiveEvent,AnsfError>{
-        self.append_live_chat_event(session_id,event,LiveOrigin::HostAuthenticated,false)
+        self.append_live_chat_event(session_id,event,LiveOrigin::HostAuthenticated,false,&[])
+    }
+
+    /// Commit an authenticated original user event and its exact external
+    /// artifact references in ONE book transaction. The host must verify
+    /// and durably stage bytes before calling; metadata alone grants no read.
+    /// This is not the draft registry, byte store or ordered model manifest.
+    pub fn append_host_chat_event_with_artifacts(
+        &self,session_id:&str,event:&LiveEvent,artifacts:&[NewTurnArtifact]
+    )->Result<StoredLiveEvent,AnsfError>{
+        self.append_live_chat_event(session_id,event,LiveOrigin::HostAuthenticated,false,artifacts)
     }
     /// Boundary-only migration of old JSONL events. Never authenticates a
     /// historical User record, even if its source contains a generation ID.
     /// Exact replay is idempotent; same ID with changed content fails.
     pub fn import_legacy_chat_event(&self,session_id:&str,event:&LiveEvent)
         ->Result<StoredLiveEvent,AnsfError>{
-        self.append_live_chat_event(session_id,event,LiveOrigin::LegacyObserved,true)
+        self.append_live_chat_event(session_id,event,LiveOrigin::LegacyObserved,true,&[])
     }
     fn append_live_chat_event(&self,session_id:&str,event:&LiveEvent,
-        origin:LiveOrigin,idempotent:bool)->Result<StoredLiveEvent,AnsfError>{
+        origin:LiveOrigin,idempotent:bool,artifacts:&[NewTurnArtifact])->Result<StoredLiveEvent,AnsfError>{
         if !valid_session(session_id){return Err(AnsfError::InvalidInput)}
         event.validate(origin)?;
+        if !artifacts.is_empty() {
+            if origin!=LiveOrigin::HostAuthenticated || event.kind!=LiveKind::User ||
+                event.user_turn_id.is_none() || artifacts.len()>8 {
+                return Err(AnsfError::InvalidInput)
+            }
+            let mut ids=std::collections::HashSet::new();
+            if artifacts.iter().any(|a|a.expected_bytes==0||!ids.insert(a.artifact_id.as_str())){
+                return Err(AnsfError::InvalidInput)
+            }
+        }
         let mut conn=self.conn.lock().map_err(|_|AnsfError::Locked)?;
         let tx=conn.transaction()?;
         let exists:Option<StoredLiveEvent>=tx.query_row(
@@ -353,6 +385,19 @@ impl AnsfStore{
                 event.call_id,event.tool_id,origin.as_str(),source_entry_id],
         )?;
         let seq=tx.last_insert_rowid();
+        if !artifacts.is_empty(){
+            let entry_id=source_entry_id.ok_or(AnsfError::InvalidInput)?;
+            for artifact in artifacts{
+                insert_artifact_link(&tx,&ArtifactLink{
+                    session_id:session_id.to_owned(),entry_id,
+                    artifact_id:artifact.artifact_id.clone(),
+                    display_name:artifact.display_name.clone(),
+                    media_type:artifact.media_type.clone(),
+                    expected_bytes:Some(artifact.expected_bytes),
+                    expected_sha256:Some(artifact.expected_sha256.clone()),
+                })?;
+            }
+        }
         // A bounded display index points to the actual original event text.
         // Stream checkpoints update only the last-event pointer; they do not
         // duplicate megabytes of text in a second transcript.
@@ -675,6 +720,48 @@ mod tests{
         std::env::temp_dir().join(format!("lu-ansf-live-{}-{}.sqlite",
             std::process::id(),SystemTime::now()
             .duration_since(UNIX_EPOCH).unwrap().as_nanos()))
+    }
+    #[test]
+    fn original_user_and_artifact_references_commit_together_or_rollback(){
+        let db=path();
+        let artifact=NewTurnArtifact{
+            artifact_id:"asset-valid".into(),display_name:"image.png".into(),
+            media_type:"image/png".into(),expected_bytes:42,
+            expected_sha256:"a".repeat(64),
+        };
+        let entry_id;
+        {
+            let store=AnsfStore::open(&db).unwrap();
+            store.create_session("c-att","workspace","Attachments").unwrap();
+            store.start_chapter("c-att","Original").unwrap();
+            let mut invalid=artifact.clone();
+            invalid.artifact_id="asset-invalid".into();
+            invalid.expected_sha256="bad".into();
+            let user=event(1,LiveKind::User,"Inspect both",Some(2),None);
+            assert!(store.append_host_chat_event_with_artifacts(
+                "c-att",&user,&[artifact.clone(),invalid]).is_err());
+            assert!(store.authenticated_chat_turn("c-att",&format!("g-{:032x}",2))
+                .unwrap().is_none());
+            assert!(store.live_chat_events_after("c-att",0,20).unwrap().is_empty());
+            assert!(store.append_host_chat_event_with_artifacts(
+                "c-att",&user,&[artifact.clone(),artifact.clone()]).is_err());
+            entry_id=store.append_host_chat_event_with_artifacts(
+                "c-att",&user,&[artifact.clone()]).unwrap().source_entry_id.unwrap();
+            assert!(store.append_host_chat_event_with_artifacts(
+                "c-att",&event(3,LiveKind::AssistantFinal,"Answer",None,None),
+                &[artifact.clone()]).is_err());
+        }
+        {
+            let store=AnsfStore::open(&db).unwrap();
+            let links=store.artifact_links_for_entry("c-att",entry_id).unwrap();
+            assert_eq!(links.len(),1);
+            assert_eq!(links[0].artifact_id,artifact.artifact_id);
+            assert_eq!(links[0].expected_sha256,Some(artifact.expected_sha256));
+            assert_eq!(store.authenticated_chat_turn("c-att",&format!("g-{:032x}",2))
+                .unwrap(),Some(("Inspect both".into(),entry_id)));
+            assert!(store.artifact_links_for_entry("c-other",entry_id).unwrap().is_empty());
+        }
+        let _=fs::remove_file(db);
     }
     #[test]
     fn all_live_messages_and_stream_completion_survive_restart(){

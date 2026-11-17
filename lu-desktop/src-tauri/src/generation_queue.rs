@@ -124,6 +124,21 @@ impl GenerationQueue {
         generation_id: &str,
         class: TurnClass,
     ) -> Result<(Ticket, usize), String> {
+        self.enqueue_with_class_committing(session_id, chat_id, generation_id, class, || Ok(()))
+    }
+
+    /// Validate capacity and ownership before the canonical write, then publish
+    /// the job under the same scheduler mutex. A failed write cannot leave a
+    /// visible queue job. Like commit_completed, the closure must be a bounded
+    /// host journal write only; never call back into this queue or run inference.
+    pub fn enqueue_with_class_committing(
+        self: &Arc<Self>,
+        session_id: &str,
+        chat_id: &str,
+        generation_id: &str,
+        class: TurnClass,
+        commit: impl FnOnce() -> Result<(), String>,
+    ) -> Result<(Ticket, usize), String> {
         let mut state = self.state.lock().map_err(|_| "generation queue poisoned")?;
         if state.jobs.len() >= MAX_JOBS {
             return Err("generation queue full (8 turns maximum)".into());
@@ -142,6 +157,9 @@ impl GenerationQueue {
         if state.jobs.values().any(|j| j.session_id != session_id) {
             return Err("generation queue belongs to a different model session".into());
         }
+        // No queue snapshot, cancellation target or worker can observe the
+        // candidate before the host's durable admission callback succeeds.
+        commit()?;
         state.jobs.insert(
             generation_id.into(),
             Job {
@@ -410,6 +428,27 @@ impl Drop for Ticket {
 mod tests {
     use super::*;
     use std::{sync::mpsc, thread, time::Duration};
+    #[test]
+    fn admission_failure_never_publishes_or_consumes_capacity() {
+        let q = Arc::new(GenerationQueue::default());
+        let result = q.enqueue_with_class_committing("s", "c", "g", TurnClass::Foreground,
+            || Err("journal write rejected".into()));
+        assert!(result.is_err());
+        assert!(!q.has_jobs());
+        assert!(q.reconnect_snapshot("s", "c").unwrap().is_none());
+        assert!(q.cancel("s", "g").is_err());
+        let (ticket, _) = q.enqueue("s", "c", "g2").unwrap();
+        ticket.wait_for_slot().unwrap();
+    }
+    #[test]
+    fn conflicting_admission_never_invokes_durable_write() {
+        let q = Arc::new(GenerationQueue::default());
+        let (_ticket, _) = q.enqueue("s", "c", "g").unwrap();
+        let mut called = false;
+        assert!(q.enqueue_with_class_committing("s", "c", "g2", TurnClass::Foreground,
+            || { called = true; Ok(()) }).is_err());
+        assert!(!called);
+    }
     #[test]
     fn final_journal_commit_is_ordered_against_cancellation(){
         let q=Arc::new(GenerationQueue::default());
