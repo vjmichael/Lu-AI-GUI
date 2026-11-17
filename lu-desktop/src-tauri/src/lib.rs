@@ -5168,29 +5168,16 @@ async fn generate_internal(
         .with_background_origin(origin==GenerationOrigin::BackgroundTerminal);
     perf_trace.queued();
     let supervisor = Arc::clone(&state.supervisor);
-    // Admission is bounded and host-owned. Queue publication becomes
-    // visible only after the original journal/continuation checks succeed.
-    let admission = state.generation_queue.enqueue_with_class_committing(
-        &session_id, &chat_id, &generation_id,
-        match origin {
-            GenerationOrigin::Human => TurnClass::Foreground,
-            GenerationOrigin::BackgroundTerminal => TurnClass::Background,
-        },
-        || {
-            if origin==GenerationOrigin::Human{
-                state.chats.append_user_with_turn_id(&chat_id,&generation_id,&prompt)?;
-            }else{
-                // Retain the existing background authorization checks.
-                if !state.background_tasks.auto_continue_enabled(&chat_id)
-                    .map_err(|_|"Background continuation policy unavailable")?
-                  ||state.background_tasks.pending_notices_for_workspace(&chat_id,1)
-                    .map_err(|_|"Background notification store unavailable")?.is_empty(){
-                    return Err("No authorized pending background completion".into());
-                }
-                state.chats.history(&chat_id)?;
-            }
-            Ok(())
-        });
+    // CP-01A: publish a human queue reservation only after its bounded
+    // original journal write succeeds. Background authorization/history reads
+    // retain the existing ordering and do not run under the scheduler mutex.
+    let admission = match origin {
+        GenerationOrigin::Human => state.generation_queue.enqueue_with_class_committing(
+            &session_id, &chat_id, &generation_id, TurnClass::Foreground,
+            || state.chats.append_user_with_turn_id(&chat_id,&generation_id,&prompt)),
+        GenerationOrigin::BackgroundTerminal => state.generation_queue.enqueue_with_class(
+            &session_id, &chat_id, &generation_id, TurnClass::Background),
+    };
     let (ticket, position) = match admission {
         Ok(value) => {
             perf_trace.admission_publication(true, images.len());
@@ -5204,6 +5191,17 @@ async fn generate_internal(
             return Err(error);
         }
     };
+    if origin==GenerationOrigin::BackgroundTerminal{
+        // Native auto-continuation can only run for a previously granted
+        // conversation with a still-unacknowledged terminal task event.
+        if !state.background_tasks.auto_continue_enabled(&chat_id)
+            .map_err(|_|"Background continuation policy unavailable")?
+          ||state.background_tasks.pending_notices_for_workspace(&chat_id,1)
+            .map_err(|_|"Background notification store unavailable")?.is_empty(){
+            return Err("No authorized pending background completion".into());
+        }
+        state.chats.history(&chat_id)?;
+    }
     let queued = GenerationEvent {
         chat_id: chat_id.clone(),
         generation_id: generation_id.clone(),
