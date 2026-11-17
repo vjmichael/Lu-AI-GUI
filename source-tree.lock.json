@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "bc9a38a8f4b1bc7490c0aa6a21b56da4ba34447e",
-  "trackedFileCount": 1079,
+  "sourceCommitBeforeLock": "e56e4e5f6ff60f41108f37465565d696927d59e7",
+  "trackedFileCount": 1081,
   "files": [
     {
       "path": ".github/pull_request_template.md",
@@ -741,7 +741,7 @@
     },
     {
       "path": "docs/LU_DEVELOPMENT_LEDGER.md",
-      "blob": "85d3fe36cb85021482dc7aa9489fe9cec7a5c3ee"
+      "blob": "34704c6a8812333789b451890b2236da268e0690"
     },
     {
       "path": "docs/LU_E1_NATIVE_EVIDENCE_20261107.md",
@@ -1429,7 +1429,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/ansf_chat_store.rs",
-      "blob": "4321c0ecff63554b9ec2c9a166be1f26b7b1f497"
+      "blob": "9e1db5a7ccf25943091afffba227ed92364bef6b"
     },
     {
       "path": "lu-desktop/src-tauri/src/ansf_migration.rs",
@@ -1533,7 +1533,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/lib.rs",
-      "blob": "258fa8de47a1138a0b985c6e1a9725ff8eb79ec4"
+      "blob": "d49661a31ced4c91b3919a07dce8fd3885b7dcd8"
     },
     {
       "path": "lu-desktop/src-tauri/src/load_trace.rs",
@@ -1864,6 +1864,10 @@
       "blob": "bb90df9ab4f6e2385464aa6ac6f519963285edaa"
     },
     {
+      "path": "lu-desktop/tests/cp01-submission-lifecycle.test.mjs",
+      "blob": "a87986d7862680877c96f07a0ed6f64629084d33"
+    },
+    {
       "path": "lu-desktop/tests/filesystem-discovery.test.mjs",
       "blob": "7e53d32f4bfb49963712186387cb08e6f1176013"
     },
@@ -1917,7 +1921,7 @@
     },
     {
       "path": "lu-desktop/tests/m3-scroll-geometry.test.mjs",
-      "blob": "e9a5ab00232bee2f3be023a34013ed60a347b143"
+      "blob": "4c736b9eb2ba17fd4832b0d99fdc7c52bc76173e"
     },
     {
       "path": "lu-desktop/tests/m3-semantic-contract.test.mjs",
@@ -1925,7 +1929,7 @@
     },
     {
       "path": "lu-desktop/tests/m3-windowed-chat.test.mjs",
-      "blob": "83d2863f681dd5d1d6f14b0d248e711be9e65337"
+      "blob": "28be88f85539608d37f3a3e331b65ca3f4e3bd04"
     },
     {
       "path": "lu-desktop/tests/m3-windows-physical-contract.test.mjs",
@@ -2129,11 +2133,11 @@
     },
     {
       "path": "lu-desktop/tests/r17-interface.test.mjs",
-      "blob": "5f7a2ff0b8fc2d326e3e030d03f4e6289e6b6935"
+      "blob": "ebbaf4afe904acc8d41e9b0c10b4377bcdbdf3f3"
     },
     {
       "path": "lu-desktop/tests/r18-queue.test.mjs",
-      "blob": "00f537a4a44a4a29943e5a774eec7282f4469cdf"
+      "blob": "a16522826deee7bf9e57f750432867a8115ce1bd"
     },
     {
       "path": "lu-desktop/tests/r19-desktop-ux.test.mjs",
@@ -2141,7 +2145,7 @@
     },
     {
       "path": "lu-desktop/tests/r20-markdown-attachments.test.mjs",
-      "blob": "ccc922f74c81d5104db8d194e827af38f0a818b6"
+      "blob": "850fca4342ade54753f5dd2a84fe8dbfd0237a8f"
     },
     {
       "path": "lu-desktop/tests/r20-markdown-render.jsx",
@@ -2157,7 +2161,7 @@
     },
     {
       "path": "lu-desktop/tests/reader-desktop.test.mjs",
-      "blob": "b08e41c795ee1a5216dff0d0a42776961612d48a"
+      "blob": "1f361be1fbd3ff986b2b4843a7affa762d2f1875"
     },
     {
       "path": "lu-desktop/tests/research-citation-enforcement.test.mjs",
@@ -2289,7 +2293,7 @@
     },
     {
       "path": "lu-desktop/web/main.jsx",
-      "blob": "92f4144a0555755caca308eb90c22c04942b459c"
+      "blob": "16cee0451411865db300b3a83f1a44615b10fe61"
     },
     {
       "path": "lu-desktop/web/markdown_view.jsx",
@@ -2329,7 +2333,11 @@
     },
     {
       "path": "lu-desktop/web/styles.css",
-      "blob": "db546bd9675878b25818fadc533d2943682a3c7c"
+      "blob": "d4d273bc0c48016a5787d52a1d93ab14c7b1ad67"
+    },
+    {
+      "path": "lu-desktop/web/submission_lifecycle.mjs",
+      "blob": "86692bc00a9f63fa7fbddcb43288c5edb18cd497"
     },
     {
       "path": "lu-desktop/web/task_board.jsx",
@@ -2853,7 +2861,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/ansf_image_attachments.rs",
-      "blob": "8d8d1789054ec9a83c8db418b0deb57c9b5858c4"
+      "blob": "1c45aed344502bd2413329e25de731cb23263f1d"
     },
     {
       "path": "src-tauri/lu-core/src/ansf_import.rs",
