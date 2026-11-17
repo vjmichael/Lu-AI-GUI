@@ -7,6 +7,7 @@
 use rusqlite::{params,Connection,OptionalExtension};
 use crate::ansf::{AnsfError,AnsfStore,Entry};
 use crate::ansf_artifact_links::{ArtifactLink,insert_artifact_link};
+use crate::ansf_image_attachments::{ImageAttachment,bind_draft};
 
 /// Metadata for an immutable external object that the host has independently
 /// admitted, staged and verified. This is never a path, file handle or grant.
@@ -276,7 +277,7 @@ impl AnsfStore{
     /// imported transcripts or generic MCP calls.
     pub fn append_host_chat_event(&self,session_id:&str,event:&LiveEvent)
         ->Result<StoredLiveEvent,AnsfError>{
-        self.append_live_chat_event(session_id,event,LiveOrigin::HostAuthenticated,false,&[])
+        self.append_live_chat_event(session_id,event,LiveOrigin::HostAuthenticated,false,&[],None)
     }
 
     /// Commit an authenticated original user event and its exact external
@@ -286,17 +287,24 @@ impl AnsfStore{
     pub fn append_host_chat_event_with_artifacts(
         &self,session_id:&str,event:&LiveEvent,artifacts:&[NewTurnArtifact]
     )->Result<StoredLiveEvent,AnsfError>{
-        self.append_live_chat_event(session_id,event,LiveOrigin::HostAuthenticated,false,artifacts)
+        self.append_live_chat_event(session_id,event,LiveOrigin::HostAuthenticated,false,artifacts,None)
+    }
+    /// Original event, ordered image manifest and ordinary artifact links
+    /// commit together. The native caller has verified the external bytes.
+    pub fn append_host_chat_event_with_image_draft(
+        &self,session_id:&str,event:&LiveEvent,expected:&[ImageAttachment]
+    )->Result<StoredLiveEvent,AnsfError>{
+        self.append_live_chat_event(session_id,event,LiveOrigin::HostAuthenticated,false,&[],Some(expected))
     }
     /// Boundary-only migration of old JSONL events. Never authenticates a
     /// historical User record, even if its source contains a generation ID.
     /// Exact replay is idempotent; same ID with changed content fails.
     pub fn import_legacy_chat_event(&self,session_id:&str,event:&LiveEvent)
         ->Result<StoredLiveEvent,AnsfError>{
-        self.append_live_chat_event(session_id,event,LiveOrigin::LegacyObserved,true,&[])
+        self.append_live_chat_event(session_id,event,LiveOrigin::LegacyObserved,true,&[],None)
     }
     fn append_live_chat_event(&self,session_id:&str,event:&LiveEvent,
-        origin:LiveOrigin,idempotent:bool,artifacts:&[NewTurnArtifact])->Result<StoredLiveEvent,AnsfError>{
+        origin:LiveOrigin,idempotent:bool,artifacts:&[NewTurnArtifact],draft:Option<&[ImageAttachment]>)->Result<StoredLiveEvent,AnsfError>{
         if !valid_session(session_id){return Err(AnsfError::InvalidInput)}
         event.validate(origin)?;
         if !artifacts.is_empty() {
@@ -308,6 +316,10 @@ impl AnsfStore{
             if artifacts.iter().any(|a|a.expected_bytes==0||!ids.insert(a.artifact_id.as_str())){
                 return Err(AnsfError::InvalidInput)
             }
+        }
+        if draft.is_some() && (origin!=LiveOrigin::HostAuthenticated ||
+            event.kind!=LiveKind::User || event.user_turn_id.is_none() || !artifacts.is_empty()){
+            return Err(AnsfError::InvalidInput)
         }
         let mut conn=self.conn.lock().map_err(|_|AnsfError::Locked)?;
         let tx=conn.transaction()?;
@@ -397,6 +409,10 @@ impl AnsfStore{
                     expected_sha256:Some(artifact.expected_sha256.clone()),
                 })?;
             }
+        }
+        if let Some(expected)=draft{
+            bind_draft(&tx,session_id,event.user_turn_id.as_deref().ok_or(AnsfError::InvalidInput)?,
+                source_entry_id.ok_or(AnsfError::InvalidInput)?,expected)?;
         }
         // A bounded display index points to the actual original event text.
         // Stream checkpoints update only the last-event pointer; they do not

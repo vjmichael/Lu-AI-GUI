@@ -180,6 +180,7 @@ impl AnsfStore {
         crate::ansf_goals::initialize_goal_schema(&conn)?;
         crate::ansf_artifact_links::initialize_artifact_schema(&conn)?;
         crate::ansf_live_chat::initialize_live_chat_schema(&conn)?;
+        crate::ansf_image_attachments::initialize_image_attachment_schema(&conn)?;
         crate::ansf_goal_records::initialize_goal_record_schema(&conn)?;
         crate::ansf_semantic::initialize_semantic_schema(&conn)?;
         Ok(Self {

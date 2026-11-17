@@ -34,6 +34,7 @@ pub mod ansf_verified_procedures;
 pub mod ansf_belief_revision;
 pub mod ansf_embedding_worker;
 pub mod ansf_artifact_links;
+pub mod ansf_image_attachments;
 pub mod ansf_goals;
 pub mod ansf_import;
 pub mod ansf_library;
