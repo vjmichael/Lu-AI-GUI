@@ -17,6 +17,7 @@ mod host_clock;
 mod perf01_router;
 mod perf01_telemetry;
 mod causal_diagnostic;
+mod diagnostic_archive;
 use causal_diagnostic::Checkpoint as CausalCheckpoint;
 mod vision_context;
 mod observe_desktop;
@@ -1319,7 +1320,10 @@ impl DesktopState {
             inference_profiles,
             model_profile_admission:Mutex::new(()),
             chats,
-            perf01:perf01_telemetry::PerfLedger::default(),
+            perf01:perf01_telemetry::PerfLedger::with_archive(
+                diagnostic_archive::DiagnosticArchive::open(&root.join("lu-dx-traces.sqlite"))
+                    .ok().map(Arc::new)
+            ),
             operational_assets:lu_core::operational_asset_ledger::OperationalAssetLedger::open(
                 &root.join("lu-operational-assets.sqlite")
             ).map_err(|e|format!("Operational asset ledger unavailable: {e:?}"))?,
@@ -1988,6 +1992,7 @@ struct ImageSubmissionResult{
     error:Option<String>,
     // A random, ephemeral host correlation reference, not a capability.
     diagnostic_ref:Option<String>,
+    assistant_seq:Option<i64>,
 }
 /// A successful IPC response establishes that this particular invocation
 /// returned, even on native admission or inference failure. Transport failure
@@ -2002,6 +2007,9 @@ async fn lu_submit_image_turn(app:AppHandle,state:State<'_,Arc<DesktopState>>,
     let count=image_refs.len();
     if image_refs.is_empty(){return Err("An image submission requires an image".into())}
     let diagnostic_ref=next_id("");
+    if let Some(archive)=owner.perf01.archive(){
+        let _=archive.persist(&causal_diagnostic::CausalProgress::new(diagnostic_ref.clone(),started));
+    }
     let result=lu_generate_impl(app,state,session_id,chat_id.clone(),prompt,image_refs,
         512,Some(false),Some(false),Some(submission_id.clone()),
         Some((diagnostic_ref.clone(),started))).await;
@@ -2012,7 +2020,7 @@ async fn lu_submit_image_turn(app:AppHandle,state:State<'_,Arc<DesktopState>>,
         // recorder was available. A prior same-nonce attempt is not evidence.
         let mut trace=perf01_telemetry::ModelTrace::new(&chat_id,&gid,started,
             owner.supervisor.status().is_ok_and(|s|s.session_id.is_some()))
-            .with_cp01_trace(diagnostic_ref.clone(),started);
+            .with_cp01_trace(diagnostic_ref.clone(),started,owner.perf01.archive());
         trace.image_stage("BEFORE_QUEUE");
         if receipt.rejected{
             trace.causal_refused();
@@ -2043,7 +2051,11 @@ async fn lu_submit_image_turn(app:AppHandle,state:State<'_,Arc<DesktopState>>,
     };
     let diagnostic_ref=owner.perf01.exact_causal_turn(&chat_id,&gid,&diagnostic_ref)
         .map(|_|diagnostic_ref);
-    Ok(ImageSubmissionResult{receipt,outcome,error,diagnostic_ref})
+    let assistant_seq=if outcome=="completed"{
+        owner.chats.require(&chat_id).ok().and_then(|book|
+            book.authenticated_completed_assistant_seq(&chat_id,&gid).ok().flatten())
+    }else{None};
+    Ok(ImageSubmissionResult{receipt,outcome,error,diagnostic_ref,assistant_seq})
 }
 
 /// The renderer reports receipt of this *exact* native image result after
@@ -2051,7 +2063,8 @@ async fn lu_submit_image_turn(app:AppHandle,state:State<'_,Arc<DesktopState>>,
 /// durable completion, or worker termination is accepted.
 #[tauri::command]
 fn lu_cp01_reply_observed(caller:tauri::WebviewWindow,state:State<'_,Arc<DesktopState>>,
-    chat_id:String,submission_id:String,generation_id:String,diagnostic_ref:String)->Result<bool,String>{
+    chat_id:String,submission_id:String,generation_id:String,diagnostic_ref:String,
+    assistant_seq:Option<i64>)->Result<bool,String>{
     if caller.label()!="main" {return Ok(false)}
     if diagnostic_ref.len()!=32||!diagnostic_ref.bytes().all(|b|
         b.is_ascii_digit()||(b'a'..=b'f').contains(&b)){return Ok(false)}
@@ -2062,7 +2075,30 @@ fn lu_cp01_reply_observed(caller:tauri::WebviewWindow,state:State<'_,Arc<Desktop
         .map_err(|_|"Diagnostic receipt unavailable")?.is_none(){
         return Ok(false)
     }
-    Ok(state.perf01.observe_cp01_reply(&chat_id,&generation_id,&diagnostic_ref))
+    // A layout-commit report must match the exact final original reply.
+    if let Some(seq)=assistant_seq{
+        if seq<=0||book.authenticated_completed_assistant_seq(&chat_id,&generation_id)
+            .map_err(|_|"Diagnostic receipt unavailable")?!=Some(seq){return Ok(false)}
+    }
+    Ok(state.perf01.observe_cp01_reply(&chat_id,&generation_id,&diagnostic_ref,
+        assistant_seq.is_some()))
+}
+/// Optional local support report. Nothing is automatically transferred,
+/// copied, repaired, executed or disclosed by the native host.
+#[tauri::command]
+async fn lu_cp01_diagnostic_report(app:AppHandle,caller:tauri::WebviewWindow,
+    state:State<'_,Arc<DesktopState>>)->Result<Option<diagnostic_archive::ArchiveReport>,String>{
+    if !matches!(caller.label(),"main"|"settings"){return Ok(None)}
+    let archive=state.perf01.archive().ok_or("Local response diagnostics unavailable")?;
+    tauri::async_runtime::spawn_blocking(move||{
+        let approved=app.dialog().message(
+            "Prepare a local troubleshooting report? It contains only bounded response checkpoints, timing and failure categories, not conversations, images, model names or file paths. Nothing is sent anywhere."
+        ).title("Lu — Troubleshooting")
+         .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom(
+             "Prepare report".into(),"Cancel".into())).blocking_show();
+        if !approved{return Ok(None)}
+        archive.report().map(Some)
+    }).await.map_err(|_|"Troubleshooting report unavailable")?
 }
 /// Explicitly copy exact ordinary saved images into an EMPTY draft with
 /// new host handles. No inference, permission replay, overwriting a draft,
@@ -5570,7 +5606,7 @@ async fn generate_internal(
     ).with_model(runtime.model_ref.clone())
         .with_background_origin(origin==GenerationOrigin::BackgroundTerminal);
     if let Some((trace_ref,started))=cp01_trace{
-        perf_trace=perf_trace.with_cp01_trace(trace_ref,started);
+        perf_trace=perf_trace.with_cp01_trace(trace_ref,started,state.perf01.archive());
         perf_trace.causal_checkpoint(CausalCheckpoint::SessionReady);
     }
     perf_trace.queued();
@@ -5624,6 +5660,7 @@ async fn generate_internal(
     (manifest,images,perf_trace,supervisor,generation_id,request_id,
         observed_engine_starts_before,ticket,position)
     };
+    perf_trace.persist_cp01();
     let queued = GenerationEvent {
         chat_id: chat_id.clone(),
         generation_id: generation_id.clone(),
@@ -9787,6 +9824,7 @@ pub fn run() {
             lu_native_route_catalog,
             lu_perf01_recent,
             lu_cp01_reply_observed,
+            lu_cp01_diagnostic_report,
             project_discovery_desktop::lu_project_discover,
             project_evidence_desktop::lu_project_evidence_graph,
             project_status_desktop::lu_project_classify,

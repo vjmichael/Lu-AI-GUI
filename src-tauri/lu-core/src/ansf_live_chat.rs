@@ -638,6 +638,35 @@ impl AnsfStore{
             |r|Ok((r.get(0)?,r.get(1)?))
         ).optional().map_err(Into::into)
     }
+    /// Exact final assistant display row for the original host-authenticated
+    /// human turn. Never match response text or the latest conversation row.
+    pub fn authenticated_completed_assistant_seq(
+        &self,session_id:&str,turn_id:&str
+    )->Result<Option<i64>,AnsfError>{
+        if !valid_session(session_id)||!opaque(turn_id,"g-"){
+            return Err(AnsfError::InvalidInput)
+        }
+        let conn=self.conn.lock().map_err(|_|AnsfError::Locked)?;
+        conn.query_row(
+            "SELECT d.first_seq FROM ansf_visible_chat d
+             JOIN ansf_live_chat_events e ON e.seq=d.latest_event_seq
+               AND e.session_id=d.session_id AND e.generation_id=d.generation_id
+             WHERE d.session_id=?1 AND d.generation_id=?2 AND d.role='assistant'
+               AND d.status='final' AND e.kind='assistant_progress' AND e.origin='host'
+               AND length(e.text)>0
+               AND EXISTS(SELECT 1 FROM ansf_live_chat_events u
+                 WHERE u.session_id=d.session_id AND u.user_turn_id=?2
+                   AND u.kind='user' AND u.origin='host' AND u.source_entry_id IS NOT NULL
+                   AND u.seq<d.first_seq)
+               AND EXISTS(SELECT 1 FROM ansf_live_chat_events c
+                 WHERE c.session_id=d.session_id AND c.generation_id=?2
+                   AND c.kind='assistant_completed' AND c.origin='host' AND c.seq>e.seq)
+               AND NOT EXISTS(SELECT 1 FROM ansf_live_chat_events x
+                 WHERE x.session_id=d.session_id AND x.generation_id=?2
+                   AND x.kind='assistant_cancelled')",
+            params![session_id,turn_id],|r|r.get(0)
+        ).optional().map_err(Into::into)
+    }
     /// Indexed latest human-origin authenticated user turn. No imported,
     /// unauthenticated or Reader event ever appears in this result.
     /// MEMORY-LOOP-02: select only earlier host-authenticated human turns
