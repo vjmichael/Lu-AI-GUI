@@ -682,3 +682,9 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .taskTabPage>.nativeWindowRoot{flex:1;height:auto;min-height:0}
 .taskTabPage .backgroundPaneList{padding:16px clamp(18px,5vw,80px)}
 @media(max-width:760px){.luTopTabs button{padding:9px 10px;font-size:12px}.simpleHistory{padding:14px}}
+
+/* CP-01C: immutable saved attachment chips, no engineering controls. */
+.savedAttachments{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:8px}
+.savedAttachments .attachment{max-width:100%;overflow-wrap:anywhere}
+.savedImageDialog>img{display:block;max-width:100%;max-height:72vh;object-fit:contain;margin:auto}
+.submissionNotice{display:flex;flex-wrap:wrap;gap:8px;align-items:center;font-size:.9rem;padding:8px 0}

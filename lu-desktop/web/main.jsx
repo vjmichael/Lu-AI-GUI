@@ -14,6 +14,7 @@ import {isPotentialImage, normalizedImageFile} from './image_attachment_input.mj
 import {stagedImageDimensions,REGION_IMAGE_OPERATIONS,
   imagePointerPixel,imageDragRectangle} from './image_assembly_geometry.mjs';
 import {queuedJob, startedJob, tokenForJob, resumedJob, removeJob} from './generation_jobs.mjs';
+import {submissionNonce,snapshotDraft,receiptDecision,clearSubmittedDraft,emptyDraft,removeOwnedJob} from './submission_lifecycle.mjs';
 import {nearTranscriptBottom, restoredScrollTop, isSendKey, isSearchKey, isNewChatKey, matchesChatTitle} from './chat_ui_behavior.mjs';
 import {MAX_HISTORY_ROWS,mergeHistoryWindow,captureHistoryAnchor,restoreHistoryAnchor} from './history_window_geometry.mjs';
 import {MESSAGE_REACTIONS,DEFAULT_APPEARANCE,CHAT_APPEARANCE_PRESETS,safeAppearance,textForBackground,visibleReactionBySeq} from './message_interactions.mjs';
@@ -982,6 +983,11 @@ function App() {
   const pendingDrafts = useRef(new Map());
   const attachmentChatCreation = useRef(null);
   const imageRefreshSequence = useRef(new Map());
+  const pendingSends=useRef(new Map());
+  const draftMutations=useRef(new Set());
+  const [,setSubmissionRevision]=useState(0);
+  const [savedImagePreview,setSavedImagePreview]=useState(null);
+  const savedPreviewSequence=useRef(0);
   const draftText = useRef('');
   const draftImages = useRef([]);
   const draftFiles = useRef([]);
@@ -1008,6 +1014,29 @@ function App() {
   const visibleJob = chatId ? jobs[chatId] : null;
   const visibleStream = visibleJob?.text ?? '';
   const chatBusy = Boolean(visibleJob);
+  const composerKey=chatId||'new';
+  const visibleAttempt=pendingSends.current.get(composerKey);
+  const composerLocked=Boolean(visibleAttempt&&!visibleAttempt.admitted);
+  const composerMutating=draftMutations.current.has(composerKey);
+  function refreshComposerState(){setSubmissionRevision(n=>n+1);}
+  function readComposerDraft(key){
+    return key===(currentChat.current||'new')
+      ? {prompt:draftText.current,images:draftImages.current,files:draftFiles.current}
+      : pendingDrafts.current.get(key)||{prompt:'',images:[],files:[]};
+  }
+  function writeComposerDraft(key,draft){
+    pendingDrafts.current.set(key,draft);
+    if(key===(currentChat.current||'new')){
+      draftText.current=draft.prompt;draftImages.current=draft.images;draftFiles.current=draft.files;
+      setPrompt(draft.prompt);setImages(draft.images);setTextFiles(draft.files);
+    }
+  }
+  function lockedDraft(key){const attempt=pendingSends.current.get(key);return Boolean(attempt&&!attempt.admitted);}
+  function beginDraftMutation(key){
+    if(lockedDraft(key)||draftMutations.current.has(key))return false;
+    draftMutations.current.add(key);refreshComposerState();return true;
+  }
+  function endDraftMutation(key){draftMutations.current.delete(key);refreshComposerState();}
   const activeBackgroundTasks=backgroundTasks.filter(task=>
     ['PENDING','QUEUED','RUNNING','PAUSED'].includes(task.state));
   const shownBackgroundTasks=backgroundFilter==='active'
@@ -2307,6 +2336,7 @@ function App() {
     const entries = await loadRememberedUiHistory(id);
     if (requestedChat.current !== id) return;
     currentChat.current = id;
+    savedPreviewSequence.current++;setSavedImagePreview(null);setImageViewer(null);
     const draft = pendingDrafts.current.get(id) || {prompt:'',images:[],files:[]};
     draftText.current = draft.prompt;
     draftImages.current = draft.images;
@@ -2317,7 +2347,7 @@ function App() {
     setChatId(id);
     setHistory(entries);
     setError('');
-    void refreshDraftImages(id).catch(error=>{
+    if(!lockedDraft(id))void refreshDraftImages(id).catch(error=>{
       if(currentChat.current===id)setError(String(error));
     });
     void reconcileActiveStream(id);
@@ -2337,10 +2367,12 @@ function App() {
     listen('lu-generation-queued', e => {
       if (!alive || !e.payload?.chatId) return;
       setJobs(prev => queuedJob(prev,e.payload));
+      void acknowledgeImageAttempt(e.payload.chatId,e.payload.generationId).catch(()=>{});
     }).then(fn => { if (alive) stopQueued = fn; else fn(); });
     listen('lu-generation-start', e => {
       if (!alive || !e.payload?.chatId) return;
       setJobs(prev => startedJob(prev,e.payload));
+      void acknowledgeImageAttempt(e.payload.chatId,e.payload.generationId).catch(()=>{});
     }).then(fn => { if (alive) stopStart = fn; else fn(); });
     listen('lu-browser-needs-human',e=>{
       if(!alive||!e.payload?.chatId)return;
@@ -2692,7 +2724,7 @@ function App() {
     const sequence=(imageRefreshSequence.current.get(targetChat)||0)+1;
     imageRefreshSequence.current.set(targetChat,sequence);
     const manifest=await invoke('lu_image_attachments',{chatId:targetChat,visibleSeq:null});
-    if(imageRefreshSequence.current.get(targetChat)!==sequence)return null;
+    if(imageRefreshSequence.current.get(targetChat)!==sequence||lockedDraft(targetChat))return null;
     const visible=targetChat===currentChat.current;
     const previous=visible?draftImages.current:(pendingDrafts.current.get(targetChat)?.images||[]);
     const cache=new Map([...previous,...extra].map(im=>[im.imageRef,im]));
@@ -2712,14 +2744,20 @@ function App() {
 
   function pickImage() {
     action('Choosing image', async () => {
-      const targetChat=await ensureAttachmentChat();
-      const image = await invoke('lu_pick_image',{chatId:targetChat});
-      if (image) await refreshDraftImages(targetChat,[image]);
+      const origin=currentChat.current||'new';
+      if(!beginDraftMutation(origin))return;
+      let targetChat=origin;
+      try{
+        targetChat=await ensureAttachmentChat();
+        if(targetChat!==origin){draftMutations.current.add(targetChat);refreshComposerState();}
+        const image = await invoke('lu_pick_image',{chatId:targetChat});
+        if(image)await refreshDraftImages(targetChat,[image]);
+      }finally{endDraftMutation(origin);if(targetChat!==origin)endDraftMutation(targetChat);}
     });
   }
   async function removeImage(imageRef) {
     const targetChat=currentChat.current;
-    if(!targetChat)return;
+    if(!targetChat||!beginDraftMutation(targetChat))return;
     const image=draftImages.current.find(i=>i.imageRef===imageRef);
     try{
       await invoke('lu_release_image',{chatId:targetChat,imageRef});
@@ -2727,10 +2765,11 @@ function App() {
       if(image?.previewUrl){URL.revokeObjectURL(image.previewUrl);previewUrls.current.delete(image.previewUrl);}
       await refreshDraftImages(targetChat);
     }catch(error){if(currentChat.current===targetChat)setError(String(error));}
+    finally{endDraftMutation(targetChat);}
   }
   function cancel() {
     const current = chatId && jobs[chatId];
-    if (!current?.generationId || !runtime.sessionId || current.cancelling) return;
+    if (!current?.generationId || current.phase==='submitting' || !runtime.sessionId || current.cancelling) return;
     const origin = chatId;
     setJobs(prev => ({...prev,[origin]:{...prev[origin],cancelling:true}}));
     invoke('lu_cancel', {sessionId: runtime.sessionId, generationId: current.generationId})
@@ -3034,13 +3073,14 @@ function App() {
     catch(error){setError('Could not copy this message: '+String(error))}
   }
   function reuseSavedUserPrompt(entry){
-    if(entry.role!=='user')return;
+    if(entry.role!=='user'||lockedDraft(currentChat.current||'new'))return;
     // This only populates the editable composer. It DOES NOT submit,
     // regenerate an effect, or transfer a previous turn's authority.
-    setPrompt(entry.text);
+    draftText.current=entry.text;setPrompt(entry.text);
     composerRef.current?.focus();
   }
   function quoteSavedMessage(entry){
+    if(lockedDraft(currentChat.current||'new'))return;
     const excerpt=entry.text.slice(0,1200)
       .split('\n').map(line=>'> '+line).join('\n');
     setPrompt(prev=>(prev?prev+'\n\n':'')+excerpt+'\n\n');
@@ -4069,11 +4109,127 @@ function App() {
       setJobs(prev=>removeJob(prev,activeId));
     }
   }
+  // Native original receipt, not a queue event or text comparison, consumes
+  // the submitted composer. Acknowledgment during a run permits a next draft
+  // without allowing another Send in the same conversation.
+  async function admitSavedImageAttempt(target,attempt,receipt){
+    if(pendingSends.current.get(target)!==attempt)return false;
+    if(receiptDecision(attempt,receipt)!=='saved')return false;
+    if(!attempt.admitted){
+      attempt.admitted=true;attempt.visibleSeq=receipt.visibleSeq;
+      const old=readComposerDraft(target);
+      writeComposerDraft(target,clearSubmittedDraft(old,attempt.snapshot));
+      refreshComposerState();
+      if(currentChat.current===target)setImageViewer(null);
+      await refreshDraftImages(target).catch(()=>null);
+      if(currentChat.current===target){
+        const entries=await loadLatestUiHistory(target).catch(()=>null);
+        if(entries&&currentChat.current===target)setHistory(entries);
+      }
+      // Release only ephemeral renderer preview URLs, never native bytes.
+      for(const im of attempt.snapshot.images){
+        if(im.previewUrl?.startsWith('blob:')&&!readComposerDraft(target).images.some(a=>a.previewUrl===im.previewUrl)){
+          URL.revokeObjectURL(im.previewUrl);previewUrls.current.delete(im.previewUrl);
+        }
+      }
+    }
+    return true;
+  }
+  async function acknowledgeImageAttempt(target,generationId){
+    const attempt=pendingSends.current.get(target);
+    if(!attempt?.nonce||attempt.generationId!==generationId||attempt.admitted)return;
+    const receipt=await invoke('lu_image_submission_status',{chatId:target,submissionId:attempt.nonce});
+    await admitSavedImageAttempt(target,attempt,receipt);
+  }
+  async function finishSubmission(target,attempt){
+    if(pendingSends.current.get(target)===attempt){
+      pendingSends.current.delete(target);refreshComposerState();
+    }
+    setJobs(prev=>removeOwnedJob(prev,target,attempt));
+    await refreshDraftImages(target).catch(error=>{
+      if(currentChat.current===target)setError(String(error));
+    });
+    await refreshChats().catch(error=>{if(currentChat.current===target)setError(String(error));});
+    if(currentChat.current===target){
+      const entries=await loadLatestUiHistory(target).catch(error=>{setError(String(error));return null;});
+      if(entries&&currentChat.current===target)setHistory(entries);
+    }
+    await refreshCatalog().catch(error=>{if(currentChat.current===target)setError(String(error));});
+  }
+  async function runImageAttempt(target,attempt,sessionId){
+    try{
+      const receipt=await invoke('lu_image_submission_status',{chatId:target,submissionId:attempt.nonce});
+      if(pendingSends.current.get(target)!==attempt)return;
+      if(attempt.generationId&&attempt.generationId!==receipt.generationId)throw Error('Message identity changed');
+      attempt.generationId=receipt.generationId;
+      if(await admitSavedImageAttempt(target,attempt,receipt)){
+        // Explicit recheck of a lost RPC never repeats a saved message.
+        await finishSubmission(target,attempt);
+        if(currentChat.current===target)void reconcileActiveStream(target);
+        return;
+      }
+      if(receiptDecision(attempt,receipt)==='rejected'){
+        await finishSubmission(target,attempt);return;
+      }
+      if(!sessionId)throw Error('Load a model before retrying this message');
+      attempt.uncertain=false;refreshComposerState();
+      setJobs(prev=>({...prev,[target]:{generationId:attempt.generationId,
+        submissionMarker:attempt.marker,phase:'submitting',position:0,text:''}}));
+      const result=await invoke('lu_submit_image_turn',{sessionId,chatId:target,prompt:attempt.submitted,
+        imageRefs:attempt.snapshot.images.map(i=>i.imageRef),submissionId:attempt.nonce});
+      const decision=receiptDecision(attempt,result?.receipt);
+      if(decision==='saved'){
+        await admitSavedImageAttempt(target,attempt,result.receipt);
+        if(currentChat.current===target&&result.outcome!=='completed'){
+          setError(result.outcome==='cancelled'?'Message stopped. Your original images are saved. Restore the message to try again.':
+            'Response failed. Your original images are saved. Restore the message to try again.');
+        }
+      }else if(decision==='rejected'){
+        // The native refusal fence guarantees this nonce cannot consume the
+        // retained editable draft later. Original prompt and files remain.
+        if(currentChat.current===target)setError(result.error||'Message not sent. Your draft is retained.');
+      }else{throw Error('Message receipt is not yet confirmed');}
+      await finishSubmission(target,attempt);
+    }catch(error){
+      // Transport failure does not prove a rejection. Retain exact nonce
+      // and snapshot; only an explicit recheck/retry may invoke it again.
+      if(pendingSends.current.get(target)!==attempt)return;
+      try{
+        const receipt=await invoke('lu_image_submission_status',{chatId:target,submissionId:attempt.nonce});
+        if(await admitSavedImageAttempt(target,attempt,receipt)){
+          if(currentChat.current===target)setError('Your message is saved. Checking for an active response.');
+          await finishSubmission(target,attempt);
+          if(currentChat.current===target)void reconcileActiveStream(target);
+          return;
+        }
+        if(receiptDecision(attempt,receipt)==='rejected'){
+          await finishSubmission(target,attempt);
+          if(currentChat.current===target)setError('Message not sent. Your draft is retained.');
+          return;
+        }
+      }catch(_){/* leave unresolved */}
+      attempt.uncertain=true;refreshComposerState();
+      setJobs(prev=>removeOwnedJob(prev,target,attempt));
+      if(currentChat.current===target)setError('Could not confirm whether Lu received this message. Check or retry the same message; your draft has not been discarded.');
+    }
+  }
+  async function retryUnconfirmedMessage(){
+    const target=currentChat.current;
+    const attempt=target&&pendingSends.current.get(target);
+    if(!attempt?.uncertain||attempt.checking)return;
+    attempt.checking=true;refreshComposerState();
+    try{await runImageAttempt(target,attempt,runtime.sessionId??'');}
+    finally{attempt.checking=false;refreshComposerState();}
+  }
+
   async function send(e) {
     e.preventDefault();
-    if (working || chatBusy || attachmentChatCreation.current ||
-        (!runtime.sessionId && !modelFreeClockAllowed) || !prompt.trim()) return;
-    const input = prompt.trim();
+    const origin=currentChat.current||'new';
+    if(working||jobsRef.current[origin]||pendingSends.current.has(origin)||
+       draftMutations.current.has(origin)||attachmentChatCreation.current||
+       (!runtime.sessionId&&!modelFreeClockAllowed)||!draftText.current.trim())return;
+    const snapshot=snapshotDraft(readComposerDraft(origin));
+    const input=snapshot.prompt.trim();
     const usePlanDraft=planDraftNextSend;
     const useBrowserResearch=browserResearchNextSend;
     const useReviewedApp=reviewedAppNextSend;
@@ -4107,119 +4263,108 @@ function App() {
       setError('Reviewed application tools require a text-only question no longer than 8192 characters.');return;
     }
     let submitted;
-    try { submitted = buildSubmittedPrompt(input, textFiles); }
+    try { submitted = buildSubmittedPrompt(input, snapshot.files); }
     catch (error) {setError(String(error));return;}
-    const submittedImages = [...images];
-    const refs = submittedImages.map(i => i.imageRef);
-    let activeId = chatId;
-    if (!activeId) {
-      const created = await invoke('lu_new_chat').catch(error => { setError(String(error)); return null; });
-      if (!created) return;
-      activeId = created.chatId;
-      currentChat.current = activeId;
-      setChatId(activeId);
-      setHistoryWindow({older:null,hasOlder:false,hasNewer:false});
-      setHistory([]);
+    if(snapshot.images.some(im=>im.available===false)){
+      setError('Remove or replace unavailable images before sending.');return;
     }
-    // A workspace opt-in is consumed on this Send even if the picker is
-    // denied/cancelled. No future conversation inherits a filesystem grant.
+    const attempt={snapshot,submitted,marker:submissionNonce(),
+      nonce:snapshot.images.length?submissionNonce():null,generationId:null,
+      admitted:false,uncertain:false,checking:false};
+    pendingSends.current.set(origin,attempt);refreshComposerState();
+    let activeId=origin;
+    try{
+      if(origin==='new'){
+        activeId=await ensureAttachmentChat();
+        if(pendingSends.current.get(origin)!==attempt)return;
+        pendingSends.current.delete(origin);pendingSends.current.set(activeId,attempt);
+        refreshComposerState();
+      }
+    }catch(error){
+      pendingSends.current.delete(origin);refreshComposerState();setError(String(error));return;
+    }
+    // One-shot mode flags never become retry permission. A new explicit
+    // Send is required for a failed non-image/tool request.
     if (useWorkspaceTools) setWorkspaceToolsNextSend(false);
     if (usePlanDraft) setPlanDraftNextSend(false);
     if (useBrowserResearch) setBrowserResearchNextSend(false);
     if (useReviewedApp) setReviewedAppNextSend(null);
-    setImageViewer(null);
-    // Capture the submitted turn immediately; leave the composer available
-    // for drafting the next prompt while inference runs.
-    draftText.current = '';
-    draftImages.current = [];
-    draftFiles.current = [];
-    pendingDrafts.current.set(activeId, {prompt:'',images:[],files:[]});
-    setPrompt(''); setImages([]); setTextFiles([]);
-    if (currentChat.current === activeId) {
-      setHistory(prev => [...prev, {role:'user',text:input,interrupted:false,cancelled:false}]);
+    if(currentChat.current===activeId)setError('');
+    if(attempt.nonce){
+      await runImageAttempt(activeId,attempt,runtime.sessionId??'');
+      return;
     }
-    setJobs(prev => ({...prev,[activeId]: {generationId:null,phase:'submitting',position:0,text:''}}));
-    setError('');
-    let completed = false;
-    let cancelled = false;
-    try {
-      const output = useReviewedApp
-        ? await invoke('lu_reviewed_app_ask', {
-            sessionId:runtime.sessionId,chatId:activeId,prompt:input,
-            mode:useReviewedApp
-          })
+    // Existing text-only/native routes retain their independent authority.
+    // Without a correlation receipt, keep their composer until RPC success.
+    setJobs(prev=>({...prev,[activeId]:{generationId:null,submissionMarker:attempt.marker,
+      phase:'submitting',position:0,text:''}}));
+    let completed=false;
+    try{
+      const output=useReviewedApp
+        ? await invoke('lu_reviewed_app_ask',{sessionId:runtime.sessionId,chatId:activeId,prompt:input,mode:useReviewedApp})
         : useBrowserResearch
-          ? await invoke('lu_generate_browser', {
-              sessionId:runtime.sessionId,chatId:activeId,
-              prompt:input,origins:browserOrigins,maxNewTokens:512
-            })
-          : await invoke('lu_generate', {
-            sessionId: runtime.sessionId ?? '', chatId: activeId,
-            prompt: submitted, imageRefs: refs, maxNewTokens: 512,
-            readOnlyWorkspace: useWorkspaceTools,
-            planOnly: usePlanDraft
-          });
-      if (output===null && useReviewedApp) {
-        // Native picker cancellation creates no user turn or permission.
-        cancelled = true;
-        if (currentChat.current === activeId) {
-          draftText.current=input;
-          pendingDrafts.current.set(activeId,{prompt:input,images:[],files:[]});
-          setPrompt(input);
-        }
-      } else {
-        if (typeof output !== 'string') throw Error('Lu did not return a text response');
-        completed = true;
+          ? await invoke('lu_generate_browser',{sessionId:runtime.sessionId,chatId:activeId,
+              prompt:input,origins:browserOrigins,maxNewTokens:512})
+          : await invoke('lu_generate',{sessionId:runtime.sessionId??'',chatId:activeId,
+              prompt:submitted,imageRefs:[],maxNewTokens:512,readOnlyWorkspace:useWorkspaceTools,planOnly:usePlanDraft});
+      if(output===null&&useReviewedApp){/* native picker denied; keep draft */}
+      else if(typeof output!=='string')throw Error('Lu did not return a text response');
+      else{
+        completed=true;
+        writeComposerDraft(activeId,clearSubmittedDraft(readComposerDraft(activeId),snapshot));
       }
-    } catch (error) {
-      cancelled = /Cancelled|Canceled/i.test(String(error));
-      if (!cancelled && currentChat.current === activeId) setError(String(error));
-    } finally {
-      // Keep the streaming bubble until the journal has been read back.
-      await refreshChats().catch(error => setError(String(error)));
-      // A background turn must never steal focus from another conversation.
-      if (currentChat.current === activeId) {
-        const entries = await loadLatestUiHistory(activeId)
-          .catch(error => {setError(String(error));return null;});
-        if (entries && currentChat.current === activeId) setHistory(entries);
+    }catch(error){
+      if(currentChat.current===activeId&&!/Cancelled|Canceled/i.test(String(error)))setError(String(error));
+    }finally{
+      await finishSubmission(activeId,attempt);
+      if(completed&&currentChat.current===activeId){
+        const samples=await invoke('lu_perf01_recent',{chatId:activeId,limit:1}).catch(()=>[]);
+        if(samples.length&&currentChat.current===activeId)setPerfLatestByChat(prev=>({...prev,[activeId]:samples[0]}));
       }
-      setJobs(prev => removeJob(prev,activeId));
-      await refreshCatalog().catch(error => { if (currentChat.current === activeId) setError(String(error)); });
-      // Read only the original host-observed per-chat latency receipt.
-      // The WebView never sends performance records or model permissions.
-      if (completed && currentChat.current===activeId) {
-        const samples=await invoke('lu_perf01_recent',{
-          chatId:activeId,limit:1
-        }).catch(()=>[]);
-        if(samples.length && currentChat.current===activeId){
-          setPerfLatestByChat(prev=>({...prev,[activeId]:samples[0]}));
-        }
-      }
-      if (usePlanDraft) await refreshToolActivity(activeId).catch(error=>{
-        if (currentChat.current===activeId)setError(String(error));
-      });
+      if(usePlanDraft)await refreshToolActivity(activeId).catch(error=>{if(currentChat.current===activeId)setError(String(error));});
     }
-    if (!completed && !cancelled && currentChat.current === activeId && !draftText.current.trim()) {
-      // Failed submissions remain editable. Already-journaled user turns are
-      // still displayed; the next attempt can be revised by the operator.
-      draftText.current = input;
-      setPrompt(input);
+  }
+  async function openSavedAttachment(entry,im){
+    const target=currentChat.current;
+    if(!target||im.observed)return;
+    const request=++savedPreviewSequence.current;
+    try{
+      const url=await invoke('lu_read_image_attachment',{chatId:target,imageRef:im.imageRef,visibleSeq:entry.seq});
+      if(currentChat.current===target&&savedPreviewSequence.current===request)
+        setSavedImagePreview({chatId:target,seq:entry.seq,name:im.name,url});
+    }catch(error){if(currentChat.current===target&&savedPreviewSequence.current===request)setError('Saved image unavailable: '+String(error));}
+  }
+  async function openDraftAttachment(im){
+    const target=currentChat.current;
+    if(!target||im.observed||im.available===false||lockedDraft(target))return;
+    const request=++savedPreviewSequence.current;
+    try{
+      const url=await invoke('lu_read_image_attachment',{chatId:target,imageRef:im.imageRef,visibleSeq:null});
+      if(currentChat.current!==target||savedPreviewSequence.current!==request||lockedDraft(target))return;
+      const draft=readComposerDraft(target);
+      if(!draft.images.some(a=>a.imageRef===im.imageRef))return;
+      writeComposerDraft(target,{...draft,images:draft.images.map(a=>a.imageRef===im.imageRef?{...a,previewUrl:url}:a)});
+      setImageViewer({imageRef:im.imageRef,zoom:1});
+    }catch(error){if(currentChat.current===target)setError(String(error));}
+  }
+  async function restoreSavedMessage(entry){
+    const target=currentChat.current;
+    if(!target||pendingSends.current.has(target)||jobsRef.current[target]||
+       !emptyDraft(readComposerDraft(target))||!beginDraftMutation(target)){
+      setError('Finish or clear the current draft before restoring a saved message.');return;
     }
-    // Submission cleanup may NEVER call the explicit remove command.
-    // Native admission failure retains the draft; committed images belong
-    // to immutable history even when inference is cancelled or fails.
-    const remaining=await refreshDraftImages(activeId,submittedImages).catch(error=>{
-      if(currentChat.current===activeId)setError(String(error));
-      return null;
-    });
-    if(remaining){
-      const live=new Set(remaining.map(im=>im.imageRef));
-      for(const image of submittedImages){
-        if(!live.has(image.imageRef)&&image.previewUrl){
-          URL.revokeObjectURL(image.previewUrl);previewUrls.current.delete(image.previewUrl);
-        }
-      }
-    }
+    try{
+      const restored=await invoke('lu_restore_image_turn',{chatId:target,visibleSeq:entry.seq});
+      // Restore the original canonical text. Mixed text-file instructions
+      // currently remain in the original text; CP-02 separates those sources.
+      const draft=readComposerDraft(target);
+      if(!draft.prompt.trim()&&!draft.files.length){
+        writeComposerDraft(target,{...draft,prompt:entry.text,images:restored});
+      }else{writeComposerDraft(target,{...draft,images:restored});}
+      await refreshDraftImages(target);
+      if(currentChat.current===target)composerRef.current?.focus();
+    }catch(error){if(currentChat.current===target)setError(String(error));}
+    finally{endDraftMutation(target);}
   }
   async function attachReaderDocument(continuePrevious=false) {
     // The local picker is always native and the source is copied into one
@@ -4289,11 +4434,15 @@ function App() {
     }
   }
   async function importAttachments(files) {
-    // Establish native ownership before FileReader or image admission.
-    // The original chat remains the destination across focus changes.
-    let targetChat;
-    try{targetChat=await ensureAttachmentChat();}
-    catch(error){setError(String(error));return;}
+    // Serialize image/text intake with same-chat Send, even across a picker
+    // or FileReader await. Other conversations remain independently usable.
+    const origin=currentChat.current||'new';
+    if(!beginDraftMutation(origin))return;
+    let targetChat=origin;
+    try{
+    targetChat=await ensureAttachmentChat();
+    if(targetChat!==origin){draftMutations.current.add(targetChat);refreshComposerState();}
+    if(lockedDraft(targetChat))return;
     function storeAttachment(kind, value) {
       const key=targetChat;
       const old=pendingDrafts.current.get(key) || {
@@ -4313,9 +4462,6 @@ function App() {
       if (isPotentialImage(file)) {
         if (file.size <= 0 || file.size > MAX_IMAGE_ATTACHMENT) {
           setError(`Image ${file.name} exceeds the 8 MB limit`); continue;
-        }
-        if (!loadedModel?.projectorAttached) {
-          setError('Load an MMProj-compatible model before attaching images'); continue;
         }
         try {
           const normalized = await normalizedImageFile(file);
@@ -4361,6 +4507,8 @@ function App() {
         setError(`Unsupported attachment ${file.name}. Images and plaintext documents work; PDF/DOCX are not yet supported.`);
       }
     }
+    }catch(error){if(currentChat.current===targetChat)setError(String(error));}
+    finally{endDraftMutation(origin);if(targetChat!==origin)endDraftMutation(targetChat);}
   }
   function handlePaste(event) {
     const fileItems = Array.from(event.clipboardData?.items || [])
@@ -4369,13 +4517,12 @@ function App() {
   }
   function handleDrop(event) {
     event.preventDefault(); setDragActive(false);
-    if (!loaded) { setError('Load a model before attaching files'); return; }
     void importAttachments(event.dataTransfer?.files);
   }
   function handleAppDrag(event) {
     if (Array.from(event.dataTransfer?.types || []).includes('Files')) {
       event.preventDefault();
-      if (loaded) setDragActive(true);
+      if(!lockedDraft(currentChat.current||'new'))setDragActive(true);
     }
   }
   function beginComposerDrag(event) {
@@ -4500,6 +4647,15 @@ function App() {
             {' '+revision.replyTo.pinnedParentExcerpt}
           </button>}
           <MessageText text={displayText} role={entry.role}/>
+          {entry.role==='user'&&entry.attachments?.length>0&&<div className="savedAttachments" aria-label="Saved attachments">
+            {entry.attachments.map(im=><span className="attachment" key={im.imageRef}>
+              <span aria-hidden="true">▧</span><span>{im.name}{im.observed?' (local capture expired)':''}</span>
+              {!im.observed&&<button type="button" onClick={()=>void openSavedAttachment(entry,im)}>View</button>}
+            </span>)}
+            {!entry.attachments.some(im=>im.observed)&&<button type="button" className="subtleButton"
+              disabled={chatBusy||Boolean(visibleAttempt)||composerMutating||Boolean(prompt.trim()||images.length||textFiles.length)}
+              onClick={()=>void restoreSavedMessage(entry)}>Restore message to draft</button>}
+          </div>}
           {revision?.currentVersion>0&&<small className="messageEditedNotice">
             Human-edited display · revision {revision.currentVersion}.
             Original model input and tool history unchanged.
@@ -6321,28 +6477,43 @@ function App() {
             {images.map(im => <span key={im.imageRef} className="attachment imageAttachment">
               {im.previewUrl ? <img src={im.previewUrl} alt="Attached image preview"/> : <span aria-hidden="true">▧</span>}
               <span title={im.name || im.mimeType}>{im.name || im.mimeType}{im.available===false?' (unavailable)':''}{im.detectedMimeType && im.name?.toLowerCase().endsWith('.jpg') && im.detectedMimeType === 'image/png' ? ' (PNG data)' : ''}</span>
-              {im.previewUrl && <button type="button" onClick={()=>setImageViewer({imageRef:im.imageRef,zoom:1})} aria-label={'View image '+(im.name||'draft')}>View</button>}
-              <button type="button" onClick={() => removeImage(im.imageRef)} aria-label="Remove image">×</button>
+              {!im.observed&&im.available!==false&&<button type="button" disabled={composerLocked||composerMutating}
+                onClick={()=>void openDraftAttachment(im)} aria-label={'View image '+(im.name||'draft')}>View</button>}
+              <button type="button" disabled={composerLocked||composerMutating} onClick={() => void removeImage(im.imageRef)} aria-label="Remove image">×</button>
             </span>)}
             {textFiles.map((file,i)=><span key={i} className="attachment textAttachment"><span aria-hidden="true">▤</span>
               <span title={attachmentSummary(file)}>{attachmentSummary(file)}</span>
-              <button type="button" onClick={() => {const next=draftFiles.current.filter((_,n)=>n!==i);draftFiles.current=next;setTextFiles(next);}} aria-label={'Remove '+file.name}>×</button>
+              <button type="button" disabled={composerLocked||composerMutating} onClick={() => {const next=draftFiles.current.filter((_,n)=>n!==i);draftFiles.current=next;setTextFiles(next);}} aria-label={'Remove '+file.name}>×</button>
             </span>)}
           </div>}
-          <textarea ref={composerRef} aria-label="Message Lu" value={prompt} onChange={e => {draftText.current=e.target.value;setPrompt(e.target.value);}} style={{height:composerHeight}} maxLength={16384}
+          {visibleAttempt?.uncertain&&<div className="submissionNotice" role="status">
+            Message receipt could not be confirmed. Your draft is retained.
+            <button className="subtleButton" type="button" disabled={visibleAttempt.checking}
+              onClick={()=>void retryUnconfirmedMessage()}>Check / retry same message</button>
+          </div>}
+          <textarea ref={composerRef} aria-label="Message Lu" value={prompt} readOnly={composerLocked||composerMutating} onChange={e => {if(lockedDraft(currentChat.current||'new'))return;draftText.current=e.target.value;setPrompt(e.target.value);}} style={{height:composerHeight}} maxLength={16384}
             placeholder={loaded ? 'Message Lu… Paste or drop images and text files' : 'Ask the time, check model status, search this chat or selected workspace'}
             onPaste={handlePaste}
             onKeyDown={e => { if (isSendKey(e)) { e.preventDefault(); e.currentTarget.form?.requestSubmit(); } }}/>
           <div className="composerFooter"><input ref={fileInput} type="file" className="visuallyHidden" multiple
               accept=".png,.jpg,.jpeg,.txt,.md,.csv,.json,.log,.py,.rs,.js,.jsx,.ts,.tsx" onChange={e => {void importAttachments(e.target.files);e.target.value='';}}/>
-            <button type="button" className="subtleButton" disabled={!loaded} onClick={() => fileInput.current?.click()}>+ Attach</button>
+            <button type="button" className="subtleButton" disabled={composerLocked||composerMutating} onClick={() => fileInput.current?.click()}>+ Attach</button>
             {/* Goal and task planning remain host capabilities, not chat controls. */}
             {chatBusy ? <button className="dangerButton" type="button" onClick={cancel}
-                disabled={!visibleJob.generationId || visibleJob.cancelling}>{visibleJob.cancelling ? 'Stopping…' : visibleJob.phase === 'queued' ? 'Cancel queued' : 'Cancel'}</button>
-              : <button className="primaryButton" type="submit" disabled={working || (!loaded && !modelFreeClockAllowed) || !prompt.trim()}>Send</button>}
+                disabled={!visibleJob.generationId || visibleJob.phase==='submitting' || visibleJob.cancelling}>{visibleJob.cancelling ? 'Stopping…' : visibleJob.phase === 'queued' ? 'Cancel queued' : 'Cancel'}</button>
+              : <button className="primaryButton" type="submit" disabled={working || Boolean(visibleAttempt) || composerMutating || (!loaded && !modelFreeClockAllowed) || !prompt.trim()}>Send</button>}
           </div></form>}
       </div>
     </main>
+    {savedImagePreview?.chatId===chatId&&<div className="imageViewerBackdrop" role="presentation"
+      onClick={()=>{savedPreviewSequence.current++;setSavedImagePreview(null);}}>
+      <section className="imageViewerDialog savedImageDialog" role="dialog" aria-modal="true" aria-label="Saved image"
+        onClick={e=>e.stopPropagation()}>
+        <header><strong>{savedImagePreview.name}</strong><button type="button" autoFocus
+          onClick={()=>{savedPreviewSequence.current++;setSavedImagePreview(null);}}>Close</button></header>
+        <img src={savedImagePreview.url} alt={savedImagePreview.name}/>
+      </section>
+    </div>}
     {viewedDraftImage?.previewUrl && <div className="imageViewerBackdrop" role="presentation"
       onClick={()=>setImageViewer(null)}>
       <section className="imageViewerDialog" role="dialog" aria-modal="true"
