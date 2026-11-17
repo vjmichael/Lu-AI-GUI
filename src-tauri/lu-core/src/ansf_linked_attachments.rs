@@ -245,6 +245,25 @@ mod tests{
         let _=std::fs::remove_file(path);
     }
     #[test]
+    fn linked_document_and_existing_image_commit_or_rollback_together(){
+        use crate::ansf_image_attachments::ImageAttachment;
+        let path=db();let book=AnsfStore::open(&path).unwrap();
+        book.create_session("chat-a","ws","Chat").unwrap();book.start_chapter("chat-a","Original").unwrap();
+        let a=doc(9);let image=ImageAttachment{attachment_id:format!("img-{:032x}",10),
+            display_name:"photo.png".into(),media_type:"image/png".into(),bytes:32,
+            sha256:format!("{:064x}",10),observed:false};
+        book.admit_linked_draft("chat-a",&a).unwrap();book.admit_draft_image("chat-a",&image).unwrap();
+        let event=turn(11);let gid=event.user_turn_id.as_deref().unwrap();
+        assert!(book.append_host_chat_event_with_attachment_drafts("chat-a",&event,&[image.clone()],&[]).is_err());
+        assert_eq!(book.image_draft("chat-a").unwrap(),vec![image.clone()]);
+        assert_eq!(book.linked_draft("chat-a").unwrap(),vec![a.clone()]);
+        assert!(book.authenticated_chat_turn("chat-a",gid).unwrap().is_none());
+        book.append_host_chat_event_with_attachment_drafts("chat-a",&event,&[image.clone()],&[a.clone()]).unwrap();
+        assert_eq!(book.saved_image_manifest("chat-a",gid).unwrap(),vec![image]);
+        assert_eq!(book.saved_linked_manifest("chat-a",gid).unwrap(),vec![a]);
+        drop(book);let _=std::fs::remove_file(path);
+    }
+    #[test]
     fn refused_nonce_cannot_consume_linked_draft_and_metadata_removal_never_deletes_source(){
         let path=db();let book=AnsfStore::open(&path).unwrap();
         book.create_session("chat-a","ws","Chat").unwrap();book.start_chapter("chat-a","Original").unwrap();

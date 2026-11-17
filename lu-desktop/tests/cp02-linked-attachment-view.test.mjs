@@ -1,0 +1,21 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+const read=(path)=>readFileSync(new URL(path,import.meta.url),'utf8');
+test('saved linked files show unavailable status and click reopens exact original',()=>{
+  const ui=read('../web/saved_linked_attachments.jsx');
+  const main=read('../web/main.jsx');
+  const host=read('../src-tauri/src/lib.rs');
+  const history=read('../src-tauri/src/ansf_chat_store.rs');
+  assert.match(main,/entry\.linkedAttachments\?\.length/);
+  assert.match(ui,/lu_linked_attachment_status/);
+  assert.match(ui,/lu_read_linked_attachment/);
+  assert.match(ui,/chatId,visibleSeq,attachmentId:link\.attachmentId/);
+  assert.match(ui,/File not available/);
+  assert.match(ui,/availability\[link\.attachmentId\]===false/);
+  assert.doesNotMatch(ui,/sourcePath|source_path|dangerouslySetInnerHTML|file:\/\//);
+  assert.match(host,/book\.linked_manifest_for_visible_seq\(&chat_id,visible_seq\)/);
+  assert.match(host,/format!\("\{:x\}",Sha256::digest\(&opened\.bytes\)\)!=link\.sha256/);
+  const view=history.slice(history.indexOf('pub struct HistoryLinkedAttachment'),history.indexOf('pub struct HistoryWindowEntry'));
+  assert.doesNotMatch(view,/source_path|sha256/);
+});

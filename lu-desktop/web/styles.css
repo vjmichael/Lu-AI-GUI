@@ -688,3 +688,5 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .savedAttachments .attachment{max-width:100%;overflow-wrap:anywhere}
 .savedImageDialog>img{display:block;max-width:100%;max-height:72vh;object-fit:contain;margin:auto}
 .submissionNotice{display:flex;flex-wrap:wrap;gap:8px;align-items:center;font-size:.9rem;padding:8px 0}
+
+.linkedAttachmentArea{margin-top:8px}.linkedAttachment{color:inherit;cursor:pointer;text-align:left}.linkedAttachment small{color:#ffd8c2}.linkedAttachmentFailure{font-size:12px;color:#ffd8c2;margin:6px 0}.linkedAttachmentPreview{margin-top:8px;border:1px solid #516e8a;border-radius:8px;padding:10px}.linkedAttachmentPreview header{display:flex;align-items:center;justify-content:space-between;gap:10px}.linkedAttachmentPreview pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:310px;overflow:auto}.linkedAttachmentPreview img{max-width:100%;max-height:310px;object-fit:contain}

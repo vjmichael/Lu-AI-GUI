@@ -10,6 +10,7 @@ import {explainToolOutcome,explainReviewedContinuation} from './reviewed_tool_fe
 import {explainMemoryProjectionRecovery} from './reviewed_memory_recovery.mjs';
 import { fullEditChangeLines } from './edit_diff.mjs';
 import { MarkdownView } from './markdown_view.jsx';
+import { SavedLinkedAttachments } from './saved_linked_attachments.jsx';
 import {buildSubmittedPrompt, attachmentSummary, MAX_TEXT_FILES} from './attachment_drafts.mjs';
 import {isPotentialImage, normalizedImageFile} from './image_attachment_input.mjs';
 import {ATTACHMENT_ACCEPT, supportedDocumentName, documentFilePayload, documentDraftItem} from './document_attachment_input.mjs';
@@ -4796,6 +4797,9 @@ function App() {
               disabled={chatBusy||Boolean(visibleAttempt)||composerMutating||Boolean(prompt.trim()||images.length||textFiles.length)}
               onClick={()=>void restoreSavedMessage(entry)}>Restore message to draft</button>}
           </div>}
+          {entry.role==='user'&&entry.linkedAttachments?.length>0&&
+            <SavedLinkedAttachments key={chatId+':'+entry.seq} chatId={chatId}
+              visibleSeq={entry.seq} attachments={entry.linkedAttachments}/>}
           {revision?.currentVersion>0&&<small className="messageEditedNotice">
             Human-edited display · revision {revision.currentVersion}.
             Original model input and tool history unchanged.

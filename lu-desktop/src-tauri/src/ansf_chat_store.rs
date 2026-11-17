@@ -177,10 +177,21 @@ pub struct HistoryImageAttachment{
     pub size:u64,
     pub observed:bool,
 }
+/// The original OS pathname is intentionally not serializable through the
+/// history view. This is a display reference, not a file authorization.
+#[derive(Debug,Clone,Serialize)]
+#[serde(rename_all="camelCase")]
+pub struct HistoryLinkedAttachment{
+    pub attachment_id:String,
+    pub name:String,
+    pub kind:&'static str,
+    pub size:u64,
+}
 #[derive(Debug,Clone,Serialize)]
 #[serde(rename_all="camelCase")]
 pub struct HistoryWindowEntry{
     pub attachments:Vec<HistoryImageAttachment>,
+    pub linked_attachments:Vec<HistoryLinkedAttachment>,
     pub seq:i64,
     pub role:String,
     pub text:String,
@@ -190,7 +201,7 @@ pub struct HistoryWindowEntry{
 impl From<VisibleChatMessage> for HistoryWindowEntry{
     fn from(e:VisibleChatMessage)->Self{
         Self{seq:e.seq,role:e.role,text:e.text,
-            interrupted:e.interrupted,cancelled:e.cancelled,attachments:Vec::new()}
+            interrupted:e.interrupted,cancelled:e.cancelled,attachments:Vec::new(),linked_attachments:Vec::new()}
     }
 }
 
@@ -1340,6 +1351,16 @@ impl ChatStore {
                         image_ref:a.attachment_id,name:a.display_name,mime_type:a.media_type,
                         size:a.bytes,observed:a.observed,
                     }).collect();
+                row.linked_attachments=book.linked_manifest_for_visible_seq(chat_id,row.seq)
+                    .map_err(to_err)?.into_iter().map(|a|HistoryLinkedAttachment{
+                        attachment_id:a.attachment_id,name:a.display_name,
+                        kind:if a.reader_format.is_some(){"document"}else{"image"},
+                        size:a.bytes,
+                    }).collect();
+                // In the eventual linked-image compatibility path the same
+                // opaque ID must not produce a legacy-copy preview button.
+                row.attachments.retain(|a|!row.linked_attachments.iter()
+                    .any(|link|link.attachment_id==a.image_ref));
             }
             Ok(row)
         }).collect::<Result<Vec<_>,String>>()?;
