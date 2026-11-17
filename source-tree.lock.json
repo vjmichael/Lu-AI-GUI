@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "149c85d77c474222c542376a259b282280494584",
-  "trackedFileCount": 1090,
+  "sourceCommitBeforeLock": "b6cbc741720ce3d750dc7f4ba874c3a2615a2dd2",
+  "trackedFileCount": 1092,
   "files": [
     {
       "path": ".github/pull_request_template.md",
@@ -97,7 +97,7 @@
     },
     {
       "path": ".github/workflows/lu-cp01-grouped-native.yml",
-      "blob": "8cf4216f68a172e94f055316eec409bfa6be1d90"
+      "blob": "28664a3a28c9620f7502860173f38dc3dd8b74f1"
     },
     {
       "path": ".github/workflows/lu-development-ledger.yml",
@@ -749,7 +749,7 @@
     },
     {
       "path": "docs/LU_DEVELOPMENT_LEDGER.md",
-      "blob": "16d96b7008c6455b7748ba653ac819a1d6f458df"
+      "blob": "3c1c40342c7ddb869bf7314f0a364b514b40df98"
     },
     {
       "path": "docs/LU_E1_NATIVE_EVIDENCE_20261107.md",
@@ -1549,7 +1549,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/lib.rs",
-      "blob": "970299824f12b917384635b54a68fcd3b1a5e052"
+      "blob": "a77912b74f567ea1f572420b7f264b0d2fa4ce5a"
     },
     {
       "path": "lu-desktop/src-tauri/src/load_trace.rs",
@@ -1896,6 +1896,10 @@
       "blob": "a87986d7862680877c96f07a0ed6f64629084d33"
     },
     {
+      "path": "lu-desktop/tests/cp02-document-intake.test.mjs",
+      "blob": "dddad3478aaa279387f945afb99f576eb6d1c571"
+    },
+    {
       "path": "lu-desktop/tests/filesystem-discovery.test.mjs",
       "blob": "7e53d32f4bfb49963712186387cb08e6f1176013"
     },
@@ -2189,7 +2193,7 @@
     },
     {
       "path": "lu-desktop/tests/reader-desktop.test.mjs",
-      "blob": "1f361be1fbd3ff986b2b4843a7affa762d2f1875"
+      "blob": "db8626b7dbe132362e18375f515509e12743844f"
     },
     {
       "path": "lu-desktop/tests/research-citation-enforcement.test.mjs",
@@ -2292,6 +2296,10 @@
       "blob": "92b48fc424689e0af3018863d5a4d086ef837852"
     },
     {
+      "path": "lu-desktop/web/document_attachment_input.mjs",
+      "blob": "755ba8734279c2483c3ab34c185e2a454389597a"
+    },
+    {
       "path": "lu-desktop/web/edit_diff.mjs",
       "blob": "b5d4ee559112d06aff7e8467ee3b11c9ff77bbb5"
     },
@@ -2325,7 +2333,7 @@
     },
     {
       "path": "lu-desktop/web/main.jsx",
-      "blob": "5b68b0ed28699b5ea19642eaf728ffe60a77885f"
+      "blob": "459ad799ddfdabcdab83950f23c842411e97c9fd"
     },
     {
       "path": "lu-desktop/web/markdown_view.jsx",
