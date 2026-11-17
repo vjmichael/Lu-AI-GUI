@@ -15,12 +15,15 @@ pub(crate) enum Checkpoint {
     ModelReturned = 9,
     AssistantSaved = 12,
     ReplyObserved = 10,
+    StreamClosed = 11,
+    AssistantRendered = 13,
 }
 
 const ORDER: &[Checkpoint] = &[
     Checkpoint::NativeReceived, Checkpoint::SessionReady, Checkpoint::UserSaved,
     Checkpoint::WorkerEntered, Checkpoint::SavedAttested, Checkpoint::ModelEntered,
     Checkpoint::ModelReturned, Checkpoint::AssistantSaved, Checkpoint::ReplyObserved,
+    Checkpoint::StreamClosed, Checkpoint::AssistantRendered,
 ];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -57,6 +60,11 @@ impl CausalProgress {
     pub fn trace_ref(&self) -> &str { &self.trace_ref }
     pub fn observations(&self) -> &[Observation] { &self.observations }
     pub fn dropped(&self) -> u32 { self.dropped }
+    pub fn mark_lost(&mut self) { self.dropped = self.dropped.saturating_add(1); }
+    pub fn terminal(&self) -> bool {
+        self.failed || self.observations.last().is_some_and(|e|
+            e.stage == Checkpoint::AssistantRendered as i32)
+    }
 
     fn append(&mut self, stage: i32, outcome: i32, failure_code: i32) {
         let elapsed_ms = self.started.elapsed().as_millis().min(u64::MAX as u128) as u64;
@@ -66,8 +74,9 @@ impl CausalProgress {
     pub fn observe(&mut self, stage: Checkpoint) -> bool {
         // A duplicate renderer report is idempotent. A report before the
         // exact original host commit is not evidence and cannot be promoted.
-        if stage == Checkpoint::ReplyObserved && !self.failed &&
-            self.observations.last().is_some_and(|e| e.stage == stage as i32) {
+        if matches!(stage, Checkpoint::ReplyObserved | Checkpoint::StreamClosed |
+            Checkpoint::AssistantRendered) && !self.failed &&
+            self.observations.iter().any(|e| e.stage == stage as i32) {
             return true;
         }
         if self.failed || ORDER.get(self.observations.len()) != Some(&stage) {
@@ -161,5 +170,35 @@ mod tests {
         assert_ne!(a.trace_ref(), b.trace_ref());
         assert_eq!(b.observations().len(), 1);
         assert!(a.observations().windows(2).all(|w| w[0].elapsed_ms <= w[1].elapsed_ms));
+    }
+}
+
+#[cfg(test)]
+mod delivery_tests {
+    use super::*;
+    #[test]
+    fn two_renderer_milestones_are_required_after_reply() {
+        let mut t = CausalProgress::new("0123456789abcdef0123456789abcdef".into(), Instant::now());
+        for stage in ORDER.iter().take(9).skip(1) { assert!(t.observe(*stage)); }
+        assert!(!t.terminal());
+        assert!(t.observe(Checkpoint::StreamClosed));
+        assert!(!t.terminal());
+        assert!(t.observe(Checkpoint::AssistantRendered));
+        assert!(t.terminal());
+        assert!(t.observe(Checkpoint::ReplyObserved));
+        assert!(t.observe(Checkpoint::AssistantRendered));
+        assert_eq!(t.observations().len(), 11);
+        assert_eq!(t.dropped(), 0);
+    }
+    #[test]
+    fn out_of_order_render_and_storage_loss_never_prove_complete_evidence() {
+        let mut t = CausalProgress::new("fedcba9876543210fedcba9876543210".into(), Instant::now());
+        for stage in ORDER.iter().take(9).skip(1) { assert!(t.observe(*stage)); }
+        assert!(!t.observe(Checkpoint::AssistantRendered));
+        assert!(!t.terminal());
+        t.mark_lost();
+        assert!(t.observe(Checkpoint::StreamClosed));
+        assert!(t.observe(Checkpoint::AssistantRendered));
+        assert_eq!(t.dropped(), 2);
     }
 }

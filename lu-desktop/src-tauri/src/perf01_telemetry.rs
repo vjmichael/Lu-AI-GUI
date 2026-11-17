@@ -3,10 +3,11 @@
 //! hypothetical GPU/prefill/token-rate measurements are persisted here.
 use serde::Serialize;
 use crate::causal_diagnostic::{CausalProgress,Checkpoint};
-use lu_core::{diagnostic_contract,diagnostic_localization,wire::proto};
+use lu_core::diagnostic_localization;
+use crate::diagnostic_archive::{DiagnosticArchive,wire_trace};
 use std::{
     collections::VecDeque,
-    sync::Mutex,
+    sync::{Arc,Mutex},
     time::Instant,
 };
 
@@ -111,8 +112,13 @@ fn base(chat_id:&str,generation_id:&str,route:&str,reason_code:&str,
 #[derive(Default)]
 pub(crate) struct PerfLedger {
     recent:Mutex<VecDeque<PerfReceipt>>,
+    archive:Option<Arc<DiagnosticArchive>>,
 }
 impl PerfLedger{
+    pub fn with_archive(archive:Option<Arc<DiagnosticArchive>>)->Self{
+        Self{archive,..Self::default()}
+    }
+    pub fn archive(&self)->Option<Arc<DiagnosticArchive>>{self.archive.clone()}
     pub fn record(&self,mut row:PerfReceipt)->Result<(),String>{
         row.refresh_cp01_finding();
         // Never print raw source content; performance is a diagnostic,
@@ -134,14 +140,20 @@ impl PerfLedger{
     }
     // Reports are observational only. Never let a stale attempt mutate a
     // newer row, and never block inference/cancellation on telemetry.
-    pub fn observe_cp01_reply(&self,chat_id:&str,generation_id:&str,trace_ref:&str)->bool{
+    pub fn observe_cp01_reply(&self,chat_id:&str,generation_id:&str,trace_ref:&str,delivered:bool)->bool{
         let Ok(mut q)=self.recent.try_lock() else{return false};
         let Some(row)=q.iter_mut().rev().find(|row|row.chat_id==chat_id&&
             row.generation_id==generation_id&&row.terminal_state=="COMPLETED"&&
             row.cp01_trace.as_ref().is_some_and(|t|t.trace_ref()==trace_ref))
             else{return false};
         let Some(trace)=row.cp01_trace.as_mut() else{return false};
-        let accepted=trace.observe(Checkpoint::ReplyObserved);
+        let mut accepted=trace.observe(Checkpoint::ReplyObserved);
+        if delivered&&accepted{
+            accepted=trace.observe(Checkpoint::StreamClosed)&&trace.observe(Checkpoint::AssistantRendered);
+        }
+        if let Some(archive)=self.archive.as_ref(){
+            if !archive.persist(trace){trace.mark_lost();}
+        }
         row.refresh_cp01_finding();
         accepted
     }
@@ -174,20 +186,7 @@ pub(crate) fn cpu_receipt(
 impl PerfReceipt {
     fn refresh_cp01_finding(&mut self){
         self.cp01_finding=self.cp01_trace.as_ref().and_then(|source|{
-            let trace=proto::DiagnosticTrace{
-                protocol_version:diagnostic_contract::DIAGNOSTIC_PROTOCOL_VERSION,
-                trace_ref:source.trace_ref().to_owned(),
-                dropped_events:source.dropped(),
-                events:source.observations().iter().enumerate().map(|(i,event)|
-                    proto::DiagnosticEvent{
-                        sequence:(i+1) as u64,parent_sequence:i as u64,
-                        stage:event.stage,outcome:event.outcome,
-                        // Host receipt time, including receipt of an explicit
-                        // renderer report; never a renderer clock estimate.
-                        elapsed_millis:event.elapsed_ms,clock_domain:2,
-                        failure_code:event.failure_code,attempt:1,clock_epoch:1,
-                    }).collect(),
-            };
+            let trace=wire_trace(source);
             diagnostic_localization::localize_transactional_turn(&trace).ok()
         });
     }
@@ -204,6 +203,7 @@ pub(crate) struct ModelTrace{
     context_entered:Option<Instant>,
     dispatch_entered:Option<Instant>,
     row:PerfReceipt,
+    archive:Option<Arc<DiagnosticArchive>>,
 }
 impl ModelTrace{
     pub fn new(chat_id:&str,generation_id:&str,started:Instant,model_loaded:bool)
@@ -213,17 +213,29 @@ impl ModelTrace{
             dispatch_entered:None,
             row:base(chat_id,generation_id,"MODEL_INFERENCE",
                 "MODEL_REASONING_REQUIRED",model_loaded),
+            archive:None,
         }
     }
-    pub fn with_cp01_trace(mut self,trace_ref:String,started:Instant)->Self{
+    pub fn with_cp01_trace(mut self,trace_ref:String,started:Instant,
+        archive:Option<Arc<DiagnosticArchive>>)->Self{
         self.row.cp01_trace=Some(CausalProgress::new(trace_ref,started));
+        self.archive=archive;
         self
+    }
+    pub fn persist_cp01(&mut self){
+        if let (Some(trace),Some(archive))=(self.row.cp01_trace.as_mut(),self.archive.as_ref()){
+            if !archive.persist(trace){trace.mark_lost();}
+        }
     }
     pub fn causal_checkpoint(&mut self,stage:Checkpoint){
         if let Some(trace)=self.row.cp01_trace.as_mut(){trace.observe(stage);}
+        // SessionReady/UserSaved occur inside the attachment admission gate.
+        // Flush directly after releasing the gate.
+        if !matches!(stage,Checkpoint::SessionReady|Checkpoint::UserSaved){self.persist_cp01();}
     }
     pub fn causal_model_failed(&mut self){
         if let Some(trace)=self.row.cp01_trace.as_mut(){trace.model_failed();}
+        self.persist_cp01();
     }
     pub fn causal_refused(&mut self){
         if let Some(trace)=self.row.cp01_trace.as_mut(){trace.refused();}
@@ -305,6 +317,7 @@ impl ModelTrace{
                 trace.finish_incomplete(terminal=="CANCELLED");
             }
         }
+        self.persist_cp01();
         self.row.terminal_state=terminal.into();
         self.row.overall_latency_ms=elapsed_ms(self.started);
         self.row
