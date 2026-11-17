@@ -146,6 +146,11 @@ mod native_stderr_classification_tests {
     use super::*;
     #[test]
     fn native_exit_statuses_are_classified_without_paths_or_rights_changes() {
+        assert_eq!(classify_pipe_error(&io::Error::from_raw_os_error(109)), "closed_or_disconnected_pipe");
+        assert_eq!(classify_pipe_error(&io::Error::from_raw_os_error(5)), "host_pipe_access_denied");
+        assert_eq!(classify_pipe_error(&io::Error::from_raw_os_error(6)), "invalid_pipe_handle");
+        assert_eq!(classify_pipe_error(&io::Error::from_raw_os_error(87)), "invalid_pipe_parameter");
+        assert_eq!(classify_pipe_error(&io::Error::from_raw_os_error(123)), "other_win32_pipe_error");
         assert_eq!(classify_native_exit(0xc0000135), "dependency_dll_missing");
         assert_eq!(
             classify_native_exit(0xc0000142),
@@ -270,6 +275,26 @@ fn native_lsp_exit_code(process: HANDLE) {
 fn native_lsp_debug_enabled() -> bool {
     cfg!(debug_assertions)
         && std::env::var_os("LU_IDE_E2_NATIVE_TRACE").as_deref() == Some(OsStr::new("1"))
+}
+// Preserve the error returned by the failed pipe syscall, before later
+// Win32 process/diagnostic observations can overwrite thread-local GetLastError.
+// Only emit a fixed, path-free category in disposable debug acceptance.
+fn classify_pipe_error(error: &io::Error) -> &'static str {
+    match error.raw_os_error() {
+        Some(109 | 232 | 233) => "closed_or_disconnected_pipe",
+        Some(5) => "host_pipe_access_denied",
+        Some(6) => "invalid_pipe_handle",
+        Some(87) => "invalid_pipe_parameter",
+        _ => "other_win32_pipe_error",
+    }
+}
+fn trace_pipe_error(error: &io::Error) {
+    if native_lsp_debug_enabled() {
+        eprintln!(
+            "PROTECTED_LSP_NATIVE_STDOUT_PIPE_ERROR_CLASS={}",
+            classify_pipe_error(error)
+        );
+    }
 }
 fn classify_debug_stderr(bytes: &[u8]) -> &'static str {
     if bytes.is_empty() {
@@ -1046,10 +1071,12 @@ impl RestrictedLspProcess for WindowsLspProcess {
                 )
             } == 0
             {
+                let pipe_error = io::Error::last_os_error();
                 native_lsp_trace("stdout_peek_failed");
+                trace_pipe_error(&pipe_error);
                 native_lsp_exit_code(self.process.0);
                 inspect_debug_stderr(self.debug_stderr.as_ref());
-                return Err(io::Error::last_os_error());
+                return Err(pipe_error);
             }
             if available > 0 {
                 let mut data = vec![0u8; available.min(limit as u32) as usize];
@@ -1064,9 +1091,11 @@ impl RestrictedLspProcess for WindowsLspProcess {
                     )
                 } == 0
                 {
+                    let pipe_error = io::Error::last_os_error();
                     native_lsp_trace("stdout_read_failed");
+                    trace_pipe_error(&pipe_error);
                     native_lsp_exit_code(self.process.0);
-                    return Err(io::Error::last_os_error());
+                    return Err(pipe_error);
                 }
                 data.truncate(read as usize);
                 return Ok(data);
