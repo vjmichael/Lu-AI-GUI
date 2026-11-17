@@ -1858,11 +1858,10 @@ struct ImageSubmissionStatus{
 }
 /// Exact original receipt, not a text match or an optimistic event. Missing
 /// original is NOT a claim that an unresolved invocation cannot still commit.
-#[tauri::command]
-fn lu_image_submission_status(state:State<'_,Arc<DesktopState>>,chat_id:String,submission_id:String)
+fn image_submission_status(state:&DesktopState,chat_id:&str,submission_id:&str)
     ->Result<ImageSubmissionStatus,String>{
     let _gate=state.attachments.gate.lock().map_err(|_|"Attachment manifest unavailable")?;
-    let gid=image_submission_generation(&chat_id,&submission_id)?;
+    let gid=image_submission_generation(chat_id,submission_id)?;
     let book=state.chats.require(&chat_id)?;
     let original=book.authenticated_chat_turn_visible_seq(&chat_id,&gid)
         .map_err(|_|"Submission receipt unavailable")?;
@@ -1871,6 +1870,38 @@ fn lu_image_submission_status(state:State<'_,Arc<DesktopState>>,chat_id:String,s
         return Err("Saved submission has no image manifest".into())
     }
     Ok(ImageSubmissionStatus{generation_id:gid,visible_seq:original.map(|(seq,_)|seq)})
+}
+#[tauri::command]
+fn lu_image_submission_status(state:State<'_,Arc<DesktopState>>,chat_id:String,submission_id:String)
+    ->Result<ImageSubmissionStatus,String>{
+    image_submission_status(state.inner(),&chat_id,&submission_id)
+}
+#[derive(Serialize)]
+#[serde(rename_all="camelCase")]
+struct ImageSubmissionResult{
+    receipt:ImageSubmissionStatus,
+    outcome:&'static str,
+    error:Option<String>,
+}
+/// A successful IPC response establishes that this particular invocation
+/// returned, even on native admission or inference failure. Transport failure
+/// has no such meaning; the UI must keep the nonce and reconcile/retry it.
+#[tauri::command]
+async fn lu_submit_image_turn(app:AppHandle,state:State<'_,Arc<DesktopState>>,
+    session_id:String,chat_id:String,prompt:String,image_refs:Vec<String>,
+    submission_id:String)->Result<ImageSubmissionResult,String>{
+    let owner=Arc::clone(state.inner());
+    image_submission_generation(&chat_id,&submission_id)?;
+    if image_refs.is_empty(){return Err("An image submission requires an image".into())}
+    let result=lu_generate(app,state,session_id,chat_id.clone(),prompt,image_refs,
+        512,Some(false),Some(false),Some(submission_id.clone())).await;
+    let receipt=image_submission_status(&owner,&chat_id,&submission_id)?;
+    let (outcome,error)=match result{
+        Ok(_)=>("completed",None),
+        Err(error) if error.contains("Cancelled")||error.contains("Canceled")=>("cancelled",None),
+        Err(error)=>("failed",Some(error)),
+    };
+    Ok(ImageSubmissionResult{receipt,outcome,error})
 }
 /// Explicitly copy exact ordinary saved images into an EMPTY draft with
 /// new host handles. No inference, permission replay, overwriting a draft,
@@ -9587,6 +9618,7 @@ pub fn run() {
             lu_image_attachments,
             lu_read_image_attachment,
             lu_image_submission_status,
+            lu_submit_image_turn,
             lu_restore_image_turn,
             lu_load_model,
             lu_load_diagnostics,
