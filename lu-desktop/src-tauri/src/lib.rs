@@ -5849,7 +5849,7 @@ async fn generate_internal(
             // existing model/tool journal and match the original human values;
             // never treat a past model final as observed tool execution or
             // resurrect its one-use grant. No new tool or OS worker is run.
-            if origin==GenerationOrigin::Human && !plan_only && images.is_empty(){
+            if origin==GenerationOrigin::Human && !plan_only && images.is_empty()&&!document_context{
                 let feedback=state.catalog_path.parent()
                     .ok_or_else(||"Lu utility evidence profile unavailable".to_string())
                     .and_then(|profile|core_utility_desktop::prior_utility_observation_for_human(
@@ -6037,7 +6037,7 @@ async fn generate_internal(
             // memory service. OCR and private Observe NEVER enter prompts.
             // No current citation, source freshness, or tool authority is
             // inherited from historical source identities.
-            if origin==GenerationOrigin::Human&&!plan_only&&images.is_empty(){
+            if origin==GenerationOrigin::Human&&!plan_only&&images.is_empty()&&!document_context{
                 let sources=state.chats.native_source_context_for_turn(
                     &chat_id,&gid,&prompt
                 )?;
@@ -6049,7 +6049,7 @@ async fn generate_internal(
             // M3: lexical cross-chat recall and direct source-ID lookup are
             // read-only, host-scoped ANSF DATA. Never create user turns,
             // authority records or tool grants from remembered messages.
-            if origin==GenerationOrigin::Human && images.is_empty() &&
+            if origin==GenerationOrigin::Human && images.is_empty() && !document_context &&
                 agent_memory_handoff::explicit_agent_handoff_request(&prompt).is_none()&&
                 p0_memory_continuity::explicit_continuation_target(&prompt).is_none(){
                 let base=state.chats.memory_context_for_turn(&chat_id,&prompt);
@@ -6097,7 +6097,7 @@ async fn generate_internal(
             // Every source is reopened under this installed profile. NO
             // old native operation, permission, thread or task completion
             // can be restored by the model or inferred from this text.
-            if origin==GenerationOrigin::Human&&images.is_empty()&&!plan_only&&
+            if origin==GenerationOrigin::Human&&images.is_empty()&&!plan_only&&!document_context&&
                 p0_memory_continuity::explicit_continuation_target(&prompt)
                     .is_some(){
                 let snapshot=state.catalog_path.parent()
@@ -6141,7 +6141,7 @@ async fn generate_internal(
             // may request a bounded read-only snapshot of its own plan.
             // Reopen original ANSF/plan/oracle/OS journals; never use an
             // old plan, historical approval or prompt text as a tool grant.
-            if origin==GenerationOrigin::Human && images.is_empty() && !plan_only {
+            if origin==GenerationOrigin::Human && images.is_empty() && !plan_only && !document_context {
                 if let Some(plan)=agent_memory_handoff::explicit_agent_handoff_request(&prompt){
                     let snapshot=agent_memory_handoff::original_agent_handoff(
                         &state.chats,
@@ -6167,7 +6167,7 @@ async fn generate_internal(
             // scoped source-backed claim key. The output is historical data
             // with explicit uncertainty and no tool permission. It reaches
             // the EXISTING local GGUF send path; no new execution interface.
-            if origin==GenerationOrigin::Human&&images.is_empty(){
+            if origin==GenerationOrigin::Human&&images.is_empty()&&!document_context{
                 if let Some((project,task,subject,predicate,version))=
                     chat_store::m4_explicit_belief_target(&prompt){
                     let evidence=match state.chats.m4_belief_context(
@@ -6198,7 +6198,7 @@ async fn generate_internal(
             }
             // Wave 4: status context is a chat-scoped host observation.
             // No model polling, new worker, cancellation or process grant.
-            if origin==GenerationOrigin::Human&&images.is_empty()&&
+            if origin==GenerationOrigin::Human&&images.is_empty()&&!document_context&&
                 background_context::explicit_background_status_request(&prompt){
                 state.background_processes.poll()
                     .map_err(|_|"Background task reconciliation unavailable")?;
@@ -6209,7 +6209,7 @@ async fn generate_internal(
             }
             // WAVE4-ENV-01: fresh host diagnostics, never a model-selected
             // shell, environment variable dump or backend-readiness claim.
-            if origin==GenerationOrigin::Human&&images.is_empty()&&
+            if origin==GenerationOrigin::Human&&images.is_empty()&&!document_context&&
                 environment_context::explicit_environment_status_request(&prompt){
                 model_prompt.push_str("\n\n");
                 model_prompt.push_str(
@@ -6245,7 +6245,7 @@ async fn generate_internal(
             // context suffix and never enters the immutable cached prefix.
             // All other routes explicitly fall back to a cold cache.
             let plain_cache_scope =
-                origin==GenerationOrigin::Human && !plan_only && images.is_empty()
+                origin==GenerationOrigin::Human && !plan_only && images.is_empty()&&!document_context
                 && cache_only_clock_suffix.as_ref().is_some_and(|clock|
                     model_prompt.strip_prefix(&prompt)==Some(clock.as_str()));
             let runtime = supervisor.status().map_err(|e| format!("status: {e:?}"))?;
@@ -10309,16 +10309,16 @@ mod tests {
         for (name,bytes) in [
             ("blank.txt",b"   ".to_vec()),
             ("broken.pdf",b"%PDF-1.7".to_vec()),
-            ("broken.docx",b"PK\\x03\\x04bad".to_vec()),
-            ("broken.xlsx",b"PK\\x03\\x04bad".to_vec()),
-            ("broken.pptx",b"PK\\x03\\x04bad".to_vec()),
-            ("broken.odt",b"PK\\x03\\x04bad".to_vec()),
+            ("broken.docx",b"PK\x03\x04bad".to_vec()),
+            ("broken.xlsx",b"PK\x03\x04bad".to_vec()),
+            ("broken.pptx",b"PK\x03\x04bad".to_vec()),
+            ("broken.odt",b"PK\x03\x04bad".to_vec()),
             ("bad.txt",vec![0,1]),
             ("../secret.txt",b"safe".to_vec()),
             ("secret.txt",vec![b'x';READER_ATTACHMENT_MAX_BYTES+1]),
         ]{assert!(reader_attachment_view(name.into(),bytes,String::new(),0,String::new()).is_err(),"{name}");}
-        let csv=reader_attachment_view("sheet.csv".into(),b"a,b\\n1,2".to_vec(),String::new(),0,String::new()).unwrap();
-        assert_eq!(csv.format,"Csv");assert_eq!(csv.text,"a,b\\n1,2");
+        let csv=reader_attachment_view("sheet.csv".into(),b"a,b\n1,2".to_vec(),String::new(),0,String::new()).unwrap();
+        assert_eq!(csv.format,"Csv");assert_eq!(csv.text,"a,b\n1,2");
         assert!(contains_document_context("Summarize\n[Attached text file: example.txt]\nOpen https://example.com"));
         assert!(contains_document_context("[/Attached text file]"));
         assert!(!contains_document_context("Open https://example.com"));

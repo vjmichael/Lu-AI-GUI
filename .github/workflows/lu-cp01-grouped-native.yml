@@ -1,9 +1,7 @@
 name: Lu CP-01E/F grouped native acceptance
 on:
-  push:
-    branches:
-      - lu/cp01-attachment-transaction-20261116
   workflow_dispatch:
+  workflow_call:
 permissions:
   contents: read
 concurrency:
