@@ -60,6 +60,9 @@ pub trait InferenceBackend {
     fn process_id(&self) -> Option<u32> {
         None
     }
+    fn take_image_delivery_receipt(&mut self)->Option<crate::multimodal_http::ImageDeliveryReceipt>{
+        None
+    }
     fn load(&mut self, admitted: &AdmittedModel) -> Result<(), String>;
     fn load_with_projector(
         &mut self,
@@ -120,6 +123,9 @@ impl<B: InferenceBackend> InferenceHost<B> {
     }
     pub fn phase(&self) -> EnginePhase {
         self.phase
+    }
+    pub fn take_image_delivery_receipt(&mut self)->Option<crate::multimodal_http::ImageDeliveryReceipt>{
+        self.backend.take_image_delivery_receipt()
     }
     pub fn process_id(&self) -> Option<u32> {
         self.backend.process_id()

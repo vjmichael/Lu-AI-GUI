@@ -15,7 +15,7 @@ use crate::backend_restart_ledger::{BackendRestartLedger,RestartAdmission};
 use crate::mmproj_admission::AdmittedProjector;
 use crate::model_admission::AdmittedModel;
 use crate::prefix_kv_cache::PromptCacheGate;
-use crate::multimodal_http::generate_chat_stream_body;
+use crate::multimodal_http::{generate_chat_stream_body,generate_verified_image_body,ImageDeliveryReceipt,image_failure_code};
 use crate::multimodal_saved_turn::{build_structured_chat_request, PinnedImage};
 use sha2::{Digest, Sha256};
 use std::{
@@ -87,6 +87,7 @@ pub struct PersistentLlamaBackend {
     port: Option<u16>,
     cache_gate: PromptCacheGate,
     next_trusted_cache_scope: Option<String>,
+    last_image_delivery:Option<ImageDeliveryReceipt>,
     durable_spawn_gate: Option<HostEngineSpawnGate>,
     #[cfg(windows)]
     job: Option<lu_win_worker_job::Job>,
@@ -225,6 +226,7 @@ impl PersistentLlamaBackend {
             port: None,
             cache_gate: PromptCacheGate::default(),
             next_trusted_cache_scope: None,
+            last_image_delivery:None,
             durable_spawn_gate: None,
             #[cfg(windows)]
             job: None,
@@ -418,6 +420,9 @@ impl PersistentLlamaBackend {
 impl InferenceBackend for PersistentLlamaBackend {
     fn process_id(&self) -> Option<u32> {
         self.pid()
+    }
+    fn take_image_delivery_receipt(&mut self)->Option<ImageDeliveryReceipt>{
+        self.last_image_delivery.take()
     }
     fn set_trusted_cache_scope(&mut self, scope: Option<&str>) {
         self.next_trusted_cache_scope=scope.map(str::to_owned);
@@ -622,48 +627,46 @@ impl InferenceBackend for PersistentLlamaBackend {
         cancel: &Cancellation,
         emit: &mut dyn FnMut(TokenChunk) -> Result<(), EngineError>,
     ) -> Result<(), String> {
-        // Pixels and changing MMProj projection invalidate the text KV lane.
-        // Future multimodal reuse requires separate pixel-token proof.
         self.cache_gate.invalidate();
         self.next_trusted_cache_scope=None;
-        // Without a successfully loaded MMProj, image content must NEVER be
-        // downgraded to a text-only completion, even if llama-server is alive.
-        if self.pinned_projector_file.is_none() {
-            return Err("load a compatible MMProj before image generation".into());
+        let mut receipt=ImageDeliveryReceipt::new();
+        let result=(||->Result<(),String>{
+            if cancel.is_cancelled(){return Err("generation cancelled".into())}
+            if self.pinned_projector_file.is_none(){
+                return Err("load a compatible MMProj before image generation".into());
+            }
+            let port=match self.active_port(){
+                Ok(port)=>port,
+                Err(error)=>{self.unload();return Err(error)}
+            };
+            let body=build_structured_chat_request(&request.prompt,&request.history,images,
+                request.max_new_tokens).map_err(|_|"invalid structured image request".to_owned())?;
+            let mut json:serde_json::Value=serde_json::from_str(&body)
+                .map_err(|_|"invalid structured image JSON")?;
+            self.cache_gate.disable_for_other_body(&mut json).map_err(str::to_owned)?;
+            self.sampling.apply(&mut json);
+            let body=json.to_string();
+            let mut piece=0u32;
+            let child=self.process.as_ref().cloned().ok_or("llama.cpp worker is not loaded")?;
+            let result=Self::run_with_watchdog(child,cancel,||{
+                generate_verified_image_body(port,&self.config.api_key,&body,&request.prompt,
+                    &request.history,images,request.max_new_tokens,self.config.request_timeout,
+                    ||cancel.is_cancelled(),|text|{
+                        emit(TokenChunk{text,index:piece})
+                            .map_err(|_|"chat stream receiver unavailable".to_owned())?;
+                        piece=piece.saturating_add(1);Ok(())
+                    },&mut receipt)
+            });
+            let verified=self.ensure_stopped_after_stream(port,cancel,result);
+            receipt.worker_idle_verified=verified.is_ok();
+            verified
+        })();
+        if let Err(error)=&result{
+            receipt.failure_code=Some(image_failure_code(error));
         }
-        let port = self.active_port()?;
-        let body = build_structured_chat_request(
-            &request.prompt,
-            &request.history,
-            images,
-            request.max_new_tokens,
-        )
-        .map_err(|_| "invalid structured image request".to_string())?;
-        let mut json:serde_json::Value=serde_json::from_str(&body)
-            .map_err(|_|"invalid structured image JSON")?;
-        self.cache_gate.disable_for_other_body(&mut json)
-            .map_err(str::to_owned)?;
-        self.sampling.apply(&mut json);
-        let body=json.to_string();
-        let mut piece = 0u32;
-        let child = self.process.as_ref().cloned()
-            .ok_or("llama.cpp worker is not loaded")?;
-        let result = Self::run_with_watchdog(child, cancel, || {
-            generate_chat_stream_body(
-                port,
-                &self.config.api_key,
-                &body,
-                self.config.request_timeout,
-                || cancel.is_cancelled(),
-                |text| {
-                    emit(TokenChunk { text, index: piece })
-                        .map_err(|_| "chat stream receiver unavailable".to_string())?;
-                    piece = piece.saturating_add(1);
-                    Ok(())
-                },
-            )
-        });
-        self.ensure_stopped_after_stream(port, cancel, result)
+        let code=receipt.failure_code;
+        self.last_image_delivery=Some(receipt);
+        result.map_err(|_|code.unwrap_or("CP01_IMAGE_BACKEND_FAILED").to_owned())
     }
     fn generate(
         &mut self,

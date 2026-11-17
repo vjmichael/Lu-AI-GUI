@@ -15,6 +15,121 @@ const MAX_HEADER_BYTES: usize = 16 * 1024;
 const MAX_EVENT_BYTES: usize = 64 * 1024;
 const MAX_STREAM_BYTES: usize = 16 * 1024 * 1024;
 
+/// Bounded, content-free witness of the *actual final HTTP request*. This
+/// proves local transport milestones, not semantic vision or GPU execution.
+#[derive(Debug,Clone,PartialEq,Eq,serde::Serialize)]
+#[serde(rename_all="camelCase")]
+pub struct ImageDeliveryReceipt{
+    pub image_count:usize,
+    pub decoded_bytes:usize,
+    pub payload_verified:bool,
+    pub upload_completed:bool,
+    pub visible_answer:bool,
+    pub stream_completed:bool,
+    pub worker_idle_verified:bool,
+    pub failure_code:Option<&'static str>,
+}
+impl ImageDeliveryReceipt{
+    pub fn new()->Self{
+        Self{image_count:0,decoded_bytes:0,payload_verified:false,
+            upload_completed:false,visible_answer:false,stream_completed:false,
+            worker_idle_verified:false,failure_code:None}
+    }
+}
+/// Exact allowlisted categories only. Never return model/engine response
+/// text, private paths, base64, credentials or exception payloads.
+pub fn image_failure_code(error:&str)->&'static str{
+    if error.starts_with("CP01_IMAGE_"){
+        return match error{
+            "CP01_IMAGE_PAYLOAD_MISMATCH"=>"CP01_IMAGE_PAYLOAD_MISMATCH",
+            "CP01_IMAGE_OUTPUT_LIMIT"=>"CP01_IMAGE_OUTPUT_LIMIT",
+            "CP01_IMAGE_BACKEND_EVENT"=>"CP01_IMAGE_BACKEND_EVENT",
+            "CP01_IMAGE_NO_VISIBLE_ANSWER"=>"CP01_IMAGE_NO_VISIBLE_ANSWER",
+            "CP01_IMAGE_STREAM_INCOMPLETE"=>"CP01_IMAGE_STREAM_INCOMPLETE",
+            _=>"CP01_IMAGE_BACKEND_FAILED",
+        }
+    }
+    if error.contains("HTTP 400")||error.contains("HTTP 422"){
+        "CP01_IMAGE_BACKEND_REJECTED"
+    }else if error.contains("HTTP 401")||error.contains("HTTP 403"){
+        "CP01_IMAGE_ENDPOINT_AUTH"
+    }else if error.contains("HTTP 5"){
+        "CP01_IMAGE_BACKEND_HTTP_5XX"
+    }else if error.starts_with("llama.cpp chat request rejected"){
+        "CP01_IMAGE_BACKEND_HTTP_OTHER"
+    }else if error.contains("zero visible answer tokens"){
+        "CP01_IMAGE_NO_VISIBLE_ANSWER"
+    }else if error.contains("timed out"){
+        "CP01_IMAGE_TIMEOUT"
+    }else if error.contains("cancelled"){
+        "CP01_IMAGE_CANCELLED"
+    }else if error.contains("invalid structured image")||error.contains("invalid admitted multimodal"){
+        "CP01_IMAGE_PAYLOAD_MISMATCH"
+    }else if error.contains("compatible MMProj"){
+        "CP01_IMAGE_PROJECTOR_MISSING"
+    }else if error.contains("not running")||error.contains("engine unavailable")||
+        error.contains("endpoint missing")||error.contains("worker is not loaded"){
+        "CP01_IMAGE_ENGINE_UNAVAILABLE"
+    }else if error.contains("verified idle slot"){
+        "CP01_IMAGE_WORKER_STOP_UNVERIFIED"
+    }else if error.contains("upload"){
+        "CP01_IMAGE_UPLOAD_FAILED"
+    }else if error.contains("stream did not complete")||error.contains("truncated")||error.contains("closed multimodal stream"){
+        "CP01_IMAGE_STREAM_INCOMPLETE"
+    }else if error.contains("invalid")||error.contains("unsupported streaming")||
+        error.contains("oversized")||error.contains("size limit"){
+        "CP01_IMAGE_PROTOCOL_FAILED"
+    }else{"CP01_IMAGE_BACKEND_FAILED"}
+}
+
+/// Independently decode the final serialized body after sampling/cache
+/// options have been applied. Exact membership, order, MIME, bytes and
+/// digest must agree with the native originals. No remote URL is accepted.
+pub fn verify_final_image_body(body:&str,prompt:&str,history:&[crate::inference_host::ChatTurn],
+    images:&[crate::multimodal_saved_turn::PinnedImage],max_new_tokens:u32,
+)->Result<(usize,usize),String>{
+    use base64::{engine::general_purpose::STANDARD,Engine as _};
+    use sha2::{Digest,Sha256};
+    let mismatch=||"CP01_IMAGE_PAYLOAD_MISMATCH".to_owned();
+    if images.is_empty()||images.len()>4||body.len()>48*1024*1024{
+        return Err(mismatch())
+    }
+    let json:serde_json::Value=serde_json::from_str(body).map_err(|_|mismatch())?;
+    if json["stream"]!=true||json["max_tokens"]!=max_new_tokens||
+        json["chat_template_kwargs"]["enable_thinking"]!=false||json["reasoning_effort"]!="none"{
+        return Err(mismatch())
+    }
+    let messages=json["messages"].as_array().ok_or_else(mismatch)?;
+    if messages.len()!=history.len()+1{return Err(mismatch())}
+    for (actual,expected) in messages.iter().zip(history){
+        if actual["role"].as_str()!=Some(expected.role.as_str())||
+           actual["content"].as_str()!=Some(expected.text.as_str()){
+            return Err(mismatch())
+        }
+    }
+    let user=messages.last().ok_or_else(mismatch)?;
+    if user["role"]!="user"{return Err(mismatch())}
+    let parts=user["content"].as_array().ok_or_else(mismatch)?;
+    if parts.len()!=images.len()+1||parts[0]["type"]!="text"||
+        parts[0]["text"].as_str()!=Some(prompt){return Err(mismatch())}
+    let mut total=0usize;
+    for (part,expected) in parts[1..].iter().zip(images){
+        if part["type"]!="image_url"{return Err(mismatch())}
+        let url=part["image_url"]["url"].as_str().ok_or_else(mismatch)?;
+        let prefix=format!("data:{};base64,",expected.mime_type);
+        let encoded=url.strip_prefix(&prefix).ok_or_else(mismatch)?;
+        let bytes=STANDARD.decode(encoded).map_err(|_|mismatch())?;
+        let digest:[u8;32]=Sha256::digest(&bytes).into();
+        if bytes!=expected.bytes||digest!=expected.sha256||STANDARD.encode(&bytes)!=encoded{
+            return Err(mismatch())
+        }
+        total=total.checked_add(bytes.len()).ok_or_else(mismatch)?;
+    }
+    if total>crate::multimodal_saved_turn::MAX_TOTAL_IMAGE_BYTES{return Err(mismatch())}
+    Ok((images.len(),total))
+}
+
+
 fn check(cancelled: &impl Fn() -> bool, deadline: Instant) -> Result<(), String> {
     if cancelled() {
         return Err("multimodal generation cancelled".into());
@@ -142,7 +257,9 @@ pub fn generate_image_chat_stream(
 ) -> Result<(), String> {
     let body = build_llama_chat_request(turn, max_new_tokens)
         .map_err(|_| "invalid admitted multimodal request".to_string())?;
-    generate_chat_stream_body(port, api_key, &body, timeout, cancelled, on_text)
+    let mut receipt=ImageDeliveryReceipt::new();
+    generate_verified_image_body(port,api_key,&body,&turn.prompt,&[],&turn.images,
+        max_new_tokens,timeout,cancelled,on_text,&mut receipt)
 }
 
 /// The JSON format here is strictly the external llama.cpp HTTP contract.
@@ -157,6 +274,7 @@ fn stream_chat_frames(
     body: &str,
     timeout: Duration,
     cancelled: impl Fn() -> bool,
+    on_uploaded:impl FnOnce(),
     mut on_frame: impl FnMut(&[u8]) -> Result<FrameDisposition,String>,
 ) -> Result<(),String> {
     if port == 0
@@ -186,6 +304,7 @@ fn stream_chat_frames(
     );
     write_checked(&mut socket, headers.as_bytes(), &cancelled, deadline)?;
     write_checked(&mut socket, body.as_bytes(), &cancelled, deadline)?;
+    on_uploaded();
     let mut reader = BufReader::new(socket);
     let status = read_line_bounded(&mut reader, MAX_HEADER_BYTES, &cancelled, deadline)?;
     if !status.starts_with(b"HTTP/1.1 200 ") && !status.starts_with(b"HTTP/1.0 200 ") {
@@ -274,7 +393,7 @@ pub fn generate_chat_stream_body(
     mut on_text:impl FnMut(String)->Result<(),String>,
 )->Result<(),String>{
     let mut emitted=0usize;
-    stream_chat_frames(port,api_key,body,timeout,cancelled,|frame|{
+    stream_chat_frames(port,api_key,body,timeout,cancelled,||{},|frame|{
         match parse_chat_sse_frame(frame).map_err(|_|"invalid multimodal chat event")?{
             ChatEvent::Text(text)=>{
                 emitted=emitted.saturating_add(text.len());
@@ -295,6 +414,60 @@ pub fn generate_chat_stream_body(
     Ok(())
 }
 
+/// The production image lane requires complete SSE terminal framing and
+/// distinguishes a clipped answer, backend error, and no visible answer.
+/// Plain text and structured tool lanes retain their original contracts.
+pub fn generate_verified_image_body(
+    port:u16,api_key:&str,body:&str,prompt:&str,history:&[crate::inference_host::ChatTurn],
+    images:&[crate::multimodal_saved_turn::PinnedImage],max_new_tokens:u32,
+    timeout:Duration,cancelled:impl Fn()->bool,
+    mut on_text:impl FnMut(String)->Result<(),String>,receipt:&mut ImageDeliveryReceipt,
+)->Result<(),String>{
+    *receipt=ImageDeliveryReceipt::new();
+    let result=(||{
+        let(count,bytes)=verify_final_image_body(body,prompt,history,images,max_new_tokens)?;
+        receipt.image_count=count;receipt.decoded_bytes=bytes;receipt.payload_verified=true;
+        let mut uploaded=false;
+        let mut visible=false;
+        let result=stream_chat_frames(port,api_key,body,timeout,cancelled,||uploaded=true,|frame|{
+            let text=std::str::from_utf8(frame).map_err(|_|"CP01_IMAGE_BACKEND_EVENT")?;
+            // Inspect the finish reason even when content is null or nonempty.
+            // Never interpret a backend error/limit as successful termination.
+            if let Some(data)=text.lines().find_map(|line|line.strip_prefix("data: ")){
+                if data.trim()!="[DONE]"{
+                    let parsed=crate::model_json_boundary::parse_exact_boundary_object(data.trim_end(),64*1024)
+                        .map_err(|_|"CP01_IMAGE_BACKEND_EVENT")?;
+                    if parsed.contains_key("error"){return Err("CP01_IMAGE_BACKEND_EVENT".into())}
+                    if let Some(reason)=parsed.get("choices").and_then(|v|v.as_array())
+                        .and_then(|v|v.first()).and_then(|v|v.get("finish_reason")).filter(|v|!v.is_null()){
+                        match reason.as_str(){
+                            Some("stop")=>(),
+                            Some("length")=>return Err("CP01_IMAGE_OUTPUT_LIMIT".into()),
+                            _=>return Err("CP01_IMAGE_BACKEND_EVENT".into()),
+                        }
+                    }
+                }
+            }
+            match parse_chat_sse_frame(frame).map_err(|_|"CP01_IMAGE_BACKEND_EVENT")?{
+                ChatEvent::Text(part)=>{
+                    if !part.trim().is_empty(){visible=true;}
+                    on_text(part)?;Ok(FrameDisposition::Continue)
+                },
+                ChatEvent::Done if text.lines().any(|line|line.trim_end()=="data: [DONE]")=>
+                    Ok(FrameDisposition::Done),
+                _=>Ok(FrameDisposition::Continue),
+            }
+        });
+        receipt.upload_completed=uploaded;receipt.visible_answer=visible;
+        result?;
+        receipt.stream_completed=true;
+        if !visible{return Err("CP01_IMAGE_NO_VISIBLE_ANSWER".into())}
+        Ok(())
+    })();
+    if let Err(error)=&result{receipt.failure_code=Some(image_failure_code(error));}
+    result
+}
+
 /// Structured function calls are collected in isolation from the text stream.
 pub fn generate_browser_tool_stream_body(
     port:u16,
@@ -313,7 +486,7 @@ pub fn generate_browser_tool_stream_body(
     }
     let mut collector=BrowserToolCallCollector::new(allowed_names);
     let mut completed=None;
-    stream_chat_frames(port,api_key,body,timeout,cancelled,|frame|{
+    stream_chat_frames(port,api_key,body,timeout,cancelled,||{},|frame|{
         let event=parse_tool_sse_frame(frame)
             .map_err(|_|"invalid browser tool SSE event")?;
         let done=matches!(event,ToolStreamEvent::Done);
