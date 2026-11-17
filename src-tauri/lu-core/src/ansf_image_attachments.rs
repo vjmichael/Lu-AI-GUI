@@ -334,6 +334,21 @@ mod tests{
             generation_id:None,call_id:None,tool_id:None}
     }
     #[test]
+    fn canonical_attachment_id_has_exact_lowercase_128_bit_shape(){
+        let exact=format!("img-{:032x}",42);
+        assert_eq!(exact.len(),36);
+        assert!(valid_attachment_id(&exact));
+        for bad in [
+            format!("img-{}","a".repeat(64)),
+            format!("img-{}","a".repeat(31)),
+            format!("img-{}","a".repeat(33)),
+            format!("img-{}","A".repeat(32)),
+            format!("img-{}","g".repeat(32)),
+            format!("g-{}","a".repeat(32)),
+            "../img-00000000000000000000000000000000".to_owned()
+        ]{assert!(!valid_attachment_id(&bad));}
+    }
+    #[test]
     fn order_scope_retry_and_atomic_binding_survive_restart(){
         let db=std::env::temp_dir().join(format!("lu-image-manifest-{}-{}.sqlite",
             std::process::id(),std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)

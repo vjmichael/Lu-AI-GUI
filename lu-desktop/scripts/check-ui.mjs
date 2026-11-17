@@ -8,6 +8,11 @@ const workspaceHost = readFileSync(new URL('../src-tauri/src/workspace_desktop.r
 const store = readFileSync(new URL('../src-tauri/src/ansf_chat_store.rs', import.meta.url), 'utf8');
 const css = readFileSync(new URL('../web/styles.css', import.meta.url), 'utf8');
 const js = readFileSync(new URL('../dist/assets/app.js', import.meta.url), 'utf8');
+const attachmentCore = readFileSync(new URL('../../src-tauri/lu-core/src/ansf_image_attachments.rs', import.meta.url), 'utf8');
+const attachmentStore = readFileSync(new URL('../src-tauri/src/attachment_store.rs', import.meta.url), 'utf8');
+const lifecycle = readFileSync(new URL('../web/submission_lifecycle.mjs', import.meta.url), 'utf8');
+const send = ui.slice(ui.indexOf('async function send(e)'),ui.indexOf('async function openSavedAttachment'));
+const imageAdmission = ui.slice(ui.indexOf('async function admitSavedImageAttempt'),ui.indexOf('async function acknowledgeImageAttempt'));
 const tests = [
   ['Image Workspace only exports immutable native-approved PNG revisions from host-pinned images',
     host.includes('async fn lu_image_workspace_export(') &&
@@ -125,12 +130,17 @@ const tests = [
     host.includes('state.native_actions.stage(') &&
     host.includes('fn lu_accept_native_action_proposal(')],
   ['Wave 3 normal Send one-turn workspace route is explicitly opt-in and uses native picker',
-    ui.includes('readOnlyWorkspace: useWorkspaceTools') &&
-    host.includes('workspace_desktop::explicit_read_workspace_request(&prompt)') &&
+    /readOnlyWorkspace:\s*useWorkspaceTools/.test(send) &&
+    send.includes('const useWorkspaceTools=workspaceToolsNextSend;') &&
     !ui.includes('chatToolsDrawer') &&
-    ui.includes('if (useWorkspaceTools) setWorkspaceToolsNextSend(false)') &&
-    host.includes('workspace_desktop::ask_workspace_for_chat(') &&
-    host.includes('workspace_desktop::validate_workspace_send_request(')],
+    send.includes('if (useWorkspaceTools) setWorkspaceToolsNextSend(false)') &&
+    send.indexOf('if (useWorkspaceTools) setWorkspaceToolsNextSend(false)') < send.indexOf("await invoke('lu_generate'") &&
+    send.includes('if (useWorkspaceTools && (images.length || textFiles.length))') &&
+    /let requested_workspace=read_only_workspace.unwrap_or\(false\)\s*\|\|\s*\(image_refs.is_empty\(\)\s*&&\s*workspace_desktop::explicit_read_workspace_request\(&prompt\)\);/.test(host) &&
+    /if requested_workspace\{[\s\S]*?workspace_desktop::validate_workspace_send_request\([\s\S]*?return workspace_desktop::ask_workspace_for_chat\(/.test(host) &&
+    workspaceHost.includes('chooser.dialog().file().blocking_pick_folder()') &&
+    workspaceHost.includes('state.chats.append_user_with_turn_id(&chat_id,&generation_id,&prompt)?') &&
+    workspaceHost.includes('ask_scoped_read_for_chat(app,state,session_id,chat_id,prompt,false).await')],
   ['native GGUF import and generate remain Lu-only', ui.includes("invoke('lu_import_model')") && ui.includes("invoke('lu_generate'")],
   ['no Jan execution paths introduced', !/jan_llama|JanInference|jan-cowork/.test(ui + host)],
   ['new chats and conversation history are host-owned', ui.includes("invoke('lu_new_chat')") && ui.includes("invoke('lu_chats')") && host.includes('fn lu_new_chat(')],
@@ -141,11 +151,28 @@ const tests = [
   ['selection does not start model inference', !/onClick=\{\(\) => \{ setSelectedModel\([^}]*loadModel/.test(ui) && ui.includes('Selection does not load')],
   ['model discovery stays host owned and explicit', host.includes('fn scan_unindexed_models(') && host.includes('fn lu_rescan_models(')],
   ['no auto load in application setup', !/\.setup\([\s\S]*?lu_load_model\(/.test(host)],
-  ['prompt clears immediately and drafts restore on failure', ui.includes("setPrompt(''); setImages([]);") && ui.includes('if (!completed && !cancelled && currentChat.current === activeId')],
+  ['submitted draft clears only on exact saved receipt or successful text reply; rejected/uncertain draft is retained',
+    send.includes('const snapshot=snapshotDraft(readComposerDraft(origin));') &&
+    send.includes('writeComposerDraft(activeId,clearSubmittedDraft(readComposerDraft(activeId),snapshot))') &&
+    send.includes("else if(typeof output!=='string')throw Error(") &&
+    imageAdmission.includes("if(receiptDecision(attempt,receipt)!=='saved')return false;") &&
+    imageAdmission.includes('writeComposerDraft(target,clearSubmittedDraft(old,attempt.snapshot))') &&
+    lifecycle.includes("if(!sameSubmittedDraft(current,original))return current;") &&
+    lifecycle.includes("if(saved&&receipt.rejected===false)return 'saved';") &&
+    ui.includes("Message not sent. Your draft is retained.") &&
+    ui.includes("attempt.uncertain=true;refreshComposerState()")],
   ['intentional cancellation retains partial text', !ui.includes("// Cancellation is intentional; partial streamed text is not a final answer.") && host.includes('append_progress(&chat_id, &gid, &answer)') && host.includes('state.chats.cancel(&chat_id, &gid)')],
   ['composer is resizable and collapsible', ui.includes('beginComposerDrag') && ui.includes('composerCollapsed') && css.includes('composerResizer')],
   ['brighter green model loaded indicator', css.includes('#22f66e')],
-  ['fixed host image ID length matches Lu Core', host.includes('image_ref.len() != 36') && !host.includes('image_ref.len() != 68')],
+  ['fixed host image ID shape matches canonical Lu Core ownership validator',
+    host.includes('next_id("img-")') &&
+    host.includes('let mut random = [0u8; 16];') &&
+    host.includes('lu_core::ansf_image_attachments::valid_attachment_id(id)') &&
+    attachmentStore.includes('if !chat_ok(chat)||!valid_attachment_id(id)') &&
+    attachmentCore.includes('pub fn valid_attachment_id(id:&str)->bool{opaque(id,"img-")}') &&
+    attachmentCore.includes('id.len()==prefix.len()+32 && id.starts_with(prefix)') &&
+    attachmentCore.includes("b.is_ascii_digit()||(b'a'..=b'f').contains(&b)") &&
+    !host.includes('image_ref.len() != 68')],
   ['model discovery never imports MMProj as a main model', host.includes('lowered.starts_with("mmproj")')],
   ['switching chats permitted during generation', !ui.includes('if (busy) return;\n    requestedChat.current') && ui.includes('currentChat.current')],
   ['streaming chunks are routed to generating chat', ui.includes('tokenForJob(prev,e.payload)') && host.includes('chat_id: chat_id.clone()')],
@@ -163,7 +190,12 @@ const tests = [
     store.includes('recent_context_entries(chat_id,limit)')],
   ['queued generations do not stop unrelated chat work', /generation_queue\s*\.enqueue\(/.test(host) && ui.includes('visibleJob')],
   ['restricted Markdown renderer and code-copy presentation', ui.includes("import { MarkdownView }") && ui.includes('role={entry.role}') && css.includes('.markdownBody .codeBlock')],
-  ['text attachments are draft metadata rather than textarea insertion', ui.includes("setTextFiles(draft.files || [])") && ui.includes("buildSubmittedPrompt(input, textFiles)")],
+  ['text attachments are draft metadata rather than textarea insertion',
+    ui.includes("setTextFiles(draft.files || [])") &&
+    send.includes('const snapshot=snapshotDraft(readComposerDraft(origin));') &&
+    send.includes('buildSubmittedPrompt(input, snapshot.files)') &&
+    lifecycle.includes('files:[...draft.files]') &&
+    send.includes('prompt:submitted,imageRefs:[]')],
   ['image previews are scoped with blob CSP only for image sources', ui.includes('URL.createObjectURL(file)') && readFileSync(new URL('../src-tauri/tauri.conf.json', import.meta.url),'utf8').includes("img-src 'self' data: blob:")],
   ['archive review uses supervised native decoding and scoped preview cancellation',
     host.includes('state.archive_reviews.stage_supervised(') &&
@@ -285,8 +317,12 @@ const tests = [
     host.includes('state.wave2_recovery.record_intent(')],
   ['frontend build exists and includes chat commands', statSync(new URL('../dist/assets/app.js', import.meta.url)).size > 100000 && js.includes('lu_new_chat') && js.includes('lu_rescan_models')],
 ];
+// Evaluate every contract before failing so a grouped repair sees the
+// entire cohort, not only the first obsolete/missing assertion.
+const failures=[];
 for (const [name, pass] of tests) {
   console.log(`${pass ? 'PASS' : 'FAIL'} ${name}`);
-  assert.ok(pass, name);
+  if(!pass)failures.push(name);
 }
-console.log(`Lu R22 independent desktop source and bundle checks: ${tests.length}/${tests.length}`);
+console.log(`Lu R22 independent desktop source and bundle checks: ${tests.length-failures.length}/${tests.length}`);
+assert.deepEqual(failures, [], 'Independent desktop contracts failed');

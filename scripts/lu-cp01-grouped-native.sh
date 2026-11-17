@@ -18,7 +18,7 @@ done
 for suite in ansf_image_attachments::tests ansf_live_chat::tests multimodal_http::tests inference_supervisor persistent_llama_backend::tests passive_localization::tests; do
   run_tests "core-${suite//::/-}" --manifest-path "$core" --lib "$suite"
 done
-for suite in causal_diagnostic diagnostic_archive::tests perf01_telemetry::tests attachment_store::tests generation_queue::tests stream_delivery::tests image_submission_nonce_is_chat_bound_and_rejects_bad_shape; do
+for suite in causal_diagnostic diagnostic_archive::tests perf01_telemetry::tests attachment_store::tests generation_queue::tests stream_delivery::tests workspace_desktop::tests image_submission_nonce_is_chat_bound_and_rejects_bad_shape; do
   run_tests "desktop-${suite//::/-}" --manifest-path "$desktop" --lib "$suite"
 done
 # Positive genuine MMProj test is intentionally NOT run with dummy resources.
