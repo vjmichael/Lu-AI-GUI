@@ -99,6 +99,7 @@ impl NativeDirectoryPicker for NativePicker {
         self.0
             .dialog()
             .file()
+            .set_title("Select folder")
             .blocking_pick_folder()
             .map(|folder| folder.into_path().map_err(|_| IdeError::InvalidSelection))
             .transpose()
@@ -4166,6 +4167,77 @@ async fn ide_draft_discard(
     }).await.map_err(|_|"DRAFT_DISCARD_TASK_UNAVAILABLE".to_owned())?
 }
 
+/// Native, read-only confirmation for the three explicit source actions.
+/// This dialog grants no project capability and performs no filesystem write.
+/// The caller must recheck the live editor/project ticket; the separate
+/// mutation command independently rechecks the source revision and no-clobber.
+#[tauri::command]
+async fn ide_confirm_source_action(
+    app: AppHandle,
+    state: State<'_, Arc<IdeWorkspaceRegistry>>,
+    project_id: String,
+    mode: String,
+    relative_path: String,
+    destination_path: Option<String>,
+    expected_revision: String,
+    token: Option<String>,
+) -> Result<bool, String> {
+    let registry = Arc::clone(state.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        let valid_display_path = |path: &str| {
+            !path.is_empty()
+                && path.len() <= 1024
+                && !path.contains('\\')
+                && !path.chars().any(char::is_control)
+                && path.split('/').all(|part| {
+                    !part.is_empty() && part != "." && part != ".." && !part.contains(':')
+                })
+        };
+        if !valid_display_path(&relative_path) {
+            return Err("SOURCE_CONFIRM_INVALID_PATH".to_owned());
+        }
+        let message = match mode.as_str() {
+            "move" | "trash" if token.is_none() => {
+                let preview = registry
+                    .preview_source_file(&project_id, &relative_path)
+                    .map_err(|e| e.code().to_owned())?;
+                if preview.revision != expected_revision {
+                    return Err("SOURCE_CONFIRM_REVISION_CHANGED".to_owned());
+                }
+                match (mode.as_str(), destination_path.as_deref()) {
+                    ("move", Some(destination))
+                        if valid_display_path(destination) && destination != relative_path.as_str() =>
+                    {
+                        format!("Move {} to {}? No existing file will be overwritten.", relative_path, destination)
+                    }
+                    ("trash", None) => format!("Move {} to recoverable project trash? This will not erase private draft checkpoints.", relative_path),
+                    _ => return Err("SOURCE_CONFIRM_INVALID_ACTION".to_owned()),
+                }
+            }
+            "restore" if destination_path.is_none() => {
+                let token = token.ok_or_else(|| "SOURCE_CONFIRM_MISSING_TOKEN".to_owned())?;
+                let items = registry.list_trashed_source_files(&project_id)
+                    .map_err(|e| e.code().to_owned())?;
+                if !items.iter().any(|item| item.token == token
+                    && item.original_relative_path == relative_path
+                    && item.revision == expected_revision
+                    && item.payload_present && !item.original_present) {
+                    return Err("SOURCE_CONFIRM_TRASH_CHANGED".to_owned());
+                }
+                format!("Restore {} from project trash? No existing file will be overwritten.", relative_path)
+            }
+            _ => return Err("SOURCE_CONFIRM_INVALID_ACTION".to_owned()),
+        };
+        Ok(app.dialog().message(message)
+            .title("Lu IDE · Confirm source file action")
+            .buttons(MessageDialogButtons::OkCancelCustom(
+                "Apply file action".into(), "Cancel".into()))
+            .blocking_show())
+    })
+    .await
+    .map_err(|_| "SOURCE_CONFIRM_TASK_UNAVAILABLE".to_owned())?
+}
+
 /// Exact-source no-clobber rename/move of one regular file in the same
 /// native registered project. Directories and cross-project moves are denied.
 #[tauri::command]
@@ -4806,6 +4878,7 @@ pub fn run() {
             ide_review_source_change,
             ide_save_source_file,
             ide_create_source_entry,
+            ide_confirm_source_action,
             ide_move_source_file,
             ide_trash_source_file,
             ide_list_trashed_sources,

@@ -172,12 +172,13 @@ def main():
         editor_project()  # actual persisted registered project reopen in GTK
         activate("Job requests")
         accessible("DEV-03.4 · Conventional test files",seconds=16)
-        accessible("DEV-03.3B · Live protected worker output",seconds=16)
+        accessible("INT05-C · Protected terminal transcript",seconds=16)
+        accessible("No current project-owned native terminal",seconds=16)
         accessible("DEV-03.5 · Protected job lifecycle",seconds=16)
         native_empty_job_journal(seconds=16)
         activate("Discover test files")
         native_bounded_test_discovery_status(seconds=18)
-        run=accessible("Request protected Run / Test",role="push button",seconds=16)
+        run=accessible("Request protected Build/Test",role="push button",seconds=16)
         if run.getState().contains(pyatspi.STATE_ENABLED):
             deny("dev035_unsigned_gtk_admitted_protected_execution")
         if digest()!=old:

@@ -84,7 +84,10 @@ def owned_confirmation(proc, message):
         child = int(parent.split(":", 1)[1].strip())
     else:
         deny("confirmation_not_owned_by_installed_desktop")
-    native.activate("OK")
+    button = native.accessible("Apply file action", role="button", seconds=12)
+    if not native._native_dialog_ancestor(button):
+        deny("confirmation_action_not_in_native_dialog")
+    native.activate("Apply file action", role="button")
     print("DEV01_MODERN_LINUX_NATIVE_OWNED_CONFIRMATION=OBSERVED", flush=True)
 
 

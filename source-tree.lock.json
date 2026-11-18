@@ -1,0 +1,4463 @@
+{
+  "schema": 1,
+  "sourceCommitBeforeLock": "836b90cd8a8a45de33aa189dc105967f2aec0313",
+  "trackedFileCount": 1114,
+  "files": [
+    {
+      "path": ".gitattributes",
+      "blob": "72050fb2ee63130195556bb14cafce3da9e2e0f7"
+    },
+    {
+      "path": ".github/ide-group06d-batch-trigger.txt",
+      "blob": "bb44b64f1e698dfcbd618be7cc2a447735297317"
+    },
+    {
+      "path": ".github/ide-merge/ide-merge-01-02-native-batch.txt",
+      "blob": "bc226ff7367de1a21afe00777f99aac3d676d95b"
+    },
+    {
+      "path": ".github/pull_request_template.md",
+      "blob": "ed863daf448d97af570c2b8272553115ddf821fa"
+    },
+    {
+      "path": ".github/workflows/ide-alpha-windows.yml",
+      "blob": "7680fdafd56458a9cff1ec6b6ea1478e5c662c7c"
+    },
+    {
+      "path": ".github/workflows/ide-appcontainer-windows.yml",
+      "blob": "0031405812af8347a32123fefdd2050e4b20c8d8"
+    },
+    {
+      "path": ".github/workflows/ide-b11-reviewed-merge-native.yml",
+      "blob": "e8cfbeb6c8235b53389bd7cb5e3f7b828029c49f"
+    },
+    {
+      "path": ".github/workflows/ide-b2-durable-drafts-native.yml",
+      "blob": "ed9a70dd8079eee867dcbd78ed702215d8843b7d"
+    },
+    {
+      "path": ".github/workflows/ide-b2-installed-editor-linux.yml",
+      "blob": "3fb057bcc6f647d020cd5e855d2b15a9a5178688"
+    },
+    {
+      "path": ".github/workflows/ide-b2-installed-editor-windows.yml",
+      "blob": "ae36275372a231ffe9247cb7f484bba367969a39"
+    },
+    {
+      "path": ".github/workflows/ide-b3-current-stack-native.yml",
+      "blob": "e92063c0e93382a5cd55f25f0bfd6058cfdebdf8"
+    },
+    {
+      "path": ".github/workflows/ide-b4-installed-editor-linux.yml",
+      "blob": "9b05c0fc6890e130ebea4f3672ad609dcbd281b5"
+    },
+    {
+      "path": ".github/workflows/ide-b4-installed-editor-windows.yml",
+      "blob": "36a27a523ccc28f9313fff85dc7a38f0485352cb"
+    },
+    {
+      "path": ".github/workflows/ide-b4-split-editor-native.yml",
+      "blob": "dc7d8b7aec7c7e661240602e53d12026ffd43eda"
+    },
+    {
+      "path": ".github/workflows/ide-b5-large-project-native.yml",
+      "blob": "d980d90c46f621cc0f601d9207b5ad99c665c978"
+    },
+    {
+      "path": ".github/workflows/ide-b6-async-editor-native.yml",
+      "blob": "66dbeabcaef6294c360259e3b6e4b1a5d66d86d2"
+    },
+    {
+      "path": ".github/workflows/ide-b9-private-navigation-native.yml",
+      "blob": "2c0d7f546e89b0c2c3058dde11c53f33e85bd814"
+    },
+    {
+      "path": ".github/workflows/ide-c7-task-source-evidence-native.yml",
+      "blob": "db5c06b6b6c2d7e1ddf2824c0ed7f1aab5731768"
+    },
+    {
+      "path": ".github/workflows/ide-continuity.yml",
+      "blob": "286b52f3fa1004d9fdf28306f6002a775772e9f1"
+    },
+    {
+      "path": ".github/workflows/ide-d7-windows-worker.yml",
+      "blob": "6832a33bdab3539d85805ccd43a9aa479758d08d"
+    },
+    {
+      "path": ".github/workflows/ide-d7b-native-acceptance.yml",
+      "blob": "c247635e41a4c325a76cc5223239f890898c92c1"
+    },
+    {
+      "path": ".github/workflows/ide-d7c-windows-capability.yml",
+      "blob": "a4277dffbcd0026ada381f38813205a4c9354c4c"
+    },
+    {
+      "path": ".github/workflows/ide-d7d-protected-service.yml",
+      "blob": "3450fba59185c88dc67ccc87627570db3a91b1b7"
+    },
+    {
+      "path": ".github/workflows/ide-dev02-disposable-native-test-payload.yml",
+      "blob": "53d052837865ab35af9992477ece8ce0d66df984"
+    },
+    {
+      "path": ".github/workflows/ide-dev02-full-native-resource-candidate.yml",
+      "blob": "347cd8ac9fd418caee5cabcfd55d3e88b97562dd"
+    },
+    {
+      "path": ".github/workflows/ide-dev02-linux-installed-protected-lsp.yml",
+      "blob": "83510d2b636bc63f83e96b9fc85084805f1ac5be"
+    },
+    {
+      "path": ".github/workflows/ide-dev02-native-closure-smoke.yml",
+      "blob": "e63a9baf5f8e25624d522449ecc5ad0e742e5e8f"
+    },
+    {
+      "path": ".github/workflows/ide-dev02-offline-lsp-review.yml",
+      "blob": "e651f8e9a70bc99fbb3e8a3cea534fa47d497b07"
+    },
+    {
+      "path": ".github/workflows/ide-dev02-project-problems-native-ci.yml",
+      "blob": "5314a0ba61f6df04ccb840f3e43d317b8eeba9c4"
+    },
+    {
+      "path": ".github/workflows/ide-dev02-protected-multilang-native-ci.yml",
+      "blob": "519a664edd230bd42b22ab83f04a023249cf0e2d"
+    },
+    {
+      "path": ".github/workflows/ide-dev02-protected-multilang-real-protocol.yml",
+      "blob": "737e8676be47c444d4d78ab7033778d0a1a33a7a"
+    },
+    {
+      "path": ".github/workflows/ide-dev02-python-semantic-candidate-ci.yml",
+      "blob": "2de2c7acab5628a20769986ba28dfadc425704a9"
+    },
+    {
+      "path": ".github/workflows/ide-dev02-upstream-native-asset-intake.yml",
+      "blob": "7423318bf48f22969abafadc3adf83787cdab405"
+    },
+    {
+      "path": ".github/workflows/ide-dev02-windows-installed-protected-lsp.yml",
+      "blob": "ee6e8af6c97a2e10c0c25ccde47eff878a64d065"
+    },
+    {
+      "path": ".github/workflows/ide-dev03-4-discovery-native.yml",
+      "blob": "c325aef77acafea401f96dd28c3f201608bbfd4e"
+    },
+    {
+      "path": ".github/workflows/ide-dev03-5-job-lifecycle-native.yml",
+      "blob": "8df3bd6e1608a2838d6690e1af5bb2ac63a711dc"
+    },
+    {
+      "path": ".github/workflows/ide-dev03-cmake-llvm-candidate.yml",
+      "blob": "e774e009d8cb5e8435e6b73e5dfec44e0240f1aa"
+    },
+    {
+      "path": ".github/workflows/ide-dev03-job-progress-native.yml",
+      "blob": "1c0a065554dff08e16e445c41574bbeea7be153d"
+    },
+    {
+      "path": ".github/workflows/ide-dev03-multilang-adapter-review-native.yml",
+      "blob": "5b357a24a2dd9b49808af5bd3a0a67cfba89dfaa"
+    },
+    {
+      "path": ".github/workflows/ide-dev03-multilang-runtime-native.yml",
+      "blob": "93d77b917743e83aff9cc24865403429fedd0fc1"
+    },
+    {
+      "path": ".github/workflows/ide-dev03-project-profiles-native.yml",
+      "blob": "5ec1e64e6a657365c5143b3d55fe3e3856796957"
+    },
+    {
+      "path": ".github/workflows/ide-dev03-reviewed-rust-build-native.yml",
+      "blob": "bbcef6898c11f79323076cbde9d4b6c029f4ae89"
+    },
+    {
+      "path": ".github/workflows/ide-dev03b-protected-output-native.yml",
+      "blob": "6f38ceec357a1ace6ff1f9bc7bd8ba842e09f0eb"
+    },
+    {
+      "path": ".github/workflows/ide-dev04-1-debug-target-review-native.yml",
+      "blob": "513c9bb19ed9a7809da83f6e9b6eb9887346613e"
+    },
+    {
+      "path": ".github/workflows/ide-dev04-2-build-binary-native.yml",
+      "blob": "b6558009b98d24cafef8d190467b27636ebc3d17"
+    },
+    {
+      "path": ".github/workflows/ide-dev04-3-debug-symbol-native.yml",
+      "blob": "8062f000766256cceffce71fa537bb7509b96268"
+    },
+    {
+      "path": ".github/workflows/ide-dev04-4-native-project-dap.yml",
+      "blob": "b620c764fe3a0017efcbdda334325bf52853322e"
+    },
+    {
+      "path": ".github/workflows/ide-dev04-5b-one-shot-rustfmt.yml",
+      "blob": "8fb6f7aff0b021eec6bee9adc89d50393a28dd34"
+    },
+    {
+      "path": ".github/workflows/ide-dev04-5c-installed-project-debug.yml",
+      "blob": "565813a5ae4df237f3b8f21eabc8171af3892dea"
+    },
+    {
+      "path": ".github/workflows/ide-dev04-5c-one-shot-rustfmt.yml",
+      "blob": "b61b24b6901c1ca79734f4ddbab031b5f93c496b"
+    },
+    {
+      "path": ".github/workflows/ide-dev04-5d-source-line.yml",
+      "blob": "330e975c016fe234cf477dd564ca1cb96656577e"
+    },
+    {
+      "path": ".github/workflows/ide-dev04-5d2-source-symbol-oracle.yml",
+      "blob": "793425d806b92d2b6f01d57dd1d739cb8aab2938"
+    },
+    {
+      "path": ".github/workflows/ide-dev04-5d3-kernel-line.yml",
+      "blob": "6682edc49b2528a7b93fb381b86e811601e87b01"
+    },
+    {
+      "path": ".github/workflows/ide-dev04-5d4-job-module.yml",
+      "blob": "9eac93eb2a6aab79e6f6f2300477feb01d0dfd1f"
+    },
+    {
+      "path": ".github/workflows/ide-dev04-5d4b-win-event-pdb.yml",
+      "blob": "97de5295cbbcc658c0944b5a4a5f7f91e2758410"
+    },
+    {
+      "path": ".github/workflows/ide-dev04-5d4c-real-lldb-line.yml",
+      "blob": "0a5d7c4247809454943e80574ec33bc00ea546ac"
+    },
+    {
+      "path": ".github/workflows/ide-dev04-5d4d-debug-port-owner-preflight.yml",
+      "blob": "28d4f8480223358525ee0300ae4a322f21010533"
+    },
+    {
+      "path": ".github/workflows/ide-dev04-5d5-owner-event-native.yml",
+      "blob": "2f3f3e85402daa5a7df41df45b1c00ae33b44454"
+    },
+    {
+      "path": ".github/workflows/ide-dev05-consolidated-native.yml",
+      "blob": "69a3223f89a63e5333a20435847fb7b81c1be285"
+    },
+    {
+      "path": ".github/workflows/ide-dev056-installed-native.yml",
+      "blob": "c46a98bd7a5b597f37c4cf851087b99d3c09f7b7"
+    },
+    {
+      "path": ".github/workflows/ide-e1-lsp-foundation.yml",
+      "blob": "10e8cb970bda58aa9213125443590a4e9d433c1b"
+    },
+    {
+      "path": ".github/workflows/ide-e2-native-lsp.yml",
+      "blob": "b0e8017157e9727f7c5a3fe474f7510db08b97fe"
+    },
+    {
+      "path": ".github/workflows/ide-e2-supervised-lsp.yml",
+      "blob": "a29c605710c16b9fe8678f4072f79f12a4797d98"
+    },
+    {
+      "path": ".github/workflows/ide-e2-unsigned-installed-smoke.yml",
+      "blob": "29b34141b0557ddc4a341ebf5ce5f64f16c69ab1"
+    },
+    {
+      "path": ".github/workflows/ide-fin01d-custody.yml",
+      "blob": "d606404b217d680acfb816e397dcf7a519b2a943"
+    },
+    {
+      "path": ".github/workflows/ide-fin03-6e05-native.yml",
+      "blob": "02f2c092ded8fe12941854f0af8549c8c64e234f"
+    },
+    {
+      "path": ".github/workflows/ide-fin04r1-exact-native.yml",
+      "blob": "6f4bf3ff41acd9eea869d701a0799125aa4e3d65"
+    },
+    {
+      "path": ".github/workflows/ide-group02-installed-consolidated.yml",
+      "blob": "2c23d77f7b42c1c3bf9771665c133364f9e91586"
+    },
+    {
+      "path": ".github/workflows/ide-group03-security-native.yml",
+      "blob": "109cfa5e1379f5df96db4b5e13dfe557c229af0b"
+    },
+    {
+      "path": ".github/workflows/ide-group04-native.yml",
+      "blob": "e36b1eded9d68031d26e305f34e3e28903a99045"
+    },
+    {
+      "path": ".github/workflows/ide-group04d-source.yml",
+      "blob": "08c1e1eeb4a7b71e31707d4377764412d9a1556a"
+    },
+    {
+      "path": ".github/workflows/ide-group06a-native.yml",
+      "blob": "19ba1e3280880a9bc48005c7572a94b8f8d3f1aa"
+    },
+    {
+      "path": ".github/workflows/ide-group06b-native.yml",
+      "blob": "39198be799aaec13278eecac891bd62adf50f546"
+    },
+    {
+      "path": ".github/workflows/ide-group06c-native.yml",
+      "blob": "f7e3c9c03277bb20f8513b484ee43e9622227e5a"
+    },
+    {
+      "path": ".github/workflows/ide-group06c02-native.yml",
+      "blob": "7bb288e1466a1139297664f51a2923b05c0c7c51"
+    },
+    {
+      "path": ".github/workflows/ide-group06c03-native.yml",
+      "blob": "1186609d3154f8ed284c70d5b184da4ab75a835f"
+    },
+    {
+      "path": ".github/workflows/ide-group06c03b-native.yml",
+      "blob": "feb2620a47b4178cf5f4e25ac8d0006795dce6e9"
+    },
+    {
+      "path": ".github/workflows/ide-group06c04-native.yml",
+      "blob": "6ad101f823066d7979ddaa435c4070ea8da16ff9"
+    },
+    {
+      "path": ".github/workflows/ide-group06d01-native.yml",
+      "blob": "832a0a6050e5bf43c7f0c4bf3134f1b813426ec1"
+    },
+    {
+      "path": ".github/workflows/ide-group6f-integrated-native.yml",
+      "blob": "86cbc5b5f994d855762a700ed3bb9bac4eb5162d"
+    },
+    {
+      "path": ".github/workflows/ide-linux-26-installed-diagnostic.yml",
+      "blob": "3b6b536a243c89b5caf3deaba1a9c1164179c32e"
+    },
+    {
+      "path": ".github/workflows/ide-p02-native-checks.yml",
+      "blob": "b8f80361b98df9f93ee7439ab44242f3d9587f70"
+    },
+    {
+      "path": ".github/workflows/ide-p03-native-security-checks.yml",
+      "blob": "aa567ec48ce084f5c698f77cdd07de381fa72221"
+    },
+    {
+      "path": ".github/workflows/ide-p04-linux-upgrade.yml",
+      "blob": "5819cdc1508e2ded93b14a3eda0a6046b18259e0"
+    },
+    {
+      "path": ".github/workflows/ide-p04-signed-reinstall.yml",
+      "blob": "9a23b270e06245f0140d18732ed5fc79eb32bf37"
+    },
+    {
+      "path": ".github/workflows/ide-p04-source-acceptance.yml",
+      "blob": "4c4659bc09ee1529b4ef5583311b51f9bcccba0d"
+    },
+    {
+      "path": ".github/workflows/ide-p04-upgrade-native.yml",
+      "blob": "ff101bac8fab4873f5eba247d0494f6bf37181f0"
+    },
+    {
+      "path": ".github/workflows/ide-p05-consolidation-audit.yml",
+      "blob": "86290bee94ddd3eaeb9ca75a618ff093faec577f"
+    },
+    {
+      "path": ".github/workflows/ide-p06-dependency-evidence.yml",
+      "blob": "58338f658fb21c6eddac75649b2a4f181049d2b1"
+    },
+    {
+      "path": ".github/workflows/ide-sandbox-linux.yml",
+      "blob": "ea60133db84b0c909773c7f15030c950f43891dc"
+    },
+    {
+      "path": ".github/workflows/ide-sandbox-windows.yml",
+      "blob": "742a255acbbae975514ea468d5932c07021d7643"
+    },
+    {
+      "path": ".github/workflows/ide-standalone.yml",
+      "blob": "cb3142c60154bcc22aee12b36b9080e415a1aba5"
+    },
+    {
+      "path": ".github/workflows/ide-supervisor-core.yml",
+      "blob": "11203a4e5f8cfeecee9effa00c88c981492be527"
+    },
+    {
+      "path": ".github/workflows/ide-supervisor-os-rights.yml",
+      "blob": "54eeabf51d698cb3342e624cb8157a23a1bcdcc5"
+    },
+    {
+      "path": ".github/workflows/ide-wo4-linux-native-delegation.yml",
+      "blob": "a2fe91d09757347f206ba39e5618c4d3803c42c6"
+    },
+    {
+      "path": ".github/workflows/ide-wo4-linux-source.yml",
+      "blob": "2fb1a5571f36a8905c0264d28d82f5e33ee0e2fc"
+    },
+    {
+      "path": ".github/workflows/ide-wo5-native-linux-clangd.yml",
+      "blob": "12fd318caa638fa4e0c773256145d483588b9a83"
+    },
+    {
+      "path": ".github/workflows/ide-wo6-build-test-dap.yml",
+      "blob": "fe7bddaee39a93d4a063e8067cc2fcf03e317cb3"
+    },
+    {
+      "path": ".github/workflows/ide-wo6-native-desktop.yml",
+      "blob": "7d480b2627f3fa7c42756b301e653f6ca4cd8cb7"
+    },
+    {
+      "path": ".github/workflows/ide-wo6-native-os-acceptance.yml",
+      "blob": "0c617c002bc86ccf702319d4515ebbb86bfe9262"
+    },
+    {
+      "path": ".github/workflows/ide-wo7-installed-acceptance.yml",
+      "blob": "b1046bc7277ccb31924e3ed3b78d7afb22595d1e"
+    },
+    {
+      "path": ".github/workflows/ide-wo7-signed-release-preflight.yml",
+      "blob": "6413844fdaa579840441d538d21bb62cf605fc93"
+    },
+    {
+      "path": ".github/workflows/ide-wo8-installed-linux.yml",
+      "blob": "a40f2ba4867acd24e94ccc73a86cd6e4580735b3"
+    },
+    {
+      "path": ".github/workflows/ide-wo8-installed-windows.yml",
+      "blob": "95138087b419a4b1f9baa052e717c34fc069ae44"
+    },
+    {
+      "path": ".github/workflows/ide-wo8-protected-recovery.yml",
+      "blob": "52261be31b317839ea55a3e6e2fb145193ce2331"
+    },
+    {
+      "path": ".github/workflows/ide-wo8-signed-protected-e2e.yml",
+      "blob": "3cbaf9efc3836bfbe3a978cdd5511daac04f2380"
+    },
+    {
+      "path": ".github/workflows/ide-wo8-source-safety.yml",
+      "blob": "d5ccdf5a4a9832d6a659586cae4c627ab20bc14c"
+    },
+    {
+      "path": ".github/workflows/ide-wo9-advanced-workflows.yml",
+      "blob": "5949c11d2a288520f7fb97f3bd758fbdf862f7cd"
+    },
+    {
+      "path": ".github/workflows/ide-wo9-installed-native.yml",
+      "blob": "6c6e8f89a9a60d8e9703dc54af91e6bc690024b8"
+    },
+    {
+      "path": ".github/workflows/ide-wo9-signed-protected-acceptance.yml",
+      "blob": "8931e49493e2559cf5368f93b72029418902001c"
+    },
+    {
+      "path": ".github/workflows/lu-core-c4-delegated-kernel-original-sha.yml",
+      "blob": "824e3eeb85a9f422255e52c9fb17ff336667e927"
+    },
+    {
+      "path": ".github/workflows/lu-development-ledger.yml",
+      "blob": "35c5de7ab6bb4e4b50db76f785064809f342396b"
+    },
+    {
+      "path": ".gitignore",
+      "blob": "323525d460d1998525767d6dd5570bef9b7b6cd5"
+    },
+    {
+      "path": "AGENTS.md",
+      "blob": "7c0eb30161d83842248c1581ff28d0d0e849b661"
+    },
+    {
+      "path": "CHANGELOG.md",
+      "blob": "4bdbf023b175171ae55df962ef776c43c1916cc5"
+    },
+    {
+      "path": "LICENSE",
+      "blob": "d645695673349e3947e8e5ae42332d0ac3164cd7"
+    },
+    {
+      "path": "NOTICE",
+      "blob": "e32bc48b315676843002c0d40f9b47df7be9e768"
+    },
+    {
+      "path": "README.md",
+      "blob": "cbff0b8a56b69f341912b260a07e3b03309434fd"
+    },
+    {
+      "path": "docs/CANONICAL_REPOSITORY_AND_R16_HANDOFF.md",
+      "blob": "0919d9b88019a04888d5992589c976937ba71035"
+    },
+    {
+      "path": "docs/GUI_REFERENCE_FIRST_POLICY.md",
+      "blob": "122946cdaab9394e3c85793d2c14ff1bbf6c34d2"
+    },
+    {
+      "path": "docs/LU_ALPHA_01_ACCEPTED_BASELINE_20261103.md",
+      "blob": "0c3165d92786b0a8a1c24f885d30eac6a997aa5d"
+    },
+    {
+      "path": "docs/LU_CORE_C4_EPHEMERAL_LINUX_RUNNER.md",
+      "blob": "dd4c6594a08a19d5e4c2b3a8cddb34ed4d7848bd"
+    },
+    {
+      "path": "docs/LU_CORE_C4_ISOLATED_KVM_VM.md",
+      "blob": "766fe824796b95e7a600f49c7855d7a2a43a4535"
+    },
+    {
+      "path": "docs/LU_CORE_CONSOLIDATION_INVENTORY_20261113.md",
+      "blob": "054edb072685986a24b7edfd8189d5762f6aa012"
+    },
+    {
+      "path": "docs/LU_DEVELOPMENT_LEDGER.md",
+      "blob": "26554f767c27718404f45cec93c9d65416b2622f"
+    },
+    {
+      "path": "docs/LU_R16_MODEL_FOLDERS_AND_REPO_EXTRACTION.md",
+      "blob": "d575a68dd9530e0773cf5821d2cf1920eb428595"
+    },
+    {
+      "path": "docs/LU_R20_ENGINEERING_REPORT_20261101.md",
+      "blob": "5e8f5d00625f2b647b306b2812870d6b1cc6be4c"
+    },
+    {
+      "path": "docs/LU_R22_STRUCTURED_CHAT_AND_ALPHA_V1_ROADMAP.md",
+      "blob": "b7b146ba193bf68df29d99d4bcf0e5556c2e82cf"
+    },
+    {
+      "path": "docs/LU_V1_0_DESIGN_RECONCILIATION_20261103.md",
+      "blob": "d8a8650d860895411306c71a3a59db61bab13564"
+    },
+    {
+      "path": "docs/WRITE_01E_EXACT_EDIT_APPROVAL_20261103.md",
+      "blob": "059141c168eff1d3296c4477f256c8e4d5d86b5a"
+    },
+    {
+      "path": "docs/acceptance/LU_R20_WINDOWS_GPU_MEMORY_LOAD_UNLOAD_20261101.md",
+      "blob": "c82be5f52e71734251979eb5784c22f8abef0971"
+    },
+    {
+      "path": "docs/acceptance/LU_R22_WINDOWS_DEV_EVAL_BUILD_20261101.json",
+      "blob": "f4c804a0ee248b1b5484b222358d3a3400695e05"
+    },
+    {
+      "path": "docs/acceptance/LU_R22_WINDOWS_DEV_EVAL_BUILD_20261101.md",
+      "blob": "4128f7f09688ca129a674e51598e06a6bfd7d6bb"
+    },
+    {
+      "path": "docs/lu/LU_R17_CHAT_CONTINUITY_AND_ATTACHMENT_REPAIR.md",
+      "blob": "8fee2c1ffbcd9ba10064cfc4198f44190880debe"
+    },
+    {
+      "path": "ide/AGENTS.md",
+      "blob": "4551cd9a3504a103cfa30fec1b43f74e89a75486"
+    },
+    {
+      "path": "ide/CHANGELOG.md",
+      "blob": "c5976cd198b89163b407feec065ad0938acaa6cb"
+    },
+    {
+      "path": "ide/CONTINUITY_PROTOCOL.md",
+      "blob": "fef489057b29a17151ac2faa6937568595de7694"
+    },
+    {
+      "path": "ide/ENGINEERING_HANDOFF.md",
+      "blob": "29e11068821ee72be99c6ba92a40423ee2b1ab3c"
+    },
+    {
+      "path": "ide/PROJECT_STATE.md",
+      "blob": "87f03f5279c32a838e899d307e4e1de8953a3905"
+    },
+    {
+      "path": "ide/README.md",
+      "blob": "e6f18575950356117b5a92f5a216940312bbf7f7"
+    },
+    {
+      "path": "ide/app/README.md",
+      "blob": "fe063d32505f49e1921f0dad4de762ad62573262"
+    },
+    {
+      "path": "ide/app/fixtures/Run-DEV01ModernGtkSession.sh",
+      "blob": "910ae4f225f80e4155f8414cef2ad983e6b7cab1"
+    },
+    {
+      "path": "ide/app/fixtures/Test-B2InstalledDeb.sh",
+      "blob": "f9533ac7af6730424f6d06f374726a9f49e3580d"
+    },
+    {
+      "path": "ide/app/fixtures/Test-B2InstalledDraftRecovery.ps1",
+      "blob": "87625c1698eea936075095df65f5e9f80df79a2a"
+    },
+    {
+      "path": "ide/app/fixtures/Test-B4InstalledDeb.sh",
+      "blob": "0dc4873fe4950783413de3699cd9846e2a35bad0"
+    },
+    {
+      "path": "ide/app/fixtures/Test-DEV01ModernInstalledDeb.sh",
+      "blob": "b4f15318f015f07522ce15984eecfab88d0b9d2b"
+    },
+    {
+      "path": "ide/app/fixtures/Test-DEV01ModernInstalledNsis.ps1",
+      "blob": "84ffc0c0ece6bd36966dca5715f090564b6221a1"
+    },
+    {
+      "path": "ide/app/fixtures/Test-DEV046D-PhysicalHumanConsent.ps1",
+      "blob": "0fccbfbdb5021b54194154fcf906fedc6bde5411"
+    },
+    {
+      "path": "ide/app/fixtures/Test-FIN04R1-PhysicalProtectedPdbReview.ps1",
+      "blob": "b3eaae7369b205ad216bf404fc5443986f2e4749"
+    },
+    {
+      "path": "ide/app/fixtures/Test-G06A-PhysicalLinuxGitInventory.sh",
+      "blob": "7a0582b8d6e62a69f2d9a683232102918750d2d5"
+    },
+    {
+      "path": "ide/app/fixtures/Test-G06A-PhysicalWindowsGitInventory.ps1",
+      "blob": "ccb2ce98acb3daf1d15bf5e308b0ca4cd2ced169"
+    },
+    {
+      "path": "ide/app/fixtures/Test-G06B05InstalledDebSmoke.sh",
+      "blob": "4b1a8b089127cf47ad912b7629564ea463b7dd48"
+    },
+    {
+      "path": "ide/app/fixtures/Test-IDE055-PhysicalWindowsPackageDenial.ps1",
+      "blob": "efbc7dd8580031dc5e1ea39b7e82d017f209db21"
+    },
+    {
+      "path": "ide/app/fixtures/Test-InstalledAlphaNsis.ps1",
+      "blob": "a85ef4ce3056b4690b21197c9d38cc16b28632fc"
+    },
+    {
+      "path": "ide/app/fixtures/Test-P04SignedDebTransition.sh",
+      "blob": "f3cb63a384b4f587670348caefe04cc6fb5e3a75"
+    },
+    {
+      "path": "ide/app/fixtures/Test-P04SignedReinstall.ps1",
+      "blob": "34d8d4415f752761855f2110a2118ae306b6fa85"
+    },
+    {
+      "path": "ide/app/fixtures/Test-P04SignedVersionTransition.ps1",
+      "blob": "7b800c55772c3d4a4b44323c3e038f7f4e731007"
+    },
+    {
+      "path": "ide/app/fixtures/Test-P04UnsignedDebBrokenUpgrade.sh",
+      "blob": "a50e11d8b237d16994a3b4a067dacc884eb3b73e"
+    },
+    {
+      "path": "ide/app/fixtures/Test-Wo7SignedInstalledNsis.ps1",
+      "blob": "c68e766c6ae0c8706393e442582b67dd82fa0d74"
+    },
+    {
+      "path": "ide/app/fixtures/Test-Wo8InstalledDeb.sh",
+      "blob": "ebe782e6eb70b69ef20ce4d0ed976989e9f16550"
+    },
+    {
+      "path": "ide/app/fixtures/Test-Wo8NativeDesktopUI.ps1",
+      "blob": "123c7962d04fba9730358c31b9f53a424558db7b"
+    },
+    {
+      "path": "ide/app/fixtures/b2_linux_installed_draft_atspi.py",
+      "blob": "f272db3f46a9f3a2ab4cd1e04e87b35c96c107c1"
+    },
+    {
+      "path": "ide/app/fixtures/b4_linux_installed_split_atspi.py",
+      "blob": "82c172d4f80d13d09de259e5e75967c08de8e71b"
+    },
+    {
+      "path": "ide/app/fixtures/b5_linux_installed_perf_atspi.py",
+      "blob": "df1aaa08f6a70b73647987ff3efe1266b3dc7f8b"
+    },
+    {
+      "path": "ide/app/fixtures/dev01_modern_linux_installed_atspi.py",
+      "blob": "4a1e19adfd7f1daad352dd9dbbc4c40a5c810638"
+    },
+    {
+      "path": "ide/app/fixtures/dev02_linux_installed_lsp_atspi.py",
+      "blob": "f0a0d19d26bf7b5a79f45ad043e88a2a429ed56c"
+    },
+    {
+      "path": "ide/app/fixtures/dev035_jobs_installed_atspi.py",
+      "blob": "8ae1e78fe241cf9423a62e73c41689238d97a70f"
+    },
+    {
+      "path": "ide/app/fixtures/g06b05_git_oracle.py",
+      "blob": "988a5f7911f7b0a2b8d05cea68ee6caaaa7085f5"
+    },
+    {
+      "path": "ide/app/fixtures/g06b05_physical_installed_acceptance.py",
+      "blob": "718ec3b9ae1f826b041fd52d5de67950567cb19d"
+    },
+    {
+      "path": "ide/app/fixtures/group02_user_data_preservation.py",
+      "blob": "93d6b1efc48cbf1987aa46d985589bb0cb86bf13"
+    },
+    {
+      "path": "ide/app/fixtures/gtk_chooser_confirmation_policy.py",
+      "blob": "f4802303ef0ee40354095cfd5841bc1ca3c77b2a"
+    },
+    {
+      "path": "ide/app/fixtures/make_g04d_ci_icon.py",
+      "blob": "acb23ab0f397877f9977a8f9684f1bb5f91a5241"
+    },
+    {
+      "path": "ide/app/fixtures/test_atspi_signature_contract.py",
+      "blob": "c6e8d3488ab4f0194902a550e27c202ec5334472"
+    },
+    {
+      "path": "ide/app/fixtures/test_dev035_jobs_accessibility_contract.py",
+      "blob": "a46e2516b6b407056eb43ad5b89ae5cccc2cd3f0"
+    },
+    {
+      "path": "ide/app/fixtures/test_g06b05_git_oracle.py",
+      "blob": "b2ebb203771ad4f571ba10cd18a192dc5ff9b37d"
+    },
+    {
+      "path": "ide/app/fixtures/test_group03_security_contract.py",
+      "blob": "7ec3b0f8985bbfccd16e3ec7daa537d0810d9ae9"
+    },
+    {
+      "path": "ide/app/fixtures/test_gtk_chooser_confirmation_policy.py",
+      "blob": "756bc07766f4e91c32bc919504875a9f961c5423"
+    },
+    {
+      "path": "ide/app/fixtures/verify_reviewed_ide_icons.py",
+      "blob": "289083f5c5fc1401f6c15ca5571a30c1b176c54e"
+    },
+    {
+      "path": "ide/app/fixtures/wo8_linux_editor_atspi.py",
+      "blob": "772de21f5c5d0723645f0547c64cdd889b349e60"
+    },
+    {
+      "path": "ide/app/fixtures/wo8_linux_window_acceptance.sh",
+      "blob": "9d92e2e08746e8fe6509aba0846c659da15eb450"
+    },
+    {
+      "path": "ide/app/fixtures/wo9_linux_protected_graph_atspi.py",
+      "blob": "21344bef8232bba52511e41245c9d4f9e2eb2d80"
+    },
+    {
+      "path": "ide/app/fixtures/wo9_linux_workflow_atspi.py",
+      "blob": "a6cd9a5f2ceeb593fd51d881477222a1e3cab32b"
+    },
+    {
+      "path": "ide/app/package-lock.json",
+      "blob": "dfe4412bfacfc22ad1149f5213f4a26aa49b4067"
+    },
+    {
+      "path": "ide/app/package.json",
+      "blob": "60420ff6051235d8097114d2c72e11ac21bb07fb"
+    },
+    {
+      "path": "ide/app/scripts/build.mjs",
+      "blob": "cab4ee4fe90588d65e752b58617f9d8d84ff29b6"
+    },
+    {
+      "path": "ide/app/scripts/make-icon.mjs",
+      "blob": "ef7790ac656ea6b59067f00bf4be959eec3f99bb"
+    },
+    {
+      "path": "ide/app/src-tauri/Cargo.lock",
+      "blob": "ec7461e0a64a8fa121cffda7ecb74333c6f6686c"
+    },
+    {
+      "path": "ide/app/src-tauri/Cargo.toml",
+      "blob": "daf6f325f22827fa843c0b5afb333321211b97a0"
+    },
+    {
+      "path": "ide/app/src-tauri/LICENSE",
+      "blob": "d645695673349e3947e8e5ae42332d0ac3164cd7"
+    },
+    {
+      "path": "ide/app/src-tauri/build.rs",
+      "blob": "3bb3802f067a0150e01d232cef35e962948fac74"
+    },
+    {
+      "path": "ide/app/src-tauri/capabilities/default.json",
+      "blob": "185b614a87a92ab2e5ea82bbff0a97883aa7757c"
+    },
+    {
+      "path": "ide/app/src-tauri/icons/icon.ico",
+      "blob": "9ef9713a2ab32ea29244c9b65b04f1f16245b92a"
+    },
+    {
+      "path": "ide/app/src-tauri/icons/icon.png",
+      "blob": "66d0c1b7fe0448f50055995ef3a49bddb34262a6"
+    },
+    {
+      "path": "ide/app/src-tauri/src/build_backend.rs",
+      "blob": "7e11c76a091eff3400b4ca7c50253d033a282542"
+    },
+    {
+      "path": "ide/app/src-tauri/src/debug_backend.rs",
+      "blob": "6e8fb681a6c61edb1a241abb4f68020d0d68ed47"
+    },
+    {
+      "path": "ide/app/src-tauri/src/fin04w2_c4_desktop.rs",
+      "blob": "f18a9980c2a7ac7c260d9df7f7957cce316b8bd4"
+    },
+    {
+      "path": "ide/app/src-tauri/src/global_native_custody.rs",
+      "blob": "2b81b0c7464571d9a4637974409fc1e49ac9184f"
+    },
+    {
+      "path": "ide/app/src-tauri/src/lib.rs",
+      "blob": "bb479355f9474d507fef6a14ec6573f7c504d8ec"
+    },
+    {
+      "path": "ide/app/src-tauri/src/lsp_backend.rs",
+      "blob": "689e5f6b665e5cc4e30919fadf72138561830d22"
+    },
+    {
+      "path": "ide/app/src-tauri/src/main.rs",
+      "blob": "abc5f54f418416a0ec6d7d6aec00ed890059e7fa"
+    },
+    {
+      "path": "ide/app/src-tauri/src/terminal_broker.rs",
+      "blob": "9ba854c880c4194cd7a2c9fe1de7d3d86b6fc0c1"
+    },
+    {
+      "path": "ide/app/src-tauri/src/test_case_evidence.rs",
+      "blob": "56f66fe982da2b226b984c5bc94ec95b84022659"
+    },
+    {
+      "path": "ide/app/src-tauri/tauri.conf.json",
+      "blob": "ccf402b56fed0f4c6f76a70f76e90edfe74ed82d"
+    },
+    {
+      "path": "ide/app/src-tauri/tauri.dev02.linux.conf.json",
+      "blob": "daddaf31d959bb5b31e0a736200c408901d4d93b"
+    },
+    {
+      "path": "ide/app/src-tauri/tauri.dev02.windows.conf.json",
+      "blob": "d9685ebc780c0a5f991fdb9da0e5cc8daf4c060a"
+    },
+    {
+      "path": "ide/app/src-tauri/tauri.e2.nsis.conf.json",
+      "blob": "b6612a3106011f8edc2b30077337f49b5c93936a"
+    },
+    {
+      "path": "ide/app/src-tauri/tauri.fin02.linux.conf.json",
+      "blob": "66beaa2a3403c264ab80ad4bbd2a29ff3aca67e7"
+    },
+    {
+      "path": "ide/app/src-tauri/tauri.fin02.windows.conf.json",
+      "blob": "88bdf1946f68aeedea9df0542299c5bead60aa6e"
+    },
+    {
+      "path": "ide/app/src-tauri/tauri.g06b05.linux.conf.json",
+      "blob": "a9fc713f577aaecc637c0a1883609a959ba07bb5"
+    },
+    {
+      "path": "ide/app/src-tauri/tauri.g06b05.windows.conf.json",
+      "blob": "8a77ad0d9b51564fff2473f2b678f9507b6cef9d"
+    },
+    {
+      "path": "ide/app/src-tauri/tauri.installed-smoke.conf.json",
+      "blob": "8a77ad0d9b51564fff2473f2b678f9507b6cef9d"
+    },
+    {
+      "path": "ide/app/src-tauri/tauri.wo7.nsis.conf.json",
+      "blob": "6ac5d7470cdf5280dfed9e568ef7cf70fcce0e4f"
+    },
+    {
+      "path": "ide/app/src-tauri/tauri.wo8.linux.conf.json",
+      "blob": "a9fc713f577aaecc637c0a1883609a959ba07bb5"
+    },
+    {
+      "path": "ide/app/src-tauri/windows/wo7-release-hooks.nsh",
+      "blob": "44a4ce60dbadf3f196ff16fbd64c4e03f742c943"
+    },
+    {
+      "path": "ide/app/src-tauri/windows/wo7-service-lifecycle.ps1",
+      "blob": "1a93de87506b781a1ae5ad14d22ad6463bdba42b"
+    },
+    {
+      "path": "ide/app/tests/buffer_identity.test.mjs",
+      "blob": "5399702a49670be5736c2e34f8107dadf68a6c80"
+    },
+    {
+      "path": "ide/app/tests/conventional_tests.test.mjs",
+      "blob": "2707bbc4e99942221e642169c02de6c6bd7022f0"
+    },
+    {
+      "path": "ide/app/tests/debug_binary_evidence.test.mjs",
+      "blob": "27dbe197d3d797cb45aa8ac9e0f3a6b9feec4c56"
+    },
+    {
+      "path": "ide/app/tests/debug_symbol_evidence.test.mjs",
+      "blob": "a6936ba55b6b373ad175cd2aec4fcc37ccc44dfa"
+    },
+    {
+      "path": "ide/app/tests/debug_target_review.test.mjs",
+      "blob": "f5c168ac816d0bd01889866c192904fc89ccbd65"
+    },
+    {
+      "path": "ide/app/tests/dev01_integrated_license_bundle_source.test.mjs",
+      "blob": "b3691623e3f831f1f579266ee2a0bb6d2a871b2c"
+    },
+    {
+      "path": "ide/app/tests/dev02_project_problems.test.mjs",
+      "blob": "ab721548a0d5b054b8857075bbd05bf14d5bdca1"
+    },
+    {
+      "path": "ide/app/tests/dev02_project_problems_ui_contract.test.mjs",
+      "blob": "f57b916aaf76241923e4c120fed25f500691a45e"
+    },
+    {
+      "path": "ide/app/tests/dev02_protected_installed_workflows_contract.test.mjs",
+      "blob": "9d86b9bcb8053f6b47c82d61fa92aa539d8578d8"
+    },
+    {
+      "path": "ide/app/tests/dev02_protected_multilang_contract.test.mjs",
+      "blob": "35b9f32974a63d698e310fcfc6fb2c2dec9e786a"
+    },
+    {
+      "path": "ide/app/tests/dev03_rust_build_contract.test.mjs",
+      "blob": "0cf5e4e63c87533d9efaf0ffde06f22dab7e21fa"
+    },
+    {
+      "path": "ide/app/tests/dev046d_installed_debugger_boundary.test.mjs",
+      "blob": "5a745e80df455e40c569dd5070833a9ce3ee8bc3"
+    },
+    {
+      "path": "ide/app/tests/dev046d_native_operator_dialog.test.mjs",
+      "blob": "e808de79750248ccfa9ebc117f600c35823928f6"
+    },
+    {
+      "path": "ide/app/tests/dev052_package_operation_preview.test.mjs",
+      "blob": "7358555cfbb0ab6d9f64288f8a16b86a9e97eb0b"
+    },
+    {
+      "path": "ide/app/tests/dev053_protected_package_admission.test.mjs",
+      "blob": "ec474e076237b2d74d2fcfdcebebaa9f58dcb030"
+    },
+    {
+      "path": "ide/app/tests/dev054_package_output_recovery.test.mjs",
+      "blob": "83eeab20039fba280d0f19dd94a2579a4c3df34e"
+    },
+    {
+      "path": "ide/app/tests/dev05_package_manager_inspection.test.mjs",
+      "blob": "88cc948b7178de8784bc4640b33b40661ddb1a13"
+    },
+    {
+      "path": "ide/app/tests/development_checkpoint.test.mjs",
+      "blob": "3b32068cca4afdbe320dc029ebfcb9d266beee3a"
+    },
+    {
+      "path": "ide/app/tests/development_reconciliation.test.mjs",
+      "blob": "7a93320fecb4022304e11e5fb59e9ff97fb4e503"
+    },
+    {
+      "path": "ide/app/tests/editor_async_admission.test.mjs",
+      "blob": "6ea71589d9ed0f84c795d45e22bc70a459f3e5f9"
+    },
+    {
+      "path": "ide/app/tests/editor_clean_tab_reclamation.test.mjs",
+      "blob": "15665fe946813882e6e2368f47eecd8f09173c94"
+    },
+    {
+      "path": "ide/app/tests/editor_conflict_merge.test.mjs",
+      "blob": "50cfde2aef36d896c3309af65e3396c8ff73ae08"
+    },
+    {
+      "path": "ide/app/tests/editor_disk_drift.test.mjs",
+      "blob": "3e8e3fbdcd25f16417698b6145f288f66dabf96f"
+    },
+    {
+      "path": "ide/app/tests/editor_layout.test.mjs",
+      "blob": "86f21b277aa2dbb5067d06d7abad8e0cad9a367e"
+    },
+    {
+      "path": "ide/app/tests/editor_project_view.test.mjs",
+      "blob": "683f4d330363cc274bb0648b28c4b6f2fc3b2b44"
+    },
+    {
+      "path": "ide/app/tests/editor_working_set.test.mjs",
+      "blob": "6bfa4c73d05c64e3f9ef2ca1a2770d9def429b1c"
+    },
+    {
+      "path": "ide/app/tests/execution_intent.test.mjs",
+      "blob": "d2a5da04f95b326a202e99dad4a0899491cadc2c"
+    },
+    {
+      "path": "ide/app/tests/fin01_cross_supervisor_custody.test.mjs",
+      "blob": "e738b8da3af8abe8e8cfe8dad62ed082599867f1"
+    },
+    {
+      "path": "ide/app/tests/fin03_github_evidence.test.mjs",
+      "blob": "375dffc508c769bd0f5aac6b96cda1d09eea87c0"
+    },
+    {
+      "path": "ide/app/tests/fin03_local_mutation_impact.test.mjs",
+      "blob": "96f0ad07626015acaba904624eac84bedea2487e"
+    },
+    {
+      "path": "ide/app/tests/fin03_reviewed_restore.test.mjs",
+      "blob": "8aa4f2a82b34df3907cd870c449952c08b745deb"
+    },
+    {
+      "path": "ide/app/tests/fin03_stash_save.test.mjs",
+      "blob": "dd37b05945cb22ca21ef3d9eafafdf529f6883d2"
+    },
+    {
+      "path": "ide/app/tests/fin03e05_remote_preflight.test.mjs",
+      "blob": "8d175041acec59c6604d18c932595d90beb5991a"
+    },
+    {
+      "path": "ide/app/tests/fin04_framework_exact_case.test.mjs",
+      "blob": "8baa8de156a6811d9740cc7ad7f16781b31edb58"
+    },
+    {
+      "path": "ide/app/tests/fin04_native_control_evidence.test.mjs",
+      "blob": "a9e3df7f66971e7310f3567acfdd391d696c9fa4"
+    },
+    {
+      "path": "ide/app/tests/fin04_release_owner_and_os_recovery.test.mjs",
+      "blob": "5503e3ccd5b02baf260a263dfa15d9f52ee3c003"
+    },
+    {
+      "path": "ide/app/tests/fin04_rust_exact_case.test.mjs",
+      "blob": "49d54d1112ff7d86d26d5cb42207dc7e85ded9b7"
+    },
+    {
+      "path": "ide/app/tests/fin04_test_explorer.test.mjs",
+      "blob": "c04226e6c33d7f7dcd1c5832d8312c62a493b8cd"
+    },
+    {
+      "path": "ide/app/tests/fin04r1_protected_pdb.test.mjs",
+      "blob": "fb711bef42e6a819a102bd8047d185599fc013fa"
+    },
+    {
+      "path": "ide/app/tests/fin05_offline_vcpkg_worker.test.mjs",
+      "blob": "b218375352f1c0bc64d79228a59e8032b7c29fb7"
+    },
+    {
+      "path": "ide/app/tests/fin06_guided_workflow.test.mjs",
+      "blob": "cf42db2a7b1c29f067a7d4e557dfb11749e87b4f"
+    },
+    {
+      "path": "ide/app/tests/fin07_scope_register.test.mjs",
+      "blob": "94af51c5bb6e5834437b5883da00d0ce3b43a47f"
+    },
+    {
+      "path": "ide/app/tests/find_replace.test.mjs",
+      "blob": "3934dc36631c4b9aef375b3eb4eb40fe75322f57"
+    },
+    {
+      "path": "ide/app/tests/g06a_git_repository_inventory.test.mjs",
+      "blob": "f96903ff22398e94a5053264bb6a6cd35921103e"
+    },
+    {
+      "path": "ide/app/tests/g06b_protected_partial_stage.test.mjs",
+      "blob": "9ffc5aff1b0f1ece33101c43368be582da3a48ec"
+    },
+    {
+      "path": "ide/app/tests/g06b_reviewed_batch_preview.test.mjs",
+      "blob": "510f8893d9bbbe6d895e7c86c33b2eb48883f9f2"
+    },
+    {
+      "path": "ide/app/tests/g06b_reviewed_commits_amend.test.mjs",
+      "blob": "9fa8f1aed3e57e662f74695b4df503797475837f"
+    },
+    {
+      "path": "ide/app/tests/g06b_reviewed_hunk_selection.test.mjs",
+      "blob": "1afecdf53c2262275daa80da9c6d05123e5f1293"
+    },
+    {
+      "path": "ide/app/tests/g06c02_reviewed_merge_plan.test.mjs",
+      "blob": "ba0532691f2e33b9a972f0f0b56d1214d21b3553"
+    },
+    {
+      "path": "ide/app/tests/g06c03_protected_fast_forward.test.mjs",
+      "blob": "da6320a2fa29c8ab81018f2dbce622c15fc23d2a"
+    },
+    {
+      "path": "ide/app/tests/g06c03b_protected_divergent.test.mjs",
+      "blob": "b29ac10a8e00fd61e48c7992202805d12efebf90"
+    },
+    {
+      "path": "ide/app/tests/g06c04_original_replay_review.test.mjs",
+      "blob": "5514f8537b764ac7a1516af5522d6c729f0207f5"
+    },
+    {
+      "path": "ide/app/tests/g06c04_protected_replay.test.mjs",
+      "blob": "c1becb33c37988f7fa6d0c02369778da76f1b318"
+    },
+    {
+      "path": "ide/app/tests/g06c_local_branch_operations.test.mjs",
+      "blob": "810a16cf6c7a4363780da6db9ff8660b3bdad98b"
+    },
+    {
+      "path": "ide/app/tests/g06d01_conflict_inventory.test.mjs",
+      "blob": "489d47b3720bc3c445453f5d2726d2f129d79cde"
+    },
+    {
+      "path": "ide/app/tests/g06d02_three_way_editor.test.mjs",
+      "blob": "a6997986eabddaf16f993d03609766543de54e30"
+    },
+    {
+      "path": "ide/app/tests/g06d0304_protected_conflict_resolution.test.mjs",
+      "blob": "adb2af2d1875241f185a5cfc2ca71c830c2b59d5"
+    },
+    {
+      "path": "ide/app/tests/g06e01_github_pull_review.test.mjs",
+      "blob": "f1ec196468a06b9debd63d4dd782a047493c977f"
+    },
+    {
+      "path": "ide/app/tests/github_ci.test.mjs",
+      "blob": "2e25a0abe5ecceb2fa49f217c26ee8b4151f2827"
+    },
+    {
+      "path": "ide/app/tests/ide_cross_platform_frontend_startup_diagnostic.test.mjs",
+      "blob": "aa22c1ffee344f0a3ab08b526599933196f8abb0"
+    },
+    {
+      "path": "ide/app/tests/ide_group04d_native_inspection.test.mjs",
+      "blob": "d7307b10bfc60cbbf074b4eb1f19b2fcf90e7270"
+    },
+    {
+      "path": "ide/app/tests/ide_icon_source_contract.test.mjs",
+      "blob": "e2dafe5fc0967ea5acbf0dac9f92239eaad17481"
+    },
+    {
+      "path": "ide/app/tests/ide_initial_workspace_render.test.mjs",
+      "blob": "3e45cf405cbb07fdf7ff0e69b7c1d693575994bf"
+    },
+    {
+      "path": "ide/app/tests/ide_merge02_03_consolidation.test.mjs",
+      "blob": "084c5c0cb8eacdc6a69207ae8c4d866b926c352e"
+    },
+    {
+      "path": "ide/app/tests/int01_live_editor_write.test.mjs",
+      "blob": "6267e2179b7cd04423c660b451163924c54871e9"
+    },
+    {
+      "path": "ide/app/tests/int01_project_navigation.test.mjs",
+      "blob": "0e64c019e11f00d89b8c7e7054a6a76d2c0bce0d"
+    },
+    {
+      "path": "ide/app/tests/int01_workspace_lifecycle.test.mjs",
+      "blob": "c79971e17606c744eaca3955514bbad88b2c72ae"
+    },
+    {
+      "path": "ide/app/tests/int03_protected_build_profiles.test.mjs",
+      "blob": "bd4a711291ae2c27b8c2edd0db7cc90896ca7d51"
+    },
+    {
+      "path": "ide/app/tests/int03e_structured_test_evidence.test.mjs",
+      "blob": "ef6748de6d1c7aa0947a0e1a82c18d2a45057eab"
+    },
+    {
+      "path": "ide/app/tests/int04_debugger_integration.test.mjs",
+      "blob": "85dc706f90c29a1c5d0efa65b311c39d0defa512"
+    },
+    {
+      "path": "ide/app/tests/int05_toolchain_packages_terminal.test.mjs",
+      "blob": "af37c5b38654afd8844ea08a3f8a9ced11da2c1a"
+    },
+    {
+      "path": "ide/app/tests/int05d_interactive_terminal.test.mjs",
+      "blob": "0abcb444167482210662942b180328d5c3a41924"
+    },
+    {
+      "path": "ide/app/tests/int06_integration_workbench.test.mjs",
+      "blob": "6e581382a68397caf3b55a9cb5e29d01be8c40af"
+    },
+    {
+      "path": "ide/app/tests/job_progress.test.mjs",
+      "blob": "88f1b97a8715a389d798c8db75cd15825215fb0f"
+    },
+    {
+      "path": "ide/app/tests/job_render_guard.test.mjs",
+      "blob": "4d31c441b692348851263b406a2e228be7d0312d"
+    },
+    {
+      "path": "ide/app/tests/lsp_e1.test.mjs",
+      "blob": "719baa20c883584604f49617a903bc542367e78e"
+    },
+    {
+      "path": "ide/app/tests/lsp_e2.test.mjs",
+      "blob": "c15f7cff8007096481cf5dab28efa3de392f9f3e"
+    },
+    {
+      "path": "ide/app/tests/lsp_e2_boundary.test.mjs",
+      "blob": "fa24eeae05a06b90ea710c4a4176700e3b5d9b47"
+    },
+    {
+      "path": "ide/app/tests/native_build_output.test.mjs",
+      "blob": "4a86076d5908f2c38c76440727767d002496719c"
+    },
+    {
+      "path": "ide/app/tests/project_debug_authority.test.mjs",
+      "blob": "84740d12e809760f3f5eb5446c2705959d78f4eb"
+    },
+    {
+      "path": "ide/app/tests/project_run_profiles.test.mjs",
+      "blob": "1d447ce28ad792fdce22c80e6d27ba4746abc085"
+    },
+    {
+      "path": "ide/app/tests/protected_job_lifecycle.test.mjs",
+      "blob": "a864b4e6b3b1b0d638ea3fabad40f12b6461a174"
+    },
+    {
+      "path": "ide/app/tests/reviewed_git_commit_form.test.mjs",
+      "blob": "db584cc2fe2e2c069f9519f3c292be9c3b0e3707"
+    },
+    {
+      "path": "ide/app/tests/reviewed_multilang_adapters.test.mjs",
+      "blob": "953592ac69cd9b10a1fa73aaca41c06213c38a61"
+    },
+    {
+      "path": "ide/app/tests/standalone.test.mjs",
+      "blob": "d8c8975ef4a7fa4eb657a93905e71270d32220b6"
+    },
+    {
+      "path": "ide/app/tests/supervisor_contract.test.mjs",
+      "blob": "682cf24492366d2c03192b1539463ac744b54dd7"
+    },
+    {
+      "path": "ide/app/tests/task_ledger.test.mjs",
+      "blob": "3452a18e77d7e6c91ed06bdb8e86a8d21d2c4392"
+    },
+    {
+      "path": "ide/app/tests/task_source_evidence.test.mjs",
+      "blob": "f5cbecca15835f7d6a16bf819c65bf03f179acf7"
+    },
+    {
+      "path": "ide/app/tests/workspace_layout.test.mjs",
+      "blob": "8124e02f8cc7641b649b6fe4c1b85e2b1def0335"
+    },
+    {
+      "path": "ide/app/web/buffer_identity.js",
+      "blob": "7009cb0b352d150dd131f59796f10e90127e664c"
+    },
+    {
+      "path": "ide/app/web/build_test_output_hints.js",
+      "blob": "059fd6519888d17afd273daba5b4e072b0c311f3"
+    },
+    {
+      "path": "ide/app/web/code_editor.jsx",
+      "blob": "a2082dec9eb340eb6adc782a61a6e29c1e48d7d2"
+    },
+    {
+      "path": "ide/app/web/conventional_tests.js",
+      "blob": "0318139d0e8ad73a6257acee20817785620a8157"
+    },
+    {
+      "path": "ide/app/web/debug_binary_evidence.js",
+      "blob": "84a7fbd9e6947a4c3dcd03902695fdc9130e6944"
+    },
+    {
+      "path": "ide/app/web/debug_symbol_evidence.js",
+      "blob": "cc4f5054e7ea41f3b686ed4be5609371684efbd0"
+    },
+    {
+      "path": "ide/app/web/debug_target_review.js",
+      "blob": "3dc7ad9b713688b2bb97be32e54414ddb985fab3"
+    },
+    {
+      "path": "ide/app/web/debugger_integration.js",
+      "blob": "ec1d36501a0131e8c68a1c0f4a3bda484e43c9eb"
+    },
+    {
+      "path": "ide/app/web/development_checkpoint.js",
+      "blob": "926e17da20fdf9476c1cb1b7439c65d2c50f52fb"
+    },
+    {
+      "path": "ide/app/web/development_reconciliation.js",
+      "blob": "6821b13456693c5b21750e0342f0ae635a20399c"
+    },
+    {
+      "path": "ide/app/web/editor_clean_tab_reclamation.js",
+      "blob": "90842f168d8f133150b764bea354ffa055795a8b"
+    },
+    {
+      "path": "ide/app/web/editor_conflict_merge.js",
+      "blob": "eb028bfd9c818e46a5c0a49b2b44434f9678f096"
+    },
+    {
+      "path": "ide/app/web/editor_disk_drift.js",
+      "blob": "ab292faaf8a20daf7197693959872130e16e39e4"
+    },
+    {
+      "path": "ide/app/web/editor_layout.js",
+      "blob": "3e04d87cc9d780319bfa7a407949b239a7f5c0e3"
+    },
+    {
+      "path": "ide/app/web/editor_live_write.js",
+      "blob": "8e6e3bdd19dd40e8b7f19cd873e0f95c725294b7"
+    },
+    {
+      "path": "ide/app/web/editor_project_navigation.js",
+      "blob": "126da63d5f08a5bbcb00a3c2eefffec3ca9f26bc"
+    },
+    {
+      "path": "ide/app/web/editor_project_view.js",
+      "blob": "504923156b7603af6ff9265ee623a1c3627372cb"
+    },
+    {
+      "path": "ide/app/web/editor_restart_reconciliation.js",
+      "blob": "39452dffc3f8f4387405696c598360cbf27e03d5"
+    },
+    {
+      "path": "ide/app/web/editor_working_set.js",
+      "blob": "04ffdef569defbd9b9c51d0fe0ecd08796ccef54"
+    },
+    {
+      "path": "ide/app/web/fin06_guided_workflow.js",
+      "blob": "a4256fbff583b3b7d810219c7339623046f673b8"
+    },
+    {
+      "path": "ide/app/web/fin07_scope_register.js",
+      "blob": "1f78846f61c47919d4b4e1f4dfa00ba7a372b82a"
+    },
+    {
+      "path": "ide/app/web/find_replace.js",
+      "blob": "cfb6da97ba6aea6ad859216dae5ab1e0c65b084f"
+    },
+    {
+      "path": "ide/app/web/frontend_startup_diagnostic.js",
+      "blob": "58771b8251fd57c92c057ce3565bcabca3d6fd9f"
+    },
+    {
+      "path": "ide/app/web/github_pr_evidence.js",
+      "blob": "4150c1f94f1ff935fa660dc266deb4b568c0ec9b"
+    },
+    {
+      "path": "ide/app/web/index.html",
+      "blob": "34abf9467cf9a9363037ee9dd467686a8a1dc918"
+    },
+    {
+      "path": "ide/app/web/integration_workbench.js",
+      "blob": "fef060561ca3c17c3bd37082ec91035a7d727f39"
+    },
+    {
+      "path": "ide/app/web/interactive_terminal.js",
+      "blob": "c0d469d173ef48961a2090409d7a33d8523c2195"
+    },
+    {
+      "path": "ide/app/web/job_progress.js",
+      "blob": "cb8ee55f1eb950a01918161aae0a8cb554bd265a"
+    },
+    {
+      "path": "ide/app/web/job_render_guard.js",
+      "blob": "d3c35178441e8ced867de268badf8ca3159b8a31"
+    },
+    {
+      "path": "ide/app/web/lsp_editor.js",
+      "blob": "55979406457de8e7b807c70531eb4154bff1b024"
+    },
+    {
+      "path": "ide/app/web/lsp_language_capabilities.js",
+      "blob": "48b8afafeaf661012901779b66232bf5bc7ade99"
+    },
+    {
+      "path": "ide/app/web/lsp_live_source.js",
+      "blob": "e4861a9714bc9ee00bafcf44f52244725d9bb000"
+    },
+    {
+      "path": "ide/app/web/lsp_problems.js",
+      "blob": "c0ad6a3a81131d86c94b8d89464a3bb80a4b2d0f"
+    },
+    {
+      "path": "ide/app/web/lsp_runtime_ui.js",
+      "blob": "abbed8d6ee143da815850c0bf5ba69628d073017"
+    },
+    {
+      "path": "ide/app/web/main.jsx",
+      "blob": "02b581e7338c87c4ed8aa224438bd4ee93ddff0e"
+    },
+    {
+      "path": "ide/app/web/native_build_output.js",
+      "blob": "fee625c87e91670a64a6e4bc57edcf48b658a3b4"
+    },
+    {
+      "path": "ide/app/web/project_debug_authority.js",
+      "blob": "f8c7c6ba247dc42fc43d933ff167b7228504cc2e"
+    },
+    {
+      "path": "ide/app/web/project_run_profiles.js",
+      "blob": "2cf67a92b45a52766943e276d642cdec22bc5213"
+    },
+    {
+      "path": "ide/app/web/protected_build_profiles.js",
+      "blob": "d03717b9c08229fe8a4fb5da196804aa61bfebe2"
+    },
+    {
+      "path": "ide/app/web/protected_job_lifecycle.js",
+      "blob": "0a18bfede00a9177903e52b71bdb0ff9702e5cf8"
+    },
+    {
+      "path": "ide/app/web/quick_open_view.js",
+      "blob": "82396c9176b5f1d560e2da0471fe3331ad9054ee"
+    },
+    {
+      "path": "ide/app/web/reviewed_adapters.js",
+      "blob": "9beac8da1d500edfacb636707439659b34d6b9d5"
+    },
+    {
+      "path": "ide/app/web/reviewed_git_commit_form.js",
+      "blob": "9e32baaf679d9d5eaa696a2f6ad6770bc4db674a"
+    },
+    {
+      "path": "ide/app/web/structured_test_evidence.js",
+      "blob": "8f1db866d4dcb392a5eacc6128b15e2c4b86b782"
+    },
+    {
+      "path": "ide/app/web/styles.css",
+      "blob": "2d0583f95e2e24cf2f318a139203c1610bc3e49f"
+    },
+    {
+      "path": "ide/app/web/task_source_evidence.js",
+      "blob": "5546d44d155898bd0ce373cb454068db685f4254"
+    },
+    {
+      "path": "ide/app/web/test_explorer.js",
+      "blob": "98da4d6bf46debb8d567dff3f935567e7015a760"
+    },
+    {
+      "path": "ide/app/web/toolchain_terminal.js",
+      "blob": "06c451d9e5655efde9539125b2bd08282fc6d17a"
+    },
+    {
+      "path": "ide/app/web/workspace_layout.js",
+      "blob": "40ee7eb4dd6622fb7c8abdd19eceb154085f922a"
+    },
+    {
+      "path": "ide/audits/p05_additional_current_source_dispositions.json",
+      "blob": "09e044c25d3894f03133a4360affae52eb23e165"
+    },
+    {
+      "path": "ide/audits/p05_owner_authorized_successor.json",
+      "blob": "6c6eeb826e2722de3923fa3a86d47ab5c20712e9"
+    },
+    {
+      "path": "ide/audits/test_p05_owner_successor.py",
+      "blob": "70e792885ecade8551d7fcef70834b2549df78a3"
+    },
+    {
+      "path": "ide/audits/verify_p05_owner_successor.py",
+      "blob": "4876cb30f3c232d2ecef53af6e42557f4e61452c"
+    },
+    {
+      "path": "ide/ci/merge02-reviewed-native-boundaries.json",
+      "blob": "c862a41328a1a229a09eac1c23afc804cd4756f4"
+    },
+    {
+      "path": "ide/ci/test_verify_reviewed_native_boundaries.py",
+      "blob": "fa43e05f9298f561e99ab52412c6a704eca5b21c"
+    },
+    {
+      "path": "ide/ci/verify_reviewed_native_boundaries.py",
+      "blob": "0698984bba1258283d63c229d3388c4e24516567"
+    },
+    {
+      "path": "ide/docs/ADR_0001_STANDALONE_APP_AND_LU_BRIDGE.md",
+      "blob": "14d42248c4f55fa79407eee89d2b937f621a8ad7"
+    },
+    {
+      "path": "ide/docs/ADR_0002_WORKSPACE_CHAT_BOUNDARIES.md",
+      "blob": "858faab24b629d5420ffada92ff211912eb771b9"
+    },
+    {
+      "path": "ide/docs/ADR_0003_LU_CODING_PROPOSAL_PROTOCOL.md",
+      "blob": "73a84cc96b37e453f198a93a1fc285d820024b93"
+    },
+    {
+      "path": "ide/docs/ADR_0003_LU_CORE_DLC_VERSION_BOUNDARIES_20261110.md",
+      "blob": "75222fcb642551e26617a8b72f0e81b41a9a82e1"
+    },
+    {
+      "path": "ide/docs/AIW_A3_LIVE_GITHUB_CI.md",
+      "blob": "3aa5e47f2f41d347dca67e0e12aa707951b6dc4c"
+    },
+    {
+      "path": "ide/docs/AI_FIRST_IDE_DESIGN.md",
+      "blob": "62306e833ca377c8f945ad81e9fc4c34948bd0ca"
+    },
+    {
+      "path": "ide/docs/ARCHITECTURE.md",
+      "blob": "e9797608435a458b61238ffb40fd5f808b496bff"
+    },
+    {
+      "path": "ide/docs/CAPABILITY_FIRST_ARCHITECTURE.md",
+      "blob": "e9ea0bb7def712f3152cc69a472be4512fff3933"
+    },
+    {
+      "path": "ide/docs/E2_NATIVE_CI_FAILURE_TRIAGE_20261106.md",
+      "blob": "3b4e6b510128681c480e6097e29aca9604548f7a"
+    },
+    {
+      "path": "ide/docs/IDE_01B_IMPLEMENTATION_EVIDENCE.md",
+      "blob": "90a7811d0478a8cf939d36ebb72f7764be833348"
+    },
+    {
+      "path": "ide/docs/IDE_01B_MANUAL_DESKTOP_ACCEPTANCE.md",
+      "blob": "b0c09f54df9c4878d1bbfcaa97a1df09fa8ee219"
+    },
+    {
+      "path": "ide/docs/IDE_02_SECURITY_PROBE_EVIDENCE.md",
+      "blob": "6b878196c468589c66ebbd190c3b57cf87d18e85"
+    },
+    {
+      "path": "ide/docs/IDE_03_PROJECT_DELIST_ACCEPTANCE.md",
+      "blob": "06afdbd1a33c33a8359ebe931bde4549829671d3"
+    },
+    {
+      "path": "ide/docs/IDE_03_R3_EDITOR_ACCEPTANCE.md",
+      "blob": "5e56b69b6f72b3e9fc1ffbc431408a8bbf01253e"
+    },
+    {
+      "path": "ide/docs/IDE_03_READONLY_EXPLORER_EVIDENCE.md",
+      "blob": "558ed590e141640d7d514747ae4d26d1336d62b7"
+    },
+    {
+      "path": "ide/docs/IDE_07_PROPOSAL_REVIEW_FOUNDATION.md",
+      "blob": "67867822b4a3342bfc89f5f454f073489aaf1fdb"
+    },
+    {
+      "path": "ide/docs/IDE_07_R34_MULTIHUNK_PROPOSALS.md",
+      "blob": "3d46d410964fbe0599f518586e8ecccaa1ed3009"
+    },
+    {
+      "path": "ide/docs/IDE_07_R35_PROPOSAL_INBOX.md",
+      "blob": "0020533f8cb1f69c319840167959798bf991d5f0"
+    },
+    {
+      "path": "ide/docs/IDE_B10_EXTERNAL_SOURCE_DRIFT_20261108.md",
+      "blob": "4613e3b8f012d62c1ecb23b079738ff8fb11e385"
+    },
+    {
+      "path": "ide/docs/IDE_B11_REVIEWED_EXTERNAL_MERGE_20261108.md",
+      "blob": "628f641d7debeb3914bc2cb9f40f87782d62d8ae"
+    },
+    {
+      "path": "ide/docs/IDE_B2_DURABLE_DRAFTS_20261108.md",
+      "blob": "b01751ea2efd4d8ca3749badc84c8ec440efe624"
+    },
+    {
+      "path": "ide/docs/IDE_B3_PROJECT_SEARCH_CURRENT_STACK_PORT_20261108.md",
+      "blob": "d0a0c52afed4b07254488f42cf7b5c2515aaeff4"
+    },
+    {
+      "path": "ide/docs/IDE_B4_SPLIT_EDITOR_20261108.md",
+      "blob": "42e1b5f4054026e5b42d7690369dc9733c7307ec"
+    },
+    {
+      "path": "ide/docs/IDE_B5_LARGE_PROJECT_WORKING_SET_20261108.md",
+      "blob": "859e7d33b69f3edea97283496c1866cf678dd919"
+    },
+    {
+      "path": "ide/docs/IDE_B6_NATIVE_EDITOR_ASYNC_ADMISSION_20261108.md",
+      "blob": "e9dafe48998a8befc66a1ab99947df804c757e3f"
+    },
+    {
+      "path": "ide/docs/IDE_B7_PROJECT_WORKSPACE_NAVIGATION_20261108.md",
+      "blob": "c76b71e07a43da9e9ccf57c06be0643e44908577"
+    },
+    {
+      "path": "ide/docs/IDE_B8_EXPLICIT_CLEAN_TAB_RECLAMATION_20261108.md",
+      "blob": "b9bc6a4ca8f17a2b3abb29b83197802624fb7bfd"
+    },
+    {
+      "path": "ide/docs/IDE_B9_DURABLE_WORKSPACE_NAVIGATION_20261108.md",
+      "blob": "540e862ab72cddded0762bfbe5e98fc8c2aa6970"
+    },
+    {
+      "path": "ide/docs/IDE_C7_TASK_SOURCE_EVIDENCE_20261108.md",
+      "blob": "6f9e38f9c1919d39552d21022bdb90a1e1c27d51"
+    },
+    {
+      "path": "ide/docs/IDE_DEV02_3_OFFLINE_REVIEW_AND_PYTHON_SEMANTIC_20261108.md",
+      "blob": "ca35bda0528b3713c65e2b642736381f66a4ed54"
+    },
+    {
+      "path": "ide/docs/IDE_DEV02_4_PYTHON_SEMANTIC_NATIVE_BENCHMARK_20261108.md",
+      "blob": "8d1aabf786e0754adf103898043afdc1f06f1fb3"
+    },
+    {
+      "path": "ide/docs/IDE_DEV02_5_DISPOSABLE_NATIVE_LSP_TEST_PAYLOAD_20261108.md",
+      "blob": "0cfc124add2837fc3566e66c4fc6e8facdacffaf"
+    },
+    {
+      "path": "ide/docs/IDE_DEV02_6B_FULL_NATIVE_RESOURCES_AND_PROTECTED_PROTOCOL_20261108.md",
+      "blob": "38d22f5ad23f06a2206755dbb7d884e8b90318c5"
+    },
+    {
+      "path": "ide/docs/IDE_DEV02_6_NATIVE_DEPENDENCY_SMOKE_20261108.md",
+      "blob": "28c45d015ffa866c91571f8b219b1d1cd23ce7c5"
+    },
+    {
+      "path": "ide/docs/IDE_DEV02_PROJECT_PROBLEMS_20261108.md",
+      "blob": "03f2f09ee5687161d5895b1810da8cceca1ac703"
+    },
+    {
+      "path": "ide/docs/IDE_DEV02_PROTECTED_MULTILANG_20261108.md",
+      "blob": "60544cde2f1d72b3d6b095952f286c64a70a46bb"
+    },
+    {
+      "path": "ide/docs/IDE_DEV034_TEST_DISCOVERY_20261108.md",
+      "blob": "d9cd7dad01ac99f52662c17ed4287c20a06f9a7a"
+    },
+    {
+      "path": "ide/docs/IDE_DEV035_PROTECTED_LIFECYCLE_20261108.md",
+      "blob": "b094de0edd93a60933578d67f5097fbaed9a4e7a"
+    },
+    {
+      "path": "ide/docs/IDE_DEV03B_PROTECTED_OUTPUT_20261108.md",
+      "blob": "6ecec05adcfa0d7617b1f74c6b935b79d91d93a4"
+    },
+    {
+      "path": "ide/docs/IDE_DEV03_JOB_PROGRESS_20261108.md",
+      "blob": "acb24f1f92ae6301d25232cdacce6b5aac795ff8"
+    },
+    {
+      "path": "ide/docs/IDE_DEV03_MULTILANG_ADAPTER_REVIEW_20261108.md",
+      "blob": "fbfd59ad9e8e2158485a1d1cb1aa92553884dddf"
+    },
+    {
+      "path": "ide/docs/IDE_DEV03_PROJECT_PROFILES_20261108.md",
+      "blob": "e31b734c76b090d509a142775759261c98bb4460"
+    },
+    {
+      "path": "ide/docs/IDE_DEV03_REVIEWED_RUST_BUILD_20261108.md",
+      "blob": "c2037028f2e8bf5c79f2a6e0b85e8708af911dfa"
+    },
+    {
+      "path": "ide/docs/IDE_DEV041_DEBUG_TARGET_PROVENANCE_20261108.md",
+      "blob": "65369615c7965448847fed9e851eef984ef66ca5"
+    },
+    {
+      "path": "ide/docs/IDE_DEV042_PROTECTED_BUILD_BINARY_20261108.md",
+      "blob": "6ee80c3f04c17c692c5b8cc87749d217e2bf7df1"
+    },
+    {
+      "path": "ide/docs/IDE_DEV043_DEBUG_SYMBOLS_20261108.md",
+      "blob": "70410a620c7078b3fdf5d24d49a5c15236529ea8"
+    },
+    {
+      "path": "ide/docs/IDE_DEV044_PROTECTED_PROJECT_DEBUG_20261108.md",
+      "blob": "15c6858c9ebb82c4a26d6108e82ab299d09443d2"
+    },
+    {
+      "path": "ide/docs/IDE_DEV045B_NATIVE_PROJECT_DEBUG_OS_ACCEPTANCE_20261108.md",
+      "blob": "c5245f88bdda379a4cff510d4396d984e6210a34"
+    },
+    {
+      "path": "ide/docs/IDE_DEV045C_INSTALLED_PROJECT_DEBUG_20261108.md",
+      "blob": "10863f983cd67c06f429c4731c4f24b86f25a6b2"
+    },
+    {
+      "path": "ide/docs/IDE_DEV045D2_INDEPENDENT_STOP_LINE_20261108.md",
+      "blob": "8738a695c524532b44051d3318ea5580e6090521"
+    },
+    {
+      "path": "ide/docs/IDE_DEV045D3_PROTECTED_STOP_KERNEL_LINE_20261108.md",
+      "blob": "daf4c182eb33cdf9ccd66009cdb161b783b43c7c"
+    },
+    {
+      "path": "ide/docs/IDE_DEV045D4B_WINDOWS_STOP_EVENT_PDB_20261109.md",
+      "blob": "614bed1d733f0612f1c338679582ea0efdf727bd"
+    },
+    {
+      "path": "ide/docs/IDE_DEV045D4C_REAL_LLDB_STOP_PDB_20261109.md",
+      "blob": "8dc3c98976d900008d6649b2081f285e55505258"
+    },
+    {
+      "path": "ide/docs/IDE_DEV045D4D_WINDOWS_EVENT_OWNER_AND_NATIVE_GATES_20261109.md",
+      "blob": "c1423be26ccf2eb23011ece471b034e4eab22fe0"
+    },
+    {
+      "path": "ide/docs/IDE_DEV045D4_WINDOWS_JOB_MODULE_20261108.md",
+      "blob": "d874e56edc784cb4706098b5fa54be5dd0017e64"
+    },
+    {
+      "path": "ide/docs/IDE_DEV045D5_FIRST_PARTY_LLDB_OWNER_EVENT_20261109.md",
+      "blob": "5e4622a3c030defed3ccb6281083f3c759ff0d99"
+    },
+    {
+      "path": "ide/docs/IDE_DEV045D_SOURCE_LINE_PREFLIGHT_20261108.md",
+      "blob": "baa28e186c33186810ed3ae11f19ad2393a782f4"
+    },
+    {
+      "path": "ide/docs/IDE_DEV045_INSTALLED_PROJECT_DEBUG_ACCEPTANCE_20261108.md",
+      "blob": "c2eaca7dc59f5b53b5d4934122a40801ef9c71c2"
+    },
+    {
+      "path": "ide/docs/IDE_DEV046A_DEBUG_COMMAND_REVIEW_AND_CI_BATCH_20261109.md",
+      "blob": "5c01d360e9e243808cea44b835f15b75089227f4"
+    },
+    {
+      "path": "ide/docs/IDE_DEV046B_ACTION_APPROVAL_ONE_USE_20261109.md",
+      "blob": "7b20a8122f9988ee68decc41f5fcc67ef835cc9c"
+    },
+    {
+      "path": "ide/docs/IDE_DEV046C_NATIVE_CONTROL_DISPATCH_20261109.md",
+      "blob": "ad22e6ed0ce261567aa727535441ce7cb0e17b9c"
+    },
+    {
+      "path": "ide/docs/IDE_DEV046D_INSTALLED_DEBUGGER_APPROVAL_RECOVERY_20261109.md",
+      "blob": "2329aa2cff805fa9a0da790a3c04dc8c12b2cb90"
+    },
+    {
+      "path": "ide/docs/IDE_DEV051_PACKAGE_MANAGER_DISCOVERY_20261109.md",
+      "blob": "ddef59d16b65dece0126b44673a2cd2ad8df637c"
+    },
+    {
+      "path": "ide/docs/IDE_DEV052_PACKAGE_OPERATION_PREVIEW_20261109.md",
+      "blob": "da5874da742372cc951420d9c75dcc578fb82e39"
+    },
+    {
+      "path": "ide/docs/IDE_DEV053_PROTECTED_PACKAGE_ADMISSION_20261109.md",
+      "blob": "98d6e4e0dd7a1b1cc7dbac2cdf25e7086878a3c7"
+    },
+    {
+      "path": "ide/docs/IDE_DEV054_PACKAGE_OUTPUT_PROVENANCE_RECOVERY_20261109.md",
+      "blob": "93130d53886ed25cc998dbf55a5e565a12b1124e"
+    },
+    {
+      "path": "ide/docs/IDE_DEV055_CONSOLIDATED_NATIVE_ACCEPTANCE_20261109.md",
+      "blob": "de47cd3257b477e7719e46fafd9def3977e9bc2d"
+    },
+    {
+      "path": "ide/docs/IDE_DEV056_GTK_SELECTION_STATE_REPAIR_20261109.md",
+      "blob": "6bfbbb8b239fdd893ae7f2c2f98a9a8efe87bbe1"
+    },
+    {
+      "path": "ide/docs/IDE_DEV056_INSTALLED_GROUP_ACCEPTANCE_20261109.md",
+      "blob": "f3ed2ecaadbf90cea4fe4bde53aa2760f7548e57"
+    },
+    {
+      "path": "ide/docs/IDE_DEV056_INSTALLED_NATIVE_TRIAGE_20261109.md",
+      "blob": "66757e5569eebd6e5b4a1e7c02264baf871ce932"
+    },
+    {
+      "path": "ide/docs/IDE_DEV056_PHYSICAL_HUMAN_APPROVAL_ACCEPTANCE_20261109.md",
+      "blob": "52ee206ea144dc1513e6d73646893b8d30b06c5b"
+    },
+    {
+      "path": "ide/docs/IDE_DEV056_UPSTREAM_APPROVAL_ACCEPTANCE_20261109.md",
+      "blob": "55277eab73395bd2a69a6e0feeb427354244f6b3"
+    },
+    {
+      "path": "ide/docs/IDE_DEV056_WINDOWS_ACL_OS_PROBE_20261109.md",
+      "blob": "527c6561c72d5e5bb11c174429a47de0f3232569"
+    },
+    {
+      "path": "ide/docs/IDE_FIN01D_RELEASE_PENDING_CLOSEOUT_20261112.md",
+      "blob": "0f24115ba98b191c4456872231b82575b9f79ea8"
+    },
+    {
+      "path": "ide/docs/IDE_FIN01_GLOBAL_EXECUTION_CUSTODY.md",
+      "blob": "50f1f27e0835ff1bf1eeb8d76830d0c722c5f5fd"
+    },
+    {
+      "path": "ide/docs/IDE_FIN02B_PINNED_RUNTIME_STAGE.md",
+      "blob": "9d45a38d047baf1d98de78dc505006d24f91e6c3"
+    },
+    {
+      "path": "ide/docs/IDE_FIN02C_RUNTIME_INPUT_PREPARATION.md",
+      "blob": "9955d9bd2620dd3332d2570c95ca1f5a917c74ea"
+    },
+    {
+      "path": "ide/docs/IDE_FIN02D_EXACT_TAURI_RUNTIME_LAYOUT.md",
+      "blob": "3049b6d45c776a968d7c5657f92ce4b7101f9b2f"
+    },
+    {
+      "path": "ide/docs/IDE_FIN02E_LINUX_NATIVE_HOST_READINESS.md",
+      "blob": "ce2532b174bc6d568b6c337a1ee9f6e3cfe57d72"
+    },
+    {
+      "path": "ide/docs/IDE_FIN02_PROTECTED_ALPHA_WIRING.md",
+      "blob": "81a27739822c2606922903a1da88289ffeb92667"
+    },
+    {
+      "path": "ide/docs/IDE_FIN03B_LOCAL_STASH_REVIEW.md",
+      "blob": "b068b41495e941bb6005901698f1c93c611f820b"
+    },
+    {
+      "path": "ide/docs/IDE_FIN03E03_PUBLIC_BRANCH_RULES.md",
+      "blob": "d2b4e59ab6f39ccaed967d2b9890a7b955798c2d"
+    },
+    {
+      "path": "ide/docs/IDE_FIN03E04_PUBLIC_PR_EVIDENCE.md",
+      "blob": "dcd8a7153c1ed9aa057cc1e4ecb2bf3e5fbf6d31"
+    },
+    {
+      "path": "ide/docs/IDE_FIN03E05_REMOTE_PUBLICATION_PREFLIGHT.md",
+      "blob": "3005220acf7130bef6d88bd428f5a66b8e737cf8"
+    },
+    {
+      "path": "ide/docs/IDE_FIN03_GITHUB_REVIEW_STATE.md",
+      "blob": "d5388bb3106589393f4d46c097ef56ea9758777c"
+    },
+    {
+      "path": "ide/docs/IDE_FIN03_GIT_REPOSITORY_BORROW_REPAIR.md",
+      "blob": "7091c73078e2fe319672009232d98bc396d85714"
+    },
+    {
+      "path": "ide/docs/IDE_FIN03_ONE_USE_UNSTAGE.md",
+      "blob": "42de73bb85003f368f789029896737b7e2b557cd"
+    },
+    {
+      "path": "ide/docs/IDE_FIN03_UNSTAGE_RECOVERY.md",
+      "blob": "043adae325d0e8bf3edcd621036eda13d638b97e"
+    },
+    {
+      "path": "ide/docs/IDE_FIN04B_SOURCE_TEST_SYMBOLS.md",
+      "blob": "12174412b840439d72ee95e5771d17b15e9d477e"
+    },
+    {
+      "path": "ide/docs/IDE_FIN04H_EXACT_FRAMEWORK_AND_LLDB_RELEASE_GATES_20261112.md",
+      "blob": "ad980fec97ca7052b51ca1f84289d90ccc164c51"
+    },
+    {
+      "path": "ide/docs/IDE_FIN04R1_PROTECTED_PDB_AND_NATIVE_ACCEPTANCE_20261112.md",
+      "blob": "0cd42750fd191d184e1fe9be62d385b68e43a01a"
+    },
+    {
+      "path": "ide/docs/IDE_FIN04R_RELEASE_OWNER_AND_ACTION_RECOVERY_20261112.md",
+      "blob": "f0d9aabc926a5579c2b41361c7a3910bfa422f81"
+    },
+    {
+      "path": "ide/docs/IDE_FIN04_EXACT_CASE_UI.md",
+      "blob": "85a86daccbeae060d30ee1336be06885a580a4ea"
+    },
+    {
+      "path": "ide/docs/IDE_FIN04_ORIGINAL_REPORT_ELIGIBILITY_REPAIR.md",
+      "blob": "d2ebe50cc8d9c5d67f31fbcec0523d08d9095e29"
+    },
+    {
+      "path": "ide/docs/IDE_FIN04_RUST_EXACT_CASE_EXECUTION.md",
+      "blob": "675108694030ef89a44486b18051fc788d92ac11"
+    },
+    {
+      "path": "ide/docs/IDE_FIN04_TEST_EXPLORER.md",
+      "blob": "3fc874c124a5982a44c8a87210dfb8c8332f1c6d"
+    },
+    {
+      "path": "ide/docs/IDE_FIN05B_VCPKG_MANIFEST_DRAFT.md",
+      "blob": "313127bed4de5756146ef958c89eb9076f66947b"
+    },
+    {
+      "path": "ide/docs/IDE_FIN05C_NATIVE_CONFIRMED_VCPKG.md",
+      "blob": "d7f3358e14234a22590ccaff37d7b519aee1c14a"
+    },
+    {
+      "path": "ide/docs/IDE_FIN05_LINUX_OFFLINE_UV_PROFILE.md",
+      "blob": "069f68b89e087d6b62a3e28d58215ea70bea5696"
+    },
+    {
+      "path": "ide/docs/IDE_FIN05_PACKAGE_CUSTODY.md",
+      "blob": "394de63127699cfad32eba39bdb4d7f2b23daf0f"
+    },
+    {
+      "path": "ide/docs/IDE_FIN06_HUMAN_GUIDED_WORKFLOW.md",
+      "blob": "3dfa7a9d4dcbbab10be3414f3d64e3b716c33d52"
+    },
+    {
+      "path": "ide/docs/IDE_FIN07_SCOPE_REGISTER.md",
+      "blob": "da72b424eff3309ccb67aa0ac19b411ae9ef60c5"
+    },
+    {
+      "path": "ide/docs/IDE_GROUP02_CONSOLIDATED_INSTALLED_ACCEPTANCE_20261110.md",
+      "blob": "fe7f4d7116e03755faf8f9d1c0fb3186c1cc26aa"
+    },
+    {
+      "path": "ide/docs/IDE_GROUP03_SECURITY_AUTHORIZATION_20261110.md",
+      "blob": "60806c89d3e606515f11fb3b23970f2444dda9d5"
+    },
+    {
+      "path": "ide/docs/IDE_GROUP04_PROTECTED_BUILD_TEST_LLDB_20261110.md",
+      "blob": "2c17984d73817bdf857e84145b4ff8da24a020b2"
+    },
+    {
+      "path": "ide/docs/IDE_GROUP05_PACKAGE_TOOLCHAIN_20261110.md",
+      "blob": "5c4201d7658c3893681e76d2d5093451ca78ae69"
+    },
+    {
+      "path": "ide/docs/IDE_GROUP06A_GIT_REPOSITORY_AUDIT_20261110.md",
+      "blob": "f767802f37c4646db9644dc57ceeb78de4d256b0"
+    },
+    {
+      "path": "ide/docs/IDE_GROUP06B05_INSTALLED_COMMIT_RECOVERY_20261110.md",
+      "blob": "c969eabe81a497fd753a50b3c27dfd1c85a09c67"
+    },
+    {
+      "path": "ide/docs/IDE_GROUP06B_ADVANCED_STAGING_20261110.md",
+      "blob": "b6c0c07b845e7437838eb8d3b809f9622749f185"
+    },
+    {
+      "path": "ide/docs/IDE_GROUP06C01_BRANCH_OPERATIONS_20261110.md",
+      "blob": "78bed06b174c54c106c00c64e8595dc6792c426e"
+    },
+    {
+      "path": "ide/docs/IDE_GROUP06C02_REVIEWED_MERGE_PLAN_20261110.md",
+      "blob": "c6733dd3f4505e9c0d64ba7024d928ed7d3178d6"
+    },
+    {
+      "path": "ide/docs/IDE_GROUP06C03_PROTECTED_MERGE_RECOVERY_20261110.md",
+      "blob": "65b39bbe0761e16fa248c3a4104fbc6ae0611b2a"
+    },
+    {
+      "path": "ide/docs/IDE_GROUP06C04_REBASE_CHERRYPICK_20261110.md",
+      "blob": "3e76b6117598b3d9bf8d803452c4323fea212212"
+    },
+    {
+      "path": "ide/docs/IDE_GROUP06D_NATIVE_CONFLICT_RESOLUTION.md",
+      "blob": "f4322a00c78d2db77692ad6a1352069e81fc19be"
+    },
+    {
+      "path": "ide/docs/IDE_GROUP06E_GITHUB_INTEGRATION.md",
+      "blob": "95a728bd8a1c342d552c393ad160bff271a54120"
+    },
+    {
+      "path": "ide/docs/IDE_GROUP6F_FOREIGN_LOCK_CLOSEOUT_20261113.md",
+      "blob": "6adc38629477fa7b573dab66e3902914852fcbe7"
+    },
+    {
+      "path": "ide/docs/IDE_GROUP6F_MAIN_CONVERGENCE_20261113.md",
+      "blob": "ed05832b02ef94d723a8862a0ffa4057395ee979"
+    },
+    {
+      "path": "ide/docs/IDE_INT01_EDITOR_WORKSPACE_INTEGRATION.md",
+      "blob": "b7a0defb0830aed70a6ad1b763093c7f1a2f348f"
+    },
+    {
+      "path": "ide/docs/IDE_INT02_LANGUAGE_SERVER_INTEGRATION.md",
+      "blob": "8b042909c7ccfb95f13ee707460cc5653585e3e3"
+    },
+    {
+      "path": "ide/docs/IDE_INT03_BUILD_TEST_INTEGRATION.md",
+      "blob": "821761ec0a70504f0c6710ea5a06f6b2014101e1"
+    },
+    {
+      "path": "ide/docs/IDE_INT04_DEBUGGER_INTEGRATION.md",
+      "blob": "c93a76d560393c089f65f52cb1abfb6c89e8c140"
+    },
+    {
+      "path": "ide/docs/IDE_INT05_TOOLCHAIN_PACKAGES_TERMINAL.md",
+      "blob": "cc17712b8fc675315664ec12c22dbeea72d651e2"
+    },
+    {
+      "path": "ide/docs/IDE_INT06_INTEGRATION_WORKBENCH.md",
+      "blob": "ab70f49d28b893453db09a44f190a41cbd06258a"
+    },
+    {
+      "path": "ide/docs/IDE_MERGE_01_02_EDITOR_WORKSPACE_BEHAVIOR_REVIEW_20261115.md",
+      "blob": "818fb1fee936e709d270b03642bd7ef237dee7d5"
+    },
+    {
+      "path": "ide/docs/IDE_MERGE_02C_FIRST_RENDER_ROOT_CAUSE_20261115.md",
+      "blob": "ef753e31a1ace196569df31ed31e1aa9d64f3576"
+    },
+    {
+      "path": "ide/docs/IDE_MERGE_02C_FROZEN_SHA_REPAIR_REGISTER_20261115.md",
+      "blob": "0056a23804e8db624dea39aeeca59614de533b88"
+    },
+    {
+      "path": "ide/docs/IDE_MERGE_02C_INSTALLED_LICENSE_RESOURCE_REPAIR_20261115.md",
+      "blob": "59602b6489273bee67bad55012611b2dac9f409e"
+    },
+    {
+      "path": "ide/docs/IDE_MERGE_02C_INSTALLED_RENDER_DIAGNOSTICS_20261115.md",
+      "blob": "1811359150440629ae913c4cc1967eb5b6e65f4f"
+    },
+    {
+      "path": "ide/docs/IDE_MERGE_02C_WINDOWS_TAURI_ICON_REPAIR_20261115.md",
+      "blob": "fea9f8b295e263d804264c06132ca5deee2fe599"
+    },
+    {
+      "path": "ide/docs/IDE_P01_INTEGRATION_AUDIT_20261107.md",
+      "blob": "1defa2bdf27f45b4281da185dc172ac7ff740583"
+    },
+    {
+      "path": "ide/docs/IDE_P02_DETERMINISTIC_REPAIR_20261107.md",
+      "blob": "c9aad33faa0451f3f3933f302a3f6aec2e7c52a5"
+    },
+    {
+      "path": "ide/docs/IDE_P03_NATIVE_SECURITY_ACCEPTANCE_20261107.md",
+      "blob": "cb72911f4d0dbe0dce2c4a268fc83ecfe8ebfeec"
+    },
+    {
+      "path": "ide/docs/IDE_P04_INSTALLED_RELEASE_CLOSEOUT_20261107.md",
+      "blob": "3654412cda0d9678457f71570b3b7a5b46c82ab9"
+    },
+    {
+      "path": "ide/docs/IDE_P05_PR_CI_CONSOLIDATION_20261107.md",
+      "blob": "9e5742f200bd354309bc60f8be0266f86100b462"
+    },
+    {
+      "path": "ide/docs/IDE_P06_GOVERNANCE_REPRODUCIBILITY_20261107.md",
+      "blob": "c2be95289870a5ac0b1928b804c64cd91c9186fd"
+    },
+    {
+      "path": "ide/docs/IDE_P06_INDEPENDENT_DISTRIBUTION_SIGNING_REVIEW_20261108.md",
+      "blob": "eeac643edb9030041a9b55508c8a0525ff7e3bf7"
+    },
+    {
+      "path": "ide/docs/IDE_RELEASE_CLOSEOUT_P01_P07_20261107.md",
+      "blob": "24dfed28bb77b46f1231f85d7b07dc5968c25a80"
+    },
+    {
+      "path": "ide/docs/IDE_WAVE_C5_EXACT_HEAD_CI.md",
+      "blob": "b0b6743b1ea6daf06290ac747d9cf80ded23b3f8"
+    },
+    {
+      "path": "ide/docs/IDE_WAVE_C6_TASK_EVIDENCE.md",
+      "blob": "1c8c34eeb0b66ef6b652be4675df508dc10bbff2"
+    },
+    {
+      "path": "ide/docs/IDE_WAVE_C_DEVELOPMENT_TRUTH.md",
+      "blob": "1181a36de313744d33bbf9a53db6d1bddca1b7d8"
+    },
+    {
+      "path": "ide/docs/IDE_WAVE_D_EXECUTION_BOUNDARY.md",
+      "blob": "65dcb5f15c9acea704c2cf6d18f5f9dabf75e05a"
+    },
+    {
+      "path": "ide/docs/IDE_WAVE_E1_LSP_FOUNDATION.md",
+      "blob": "5c80d8ad6c80f816e69360e27789ba15cbd2a23e"
+    },
+    {
+      "path": "ide/docs/IDE_WAVE_E2_SUPERVISED_LANGUAGE_SERVICES.md",
+      "blob": "42db810406f79f5b1667c5728bfeec29faf0f003"
+    },
+    {
+      "path": "ide/docs/IDE_WORKSPACE_DESIGN.md",
+      "blob": "102f88c268688e211c167ed391a10a6c761b1ce7"
+    },
+    {
+      "path": "ide/docs/IDE_WORK_BATCH_01_20261106.md",
+      "blob": "a114983c9c2803a5e6fdea16e55a4516e568b8c5"
+    },
+    {
+      "path": "ide/docs/IDE_WORK_BATCH_02_20261106.md",
+      "blob": "5d3530e3441c727cf38146914da3427a2e62698f"
+    },
+    {
+      "path": "ide/docs/IDE_WORK_ORDER_04_LINUX_DELEGATION_20261106.md",
+      "blob": "37d7ddc64ef9fa5c316fd389c6ad733062c08399"
+    },
+    {
+      "path": "ide/docs/IDE_WORK_ORDER_05_PROTECTED_LANGUAGE_SERVERS_20261106.md",
+      "blob": "6773739d32835d7e81594935b45052203d8e6c8e"
+    },
+    {
+      "path": "ide/docs/IDE_WORK_ORDER_06_PROTECTED_BUILD_TEST_DEBUG_20261106.md",
+      "blob": "072b01d69ffb4451f9fef228676293c60cc59218"
+    },
+    {
+      "path": "ide/docs/IDE_WORK_ORDER_07_SIGNED_NSIS_RELEASE_20261106.md",
+      "blob": "371e602886bce46da4e2370e34bcedacbdb20462"
+    },
+    {
+      "path": "ide/docs/IDE_WORK_ORDER_08_INSTALLED_E2E_20261107.md",
+      "blob": "5da1eae8e22ed2882cd78ed9d06d8e19b6ebaad7"
+    },
+    {
+      "path": "ide/docs/IDE_WORK_ORDER_09_ADVANCED_WORKFLOWS_20261107.md",
+      "blob": "c808434dfcd61c2b099a1efd15eae8041adce5e1"
+    },
+    {
+      "path": "ide/docs/IMPLEMENTATION_GATES.md",
+      "blob": "ce80ef12b4576c57594c39b47250ebf6d87663db"
+    },
+    {
+      "path": "ide/docs/PACKAGE_ORCHESTRATOR.md",
+      "blob": "a420aabb8fc6bf8b47d0f63d7dde7cea64f6121a"
+    },
+    {
+      "path": "ide/docs/SECURITY_MODEL.md",
+      "blob": "220f4792a0d817c0ce9097acb4e0f75e8ac1a4f2"
+    },
+    {
+      "path": "ide/host/Cargo.lock",
+      "blob": "90e52a812a834786d828fefb86d244732a882dd7"
+    },
+    {
+      "path": "ide/host/Cargo.toml",
+      "blob": "ee529f038409f31e2dd6ca01aa03d095fd58fb69"
+    },
+    {
+      "path": "ide/host/LICENSE",
+      "blob": "d645695673349e3947e8e5ae42332d0ac3164cd7"
+    },
+    {
+      "path": "ide/host/README.md",
+      "blob": "16bf43d56c173dcf788076bd6b2c306e4c20043f"
+    },
+    {
+      "path": "ide/host/build.rs",
+      "blob": "5f3276560c0b2c78e471b802858f4d18e9437bce"
+    },
+    {
+      "path": "ide/host/examples/fin03_live_vault_probe.rs",
+      "blob": "2e0991069b509276f84d4a7f00d99a71b3ea5d76"
+    },
+    {
+      "path": "ide/host/fixtures/clangd17_real_wire.json",
+      "blob": "3f650a91545636439424d95faf127d225b142bf1"
+    },
+    {
+      "path": "ide/host/src/advanced_workflows.rs",
+      "blob": "c2cedfa2b0bc85ea32da3d7daae416c5c5ff7c16"
+    },
+    {
+      "path": "ide/host/src/browser.rs",
+      "blob": "c5fa0d1a3a769c3ae8d2be5779210a84a3ca3d11"
+    },
+    {
+      "path": "ide/host/src/capabilities.rs",
+      "blob": "796ecf8ac5dd148434a9bdc69eb2bbd48152afc3"
+    },
+    {
+      "path": "ide/host/src/capability_schemas.json",
+      "blob": "be27012e55220165b8c5651160843453386ce34a"
+    },
+    {
+      "path": "ide/host/src/continuity.rs",
+      "blob": "ce02f2b368eeec1bae9294e3ba3799b2fbcc12cd"
+    },
+    {
+      "path": "ide/host/src/conventional_tests.rs",
+      "blob": "1082ed86aa5e7c24da40f509a816de552a90e57d"
+    },
+    {
+      "path": "ide/host/src/dap_session.rs",
+      "blob": "8396d524a0f6c135a28b6400ebd4a4a10ed8eb74"
+    },
+    {
+      "path": "ide/host/src/dap_source_lines.rs",
+      "blob": "581177e817e5e06da316ced05e1d14a8285a08dc"
+    },
+    {
+      "path": "ide/host/src/debug_target_review.rs",
+      "blob": "8d16edb47dab8ecfeed289d22f6b5a95b20b0886"
+    },
+    {
+      "path": "ide/host/src/draft_vault.rs",
+      "blob": "848030a96a584e58341bb5ea17040e3bd066b0bc"
+    },
+    {
+      "path": "ide/host/src/editor.rs",
+      "blob": "d2d789f6374d402f8b94413802e2a90cbd021cc4"
+    },
+    {
+      "path": "ide/host/src/execution_intents.rs",
+      "blob": "a3e63274f6e51e5ce393b573f3d6bd94f8c906f4"
+    },
+    {
+      "path": "ide/host/src/git_batch_review.rs",
+      "blob": "8347b364484d23a4b82a7672cc2111a51e50630c"
+    },
+    {
+      "path": "ide/host/src/git_branch_operations.rs",
+      "blob": "84f87470619e87b52ea67a02aed20b1507534856"
+    },
+    {
+      "path": "ide/host/src/git_conflict_inventory.rs",
+      "blob": "eb3fb3f820bc3f838900277e6af943577bebf969"
+    },
+    {
+      "path": "ide/host/src/git_conflict_resolution.rs",
+      "blob": "6b66cddcac49090f7dfda2416518194ace5bc597"
+    },
+    {
+      "path": "ide/host/src/git_divergent_verify.rs",
+      "blob": "6a6de72ebbd0ba24e8701816b47c587e4f2fbf36"
+    },
+    {
+      "path": "ide/host/src/git_evidence.rs",
+      "blob": "838209f9b94be6db978431e6cdef87876be0eff0"
+    },
+    {
+      "path": "ide/host/src/git_file_history.rs",
+      "blob": "4031192bd0f943dfa0739c6801c4966eb7654a8b"
+    },
+    {
+      "path": "ide/host/src/git_fin03_operation_preview.rs",
+      "blob": "80a6afedb77e23ef1b3ce87815c0495b2dbfc647"
+    },
+    {
+      "path": "ide/host/src/git_hunk_review.rs",
+      "blob": "4f797f6189d9376c94b2f2b355d8f615bad3dfbe"
+    },
+    {
+      "path": "ide/host/src/git_inventory.rs",
+      "blob": "aade23bd617e5e7a5a5b09dd651909a13176eee7"
+    },
+    {
+      "path": "ide/host/src/git_merge_plan.rs",
+      "blob": "b2e0a255bc4e9e0777844152d4fa2e056af7f9a6"
+    },
+    {
+      "path": "ide/host/src/git_partial_stage.rs",
+      "blob": "497c44e0c81f6e518e153d37a5d6ab37c713aaf1"
+    },
+    {
+      "path": "ide/host/src/git_protected_divergent_merge.rs",
+      "blob": "d0756e6d7e900c56239545291529b31cc0188ec1"
+    },
+    {
+      "path": "ide/host/src/git_protected_merge.rs",
+      "blob": "3ececcc5f39d4621acefa8905e33e99139c7caeb"
+    },
+    {
+      "path": "ide/host/src/git_protected_replay.rs",
+      "blob": "fa64cc77dd4d7594924800f2b52d5b004be9387a"
+    },
+    {
+      "path": "ide/host/src/git_rebase_cherry_plan.rs",
+      "blob": "4b753e3b5ebb20e257f50cca1ce862de187d918b"
+    },
+    {
+      "path": "ide/host/src/git_refs_health.rs",
+      "blob": "958080217ba96606df09fde141ae8eec365a4052"
+    },
+    {
+      "path": "ide/host/src/git_replay_quarantine.rs",
+      "blob": "c5e7fa942552654b49755b0889c57bfb0a8869b5"
+    },
+    {
+      "path": "ide/host/src/git_reviewed_commit.rs",
+      "blob": "36a4f731004251bdeac32efa9b732328cb6b1d70"
+    },
+    {
+      "path": "ide/host/src/git_reviewed_restore.rs",
+      "blob": "fe45c909b4d0e522826016c9c72816e7719513f4"
+    },
+    {
+      "path": "ide/host/src/git_reviewed_stash_save.rs",
+      "blob": "f1d54aaee76acca98c53fa405d959eceb9ee1b0c"
+    },
+    {
+      "path": "ide/host/src/git_reviewed_unstage.rs",
+      "blob": "1713f19dc6491cba2d857b216106b34009dd373f"
+    },
+    {
+      "path": "ide/host/src/git_security_recovery_matrix.rs",
+      "blob": "4a6c2114326bf8b2403df66b0a4d03ee90fb1c8e"
+    },
+    {
+      "path": "ide/host/src/git_stash_inventory.rs",
+      "blob": "62a960bf0c5f8f5a6e7660422cfea2e53a62c211"
+    },
+    {
+      "path": "ide/host/src/git_status.rs",
+      "blob": "bc680c1a252a94c8e674368f1225f782ba6ecd75"
+    },
+    {
+      "path": "ide/host/src/github_branch_rules.rs",
+      "blob": "b4eb258162c31a6354084bddda1da698f73af50b"
+    },
+    {
+      "path": "ide/host/src/github_ci.rs",
+      "blob": "beaa8b76c33cd3cbfa32b979c37c09a1c9922e35"
+    },
+    {
+      "path": "ide/host/src/github_live.rs",
+      "blob": "ce5741f96ef473cc1e55fad260bf5afa045f1c75"
+    },
+    {
+      "path": "ide/host/src/github_pull_review.rs",
+      "blob": "9170151fb9b305a23267edca92fabd0cb740e66a"
+    },
+    {
+      "path": "ide/host/src/github_remote_live_policy.rs",
+      "blob": "245232b1b9f2ef35ebda29fb00bdefa0de197473"
+    },
+    {
+      "path": "ide/host/src/github_remote_native_consent.rs",
+      "blob": "601ca2f2ca45d6f26649e53354fc7a3cc6c49dfc"
+    },
+    {
+      "path": "ide/host/src/github_remote_publication.rs",
+      "blob": "3414f75460c43071de589a65bada7f3acf3f78aa"
+    },
+    {
+      "path": "ide/host/src/github_remote_publication_intent.rs",
+      "blob": "492b12fa3a9232adbbdb5ffda95fa6c9c6c4f41a"
+    },
+    {
+      "path": "ide/host/src/github_review_state.rs",
+      "blob": "f3fedb593112f93056b90a27f6e5239efc7da1a6"
+    },
+    {
+      "path": "ide/host/src/inbox.rs",
+      "blob": "8460e0d90140981dc2a35e5cf7617c487fdae1ab"
+    },
+    {
+      "path": "ide/host/src/inventory.rs",
+      "blob": "30a18ed839ae7a19351c8a17f44c83c766d98e76"
+    },
+    {
+      "path": "ide/host/src/inventory_history.rs",
+      "blob": "a5c59b5607bff7e4d66920a2c9753c725fa87a82"
+    },
+    {
+      "path": "ide/host/src/lib.rs",
+      "blob": "bfcfcb8cc8ae0375cedd99d8b320198e2409997a"
+    },
+    {
+      "path": "ide/host/src/lsp.rs",
+      "blob": "32b9e319890158cb217e8ac5364f7aba4ab2d7bd"
+    },
+    {
+      "path": "ide/host/src/lsp_session.rs",
+      "blob": "ea4a932f217b6834991005be421c36122873248d"
+    },
+    {
+      "path": "ide/host/src/package_manager.rs",
+      "blob": "a2d7f2c3befbe7ef9dbb5d6ccbde7d2dea391688"
+    },
+    {
+      "path": "ide/host/src/package_manifest_edits.rs",
+      "blob": "f14f75bf04a1b2939f5d6e53fd24054cd65f1dc2"
+    },
+    {
+      "path": "ide/host/src/package_preview.rs",
+      "blob": "1a8393db574373a79dc8c0ea1819b9601525cc1a"
+    },
+    {
+      "path": "ide/host/src/project_run_profiles.rs",
+      "blob": "90c00346a31288434fdbbe07f945423462eaa1f3"
+    },
+    {
+      "path": "ide/host/src/project_search.rs",
+      "blob": "7762ac38b072e85048c984261aa45d2e49e1bf8a"
+    },
+    {
+      "path": "ide/host/src/proposal.rs",
+      "blob": "f5d1764c48e76340d5568e658d6d71d208fe3d15"
+    },
+    {
+      "path": "ide/host/src/quick_open.rs",
+      "blob": "4d7a0e9c8aa400341eddc4ff60a7f35a7e9bffeb"
+    },
+    {
+      "path": "ide/host/src/resource_probe.rs",
+      "blob": "c6a6147c12de677d1199d66b380c449aea93dc0c"
+    },
+    {
+      "path": "ide/host/src/review.rs",
+      "blob": "3eab7361c3e1e6babe63d021eac2d83a7e66b551"
+    },
+    {
+      "path": "ide/host/src/reviewed_adapters.rs",
+      "blob": "a86c1346c8c126be184b7cbe2b6f5ab696163da4"
+    },
+    {
+      "path": "ide/host/src/reviewed_git.rs",
+      "blob": "c771ba64a93faca558e44eebe0f447ab36878c4a"
+    },
+    {
+      "path": "ide/host/src/source_create.rs",
+      "blob": "f6141c13d50d7e8759cdf7c538d852286b53692b"
+    },
+    {
+      "path": "ide/host/src/source_file_transactions.rs",
+      "blob": "2bf8f0bebac4fb193ecb805922434e14bf65c9a5"
+    },
+    {
+      "path": "ide/host/src/source_span.rs",
+      "blob": "186df197d32e7d6daaa6dbec34a005d0bfc4c543"
+    },
+    {
+      "path": "ide/host/src/task_evidence.rs",
+      "blob": "6c8a2cc008e4c182fe77ebbe546e94d233e094fb"
+    },
+    {
+      "path": "ide/host/src/wire.rs",
+      "blob": "ce0d165e4ebef5f2f52fa665ea71d32a54f404c9"
+    },
+    {
+      "path": "ide/host/src/workflow_orchestrator.rs",
+      "blob": "68fac7841912cc3bdcf97f3a0e326206368aaf8d"
+    },
+    {
+      "path": "ide/host/src/workspace_layout.rs",
+      "blob": "f90a64955a8757d00c3b6478f423ca8539414744"
+    },
+    {
+      "path": "ide/host/tests/browser.rs",
+      "blob": "2b347df3b99f77716b2f0c256be1358eca32d7b7"
+    },
+    {
+      "path": "ide/host/tests/continuity.rs",
+      "blob": "01d0f7ca85120f6134597db4738cc064b31cb8a1"
+    },
+    {
+      "path": "ide/host/tests/conventional_tests.rs",
+      "blob": "1ed11235463fd5019744726965d4d2226047157b"
+    },
+    {
+      "path": "ide/host/tests/debug_target_review.rs",
+      "blob": "2402b86728d6a5a75a1f3e5ff4147b078024b529"
+    },
+    {
+      "path": "ide/host/tests/draft_vault.rs",
+      "blob": "743ee623f90fd02cdd382797f3ec422d5e45206c"
+    },
+    {
+      "path": "ide/host/tests/editor.rs",
+      "blob": "5cd448845b827bdf5b2b6d1e901f7f484cbcbe47"
+    },
+    {
+      "path": "ide/host/tests/fin03_reviewed_restore.rs",
+      "blob": "02b644ff4c229d0c92697a22f89a48b98e170a4e"
+    },
+    {
+      "path": "ide/host/tests/fin03_stash_save.rs",
+      "blob": "90df81f8f5df31c7db1bbdaf52643f8e67efe323"
+    },
+    {
+      "path": "ide/host/tests/git_evidence.rs",
+      "blob": "7106de53398f8609ce18278841b36fde0e52d3e3"
+    },
+    {
+      "path": "ide/host/tests/git_status.rs",
+      "blob": "49d0ed09d3cf49cd805478b5ba1c03dc12e866cd"
+    },
+    {
+      "path": "ide/host/tests/inbox.rs",
+      "blob": "ba8414dc563417e6337ffb5bc4a0fec1d786b14f"
+    },
+    {
+      "path": "ide/host/tests/inventory_history.rs",
+      "blob": "7944085295dd47aee444144df32d43bf1801829b"
+    },
+    {
+      "path": "ide/host/tests/lifecycle.rs",
+      "blob": "571ce970d7bfed6b205d292ef9f1af302e694e43"
+    },
+    {
+      "path": "ide/host/tests/project_run_profiles.rs",
+      "blob": "627af457d8500d0699c08c8e61860bf75dc59731"
+    },
+    {
+      "path": "ide/host/tests/project_search.rs",
+      "blob": "f3b76bb80fc7fa95838dd280644cc1ca7140c9f5"
+    },
+    {
+      "path": "ide/host/tests/proposal.rs",
+      "blob": "5eeed035c424b35b46342292a77173b3ed8d7fa5"
+    },
+    {
+      "path": "ide/host/tests/quick_open.rs",
+      "blob": "b417586fa2a6a0be7c0fd8f570464b035e5ef2ff"
+    },
+    {
+      "path": "ide/host/tests/resource_probe.rs",
+      "blob": "73a1ecc5541371a2d72367a752c61c5268c8aa91"
+    },
+    {
+      "path": "ide/host/tests/review.rs",
+      "blob": "2021a8af17fd738193617b382c101b5764c1ad04"
+    },
+    {
+      "path": "ide/host/tests/reviewed_multilang_adapters.rs",
+      "blob": "20e2d5f5f076917adc9ea231fa9c61ffe8797d1f"
+    },
+    {
+      "path": "ide/host/tests/source_create.rs",
+      "blob": "284d4ed5bc5a6d9132c4b6f12d3a7202891a0031"
+    },
+    {
+      "path": "ide/host/tests/source_file_transactions.rs",
+      "blob": "ffd8d8897aa846643c7bb78d48b43a1e6d7f0bf0"
+    },
+    {
+      "path": "ide/host/tests/source_span.rs",
+      "blob": "37bddcaa327d91c004d3fde240cbed5fe7d5d6aa"
+    },
+    {
+      "path": "ide/host/tests/task_source_link.rs",
+      "blob": "e70306654cb15df2c465206dc09bc4408c15bac3"
+    },
+    {
+      "path": "ide/host/tests/workspace_layout.rs",
+      "blob": "ae1bd6e2f359be970e8c66828250bda3a76b2077"
+    },
+    {
+      "path": "ide/llvm18_owner/Build-PinnedOwnerWindows.ps1",
+      "blob": "8ee517b53fad00a5f07031e62334cc52a4107719"
+    },
+    {
+      "path": "ide/llvm18_owner/LuIdeOwnerEvent.h",
+      "blob": "897c79c7da40b933d9370af2c1b6ea46b3f8e7bc"
+    },
+    {
+      "path": "ide/llvm18_owner/Test-FIN04R1-ProtectedPdbWindows.ps1",
+      "blob": "84a88cb6e28656bb651e060c2f7815d7d8ab04f8"
+    },
+    {
+      "path": "ide/llvm18_owner/Test-PinnedOwnerWindows.ps1",
+      "blob": "87fb771caacf4bf162332475f7a4eed189da46ca"
+    },
+    {
+      "path": "ide/llvm18_owner/Transfer-PinnedOwnerBundle.ps1",
+      "blob": "785cef7c65c436fb0822a4277f9f8a8209b37e89"
+    },
+    {
+      "path": "ide/llvm18_owner/apply_llvm18_owner_hook.py",
+      "blob": "d25513a65352793d4c5a5aed231dbc476636dcd5"
+    },
+    {
+      "path": "ide/llvm18_owner/test_pinned_chrono_overlay.py",
+      "blob": "c3a6e66fb12afe08ead80d8006ac758bf75c6a86"
+    },
+    {
+      "path": "ide/packaging/Build-Wo7ReviewedNsis.ps1",
+      "blob": "1dbef53b0a8d3ea385110bf165e4dd85ad5c5190"
+    },
+    {
+      "path": "ide/packaging/Sign-Wo7ReviewedArtifact.ps1",
+      "blob": "5f9f4e52b92ccf105dccddba5c75b2523c22485c"
+    },
+    {
+      "path": "ide/packaging/Start-FIN04W2-LoopbackControl.ps1",
+      "blob": "412c632f45e4089b3a68c5102dc3d36602a4b4e3"
+    },
+    {
+      "path": "ide/packaging/Test-FIN04W2-EffectiveWfpNative.ps1",
+      "blob": "a4ce3147c9d1b0276d7a7a4da7c2b9165dc27c23"
+    },
+    {
+      "path": "ide/packaging/Test-FIN04W2-ServiceLossNative.ps1",
+      "blob": "b8de6c06add284c3fbcb5eb17514144df69d8dfa"
+    },
+    {
+      "path": "ide/packaging/audit_native_lsp_dependency_smoke.py",
+      "blob": "4f95db53d6d87b761d52a014986903e7aac0810e"
+    },
+    {
+      "path": "ide/packaging/audit_p05_reviewed_workflow_successor.py",
+      "blob": "f42432bba301210c97907e61478263f68e425848"
+    },
+    {
+      "path": "ide/packaging/collect_original_lsp_notices.py",
+      "blob": "159f3d3eca93970a32da98c3c1bc72d3b1beabc8"
+    },
+    {
+      "path": "ide/packaging/collect_verification_licenses.py",
+      "blob": "76c70e27e015550fc4caedb01b9418ecbfcfdbad"
+    },
+    {
+      "path": "ide/packaging/debug-adapters.manifest.json",
+      "blob": "d6fa50a93b379ddb469ac2a9f8d3a14d37817124"
+    },
+    {
+      "path": "ide/packaging/ide-merge02-reviewed-lock-successor.json",
+      "blob": "57dc6adb4badf56bf62e116b0c933f7e9518e99b"
+    },
+    {
+      "path": "ide/packaging/ide-merge02c-native-cargo-lock-receipts.json",
+      "blob": "05c3c97cb1d5b73f01a0fd2562816e23a363407e"
+    },
+    {
+      "path": "ide/packaging/ide05-reviewed-lock-successor.json",
+      "blob": "c2d77b3fa56676f5518d6483a19a86d6061ec7d2"
+    },
+    {
+      "path": "ide/packaging/ide_merge02c_grouped_repair_review_20261115.md",
+      "blob": "8df508c296507720f03ec579b84266c5f2a5bc89"
+    },
+    {
+      "path": "ide/packaging/ide_merge02c_lock_p05_p06_reconciliation_20261115.md",
+      "blob": "877a389ef21561d258783a4cb612ae4163c72ee3"
+    },
+    {
+      "path": "ide/packaging/ide_merge02c_p05_p06_historical_security_review_20261115.md",
+      "blob": "12b99222adc1dd82994311d8fc3dbafe0f965905"
+    },
+    {
+      "path": "ide/packaging/ide_merge02c_p05_p06_successor_review_20261115.md",
+      "blob": "08d3a0a1a69312a5a2b94c5bd3ae0bea5dc8b59c"
+    },
+    {
+      "path": "ide/packaging/language-servers.manifest.json",
+      "blob": "c00712d711e5f62a9e72d4866a8d9f5a7a7fd443"
+    },
+    {
+      "path": "ide/packaging/lsp_original_upstream_notices_20261108.json",
+      "blob": "e4ba0895137330efc42032ba05d367555871353d"
+    },
+    {
+      "path": "ide/packaging/lsp_upstream_archive_candidates_20261108.json",
+      "blob": "b7fdea1c577eef028ea1db929c8bedc28fcca06f"
+    },
+    {
+      "path": "ide/packaging/p04-transition-evidence.json",
+      "blob": "35f17da22803a0662c87dd7b864fe369eb5c7324"
+    },
+    {
+      "path": "ide/packaging/p04_transactional_upgrade.py",
+      "blob": "ef3c6c20d5a76fa0b3c7632b26bd6c557b7e3c86"
+    },
+    {
+      "path": "ide/packaging/p05-ci-retention-decision.json",
+      "blob": "ff30c545717e9aec7d85f97fc4647c919d4bf7cd"
+    },
+    {
+      "path": "ide/packaging/p05-merge02-pending-native-boundaries.json",
+      "blob": "510293d0df6b18150739cee0fbdcd58dc24cb392"
+    },
+    {
+      "path": "ide/packaging/p05-pr-source-audit.json",
+      "blob": "dcd56a42a42fd6663834f124f987e665d309718d"
+    },
+    {
+      "path": "ide/packaging/p05-semantic-reconciliation.json",
+      "blob": "05191345a4033c75954d902c00e4f869921bfe2c"
+    },
+    {
+      "path": "ide/packaging/p05-workflow-coverage.json",
+      "blob": "5299b1ca6981f341d2855f549e567b8c2747dc13"
+    },
+    {
+      "path": "ide/packaging/p06-exact-windows-unsigned-receipt.json",
+      "blob": "c63066d95fc13f446c81ffe2185b56ef1660fde7"
+    },
+    {
+      "path": "ide/packaging/p06-known-license-risk.json",
+      "blob": "33859397cb1cdf64cfe1ef2c1b2d2f3fc14e01e1"
+    },
+    {
+      "path": "ide/packaging/p06-native-acceptance-matrix.json",
+      "blob": "d94d92b8e0f30a49f11a7b350e4bd23e5e26981e"
+    },
+    {
+      "path": "ide/packaging/p06-reviewed-lock-graphs.json",
+      "blob": "fa149788d64c618d736acbe5bc1c80b1f185cc3e"
+    },
+    {
+      "path": "ide/packaging/p06_license_triage.py",
+      "blob": "1dce6e07ef55a8e3b64043ca6560366a5465dba6"
+    },
+    {
+      "path": "ide/packaging/p06_live_native_jobs.py",
+      "blob": "7b8e7358092732f1f09c3f2b4960e18ded9ee1b2"
+    },
+    {
+      "path": "ide/packaging/p06_shipping_content.py",
+      "blob": "b926a425df86cfad26653c747e80a2251924be54"
+    },
+    {
+      "path": "ide/packaging/p06_target_license_scope.py",
+      "blob": "d2b4cfa67cf22389c89fdf5a1f35eac6e181c8f2"
+    },
+    {
+      "path": "ide/packaging/prepare_fin02_runtime_pins.py",
+      "blob": "ebe7b3e211af07ac0136a91ab299c7aabc486113"
+    },
+    {
+      "path": "ide/packaging/prepare_int02f_lsp_resources.py",
+      "blob": "147f2301206f32f1a2d025dc9895923dfe149e6d"
+    },
+    {
+      "path": "ide/packaging/prepare_lsp_candidate_review.py",
+      "blob": "11964aa6cd3bcc67974021a939c73a2180b2da4d"
+    },
+    {
+      "path": "ide/packaging/prepare_wo7_tauri_bundle.py",
+      "blob": "762244bf026599d388b83837262abfb56e37c84a"
+    },
+    {
+      "path": "ide/packaging/python_semantic_native_benchmark.py",
+      "blob": "c11c0b883eb26d976489146a8df73c7e8402a8fe"
+    },
+    {
+      "path": "ide/packaging/review_upstream_lsp_archives.py",
+      "blob": "28e108abfcaf3adeaa0fc80b63955465a31ba517"
+    },
+    {
+      "path": "ide/packaging/stage_complete_native_lsp_candidate.py",
+      "blob": "78f43602fbde07987605886cc3550277f4bb2663"
+    },
+    {
+      "path": "ide/packaging/stage_language_server_release.py",
+      "blob": "30c41b5240d99ffa5e3c260970bdcf1fe97f607f"
+    },
+    {
+      "path": "ide/packaging/stage_linux_language_server_release.py",
+      "blob": "29f935c3ebc055a0d2219a030201e052a12396d4"
+    },
+    {
+      "path": "ide/packaging/stage_native_lsp_disposable_test_install.py",
+      "blob": "483a5ef426ee3d0d67320dbd0a026a45bc8cd426"
+    },
+    {
+      "path": "ide/packaging/stage_ty_semantic_candidate_ci.py",
+      "blob": "3d51c9a54b3e6632932a532f6a8d65875339a29f"
+    },
+    {
+      "path": "ide/packaging/stage_wo7_windows_release.py",
+      "blob": "2618835cfe865139f7c4c1a475a8e20e4cbb58d6"
+    },
+    {
+      "path": "ide/packaging/test_audit_native_lsp_dependency_smoke.py",
+      "blob": "8c9c15b9fb1c35a8ed6c56e9316d66e8fd2a402b"
+    },
+    {
+      "path": "ide/packaging/test_collect_original_lsp_notices.py",
+      "blob": "8ac7b1e5aa02da970f906507c9d022166a8d944d"
+    },
+    {
+      "path": "ide/packaging/test_collect_verification_licenses.py",
+      "blob": "41fc5cb0cb8a55190a99fa478fe2e7d4a3b2331a"
+    },
+    {
+      "path": "ide/packaging/test_debug_adapters.py",
+      "blob": "a25ed1ba569ea6e4674d900949f4171ab3246bac"
+    },
+    {
+      "path": "ide/packaging/test_dev045d4b_windows_debug_event_pdb.py",
+      "blob": "4f6661c052a90e6ac500313ed0538ce146ed427d"
+    },
+    {
+      "path": "ide/packaging/test_ide056_successor_lock.py",
+      "blob": "3dd4606062bf75ad3e68be7badddef6c6ad5d8df"
+    },
+    {
+      "path": "ide/packaging/test_ide05_upstream_intake.py",
+      "blob": "9c29f8264db60bd09c3a2bbb7bb9d4c73f491b22"
+    },
+    {
+      "path": "ide/packaging/test_ide_merge02c_native_locks.py",
+      "blob": "2a491717de77283b520e0addc561d9069e34daa0"
+    },
+    {
+      "path": "ide/packaging/test_p04_transactional_upgrade.py",
+      "blob": "e5068800df4ef4c061614c72e8b7fed8bb306d9a"
+    },
+    {
+      "path": "ide/packaging/test_p05_ci_retention.py",
+      "blob": "eb1c7ebd0050a157474be0c2d3e7ca82ede2e363"
+    },
+    {
+      "path": "ide/packaging/test_p05_merge02_pending_native_boundaries.py",
+      "blob": "e004af8f1010c9e9d30809027946ffd1ccdbbe5e"
+    },
+    {
+      "path": "ide/packaging/test_p05_native_picker_repair.py",
+      "blob": "d7e54df32fb0c92ec6389584fd23f20106e5e10a"
+    },
+    {
+      "path": "ide/packaging/test_p05_reviewed_workflow_successor.py",
+      "blob": "f0d71fa1bb5e0a7f31f30ca7d200a854187439bd"
+    },
+    {
+      "path": "ide/packaging/test_p05_semantic_reconciliation.py",
+      "blob": "fb2097b591b15982bb8efcf58291cdb740f6143a"
+    },
+    {
+      "path": "ide/packaging/test_p05_upstream_bundle_integration.py",
+      "blob": "a70d2adddbfb37f95b2a22b3023523b66cd90904"
+    },
+    {
+      "path": "ide/packaging/test_p05_upstream_ci_wiring.py",
+      "blob": "2fe8e1e4e0651d21af98b4f680d5125b0017a01d"
+    },
+    {
+      "path": "ide/packaging/test_p05_wo7_signed_bundle_source.py",
+      "blob": "69dd7623a647e72a56a18602a98fd099739c99e0"
+    },
+    {
+      "path": "ide/packaging/test_p06_candidate_lock.py",
+      "blob": "373ed6c0eb6ee965fab6d32c97a7e7452597a1c2"
+    },
+    {
+      "path": "ide/packaging/test_p06_checkout_lock.py",
+      "blob": "7058bb489bde7b92efbc07e8af3e92a149b958a1"
+    },
+    {
+      "path": "ide/packaging/test_p06_exact_upstream_notice_fallback.py",
+      "blob": "3557edd3315bee5b581fb9d1a1557f39ab0261d7"
+    },
+    {
+      "path": "ide/packaging/test_p06_license_provenance.py",
+      "blob": "7247499c4a76321af56d141486a10ea80cbda3b5"
+    },
+    {
+      "path": "ide/packaging/test_p06_license_triage.py",
+      "blob": "2832d0a57ebbe2dfb0d53561ba1c1e7b396571b7"
+    },
+    {
+      "path": "ide/packaging/test_p06_live_native_jobs.py",
+      "blob": "28ebe1643e2813cc6aafd143ae2bfbc9ecb077bf"
+    },
+    {
+      "path": "ide/packaging/test_p06_r_efi_authors.py",
+      "blob": "57738450eec94234a78d1cb6f8c44c00ea252be8"
+    },
+    {
+      "path": "ide/packaging/test_p06_shipping_content.py",
+      "blob": "c441952959c2c25e2a128ded60f41901e67b57a1"
+    },
+    {
+      "path": "ide/packaging/test_p06_source_notice_recovery.py",
+      "blob": "bb1746e2495d187afeb304a1e1c865647dd6a902"
+    },
+    {
+      "path": "ide/packaging/test_p06_target_license_scope.py",
+      "blob": "8464bccac7a6a4c5f6b91c841054bf7f9255c7ce"
+    },
+    {
+      "path": "ide/packaging/test_p06_wo8_lock_wiring.py",
+      "blob": "8858a71e2d866855aa8b9cf8df5fe8496870f1b9"
+    },
+    {
+      "path": "ide/packaging/test_prepare_fin02_runtime_pins.py",
+      "blob": "3501110046e0fda23e8761fdd443e3a61475fa4c"
+    },
+    {
+      "path": "ide/packaging/test_prepare_lsp_candidate_review.py",
+      "blob": "4589a5a18eb448c282fe30f3694650308fdb1325"
+    },
+    {
+      "path": "ide/packaging/test_prepare_wo7_tauri_bundle.py",
+      "blob": "3ebe6b89389d622910604840d77305a4454dfccc"
+    },
+    {
+      "path": "ide/packaging/test_python_semantic_native_benchmark.py",
+      "blob": "28809796c39f8302bed7a4f1703b72a8ed77f5ed"
+    },
+    {
+      "path": "ide/packaging/test_review_upstream_lsp_archives.py",
+      "blob": "ff33b9b9b7a43ebba7075e6444445b39cbfdcdc1"
+    },
+    {
+      "path": "ide/packaging/test_stage_complete_native_lsp_candidate.py",
+      "blob": "fd2eefeae79cfb467f57b8264f3e88e076276232"
+    },
+    {
+      "path": "ide/packaging/test_stage_language_server_release.py",
+      "blob": "5970151393226b399fb098557eea30f44a76b710"
+    },
+    {
+      "path": "ide/packaging/test_stage_linux_language_server_release.py",
+      "blob": "41b4cdb38df9c8213bad72a809f1d9f96ade548d"
+    },
+    {
+      "path": "ide/packaging/test_stage_native_lsp_disposable_test_install.py",
+      "blob": "45c1d6c59edac1e6f9a6e399cc42db78749477d7"
+    },
+    {
+      "path": "ide/packaging/test_stage_wo7_windows_release.py",
+      "blob": "b34af5801c297f9a4c3a61ba79618a0c29123148"
+    },
+    {
+      "path": "ide/packaging/test_upstream_notice_receipt.py",
+      "blob": "c8a8ff3103cf02c481256c385c79d32c07c2eb2e"
+    },
+    {
+      "path": "ide/packaging/test_verify_dev045c_debug_bundle.py",
+      "blob": "9ac03d70d7f0b8e376a7f55629b9ec421c014da4"
+    },
+    {
+      "path": "ide/packaging/test_verify_dev045d2_line_oracle.py",
+      "blob": "31931e3793a97ad341412736f7a2fcdc0ddd852c"
+    },
+    {
+      "path": "ide/packaging/test_verify_language_servers.py",
+      "blob": "bc2b9660918a74a4912d5652bcbd09798f6937d4"
+    },
+    {
+      "path": "ide/packaging/test_verify_p04_license_bundle.py",
+      "blob": "45595c5d03b1f6c49d8771d2a759e5f011740fcc"
+    },
+    {
+      "path": "ide/packaging/test_verify_p04_transition_evidence.py",
+      "blob": "92f9da8c32ea66014bb03927c56afb1479f19ddf"
+    },
+    {
+      "path": "ide/packaging/test_verify_p05_pr_inventory.py",
+      "blob": "925e9031f2fbced1adfcad9cda969581c7e8ef84"
+    },
+    {
+      "path": "ide/packaging/test_verify_p06_acceptance_matrix.py",
+      "blob": "9effcb76cf229e1f4d727359ed31bb1cee43aaa3"
+    },
+    {
+      "path": "ide/packaging/test_verify_p06_dependency_graph.py",
+      "blob": "7fe9c4193dc2f9761d4d9976e227f9fbb7161f6a"
+    },
+    {
+      "path": "ide/packaging/test_verify_p06_lock_parity.py",
+      "blob": "529c5f64856fecf3e0978536d887b1ceb1cd05e9"
+    },
+    {
+      "path": "ide/packaging/test_verify_tauri_minor.py",
+      "blob": "b8dbe0adb38735a271c885ea7af511ecd8f1dbff"
+    },
+    {
+      "path": "ide/packaging/test_verify_wo7_candidate.py",
+      "blob": "4bde0bcb7dc7592bd244f58a8c50f4aaeb35395d"
+    },
+    {
+      "path": "ide/packaging/test_verify_wo7_nsis_release.py",
+      "blob": "e6c66a644ad86a40b07041c76dac6716221c79ae"
+    },
+    {
+      "path": "ide/packaging/test_verify_wo7_pe_imports.py",
+      "blob": "837d9c68852be3ab965c8e2079f34a74fe139e18"
+    },
+    {
+      "path": "ide/packaging/test_verify_wo7_release_evidence.py",
+      "blob": "eb92d202de56037a9c6451804b0e94fd3213371c"
+    },
+    {
+      "path": "ide/packaging/test_verify_wo8_installed_evidence.py",
+      "blob": "83d41e763f185f2c5ef2042e6ea4167578c61abb"
+    },
+    {
+      "path": "ide/packaging/test_verify_wo9_release.py",
+      "blob": "bd1c68bb120d39320a7680283143e70df17b6e1f"
+    },
+    {
+      "path": "ide/packaging/upstream-crate-notices/alloc-stdlib-0.3.0-LICENSE.txt",
+      "blob": "cd496ba72eb37e83a44958358d1f89a8a28cbc15"
+    },
+    {
+      "path": "ide/packaging/upstream-crate-notices/dlopen2-0.8.2-derive-0.4.3-LICENSE.txt",
+      "blob": "d38093a7a564c64ad15e459f2e0a1f86a443c8b3"
+    },
+    {
+      "path": "ide/packaging/upstream-crate-notices/jni-sys-macros-0.4.1-LICENSE-APACHE.txt",
+      "blob": "8f71f43fee3f78649d238238cbde51e6d7055c82"
+    },
+    {
+      "path": "ide/packaging/upstream-crate-notices/jni-sys-macros-0.4.1-LICENSE-MIT.txt",
+      "blob": "2008402b8a1299cf118ea38e02116bfcc72e53c3"
+    },
+    {
+      "path": "ide/packaging/upstream-crate-notices/libappindicator-sys-0.9.0-LICENSE-APACHE.txt",
+      "blob": "16fe87b06e802f094b3fbb0894b137bca2b16ef1"
+    },
+    {
+      "path": "ide/packaging/upstream-crate-notices/libappindicator-sys-0.9.0-LICENSE-MIT.txt",
+      "blob": "50e79e21ccd1454f00695108ae01eaff9569689a"
+    },
+    {
+      "path": "ide/packaging/upstream-crate-notices/objc2-family-LICENSE.md",
+      "blob": "540ae4c81adb5f64a9f61e222b688880da24300e"
+    },
+    {
+      "path": "ide/packaging/upstream-crate-notices/protoc-bin-vendored-3.3.0-LICENSE.txt",
+      "blob": "acce6396f3cd1990471e8415ddf190780fa255b5"
+    },
+    {
+      "path": "ide/packaging/upstream-crate-notices/r-efi-5.3.0-AUTHORS.txt",
+      "blob": "7397b2bd6a8580d51fe7b23783f8f1a05fa70291"
+    },
+    {
+      "path": "ide/packaging/upstream-crate-notices/r-efi-6.0.0-AUTHORS.txt",
+      "blob": "79c8b7c4a1dabcfbc718b7fe6d43b1892f9850cd"
+    },
+    {
+      "path": "ide/packaging/upstream-crate-notices/r-efi-sources.json",
+      "blob": "582da640b836e3bfa910b4c85b17d1fad4638dfb"
+    },
+    {
+      "path": "ide/packaging/upstream-crate-notices/rust-mobile-ndk-original-LICENSE-APACHE.txt",
+      "blob": "261eeb9e9f8b2b4b0d119366dda99c6fd7d35c64"
+    },
+    {
+      "path": "ide/packaging/upstream-crate-notices/rust-mobile-ndk-original-LICENSE-MIT.txt",
+      "blob": "9cf106272ac3b56b0c4c80218e8fc10a664ca5f4"
+    },
+    {
+      "path": "ide/packaging/upstream-crate-notices/selectors-0.38.0-SPDX-MPL-2.0-full-terms.txt",
+      "blob": "ee6256cdb62a765749a71aae3abea32884301cd1"
+    },
+    {
+      "path": "ide/packaging/upstream-crate-notices/tauri-plugin-2.7.2-LICENSE-APACHE-2.0.txt",
+      "blob": "f433b1a53f5b830a205fd2df78e2b34974656c7b"
+    },
+    {
+      "path": "ide/packaging/upstream-crate-notices/tauri-plugin-2.7.2-LICENSE-MIT.txt",
+      "blob": "b08530d59433b3060f4fad8751ac2610c0b0aff3"
+    },
+    {
+      "path": "ide/packaging/upstream-crate-notices/webview2-rs-0.39.1-LICENSE.txt",
+      "blob": "de9a7e660e173136b351982a34f715af424ff812"
+    },
+    {
+      "path": "ide/packaging/upstream-crate-notices/winapi-gnu-0.4.0-LICENSE-APACHE.txt",
+      "blob": "8dada3edaf50dbc082c9a125058f25def75e625a"
+    },
+    {
+      "path": "ide/packaging/upstream-crate-notices/winapi-gnu-0.4.0-LICENSE-MIT.txt",
+      "blob": "6f1b4c850cd2bd0d165f122c0274afc95e10a851"
+    },
+    {
+      "path": "ide/packaging/upstream-licenses/CodeMirror-6-LICENSE-MIT.txt",
+      "blob": "3af12e62d9b6de4259803e6afabae22ccd35ad7c"
+    },
+    {
+      "path": "ide/packaging/upstream-licenses/LLVM-18.1.8-LICENSE.txt",
+      "blob": "fa6ac540007032cbd0ec772a1c72e6cb5527a4fe"
+    },
+    {
+      "path": "ide/packaging/upstream-licenses/Python-3.10.11-LICENSE.txt",
+      "blob": "f26bcf4d2de6eb136e31006ca3ab447d5e488adf"
+    },
+    {
+      "path": "ide/packaging/upstream-licenses/README.md",
+      "blob": "0388610dec535e541df76d6b29112f901619545e"
+    },
+    {
+      "path": "ide/packaging/upstream-licenses/Tauri-LICENSE-APACHE-2.0.txt",
+      "blob": "f433b1a53f5b830a205fd2df78e2b34974656c7b"
+    },
+    {
+      "path": "ide/packaging/upstream-licenses/Tauri-LICENSE-MIT.txt",
+      "blob": "b08530d59433b3060f4fad8751ac2610c0b0aff3"
+    },
+    {
+      "path": "ide/packaging/upstream-licenses/esbuild-0.25.9-LICENSE-MIT.txt",
+      "blob": "2027e8dcf3787f5aac9fcd835e2b80cb75a39211"
+    },
+    {
+      "path": "ide/packaging/upstream_notice_receipt.py",
+      "blob": "0f15cb6373a743925a4a5c7303efa6dca9208704"
+    },
+    {
+      "path": "ide/packaging/verify_debug_adapters.py",
+      "blob": "5e3f91bb353e411c22a0af7a27e1cdd8703dd4b8"
+    },
+    {
+      "path": "ide/packaging/verify_dev045c_debug_bundle.py",
+      "blob": "cddcc787ff4b3588010c6817eed6446b7adc368a"
+    },
+    {
+      "path": "ide/packaging/verify_dev045d2_line_oracle.py",
+      "blob": "047eaf2070c40264f1666e51d5d2b0e98f8facc6"
+    },
+    {
+      "path": "ide/packaging/verify_ide05_upstream_uv.py",
+      "blob": "462af4619b85e7d79deec9e65775d5d5723ef0e7"
+    },
+    {
+      "path": "ide/packaging/verify_ide_merge02c_native_locks.py",
+      "blob": "3851bb210fbd0aa23834aef4de130e02d2bd47da"
+    },
+    {
+      "path": "ide/packaging/verify_language_servers.py",
+      "blob": "62fc38065834ddd0ceb0cc49764711c828833716"
+    },
+    {
+      "path": "ide/packaging/verify_p04_license_bundle.py",
+      "blob": "835e3c1608492c05ec665e4927c1faee6948f3bf"
+    },
+    {
+      "path": "ide/packaging/verify_p04_transition_evidence.py",
+      "blob": "b97a918e55e34949427e144b2c9f823f6353ba4a"
+    },
+    {
+      "path": "ide/packaging/verify_p05_merge02_pending_native_boundaries.py",
+      "blob": "c7c7a3daa21d4c6550d7630c96b044cb2d5cde88"
+    },
+    {
+      "path": "ide/packaging/verify_p05_pr_inventory.py",
+      "blob": "92299fb443f58e73d0600a1e2a1b84be5fcef5e7"
+    },
+    {
+      "path": "ide/packaging/verify_p06_acceptance_matrix.py",
+      "blob": "eb6dcd5fd403e51f363b32e642d0489684a2d500"
+    },
+    {
+      "path": "ide/packaging/verify_p06_candidate_lock.py",
+      "blob": "0f312f74419fff9f7b93a91408f92022219a8257"
+    },
+    {
+      "path": "ide/packaging/verify_p06_checkout_lock.py",
+      "blob": "9645f844d78e64c27ff482aed0f9404ceb4805f8"
+    },
+    {
+      "path": "ide/packaging/verify_p06_dependency_graph.py",
+      "blob": "e37fb761569760e5473e244d58c4a79e2167e663"
+    },
+    {
+      "path": "ide/packaging/verify_p06_lock_parity.py",
+      "blob": "8f9d6561803544be8a7f15f122fd8ac30b5dcf3d"
+    },
+    {
+      "path": "ide/packaging/verify_tauri_minor.py",
+      "blob": "d179c5981887cec5b43a0e34d1cd33cc6a5bb89c"
+    },
+    {
+      "path": "ide/packaging/verify_wo7_candidate.py",
+      "blob": "de23507f73f52226d7adadc5e38a05bcc3970b83"
+    },
+    {
+      "path": "ide/packaging/verify_wo7_nsis_release.py",
+      "blob": "82b846b79338df8cd8de678a7b9aeff9cadb16fc"
+    },
+    {
+      "path": "ide/packaging/verify_wo7_pe_imports.py",
+      "blob": "8164991abdeb05b1d7dc1d89da9fd0b7ad34d4a2"
+    },
+    {
+      "path": "ide/packaging/verify_wo7_release_evidence.py",
+      "blob": "deca9a3f9706955b14d34f9cc5fbfed5358c4ddb"
+    },
+    {
+      "path": "ide/packaging/verify_wo8_installed_evidence.py",
+      "blob": "f610bb094d8a491ffa5e741383ddf28986c18379"
+    },
+    {
+      "path": "ide/packaging/verify_wo9_release.py",
+      "blob": "2c91d597ab10f3a3cb0941064ce9cf11df947b44"
+    },
+    {
+      "path": "ide/packaging/wo7-bundle.inputs.json",
+      "blob": "7927440108a4bfa239ce022dafcec40f2bb1824b"
+    },
+    {
+      "path": "ide/packaging/wo7-evidence.inputs.json",
+      "blob": "b73a54fe08bf2099183d218f75c35ed99681abe2"
+    },
+    {
+      "path": "ide/packaging/wo7-release.manifest.json",
+      "blob": "bd2f9334717e44956f4da36da93605ed25384ed6"
+    },
+    {
+      "path": "ide/packaging/wo8-installed-evidence.json",
+      "blob": "87439190cfd880c2c3c48a642f8b0e8c03b30924"
+    },
+    {
+      "path": "ide/packaging/wo9-release-evidence.json",
+      "blob": "54771c7c46f4468fa78dd22a0e7a8a11f274efcc"
+    },
+    {
+      "path": "ide/proto/lu/ide/v1/workspace.proto",
+      "blob": "98d6ed7a6682f521f1cca7420821fd7867bab266"
+    },
+    {
+      "path": "ide/runtime-pins/upstream_sources.json",
+      "blob": "82d67524871cf30f1e3a0b3c02f8611d9591a77f"
+    },
+    {
+      "path": "ide/sandbox/Cargo.toml",
+      "blob": "a1f9fe226fb5d9b4f3ad61abd69206622234a938"
+    },
+    {
+      "path": "ide/sandbox/OS_RIGHTS_ADMISSION.md",
+      "blob": "ca929b4ea41a5a4f13387f2117da43e46f64aa17"
+    },
+    {
+      "path": "ide/sandbox/README.md",
+      "blob": "489b319f651551a1ebd1f6748ea6a14de4c3b078"
+    },
+    {
+      "path": "ide/sandbox/WINDOWS_APPCONTAINER_ADMISSION.md",
+      "blob": "0b6f978e57ac3434625274bab4ab95635efbfe45"
+    },
+    {
+      "path": "ide/sandbox/WINDOWS_JOB_PROBE.md",
+      "blob": "e37a2e66b33860f83727ab9744d8187451f66416"
+    },
+    {
+      "path": "ide/sandbox/fixtures/Test-G03NativeDelegatedHost.sh",
+      "blob": "e8c3b8309a9fea00eda11750a333b5b3fe32a93d"
+    },
+    {
+      "path": "ide/sandbox/fixtures/test_g03_bwrap_hostile.py",
+      "blob": "d0faee177b61bd4b31a93336534418781fec7750"
+    },
+    {
+      "path": "ide/sandbox/fixtures/wo4_bwrap_hostile_native.py",
+      "blob": "2d08b5f547f7742a78902853fbad0c06820974d5"
+    },
+    {
+      "path": "ide/sandbox/src/bin/linux_cgroup_native_witness.rs",
+      "blob": "208b9a80aa91aad0f6c66926fe03c8ebd387bca9"
+    },
+    {
+      "path": "ide/sandbox/src/bin/linux_cgroup_prepare.rs",
+      "blob": "6dd7cf8ac7bda2568490e217db4e395ea82f7db9"
+    },
+    {
+      "path": "ide/sandbox/src/bin/linux_cgroup_probe.rs",
+      "blob": "57aada2e6d6fb453a2912e003f0624109ddcebf1"
+    },
+    {
+      "path": "ide/sandbox/src/bin/linux_delegated_ci_ide05_host.rs",
+      "blob": "2f0afe10ab6a26d48dd72e003fdfa68c7b01a6f6"
+    },
+    {
+      "path": "ide/sandbox/src/bin/linux_delegated_ci_lsp_host.rs",
+      "blob": "63ae9911b489e8599b79ef59d3cbcccaa61b60c9"
+    },
+    {
+      "path": "ide/sandbox/src/bin/linux_delegated_ci_wo4_host.rs",
+      "blob": "6ec3800e6e58080fa838e6d9d4adf46c793799f4"
+    },
+    {
+      "path": "ide/sandbox/src/bin/linux_delegated_ci_wo6_build_host.rs",
+      "blob": "cc93ca781e852c6d178dae31b339314fc87d1f3c"
+    },
+    {
+      "path": "ide/sandbox/src/bin/linux_delegated_ci_wo6_dap_host.rs",
+      "blob": "d379cd2793aa5a83b353365643f675be42e26a72"
+    },
+    {
+      "path": "ide/sandbox/src/bin/probe.rs",
+      "blob": "477e3ef3649a62afab8346a7203d82d11498218c"
+    },
+    {
+      "path": "ide/sandbox/src/bin/windows_appcontainer_probe.rs",
+      "blob": "d3bdc4ddd9bf0ab8dfbd7d3d5fb4cfe02fd633f2"
+    },
+    {
+      "path": "ide/sandbox/src/bin/windows_probe.rs",
+      "blob": "1a636de7ad44664263fdae792f69babcb6f26756"
+    },
+    {
+      "path": "ide/sandbox/src/bin/windows_restricted_token_probe.rs",
+      "blob": "c9c73d59312b105f5396c0b8402e773ca8a6dce1"
+    },
+    {
+      "path": "ide/sandbox/src/lib.rs",
+      "blob": "56ffc9eff19e515fa832187f0be6a31030a96b5e"
+    },
+    {
+      "path": "ide/scripts/check_continuity.py",
+      "blob": "9946275f6cb8afcb88f329b7b7ef703ff1699c0b"
+    },
+    {
+      "path": "ide/supervisor/Cargo.lock",
+      "blob": "cf3ea845e89c7b8242a75d71c9dd5288b5580595"
+    },
+    {
+      "path": "ide/supervisor/Cargo.toml",
+      "blob": "d62a906c32402b18046e29a9adb8b058521d0ef7"
+    },
+    {
+      "path": "ide/supervisor/D7C_WINDOWS_CAPABILITY_ACCEPTANCE.md",
+      "blob": "63512ead4d7a93a3c4e6cbda4e0bda85ee57c598"
+    },
+    {
+      "path": "ide/supervisor/D7D_PROTECTED_SERVICE_ACCEPTANCE.md",
+      "blob": "9a03969143f42626c1a912e9dacb934d8179c226"
+    },
+    {
+      "path": "ide/supervisor/README.md",
+      "blob": "3f83816a2890f2ec2e679e6e37f64922764e6ed7"
+    },
+    {
+      "path": "ide/supervisor/WINDOWS_WORKER_ACCEPTANCE.md",
+      "blob": "35a04009d6248be6a9b62e592b499f6ba05d13c4"
+    },
+    {
+      "path": "ide/supervisor/WORKER_ACCEPTANCE.md",
+      "blob": "f0032dae92fbd4bc1f47f106c02b332dbdd29ca4"
+    },
+    {
+      "path": "ide/supervisor/examples/d7_windows_acceptance.rs",
+      "blob": "f7abeb8088f9317f6907cea6792ea40c17cf6118"
+    },
+    {
+      "path": "ide/supervisor/examples/dev046d_restart_receipt_audit.rs",
+      "blob": "e5cbdb6e4274225329a62829a6ff033feee5b054"
+    },
+    {
+      "path": "ide/supervisor/examples/e2_native_lsp_acceptance.rs",
+      "blob": "f225a394a47d22f08af62f053e533a694d7b47ca"
+    },
+    {
+      "path": "ide/supervisor/examples/e2_native_multilang_protected_acceptance.rs",
+      "blob": "3c48b2a71c64c58f35b7ab033101ba69f862156f"
+    },
+    {
+      "path": "ide/supervisor/examples/e2_native_release_bundle_pins.rs",
+      "blob": "efdba173ff0feb275566628a42cad1b41fca3133"
+    },
+    {
+      "path": "ide/supervisor/examples/ide056_windows_acl_positive.rs",
+      "blob": "4d1f217d99490741f5232104df0431ad9e011d42"
+    },
+    {
+      "path": "ide/supervisor/examples/ide05_native_uv_acceptance.rs",
+      "blob": "d4b442ca4ce9da09f32b605892192f68e3406c7f"
+    },
+    {
+      "path": "ide/supervisor/examples/wo6_linux_native_build_acceptance.rs",
+      "blob": "206ba5fc51d175d5feea6a5e6d91975ec7aa8e15"
+    },
+    {
+      "path": "ide/supervisor/examples/wo6_native_dap_acceptance.rs",
+      "blob": "6c752702b79fdf19b15bb19598a531cf01c47c3e"
+    },
+    {
+      "path": "ide/supervisor/fixtures/Install-ProtectedRecoveryService.ps1",
+      "blob": "c65b196b79982e0579f5a9a139bddb2461e66202"
+    },
+    {
+      "path": "ide/supervisor/fixtures/New-PinnedWindowsToolchain.ps1",
+      "blob": "5ab7f6cc027da08f7819ed2ae3388cc48916f500"
+    },
+    {
+      "path": "ide/supervisor/fixtures/Test-D7CProductionBrokerCrash.ps1",
+      "blob": "154027f83173b5a320ae6b294bbd36bdd8b6a592"
+    },
+    {
+      "path": "ide/supervisor/fixtures/Test-D7DProtectedServiceCrash.ps1",
+      "blob": "e9bf79e98a378f468e99d7607daaacabda2543f6"
+    },
+    {
+      "path": "ide/supervisor/fixtures/Test-D7DProtectedServiceLoss.ps1",
+      "blob": "91886901059701127497eaf73be18765d413a553"
+    },
+    {
+      "path": "ide/supervisor/fixtures/Test-IndependentJobCrash.ps1",
+      "blob": "ab47f5ebd75bb8c2a0df8ce700ef90a7b132f9d5"
+    },
+    {
+      "path": "ide/supervisor/fixtures/Test-P03ClangdCI.ps1",
+      "blob": "2cc1e2e3264d509684fc609ac1ad21deb85e390b"
+    },
+    {
+      "path": "ide/supervisor/fixtures/debug/Probe-WindowsWo6FileDenial.ps1",
+      "blob": "246f2ce3ad5ebc13b5152b85a637793f72ab5c9c"
+    },
+    {
+      "path": "ide/supervisor/fixtures/debug/dev045d4b_win_event_observer.c",
+      "blob": "aca4df14a0cd346dd397149a2c1310fe5df0e547"
+    },
+    {
+      "path": "ide/supervisor/fixtures/debug/fin04w2_wfp_target/src/main.rs",
+      "blob": "faf1727d9187e60978a0c594b2ba18d643871555"
+    },
+    {
+      "path": "ide/supervisor/fixtures/debug/probe_lldb_dap_initialize.py",
+      "blob": "0c99af3eb049ad4d056ea6677c7e354ba8e1077e"
+    },
+    {
+      "path": "ide/supervisor/fixtures/debug/probe_lldb_dap_launch.py",
+      "blob": "c9ee172e1fb2344a8f3b89c07c2360e0815c6697"
+    },
+    {
+      "path": "ide/supervisor/fixtures/debug/probe_windows_dap_initialize.py",
+      "blob": "bfbecf11d42c830ed51fd011a9129fd595ab02a4"
+    },
+    {
+      "path": "ide/supervisor/fixtures/debug/test_probe_windows_dap_initialize.py",
+      "blob": "ac79d5e5f45478f4a49d96f5d8e0062067bb78f8"
+    },
+    {
+      "path": "ide/supervisor/fixtures/debug/wo6_selftest.c",
+      "blob": "87d1ba48957616673e0941a36ab8b9f6d8eb22de"
+    },
+    {
+      "path": "ide/supervisor/fixtures/linux/lu-ide-delegated.service.in",
+      "blob": "a45733828fbb54da04b9268b2c8c2ad8067bc5b2"
+    },
+    {
+      "path": "ide/supervisor/fixtures/package/prepare_ide05_ci_uv.py",
+      "blob": "e3bb84a0bf785ec268ad3f9be9a68e6cb242e29f"
+    },
+    {
+      "path": "ide/supervisor/src/bin/d7c_broker_crash_fixture.rs",
+      "blob": "15c01f487fdbe8745a7192b5435876ab8b3cf203"
+    },
+    {
+      "path": "ide/supervisor/src/bin/d7d_service_crash_fixture.rs",
+      "blob": "d87a6858e0d68074baca5185d319d60b8081c538"
+    },
+    {
+      "path": "ide/supervisor/src/bin/d7d_service_smoke_fixture.rs",
+      "blob": "d91e230731951de109b71d150f5be98626108193"
+    },
+    {
+      "path": "ide/supervisor/src/bin/windows_fin04w2_debugger_service.rs",
+      "blob": "eaf5a36b16592523ad8d9a87625013655e8b9e8a"
+    },
+    {
+      "path": "ide/supervisor/src/bin/windows_fin04w2_fixed_probe.rs",
+      "blob": "0dc47932dd64ac6df559c7431c047b80a9e496d4"
+    },
+    {
+      "path": "ide/supervisor/src/bin/windows_fin04w2_native_host_acceptance.rs",
+      "blob": "deb64507519d6267911d73b343fbf62da520c7db"
+    },
+    {
+      "path": "ide/supervisor/src/bin/windows_fin04w2_target_service.rs",
+      "blob": "b814be797a59e3deed30e87579c84cd3b34a8577"
+    },
+    {
+      "path": "ide/supervisor/src/bin/windows_null_service_bootstrap.rs",
+      "blob": "8acf0414670dfc75589e27afb51ed8e4c078a183"
+    },
+    {
+      "path": "ide/supervisor/src/bin/windows_recovery_broker.rs",
+      "blob": "63e87aac7fd94871c058ad2eba4145e38b46aeef"
+    },
+    {
+      "path": "ide/supervisor/src/bin/windows_recovery_service.rs",
+      "blob": "cb3cb7df6a584bb75992b831af77020ea91bed20"
+    },
+    {
+      "path": "ide/supervisor/src/dap_transport.rs",
+      "blob": "83dbec6e3adacfddfcae877cce3c0d9ae9bef1e4"
+    },
+    {
+      "path": "ide/supervisor/src/debug_action_receipts.rs",
+      "blob": "e3b33b739429d777ddbb150b28de374c8b34ca13"
+    },
+    {
+      "path": "ide/supervisor/src/debug_binary_witness.rs",
+      "blob": "e75c54c5296a7ef1c67ea5eaf5a67b91152d451a"
+    },
+    {
+      "path": "ide/supervisor/src/debug_command_review.rs",
+      "blob": "5f168ecf644cc77ef27ed7f4ad97aac5decedc5f"
+    },
+    {
+      "path": "ide/supervisor/src/debug_control_dispatch.rs",
+      "blob": "825ff9df3d0e78592b96a7e39789e2dc6e07e75a"
+    },
+    {
+      "path": "ide/supervisor/src/debug_control_evidence.rs",
+      "blob": "28e5c94f9e955c7844de1c0da188dee66d8577ca"
+    },
+    {
+      "path": "ide/supervisor/src/debug_symbol_verification.rs",
+      "blob": "cd8c00017f3195b83d6b98b7772ecfcd222c3f9a"
+    },
+    {
+      "path": "ide/supervisor/src/fin04w2_authority.rs",
+      "blob": "ef68d6192c0c23d5cabae6c4d2b0d3333e95ab7a"
+    },
+    {
+      "path": "ide/supervisor/src/fin04w2_c2.rs",
+      "blob": "c2db3028500bde9029e27688786ae68128030423"
+    },
+    {
+      "path": "ide/supervisor/src/fin04w2_protocol.rs",
+      "blob": "b154295a6356d255ff98f01d77b887a9c84285eb"
+    },
+    {
+      "path": "ide/supervisor/src/lib.rs",
+      "blob": "055a7045c3aa474a6adf5f1abdd485a54d4f5d95"
+    },
+    {
+      "path": "ide/supervisor/src/linux_lsp_worker.rs",
+      "blob": "3db4460d38c79e3e39034ca149468f1c45a68652"
+    },
+    {
+      "path": "ide/supervisor/src/linux_worker.rs",
+      "blob": "a50bfd1199eea8235851b59ce1a4576427302823"
+    },
+    {
+      "path": "ide/supervisor/src/live_output.rs",
+      "blob": "7465b8f2c45b669dbdb01908a7d9b7938f91ce4e"
+    },
+    {
+      "path": "ide/supervisor/src/lsp_transport.rs",
+      "blob": "8af1ccff86a1c89a5c3f6955ebaecf99e619eed9"
+    },
+    {
+      "path": "ide/supervisor/src/native_kernel_pc.rs",
+      "blob": "2739e6f18f56e21418bd2d9205280bf60dd283f8"
+    },
+    {
+      "path": "ide/supervisor/src/package_lifecycle.rs",
+      "blob": "44a2c80e4dbfddf7c418df5b64523a2df4d82b38"
+    },
+    {
+      "path": "ide/supervisor/src/package_output_evidence.rs",
+      "blob": "ebac6e26d6854cceadc140f3b79dd720bc0f1d0f"
+    },
+    {
+      "path": "ide/supervisor/src/project_debug_target.rs",
+      "blob": "c15c779f24342b72e2fb69ac1599c807997ee7b4"
+    },
+    {
+      "path": "ide/supervisor/src/runtime_bundles.rs",
+      "blob": "d4d2bc97c04a9786e014db6188fb215a56a2b9cd"
+    },
+    {
+      "path": "ide/supervisor/src/snapshot.rs",
+      "blob": "87ee2c55859e59260d5c95972a46d9837ac5223e"
+    },
+    {
+      "path": "ide/supervisor/src/windows_broker.rs",
+      "blob": "18e04248382999ddf1d5b0ae3c1e4ed99021d860"
+    },
+    {
+      "path": "ide/supervisor/src/windows_cap_tree.rs",
+      "blob": "9092e4699e66abc5ad9c74394636eaa1a4b789ac"
+    },
+    {
+      "path": "ide/supervisor/src/windows_event_owner.rs",
+      "blob": "5efa27ba364f2f7f09b2b325fbd169991e26df3d"
+    },
+    {
+      "path": "ide/supervisor/src/windows_fin04w2_c2_host.rs",
+      "blob": "7ac43a19251bc20a1ed95301d03e13ae16c3aa24"
+    },
+    {
+      "path": "ide/supervisor/src/windows_fin04w2_kernel.rs",
+      "blob": "16b7d8b202edf5601aa71baacff05fe956f5ad7a"
+    },
+    {
+      "path": "ide/supervisor/src/windows_fin04w2_lldb_dap.rs",
+      "blob": "7ebe10654f4fbe7cdb7acae82edf97b1f9b3638b"
+    },
+    {
+      "path": "ide/supervisor/src/windows_fin04w2_scm_pair.rs",
+      "blob": "5c21489020e1fc0689055fa92e1ff8716f961be7"
+    },
+    {
+      "path": "ide/supervisor/src/windows_fin04w2_service.rs",
+      "blob": "70fcfdfcd02420385860b483215969a4797e2305"
+    },
+    {
+      "path": "ide/supervisor/src/windows_fin04w2_split.rs",
+      "blob": "5e4a93957951f4ba910e167c1b2c376cecd9ad86"
+    },
+    {
+      "path": "ide/supervisor/src/windows_fin04w2_split_launcher.rs",
+      "blob": "1991e7f964cba3b20f76e58b0829e58e6214ad0a"
+    },
+    {
+      "path": "ide/supervisor/src/windows_fin04w2_target_ipc.rs",
+      "blob": "f3d6be13c44348707353ec8539b4925b284b91d6"
+    },
+    {
+      "path": "ide/supervisor/src/windows_fin04w2_target_seal.rs",
+      "blob": "0e23cc0ee137c6da1a2adc987e2c41df070118c5"
+    },
+    {
+      "path": "ide/supervisor/src/windows_fin04w2_target_service.rs",
+      "blob": "472be17dd3964db3fcdbabeb14c1be405c7eb023"
+    },
+    {
+      "path": "ide/supervisor/src/windows_fin04w2_wfp.rs",
+      "blob": "8bfd7182a4122f5c99346c4c7d5958e15fef5063"
+    },
+    {
+      "path": "ide/supervisor/src/windows_kernel_pc.rs",
+      "blob": "cce3b75eeb29642b0c1fbccfef7d8888179fab4b"
+    },
+    {
+      "path": "ide/supervisor/src/windows_lsp_worker.rs",
+      "blob": "5271af00c1fb3c7c37c8e6bb65d7e52633f9f73a"
+    },
+    {
+      "path": "ide/supervisor/src/windows_null_device.rs",
+      "blob": "aa35c6815eb13296efadee7106af7150b57c4b4b"
+    },
+    {
+      "path": "ide/supervisor/src/windows_package_acl.rs",
+      "blob": "1afdf597205faae17a5b12b477e2d3dc7ff8054e"
+    },
+    {
+      "path": "ide/supervisor/src/windows_recovery_service.rs",
+      "blob": "b2af8f2f339a564cf23a35ef6c31967c0af4dd17"
+    },
+    {
+      "path": "ide/supervisor/src/windows_service_client.rs",
+      "blob": "2323586363946ee50f56ba4b081d2a495ce6734b"
+    },
+    {
+      "path": "ide/supervisor/src/windows_service_security.rs",
+      "blob": "c480e421d7345c17fcea9087b1fcbb677bad629e"
+    },
+    {
+      "path": "ide/supervisor/src/windows_stopped_line_oracle.rs",
+      "blob": "d38e9e6adce91089d5bfe599db9d5f9475b1221c"
+    },
+    {
+      "path": "ide/supervisor/src/windows_worker.rs",
+      "blob": "3c7678ee3973d6c1f30d02001cb208a8ff6ffa1a"
+    },
+    {
+      "path": "ide/supervisor/src/wo6_build_test_evidence.rs",
+      "blob": "3b0df64a44a847eb01090807477528057a244b20"
+    },
+    {
+      "path": "ide/supervisor/src/wo6_output_evidence.rs",
+      "blob": "d82591e9de7538b567c4b47c5eed6156c2f54634"
+    },
+    {
+      "path": "ide/tools/package_reviewed_runtime.py",
+      "blob": "f8af289a50e475d2c78bd0421af1d925cfa542fc"
+    },
+    {
+      "path": "ide/tools/provision_cmake_candidate.py",
+      "blob": "273c9ed0adffc265b122644913d22f9b2fb33717"
+    },
+    {
+      "path": "ide/tools/provision_node_candidate.py",
+      "blob": "42100e4ec7f00f46cf5a0d1d08cbbfebb914ae47"
+    },
+    {
+      "path": "ide/tools/provision_python_candidate.py",
+      "blob": "2928607590c9e0922b3abc63dc7062d94356427b"
+    },
+    {
+      "path": "ide/tools/runtime_drivers/dev03-cmake.cmake",
+      "blob": "4f080a5ed9e937de11e03ead002c9a610199221e"
+    },
+    {
+      "path": "ide/tools/runtime_licenses/ninja-1.13.0-COPYING",
+      "blob": "131cb1da46d238a296d448fd79acf37160817cf6"
+    },
+    {
+      "path": "ide/tools/tests/test_package_reviewed_runtime.py",
+      "blob": "c683dc2c7acd0d5391af20d9d94a91b2e28c0d96"
+    },
+    {
+      "path": "lu-desktop/.gitignore",
+      "blob": "afbc2132751dc444e65567fae4c3844975b7233d"
+    },
+    {
+      "path": "lu-desktop/README.md",
+      "blob": "08d718270bb326123f0c5e0051ea421ce3bb463f"
+    },
+    {
+      "path": "lu-desktop/docs/LU_R15_CHAT_HISTORY_AND_QUICK_MODEL_DESIGN.md",
+      "blob": "05892e0f04198c0d8ecce8ecf8b6aade9585446c"
+    },
+    {
+      "path": "lu-desktop/docs/LU_R18_CROSS_CHAT_GENERATION_SCHEDULER.md",
+      "blob": "a59dbedf255274ab29661bd5fe222bcf0c5f29bc"
+    },
+    {
+      "path": "lu-desktop/docs/LU_R19_GUI_REFERENCE_FIRST_CHAT_CONTROLS.md",
+      "blob": "66bac95f0aca3cb79f6299e440ff6d907026bb5b"
+    },
+    {
+      "path": "lu-desktop/docs/LU_R20_GUI_MARKDOWN_AND_ATTACHMENTS_20261101.md",
+      "blob": "d3ddbd7ec04a2351b0303715bbe081c0072189d9"
+    },
+    {
+      "path": "lu-desktop/docs/LU_R21_WINDOWS_IMAGE_ADMISSION_AND_MODEL_BOUNDARY_20261101.md",
+      "blob": "8e0863b4a6d72120ef06fd4bb30f9ef0242fc664"
+    },
+    {
+      "path": "lu-desktop/package.json",
+      "blob": "801cc5fd27a5a7b7b683eb2ef2caa51ddf21957d"
+    },
+    {
+      "path": "lu-desktop/packaging/NSIS_DEV_EVAL_NOT_ALPHA.nsi",
+      "blob": "5c76758a30ad342269a7f9608b7372618fc1f718"
+    },
+    {
+      "path": "lu-desktop/packaging/README_NOT_ALPHA.txt",
+      "blob": "0616dca177f808a433371ca4e7e4348140305e6d"
+    },
+    {
+      "path": "lu-desktop/packaging/build-dev-evaluation.sh",
+      "blob": "b43d42496ae0a79c719ee89d51914d7864f0b123"
+    },
+    {
+      "path": "lu-desktop/scripts/build-r14-manifest-eval.sh",
+      "blob": "0a8592f00d22c0e808c6f4e09ac061d1c3413ff3"
+    },
+    {
+      "path": "lu-desktop/scripts/build.mjs",
+      "blob": "e1aab18d41c813815251713388db0e5082a625b2"
+    },
+    {
+      "path": "lu-desktop/scripts/build_win_manifest_res.py",
+      "blob": "1c975d3c2f49790c4eabe161d74798dad4b38d1d"
+    },
+    {
+      "path": "lu-desktop/scripts/check-ui.mjs",
+      "blob": "fd9547d248570de69c87b7993985369ce8de0c88"
+    },
+    {
+      "path": "lu-desktop/scripts/lu-desktop.manifest",
+      "blob": "ed1c5a1c76a1ec5c295c602b11af14ee909ed364"
+    },
+    {
+      "path": "lu-desktop/scripts/make-icon.mjs",
+      "blob": "02a31945d3b518c64c6fe65eaa366682a7ec8f64"
+    },
+    {
+      "path": "lu-desktop/scripts/stage-engine.mjs",
+      "blob": "3c96dd03924865ccf30a8b37cf40ac33c462498c"
+    },
+    {
+      "path": "lu-desktop/scripts/verify_win_v6_manifest.py",
+      "blob": "aa6b739d9018e47b4b1d269aa7b386b85d284f7a"
+    },
+    {
+      "path": "lu-desktop/src-tauri/Cargo.lock",
+      "blob": "a80991f0c29c3576f17510c2ac76e6fa4908f9f7"
+    },
+    {
+      "path": "lu-desktop/src-tauri/Cargo.toml",
+      "blob": "d5ec247d8419fe5249e0ed99e9e41f0cf0a82d35"
+    },
+    {
+      "path": "lu-desktop/src-tauri/build.rs",
+      "blob": "261851f6b60e0ae6f244b5469289870facc8c997"
+    },
+    {
+      "path": "lu-desktop/src-tauri/capabilities/default.json",
+      "blob": "625e4f6e822111009e74b45e2b85ea0314f0804a"
+    },
+    {
+      "path": "lu-desktop/src-tauri/icons/icon.ico",
+      "blob": "e7491c3ff71f186e2a61bddfd209e4e7d8498dac"
+    },
+    {
+      "path": "lu-desktop/src-tauri/resources/lu-inference/manifest.json",
+      "blob": "c4354bb2c13fa1ee5232d28d40920c4d1e5fb969"
+    },
+    {
+      "path": "lu-desktop/src-tauri/src/chat_store.rs",
+      "blob": "a8d134ff7efbc987d43b2aeca238bf6cc801dafc"
+    },
+    {
+      "path": "lu-desktop/src-tauri/src/generation_queue.rs",
+      "blob": "525d4316c9b1aa98f21ce5d3ef1c92cf001e5269"
+    },
+    {
+      "path": "lu-desktop/src-tauri/src/lib.rs",
+      "blob": "fb93dc2be3778cddbd9b502dec3bf5bd45656095"
+    },
+    {
+      "path": "lu-desktop/src-tauri/src/main.rs",
+      "blob": "5ed67b8dc575a8b565d27f8c1669e4bc77181e36"
+    },
+    {
+      "path": "lu-desktop/src-tauri/src/prompt_context.rs",
+      "blob": "1b9d69069c5c51ca86f8d93cbbe6d3560e5df53c"
+    },
+    {
+      "path": "lu-desktop/src-tauri/tauri.conf.json",
+      "blob": "2fd8ddaa4b524a67d830f8ba49052fa223c933ad"
+    },
+    {
+      "path": "lu-desktop/tests/r17-interface.test.mjs",
+      "blob": "5f7a2ff0b8fc2d326e3e030d03f4e6289e6b6935"
+    },
+    {
+      "path": "lu-desktop/tests/r18-queue.test.mjs",
+      "blob": "d0000921df2ab98e74c241563680459eb5fea785"
+    },
+    {
+      "path": "lu-desktop/tests/r19-desktop-ux.test.mjs",
+      "blob": "ec42e606decbcd9f9fe1329f602472dbd8d2c453"
+    },
+    {
+      "path": "lu-desktop/tests/r20-markdown-attachments.test.mjs",
+      "blob": "15158ca834221c35976908df202881eb3067c01b"
+    },
+    {
+      "path": "lu-desktop/tests/r20-markdown-render.jsx",
+      "blob": "4022ebfac47f04b52f33a5784745f5897c031a0d"
+    },
+    {
+      "path": "lu-desktop/tests/r21-image-ux.test.mjs",
+      "blob": "72604fc2d0cd400e4f345ee4a986320f1ff8a020"
+    },
+    {
+      "path": "lu-desktop/tests/windows-physical/Lu_R13_Vision_Test_Fixture.png",
+      "blob": "75b285b65e39c9c00238dd3f2b93a5f7e049fc0d"
+    },
+    {
+      "path": "lu-desktop/tests/windows-physical/Lu_R14_Vision_Test_Fixture.png",
+      "blob": "75b285b65e39c9c00238dd3f2b93a5f7e049fc0d"
+    },
+    {
+      "path": "lu-desktop/tests/windows-physical/README.txt",
+      "blob": "fd60b14582ff417ae548f766fea6f961e3844908"
+    },
+    {
+      "path": "lu-desktop/tests/windows-physical/README_R14.txt",
+      "blob": "d26ce4a835b9b97d2939b5a287c5e2f0d042fea5"
+    },
+    {
+      "path": "lu-desktop/tests/windows-physical/Run-LuR13-WindowsAcceptance.ps1",
+      "blob": "2cfcde17a7fcb53a9e67ea062f68338cdedb2a6c"
+    },
+    {
+      "path": "lu-desktop/tests/windows-physical/Run-LuR14-WindowsAcceptance.ps1",
+      "blob": "94f95235eedcc94372ec69552fb039567ff577b2"
+    },
+    {
+      "path": "lu-desktop/tests/windows-physical/START_WINDOWS_LU_R13_TEST.cmd",
+      "blob": "9d06d52ad361f1d275701dde2c1d9b27c2166bd5"
+    },
+    {
+      "path": "lu-desktop/tests/windows-physical/START_WINDOWS_LU_R14_TEST.cmd",
+      "blob": "d3ad9eebc45e0c6a167313d0c47cefabb4dbfb37"
+    },
+    {
+      "path": "lu-desktop/tests/windows-physical/test_win_manifest_regression.py",
+      "blob": "04e2b9102684045394d13146076734ed570e1aa9"
+    },
+    {
+      "path": "lu-desktop/web/attachment_drafts.mjs",
+      "blob": "926ff4a34b6c52e0a4c1d6b1d91d3e0022b5d706"
+    },
+    {
+      "path": "lu-desktop/web/chat_ui_behavior.mjs",
+      "blob": "92b48fc424689e0af3018863d5a4d086ef837852"
+    },
+    {
+      "path": "lu-desktop/web/generation_jobs.mjs",
+      "blob": "0a0728cc508f0a831681ace9cc30f24a12b24bf2"
+    },
+    {
+      "path": "lu-desktop/web/image_attachment_input.mjs",
+      "blob": "8974cb48e73f14cc56c6b937351ed2cefd960ff2"
+    },
+    {
+      "path": "lu-desktop/web/index.html",
+      "blob": "7b8244cf5b14bef9b185b88337e7d64003a95d6c"
+    },
+    {
+      "path": "lu-desktop/web/main.jsx",
+      "blob": "6956e0471a97170c2f08f5aebef8b60e4cad3cf7"
+    },
+    {
+      "path": "lu-desktop/web/markdown_view.jsx",
+      "blob": "ff905830ac710212b45960f5fce3b55b94c2c122"
+    },
+    {
+      "path": "lu-desktop/web/markdown_view.mjs",
+      "blob": "77f11da955e27a7f145e6985ef8c004c152788e9"
+    },
+    {
+      "path": "lu-desktop/web/response_view.mjs",
+      "blob": "fd2f9a2f0d9cc4593733656d5d1e7c3ffdbfaeb1"
+    },
+    {
+      "path": "lu-desktop/web/styles.css",
+      "blob": "801166be64e1e05e8e554b7ddb12e2fe877e8466"
+    },
+    {
+      "path": "scripts/lu-c4-create-kvm-vm.sh",
+      "blob": "5b261ac0d0b7be84e94827b9d232ee5551c267d0"
+    },
+    {
+      "path": "scripts/lu-c4-ephemeral-runner-preflight.py",
+      "blob": "c4f5fdf9bc76a0dfad11552306401242a5402e33"
+    },
+    {
+      "path": "scripts/lu-c4-ephemeral-runner.service.example",
+      "blob": "0ff14a380e8b33a9ef293f04190e9602d2efe131"
+    },
+    {
+      "path": "scripts/lu-c4-register-ephemeral-runner.sh",
+      "blob": "3dd6afe05d344a877578a3b8d0d484965f4552cb"
+    },
+    {
+      "path": "scripts/lu-c4-vm-audit.py",
+      "blob": "f0cc0466be71c9fb91b8db1d97b5a772d19389b5"
+    },
+    {
+      "path": "scripts/lu-c4-vm-cloud-init.py",
+      "blob": "48a7dea9090587af9447a73c188e37bceec4447f"
+    },
+    {
+      "path": "scripts/lu-ledger.mjs",
+      "blob": "0060dd91f8e39633f9a16fa41a512ba6a01a45b6"
+    },
+    {
+      "path": "scripts/lu-ledger.test.mjs",
+      "blob": "f7d38ae353d4ca0a98ddb4768fe99675c364087a"
+    },
+    {
+      "path": "scripts/verify-source-tree.mjs",
+      "blob": "b54a9eb11f353c9bd457b8f15a631f6f5333e7ed"
+    },
+    {
+      "path": "src-tauri/lu-core/Cargo.lock",
+      "blob": "b9b0b03418418f971039d59893a5ac0b3efbc40c"
+    },
+    {
+      "path": "src-tauri/lu-core/Cargo.toml",
+      "blob": "6c96e6aa0aa0d2b2a0875511ab960faa397cac74"
+    },
+    {
+      "path": "src-tauri/lu-core/DESIGN_GAP_AUDIT_2026-10-25.md",
+      "blob": "6ea7df9cb203088fdab9fb0b4cc3b51445ba1520"
+    },
+    {
+      "path": "src-tauri/lu-core/MEMORY_AND_MEDIA_ROADMAP.md",
+      "blob": "daa541309ae8740efc383dbf91b6b3bfa69ecd89"
+    },
+    {
+      "path": "src-tauri/lu-core/README.md",
+      "blob": "e2545fc47f05196af8f5d5e942e5a742d79466c2"
+    },
+    {
+      "path": "src-tauri/lu-core/SECURITY_AUTHORITY_AND_OS_CEILING.md",
+      "blob": "74c08b500e025f2fdd521f1600ca3177928c849d"
+    },
+    {
+      "path": "src-tauri/lu-core/build.rs",
+      "blob": "8cafc46386f43ac7afbda8a2500dfbff5ee2873d"
+    },
+    {
+      "path": "src-tauri/lu-core/examples/inference_supervisor_smoke.rs",
+      "blob": "d104c1d57701b9c6f298b287ee65a9164bbeff62"
+    },
+    {
+      "path": "src-tauri/lu-core/examples/linux_persistent_llama_resilience_smoke.rs",
+      "blob": "30298a18fffd0a4e740e7d5bd263f9550d684d46"
+    },
+    {
+      "path": "src-tauri/lu-core/examples/llama_cli_smoke.rs",
+      "blob": "922a6a0e2dbd7053663c19ed80e9e4e86f98d5e6"
+    },
+    {
+      "path": "src-tauri/lu-core/examples/persistent_llama_resilience_smoke.rs",
+      "blob": "84d0eff8f1b54da11fa6dbfb9bf7f550ed90086a"
+    },
+    {
+      "path": "src-tauri/lu-core/examples/persistent_llama_smoke.rs",
+      "blob": "79a31fed778c6feeb1a05d717f3f942c3949af69"
+    },
+    {
+      "path": "src-tauri/lu-core/proto/lu/v1/core.proto",
+      "blob": "6495ad09b4403dd8f6c714d3358d31da2a43e63a"
+    },
+    {
+      "path": "src-tauri/lu-core/src/agent_tool_loop.rs",
+      "blob": "7fde00b7ff0e09d5c7379774544fe89a5a093e1e"
+    },
+    {
+      "path": "src-tauri/lu-core/src/ansf.rs",
+      "blob": "b27eb57ddd9765cdc1a0985b1daaba8305088b52"
+    },
+    {
+      "path": "src-tauri/lu-core/src/ansf_import.rs",
+      "blob": "cbb31e0d5cb3e502722eccb4d0fdb0d799a5a73e"
+    },
+    {
+      "path": "src-tauri/lu-core/src/ansf_library.rs",
+      "blob": "a5c9b6da3c3d243584595b693cb989e3665dde6e"
+    },
+    {
+      "path": "src-tauri/lu-core/src/ansf_revisions.rs",
+      "blob": "642be2efc556403451ec2a7876f3997642ea5389"
+    },
+    {
+      "path": "src-tauri/lu-core/src/ansf_sync.rs",
+      "blob": "0565564828be47cea9f4732ac84601ab5c3f375d"
+    },
+    {
+      "path": "src-tauri/lu-core/src/benchmark_contract.rs",
+      "blob": "fee5732d8233f7e995c874ec122cbebc34e85c7f"
+    },
+    {
+      "path": "src-tauri/lu-core/src/capability_router.rs",
+      "blob": "e5bc987e677e70a6cccb81068cf8997ae3dd0a03"
+    },
+    {
+      "path": "src-tauri/lu-core/src/ce_approval.rs",
+      "blob": "c45456d3b814d9203dc6077654e368e18416980d"
+    },
+    {
+      "path": "src-tauri/lu-core/src/ce_broker.rs",
+      "blob": "303d5b047d3db7af8bca869754b8eff4ee561ad4"
+    },
+    {
+      "path": "src-tauri/lu-core/src/ce_packages.rs",
+      "blob": "f9059e4bac08cb83fa891682fdc94e4b43be6f75"
+    },
+    {
+      "path": "src-tauri/lu-core/src/ce_permissions.rs",
+      "blob": "750539eef836e84999569c5f77d9d85c136bd0ba"
+    },
+    {
+      "path": "src-tauri/lu-core/src/ce_schema.rs",
+      "blob": "ef41c7df2845cf5d20695901a86513bbe831f86b"
+    },
+    {
+      "path": "src-tauri/lu-core/src/ce_signing.rs",
+      "blob": "60e2321e6e24d469b8b94afd41035dc3570daaf3"
+    },
+    {
+      "path": "src-tauri/lu-core/src/ce_staging.rs",
+      "blob": "1a165bfc0bb18a693fca10185a2419c9ea3614be"
+    },
+    {
+      "path": "src-tauri/lu-core/src/ce_turn.rs",
+      "blob": "c36384b6d20aa7d0c09acc931ced1bd477dd8de9"
+    },
+    {
+      "path": "src-tauri/lu-core/src/compute_inventory.rs",
+      "blob": "492b777c952ea203c8a7943f278ef798bc87c03c"
+    },
+    {
+      "path": "src-tauri/lu-core/src/compute_probe.rs",
+      "blob": "f41b960d34a637e487e8c668bcfcefabcd858c48"
+    },
+    {
+      "path": "src-tauri/lu-core/src/compute_runtime.rs",
+      "blob": "64dec8beb2b467a1b1e4c5f814bcb2192788592e"
+    },
+    {
+      "path": "src-tauri/lu-core/src/continuity.rs",
+      "blob": "3f0f6ed7e001ff80bd45b85e061810866c81d095"
+    },
+    {
+      "path": "src-tauri/lu-core/src/contracts.rs",
+      "blob": "3379943e6d58aa0d18a7e62f04d25766293ef736"
+    },
+    {
+      "path": "src-tauri/lu-core/src/conversation_authority.rs",
+      "blob": "38d4f59524a16a00d6ac531623448c76798c4610"
+    },
+    {
+      "path": "src-tauri/lu-core/src/core_extension.rs",
+      "blob": "129f1b23224d006d6f972816f4640d89680bd41c"
+    },
+    {
+      "path": "src-tauri/lu-core/src/cpu_instructions.rs",
+      "blob": "7d1143fd1b6ff6bca4fb56c6c0b74271a1cb9096"
+    },
+    {
+      "path": "src-tauri/lu-core/src/cpu_topology.rs",
+      "blob": "b5dfbeddb8e81b71495a9fbf6e44add53320ff91"
+    },
+    {
+      "path": "src-tauri/lu-core/src/cross_chat_reference.rs",
+      "blob": "ab68b08fba222b108e90002b2ac8e9112ca3e2a2"
+    },
+    {
+      "path": "src-tauri/lu-core/src/diagnostic_contract.rs",
+      "blob": "895be60aa5dbf7f9c9380fe1ac575fae18d5648f"
+    },
+    {
+      "path": "src-tauri/lu-core/src/diagnostic_localization.rs",
+      "blob": "278757596e16647e7d2dee5f55251dd44259d1e8"
+    },
+    {
+      "path": "src-tauri/lu-core/src/durable.rs",
+      "blob": "5125281dff152cabdf8bcc23e0a3ab6042c982ed"
+    },
+    {
+      "path": "src-tauri/lu-core/src/export_contract.rs",
+      "blob": "7fd16a377c4374e377fa37349987596acebec4f7"
+    },
+    {
+      "path": "src-tauri/lu-core/src/gguf_preflight.rs",
+      "blob": "3ed35bb1b76c5bd619eace47cc94e6cd9705e12d"
+    },
+    {
+      "path": "src-tauri/lu-core/src/host_resource_authority.rs",
+      "blob": "e256b35991757d0ba34b7be981a8dc21a09c2567"
+    },
+    {
+      "path": "src-tauri/lu-core/src/host_session.rs",
+      "blob": "38895a2037f30c5e972f5a3b061755bac602dee3"
+    },
+    {
+      "path": "src-tauri/lu-core/src/host_typed_evidence.rs",
+      "blob": "723de114698952aa97f64e199b20e51e861442a1"
+    },
+    {
+      "path": "src-tauri/lu-core/src/inference_bridge.rs",
+      "blob": "c91ed750e9be19c99744d9ae4b9ae3d9fde8510c"
+    },
+    {
+      "path": "src-tauri/lu-core/src/inference_host.rs",
+      "blob": "a381b88da46ae22be9c5c309c8b4734fc24fbc04"
+    },
+    {
+      "path": "src-tauri/lu-core/src/inference_image_refs.rs",
+      "blob": "be4259cef3f5eb784f20ff2fae42490efe52e04f"
+    },
+    {
+      "path": "src-tauri/lu-core/src/inference_supervisor.rs",
+      "blob": "3d38347f1f5b52194189f95259712577fea6645a"
+    },
+    {
+      "path": "src-tauri/lu-core/src/inference_wire.rs",
+      "blob": "1631866d48f9e22d9c7d53fd88b79edb8af9244a"
+    },
+    {
+      "path": "src-tauri/lu-core/src/journal.rs",
+      "blob": "96d4475241593c6331836d7623f4a52a52767071"
+    },
+    {
+      "path": "src-tauri/lu-core/src/lib.rs",
+      "blob": "05c5ad629d058f0764361f38c90ec73888607f7b"
+    },
+    {
+      "path": "src-tauri/lu-core/src/linux_device_hints.rs",
+      "blob": "2dd015a07a4fac1938a8e9d266db85825537e92d"
+    },
+    {
+      "path": "src-tauri/lu-core/src/linux_gpu_nodes.rs",
+      "blob": "b5fc0cfa29f2f98193b7f63cd0f749d64cef9865"
+    },
+    {
+      "path": "src-tauri/lu-core/src/llama_cli_backend.rs",
+      "blob": "6fc19dbe3a264681c7d595528d0b48325fab38b2"
+    },
+    {
+      "path": "src-tauri/lu-core/src/mmproj_admission.rs",
+      "blob": "9e2dc1be3c1bb7762fa728765b5ec5b0e4bebf92"
+    },
+    {
+      "path": "src-tauri/lu-core/src/model.rs",
+      "blob": "b3338ebe49b1223f48d966d2b7d861a830b3a100"
+    },
+    {
+      "path": "src-tauri/lu-core/src/model_admission.rs",
+      "blob": "3abf2cb78f3a7c287ac3df9cc33f40abe3e683d2"
+    },
+    {
+      "path": "src-tauri/lu-core/src/model_import.rs",
+      "blob": "7b5faadfb241ef6bee006a5efc9b0909162a8de0"
+    },
+    {
+      "path": "src-tauri/lu-core/src/model_json_boundary.rs",
+      "blob": "66370cdd228ee781bb34f4aa82510a0ba9bc6937"
+    },
+    {
+      "path": "src-tauri/lu-core/src/model_turn_journal.rs",
+      "blob": "c73e9da19b5d21b0c6f93bac25f04a7b3dee1c32"
+    },
+    {
+      "path": "src-tauri/lu-core/src/multimodal_http.rs",
+      "blob": "668f842f2ff1c5abccfe1559a9ad348765fe1830"
+    },
+    {
+      "path": "src-tauri/lu-core/src/multimodal_saved_turn.rs",
+      "blob": "9ae01f6c7083b1cd1d7898dc248dacd668254d87"
+    },
+    {
+      "path": "src-tauri/lu-core/src/native_chat_ids.rs",
+      "blob": "ff2801eb56e6725596f31a779ae1d09cc4cd80ac"
+    },
+    {
+      "path": "src-tauri/lu-core/src/native_file_extra.rs",
+      "blob": "6cbf5935fc3374ff1358fd9d9c1d78cb946835bd"
+    },
+    {
+      "path": "src-tauri/lu-core/src/native_files.rs",
+      "blob": "e3a5b9dc0a769d38afc63aa987b3c657ed9d6763"
+    },
+    {
+      "path": "src-tauri/lu-core/src/native_workspace_paths.rs",
+      "blob": "fd4fc31066f0e489fb518196cae06ae6df4882f9"
+    },
+    {
+      "path": "src-tauri/lu-core/src/ownership_store.rs",
+      "blob": "def693d5cf3c1dbf3f5d35a2de916a34a15154fa"
+    },
+    {
+      "path": "src-tauri/lu-core/src/passive_diagnostics.rs",
+      "blob": "f9b600494cee0ce806464567795faa6f37a35bbe"
+    },
+    {
+      "path": "src-tauri/lu-core/src/passive_localization.rs",
+      "blob": "172f08ec3bd4a5d2f8eb491b1b34daf96a2b5472"
+    },
+    {
+      "path": "src-tauri/lu-core/src/persistent_llama_backend.rs",
+      "blob": "ea28e818b1a62538ab3f1afc10c7b588f9ff0e1a"
+    },
+    {
+      "path": "src-tauri/lu-core/src/platform_compute.rs",
+      "blob": "2ae209b12e327e07fc621bedd006f376c51f35f2"
+    },
+    {
+      "path": "src-tauri/lu-core/src/policy.rs",
+      "blob": "64075f504a0e8236c48972a60db17310a39b2046"
+    },
+    {
+      "path": "src-tauri/lu-core/src/privilege_guard.rs",
+      "blob": "55a50567b8451994460b8e169703fad79eabd9bc"
+    },
+    {
+      "path": "src-tauri/lu-core/src/projector_identity.rs",
+      "blob": "ca1f9cdb97bdb8800e2973c77d70f122c0a9b794"
+    },
+    {
+      "path": "src-tauri/lu-core/src/recovery.rs",
+      "blob": "4dc3a12fd27a79d59aa39f67dc2d2bce99aca8d1"
+    },
+    {
+      "path": "src-tauri/lu-core/src/registry.rs",
+      "blob": "72d177558c238e1227bc8b4e0090a7daf75076a5"
+    },
+    {
+      "path": "src-tauri/lu-core/src/reversible_edit.rs",
+      "blob": "0aa4cef5279f65236710dddc289c731068972f04"
+    },
+    {
+      "path": "src-tauri/lu-core/src/saved_chat_prompt.rs",
+      "blob": "38816d0a567250ab55749c76ad1ca992a115ecce"
+    },
+    {
+      "path": "src-tauri/lu-core/src/supervised_tool_generation.rs",
+      "blob": "5680d788e9f74e429c58baeb342c09dbab738b67"
+    },
+    {
+      "path": "src-tauri/lu-core/src/tasks.rs",
+      "blob": "a2c0e5bc9a93fc3e7c6e182d86883b26cb864365"
+    },
+    {
+      "path": "src-tauri/lu-core/src/wire.rs",
+      "blob": "adc396f4a537d7bad68dc1fd54b96ec73d43512b"
+    },
+    {
+      "path": "src-tauri/lu-core/src/workspace.rs",
+      "blob": "317c326c8e3975ab87d8f69f42079e0471e708c0"
+    },
+    {
+      "path": "src-tauri/lu-core/src/workspace_quarantine.rs",
+      "blob": "a7fcd91466556cde0f88f559d0645b373be6dd2f"
+    },
+    {
+      "path": "src-tauri/lu-core/tests/alpha_support_contracts.rs",
+      "blob": "19772f9e0989ce021754d5b7a6707b2e35cc030c"
+    },
+    {
+      "path": "src-tauri/lu-core/tests/ansf.rs",
+      "blob": "40db74c17603cb98b91b8ed132bc737de6923b4e"
+    },
+    {
+      "path": "src-tauri/lu-core/tests/ansf_import.rs",
+      "blob": "2678145492dbfe8d63363c9ee8d59d35ef44668b"
+    },
+    {
+      "path": "src-tauri/lu-core/tests/ansf_library.rs",
+      "blob": "40e0e2da9b465ee374c38e82ff3387fae23f527c"
+    },
+    {
+      "path": "src-tauri/lu-core/tests/ansf_revisions.rs",
+      "blob": "e7da8f058fdfb7da7434728fca280937561e47a7"
+    },
+    {
+      "path": "src-tauri/lu-core/tests/ansf_sync.rs",
+      "blob": "e2cfdbba480611c0eb67ea94b1a5c6a50a6f744e"
+    },
+    {
+      "path": "src-tauri/lu-core/tests/benchmark_contract.rs",
+      "blob": "0261def371b8803a0bae5fe4198d639e7b69e7d6"
+    },
+    {
+      "path": "src-tauri/lu-core/tests/ce_approval_commit_expiry.rs",
+      "blob": "f8f135990e5cc982913ca010cbe43185d225ddc4"
+    },
+    {
+      "path": "src-tauri/lu-core/tests/ce_broker_permissions.rs",
+      "blob": "69641d85894d8ad47c1fef8bf5346c387332ffd4"
+    },
+    {
+      "path": "src-tauri/lu-core/tests/ce_drain.rs",
+      "blob": "9e6eea04ffcb899870123d0e626d61d46beacd7d"
+    },
+    {
+      "path": "src-tauri/lu-core/tests/ce_durable_trust.rs",
+      "blob": "4b7bf6e1c865924cee13eb2f4fdbdea00b7bacc6"
+    },
+    {
+      "path": "src-tauri/lu-core/tests/ce_host_profile.rs",
+      "blob": "b6bb5aff07e72fd8c8ca78d1b2b983c6600e9a43"
+    },
+    {
+      "path": "src-tauri/lu-core/tests/ce_packages.rs",
+      "blob": "d830facc82cdc696e8121fd447762038bc458efa"
+    },
+    {
+      "path": "src-tauri/lu-core/tests/ce_revocation_notifications.rs",
+      "blob": "f7ec504ed98c64e3693e76bb6456ab97f8d4130d"
+    },
+    {
+      "path": "src-tauri/lu-core/tests/ce_staging_identity.rs",
+      "blob": "46c6dca20c3cc6fed6469a60ecada2efaea02cec"
+    },
+    {
+      "path": "src-tauri/lu-core/tests/ce_task_effect_fence.rs",
+      "blob": "5ac3680b3fdce81272d54b7a9302978c302d4b31"
+    },
+    {
+      "path": "src-tauri/lu-core/tests/ce_worker_authority.rs",
+      "blob": "889dcdbe2b37c6fe7d3e8614b6d38f6208483934"
+    },
+    {
+      "path": "src-tauri/lu-core/tests/ce_worker_wire_adversarial.rs",
+      "blob": "a0e5ffd9db130531ec3db57fda5a2eea53b4a287"
+    },
+    {
+      "path": "src-tauri/lu-core/tests/compute_autotune.rs",
+      "blob": "651e063e0ce72d4a9d431d98d8e8950635dd43a3"
+    },
+    {
+      "path": "src-tauri/lu-core/tests/compute_inventory.rs",
+      "blob": "57202f0eb10634147d260c5868d52ee06fd9c4ac"
+    },
+    {
+      "path": "src-tauri/lu-core/tests/compute_probe.rs",
+      "blob": "2d212b3b351164f01b109dd758a49ee2ae320614"
+    },
+    {
+      "path": "src-tauri/lu-core/tests/compute_runtime.rs",
+      "blob": "c69dc176d54d2715c46553526d2e868a9d7265c1"
+    },
+    {
+      "path": "src-tauri/lu-core/tests/continuity.rs",
+      "blob": "77f7c00fb9cd8ea4320526a92dbf0338bb6c9e7e"
+    },
+    {
+      "path": "src-tauri/lu-core/tests/conversation_authority.rs",
+      "blob": "a8964882a68de1b6f719a25185060f48f5de03fd"
+    },
+    {
+      "path": "src-tauri/lu-core/tests/core_extension_lifecycle.rs",
+      "blob": "e1c06de0c7ac57381bd3e361d78f03f683e88000"
+    },
+    {
+      "path": "src-tauri/lu-core/tests/cpu_autotune.rs",
+      "blob": "ba316a7058a549fa855fa652da50111aaaf1adc9"
+    },
+    {
+      "path": "src-tauri/lu-core/tests/cpu_instructions.rs",
+      "blob": "289066773fea87a704c65492622f3e8d730a6497"
+    },
+    {
+      "path": "src-tauri/lu-core/tests/cpu_topology.rs",
+      "blob": "4cc295366edc59cd4451688e602b5595559aa597"
+    },
+    {
+      "path": "src-tauri/lu-core/tests/cross_chat_reference.rs",
+      "blob": "912a616766c6ade29e265ce840185c42e71310b0"
+    },
+    {
+      "path": "src-tauri/lu-core/tests/diagnostic_contract.rs",
+      "blob": "16c15621345a34976cf6e10235b3ef0c50601d87"
+    },
+    {
+      "path": "src-tauri/lu-core/tests/diagnostic_localization.rs",
+      "blob": "9c407dfba1d8e148664cba6681afe8262c11944b"
+    },
+    {
+      "path": "src-tauri/lu-core/tests/durable_dispatch.rs",
+      "blob": "c6a6e88e59fb45b5c0167654b9a9c688e9594f3c"
+    },
+    {
+      "path": "src-tauri/lu-core/tests/effect_journal.rs",
+      "blob": "b02b7966ed4e6e4bb8b642c51ed2518e5f20549a"
+    },
+    {
+      "path": "src-tauri/lu-core/tests/export_contract.rs",
+      "blob": "0f2413a19240d274bb1d9981d852ce531646240e"
+    },
+    {
+      "path": "src-tauri/lu-core/tests/host_resource_authority.rs",
+      "blob": "7a3f843a6d33f3730a38a78cb95b9a9e67b31170"
+    },
+    {
+      "path": "src-tauri/lu-core/tests/host_reviewed_route_durable.rs",
+      "blob": "0c89a44db84c48ee302a97799f2bf87fa4c8b679"
+    },
+    {
+      "path": "src-tauri/lu-core/tests/host_session.rs",
+      "blob": "2d2c8ffb26d7a8e7b8433a2d59326068fb76c59c"
+    },
+    {
+      "path": "src-tauri/lu-core/tests/linux_device_hints.rs",
+      "blob": "6322f67e645751d5568f5bb1d1cf79d277770b2d"
+    },
+    {
+      "path": "src-tauri/lu-core/tests/linux_gpu_nodes.rs",
+      "blob": "e777af9252f11fd681b06e2c2b3bb8692e09e43f"
+    },
+    {
+      "path": "src-tauri/lu-core/tests/model_json_boundary.rs",
+      "blob": "00d5a9dcee3326917bd04e1ba34d88cb0d5eed77"
+    },
+    {
+      "path": "src-tauri/lu-core/tests/model_native_files.rs",
+      "blob": "fb4dc42b546ecd76ca9df2789fbb4f45584fe160"
+    },
+    {
+      "path": "src-tauri/lu-core/tests/model_turn_journal.rs",
+      "blob": "0a3ec97557d677939e443fe720f0f959afa8d525"
+    },
+    {
+      "path": "src-tauri/lu-core/tests/mythos_privilege_guard.rs",
+      "blob": "d4a25bf37e22741a187491320b6eb08e3daeab65"
+    },
+    {
+      "path": "src-tauri/lu-core/tests/native_agent_tool_turn.rs",
+      "blob": "f121fd1c6fbc400dd000d563d503051f42ebad7e"
+    },
+    {
+      "path": "src-tauri/lu-core/tests/native_dispatch_error_codes.rs",
+      "blob": "8e8b79d6a6c1cc51e393622049264c5da8fd953e"
+    },
+    {
+      "path": "src-tauri/lu-core/tests/native_startup_recovery.rs",
+      "blob": "c6f1f8ce1b2d4b6274b821828abd261ac38a08eb"
+    },
+    {
+      "path": "src-tauri/lu-core/tests/native_tool_lifecycle.rs",
+      "blob": "166e81b712ef6ab6bf3a14565fd19742057cf7a3"
+    },
+    {
+      "path": "src-tauri/lu-core/tests/ownership_store.rs",
+      "blob": "461f86f5eac1bb9be6f872bd048c0772d2c6a5b3"
+    },
+    {
+      "path": "src-tauri/lu-core/tests/p2_inference_lifecycle.rs",
+      "blob": "b1e2aa87344c853443ab52bb05caf76b27ef68fc"
+    },
+    {
+      "path": "src-tauri/lu-core/tests/passive_diagnostics.rs",
+      "blob": "c8d76911c3c6e1b4db067f2eef22eb4855eff683"
+    },
+    {
+      "path": "src-tauri/lu-core/tests/platform_compute.rs",
+      "blob": "a004e88577515e6eef19ad3143b7511344db52fb"
+    },
+    {
+      "path": "src-tauri/lu-core/tests/policy_native.rs",
+      "blob": "3c9b6ce189dfb46097d134b3e13eb73dfd0ba455"
+    },
+    {
+      "path": "src-tauri/lu-core/tests/protobuf_wire.rs",
+      "blob": "e7f1794d66ae2cad229228d26d36fe1b6ed99d5f"
+    },
+    {
+      "path": "src-tauri/lu-core/tests/real_gguf_import.rs",
+      "blob": "b289decb33516c38d0bec2fc22249b2d4f3fdace"
+    },
+    {
+      "path": "src-tauri/lu-core/tests/real_gguf_tool_json.rs",
+      "blob": "5adabb99ed2f4629b6166b77d1efe39bf2c210f9"
+    },
+    {
+      "path": "src-tauri/lu-core/tests/registry_contracts.rs",
+      "blob": "b399bda7b302bd19f6dbed75427058409dd066c7"
+    },
+    {
+      "path": "src-tauri/lu-core/tests/saved_chat_prompt_limits.rs",
+      "blob": "1100ab528c8cab6de41f51a0373528693fecda28"
+    },
+    {
+      "path": "src-tauri/lu-core/tests/supervised_native_turn.rs",
+      "blob": "7f6734c840dd6a27e6b520760d7aa5bfaf1b7c38"
+    },
+    {
+      "path": "src-tauri/lu-core/tests/supervisor_dynamic_catalog.rs",
+      "blob": "11ed612571a823681a13539632ed61b4d8fb11ae"
+    },
+    {
+      "path": "src-tauri/lu-core/tests/task_checkpoints.rs",
+      "blob": "c6ad146785f59abac417e92d117c9dc9d0a825a4"
+    },
+    {
+      "path": "src-tauri/lu-core/tests/workspace_quarantine.rs",
+      "blob": "9e3cafd50f26453c6bb5445f869c2b8cc4d1cb6f"
+    },
+    {
+      "path": "src-tauri/lu-win-worker-job/Cargo.toml",
+      "blob": "6b13f31db384ca06d403a58f4c1235e44e57e746"
+    },
+    {
+      "path": "src-tauri/lu-win-worker-job/src/lib.rs",
+      "blob": "d00c9ee9fbc041a7dee01bd12d591555b309a6a5"
+    }
+  ]
+}

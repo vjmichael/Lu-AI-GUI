@@ -105,7 +105,9 @@ class P05SemanticTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,"premature_release_or_pr_cleanup"):
             verify(self.a,changed)
     def test_missing_real_source_marker_fails(self):
-        changed=copy.deepcopy(self.s);changed["witnesses"][0]["terms"]=["not_a_real_capability_assertion"]
+        changed=copy.deepcopy(self.s)
+        # Keep the historical/current count guard intact to exercise live-source denial.
+        changed["witnesses"][0]["terms"].append("not_a_real_capability_assertion")
         with self.assertRaisesRegex(ValueError,"missing_semantic_witness"):
             verify(self.a,changed)
 

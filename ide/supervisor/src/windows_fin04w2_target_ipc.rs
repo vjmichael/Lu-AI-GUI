@@ -43,6 +43,34 @@ enum LeasePhase {
     Running,
     StoppedObserved,
 }
+/// Only constructed from the authenticated target SCM response, never DAP.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) struct CorroboratedStop {
+    pub(crate) thread_id: u32,
+    pub(crate) sampled_rip: u64,
+    pub(crate) relocation_bias: u64,
+}
+fn parse_corroborated_stop(
+    proof: &[u8; 21],
+    requested_rip: u64,
+) -> Result<CorroboratedStop, SupervisorError> {
+    let sampled_rip = u64::from_le_bytes(proof[5..13].try_into().map_err(|_| denied())?);
+    let thread_id = u32::from_le_bytes(proof[1..5].try_into().map_err(|_| denied())?);
+    let relocation_bias = u64::from_le_bytes(proof[13..21].try_into().map_err(|_| denied())?);
+    if proof[0] != b'P'
+        || requested_rip == 0
+        || sampled_rip != requested_rip
+        || thread_id == 0
+        || relocation_bias > u64::MAX - sampled_rip
+    {
+        return Err(denied());
+    }
+    Ok(CorroboratedStop {
+        thread_id,
+        sampled_rip,
+        relocation_bias,
+    })
+}
 pub(crate) struct SuspendedTargetLease {
     pipe: Pipe,
     os_observed_target_pid: u32,
@@ -92,7 +120,7 @@ impl SuspendedTargetLease {
         &mut self,
         pair: &IndependentScmPair,
         rip: u64,
-    ) -> Result<(u32, u64), SupervisorError> {
+    ) -> Result<CorroboratedStop, SupervisorError> {
         if self.phase != LeasePhase::Running || rip == 0 {
             return Err(denied());
         }
@@ -108,19 +136,10 @@ impl SuspendedTargetLease {
         }
         let mut proof = [0u8; 21];
         read_exact(self.pipe.0, &mut proof, Duration::from_secs(20))?;
-        if proof[0] != b'P'
-            || u64::from_le_bytes(proof[5..13].try_into().map_err(|_| denied())?) != rip
-        {
-            return Err(denied());
-        }
-        let tid = u32::from_le_bytes(proof[1..5].try_into().map_err(|_| denied())?);
-        let slide = u64::from_le_bytes(proof[13..21].try_into().map_err(|_| denied())?);
-        if tid == 0 || slide > u64::MAX - rip {
-            return Err(denied());
-        }
+        let observed = parse_corroborated_stop(&proof, rip)?;
         self.reobserve(pair)?;
         self.phase = LeasePhase::StoppedObserved;
-        Ok((tid, slide))
+        Ok(observed)
     }
     pub(crate) fn reobserve(&self, pair: &IndependentScmPair) -> Result<(), SupervisorError> {
         pair.attest_target_server(self.pipe.0)?;
@@ -340,6 +359,33 @@ mod tests {
         assert!(
             verify_suspended_receipt(&reply[..140], &image, &pdb, &approval, &session).is_err()
         );
+    }
+    #[test]
+    fn target_sample_is_returned_only_after_exact_pc_and_thread_validation() {
+        let mut proof = [0u8; 21];
+        proof[0] = b'P';
+        proof[1..5].copy_from_slice(&17u32.to_le_bytes());
+        proof[5..13].copy_from_slice(&0x1234u64.to_le_bytes());
+        proof[13..21].copy_from_slice(&0x100u64.to_le_bytes());
+        assert_eq!(
+            parse_corroborated_stop(&proof, 0x1234).unwrap(),
+            CorroboratedStop {
+                thread_id: 17,
+                sampled_rip: 0x1234,
+                relocation_bias: 0x100,
+            }
+        );
+        assert!(parse_corroborated_stop(&proof, 0x1235).is_err());
+        assert!(parse_corroborated_stop(&proof, 0).is_err());
+        let mut forged = proof;
+        forged[0] = b'V';
+        assert!(parse_corroborated_stop(&forged, 0x1234).is_err());
+        let mut forged = proof;
+        forged[1..5].fill(0);
+        assert!(parse_corroborated_stop(&forged, 0x1234).is_err());
+        let mut forged = proof;
+        forged[13..21].copy_from_slice(&u64::MAX.to_le_bytes());
+        assert!(parse_corroborated_stop(&forged, 0x1234).is_err());
     }
     #[test]
     fn no_replay_or_stopped_evidence_in_suspended_lease_state() {

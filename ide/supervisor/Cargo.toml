@@ -95,3 +95,9 @@ windows-sys = { version = "0.61.2", features = [
   "Win32_System_Diagnostics_ToolHelp", "Win32_System_Diagnostics_Debug",
   "Win32_NetworkManagement_WindowsFilteringPlatform", "Win32_System_Rpc", "Win32_Security_Authentication_Identity"
 ] }
+
+# Large pinned toolchain staging must not exhaust the unchanged short-lived
+# one-use grant simply because cryptographic hashing is unoptimised in debug.
+# Keep every independent source and staged-tree readback.
+[profile.dev.package.sha2]
+opt-level = 3

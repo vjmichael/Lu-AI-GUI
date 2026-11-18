@@ -136,6 +136,8 @@ jobs:
         with:
           ref: ${{ env.INTEGRATION_SOURCE_SHA }}
           persist-credentials: false
+          # P05 successor verifier reads immutable historical Git blobs.
+          fetch-depth: 0
       - name: Exact head
         shell: bash
         run: |

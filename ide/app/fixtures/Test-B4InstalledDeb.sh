@@ -48,7 +48,7 @@ printf 'fn main() { println!("b4 original main"); }\n' >"${fixture}/main.rs"
 printf 'pub fn second() { println!("b4 other"); }\n' >"${fixture}/second.rs"
 env WO8_INSTALLED_EXE="$exec_path" WO8_FIXTURE_ROOT="$fixture" \
   dbus-run-session -- xvfb-run -a -s '-screen 0 1280x800x24' \
-  /usr/bin/python3 ide/app/fixtures/b4_linux_installed_split_atspi.py || deny linux_b4_split_editor_acceptance_failed
+  bash ide/app/fixtures/Run-DEV01ModernGtkSession.sh b4_linux_installed_split_atspi.py || deny linux_b4_split_editor_acceptance_failed
 echo "B4_LINUX_REAL_INSTALLED_TWO_PANE_EDITOR_SAVE=PASS"
 # Same installed .deb, independent 48-tab workload with real GTK/AT-SPI
 # interactions and kernel /proc descendant memory measurements.
@@ -71,7 +71,7 @@ for number in range(48):
 PY
 env B5_EXACT_CHECKOUT_SHA="$head_sha" WO8_INSTALLED_EXE="$exec_path" WO8_FIXTURE_ROOT="$perf" \
   dbus-run-session -- xvfb-run -a -s '-screen 0 1280x800x24' \
-  /usr/bin/python3 ide/app/fixtures/b5_linux_installed_perf_atspi.py \
+  bash ide/app/fixtures/Run-DEV01ModernGtkSession.sh b5_linux_installed_perf_atspi.py \
   || deny linux_b5_real_ui_rss_latency_acceptance_failed
 [[ -s "$RUNNER_TEMP/ide-b5-linux-installed-performance.json" ]] \
   || deny missing_real_linux_os_performance_receipt

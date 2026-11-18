@@ -29,6 +29,7 @@ import { admitOpenTabs, tabWindow, pageTabWindow, centerSelectedTab,
   TREE_ENTRY_PAGE, verifiedRelativeSourcePath, lateSourceOpenDecision,
   lateReloadCanCommit } from './editor_working_set.js';
 import { locateMatches, planReplacement } from './find_replace.js';
+import { readReviewedCommitMetadata } from './reviewed_git_commit_form.js';
 import {
   newBufferIdentity, advanceBufferIdentity, rebaseBufferAfterSave,
   captureBufferSpan, resolveBufferSpan, formatBufferReference,
@@ -133,9 +134,6 @@ function App() {
   const [gitReview, setGitReview] = useState(null);
   const [gitStageReceipt, setGitStageReceipt] = useState(null);
   const [gitCommitReceipt, setGitCommitReceipt] = useState(null);
-  const [gitCommitMessage, setGitCommitMessage] = useState('');
-  const [gitAuthorName, setGitAuthorName] = useState('');
-  const [gitAuthorEmail, setGitAuthorEmail] = useState('');
   const [gitWriteBusy, setGitWriteBusy] = useState(false);
   const [workflowProjectIds, setWorkflowProjectIds] = useState([]);
   const [workflowInspection, setWorkflowInspection] = useState(null);
@@ -2545,17 +2543,21 @@ function App() {
     finally { setGitWriteBusy(false); void refreshGitStatus(); }
   }
 
-  async function commitReviewedGitFile() {
+  async function commitReviewedGitFile(event) {
+    event.preventDefault();
     if (!gitStageReceipt || gitWriteBusy || !activeProject ||
         gitStageReceipt.projectId !== activeProject.projectId) return;
+    // Read the actual submitted inputs synchronously. A native accessibility
+    // provider can change the field value without delivering React onChange.
+    const metadata=readReviewedCommitMetadata(new FormData(event.currentTarget));
+    if (!metadata) { setProblem('Enter valid commit message and author details.'); return; }
     setGitWriteBusy(true); setProblem('');
     try {
       const done = await invoke('ide_git_commit_reviewed', {
-        stage: gitStageReceipt, message: gitCommitMessage,
-        authorName: gitAuthorName, authorEmail: gitAuthorEmail,
+        stage: gitStageReceipt, ...metadata,
       });
       if (done.projectId === activeProject.projectId) {
-        setGitCommitReceipt(done); setGitStageReceipt(null); setGitCommitMessage('');
+        setGitCommitReceipt(done); setGitStageReceipt(null);
         setHint('Local Git commit created. No hooks, push or release action occurred.');
       }
     } catch (error) { setProblem('Native Git commit denied: ' + String(error)); }
@@ -5647,7 +5649,7 @@ function App() {
     setSourceActionPending(true);
     setProblem('');
     try {
-      let command, params, affected;
+      let command, params, affected, confirmationRevision;
       if (mode==='new-file' || mode==='new-folder') {
         const name=sourceActionPath.trim();
         if (!name || name==='.' || name==='..' || name.includes('/') ||
@@ -5678,6 +5680,7 @@ function App() {
             typeof preview?.revision!=='string' || !preview.revision)
           throw Error('SOURCE_REVISION_UNVERIFIED');
         params.expectedRevision=preview.revision;
+        confirmationRevision=preview.revision;
       } else {
         const choice=sourceRestoreChoices.find(x=>x.token===sourceRestoreToken);
         if (!choice || !verifiedRelativeSourcePath(choice.originalRelativePath))
@@ -5686,10 +5689,12 @@ function App() {
             tab.relativePath===choice.originalRelativePath))
           throw Error('Close the destination editor tab before restoring.');
         const fresh=await invoke('ide_list_trashed_sources',{projectId});
-        if (!Array.isArray(fresh) || !fresh.some(x=>x?.token===choice.token &&
+        const observed=Array.isArray(fresh) && fresh.find(x=>x?.token===choice.token &&
             x.originalRelativePath===choice.originalRelativePath &&
-            x.payloadPresent && !x.originalPresent))
-          throw Error('SOURCE_TRASH_CHANGED_RELOAD_REQUIRED');
+            x.payloadPresent && !x.originalPresent && typeof x.revision==='string' &&
+            /^[0-9a-f]{64}$/.test(x.revision));
+        if (!observed) throw Error('SOURCE_TRASH_CHANGED_RELOAD_REQUIRED');
+        confirmationRevision=observed.revision;
         command='ide_restore_source_file';
         params={projectId,token:choice.token};
         affected=choice.originalRelativePath;
@@ -5698,10 +5703,20 @@ function App() {
           activeProjectIdRef.current!==projectId || projectNavigationEpoch.current!==epoch)
         throw Error('SOURCE_ACTION_PROJECT_CHANGED');
       if (mode!=='new-file' && mode!=='new-folder') {
-        const message=mode==='move' ? 'Move '+affected+' to '+params.destinationPath+'? No existing file will be overwritten.' :
-          mode==='trash' ? 'Move '+affected+' to recoverable project trash? This will not erase private draft checkpoints.' :
-          'Restore '+affected+' from project trash? No existing file will be overwritten.';
-        if (!window.confirm(message)) return;
+        const approved=await invoke('ide_confirm_source_action',{
+          projectId, mode, relativePath:affected,
+          destinationPath:mode==='move'?params.destinationPath:null,
+          expectedRevision:confirmationRevision,
+          token:mode==='restore'?params.token:null,
+        });
+        if (approved!==true) return;
+        if (mode==='restore') {
+          const latest=await invoke('ide_list_trashed_sources',{projectId});
+          if (!Array.isArray(latest) || !latest.some(x=>x?.token===params.token &&
+              x.originalRelativePath===affected && x.revision===confirmationRevision &&
+              x.payloadPresent && !x.originalPresent))
+            throw Error('SOURCE_TRASH_CHANGED_RELOAD_REQUIRED');
+        }
       }
       // A stale editor, project switch, or overlapping native I/O denies mutation.
       if (sourceActionTicket.current!==ticket || workspaceTransitionRef.current!==ticket ||
@@ -5715,8 +5730,8 @@ function App() {
       if (sourceActionTicket.current!==ticket || workspaceTransitionRef.current!==ticket ||
           activeProjectIdRef.current!==projectId || projectNavigationEpoch.current!==epoch) return;
       if (receipt?.projectId!==projectId ||
-          (mode!=='restore' && mode!=='new-file' && mode!=='new-folder' &&
-           receipt?.originalRelativePath!==affected))
+          ((mode==='move'||mode==='trash'||mode==='restore') &&
+           (receipt?.originalRelativePath!==affected || receipt?.revision!==confirmationRevision)))
         throw Error('SOURCE_ACTION_RECEIPT_MISMATCH');
       const raw=await invoke('ide_list_source_directory_page',{
         projectId,relativeDir,after:null,
@@ -9866,24 +9881,21 @@ function App() {
                 <strong>Staged exact file: {gitStageReceipt.relativePath}</strong>
                 <p>Git blob: <code>{gitStageReceipt.stagedBlobOid}</code></p>
                 <p>SHA-256: <code>{gitStageReceipt.sourceSha256}</code></p>
-                <label htmlFor="wo9CommitMessage">Local commit message</label>
-                <input id="wo9CommitMessage" type="text" value={gitCommitMessage}
-                  maxLength={1200} disabled={gitWriteBusy}
-                  onChange={event => setGitCommitMessage(event.target.value)} />
-                <label htmlFor="wo9CommitName">Author name</label>
-                <input id="wo9CommitName" type="text" value={gitAuthorName}
-                  maxLength={96} disabled={gitWriteBusy}
-                  onChange={event => setGitAuthorName(event.target.value)} />
-                <label htmlFor="wo9CommitEmail">Author email</label>
-                <input id="wo9CommitEmail" type="email" value={gitAuthorEmail}
-                  maxLength={96} disabled={gitWriteBusy}
-                  onChange={event => setGitAuthorEmail(event.target.value)} />
-                <button type="button" className="primaryBtn"
-                  disabled={gitWriteBusy || !gitCommitMessage.trim() ||
-                    !gitAuthorName.trim() || !gitAuthorEmail.trim()}
-                  onClick={() => commitReviewedGitFile()}>
-                  Confirm separate local commit (no push)
-                </button>
+                <form key={gitStageReceipt.stagedIndexFingerprint}
+                  onSubmit={commitReviewedGitFile} aria-label="Reviewed local commit details">
+                  <label htmlFor="wo9CommitMessage">Local commit message</label>
+                  <input id="wo9CommitMessage" name="message" type="text" required
+                    maxLength={1200} disabled={gitWriteBusy} />
+                  <label htmlFor="wo9CommitName">Author name</label>
+                  <input id="wo9CommitName" name="authorName" type="text" required
+                    maxLength={96} disabled={gitWriteBusy} />
+                  <label htmlFor="wo9CommitEmail">Author email</label>
+                  <input id="wo9CommitEmail" name="authorEmail" type="email" required
+                    maxLength={96} disabled={gitWriteBusy} />
+                  <button type="submit" className="primaryBtn" disabled={gitWriteBusy}>
+                    Confirm separate local commit (no push)
+                  </button>
+                </form>
               </article>}
               {gitCommitReceipt && <p role="status">
                 Local commit: <code>{gitCommitReceipt.commitSha}</code>.

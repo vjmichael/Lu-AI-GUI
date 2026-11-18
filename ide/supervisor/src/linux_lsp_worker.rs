@@ -639,6 +639,50 @@ pub fn start_linux_project_dap(
         Some(project),
     )
 }
+// LLVM sizes several pools from the inherited CPU affinity. A CPU-time quota
+// alone does not constrain that discovery. Keep the original hard pids.max
+// ceiling and narrow the fixed debugger's initial affinity to one permitted
+// CPU before any Bubblewrap or LLDB instruction. Affinity is a performance
+// hint, NOT a substitute for the kernel cgroup's resource/security controls.
+#[cfg(feature = "dap-transport")]
+fn single_debug_cpu(allowed: &libc::cpu_set_t) -> io::Result<libc::cpu_set_t> {
+    let mut selected: libc::cpu_set_t = unsafe { std::mem::zeroed() };
+    for cpu in 0..libc::CPU_SETSIZE as usize {
+        if unsafe { libc::CPU_ISSET(cpu, allowed) } {
+            unsafe { libc::CPU_SET(cpu, &mut selected) };
+            return Ok(selected);
+        }
+    }
+    Err(io::Error::from_raw_os_error(libc::EINVAL))
+}
+
+#[cfg(feature = "dap-transport")]
+fn debugger_cpu_affinity() -> io::Result<libc::cpu_set_t> {
+    let mut allowed: libc::cpu_set_t = unsafe { std::mem::zeroed() };
+    if unsafe { libc::sched_getaffinity(0, std::mem::size_of_val(&allowed), &mut allowed) } != 0 {
+        return Err(io::Error::last_os_error());
+    }
+    single_debug_cpu(&allowed)
+}
+
+#[cfg(feature = "dap-transport")]
+fn apply_debugger_cpu_affinity(selected: &libc::cpu_set_t) -> io::Result<()> {
+    let size = std::mem::size_of_val(selected);
+    if unsafe { libc::sched_setaffinity(0, size, selected) } != 0 {
+        return Err(io::Error::last_os_error());
+    }
+    let mut actual: libc::cpu_set_t = unsafe { std::mem::zeroed() };
+    if unsafe { libc::sched_getaffinity(0, size, &mut actual) } != 0 {
+        return Err(io::Error::last_os_error());
+    }
+    for cpu in 0..libc::CPU_SETSIZE as usize {
+        if unsafe { libc::CPU_ISSET(cpu, &actual) != libc::CPU_ISSET(cpu, selected) } {
+            return Err(io::Error::from_raw_os_error(libc::EINVAL));
+        }
+    }
+    Ok(())
+}
+
 #[cfg(feature = "dap-transport")]
 fn start_linux_dap_inner(
     supervisor: Arc<Supervisor>,
@@ -771,8 +815,12 @@ fn start_linux_dap_inner(
                 Stdio::null()
             },
         );
+    let debugger_affinity = debugger_cpu_affinity().map_err(|_| denied())?;
     unsafe {
-        command.pre_exec(move || attach_pid_in_pre_exec(descriptor));
+        command.pre_exec(move || {
+            attach_pid_in_pre_exec(descriptor)?;
+            apply_debugger_cpu_affinity(&debugger_affinity)
+        });
     }
     let proof = proof_for(&group);
     if !proof.complete() {
@@ -1261,6 +1309,25 @@ impl LinuxLspSession {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(feature = "dap-transport")]
+    #[test]
+    fn debugger_cpu_selection_keeps_one_actually_allowed_cpu() {
+        let mut sparse: libc::cpu_set_t = unsafe { std::mem::zeroed() };
+        assert!(single_debug_cpu(&sparse).is_err());
+        unsafe {
+            libc::CPU_SET(3, &mut sparse);
+            libc::CPU_SET(7, &mut sparse);
+        }
+        let selected = single_debug_cpu(&sparse).unwrap();
+        assert!(unsafe { libc::CPU_ISSET(3, &selected) });
+        assert!(!unsafe { libc::CPU_ISSET(0, &selected) });
+        assert!(!unsafe { libc::CPU_ISSET(7, &selected) });
+        assert_eq!(unsafe { libc::CPU_COUNT(&selected) }, 1);
+        assert_eq!(
+            unsafe { libc::CPU_COUNT(&debugger_cpu_affinity().unwrap()) },
+            1
+        );
+    }
     #[test]
     fn kernel_quota_witness_emits_only_bounded_boolean_or_unavailable() {
         let file =

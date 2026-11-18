@@ -374,7 +374,7 @@ test('Wave A2 registry advertises actual host operations without granting execut
     'ide_preview_exact_vcpkg_manifest_edit', 'ide_apply_reviewed_vcpkg_manifest_edit',
     'ide_discover_conventional_tests', 'ide_inspect_saved_test_symbols',
     'ide_review_project_debug_target', 'ide_list_source_directory_page',
-    'ide_quick_open_source_paths', 'ide_create_source_entry', 'ide_move_source_file',
+    'ide_quick_open_source_paths', 'ide_create_source_entry', 'ide_confirm_source_action', 'ide_move_source_file',
     'ide_trash_source_file', 'ide_list_trashed_sources', 'ide_restore_source_file',
     'ide_workflow_run_step', 'ide_workflow_verify_native_receipt',
     'ide_read_local_stash_inventory'
@@ -387,7 +387,7 @@ test('Wave A2 registry advertises actual host operations without granting execut
     'new native-only route requires an explicit source-contract review: '+value);
   for (const value of nativeLspCommands.concat(nativeBuildCommands,nativeDebugCommands,
       nativePackageCommands, nativeUiOnlyCommands,
-      ['ide_terminal_submit','ide_terminal_open']))
+      ['ide_terminal_submit','ide_terminal_open','ide_confirm_source_action']))
     assert.ok(!commands.includes(value),'privileged native UI route became a Lu tool: '+value);
   assert.ok(commands.includes('ide_list_language_servers'));
   assert.match(registry, /descriptions_only: true/);

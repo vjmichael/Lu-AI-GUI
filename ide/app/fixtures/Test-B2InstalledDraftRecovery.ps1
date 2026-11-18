@@ -14,6 +14,12 @@ using System.Runtime.InteropServices;
 public static class LuMouse {
  [DllImport("user32.dll")]
  public static extern void mouse_event(uint flags,uint x,uint y,uint data,UIntPtr extra);
+ [DllImport("user32.dll")]
+ public static extern IntPtr GetWindow(IntPtr hwnd,uint command);
+ [DllImport("user32.dll")]
+ public static extern IntPtr GetForegroundWindow();
+ [DllImport("user32.dll")]
+ public static extern bool SetForegroundWindow(IntPtr hwnd);
 }
 '@
 $report = [ordered]@{ tested='installed-nsis-windows'; installed=$false; launched=$false;
@@ -33,10 +39,10 @@ function Screenshot([string]$name) {
   }
 }
 function AppWindow {
-  $root=[System.Windows.Automation.AutomationElement]::RootElement
-  $cond=[System.Windows.Automation.PropertyCondition]::new(
-    [System.Windows.Automation.AutomationElement]::ProcessIdProperty,$app.Id)
-  return $root.FindFirst([System.Windows.Automation.TreeScope]::Children,$cond)
+  $app.Refresh()
+  if($app.HasExited -or $app.MainWindowHandle -eq [IntPtr]::Zero) {return $null}
+  try {return [System.Windows.Automation.AutomationElement]::FromHandle($app.MainWindowHandle)}
+  catch {return $null}
 }
 function FindItem([string]$name,[int]$seconds=15) {
   $until=[DateTime]::UtcNow.AddSeconds($seconds)
@@ -108,20 +114,72 @@ try {
   if($null -eq $open) {$open=FindItem '+ Open folder' 8}
   if($null -eq $open) {throw 'Installed WebView controls unavailable to UI Automation'}
   $report.uia=$true
+  # Pin the actual main HWND before opening the separate native picker.
+  $mainHwnd=$app.MainWindowHandle
+  if($mainHwnd -eq [IntPtr]::Zero) {throw 'Installed main window unavailable'}
   ClickItem $open.Current.Name
-  Start-Sleep -Seconds 2
-  # Navigate the actual native folder picker, not a privileged Tauri IPC call.
+  $picker=$null
+  $deadline=[DateTime]::UtcNow.AddSeconds(20)
+  do {
+    $desktop=[System.Windows.Automation.AutomationElement]::RootElement
+    $windows=$desktop.FindAll([System.Windows.Automation.TreeScope]::Children,
+      [System.Windows.Automation.Condition]::TrueCondition)
+    $matching=@($windows | Where-Object {
+      try {
+        $h=[IntPtr]::new([int64]$_.Current.NativeWindowHandle)
+        $h -ne [IntPtr]::Zero -and $h -ne $mainHwnd -and
+          ($_.Current.ProcessId -eq $app.Id -or [LuMouse]::GetWindow($h,4) -eq $mainHwnd) -and
+          $_.Current.Name -ieq 'Select folder' -and !$_.Current.IsOffscreen
+      } catch { $false }
+    })
+    if($matching.Count -gt 1) {throw 'Ambiguous installed native folder picker'}
+    if($matching.Count -eq 1) {$picker=$matching[0]; break}
+    Start-Sleep -Milliseconds 300
+  } while([DateTime]::UtcNow -lt $deadline)
+  if($null -eq $picker) {throw 'Owned native folder picker unavailable'}
+  $pickerHwnd=[IntPtr]::new([int64]$picker.Current.NativeWindowHandle)
+  [void][LuMouse]::SetForegroundWindow($pickerHwnd)
+  if([LuMouse]::GetForegroundWindow() -ne $pickerHwnd) {throw 'Native picker not foreground'}
+  # Navigate the actual OS modal; never send keys if another window took focus.
   [System.Windows.Forms.Clipboard]::SetText($projectRoot)
-  Keys '%d'
+  Keys '^l'
+  if([LuMouse]::GetForegroundWindow() -ne $pickerHwnd) {throw 'Native picker focus changed'}
   Keys '^v'
   Keys '{ENTER}'
-  Start-Sleep -Seconds 2
-  Keys '{ENTER}'
-  Start-Sleep -Seconds 3
+  Start-Sleep -Milliseconds 800
+  $deadline=[DateTime]::UtcNow.AddSeconds(15)
+  do {
+    if([LuMouse]::GetForegroundWindow() -ne $pickerHwnd) {break}
+    try {
+      $condition=[System.Windows.Automation.PropertyCondition]::new(
+        [System.Windows.Automation.AutomationElement]::NameProperty,'Select Folder')
+      $buttons=@($picker.FindAll([System.Windows.Automation.TreeScope]::Descendants,$condition) |
+        Where-Object {$_.Current.IsEnabled -and !$_.Current.IsOffscreen -and
+          $_.Current.ControlType.ProgrammaticName -in @('ControlType.Button','ControlType.Pane')})
+      if($buttons.Count -eq 1) {
+        $button=$buttons[0]
+        try { $button.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke() }
+        catch {
+          $rect=$button.Current.BoundingRectangle
+          $owner=$picker.Current.BoundingRectangle
+          if($rect.Width -lt 8 -or $rect.Height -lt 8) {throw 'Native confirmation bounds missing'}
+          $x=[int]($rect.Left+$rect.Width/2); $y=[int]($rect.Top+$rect.Height/2)
+          if($x -le $owner.Left -or $x -ge $owner.Right -or $y -le $owner.Top -or $y -ge $owner.Bottom) {throw 'Native confirmation outside picker'}
+          [System.Windows.Forms.Cursor]::Position=[System.Drawing.Point]::new($x,$y)
+          [LuMouse]::mouse_event(2,0,0,0,[UIntPtr]::Zero)
+          [LuMouse]::mouse_event(4,0,0,0,[UIntPtr]::Zero)
+        }
+        break
+      }
+    } catch {throw}
+    Start-Sleep -Milliseconds 300
+  } while([DateTime]::UtcNow -lt $deadline)
+  Start-Sleep -Seconds 1
+  if([LuMouse]::GetForegroundWindow() -eq $pickerHwnd) {throw 'Native folder picker remained open'}
   FocusApp
-  if($null -eq (FindItem 'Edit' 18)) {throw 'Native picker failed to register project'}
+  if($null -eq (FindItem 'Edit project Fixture' 18)) {throw 'Native picker failed to register project'}
   $report.projectRegistered=$true
-  ClickItem 'Edit'
+  ClickItem 'Edit project Fixture'
   Start-Sleep -Seconds 2
   ClickItem 'acceptance.txt'
   Start-Sleep -Seconds 2
@@ -129,27 +187,12 @@ try {
     throw 'Installed editor does not expose Copy draft reference'
   }
   $report.editorOpened=$true
-  $window=AppWindow
-  $controls=$window.FindAll([System.Windows.Automation.TreeScope]::Descendants,
-    [System.Windows.Automation.Condition]::TrueCondition)
-  $editable=$null
-  foreach($control in $controls) {
-    if($control.Current.ControlType -eq [System.Windows.Automation.ControlType]::Edit) {
-      $editable=$control
-      break
-    }
+  # Exact current CodeMirror accessible identity, not an arbitrary input or
+  # the WebView document. Preserve the real native editing witness.
+  $editable=FindItem 'Source editor text · First editor: acceptance.txt' 15
+  if($null -eq $editable -or !$editable.Current.IsKeyboardFocusable) {
+    throw 'CodeMirror editable surface unavailable to UI Automation'
   }
-  # WebView2 may expose a contenteditable CodeMirror view as Document rather
-  # than Edit. Search it only when no actual Edit control was available.
-  if($null -eq $editable) {
-    foreach($control in $controls) {
-      if($control.Current.ControlType -eq [System.Windows.Automation.ControlType]::Document) {
-        $editable=$control
-        break
-      }
-    }
-  }
-  if($null -eq $editable) {throw 'CodeMirror editable surface unavailable to UI Automation'}
   $bounds=$editable.Current.BoundingRectangle
   if($bounds.IsEmpty) {throw 'CodeMirror interactive bounds empty'}
   [System.Windows.Forms.Cursor]::Position=[System.Drawing.Point]::new(
@@ -211,10 +254,10 @@ try {
   $app.Refresh()
   if($app.HasExited) {throw 'Installed app failed to reopen after durable draft checkpoint'}
   FocusApp
-  $reopen=FindItem 'Reopen' 12
-  if($null -ne $reopen) {ClickItem 'Reopen'; Start-Sleep -Seconds 2}
-  if($null -eq (FindItem 'Edit' 15)) {throw 'Persisted project not available for reopening'}
-  ClickItem 'Edit'
+  $reopen=FindItem 'Reopen project Fixture' 12
+  if($null -ne $reopen) {ClickItem 'Reopen project Fixture'; Start-Sleep -Seconds 2}
+  if($null -eq (FindItem 'Edit project Fixture' 15)) {throw 'Persisted project not available for reopening'}
+  ClickItem 'Edit project Fixture'
   Start-Sleep -Seconds 2
   ClickItem 'acceptance.txt'
   if($null -eq (FindItem 'Recover preserved draft' 18)) {

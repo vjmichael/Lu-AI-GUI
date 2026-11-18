@@ -26,9 +26,11 @@ def digest(path):
 
 def real_code_editors():
     verified={}
+    expected=("Source editor text · First editor: second.rs",
+              "Source editor text · Second editor: main.rs")
     for obj in elements():
         try:
-            if (obj.name or "").strip()!="Source editor text":
+            if (obj.name or "").strip() not in expected:
                 continue
             rect=obj.queryComponent().getExtents(pyatspi.DESKTOP_COORDS)
             if rect.width<60 or rect.height<40:
@@ -40,12 +42,11 @@ def real_code_editors():
             continue
     if len(verified)!=2:
         deny("expected_two_distinct_native_atspi_editor_surfaces_"+str(len(verified)))
-    positions=list(verified.values())
-    if abs(positions[0][1].x-positions[1][1].x)<35:
-        positions.sort(key=lambda item:(item[1].y,item[1].x))
-    else:
-        positions.sort(key=lambda item:(item[1].x,item[1].y))
-    return [item[0] for item in positions]
+    by_name={name:[obj for obj,_ in verified.values() if obj.name==name]
+             for name in expected}
+    if any(len(items)!=1 for items in by_name.values()):
+        deny("split_editor_native_identity_mismatch")
+    return [by_name[name][0] for name in expected]
 
 def focus(node):
     try:

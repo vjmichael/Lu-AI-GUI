@@ -641,18 +641,21 @@ fn review_only(pipe: HANDLE, config: &InstalledAuditConfig) -> Result<(), Superv
             &target,
             || STOP.load(Ordering::SeqCst),
         )?;
-        let (os_thread, relocation_bias) =
-            target.corroborate_stopped_rip(&scm_pair, stop.observed_pc)?;
-        if os_thread != stop.thread_id || stop.source_line == 0 || stop.source_path.is_empty() {
+        let observed = target.corroborate_stopped_rip(&scm_pair, stop.observed_pc)?;
+        if observed.thread_id != stop.thread_id
+            || stop.source_line == 0
+            || stop.source_path.is_empty()
+        {
             return Err(denied());
         }
+        let relocation_bias = observed.relocation_bias;
         // The first-party patched LLVM DebuggerThread must actually have
         // received the kernel EXCEPTION_DEBUG_EVENT. The owner evidence
         // comes from its private inherited pipe/nonce, never from DAP.
         let owner = debugger.observe_real_kernel_owner_stop(
             target.observed_target_pid(),
-            stop.thread_id,
-            stop.observed_pc,
+            observed.thread_id,
+            observed.sampled_rip,
         )?;
         let original_running = crate::fin04w2_authority::verified_running_entry_hash(
             &config.original_supervisor_journal,
@@ -667,6 +670,7 @@ fn review_only(pipe: HANDLE, config: &InstalledAuditConfig) -> Result<(), Superv
             &config.review_only_plan_hash,
             &original_running,
             &owner,
+            observed.sampled_rip,
         )?;
         // The kernel-observed relocation bias is a fixed input for the
         // original independent LLVM/PDB source-line oracle; it is not
@@ -710,7 +714,7 @@ fn review_only(pipe: HANDLE, config: &InstalledAuditConfig) -> Result<(), Superv
                 &config.expected_original_source_sha256,
                 &stop.source_path,
                 stop.source_line,
-                stop.observed_pc,
+                observed.sampled_rip,
                 relocation_bias,
                 |pe, bias, rip| {
                     crate::windows_fin04w2_split_launcher::read_llvm_pdb_line_inside_debugger_job(
@@ -725,7 +729,7 @@ fn review_only(pipe: HANDLE, config: &InstalledAuditConfig) -> Result<(), Superv
                 },
             )?;
         if !source_line.independent_llvm_pdb_source_line_verified
-            || source_line.verified_rip != stop.observed_pc
+            || source_line.verified_rip != observed.sampled_rip
             || source_line.verified_line != stop.source_line
             || source_line.os_relocation_bias != relocation_bias
         {

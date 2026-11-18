@@ -31,6 +31,15 @@ done
 printf 'DEV01_GTK_X11_EWMH_WINDOW_MANAGER=VERIFIED_NOT_PICKER_ACCEPTANCE\n'
 # The installed app is opened by the unchanged real AT-SPI driver, not by
 # this wrapper. Missing chooser, foreign focus or absent catalog still fail.
+driver="${1:-dev01_modern_linux_installed_atspi.py}"
+case "$driver" in
+  dev01_modern_linux_installed_atspi.py|b2_linux_installed_draft_atspi.py|b4_linux_installed_split_atspi.py|b5_linux_installed_perf_atspi.py) ;;
+  *) deny unreviewed_installed_driver ;;
+esac
+[[ "$#" -le 1 ]] || deny unexpected_driver_arguments
+command -v gsettings >/dev/null || deny native_gtk_setting_unavailable
+gsettings set org.gtk.Settings.FileChooser startup-mode cwd || deny native_gtk_setting_failed
+[[ "$(gsettings get org.gtk.Settings.FileChooser startup-mode)" == *cwd* ]] || deny native_gtk_setting_unverified
 env GDK_BACKEND=x11 WEBKIT_DISABLE_COMPOSITING_MODE=1 \
   WEBKIT_DISABLE_DMABUF_RENDERER=1 \
-  /usr/bin/python3 ide/app/fixtures/dev01_modern_linux_installed_atspi.py
+  /usr/bin/python3 "ide/app/fixtures/$driver"

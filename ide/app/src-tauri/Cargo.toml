@@ -78,3 +78,9 @@ debug = 0
 [profile.release]
 lto = "thin"
 strip = true
+
+# Large pinned toolchain staging must not exhaust the unchanged short-lived
+# one-use grant simply because cryptographic hashing is unoptimised in debug.
+# Keep every independent source and staged-tree readback.
+[profile.dev.package.sha2]
+opt-level = 3

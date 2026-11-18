@@ -121,7 +121,12 @@ class NativePickerSourceTests(unittest.TestCase):
         self.assertIn('if attempt > 0 and not ranked:',chooser)
         self.assertIn('_native_dialog_ancestor(obj)',chooser)
         self.assertIn('native_dialog_confirmation_not_found',chooser)
-        self.assertIn('if not _select_real_fixture_directory():',native)
+        parent_route=native.split('def _native_parent_and_exact_child():',1)[1].split(
+            'def select_native_folder():',1)[0]
+        self.assertIn('if _select_real_fixture_directory():\n        return True',parent_route)
+        self.assertIn('return _select_real_fixture_directory()',parent_route)
+        self.assertIn('parent_child_candidate = _native_parent_and_exact_child()',native)
+        self.assertIn('if parent_child_candidate:',native)
         self.assertIn('_native_parent_and_exact_child()',native)
         self.assertIn('type_text(str(ROOT.parent))',native)
         self.assertIn('type_text(str(ROOT))',native)

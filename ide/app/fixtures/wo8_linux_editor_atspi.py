@@ -162,6 +162,13 @@ def start():
     # under ROOT.parent. With the OS preference startup-mode=cwd, the native
     # chooser displays that directory as a real list row from its first map.
     # This does not register a project or bypass GTK's UI decision.
+    if os.environ.get("GITHUB_ACTIONS") == "true":
+        subprocess.run(["gsettings", "set", "org.gtk.Settings.FileChooser",
+                        "startup-mode", "cwd"], check=True, timeout=5)
+        mode = subprocess.check_output(["gsettings", "get", "org.gtk.Settings.FileChooser",
+                                        "startup-mode"], text=True, timeout=5).strip()
+        if mode != "'cwd'":
+            deny("native_gtk_startup_directory_not_verified")
     app = subprocess.Popen([EXE], cwd=str(ROOT.parent),
                            stdout=subprocess.DEVNULL, stderr=stderr_target)
     if stderr_target != subprocess.DEVNULL:
@@ -493,6 +500,12 @@ def _native_picker_confirm(attempt=0):
     if _x11_dialog_activation(attempt):
         return
     if _atspi_bounded_chooser_mouse(attempt):
+        return
+    # The prior confirmation can close the dialog asynchronously between the
+    # caller's visibility check and the action scan. Do not send another key;
+    # let the caller require exact canonical registration plus WebView row.
+    if not _native_chooser_still_open():
+        print("P04_GTK_NATIVE_CHOOSER_CLOSED_DURING_CONFIRMATION", flush=True)
         return
     print("P04_NATIVE_LINUX_GTK_DIALOG_CONFIRMATION=missing_real_chooser_button;"
           "matching_dialog_buttons=" + str(len(ranked)), flush=True)
@@ -1040,7 +1053,12 @@ def select_native_folder():
     # then tried an absolute location entry; the native row was never present.
     # Parent navigation is a real GTK keyboard action, not an input shortcut
     # to the IDE host, and selection still requires an exact native row.
-    parent_child_candidate = _native_parent_and_exact_child()
+    # The verified GTK startup preference now exposes the exact parent at
+    # first map. Try its real child row before invoking a location entry,
+    # which can navigate *into* ROOT and disable the affirmative control.
+    parent_child_candidate = _select_real_fixture_directory()
+    if not parent_child_candidate and _native_chooser_still_open():
+        parent_child_candidate = _native_parent_and_exact_child()
     if parent_child_candidate:
         print("P04_GTK_SELECTION_ROUTE=verified_native_parent_child", flush=True)
     else:
@@ -1082,7 +1100,7 @@ def select_native_folder():
                 # evidence of the selected path until the catalog is read.
                 key("ctrl+l")
                 type_text(str(ROOT))
-                key("Tab")
+                key("Return")
                 print("P04_GTK_EXACT_PATH_SELECTION=exact_fixture_reasserted_in_native_chooser",
                       flush=True)
             time.sleep(0.6)

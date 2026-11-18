@@ -427,7 +427,7 @@ function Ensure-Wo9DependentsBlocked {
     Deny 'wo9_interrupted_or_cancelled_step_unlocked_dependents'
   }
 }
-function Confirm-NativeOneUseDialog([string]$titleFragment,[string]$approvalCaption) {
+function Confirm-NativeOneUseDialog([string]$titleFragment,[string]$approvalCaption,[string]$expectedMessage='') {
   # Real WO9 Windows TaskDialog: exact caption exposes UIA Text/Pane, not Button.
   # Only interact with a separate OS popup owned by this installed process.
   $deadline=(Get-Date).AddSeconds(35)
@@ -458,6 +458,10 @@ function Confirm-NativeOneUseDialog([string]$titleFragment,[string]$approvalCapt
         }
         $desc=$win.FindAll([System.Windows.Automation.TreeScope]::Descendants,
           [System.Windows.Automation.Condition]::TrueCondition)
+        if ($expectedMessage) {
+          $visibleText=@($desc | Where-Object { !$_.Current.IsOffscreen } | ForEach-Object { [string]$_.Current.Name }) -join ' '
+          if (($visibleText -replace '\s+',' ').IndexOf($expectedMessage,[StringComparison]::Ordinal) -lt 0) { continue }
+        }
         foreach($child in $desc) {
           try {
             if ([string]$child.Current.Name -cne $approvalCaption -or
@@ -854,7 +858,8 @@ try {
         }
         $edit.SetFocus()
         [System.Windows.Forms.SendKeys]::SendWait('^a')
-        [System.Windows.Forms.SendKeys]::SendWait($pair[1])
+        [System.Windows.Forms.Clipboard]::SetText($pair[1])
+        [System.Windows.Forms.SendKeys]::SendWait('^v')
         $deadline=(Get-Date).AddSeconds(8)
         $verified=$false
         do {
@@ -864,6 +869,15 @@ try {
           Start-Sleep -Milliseconds 200
         } while ((Get-Date) -lt $deadline)
         if (!$verified) { Deny 'wo9_commit_input_readback_mismatch' }
+      }
+      foreach($pair in @(
+          @('Local commit message','WO9 installed reviewed Git source'),
+          @('Author name','WO9 Native Acceptance'),
+          @('Author email','wo9@localhost.invalid'))) {
+        $field=Find-Control $pair[0] 'Edit' 5
+        if ($field.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern).Current.Value -cne $pair[1]) {
+          Deny 'wo9_commit_all_fields_readback_mismatch'
+        }
       }
       # Do not enable the button programmatically. Wait only for the actual
       # installed application's ordinary input and staging gates to settle.
@@ -906,12 +920,13 @@ try {
       $sourceBefore=(Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $fixed 'main.rs')).Hash
       Click 'Job requests'
       Require 'DEV-03.4 · Conventional test files'
-      Require 'DEV-03.3B · Live protected worker output'
+      Require 'INT05-C · Protected terminal transcript'
+      Require 'No current project-owned native terminal'
       Require 'DEV-03.5 · Protected job lifecycle'
       Require 'No matching protected job journal entries observed'
       Click 'Discover test files'
       [void](Find-Control 'discovery incomplete by design' '' 20)
-      $start=Find-Control 'Request protected Run / Test' 'Button' 15
+      $start=Find-Control 'Request protected Build/Test' 'Button' 15
       if ($start.Current.IsEnabled) {
         Deny 'unsigned_installed_job_unexpectedly_executable'
       }
@@ -1489,10 +1504,8 @@ try {
         Start-Sleep -Milliseconds 400
       }
       function Dev01-Confirm([string]$message) {
-        # Find-Control accepts descendants only of the installed HWND and
-        # its actual WebView renderer; never a foreign or synthetic dialog.
-        Require $message
-        Click 'OK'
+        # Real owned OS dialog, never an inaccessible WebView script alert.
+        Confirm-NativeOneUseDialog 'Confirm source file action' 'Apply file action' $message
       }
       Dev01-Input 'Quick Open filename search' 'src-23/file-035.rs'
       Click 'Find files'
@@ -1560,7 +1573,9 @@ try {
               [System.Windows.Automation.Condition]::TrueCondition)
             foreach($node in $nodes) {
               try {
-                if ([string]$node.Current.Name -ne 'Source editor text') { continue }
+                if ([string]$node.Current.Name -cnotin @(
+                    'Source editor text · First editor: second.rs',
+                    'Source editor text · Second editor: main.rs')) { continue }
                 $rect=$node.Current.BoundingRectangle
                 if ($rect.IsEmpty -or $rect.Width -lt 60 -or $rect.Height -lt 40) { continue }
                 $loc=('{0:F0}-{1:F0}-{2:F0}-{3:F0}' -f $rect.X,$rect.Y,$rect.Width,$rect.Height)
@@ -1569,7 +1584,7 @@ try {
                 if (!$node.Current.IsKeyboardFocusable) {
                   Deny 'b4_installed_codemirror_pane_not_focusable'
                 }
-                $editors+=,[pscustomobject]@{ Node=$node; X=$rect.X; Y=$rect.Y }
+                $editors+=,[pscustomobject]@{ Node=$node; X=$rect.X; Y=$rect.Y; Name=[string]$node.Current.Name }
               } catch {
                 if ($_.Exception.Message -like 'WO8_NATIVE_UI_DENIED:*') { throw }
               }
@@ -1581,11 +1596,12 @@ try {
         if ($editors.Count -ne 2) {
           Deny ('b4_installed_requires_two_distinct_accessible_editors_count_'+$editors.Count)
         }
-        $ordered=@($editors | Sort-Object X,Y)
-        if ([Math]::Abs($ordered[0].X-$ordered[1].X) -lt 35) {
-          $ordered=@($editors | Sort-Object Y,X)
+        $primary=@($editors | Where-Object Name -CEQ 'Source editor text · First editor: second.rs')
+        $secondary=@($editors | Where-Object Name -CEQ 'Source editor text · Second editor: main.rs')
+        if ($primary.Count -ne 1 -or $secondary.Count -ne 1) {
+          Deny 'b4_installed_editor_identity_mismatch'
         }
-        return $ordered
+        return @($primary[0],$secondary[0])
       }
       $editors=@(Get-B4NativeEditors)
       $editors[1].Node.SetFocus()

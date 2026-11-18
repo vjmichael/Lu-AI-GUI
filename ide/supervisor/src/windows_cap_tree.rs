@@ -29,8 +29,8 @@ use std::{
 use windows_sys::Win32::{
     Foundation::HANDLE,
     Storage::FileSystem::{
-        GetFileInformationByHandle, GetFileInformationByHandleEx, BY_HANDLE_FILE_INFORMATION,
-        FILE_BASIC_INFO, FileBasicInfo,
+        FileBasicInfo, GetFileInformationByHandle, GetFileInformationByHandleEx,
+        BY_HANDLE_FILE_INFORMATION, FILE_BASIC_INFO,
     },
 };
 
@@ -137,9 +137,7 @@ fn checked_child_dir(parent: &Dir, name: &OsStr) -> Result<Dir, SupervisorError>
     // No ambient pathname here. cap_std resolves relative to parent handle.
     let child = parent.open_dir(name).map_err(|_| denied())?;
     let opened = child.dir_metadata().map_err(|_| denied())?;
-    if !opened.is_dir()
-        || opened.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
-    {
+    if !opened.is_dir() || opened.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
         return Err(denied());
     }
     // A concurrent replacement either failed to rename the pinned parent,

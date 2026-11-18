@@ -185,7 +185,7 @@ switch($Scenario) {
 if ($LASTEXITCODE -ne 0) { Deny 'independent_native_restart_audit_failed' }
 $restartedApplicationVerified=$false
 if ($RequireRestart) {
-  # Human actions are required; never use SendKeys, synthetic clicks or
+  # Human actions are required; never use automated keystrokes, synthetic clicks or
   # a headless runner to claim that a physical UI approval or restart passed.
   Write-Host 'Close the reviewed developer Lu IDE and relaunch the SAME installed binary.'
   Write-Host 'If an interrupted debug job appears, use native Verify protected debugger cleanup.'

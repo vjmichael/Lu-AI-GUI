@@ -47,6 +47,6 @@ echo "B2_LINUX_INSTALLED_DEB_GRAPHICAL_LAUNCH=PASS"
 printf 'fn main() { println!("b2 original source"); }\n' >"${fixture}/main.rs"
 env WO8_INSTALLED_EXE="$exec_path" WO8_FIXTURE_ROOT="$fixture" \
   dbus-run-session -- xvfb-run -a -s '-screen 0 1280x800x24' \
-  /usr/bin/python3 ide/app/fixtures/b2_linux_installed_draft_atspi.py || deny linux_b2_private_draft_editor_acceptance_failed
+  bash ide/app/fixtures/Run-DEV01ModernGtkSession.sh b2_linux_installed_draft_atspi.py || deny linux_b2_private_draft_editor_acceptance_failed
 echo "B2_LINUX_REAL_INSTALLED_DURABLE_DRAFT_RESTART=PASS"
 echo "B2_PROTECTED_RUN_DEBUG_AND_SIGNED_RELEASE=NOT_ACCEPTED"

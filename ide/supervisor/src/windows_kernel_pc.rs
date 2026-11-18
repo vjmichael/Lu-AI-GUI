@@ -457,7 +457,11 @@ fn query_executable(pid: u32) -> Result<(Owned, String), SupervisorError> {
     // WaitForSingleObject requires SYNCHRONIZE even with a zero timeout.
     // Keep the handle query/wait-only; do not request process mutation rights.
     let process = Owned::from_win32(unsafe {
-        OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_SYNCHRONIZE, 0, pid)
+        OpenProcess(
+            PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_SYNCHRONIZE,
+            0,
+            pid,
+        )
     })?;
     if unsafe { WaitForSingleObject(process.0, 0) } != WAIT_TIMEOUT {
         return Err(denied());
