@@ -37,7 +37,7 @@ pub(crate) fn classify(prompt:&str,has_images:bool,other_mode:bool)->Route {
     if input=="Show current chat counts" {
         return Route::CurrentChatCounts;
     }
-    let approved_workspace=input.strip_prefix("Search selected workspace for: ");
+    let approved_workspace=crate::workspace_desktop::explicit_cpu_workspace_query(input).map(|(_,q)|q);
     let current_chat=["Search this chat for: ","Find in this conversation: "]
         .iter().find_map(|prefix|input.strip_prefix(prefix));
     let Some(query)=approved_workspace.or(current_chat) else {

@@ -526,6 +526,19 @@ pub fn register_discovery_tool(
     let root=Arc::new(Dir::open_ambient_dir(&canonical,ambient_authority())
         .map_err(|_|"Cannot open authorized workspace root")?);
     let cache=cache_for(&canonical)?;
+    register_discovery_with_cache(registry,catalog,root,cache)
+}
+/// Exact-path grants deliberately do not reuse a pathname-keyed index: a
+/// subsequent directory at the same spelling may have another identity.
+pub(crate) fn register_discovery_tool_from_dir(
+    registry:&NativeToolRegistry,catalog:&mut ModelToolCatalog,root:Arc<Dir>,
+)->Result<(),String>{
+    register_discovery_with_cache(registry,catalog,root,Arc::new(Mutex::new(Index::new())))
+}
+fn register_discovery_with_cache(
+    registry:&NativeToolRegistry,catalog:&mut ModelToolCatalog,root:Arc<Dir>,
+    cache:Arc<Mutex<Index>>,
+)->Result<(),String>{
     let content=Arc::new(Mutex::new(TextCache::new()));
     let descriptor=ToolDescriptor{
         id:ID.into(),display_name:"Find workspace files by name, metadata or bounded text".into(),

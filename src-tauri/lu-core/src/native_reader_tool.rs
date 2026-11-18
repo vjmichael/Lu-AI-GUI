@@ -355,6 +355,11 @@ fn register_reader_workspace(
     if !root.is_dir(){return Err("Reader root is not a directory".into());}
     let root=Arc::new(Dir::open_ambient_dir(root,ambient_authority())
         .map_err(|_|"Cannot open Reader root")?);
+    register_reader_from_dir(registry,root,observer)
+}
+pub(crate) fn register_reader_from_dir(
+    registry:&NativeToolRegistry,root:Arc<Dir>,observer:Option<ReaderSourceObserver>,
+)->Result<ModelToolCatalog,String>{
     register_reader_source(registry,ReaderSource::Workspace(root),observer)
 }
 /// Register exactly one document chosen and copied by the trusted host.

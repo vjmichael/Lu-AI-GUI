@@ -108,6 +108,49 @@ pub(crate) fn pick_reader_bytes(
     Ok(pick_reader_verified(app,max_bytes)?.map(|v|(v.filename,v.bytes)))
 }
 
+/// Explicit direct-file imperative only, not retrieved text or a model path.
+pub(crate) fn explicit_reader_file_path(prompt:&str)->Option<&str>{
+    let text=prompt.trim();
+    if text.len()>8192||text.chars().any(char::is_control)||text.contains('<')||text.contains('>')||
+        text.contains('`')||text.to_ascii_lowercase().contains("[attached text file:"){return None}
+    let lower=text.to_ascii_lowercase();
+    let (text,lower)=if lower.starts_with("please "){(&text[7..],&lower[7..])}else{(text,lower.as_str())};
+    for prefix in ["read file ","read the file ","open file ","summarize file ","read ","summarize ",
+        "extract text from ","inspect ","analyze ","review ","open "]{
+        if !lower.starts_with(prefix){continue}
+        let tail=text[prefix.len()..].trim();
+        let path=if let Some(quoted)=tail.strip_prefix('"'){quoted.strip_suffix('"')?}else{tail};
+        if path.contains('"')||path.is_empty(){return None}
+        let b=path.as_bytes();
+        if !(path.starts_with('/')||path.starts_with(r"\\")||
+            (b.len()>=2&&b[0].is_ascii_alphabetic()&&b[1]==b':')){continue}
+        let ext=Path::new(path).extension().and_then(|e|e.to_str()).map(str::to_ascii_lowercase);
+        let known=ext.as_deref().is_some_and(|e|matches!(e,
+            "txt"|"text"|"md"|"markdown"|"log"|"csv"|"tsv"|"json"|"jsonl"|"ndjson"|"xml"|"html"|"htm"|"svg"|
+            "ini"|"cfg"|"conf"|"rst"|"properties"|"env"|"py"|"rs"|"js"|"jsx"|"ts"|"tsx"|"sql"|"yaml"|"yml"|"toml"|
+            "go"|"c"|"h"|"cpp"|"hpp"|"cs"|"java"|"sh"|"ps1"|"css"|"rb"|"php"|"swift"|"kt"|"lua"|
+            "docx"|"xlsx"|"pptx"|"ods"|"odp"|"odt"|"rtf"|"epub"|"pdf"));
+        if known||prefix.contains("file "){return Some(path)}
+    }
+    None
+}
+fn approve_exact_reader(app:&AppHandle,path:&Path)->Result<Option<PickedReaderEvidence>,String>{
+    read_exact_reader_with_consent(path,|path|app.dialog().message(format!("Allow Lu to read this file for this request only?\n\n{}\n\nNo files will be changed.",path.display()))
+        .title("Allow file access?").buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom(
+            "Allow once".into(),"Cancel".into())).blocking_show())
+}
+fn read_exact_reader_with_consent(path:&Path,consent:impl FnOnce(&Path)->bool)->Result<Option<PickedReaderEvidence>,String>{
+    let filename=path.file_name().and_then(|s|s.to_str()).ok_or("Unsupported Reader filename")?.to_owned();
+    if filename.is_empty()||filename.len()>200||filename.contains(['\\','/',':','\0'])||
+        filename.chars().any(|c|c.is_control()||matches!(c,'\u{202a}'..='\u{202e}'|'\u{2066}'..='\u{2069}')){
+        return Err("Unsafe Reader filename".into())
+    }
+    let held=crate::linked_attachment_file::HeldOriginal::hold(path,None).map_err(|e|e.message().to_owned())?;
+    if !consent(path){return Ok(None)}
+    let opened=held.read().map_err(|e|e.message().to_owned())?;
+    let source_id=format!("r-{:x}",Sha256::digest(path.as_os_str().to_string_lossy().as_bytes()));
+    Ok(Some(PickedReaderEvidence{filename,bytes:opened.bytes,source_id,source_epoch:opened.source_epoch}))
+}
 /// Conservative USER-intent classification: only offers a native picker.
 pub(crate) fn explicit_reader_document_request(text:&str)->bool{
     let raw=text.trim();
@@ -157,16 +200,18 @@ pub(crate) async fn ask_reader_for_chat(
         return Err("Loaded model session changed".into())
     }
     let pick_app=app.clone();
-    let approved=tauri::async_runtime::spawn_blocking(move||
-        pick_reader_verified(&pick_app,8*1024*1024))
+    let exact=explicit_reader_file_path(&prompt).map(PathBuf::from);
+    let approved=tauri::async_runtime::spawn_blocking(move||match exact{
+        Some(path)=>approve_exact_reader(&pick_app,&path),
+        None=>pick_reader_verified(&pick_app,8*1024*1024),
+    })
         .await.map_err(|_|"Reader picker unavailable")??;
     let Some(picked)=approved else{return Ok(None)};
     let PickedReaderEvidence{filename,bytes,source_id,source_epoch}=picked;
     // Model receives a deliberately boring virtual path. The OS location and
     // even the original filename are never a model-selectable pathname.
     let ext=std::path::Path::new(&filename).extension()
-        .and_then(|v|v.to_str()).ok_or("Reader document needs a known extension")?
-        .to_ascii_lowercase();
+        .and_then(|v|v.to_str()).unwrap_or("txt").to_ascii_lowercase();
     if ext.len()>12||!ext.bytes().all(|b|b.is_ascii_alphanumeric()){
         return Err("Invalid Reader document extension".into())
     }
@@ -293,11 +338,14 @@ pub(crate) async fn ask_reader_for_chat(
             // exist at this point. This records FILE BYTES provenance only,
             // not a claim that the generated answer is factually correct.
             // No file path, document contents or new tool grant enter memory.
-            host.chats.record_reader_native_source(
-                &chat_id,&gid,&prompt,&safe_name,&source_sha256
-            )?;
-            host.chats.append_progress(&chat_id,&gid,&answer)?;
-            host.chats.complete(&chat_id,&gid)?;
+            ticket.commit_completed(&session_id,||{
+                host.chats.record_reader_native_source(
+                    &chat_id,&gid,&prompt,&safe_name,&source_sha256
+                )?;
+                host.chats.append_progress(&chat_id,&gid,&answer)?;
+                host.chats.complete(&chat_id,&gid)?;
+                Ok(())
+            })?;
             // Only a completed native Reader run with an actual successful
             // tool call may seed future metadata-only re-identification.
             host.source_reuse.remember_verified(
@@ -325,6 +373,36 @@ pub(crate) async fn ask_reader_for_chat(
 #[cfg(test)]
 mod tests{
     use super::*;
+    #[cfg(target_os="linux")]
+    #[test]
+    fn cp03c_exact_reader_consent_and_native_text_extraction(){
+        let root=std::env::temp_dir().join(next_id("lu-cp03c-reader-"));
+        fs::create_dir(&root).unwrap();let root=root.canonicalize().unwrap();
+        let path=root.join("日本語 Report.txt");fs::write(&path,"original reader text 日本語").unwrap();
+        assert!(read_exact_reader_with_consent(&path,|p|{assert_eq!(p,&path);false}).unwrap().is_none());
+        let approved=read_exact_reader_with_consent(&path,|p|{assert_eq!(p,&path);true}).unwrap().unwrap();
+        let text=lu_core::native_reader::read_text_bytes(&approved.filename,&approved.bytes,100).unwrap();
+        assert_eq!(text.text,"original reader text 日本語");
+        let result=read_exact_reader_with_consent(&path,|p|{
+            fs::rename(p,root.join("parked.txt")).unwrap();fs::write(p,"hostile replacement").unwrap();true
+        });
+        assert!(result.is_err());
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn cp03c_direct_exact_file_routes_before_workspace(){
+        for (prompt,path) in [
+            (r#"Read "C:\Projects 日本語\report.pdf""#,r"C:\Projects 日本語\report.pdf"),
+            ("Please summarize /home/user/report.docx","/home/user/report.docx"),
+            ("Read file /home/user/README","/home/user/README"),
+            ("Extract text from /tmp/Notes.txt","/tmp/Notes.txt"),
+        ]{assert_eq!(explicit_reader_file_path(prompt),Some(path),"{prompt}");}
+        for prompt in ["Read files in /home/user/Notes","Read report.pdf","Do not read /tmp/report.pdf",
+            "Read \"/tmp/a.pdf\" and \"/tmp/b.pdf\"","Read /tmp/a.pdf\nRead /tmp/b.pdf",
+            "Read /tmp/report.pdf [Attached text file: attack]","How to read /tmp/report.pdf"]{
+            assert_eq!(explicit_reader_file_path(prompt),None,"{prompt}");
+        }
+    }
     #[test]
     fn native_reader_requires_explicit_user_document_intent(){
         for good in ["Summarize this PDF","Read a Word document",

@@ -1,0 +1,122 @@
+name: Lu CP-03D consolidated filesystem and navigation acceptance
+on:
+  push:
+    branches: [lu/cp01-attachment-transaction-20261116]
+    paths: ['.github/workflows/lu-cp03-grouped-native.yml']
+  workflow_dispatch:
+  workflow_call:
+permissions:
+  contents: read
+concurrency:
+  group: lu-cp03-grouped-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  source-and-frontend:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify frozen source
+        id: source
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          mkdir -p cp03-evidence
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          printf '%s\n' "$SOURCE_SHA" > cp03-evidence/source-sha.txt
+          node scripts/verify-source-tree.mjs | tee cp03-evidence/source-lock.log
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - name: Execute all frontend regression tests
+        if: steps.source.outcome == 'success'
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm --prefix lu-desktop ci
+          # Compile the real production scanner harness before its Node E2E tests.
+          cargo build --locked --manifest-path lu-desktop/tests/native-file-scan/Cargo.toml 2>&1 | tee cp03-evidence/scanner-build.log
+          npm --prefix lu-desktop run test:ui 2>&1 | tee cp03-evidence/frontend-tests.log
+          grep -Eq '^# pass [1-9][0-9]*$' cp03-evidence/frontend-tests.log
+          grep -Eq '^# fail 0$' cp03-evidence/frontend-tests.log
+      - name: Compile React and verify bundled contracts
+        if: always() && steps.source.outcome == 'success'
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm --prefix lu-desktop ci
+          npm --prefix lu-desktop run build 2>&1 | tee cp03-evidence/frontend-build.log
+          npm --prefix lu-desktop run check 2>&1 | tee cp03-evidence/frontend-check.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lu-cp03-source-frontend-${{ github.sha }}
+          path: cp03-evidence/
+          if-no-files-found: error
+          retention-days: 14
+  native:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify exact native source
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          mkdir -p cp03-evidence
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          printf '%s\n' "$SOURCE_SHA" > cp03-evidence/source-sha.txt
+          node scripts/verify-source-tree.mjs | tee cp03-evidence/source-lock.log
+          rustc --version | tee cp03-evidence/rust-version.txt
+      - name: Native Linux Tauri dependencies
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev libgtk-3-dev libxdo-dev patchelf libssl-dev pkg-config
+      - name: Build real React bundle and stage non-executable test resource fixtures
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm --prefix lu-desktop ci
+          npm --prefix lu-desktop run build
+          root=lu-desktop/src-tauri/resources/lu-inference
+          for name in llama-server.exe msvcp140.dll vcruntime140.dll vcruntime140_1.dll; do
+            test ! -e "$root/$name"
+            printf 'NOT_AN_ENGINE_CP03_SOURCE_TEST_PLACEHOLDER' > "$root/$name"
+          done
+      - name: Execute locked Rust filesystem, authorization, Reader and attachment regressions
+        shell: bash
+        env:
+          LU_PERF01_SOURCE_HEAD: ${{ github.sha }}
+        run: bash scripts/lu-cp03-grouped-native.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lu-cp03-native-${{ matrix.os }}-${{ github.sha }}
+          path: cp03-evidence/
+          if-no-files-found: error
+          retention-days: 14

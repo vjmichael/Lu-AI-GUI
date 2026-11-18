@@ -12,9 +12,10 @@ const desktop=readFileSync(new URL('../src-tauri/src/workspace_desktop.rs',
   import.meta.url),'utf8');
 const ui=readFileSync(new URL('../web/main.jsx',import.meta.url),'utf8');
 
-test('P01 discovery is registered only inside a human-picked read-only turn',()=>{
+test('P01 discovery is registered only inside a human-approved read-only turn',()=>{
   assert.match(registry,/pub mod native_file_discovery;/);
-  assert.match(bridge,/native_file_discovery::register_discovery_tool/);
+  assert.match(bridge,/native_file_discovery::\{register_discovery_tool,register_discovery_tool_from_dir\}/);
+  assert.match(bridge,/register_discovery_tool_from_dir\(&registry,&mut catalog,Arc::clone\(&directory\)\)/);
   assert.match(bridge,/register_discovery_tool\(&registry,&mut catalog,&root\)/);
   assert.match(bridge,/AuthorizedCapability/);
   assert.match(core,/pub const ID:&str="lu.file_discovery.discover"/);
@@ -22,6 +23,8 @@ test('P01 discovery is registered only inside a human-picked read-only turn',()=
   assert.match(core,/NativeToolRegistry/);
   assert.match(desktop,/blocking_pick_folder\(\)/);
   assert.match(desktop,/WorkspaceReadTurnSession::new_with_reader_observer\(/);
+  assert.match(desktop,/WorkspaceReadTurnSession::new_with_approved_directory\(/);
+  assert.match(desktop,/approved_workspace.pinned_directory\(\)/);
   assert.match(desktop,/blocking_pick_folder\(\)/);
 });
 

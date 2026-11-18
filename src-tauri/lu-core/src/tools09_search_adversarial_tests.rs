@@ -287,3 +287,20 @@ fn perf01_cpu_workspace_rejects_direct_symlink_as_approved_root(){
     drop(root);fs::remove_file(alias).unwrap();
     fs::remove_dir_all(path).unwrap();
 }
+
+#[cfg(target_os="linux")]
+#[test]
+fn cp03c_cpu_search_never_reopens_replaced_approved_root(){
+    let (path,root)=sandbox();
+    fs::write(path.join("original.txt"),"needle original").unwrap();
+    let held=std::fs::File::open(&path).unwrap();
+    let parked=path.with_extension("parked");fs::rename(&path,&parked).unwrap();
+    fs::create_dir(&path).unwrap();fs::write(path.join("hostile.txt"),"needle hostile").unwrap();
+    let result=search_approved_directory_cpu(held,"needle").unwrap();
+    assert_eq!(result.hits.len(),1);assert_eq!(result.hits[0].path,"original.txt");
+    assert!(result.hits[0].excerpt.contains("original"));
+    assert!(!result.hits[0].excerpt.contains("hostile"));
+    let regular=std::fs::File::open(path.join("hostile.txt")).unwrap();
+    assert!(search_approved_directory_cpu(regular,"needle").is_err());
+    drop(root);fs::remove_dir_all(parked).unwrap();fs::remove_dir_all(path).unwrap();
+}

@@ -5,7 +5,8 @@
 //! must choose the directory through a genuine user grant (never model text or
 //! a WebView-supplied path) and supply a real persisted-user-turn verifier.
 //! Tool registration is not itself authorization.
-use std::{collections::BTreeSet, path::Path, time::{Duration,SystemTime}};
+use std::{collections::BTreeSet, path::Path, sync::Arc, time::{Duration,SystemTime}};
+use cap_std::fs::Dir;
 use crate::{
     agent_tool_loop::{NativeToolTurn,ToolTurnError,ToolDispatchCheckpoint},
     contracts::{AuthorizationError,ToolAuthorizer,ToolDescriptor,ToolEffect,ToolInvocation},
@@ -17,14 +18,14 @@ use crate::{
     inference_host::Cancellation,
     model::ModelToolCatalog,
     model_turn_journal::ModelTurnJournal,
-    native_archive_inspect::register_archive_inspection_tool,
-    native_artifact_inspect::register_artifact_inspection,
-    native_file_extra::register_inspection_tools,
-    native_file_discovery::register_discovery_tool,
-    native_files::register_bundled_file_tools,
+    native_archive_inspect::{register_archive_inspection_tool,register_archive_inspection_tool_from_dir},
+    native_artifact_inspect::{register_artifact_inspection,register_artifact_inspection_from_dir},
+    native_file_extra::{register_inspection_tools,register_inspection_tools_from_dir},
+    native_file_discovery::{register_discovery_tool,register_discovery_tool_from_dir},
+    native_files::{register_bundled_file_tools,register_bundled_file_tools_from_dir},
     native_git_inspect::register_git_inspection_tools,
     native_reader_tool::{
-        register_reader,register_reader_with_host_observer,ReaderSourceObserver
+        register_reader,register_reader_with_host_observer,register_reader_from_dir,ReaderSourceObserver
     },
     registry::NativeToolRegistry,
     supervised_tool_generation::{
@@ -73,7 +74,7 @@ impl WorkspaceReadTurnSession{
         host_approved_root:&Path,
     )->Result<Self,WorkspaceReadError>{
         Self::new_with_capability(verifier,conversation_id,user_turn_id,task_id,
-            host_approved_root,None,None)
+            Some(host_approved_root),None,None,None)
     }
     /// P0-TOOLS-03: the trusted native desktop observes only completed real
     /// Reader source identity, bound to the SAME original human-selected
@@ -85,7 +86,7 @@ impl WorkspaceReadTurnSession{
     )->Result<Self,WorkspaceReadError>{
         Self::new_with_capability(
             verifier,conversation_id,user_turn_id,task_id,
-            host_approved_root,None,Some(observer)
+            Some(host_approved_root),None,None,Some(observer)
         )
     }
     /// Wave 4: read-only local Git from a HUMAN-picked repository directory
@@ -98,13 +99,30 @@ impl WorkspaceReadTurnSession{
         host_approved_repository:&Path,host_trusted_git:&Path,
     )->Result<Self,WorkspaceReadError>{
         Self::new_with_capability(verifier,conversation_id,user_turn_id,task_id,
-            host_approved_repository,Some(host_trusted_git),None)
+            Some(host_approved_repository),None,Some(host_trusted_git),None)
+    }
+    /// Native host has already obtained and verified the directory identity.
+    /// No pathname is accepted or reopened by the registered tools.
+    pub fn new_with_approved_directory(
+        verifier:&dyn TrustedUserTurnVerifier,
+        conversation_id:&str,user_turn_id:&str,task_id:&str,
+        directory:std::fs::File,observer:Option<ReaderSourceObserver>,
+    )->Result<Self,WorkspaceReadError>{
+        let meta=directory.metadata().map_err(|_|WorkspaceReadError::RootUnavailable)?;
+        if !meta.is_dir(){return Err(WorkspaceReadError::RootUnavailable)}
+        #[cfg(windows)]{
+            use std::os::windows::fs::MetadataExt;
+            if meta.file_attributes()&0x400!=0{return Err(WorkspaceReadError::RootUnavailable)}
+        }
+        Self::new_with_capability(verifier,conversation_id,user_turn_id,task_id,
+            None,Some(Arc::new(Dir::from_std_file(directory))),None,observer)
     }
     #[allow(clippy::too_many_arguments)]
     fn new_with_capability(
         verifier:&dyn TrustedUserTurnVerifier,
         conversation_id:&str,user_turn_id:&str,task_id:&str,
-        host_approved_root:&Path,git_executable:Option<&Path>,
+        host_approved_root:Option<&Path>,pinned_root:Option<Arc<Dir>>,
+        git_executable:Option<&Path>,
         reader_observer:Option<ReaderSourceObserver>,
     )->Result<Self,WorkspaceReadError>{
         if [conversation_id,user_turn_id,task_id].iter().any(|s|
@@ -113,6 +131,7 @@ impl WorkspaceReadTurnSession{
         ) || !verifier.verify_user_turn(conversation_id,user_turn_id){
             return Err(WorkspaceReadError::InvalidScope);
         }
+        let root=if let Some(host_approved_root)=host_approved_root{
         let root=host_approved_root.canonicalize()
             .map_err(|_|WorkspaceReadError::RootUnavailable)?;
         if !root.is_dir(){return Err(WorkspaceReadError::RootUnavailable)}
@@ -121,13 +140,30 @@ impl WorkspaceReadTurnSession{
         if meta.file_type().is_symlink() || !meta.is_dir(){
             return Err(WorkspaceReadError::RootUnavailable);
         }
+        Some(root)
+        }else{None};
         let registry=NativeToolRegistry::new();
-        let mut catalog=if let Some(executable)=git_executable{
+        let mut catalog=if let Some(directory)=pinned_root{
+            // Every registrar receives clones of the SAME capability. No
+            // model-supplied root, ambient reopen, or path-keyed cache.
+            let failed=|e:String|{eprintln!("Pinned workspace registration failed: {e}");WorkspaceReadError::RegistrationFailed};
+            let mut catalog=register_bundled_file_tools_from_dir(&registry,Arc::clone(&directory))
+                .map_err(|e|failed(format!("{e:?}")))?;
+            register_inspection_tools_from_dir(&registry,&mut catalog,Arc::clone(&directory)).map_err(failed)?;
+            register_discovery_tool_from_dir(&registry,&mut catalog,Arc::clone(&directory)).map_err(failed)?;
+            let reader=register_reader_from_dir(&registry,Arc::clone(&directory),reader_observer).map_err(failed)?;
+            catalog.absorb_registered(&registry,reader).map_err(|_|WorkspaceReadError::CatalogUnavailable)?;
+            register_archive_inspection_tool_from_dir(&registry,&mut catalog,Arc::clone(&directory)).map_err(failed)?;
+            register_artifact_inspection_from_dir(&registry,&mut catalog,directory).map_err(failed)?;
+            catalog
+        }else if let Some(executable)=git_executable{
+            let root=root.ok_or(WorkspaceReadError::RootUnavailable)?;
             let mut catalog=ModelToolCatalog::new();
             register_git_inspection_tools(&registry,&mut catalog,&root,executable)
                 .map_err(|e|{eprintln!("Workspace read tool registration failed: {e:?}");WorkspaceReadError::RegistrationFailed})?;
             catalog
         }else{
+            let root=root.ok_or(WorkspaceReadError::RootUnavailable)?;
             let mut catalog=register_bundled_file_tools(&registry,&root)
                 .map_err(|e|{eprintln!("Workspace read tool registration failed: {e:?}");WorkspaceReadError::RegistrationFailed})?;
             register_inspection_tools(&registry,&mut catalog,&root)
@@ -285,6 +321,59 @@ mod integrated_reader_tests{
         assert!(turn.authority.permitted_tool_ids(&origin).unwrap().is_empty());
         drop(turn);drop(journal);
         let _=std::fs::remove_dir_all(root);
+    }
+    #[cfg(target_os="linux")]
+    #[tokio::test]
+    async fn cp03_all_read_registrars_keep_approved_directory_identity(){
+        use std::io::Write;
+        use crate::supervised_tool_generation::NativeTurnRecord;
+        let base=directory();let _=std::fs::remove_dir_all(&base);
+        let root=base.join("approved");let parked=base.join("parked");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(root.join("original.txt"),b"approved-only marker").unwrap();
+        let mut zip=zip::ZipWriter::new(std::fs::File::create(root.join("source.zip")).unwrap());
+        zip.start_file("approved-member.txt",zip::write::SimpleFileOptions::default()).unwrap();
+        zip.write_all(b"approved ZIP").unwrap();zip.finish().unwrap();
+        let handle=std::fs::File::open(&root).unwrap();
+        // Simulate substitution in the narrow interval after verification,
+        // before tool registration. Registrars must not reopen by name.
+        std::fs::rename(&root,&parked).unwrap();std::fs::create_dir(&root).unwrap();
+        std::fs::write(root.join("original.txt"),b"hostile replacement").unwrap();
+        std::fs::write(root.join("hostile-only.txt"),b"hostile replacement").unwrap();
+        let mut zip=zip::ZipWriter::new(std::fs::File::create(root.join("source.zip")).unwrap());
+        zip.start_file("hostile-member.txt",zip::write::SimpleFileOptions::default()).unwrap();
+        zip.write_all(b"hostile ZIP").unwrap();zip.finish().unwrap();
+        let mut turn=WorkspaceReadTurnSession::new_with_approved_directory(
+            &OriginalTurn,"c-source","g-human","task-read",handle,None).unwrap();
+        let names=turn.capabilities().unwrap().into_iter().map(|t|t.public_name).collect::<BTreeSet<_>>();
+        assert_eq!(names.len(),8);assert!(!names.contains("lu_git_status"));
+        let journal=ModelTurnJournal::open(&base.join("turn.sqlite")).unwrap();
+        let mut model=Scripted{replies:VecDeque::from(vec![
+            r#"{"kind":"tool","name":"lu_files_list_directory","arguments":{}}"#.into(),
+            r#"{"kind":"tool","name":"lu_files_read_text","arguments":{"path":"original.txt"}}"#.into(),
+            r#"{"kind":"tool","name":"lu_files_stat","arguments":{"path":"original.txt"}}"#.into(),
+            r#"{"kind":"tool","name":"lu_files_search_text","arguments":{"query":"approved-only"}}"#.into(),
+            r#"{"kind":"tool","name":"lu_files_discover","arguments":{"query":"original.txt"}}"#.into(),
+            r#"{"kind":"tool","name":"lu_reader_read","arguments":{"path":"original.txt"}}"#.into(),
+            r#"{"kind":"tool","name":"lu_archive_list","arguments":{"path":"source.zip"}}"#.into(),
+            r#"{"kind":"tool","name":"lu_artifact_inspect","arguments":{"path":"original.txt","format":"text"}}"#.into(),
+            r#"{"kind":"final","text":"verified"}"#.into()
+        ])};
+        let result=turn.run_journaled("Inspect approved folder",&mut model,&Cancellation::default(),&journal).await.unwrap();
+        let feedback=result.records.iter().filter_map(|r|match r{NativeTurnRecord::ToolFeedback(value)=>Some(value),_=>None}).collect::<Vec<_>>();
+        assert_eq!(feedback.len(),8,"{feedback:?}");
+        for value in &feedback{assert_eq!(value["response"]["ok"],true,"{value}");assert!(!value.to_string().contains("hostile"),"{value}");}
+        assert!(feedback[0].to_string().contains("original.txt"));
+        assert!(feedback[1].to_string().contains("approved-only marker"));
+        assert_eq!(feedback[2]["response"]["result"]["size_bytes"],20);
+        assert!(feedback[3].to_string().contains("approved-only"));
+        assert!(feedback[4].to_string().contains("original.txt"));
+        assert!(feedback[5].to_string().contains("approved-only marker"));
+        assert!(feedback[6].to_string().contains("approved-member.txt"));
+        use sha2::{Sha256,Digest};
+        assert_eq!(feedback[7]["response"]["result"]["sha256"],format!("{:x}",Sha256::digest(b"approved-only marker")));
+        assert!(turn.authority.permitted_tool_ids(&turn.origin).unwrap().is_empty());
+        drop(turn);drop(journal);std::fs::remove_dir_all(base).unwrap();
     }
     #[test]
     fn source_document_reader_cannot_be_constructed_from_fabricated_user_turn(){

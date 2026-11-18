@@ -797,6 +797,7 @@ struct DesktopState {
     load_trace: Arc<Mutex<LoadTrace>>,
     engine_start_events:Arc<AtomicU64>,
     reader_generations: Mutex<HashMap<String,ReaderRunControl>>,
+    workspace_locations: workspace_desktop::WorkspaceLocations,
     source_reuse: lu_core::ai_operations::SourceReuseIndex,
     supervisor: Arc<TrustedInferenceSupervisor<PersistentLlamaBackend>>,
     background_tasks: Arc<lu_core::tasks::TaskStore>,
@@ -1315,6 +1316,7 @@ impl DesktopState {
             background_pressure,
             background_tasks,
             reader_generations:Mutex::new(HashMap::new()),
+            workspace_locations:workspace_desktop::WorkspaceLocations::default(),
             source_reuse:lu_core::ai_operations::SourceReuseIndex::new(),
             // Keep this path available for the separately initialized HF
             // transfer custody manager later in the same struct literal.
@@ -4460,6 +4462,7 @@ async fn lu_unload_model(
             .supervisor
             .unload(&session_id, &next_id("req-"))
             .map_err(|e| format!("unload: {e:?}"))?;
+        state.workspace_locations.clear()?;
         Ok(())
     })
     .await
@@ -4518,7 +4521,7 @@ fn lu_stream_reconnect(
 )->Result<Option<generation_queue::LiveStreamSnapshot>,String>{
     let runtime=state.supervisor.status()
         .map_err(|_|"Current model session status unavailable")?;
-    let Some(session_id)=runtime.session_id.as_deref() else{return Ok(None)};
+    let session_id=runtime.session_id.as_deref().unwrap_or("");
     state.generation_queue.reconnect_snapshot(session_id,&chat_id)
 }
 
@@ -5402,6 +5405,13 @@ async fn lu_generate_impl(
         return workspace_desktop::ask_git_for_chat(
             app,Arc::clone(state.inner()),session_id,chat_id,prompt,
         ).await?.ok_or_else(||"Git repository was not selected".into())
+    }
+    // Direct exact-file Reader outranks directory routing.
+    if !read_only_workspace.unwrap_or(false)&&image_refs.is_empty()&&max_new_tokens==512&&
+        reader_desktop::explicit_reader_file_path(&prompt).is_some(){
+        return reader_desktop::ask_reader_for_chat(
+            app,Arc::clone(state.inner()),session_id,chat_id,prompt,
+        ).await?.ok_or_else(||"Reader document was not approved".into())
     }
     let requested_workspace=read_only_workspace.unwrap_or(false) ||
         (image_refs.is_empty() &&

@@ -450,6 +450,16 @@ mod tests {
         assert!(!called);
     }
     #[test]
+    fn cp03d_model_free_search_uses_same_cancel_commit_fence(){
+        let q=Arc::new(GenerationQueue::default());
+        let (ticket,_)=q.enqueue("","c","g").unwrap();
+        ticket.wait_for_slot().unwrap();
+        assert!(q.cancel("other-session","g").is_err());
+        assert_eq!(q.cancel("","g"),Ok(CancelState::Active));
+        assert!(ticket.cancelled());
+        assert!(ticket.commit_completed("",||panic!("cancelled scan published result")).is_err());
+    }
+    #[test]
     fn final_journal_commit_is_ordered_against_cancellation(){
         let q=Arc::new(GenerationQueue::default());
         let (a,_)=q.enqueue("s","c","g").unwrap();

@@ -139,7 +139,8 @@ const tests = [
     send.includes('if (useWorkspaceTools && (images.length || textFiles.length))') &&
     /let requested_workspace=read_only_workspace.unwrap_or\(false\)\s*\|\|\s*\(image_refs.is_empty\(\)\s*&&\s*workspace_desktop::explicit_read_workspace_request\(&prompt\)\);/.test(host) &&
     /if requested_workspace\{[\s\S]*?workspace_desktop::validate_workspace_send_request\([\s\S]*?return workspace_desktop::ask_workspace_for_chat\(/.test(host) &&
-    workspaceHost.includes('chooser.dialog().file().blocking_pick_folder()') &&
+    workspaceHost.includes('blocking_pick_folder()') &&
+    workspaceHost.includes('ApprovedWorkspace::hold(path)') && workspaceHost.includes('blocking_show()') &&
     workspaceHost.includes('state.chats.append_user_with_turn_id(&chat_id,&generation_id,&prompt)?') &&
     workspaceHost.includes('ask_scoped_read_for_chat(app,state,session_id,chat_id,prompt,false).await')],
   ['native GGUF import and generate remain Lu-only', ui.includes("invoke('lu_import_model')") && ui.includes("invoke('lu_generate'")],

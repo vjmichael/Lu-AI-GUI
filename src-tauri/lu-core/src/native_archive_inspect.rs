@@ -444,6 +444,11 @@ pub fn register_archive_inspection_tool(
     }
     let root = Arc::new(Dir::open_ambient_dir(&root, ambient_authority())
         .map_err(|_| "trusted archive workspace root cannot be opened")?);
+    register_archive_inspection_tool_from_dir(registry,catalog,root)
+}
+pub(crate) fn register_archive_inspection_tool_from_dir(
+    registry:&NativeToolRegistry,catalog:&mut ModelToolCatalog,root:Arc<Dir>,
+)->Result<(),String>{
     let descriptor = ToolDescriptor {
         id: LIST.into(),
         display_name: "Inspect approved archive and package contents (read-only)".into(),

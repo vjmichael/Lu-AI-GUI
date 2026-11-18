@@ -376,8 +376,8 @@ fn search_with_cancel<F: Fn() -> bool>(
             #[cfg(target_os="linux")]
             {
                 use cap_std::fs::OpenOptionsExt;
-                // Linux O_NOFOLLOW: no final-component symlink swap during open.
-                opts.custom_flags(0o400000);
+                // O_NOFOLLOW | O_NONBLOCK: reject symlink and FIFO substitution.
+                opts.custom_flags(0o400000 | 0o4000);
             }
             let mut file = match dir.open_with(&name,&opts) {
                 Ok(f) => f,
@@ -556,6 +556,26 @@ pub fn search_host_approved_workspace_cpu(
     if !root.dir_metadata().is_ok_and(|m|m.is_dir()&&!is_reparse(&m)){
         return Err(bad("DENIED_SCOPE","selected root is not a safe opened directory"))
     }
+    search_cpu_in_open_directory(root,literal_query,||false)
+}
+
+/// Consume the host-approved handle, never reopen its original pathname.
+pub fn search_approved_directory_cpu(directory:std::fs::File,literal_query:&str)->Result<ApprovedCpuSearch,ToolFailure>{
+    search_approved_directory_cpu_cancellable(directory,literal_query,||false)
+}
+
+/// Host-owned cancellation is checked before and throughout the bounded scan.
+pub fn search_approved_directory_cpu_cancellable(directory:std::fs::File,literal_query:&str,cancelled:impl Fn()->bool)->Result<ApprovedCpuSearch,ToolFailure>{
+    let root=Dir::from_std_file(directory);
+    if !root.dir_metadata().is_ok_and(|m|m.is_dir()&&!is_reparse(&m)){
+        return Err(bad("DENIED_SCOPE","approved directory is unavailable"))
+    }
+    search_cpu_in_open_directory(root,literal_query,cancelled)
+}
+fn search_cpu_in_open_directory(root:Dir,literal_query:&str,cancelled:impl Fn()->bool)->Result<ApprovedCpuSearch,ToolFailure>{
+    if literal_query.len()<2||literal_query.len()>128||literal_query.chars().any(char::is_control){
+        return Err(bad("INVALID_QUERY","CPU literal request is not bounded"))
+    }
     let request=proto::SearchTextRequest{
         path:String::new(),
         query:literal_query.into(),
@@ -564,7 +584,8 @@ pub fn search_host_approved_workspace_cpu(
         recursive:Some(true),
         file_suffix:None,
     };
-    let result=search(&root,request)?;
+    let result=search_with_cancel(&root,request,&cancelled,std::time::Instant::now())?;
+    if cancelled(){return Err(bad("CANCELLED","search cancelled before returning results"))}
     let scanned=proto::SearchTextResult::decode(result.payload.bytes.as_slice())
         .map_err(|_|bad("BAD_PROTOBUF","CPU search output invalid"))?;
     Ok(ApprovedCpuSearch{
@@ -752,6 +773,12 @@ pub fn register_inspection_tools(
         Dir::open_ambient_dir(&canonical, ambient_authority())
             .map_err(|_| "cannot open authorized workspace")?,
     );
+    register_inspection_tools_from_dir(registry, catalog, root)
+}
+
+pub(crate) fn register_inspection_tools_from_dir(
+    registry: &NativeToolRegistry, catalog: &mut ModelToolCatalog, root: Arc<Dir>,
+) -> Result<(), String> {
     let descriptor = |id: &str, title: &str, input: &str, output: &str| ToolDescriptor {
         id: id.into(),
         display_name: title.into(),
@@ -848,6 +875,18 @@ mod recursive_search_tests {
         }
     }
 
+    #[test]
+    fn cp03d_cpu_search_checks_cancel_before_access_and_during_scan(){
+        let (path,dir)=fixture();
+        let stopped=search_approved_directory_cpu_cancellable(dir.try_clone().unwrap().into_std_file(),"needle",||true).unwrap_err();
+        assert_eq!(stopped.code,"CANCELLED");
+        let calls=std::cell::Cell::new(0);
+        let stopped=search_approved_directory_cpu_cancellable(dir.into_std_file(),"needle",||{
+            calls.set(calls.get()+1);calls.get()>4
+        }).unwrap_err();
+        assert_eq!(stopped.code,"CANCELLED");
+        std::fs::remove_dir_all(path).unwrap();
+    }
     #[test]
     fn recursive_search_remains_opt_in_and_scoped() {
         let (path, dir) = fixture();

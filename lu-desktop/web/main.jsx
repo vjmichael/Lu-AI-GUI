@@ -2813,10 +2813,10 @@ function App() {
   }
   function cancel() {
     const current = chatId && jobs[chatId];
-    if (!current?.generationId || current.phase==='submitting' || !runtime.sessionId || current.cancelling) return;
+    if (!current?.generationId || current.phase==='submitting' || current.cancelling) return;
     const origin = chatId;
     setJobs(prev => ({...prev,[origin]:{...prev[origin],cancelling:true}}));
-    invoke('lu_cancel', {sessionId: runtime.sessionId, generationId: current.generationId})
+    invoke('lu_cancel', {sessionId: runtime.sessionId??'', generationId: current.generationId})
       .catch(error => {
         setJobs(prev => prev[origin] ? ({...prev,[origin]:{...prev[origin],cancelling:false}}) : prev);
         if (currentChat.current === origin) setError(String(error));

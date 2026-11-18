@@ -268,6 +268,11 @@ pub fn register_artifact_inspection(
     if !root.is_dir(){return Err("artifact root unavailable".into());}
     let root=Arc::new(Dir::open_ambient_dir(root,ambient_authority())
         .map_err(|_|"artifact root unavailable")?);
+    register_artifact_inspection_from_dir(registry,catalog,root)
+}
+pub(crate) fn register_artifact_inspection_from_dir(
+    registry:&NativeToolRegistry,catalog:&mut ModelToolCatalog,root:Arc<Dir>,
+)->Result<(),String>{
     let descriptor=ToolDescriptor{id:TOOL_ID.into(),
         display_name:"Verify bounded output file structure and digest".into(),
         effect:ToolEffect::ReadWorkspace,input_type_url:INPUT.into(),

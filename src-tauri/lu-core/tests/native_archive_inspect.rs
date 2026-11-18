@@ -5,7 +5,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 use lu_core::{
-    agent_tool_loop::{NativeToolTurn, ToolTurnOutcome},
+    agent_tool_loop::{NativeToolTurn, ToolTurnOutcome, ToolTurnError},
     contracts::{AuthorizationError, ToolAuthorizer, ToolDescriptor, ToolEffect, ToolInvocation},
     conversation_authority::{
         AuthorizedCapability, BoundCallOrigin, ConversationAuthority, TaskAuthority,
@@ -177,17 +177,17 @@ async fn invalid_frames_scope_denial_and_missing_zip_are_rejected() {
         &cat,&auth,origin,"archive-scope".into(),&tools
     ).unwrap();
     auth.revoke_task("archive-task").unwrap();
-    let denied=turn.handle_model_reply(
+    // A revoked turn cannot even enter dispatch. The current turn controller
+    // checks the original advertised authority before parsing a model reply.
+    // Distinguish that terminal rejection from a dispatch-time typed denial.
+    let checkpoints=std::sync::atomic::AtomicUsize::new(0);
+    let denied=turn.handle_model_reply_observed(
         r#"{"kind":"tool","name":"lu_archive_list","arguments":{"path":"invalid.zip"}}"#,
-        &cat,&reg,&auth,&Allow
-    ).await.expect("revoked archive scope produces a paired typed tool denial");
-    let ToolTurnOutcome::ToolResult { data, .. } = denied else {
-        panic!("revoked archive tool returned a non-tool answer");
-    };
-    assert_eq!(data["ok"],false);
-    assert_eq!(data["error"]["code"],"PERMISSION_DENIED");
-    assert_eq!(data["error"]["retryable"],false);
-    assert_eq!(turn.step_count(),1);
+        &cat,&reg,&auth,&Allow,&|_|{checkpoints.fetch_add(1,Ordering::SeqCst);}
+    ).await;
+    assert!(matches!(denied,Err(ToolTurnError::Revoked)));
+    assert_eq!(checkpoints.load(Ordering::SeqCst),0,"revoked tool must not dispatch");
+    assert_eq!(turn.step_count(),0);
     // The registered archive inspector retains a pinned ZIP File. Linux
     // permits unlinking an open file, while Windows does not. Release all
     // native handles before removing this synthetic temporary repository.

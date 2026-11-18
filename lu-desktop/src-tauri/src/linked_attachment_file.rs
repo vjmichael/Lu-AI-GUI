@@ -20,6 +20,7 @@ impl LinkFailure{
 pub(crate) struct OpenedLink{
     pub(crate) path:PathBuf,
     pub(crate) bytes:Vec<u8>,
+    pub(crate) source_epoch:u64,
 }
 fn safe_meta(meta:&Metadata)->bool{
     if meta.file_type().is_symlink(){return false}
@@ -39,7 +40,7 @@ fn same_file_state(a:&Metadata,b:&Metadata)->bool{
     true
 }
 pub(crate) fn safe_absolute_path(path:&Path)->bool{
-    if !path.is_absolute()||path.to_str().is_none_or(|s|s.len()>16*1024||s.chars().any(char::is_control))||
+    if !path.is_absolute()||path.to_str().is_none_or(|s|s.len()>16*1024||s.chars().any(|c|c.is_control()||matches!(c,'\u{202a}'..='\u{202e}'|'\u{2066}'..='\u{2069}')))||
        path.components().any(|c|matches!(c,Component::ParentDir|Component::CurDir)){
         return false
     }
@@ -115,20 +116,20 @@ fn open_guarded(path:&Path)->Result<GuardedOpen,LinkFailure>{
 #[cfg(not(any(windows,all(target_os="linux",any(target_arch="x86_64",target_arch="aarch64")))))]
 fn open_guarded(_path:&Path)->Result<GuardedOpen,LinkFailure>{Err(LinkFailure::Unsafe)}
 #[cfg(windows)]
-pub(crate) fn same_handle(a:&File,b:&File)->bool{
+pub(crate) fn handle_identity(file:&File)->Option<(u64,[u8;16])>{
     use std::{ffi::c_void,os::windows::io::AsRawHandle};
     #[repr(C)]
-    #[derive(PartialEq,Eq)]
     struct FileId{volume:u64,id:[u8;16]}
     #[link(name="kernel32")]
     extern "system"{fn GetFileInformationByHandleEx(handle:*mut c_void,class:i32,info:*mut c_void,len:u32)->i32;}
-    fn id(file:&File)->Option<FileId>{
-        let mut result=FileId{volume:0,id:[0;16]};
-        if unsafe{GetFileInformationByHandleEx(file.as_raw_handle(),18,(&mut result as *mut FileId).cast(),
-            std::mem::size_of::<FileId>() as u32)}==0{return None}
-        Some(result)
-    }
-    matches!((id(a),id(b)),(Some(left),Some(right)) if left==right)
+    let mut result=FileId{volume:0,id:[0;16]};
+    if unsafe{GetFileInformationByHandleEx(file.as_raw_handle(),18,(&mut result as *mut FileId).cast(),
+        std::mem::size_of::<FileId>() as u32)}==0{return None}
+    Some((result.volume,result.id))
+}
+#[cfg(windows)]
+pub(crate) fn same_handle(a:&File,b:&File)->bool{
+    matches!((handle_identity(a),handle_identity(b)),(Some(left),Some(right)) if left==right)
 }
 #[cfg(not(windows))]
 fn same_handle(a:&File,b:&File)->bool{
@@ -136,23 +137,43 @@ fn same_handle(a:&File,b:&File)->bool{
 }
 /// Only bounded bytes remain in RAM for the authorized operation. The caller
 /// independently verifies the saved SHA-256; the file is never mutated.
+pub(crate) struct HeldOriginal{
+    path:PathBuf,before:Metadata,guarded:GuardedOpen,
+}
+impl HeldOriginal{
+    pub(crate) fn hold(path:&Path,expected_bytes:Option<u64>)->Result<Self,LinkFailure>{
+        let before=check_path(path)?;
+        if before.len()==0||before.len()>MAX_LINKED_FILE_BYTES{return Err(LinkFailure::InvalidSize)}
+        if expected_bytes.is_some_and(|n|n!=before.len()){return Err(LinkFailure::Changed)}
+        let guarded=open_guarded(path)?;
+        let opened=guarded.file.metadata().map_err(|_|LinkFailure::Unavailable)?;
+        if !same_file_state(&before,&opened){return Err(LinkFailure::Changed)}
+        let held=Self{path:path.to_path_buf(),before:opened,guarded};
+        held.verify()?;Ok(held)
+    }
+    fn verify(&self)->Result<(),LinkFailure>{
+        let current=self.guarded.file.metadata().map_err(|_|LinkFailure::Unavailable)?;
+        let named=check_path(&self.path)?;
+        let reopened=open_guarded(&self.path)?;
+        if !same_file_state(&self.before,&current)||!same_file_state(&current,&named)||
+           !same_handle(&self.guarded.file,&reopened.file){return Err(LinkFailure::Changed)}
+        Ok(())
+    }
+    pub(crate) fn read(mut self)->Result<OpenedLink,LinkFailure>{
+        self.verify()?;
+        let mut bytes=Vec::with_capacity(self.before.len() as usize);
+        (&mut self.guarded.file).take(self.before.len()+1).read_to_end(&mut bytes)
+            .map_err(|_|LinkFailure::Unavailable)?;
+        self.verify()?;
+        if bytes.len() as u64!=self.before.len(){return Err(LinkFailure::Changed)}
+        let source_epoch=self.before.modified().ok()
+            .and_then(|t|t.duration_since(std::time::UNIX_EPOCH).ok())
+            .and_then(|t|u64::try_from(t.as_nanos()).ok()).unwrap_or(0);
+        Ok(OpenedLink{path:self.path,bytes,source_epoch})
+    }
+}
 pub(crate) fn open_original(path:&Path,expected_bytes:Option<u64>)->Result<OpenedLink,LinkFailure>{
-    let before=check_path(path)?;
-    if before.len()==0||before.len()>MAX_LINKED_FILE_BYTES{return Err(LinkFailure::InvalidSize)}
-    if expected_bytes.is_some_and(|n|n!=before.len()){return Err(LinkFailure::Changed)}
-    let mut guarded=open_guarded(path)?;
-    let opened=guarded.file.metadata().map_err(|_|LinkFailure::Unavailable)?;
-    if !same_file_state(&before,&opened){return Err(LinkFailure::Changed)}
-    let mut bytes=Vec::with_capacity(before.len() as usize);
-    (&mut guarded.file).take(before.len()+1).read_to_end(&mut bytes).map_err(|_|LinkFailure::Unavailable)?;
-    let after=guarded.file.metadata().map_err(|_|LinkFailure::Unavailable)?;
-    let named=check_path(path)?;
-    // Reopen the exact spelling with the same kernel guards; never use a
-    // previously canonicalized or attacker-substituted path for data reads.
-    let reopened=open_guarded(path)?;
-    if bytes.len() as u64!=before.len()||!same_file_state(&opened,&after)||!same_file_state(&after,&named)||
-       !same_handle(&guarded.file,&reopened.file){return Err(LinkFailure::Changed)}
-    Ok(OpenedLink{path:path.to_path_buf(),bytes})
+    HeldOriginal::hold(path,expected_bytes)?.read()
 }
 
 #[cfg(test)]
@@ -162,6 +183,18 @@ mod tests{
         let p=std::env::temp_dir().join(format!("lu-linked-source-{}-{}",std::process::id(),
             std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
         fs::create_dir(&p).unwrap();p.canonicalize().unwrap()
+    }
+    #[cfg(target_os="linux")]
+    #[test]
+    fn cp03c_held_exact_file_refuses_replacement_or_mutation_before_read(){
+        let dir=root();let path=dir.join("report.txt");fs::write(&path,b"original").unwrap();
+        let held=HeldOriginal::hold(&path,None).unwrap();
+        fs::rename(&path,dir.join("parked.txt")).unwrap();fs::write(&path,b"hostile!").unwrap();
+        assert!(held.read().is_err());
+        let held=HeldOriginal::hold(&path,None).unwrap();fs::write(&path,b"changed!").unwrap();
+        assert!(held.read().is_err());
+        assert_eq!(HeldOriginal::hold(&path,None).unwrap().read().unwrap().bytes,b"changed!");
+        fs::remove_dir_all(dir).unwrap();
     }
     #[test]
     fn selected_original_is_read_without_creating_a_copy(){

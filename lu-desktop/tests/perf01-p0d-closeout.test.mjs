@@ -16,13 +16,17 @@ const perf=read('../src-tauri/src/perf01_telemetry.rs');
 const ui=read('../web/main.jsx');
 
 test('PERF01 P0D strict CPU intents reject model, filesystem root, or broad search by mere text',()=>{
-  assert.equal(isHostCpuWorkspaceLookup('Search selected workspace for: needle'),true);
+  for(const prompt of ['Search selected workspace for: needle','Search this folder for: needle',
+    'Search my Downloads for: needle','Search "/home/operator/Research Notes" for: needle',
+    'Search "D:\\Research Notes 日本語" for: needle'])assert.equal(isHostCpuWorkspaceLookup(prompt),true,prompt);
   assert.equal(isHostCpuChatCountsQuestion('Show current chat counts'),true);
   assert.equal(isHostCpuChatLookup('Search this chat for: needle'),true);
   assert.equal(isHostModelStatusQuestion('Show local model status'),true);
   for(const prompt of [
     'Search selected workspace for: ',
     'Search selected workspace for: x',
+    'Search relative/folder for: needle',
+    'Search "/one" and "/two" for: needle',
     'Please search the selected workspace for: needle',
     'Search selected workspace for: <script>',
     'Search selected workspace for: a\nb',
@@ -34,27 +38,30 @@ test('PERF01 P0D strict CPU intents reject model, filesystem root, or broad sear
 test('PERF01 P0D native host independently reclassifies current human text first',()=>{
   assert.match(router,/ApprovedWorkspaceLiteral\(String\)/);
   assert.match(router,/CurrentChatCounts/);
-  assert.match(router,/input\.strip_prefix\("Search selected workspace for: "\)/);
+  assert.match(router,/explicit_cpu_workspace_query\(input\)/);
   assert.match(host,/perf01_router::Route::ApprovedWorkspaceLiteral\(needle\)/);
   assert.match(host,/workspace_desktop::cpu_search_workspace_for_chat\(/);
   assert.match(host,/perf01_router::count_current_chat\(&host\.chats,&chat_id\)/);
   assert.match(ui,/isHostCpuWorkspaceLookup\(prompt\)/);
   assert.match(ui,/isHostCpuChatCountsQuestion\(prompt\)/);
 });
-test('PERF01 P0D CPU workspace only reads via fresh OS folder picker and same-session fence',()=>{
+test('PERF01 P0D CPU workspace only reads via fresh native consent, pinned capability and same-session fence',()=>{
   assert.match(workspace,/blocking_pick_folder\(\)/);
   assert.match(workspace,/selected\.into_path\(\)/);
   assert.match(workspace,/if !is_real_directory\(&root\)/);
   assert.match(workspace,/now\.session_id!=expected_session\|\|now\.model_ref!=expected_model/);
-  assert.match(workspace,/search_host_approved_workspace_cpu\(&root,&literal\)/);
-  assert.match(workspace,/host\.chats\.append_user_with_turn_id\(&chat_id,&gid,&prompt\)/);
+  assert.match(workspace,/approved\.pinned_directory\(\)/);
+  assert.match(workspace,/search_approved_directory_cpu_cancellable\(directory,&literal,/);
+  assert.match(workspace,/verifier\.verify_user_turn\(&chat_id,&gid\)/);
+  assert.match(workspace,/Allow once/);
+  assert.match(workspace,/enqueue_with_class_committing\([\s\S]*?state\.chats\.append_user_with_turn_id\(&chat_id,&gid,&prompt\)/);
   assert.match(workspace,/host\.chats\.complete\(&chat_id,&gid\)/);
   assert.match(workspace,/"APPROVED_WORKSPACE_LITERAL"/);
   assert.doesNotMatch(workspace,/std::process::Command::new\(/);
 });
 test('PERF01 native CPU scanner is the original bounded TOOLS-09 code',()=>{
   assert.match(scanner,/pub fn search_host_approved_workspace_cpu\(/);
-  assert.match(scanner,/let result=search\(&root,request\)\?/);
+  assert.match(scanner,/let result=search_with_cancel\(&root,request,&cancelled,/);
   assert.match(scanner,/const MAX_FILE_BYTES: u64 = 64 \* 1024/);
   assert.match(scanner,/O_DIRECTORY\|O_NOFOLLOW/);
   assert.match(scanner,/selected directory changed during admission/);

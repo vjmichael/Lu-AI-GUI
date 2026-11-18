@@ -403,7 +403,18 @@ fn register_bundled_file_tools_inner(
     // use capability-relative methods on this handle.
     let root = Dir::open_ambient_dir(&root, ambient_authority())
         .map_err(|e| FileBundleError::InvalidRoot(e.to_string()))?;
-    let root = Arc::new(root);
+    register_bundled_file_tools_from_dir_inner(registry, Arc::new(root), pinned)
+}
+
+/// Host-only: all filesystem tools use the already-approved directory handle.
+pub(crate) fn register_bundled_file_tools_from_dir(
+    registry: &NativeToolRegistry, root: Arc<Dir>,
+) -> Result<ModelToolCatalog, FileBundleError> {
+    register_bundled_file_tools_from_dir_inner(registry, root, None)
+}
+fn register_bundled_file_tools_from_dir_inner(
+    registry: &NativeToolRegistry, root: Arc<Dir>, pinned: Option<Arc<PinnedRead>>,
+) -> Result<ModelToolCatalog, FileBundleError> {
     let read = descriptor(READ_ID, "Read UTF-8 file", READ_INPUT, READ_OUTPUT);
     let list = descriptor(LIST_ID, "List directory entries", LIST_INPUT, LIST_OUTPUT);
     registry

@@ -60,16 +60,25 @@ export function isHostModelStatusQuestion(value){
 }
 
 
-/** Human-visible hint only. Native Rust reclassifies and requires an OS picker. */
+/** Presentation-only CPU search admission. Rust reclassifies the original
+ * text and obtains a native-confirmed directory handle before reading. */
 export function isHostCpuWorkspaceLookup(value){
   if(typeof value!=='string')return false;
-  const s=value.trim();
-  const prefix='Search selected workspace for: ';
-  if(s.length>512||!s.startsWith(prefix)||s.includes('<|')||
-     s.toLowerCase().includes('[attached text file:'))return false;
-  const query=s.slice(prefix.length);
-  return query.length>=2&&query.length<=128&&query.trim()===query&&
-    !/[\u0000-\u001f\u007f<>\x60]/.test(query);
+  const s=value.trim(), lower=s.toLowerCase();
+  const bytes=x=>new TextEncoder().encode(x).length;
+  if(bytes(s)>512||!lower.startsWith('search ')||
+     /[\u0000-\u001f\u007f-\u009f<>\x60]/.test(s)||lower.includes('[attached text file:'))return false;
+  const at=lower.indexOf(' for: ');
+  if(at<7)return false;
+  const scope=s.slice(7,at).trim(), query=s.slice(at+6);
+  const alias=scope.toLowerCase().replace(/^my /,'');
+  const aliases=['desktop','desktop folder','documents','documents folder','downloads','downloads folder',
+    'this folder','this workspace','this directory','selected workspace','selected folder','selected directory',
+    'current folder','current workspace','current directory'];
+  let path=scope;
+  if(path.startsWith('"')){if(!path.endsWith('"'))return false;path=path.slice(1,-1);}
+  if(!aliases.includes(alias)&&(!path||path.includes('"')||!(/^(?:\/|\\\\|[A-Za-z]:)/.test(path))))return false;
+  return bytes(query)>=2&&bytes(query)<=128&&query.trim()===query;
 }
 /** Indexed current-ANSF counts, never cross-chat search or task authority. */
 export function isHostCpuChatCountsQuestion(value){
