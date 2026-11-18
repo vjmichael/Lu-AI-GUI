@@ -1,0 +1,59 @@
+name: Lu E1 Reviewed Application Admission Native Acceptance
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: lu-e1-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  frozen-source:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify exact frozen source-tree Git blobs
+        run: node scripts/verify-source-tree.mjs
+  native-executable-and-catalog:
+    needs: frozen-source
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - name: Actual OS identity and scoped executable preflight, no process launch
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p e1-native-evidence
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_app_admission::tests -- --nocapture 2>&1 | tee e1-native-evidence/app-preflight.log
+      - name: Actual OS reviewed application catalog and version digest binding
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_app_catalog::tests -- --nocapture 2>&1 | tee e1-native-evidence/app-catalog.log
+      - name: Retain existing external app model boundary read-only restriction
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_external_app_action::tests -- --nocapture 2>&1 | tee e1-native-evidence/model-tool-boundary.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lu-e1-native-app-admission-${{ matrix.os }}
+          path: e1-native-evidence/
+          if-no-files-found: warn
+          retention-days: 14

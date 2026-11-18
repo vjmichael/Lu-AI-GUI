@@ -7,7 +7,7 @@
 //! GGUF streaming engine or persist a transcript; adapters integrate later.
 //! There is no dependency on Jan Cowork or MCP.
 
-use serde_json::{json, Value};
+use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::collections::BTreeSet;
 
@@ -17,13 +17,88 @@ use crate::{
     journal::EffectJournal,
     model::{ModelToolCatalog, ModelToolError, MAX_ADVERTISED_TOOLS},
     model_json_boundary::{
-        parse_model_boundary, serialize_host_boundary, JsonBoundaryError, JsonRepairStatus,
+        parse_model_boundary, serialize_host_tool_feedback_boundary, JsonBoundaryError, JsonRepairStatus,
     },
     registry::NativeToolRegistry,
 };
 
-pub const MAX_TOOL_STEPS: u32 = 8;
+/// Counter overflow sentinel, NOT a small fixed ceiling on useful tool calls.
+/// Existing per-turn grants, verified progress and cancellation govern execution.
+pub const MAX_TOOL_STEPS:u32=u32::MAX;
+pub const MAX_IDENTICAL_RESULTS:u8=3;
 pub const MAX_MODEL_FRAME_BYTES: usize = 64 * 1024;
+
+/// Original TOOLS-08 semantic-progress witness recovered inside the existing
+/// native turn. A different model-selected search string is not new evidence
+/// if the typed decoder returns the same substantive read result. This guard
+/// neither authorizes tools nor introduces a fixed productive-step ceiling.
+pub const MAX_STALLED_SEMANTIC_READS: u8 = 8;
+
+fn stable_read_evidence(value: &Value) -> Value {
+    match value {
+        Value::Object(items) => {
+            let mut stable = serde_json::Map::new();
+            for (key, child) in items {
+                // Call identity and elapsed-time decorations cannot establish
+                // fresh information. A real source path or result body can.
+                if matches!(key.as_str(),
+                    "call_id" | "request_id" | "duration_ms" | "elapsed_ms" |
+                    "timestamp" | "created_at" | "updated_at" | "execution_time"
+                ) {
+                    continue;
+                }
+                stable.insert(key.clone(), stable_read_evidence(child));
+            }
+            Value::Object(stable)
+        }
+        Value::Array(items) => Value::Array(items.iter().map(stable_read_evidence).collect()),
+        _ => value.clone(),
+    }
+}
+
+// Exact native worker/oracle method pairing. Model text and an arbitrary
+// first-party codec's "ok" field cannot promote a planned deliverable.
+fn verified_reviewed_oracle(tool_id: &str, data: &Value) -> bool {
+    if data.get("ok").and_then(Value::as_bool) != Some(true) {
+        return false;
+    }
+    let method = data.pointer("/result/independentOutcome/method")
+        .and_then(Value::as_str);
+    let status = data.pointer("/result/independentOutcome/status")
+        .and_then(Value::as_str);
+    if status != Some("VERIFIED") { return false; }
+    match tool_id {
+        "lu.reviewed.git.head" => method == Some("GIT_HEAD_DIRECT_V1"),
+        "lu.reviewed.git.status" => method == Some("GIT_STATUS_INDEX_TREE_V1"),
+        "lu.reviewed.git.branch" => method == Some("GIT_BRANCH_DIRECT_V1"),
+        "lu.reviewed.git.history" => matches!(method,
+            Some("GIT_HISTORY_LOOSE_DAG_V1" | "GIT_HISTORY_OBJECT_DAG_V2")),
+        "lu.reviewed.media.facts" => matches!(method,
+            Some("WAV_PCM_DIRECT_V1" | "MP4_BOXES_DIRECT_V1")),
+        _ => false,
+    }
+}
+
+fn substantive_read_digest(data: &Value) -> Option<String> {
+    if data.get("ok")?.as_bool()? != true { return None; }
+    let observed = data.get("result")?.as_object()?;
+    // Do not treat a successful status, echoed query, timing, file count,
+    // or unrecognized codec shape as positive evidence of progress.
+    const ACTUAL_DATA: &[&str] = &[
+        "content", "text", "entries", "matches", "hits", "files",
+        "diff", "commits", "items", "rows", "data", "results",
+        "evidence", "issues"
+    ];
+    let mut semantic = serde_json::Map::new();
+    for field in ACTUAL_DATA {
+        if let Some(value) = observed.get(*field) {
+            semantic.insert((*field).into(), stable_read_evidence(value));
+        }
+    }
+    if semantic.is_empty() { return None; }
+    let encoded = serde_json::to_vec(&semantic).ok()?;
+    Some(format!("{:x}", Sha256::digest(&encoded)))
+}
 
 // Compiled-in host observation with no model-supplied identifiers or text.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -54,7 +129,10 @@ pub enum ToolTurnError {
     UnexpectedFields,
     TooLarge,
     NoAuthorizedTools,
+    /// A host-reviewed factual task requires an actual native observation.
+    ObservationRequiredBeforeFinal,
     StepLimit,
+    NoProgress,
     AlreadyFinished,
     Revoked,
     ReadOnlyTurnViolation,
@@ -67,10 +145,29 @@ pub struct NativeToolTurn {
     origin: BoundCallOrigin,
     workspace_id: String,
     advertised: BTreeSet<String>,
+    // Snapshot ONLY the native IDs behind tools advertised for this turn.
+    // A grant to an unrelated tool cannot keep a revoked model context alive.
+    continuation_native_ids: BTreeSet<String>,
     steps: u32,
     done: bool,
     last_repair: JsonRepairStatus,
     read_only: bool,
+    requires_observed_tool_result: bool,
+    observed_tool_result: bool,
+    // Host-only plan admission: a successful tool reply does not establish a
+    // verified deliverable when the independent source oracle is UNSUPPORTED.
+    requires_verified_independent_outcome: bool,
+    observed_verified_independent_outcome: bool,
+    previous_request_digest:Option<String>,
+    previous_result_digest:Option<String>,
+    identical_result_count:u8,
+    // Host-decoded observations only, never model-asserted progress.
+    seen_read_evidence:BTreeSet<String>,
+    stalled_semantic_reads:u8,
+    // A new model call ID is never new human authority for an already
+    // attempted effect. Keep exact normalized proposals across interleaving
+    // observations and distinct work, not only the immediately previous call.
+    seen_effectful_requests:BTreeSet<String>,
 }
 
 impl NativeToolTurn {
@@ -104,14 +201,34 @@ impl NativeToolTurn {
         catalog
             .schemas(&advertised)
             .map_err(ToolTurnError::Catalog)?;
+        let continuation_native_ids: BTreeSet<String> = permitted.into_iter()
+            .filter(|id| {
+                let names = catalog.names_for_native_ids(&BTreeSet::from([id.clone()]));
+                !names.is_disjoint(&advertised)
+            })
+            .collect();
+        if continuation_native_ids.is_empty() {
+            return Err(ToolTurnError::NoAuthorizedTools);
+        }
         Ok(Self {
             origin,
             workspace_id: host_workspace_id,
             advertised,
+            continuation_native_ids,
             steps: 0,
             done: false,
             last_repair: JsonRepairStatus::Unchanged,
             read_only: false,
+            requires_observed_tool_result: false,
+            observed_tool_result: false,
+            requires_verified_independent_outcome: false,
+            observed_verified_independent_outcome: false,
+            previous_request_digest:None,
+            previous_result_digest:None,
+            identical_result_count:0,
+            seen_read_evidence:BTreeSet::new(),
+            stalled_semantic_reads:0,
+            seen_effectful_requests:BTreeSet::new(),
         })
     }
 
@@ -160,6 +277,45 @@ impl NativeToolTurn {
             .map_err(ToolTurnError::Catalog)
     }
 
+    /// Host-only admission for a reviewed observation task. This never
+    /// selects a native tool, changes a grant or trusts historical memory.
+    pub fn require_observed_tool_result(&mut self) {
+        self.requires_observed_tool_result = true;
+    }
+
+    /// Applied only after an independently authorized native planned-step
+    /// preflight. Never called by a model or inferred from plan approval.
+    pub fn require_verified_independent_outcome(&mut self) {
+        self.requires_observed_tool_result = true;
+        self.requires_verified_independent_outcome = true;
+    }
+
+    pub fn needs_observed_tool_result(&self) -> bool {
+        self.requires_observed_tool_result
+    }
+
+    fn ensure_final_has_required_observation(&self) -> Result<(), ToolTurnError> {
+        if self.requires_observed_tool_result && !self.observed_tool_result {
+            return Err(ToolTurnError::ObservationRequiredBeforeFinal);
+        }
+        if self.requires_verified_independent_outcome
+            && !self.observed_verified_independent_outcome {
+            return Err(ToolTurnError::ObservationRequiredBeforeFinal);
+        }
+        Ok(())
+    }
+
+    /// Read-only model discovery from an already authenticated user task.
+    /// Never expose an uninstalled native codec or widen the advertised set.
+    pub fn live_schemas(
+        &self,
+        catalog: &ModelToolCatalog,
+        registry: &NativeToolRegistry,
+    ) -> Result<Vec<Value>, ToolTurnError> {
+        catalog.live_schemas(&self.advertised, registry)
+            .map_err(ToolTurnError::Catalog)
+    }
+
     pub fn step_count(&self) -> u32 {
         self.steps
     }
@@ -169,6 +325,30 @@ impl NativeToolTurn {
     /// This does not undo a tool effect that already completed.
     pub fn halt(&mut self) {
         self.done = true;
+    }
+
+    /// Host-only live-session binding for an independently reviewed plan step.
+    /// Scheduled Git/media effects require BOTH the model-visible execute ID
+    /// and the host-only read ID to remain authorized for every continuation.
+    /// This never opens a new grant; model output cannot call this API.
+    pub fn require_native_continuation_capabilities(
+        &mut self,
+        authority: &ConversationAuthority,
+        required_ids: &[&str],
+    ) -> Result<(), ToolTurnError> {
+        if self.done || required_ids.is_empty() {
+            return Err(ToolTurnError::Revoked);
+        }
+        let permitted = authority
+            .permitted_tool_ids(&self.origin)
+            .map_err(ToolTurnError::Unauthorized)?;
+        if required_ids.iter().any(|id| !permitted.contains(*id)) {
+            return Err(ToolTurnError::Revoked);
+        }
+        for id in required_ids {
+            self.continuation_native_ids.insert((*id).into());
+        }
+        Ok(())
     }
 
     /// A previous valid grant never authorizes a later model continuation.
@@ -185,7 +365,7 @@ impl NativeToolTurn {
         let permitted = authority
             .permitted_tool_ids(&self.origin)
             .map_err(ToolTurnError::Unauthorized)?;
-        if permitted.is_empty() {
+        if !self.continuation_native_ids.is_subset(&permitted) {
             return Err(ToolTurnError::Revoked);
         }
         Ok(())
@@ -281,6 +461,10 @@ impl NativeToolTurn {
         if self.done {
             return Err(ToolTurnError::AlreadyFinished);
         }
+        // Every model reply, including prose/JSON finalization, must retain
+        // its ORIGINAL advertised grants. An unrelated surviving grant never
+        // makes an old model-tool context safe to continue.
+        self.ensure_continuation_authorized(authority)?;
         if raw.len() > MAX_MODEL_FRAME_BYTES {
             return Err(ToolTurnError::TooLarge);
         }
@@ -298,6 +482,9 @@ impl NativeToolTurn {
                 let plain_final = !text.is_empty()
                     && !matches!(text.as_bytes()[0], b'{' | b'[' | b'"' | b'`')
                     && !text.contains("<|")
+                    && !text.contains("<think>")
+                    && !text.contains("</think>")
+                    && !text.contains("```")
                     && !text.contains("\"kind\"")
                     && !text
                         .chars()
@@ -314,6 +501,7 @@ impl NativeToolTurn {
                     if current.is_empty() {
                         return Err(ToolTurnError::Revoked);
                     }
+                    self.ensure_final_has_required_observation()?;
                     self.done = true;
                     return Ok(ToolTurnOutcome::FinalText(text.to_owned()));
                 }
@@ -341,6 +529,7 @@ impl NativeToolTurn {
                 if current.is_empty() {
                     return Err(ToolTurnError::Revoked);
                 }
+                self.ensure_final_has_required_observation()?;
                 self.done = true;
                 return Ok(ToolTurnOutcome::FinalText(text.to_owned()));
             }
@@ -367,6 +556,7 @@ impl NativeToolTurn {
             if current.is_empty() {
                 return Err(ToolTurnError::Revoked);
             }
+            self.ensure_final_has_required_observation()?;
             self.done = true;
             return Ok(ToolTurnOutcome::FinalText(text.to_owned()));
         }
@@ -395,6 +585,17 @@ impl NativeToolTurn {
             .ok_or(ToolTurnError::MalformedModelReply)?;
         let encoded =
             serde_json::to_string(args).map_err(|_| ToolTurnError::MalformedModelReply)?;
+        // Stable semantic request witness excludes Lu's generated call ID.
+        let mut request_hasher=Sha256::new();
+        request_hasher.update(name.as_bytes());
+        request_hasher.update([0]);
+        request_hasher.update(encoded.as_bytes());
+        let request_digest=format!("{:x}",request_hasher.finalize());
+        if self.previous_request_digest.as_deref()==Some(&request_digest) &&
+            self.identical_result_count>=MAX_IDENTICAL_RESULTS{
+            self.halt();
+            return Err(ToolTurnError::NoProgress)
+        }
         let digest = Sha256::digest(self.origin.task_id.as_bytes());
         let prefix = digest
             .iter()
@@ -412,16 +613,40 @@ impl NativeToolTurn {
             )
             .map_err(ToolTurnError::Catalog)?;
 
-        if self.read_only {
-            let descriptors = registry
-                .tools()
-                .map_err(|_| ToolTurnError::ReadOnlyTurnViolation)?;
-            if !descriptors.iter().any(|descriptor| {
-                descriptor.id == invocation.tool_id
-                    && descriptor.effect == ToolEffect::ReadWorkspace
-            }) {
-                return Err(ToolTurnError::ReadOnlyTurnViolation);
-            }
+        let descriptors=registry.tools()
+            .map_err(|_|ToolTurnError::ReadOnlyTurnViolation)?;
+        let descriptor=descriptors.iter().find(|d|d.id==invocation.tool_id)
+            .ok_or(ToolTurnError::ReadOnlyTurnViolation)?;
+        if self.read_only && descriptor.effect!=ToolEffect::ReadWorkspace{
+            return Err(ToolTurnError::ReadOnlyTurnViolation)
+        }
+        // Do not dispatch another observed read after eight successive
+        // semantically identical/no-information read outcomes. This is not a
+        // new model tool or a separate execution controller. Non-read effects
+        // still require their own current, independent human/host approval.
+        if matches!(descriptor.effect, ToolEffect::ReadWorkspace | ToolEffect::NetworkRead)
+            && self.stalled_semantic_reads >= MAX_STALLED_SEMANTIC_READS
+        {
+            self.halt();
+            return Err(ToolTurnError::NoProgress);
+        }
+        // Preserve the existing immediate NetworkRead repeat denial. For
+        // effectful proposals, also deny A -> B -> A across an intervening
+        // observation or a different effect. A per-call journal key is not
+        // a new human grant, and a different return payload is not evidence
+        // authorizing re-execution of the same proposed effect.
+        if descriptor.effect!=ToolEffect::ReadWorkspace &&
+            self.previous_request_digest.as_deref()==Some(&request_digest){
+            self.halt();
+            return Err(ToolTurnError::NoProgress)
+        }
+        if matches!(descriptor.effect,
+            ToolEffect::WriteWorkspace | ToolEffect::ExecuteCode |
+            ToolEffect::NetworkWrite | ToolEffect::DeviceControl |
+            ToolEffect::Elevated
+        ) && !self.seen_effectful_requests.insert(request_digest.clone()){
+            self.halt();
+            return Err(ToolTurnError::NoProgress)
         }
 
         // A tool can be advertised earlier, then revoked. Host checks exact
@@ -454,6 +679,38 @@ impl NativeToolTurn {
         let data = catalog
             .decode_result(&self.advertised, name, &response)
             .map_err(ToolTurnError::Catalog)?;
+        if data.get("ok").and_then(Value::as_bool) == Some(true) {
+            self.observed_tool_result = true;
+            // Only the exact reviewed native operation and its independent
+            // original-source method can satisfy scheduled model finalization.
+            if verified_reviewed_oracle(&descriptor.id, &data) {
+                self.observed_verified_independent_outcome = true;
+            }
+        }
+        if matches!(descriptor.effect, ToolEffect::ReadWorkspace | ToolEffect::NetworkRead) {
+            if let Some(digest) = substantive_read_digest(&data) {
+                if self.seen_read_evidence.insert(digest) {
+                    self.stalled_semantic_reads = 0;
+                } else {
+                    self.stalled_semantic_reads = self.stalled_semantic_reads.saturating_add(1);
+                }
+            } else if data.get("ok").and_then(Value::as_bool) == Some(false) {
+                // A failed read is not useful progress. Unknown successful
+                // codecs remain unclassified, not misrepresented as verified.
+                self.stalled_semantic_reads = self.stalled_semantic_reads.saturating_add(1);
+            }
+        }
+        let encoded_result=serde_json::to_vec(&data)
+            .map_err(|_|ToolTurnError::MalformedModelReply)?;
+        let result_digest=format!("{:x}",Sha256::digest(&encoded_result));
+        if self.previous_request_digest.as_deref()==Some(&request_digest) &&
+            self.previous_result_digest.as_deref()==Some(&result_digest){
+            self.identical_result_count=self.identical_result_count.saturating_add(1);
+        }else{
+            self.identical_result_count=1;
+        }
+        self.previous_request_digest=Some(request_digest);
+        self.previous_result_digest=Some(result_digest);
         Ok(ToolTurnOutcome::ToolResult {
             call_id,
             tool_name: name.into(),
@@ -467,15 +724,46 @@ impl NativeToolTurn {
                 call_id,
                 tool_name,
                 data,
-            } => serialize_host_boundary(
-                &json!({
-                    "kind": "tool_result", "call_id": call_id,
-                    "name": tool_name, "response": data,
-                }),
-                MAX_MODEL_FRAME_BYTES,
-            )
-            .ok(),
+            } => serialize_host_tool_feedback_boundary(
+                call_id, tool_name, data, MAX_MODEL_FRAME_BYTES,
+            ).ok(),
             ToolTurnOutcome::FinalText(_) => None,
         }
+    }
+}
+
+#[cfg(test)]
+mod semantic_progress_tests {
+    use super::*;
+    use serde_json::json;
+    #[test]
+    fn planned_completion_requires_exact_independently_verified_native_method() {
+        use super::verified_reviewed_oracle;
+        let evidence = serde_json::json!({"ok":true,"result":{
+            "independentOutcome":{"status":"VERIFIED","method":"GIT_HEAD_DIRECT_V1"}
+        }});
+        assert!(verified_reviewed_oracle("lu.reviewed.git.head",&evidence));
+        assert!(!verified_reviewed_oracle("lu.files.read_text",&evidence));
+        assert!(!verified_reviewed_oracle("lu.reviewed.git.status",&evidence));
+        let unsupported = serde_json::json!({"ok":true,"result":{
+            "independentOutcome":{"status":"UNSUPPORTED","method":"GIT_HEAD_DIRECT_V1"}
+        }});
+        assert!(!verified_reviewed_oracle("lu.reviewed.git.head",&unsupported));
+        let failed = serde_json::json!({"ok":false,"result":{
+            "independentOutcome":{"status":"VERIFIED","method":"GIT_HEAD_DIRECT_V1"}
+        }});
+        assert!(!verified_reviewed_oracle("lu.reviewed.git.head",&failed));
+        assert!(!verified_reviewed_oracle("lu.reviewed.git.head",
+            &serde_json::json!({"ok":true})));
+    }
+    #[test]
+    fn only_substantive_decoder_content_counts_as_progress_evidence() {
+        assert!(substantive_read_digest(&json!({"ok":true,"result":{"query":"x","elapsed_ms":2}})).is_none());
+        assert!(substantive_read_digest(&json!({"ok":false,"result":{"text":"fake"}})).is_none());
+        let a=json!({"ok":true,"result":{"hits":[{"path":"notes.txt","text":"source","call_id":"one","elapsed_ms":1}]}});
+        let b=json!({"ok":true,"result":{"hits":[{"path":"notes.txt","text":"source","call_id":"two","elapsed_ms":2}]}});
+        assert_eq!(substantive_read_digest(&a),substantive_read_digest(&b));
+        let c=json!({"ok":true,"result":{"hits":[{"path":"other.txt","text":"different"}]}});
+        assert_ne!(substantive_read_digest(&a),substantive_read_digest(&c));
     }
 }

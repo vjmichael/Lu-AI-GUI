@@ -1,0 +1,111 @@
+name: Lu Wave 3 Normal Conversation Native Tools
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: lu-wave3-native-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  source:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify exact committed source and tool admission modules
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/verify-source-tree.mjs
+          grep -Fx 'pub mod native_capability_inventory;' src-tauri/lu-core/src/lib.rs
+          grep -Fx 'pub mod native_workspace_read_turn;' src-tauri/lu-core/src/lib.rs
+          grep -Fq 'mod native_action_proposal;' lu-desktop/src-tauri/src/lib.rs
+          grep -Fq 'fn lu_tool_turn_history(' lu-desktop/src-tauri/src/lib.rs
+          grep -Fq 'explicit_read_workspace_request(&prompt)' lu-desktop/src-tauri/src/lib.rs
+  core-native:
+    needs: source
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - name: Compile and test bounded normal-chat model/tool controller
+        run: |
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test native_agent_tool_turn -- --nocapture
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test native_workspace_read_turn -- --nocapture
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test model_turn_journal -- --nocapture
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib wave3_summary_tests -- --nocapture
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_capability_inventory -- --nocapture
+      - name: Verify no cargo lockfile drift
+        shell: bash
+        run: git diff --exit-code -- src-tauri/lu-core/Cargo.lock lu-desktop/src-tauri/Cargo.lock
+  desktop-ui:
+    needs: source
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Compile normal Send and tool activity React
+        working-directory: lu-desktop
+        run: |
+          npm ci
+          npm run build
+          npm run check
+          npm run test:ui
+  desktop-windows:
+    needs: [source, desktop-ui]
+    runs-on: windows-2022
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Stage non-executable inference resource placeholders for Tauri macro
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $root='lu-desktop/src-tauri/resources/lu-inference'
+          New-Item -ItemType Directory -Force -Path $root | Out-Null
+          foreach ($name in @('llama-server.exe','msvcp140.dll','vcruntime140.dll','vcruntime140_1.dll')) {
+            Set-Content -LiteralPath (Join-Path $root $name) -Value 'NOT_AN_ENGINE_CI_PLACEHOLDER' -NoNewline
+          }
+      - name: Bundle actual Wave 3 UI
+        working-directory: lu-desktop
+        run: |
+          npm ci
+          npm run build
+      - name: Compile real Windows Tauri native command routing
+        run: cargo check --locked --manifest-path lu-desktop/src-tauri/Cargo.toml
+      - name: Test normal Send user-turn admission and action proposal guards
+        run: |
+          cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib workspace_desktop::tests -- --nocapture
+          cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib reader_desktop::tests -- --nocapture
+          cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib native_action_proposal::tests -- --nocapture
+      - name: Check desktop native context and no lockfile drift
+        shell: bash
+        run: |
+          git diff --exit-code -- src-tauri/lu-core/Cargo.lock lu-desktop/src-tauri/Cargo.lock

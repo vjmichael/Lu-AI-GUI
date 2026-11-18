@@ -2,6 +2,7 @@
 //! Stored conversation IDs are host-generated. No UI-controlled path is opened.
 //! The legacy flat R14 chat log is imported once and left untouched for rollback.
 use rand::{rngs::OsRng, RngCore};
+use lu_core::ansf_goals::{GoalEvent,project_goal_events};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::HashSet,
@@ -54,11 +55,22 @@ impl Default for ChatIndex {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 enum Event {
-    User { text: String },
+    User { text: String, #[serde(default, skip_serializing_if = "Option::is_none")] user_turn_id: Option<String> },
+    // Host-minted generation ID binds the actual persisted human request
+    // to the ephemeral Reader grant; old chat journals remain compatible.
+    ReaderUser { text: String, generation_id: String },
     AssistantFinal { text: String }, // R14 migration; a complete answer.
     AssistantProgress { generation_id: String, text: String }, // cumulative checkpoint.
     AssistantCompleted { generation_id: String },
     AssistantCancelled { generation_id: String },
+    /// Internal native browser data; not a USER message or assistant prose.
+    /// A model, worker or page cannot mint this journal event.
+    BrowserObservation {
+        generation_id:String,call_id:String,tool:String,summary:String
+    },
+    /// Human-origin goal/clarification context, explicitly NOT a User turn.
+    /// The model and tool outputs never gain authority from these records.
+    GoalMemory { entry: GoalEvent },
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -207,6 +219,7 @@ impl ChatStore {
                     match role {
                         "user" => events.push(Event::User {
                             text: text.to_string(),
+                            user_turn_id: None, // Legacy migration is context, not new authority.
                         }),
                         "assistant" => events.push(Event::AssistantFinal {
                             text: text.to_string(),
@@ -330,6 +343,23 @@ impl ChatStore {
         Ok(())
     }
     pub fn append_user(&self, chat_id: &str, text: &str) -> Result<(), String> {
+        self.append_user_event(chat_id, text, Event::User { text: text.into(), user_turn_id: None })
+    }
+    /// A Reader grant must refer to this exact durable user event. Ordinary
+    /// chat messages do not acquire Reader authority, even if text matches.
+    pub fn append_reader_user(
+        &self, chat_id: &str, generation_id: &str, text: &str,
+    ) -> Result<(), String> {
+        if !valid_id(generation_id, "g-") {
+            return Err("invalid Reader generation identity".into());
+        }
+        self.append_user_event(chat_id, text, Event::ReaderUser {
+            text: text.into(), generation_id: generation_id.into(),
+        })
+    }
+    fn append_user_event(
+        &self, chat_id: &str, text: &str, event: Event,
+    ) -> Result<(), String> {
         if text.is_empty() || text.len() > 16 * 1024 {
             return Err("invalid chat input".into());
         }
@@ -341,7 +371,7 @@ impl ChatStore {
             .find(|c| c.chat_id == chat_id)
             .ok_or("unknown chat")?;
         // Journal is durable first. Failure to write index cannot erase the turn.
-        append_event(&self.chat_path(chat_id), &Event::User { text: text.into() })?;
+        append_event(&self.chat_path(chat_id), &event)?;
         if chat.title == "New chat" {
             chat.title = text.chars().take(65).take_while(|_| true).collect();
             while chat.title.len() > 96 {
@@ -353,6 +383,119 @@ impl ChatStore {
         atomic_index(&self.index_path, &next)?;
         *catalog = next;
         Ok(())
+    }
+    /// Host-generated opaque turn identity, committed with the exact User event.
+    /// A caller-supplied model ID or old imported User event never authenticates
+    /// a new tool task. The host owns issuance and chat ownership verification.
+    pub fn append_user_with_turn_id(&self, chat_id: &str, user_turn_id: &str, text: &str) -> Result<(), String> {
+        if !valid_id(user_turn_id, "g-") || text.is_empty() || text.len() > 16 * 1024 {
+            return Err("invalid authenticated user turn".into());
+        }
+        let mut catalog = self.inner.lock().map_err(|_| "chat lock poisoned")?;
+        let mut next = catalog.clone();
+        let chat = next.chats.iter_mut().find(|c| c.chat_id == chat_id).ok_or("unknown chat")?;
+        // Fail closed if any historical event is corrupt, or if the identifier
+        // is already present in this journal. Do not skip malformed records.
+        let path = self.chat_path(chat_id);
+        let metadata = fs::metadata(&path).map_err(|e| e.to_string())?;
+        if metadata.len() > MAX_LOG { return Err("conversation too large".into()); }
+        let input = File::open(&path).map_err(|e| e.to_string())?;
+        for line in BufReader::new(input).lines() {
+            let line = line.map_err(|e| e.to_string())?;
+            if line.is_empty() { return Err("empty conversation event".into()); }
+            let event: Event = serde_json::from_str(&line).map_err(|_| "corrupt user-turn journal")?;
+            if let Event::User { user_turn_id: Some(existing), .. } = event {
+                if existing == user_turn_id { return Err("duplicate authenticated user turn".into()); }
+            }
+        }
+        append_event(&path, &Event::User { text: text.into(), user_turn_id: Some(user_turn_id.into()) })?;
+        if chat.title == "New chat" {
+            chat.title = text.chars().take(65).collect();
+            while chat.title.len() > 96 { chat.title.pop(); }
+        }
+        next.sequence += 1;
+        chat.updated_seq = next.sequence;
+        atomic_index(&self.index_path, &next)?;
+        *catalog = next;
+        Ok(())
+    }
+
+    /// Verify only an exact persisted User turn from an existing host-owned
+    /// conversation. Unknown, old imported, duplicate or corrupted turns fail.
+    /// Host-only lookup for the latest durable authenticated USER turn.
+    /// Legacy imported turns and model text cannot authenticate tool tasks.
+    /// Refuse corrupt or duplicate journal rows rather than guessing.
+    pub fn latest_authenticated_user_turn_id(&self, chat_id:&str)->Option<String>{
+        if !valid_id(chat_id,"c-"){return None;}
+        let catalog=self.inner.lock().ok()?;
+        if !catalog.chats.iter().any(|c|c.chat_id==chat_id){return None;}
+        let path=self.chat_path(chat_id);
+        if fs::metadata(&path).ok()?.len()>MAX_LOG{return None;}
+        let file=File::open(&path).ok()?;
+        let mut seen=HashSet::new();
+        let mut latest=None;
+        for line in BufReader::new(file).lines(){
+            let line=line.ok()?;
+            if line.is_empty(){return None;}
+            let event:Event=serde_json::from_str(&line).ok()?;
+            if let Event::User{user_turn_id:Some(id),..}=event{
+                if !valid_id(&id,"g-")||!seen.insert(id.clone()){return None;}
+                latest=Some(id);
+            }
+        }
+        latest
+    }
+    pub fn trusted_user_turn_text(&self, chat_id: &str, user_turn_id: &str) -> Option<String> {
+        if !valid_id(chat_id, "c-") || !valid_id(user_turn_id, "g-") { return None; }
+        let catalog = self.inner.lock().ok()?;
+        if !catalog.chats.iter().any(|c| c.chat_id == chat_id) { return None; }
+        let path = self.chat_path(chat_id);
+        if fs::metadata(&path).ok()?.len() > MAX_LOG { return None; }
+        let file = File::open(&path).ok()?;
+        let mut found = None;
+        for line in BufReader::new(file).lines() {
+            let line = line.ok()?;
+            if line.is_empty() { return None; }
+            let event: Event = serde_json::from_str(&line).ok()?;
+            if let Event::User { text, user_turn_id: Some(id) } = event {
+                if id == user_turn_id {
+                    if found.is_some() { return None; }
+                    found = Some(text);
+                }
+            }
+        }
+        found
+    }
+    /// Verify a host-saved Reader user event by both immutable identity and
+    /// content, not by matching the last chat message's text. This allows a
+    /// queued Reader request to run after subsequent prompts without granting
+    /// those prompts its document permission. Any journal error fails closed.
+    pub fn reader_user_turn_matches(
+        &self, chat_id: &str, generation_id: &str, expected_text: &str,
+    ) -> Result<bool, String> {
+        if !valid_id(generation_id, "g-") {
+            return Ok(false);
+        }
+        let catalog = self.inner.lock().map_err(|_| "chat lock poisoned")?;
+        if !catalog.chats.iter().any(|c| c.chat_id == chat_id) {
+            return Ok(false);
+        }
+        let file = File::open(self.chat_path(chat_id)).map_err(|e| e.to_string())?;
+        if file.metadata().map_err(|e| e.to_string())?.len() > MAX_LOG {
+            return Err("conversation too large".into());
+        }
+        for line in BufReader::new(file).lines() {
+            let line = line.map_err(|e| e.to_string())?;
+            if line.is_empty() { continue; }
+            let event: Event = serde_json::from_str(&line)
+                .map_err(|e| format!("corrupt chat journal: {e}"))?;
+            if let Event::ReaderUser { text, generation_id: saved_id } = event {
+                if saved_id == generation_id {
+                    return Ok(text == expected_text);
+                }
+            }
+        }
+        Ok(false)
     }
     pub fn append_progress(
         &self,
@@ -367,6 +510,27 @@ impl ChatStore {
                 text: text.into(),
             },
         )
+    }
+    /// Evidence of a host-authorized, exact-generation browser observation.
+    /// Does not mean the page or any assertion in it has been corroborated.
+    pub fn append_browser_observation(
+        &self,chat_id:&str,generation_id:&str,call_id:&str,
+        tool:&str,summary:&str
+    )->Result<(),String>{
+        if !valid_id(generation_id,"g-")
+            || !valid_id(call_id,"browser-call-")
+            || tool!="lu_browser_read"
+            || summary.is_empty()||summary.len()>3200
+            || summary.chars().any(|x|x=='\0'){
+            return Err("Invalid browser observation receipt".into());
+        }
+        if self.trusted_user_turn_text(chat_id,generation_id).is_none(){
+            return Err("Browser receipt lacks exact persisted human turn".into());
+        }
+        self.append_assistant(chat_id,Event::BrowserObservation{
+            generation_id:generation_id.into(),call_id:call_id.into(),
+            tool:tool.into(),summary:summary.into(),
+        })
     }
     pub fn complete(&self, chat_id: &str, generation_id: &str) -> Result<(), String> {
         self.append_assistant(
@@ -390,6 +554,52 @@ impl ChatStore {
             return Err("unknown chat".into());
         }
         append_event(&self.chat_path(chat_id), &event)
+    }
+    // Called while the ChatStore index lock is held. The immutable JSONL is
+    // the source of user action provenance; ANSF is a derived SQLite index.
+    fn read_memory_events(&self,chat_id:&str)->Result<Vec<GoalEvent>,String>{
+        let path=self.chat_path(chat_id);
+        let metadata=fs::symlink_metadata(&path).map_err(|e|e.to_string())?;
+        if metadata.file_type().is_symlink()||!metadata.is_file()||metadata.len()>MAX_LOG{
+            return Err("Invalid memory source journal".into())
+        }
+        let file=File::open(&path).map_err(|e|e.to_string())?;
+        let mut events=Vec::new();
+        for line in BufReader::new(file).lines(){
+            let line=line.map_err(|e|e.to_string())?;
+            if line.trim().is_empty(){continue;}
+            let event:Event=serde_json::from_str(&line)
+                .map_err(|e|format!("Corrupt source memory journal: {e}"))?;
+            if let Event::GoalMemory{entry}=event{
+                events.push(entry);
+                if events.len()>1024{return Err("Memory event capacity exceeded".into())}
+            }
+        }
+        project_goal_events(&events)
+            .map_err(|_|"Invalid source memory event chain")?;
+        Ok(events)
+    }
+    /// Read user-origin context only. No event is promoted to a User tool
+    /// authorization turn or inserted as an ordinary chat message.
+    pub fn memory_events(&self,chat_id:&str)->Result<Vec<GoalEvent>,String>{
+        let catalog=self.inner.lock().map_err(|_|"chat lock poisoned")?;
+        if !catalog.chats.iter().any(|c|c.chat_id==chat_id){
+            return Err("Unknown memory conversation".into())
+        }
+        self.read_memory_events(chat_id)
+    }
+    /// Only trusted desktop code mints event/question IDs; the renderer has
+    /// no generic event-injection API. Validate against the *current* journal
+    /// while holding the ChatStore lock so concurrent answers cannot race.
+    pub fn append_goal_memory_event(&self,chat_id:&str,event:GoalEvent)->Result<(),String>{
+        let catalog=self.inner.lock().map_err(|_|"chat lock poisoned")?;
+        if !catalog.chats.iter().any(|c|c.chat_id==chat_id){
+            return Err("Unknown memory conversation".into())
+        }
+        let mut events=self.read_memory_events(chat_id)?;
+        events.push(event.clone());
+        project_goal_events(&events).map_err(|_|"Invalid goal or clarification transition")?;
+        append_event(&self.chat_path(chat_id),&Event::GoalMemory{entry:event})
     }
     pub fn history(&self, chat_id: &str) -> Result<Vec<ChatMessage>, String> {
         let catalog = self.inner.lock().map_err(|_| "chat lock poisoned")?;
@@ -415,7 +625,7 @@ impl ChatStore {
             let event: Event =
                 serde_json::from_str(&line).map_err(|e| format!("corrupt chat journal: {e}"))?;
             match event {
-                Event::User { text } => result.push(Some(ChatMessage {
+                Event::User { text, .. } | Event::ReaderUser { text, .. } => result.push(Some(ChatMessage {
                     role: "user".into(),
                     text,
                     interrupted: false,
@@ -452,6 +662,13 @@ impl ChatStore {
                         }
                     }
                 }
+                Event::BrowserObservation { .. } => {
+                    // Retained for authenticated research recovery, never
+                    // displayed as a user or assistant message.
+                }
+                Event::GoalMemory{..}=>{
+                    // Memory context remains separate from tool-granting user turns.
+                }
                 Event::AssistantCancelled { generation_id } => {
                     if let Some(i) = pending.remove(&generation_id) {
                         if let Some(message) = &mut result[i] {
@@ -472,6 +689,32 @@ mod tests {
     use super::*;
     fn root() -> PathBuf {
         std::env::temp_dir().join(id("lu-conversation-test-"))
+    }
+    #[test]
+    fn durable_browser_observation_is_not_a_user_turn_or_assistant_message(){
+        let root=root();
+        let store=ChatStore::open(&root).unwrap();
+        let chat=store.create_chat().unwrap();
+        let user_id=format!("g-{}","a".repeat(32));
+        let call_id=format!("browser-call-{}","b".repeat(32));
+        store.append_user_with_turn_id(&chat.chat_id,&user_id,"Research this claim").unwrap();
+        assert!(store.append_browser_observation(
+            &chat.chat_id,&user_id,&call_id,"lu_browser_read",
+            "URL: https://example.org/claim\\nSHA256: 1234"
+        ).is_ok());
+        assert!(store.append_browser_observation(
+            &chat.chat_id,&format!("g-{}","c".repeat(32)),
+            &call_id,"lu_browser_read","fabricated"
+        ).is_err());
+        assert!(store.append_browser_observation(
+            &chat.chat_id,&user_id,&call_id,"lu_browser_interact","click"
+        ).is_err());
+        drop(store);
+        let reopened=ChatStore::open(&root).unwrap();
+        assert_eq!(reopened.history(&chat.chat_id).unwrap().len(),1);
+        assert_eq!(reopened.latest_authenticated_user_turn_id(&chat.chat_id).as_deref(),
+            Some(user_id.as_str()));
+        fs::remove_dir_all(root).unwrap();
     }
     #[test]
     fn survives_restart_and_keeps_chats_separate() {
@@ -545,6 +788,59 @@ mod tests {
         assert!(!history[3].interrupted);
         fs::remove_dir_all(root).unwrap();
     }
+
+    #[test]
+    fn authenticated_user_turn_is_durable_exact_and_fail_closed() {
+        use lu_core::conversation_authority::TrustedUserTurnVerifier;
+        let root = root();
+        let store = ChatStore::open(&root).unwrap();
+        let a = store.create_chat().unwrap();
+        let b = store.create_chat().unwrap();
+        let turn = format!("g-{}", "a".repeat(32));
+        store.append_user_with_turn_id(&a.chat_id, &turn, "trusted prompt").unwrap();
+        assert!(store.verify_user_turn(&a.chat_id, &turn));
+        assert!(!store.verify_user_turn(&b.chat_id, &turn));
+        assert!(!store.verify_user_turn(&a.chat_id, "g-invalid"));
+        assert!(store.append_user_with_turn_id(&a.chat_id, &turn, "duplicate").is_err());
+        store.append_user(&a.chat_id, "untrusted legacy context").unwrap();
+        drop(store);
+        let restored = ChatStore::open(&root).unwrap();
+        assert_eq!(restored.trusted_user_turn_text(&a.chat_id, &turn), Some("trusted prompt".into()));
+        let journal = root.join("conversations").join(format!("{}.jsonl", a.chat_id));
+        use std::io::Write as _;
+        std::fs::OpenOptions::new().append(true).open(&journal).unwrap()
+            .write_all(b"{malformed journal row}\n").unwrap();
+        assert!(!restored.verify_user_turn(&a.chat_id, &turn));
+        assert!(restored.append_user_with_turn_id(&a.chat_id, &format!("g-{}", "b".repeat(32)), "text").is_err());
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn reader_authorization_is_bound_to_exact_durable_human_turn() {
+        let root = root();
+        let chat_store = ChatStore::open(&root).unwrap();
+        let chat = chat_store.create_chat().unwrap();
+        let second = chat_store.create_chat().unwrap();
+        let a = id("g-");
+        let b = id("g-");
+        // Matching text alone is not an authority record.
+        chat_store.append_user(&chat.chat_id, "Read this").unwrap();
+        assert!(!chat_store.reader_user_turn_matches(&chat.chat_id, &a, "Read this").unwrap());
+        chat_store.append_reader_user(&chat.chat_id, &a, "Read this").unwrap();
+        // An interleaved or identical later prompt does not invalidate the
+        // original queued Reader turn or grant a different generation.
+        chat_store.append_user(&chat.chat_id, "Later prompt").unwrap();
+        chat_store.append_reader_user(&chat.chat_id, &b, "Read this").unwrap();
+        assert!(chat_store.reader_user_turn_matches(&chat.chat_id, &a, "Read this").unwrap());
+        assert!(chat_store.reader_user_turn_matches(&chat.chat_id, &b, "Read this").unwrap());
+        assert!(!chat_store.reader_user_turn_matches(&chat.chat_id, &a, "Other text").unwrap());
+        assert!(!chat_store.reader_user_turn_matches(&second.chat_id, &a, "Read this").unwrap());
+        assert!(!chat_store.reader_user_turn_matches(&chat.chat_id, "g-forged", "Read this").unwrap());
+        drop(chat_store);
+        let reopened = ChatStore::open(&root).unwrap();
+        assert!(reopened.reader_user_turn_matches(&chat.chat_id, &a, "Read this").unwrap());
+        assert_eq!(reopened.history(&chat.chat_id).unwrap().len(), 4);
+        fs::remove_dir_all(root).unwrap();
+    }
     #[test]
     fn refuses_path_ids_and_unknown_folders() {
         let root = root();
@@ -553,5 +849,11 @@ mod tests {
         assert!(s.history("../../oops").is_err());
         assert!(s.move_chat(&a.chat_id, Some("../../".into())).is_err());
         fs::remove_dir_all(root).unwrap();
+    }
+}
+
+impl lu_core::conversation_authority::TrustedUserTurnVerifier for ChatStore {
+    fn verify_user_turn(&self, conversation_id: &str, user_turn_id: &str) -> bool {
+        self.trusted_user_turn_text(conversation_id, user_turn_id).is_some()
     }
 }

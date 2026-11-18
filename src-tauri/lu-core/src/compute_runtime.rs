@@ -126,3 +126,84 @@ pub fn choose_verified_engine(
         .map(|(backend, _)| backend)
         .ok_or(AutoTuneError::NoVerifiedEngine)
 }
+
+/// A P03 route is not eligible merely because a model header claims vision or
+/// a GPU driver/device is detected. The trusted host supplies live, testable
+/// runtime evidence. No implicit CPU/ROCm/CUDA fallback from a strict Vulkan
+/// request is allowed.
+#[derive(Debug,Clone,Copy,PartialEq,Eq)]
+pub enum ModelTaskKind{Text,Vision}
+#[derive(Debug,Clone,Copy,PartialEq,Eq)]
+pub struct ModelTaskEvidence{
+    pub model_file_admitted:bool,
+    pub projector_file_admitted:bool,
+    pub live_vision_probe_passed:bool,
+}
+#[derive(Debug,Clone,PartialEq,Eq)]
+pub enum ModelRoutingError{
+    ModelNotAdmitted,ProjectorNotAdmitted,VisionNotProven,
+    Backend(SelectionError),
+}
+pub fn select_model_task_backend(
+    task:ModelTaskKind,
+    evidence:ModelTaskEvidence,
+    probes:&[BackendProbe],
+    preference:BackendPreference,
+    auto_order:&[ComputeBackend],
+)->Result<BackendSelection,ModelRoutingError>{
+    if !evidence.model_file_admitted {
+        return Err(ModelRoutingError::ModelNotAdmitted)
+    }
+    if task==ModelTaskKind::Vision{
+        if !evidence.projector_file_admitted{
+            return Err(ModelRoutingError::ProjectorNotAdmitted)
+        }
+        if !evidence.live_vision_probe_passed{
+            return Err(ModelRoutingError::VisionNotProven)
+        }
+    }
+    select_backend(probes,preference,auto_order).map_err(ModelRoutingError::Backend)
+}
+#[cfg(test)]
+mod ai_operations_routing_tests{
+    use super::*;
+    fn probe(backend:ComputeBackend,ready:bool)->BackendProbe{
+        BackendProbe{
+            backend,package_present:ready,driver_compatible:ready,
+            model_compatible:ready,detail:"verified-only-test-fixture".into()
+        }
+    }
+    #[test]
+    fn strict_backend_never_falls_back_from_unverified_vulkan(){
+        let probes=[probe(ComputeBackend::Vulkan,false),probe(ComputeBackend::Cpu,true)];
+        let e=ModelTaskEvidence{model_file_admitted:true,
+            projector_file_admitted:false,live_vision_probe_passed:false};
+        assert_eq!(
+            select_model_task_backend(ModelTaskKind::Text,e,&probes,
+                BackendPreference::Require(ComputeBackend::Vulkan),
+                &[ComputeBackend::Vulkan,ComputeBackend::Cpu]),
+            Err(ModelRoutingError::Backend(
+                SelectionError::RequestedBackendUnavailable(ComputeBackend::Vulkan)))
+        );
+        assert_eq!(
+            select_model_task_backend(ModelTaskKind::Text,e,&probes,
+                BackendPreference::Automatic,
+                &[ComputeBackend::Vulkan,ComputeBackend::Cpu])
+                .unwrap().backend,
+            ComputeBackend::Cpu
+        );
+    }
+    #[test]
+    fn header_mmproj_and_gpu_hint_do_not_prove_vision(){
+        let probes=[probe(ComputeBackend::Cpu,true)];
+        let evidence=ModelTaskEvidence{
+            model_file_admitted:true,projector_file_admitted:true,
+            live_vision_probe_passed:false,
+        };
+        assert_eq!(
+            select_model_task_backend(ModelTaskKind::Vision,evidence,&probes,
+                BackendPreference::Automatic,&[ComputeBackend::Cpu]),
+            Err(ModelRoutingError::VisionNotProven)
+        );
+    }
+}

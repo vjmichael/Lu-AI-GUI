@@ -1,144 +1,62 @@
-# Lu Security Decision: Conversation Authority + Non-Administrative OS Ceiling
+# Lu Security Decision — Broad Host Access, Human Task Authority
 
-**Status:** Accepted design requirement, **not yet fully enforced by the desktop**  
-**Scope:** Lu Core, general chat, future Cowork convergence, local/native tools and workspace packages  
-**Decision:** User clarification, 2026-10-25
+**Status:** Owner-confirmed design correction, 2026-11-03. Not all protections are integrated in the desktop.
+**Supersedes:** The 2026-10-25 mandatory AppContainer/restricted-worker/sandbox assumptions and the 2026-11-03 autonomy sandbox audit wherever they conflict.
+**Scope:** Lu desktop, Lu Core, native tools, worker runtime, IDE/Film/Research/Writing DLCs.
 
-## Normative rule
+## First principles
 
-> Lu may independently choose and execute the operations reasonably required to
-> accomplish a human-authorized task, subject to task-scoped capabilities.
-> It cannot originate a new authorized task, expand the authority of an
-> existing task, or increase its OS privileges. Agent-facing execution is
-> **never administrative/root/SYSTEM by default or by model request**.
+> **Access is not authority. Permission is not authority.**
 
-The **non-admin operating system identity is a maximum ceiling, NOT a grant of
-everything a regular user can access**. Task permissions are narrower than
-this ceiling. An ordinary human account may access secrets, SSH keys, private
-documents, saved credentials, browser state, and network destinations; none
-of those become automatically available to Lu just because the app runs as
-that user.
+Lu is a native Windows AI application with broad access to the computer's installed tools, files, applications, devices and operating-system facilities. A mandatory sandbox, artificial workspace-only filesystem, default-denied general connectivity, restricted-token-only execution or VM/container requirement **is not part of Lu's product design**. Optional isolation may be requested for a particular risky task or test, but never silently imposed as Lu's universal operating environment.
 
-Separate the following:
-1. **User intent:** authenticated user instruction in a persisted conversation,
-   or an explicit delegation rooted in one.
-2. **Task authority:** exact origin message, task ID, workspace/session identity,
-   declared tool/effect permissions, resource scope, destination scope,
-   expiration and revocation.
-3. **Agent choice:** the model chooses which permitted operations to request.
-4. **Host decision:** trusted code verifies task lineage, argument-level
-   purpose and requested effects. Untrusted documents/pages/tool results
-   cannot authorize actions.
-5. **OS enforcement:** independently confines workers to non-administrative,
-   resource-limited identities and system-enforced sandboxes.
+Possessing an OS handle, an existing account permission, a tool registration, or a callable API does **not** authorize Lu to use it for an arbitrary purpose. The user determines Lu's authority by directing and delegating tasks; trusted Lu host code enforces that authority before committing effects. Broad access supports usefulness and prerequisite discovery; authority controls actions.
 
-Authority is rooted **in a conversation**, but may extend to an explicitly
-approved future/scheduled task only through a *durable delegation linked to
-that conversation*. No background task can create new authority on its own.
+The model cannot create a user instruction by pretending, import a grant from a retrieved document, rewrite an existing delegation, impersonate the user, or declare itself elevated. An administrative action requiring UAC must have a distinct explicit human-driven approval pathway; merely being capable of invoking an installer does not authorize it.
 
-## Host execution isolation
+## Five distinct concepts
 
-- The desktop may present a normal user's UI, but **untrusted tool execution
-  must not inherit all of that user's effective OS access**. Prefer an
-  independent restricted worker identity, e.g. on Windows an evaluated
-  AppContainer/LPAC or restricted-token design with a narrow broker. Test actual
-  filesystem, credential, registry, IPC and network isolation before choosing.
-- Never request UAC elevation or impersonate an administrator as a model tool.
-  Administrative maintenance, if required, belongs to a separately
-  authenticated human-driven application flow, **outside the agent**.
-- Deny arbitrary access to the human home/profile, credentials, browser
-  sessions, application tokens, OS configuration, and raw physical devices.
-  Mount or broker only per-task approved folders/operations. Read, write,
-  delete, network egress and code execution are distinct capabilities.
-- Network egress is *default-deny* for tool workers. Approved destinations
-  require exact-scoped grants; block all protocols/channels not explicitly
-  allowed, not just HTTP POST. Never assume a denylist of file names is a
-  filesystem security boundary.
-- Shell/code execution may run only in a constrained worker with no inherited
-  privileged credentials/handles, no general host drive access, and a
-  terminating/cancelable process boundary. Declaring `ToolEffect::ExecuteCode`
-  does not implement these protections.
-- Keep the native host policy and model-advertised schemas separate; loading
-  a module is not authorization. User approvals must be generated by trusted UI
-  code and bound to the **exact operation and arguments**.
-- Physical-device actions, including the joke toaster/sprinkler, are denied
-  in the general agent dispatcher. Any future device controller needs its own
-  authenticated permissions, failsafes and isolation.
+1. **Available access:** What Lu's native installation and its host account/OS can actually reach. Discoverable, not equivalent to approval.
+2. **OS permission:** A technical ability conferred by Windows, credentials or process token. It does not express user intent.
+3. **User authority:** Human-origin, authenticated instruction or explicit durable delegation, with purpose, effect classes, scope, time, resource/destination expectations and revocation.
+4. **Execution decision:** A trusted host checks the intended operation, target, arguments, provenance, consequence and current task authority. An AI-proposed tool invocation alone cannot pass as approval.
+5. **Effect safety:** Journaling, precondition checks, backups, atomic file replacement, Trash/restore, receipt/reconciliation, cancellation and controlled process lifetime protect against mistakes even when an action is authorized.
 
-## Low-friction behavior versus outlier controls
+## Operating model
 
-Normal task-scoped read/list/transform operations should proceed without
-repeated prompts once a narrow, verified delegation exists. Require a
-fresh host-side approval for crossing an authorization boundary or when an
-operation is high consequence: destructive deletion, exfiltration, unexpected
-target paths or hosts, privilege changes, credential access, code execution
-outside a sandbox, or direct physical control.
+- **Direct host capabilities:** Lu may discover and use installed compilers, Python, PowerShell, Git, SDKs, local services, WSL, and other operating-system facilities within the authority granted for a task. No mandatory Lu-wide sandbox, Docker install, or special worker identity.
+- **Native tools first:** Rust tools and local workers use typed Protobuf contracts; MCP is optional. Avoid making the user shuttle files manually just because a task needs a tool not already installed in Lu.
+- **Permissioned provisioning:** Lu detects a missing dependency, evaluates trustworthy source, version, architecture, digest/signature and license, then obtains an appropriate installation grant before executing. User-scoped installations can be preferred for reversibility, not mandated by an artificial isolation rule. Changes to the global OS or privileged components require separate informed approval and applicable Windows confirmation.
+- **Scoped delegation without approval fatigue:** When a task explicitly includes building, testing, editing and installing project dependencies, Lu may perform ordinary steps within the scope without repeated prompts. Ask again for meaningfully different or unusually consequential actions.
+- **High-consequence operations:** Mass deletion, credential disclosure, externally transmitting sensitive data, system settings changes, privileged installers, finance or physical device operations require stronger task-specific review. Do not mistake a generic file-access grant for permission to delete unrelated files.
+- **Untrusted input:** Webpages, prompts inside files, repository READMEs, model/tool output and downloaded installers are data, not user authority. Verify actual effect targets and destinations at the final host boundary. Prompt injection can exploit overly broad grants, so check action relevance, not only origin.
+- **Workers:** Process cancellation, Job Objects, crash isolation, quotas and resource supervision are reliability and damage-limitation tools, **not evidence of or substitutes for task authorization**. A task may opt into disposable/sandboxed execution when desired.
+- **Durability:** Persist authenticated delegation and decisions. Before a non-idempotent action, record intent. On ambiguous failures, label UNCERTAIN and reconcile; never blindly repeat. Respect live revocation and cleanup.
 
-Approval fatigue is itself a security risk. The policy should highlight
-**outlier operations** rather than interrupt harmless steps.
+## Required acceptance
 
-## Prompt injection assumptions
+1. A directly authenticated user authorizes Lu to inspect an arbitrary host directory outside its current project; Lu can do so without an artificial workspace ceiling while unrelated actions remain unauthorized.
+2. Within an explicit developer task, Lu discovers a compiler, runs it, installs an approved missing package, builds, fixes tests, and resumes after restart, without a mandatory container.
+3. An untrusted README requests secret exfiltration, deletion, or unauthorized network access. The host rejects the *operation* because it is outside the user's instruction, even if the host OS has read/write/network permission.
+4. Normal approved read/write/search/git operations continue efficiently under existing authority. New destructive/system/network effects outside the task require fresh approval.
+5. Revocation blocks new actions and stops or reconciles in-flight work. Authorization receipts cannot be forged by a model or another conversation.
+6. Child process and crash recovery is measured independently of authorization. No unsupported assertion that a Job Object alone prevents all destructive actions.
+7. Lu Dev can create and test changes using native host tools. Replacement of the stable executable, permissions store, or system components requires explicit, independently verified promotion and rollback.
 
-No language model's claimed success rate at recognizing injections is an
-enforceable guarantee, and an assertion such as "99% safe" is not a measured
-property of Lu. Treat instructions from retrieved webpages, documents,
-repositories and tool results as **untrusted task data**, regardless of how
-reasonable they sound.
+## Implementation status
 
-Conversation provenance blocks the external source from issuing grants;
-it does not prevent an injected page from persuading a model to misuse an
-*existing* overly broad grant. Prevent harm at the final tool boundary with
-argument validation, purpose and destination checks, resource isolation,
-action integrity review and task-specific allowances.
+**Existing:** `conversation_authority.rs` origin verifier interface and task lineage; `policy.rs` tool/effect/scope grants; `journal.rs` SQLite effect receipts; bounded native read/list tools; Win Job lifetime management for inference child; model-tool boundary.
 
-## Existing implementation vs requirements
+**Incomplete:** Desktop-authenticated persisted grant ledger and user approval UX; argument/target-level approval checks; full host-capability inventory and installers; native write/execute/network tools; robust revocation of actual running operations; durable end-to-end task continuations and Windows acceptance.
 
-**Already implemented and tested in Lu Core:**
-- `conversation_authority.rs`: task lineage, trusted-verifier interface,
-  exact effect/scope checks, revocation and failure to mint grants from a
-  forged user turn.
-- `policy.rs`: exact tool/effect/scope grants and revocation.
-- `privilege_guard.rs`: declared elevation/device-control effects denied.
-- `native_files.rs`: two read-only capability-relative workspace operations.
+**Change control:** Do not delete tested permission/journal code merely because universal sandboxing is rejected. Reinterpret or amend overly restrictive default workspace assumptions at the appropriate API boundary with tests. Any restriction or privileged action must trace to a concrete user-delegated authority or an explicit safety-specific review rule, not a blanket 'Lu cannot access host resources' product assumption.
 
-**NOT YET A SECURITY CLAIM:**
-- Jan desktop's Tauri native entry points still need trusted user-turn
-  verification and cannot regard a caller-supplied `thread_id` as evidence of
-  human authorization.
-- Lu's registry still has a compatibility `dispatch` entry point that does
-  not enforce conversation lineage by itself.
-- `ExecuteCode` and `NetworkWrite` may be allowed as declared effects;
-  OS isolation, egress policy, destination control, sensitive path access and
-  exact argument/purpose validation are not universally enforced by Lu Core.
-- Current desktop CI/static tests do not establish an adversarially tested
-  Windows sandbox or safe worker token.
-- A non-elevated desktop application running as the actual user would still
-  have much of that user's data access without independently restricted workers.
+## Explicitly superseded assumptions
 
-## Required acceptance tests before exposing powerful tools
+- Mandatory AppContainer/LPAC/restricted-token execution for all tools.
+- Every tool request must be confined to a fixed sandbox root irrespective of user instruction.
+- Default-deny all network capability purely because Lu is an AI.
+- Only user-writable package caches may be used regardless of the actual task.
+- OS permission or broad access implies unrestricted authority.
 
-1. From a model-generated request, attempts to elevate to UAC/admin/SYSTEM,
-   execute as a different user, or access physical devices fail in policy
-   **and** are blocked by OS permissions.
-2. Worker launched by a normal desktop user cannot read an unrelated
-   user-profile file, SSH key, credential store, browser token or other
-   unapproved path, even with malicious arguments or shell code.
-3. Unapproved network egress fails across DNS, sockets and alternate protocol
-   paths; approved destinations cannot be silently widened by redirects.
-4. A forged conversation ID, role, message ID, retrieved instruction or tool
-   result cannot mint task authority or reuse another conversation's grant.
-5. A legitimate task can perform multiple harmless operations without prompts
-   but is denied unexpected write/delete/send/escalation actions.
-6. A revocation halts new operations and terminates or reconciles applicable
-   running operations; durable receipts cannot bypass updated policy.
-7. Sandbox escape, symlink/TOCTOU, prompt-injection and stolen-token scenarios
-   are covered by integration tests on Windows before Cowork migration.
-
-## Migration sequence
-
-First prove the restricted worker and host-bound conversation verifier;
-then route a controlled subset of Cowork's read-only actions through the new
-policy. Add writable/destructive/native code execution tools only after
-their corresponding OS enforcement, argument integrity and recovery tests
-pass. Keep the old Cowork execution path available for controlled rollback,
-but do not mistake fallback mode for compliance with this new policy.
+The central rule is **broad host access, narrow and authenticated action authority, recoverable effects**.

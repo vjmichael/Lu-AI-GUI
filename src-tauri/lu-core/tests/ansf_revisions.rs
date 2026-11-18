@@ -243,3 +243,115 @@ fn source_text_search_retains_old_wording_and_new_version_is_indexed() {
     drop(store);
     let _ = std::fs::remove_file(path);
 }
+
+#[test]
+fn active_fts_recall_excludes_superseded_originals_and_intermediate_edits() {
+    let path = db_path();
+    let store = new_store(&path);
+    let original = store.append_entry(
+        "chat", "policy-msg", EntryRole::User,
+        "Executor policy", "Use unsafecandidate for the next operation"
+    ).unwrap();
+    let first = store.append_edited_entry(
+        "chat", "policy-msg", "Revised policy",
+        "Use temporarycandidate for the next operation",
+        RevisionOrigin::VerifiedUser
+    ).unwrap().unwrap();
+    let final_edit = store.append_edited_entry(
+        "chat", "policy-msg", "Current reviewed policy",
+        "Use reviewedexecutor for the next operation",
+        RevisionOrigin::VerifiedUser
+    ).unwrap().unwrap();
+    let untouched = store.append_entry(
+        "chat", "other-msg", EntryRole::Assistant,
+        "Reviewed executor", "reviewedexecutor was approved as a term"
+    ).unwrap();
+
+    // The immutable audit search still sees every historical version.
+    assert_eq!(store.search("chat", "unsafecandidate", 10).unwrap()[0].id, original);
+    assert_eq!(store.search("chat", "temporarycandidate", 10).unwrap()[0].id, first.revised_entry_id);
+    assert_eq!(store.search("chat", "reviewedexecutor", 10).unwrap().len(),2);
+
+    // Only current messages may enter default model recall.
+    assert!(store.search_current_messages("chat", "unsafecandidate", 10).unwrap().is_empty());
+    assert!(store.search_current_messages("chat", "temporarycandidate", 10).unwrap().is_empty());
+    let current = store.search_current_messages("chat", "reviewedexecutor", 10).unwrap();
+    assert_eq!(current.len(),2);
+    let ids = current.iter().map(|r|r.id).collect::<std::collections::BTreeSet<_>>();
+    assert!(ids.contains(&final_edit.revised_entry_id));
+    assert!(ids.contains(&untouched));
+    assert!(!ids.contains(&original));
+    assert!(!ids.contains(&first.revised_entry_id));
+    assert_eq!(
+        store.current_message("chat","policy-msg").unwrap().unwrap().entry.id,
+        final_edit.revised_entry_id
+    );
+    drop(store);
+    let reopened = AnsfStore::open(&path).unwrap();
+    assert!(reopened.search_current_messages("chat","unsafecandidate",10).unwrap().is_empty());
+    assert_eq!(reopened.search_current_messages("chat","reviewedexecutor",10).unwrap().len(),2);
+    drop(reopened);
+    let _=std::fs::remove_file(path);
+}
+
+#[test]
+fn current_only_recall_applies_revision_filter_before_fts_result_limit() {
+    let path=db_path();
+    let store=new_store(&path);
+    for i in 0..6 {
+        let id=format!("legacy-msg-{i}");
+        store.append_entry(
+            "chat",&id,EntryRole::User,
+            "Historic obsolete", "This historic archive contains obsoletetarget"
+        ).unwrap();
+        store.append_edited_entry(
+            "chat",&id,"Current correction",
+            "Current verified executor does not use the old target",
+            RevisionOrigin::VerifiedUser
+        ).unwrap();
+    }
+    let live=store.append_entry(
+        "chat","live-msg",EntryRole::User,
+        "Current item","The active request mentions obsoletetarget"
+    ).unwrap();
+    let active=store.search_current_messages("chat","obsoletetarget",1).unwrap();
+    assert_eq!(active.len(),1);
+    assert_eq!(active[0].id,live);
+    drop(store);
+    let _=std::fs::remove_file(path);
+}
+
+#[test]
+fn model_context_uses_current_message_revisions_without_rewriting_originals() {
+    let path=db_path();
+    let store=new_store(&path);
+    let original=store.append_entry(
+        "chat","policy1",EntryRole::User,"Selected executor",
+        "Use disallowed-executor in the next project turn"
+    ).unwrap();
+    let middle=store.append_edited_entry(
+        "chat","policy1","First correction",
+        "Use provisional-executor for this project",
+        RevisionOrigin::VerifiedUser
+    ).unwrap().unwrap();
+    let final_edit=store.append_edited_entry(
+        "chat","policy1","Final correction",
+        "Use approved-executor for this project",
+        RevisionOrigin::VerifiedUser
+    ).unwrap().unwrap();
+    let unchanged=store.append_entry(
+        "chat","next",EntryRole::Assistant,
+        "Review progress","The current task is still ongoing"
+    ).unwrap();
+    let current=store.recent_context_entries("chat",2).unwrap();
+    assert_eq!(current.len(),2);
+    assert_eq!(current[0].id,final_edit.revised_entry_id);
+    assert_eq!(current[1].id,unchanged);
+    assert!(current.iter().all(|entry|entry.id!=original && entry.id!=middle.revised_entry_id));
+    assert_eq!(store.read_entry("chat",original).unwrap().unwrap().content,
+        "Use disallowed-executor in the next project turn");
+    drop(store);
+    let reopened=AnsfStore::open(&path).unwrap();
+    assert_eq!(reopened.recent_context_entries("chat",2).unwrap()[0].id,final_edit.revised_entry_id);
+    drop(reopened);let _=std::fs::remove_file(path);
+}

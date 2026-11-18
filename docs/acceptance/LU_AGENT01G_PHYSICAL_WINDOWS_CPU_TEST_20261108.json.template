@@ -1,0 +1,65 @@
+{
+  "schema": "lu-agent01g-physical-windows-cpu-observation-v1",
+  "acceptance_status": "NOT_TESTED",
+  "build_source_sha": "FILL_FROM_BUILD_PROVENANCE",
+  "installed_executable_sha256": "FILL_FROM_BUILD_PROVENANCE",
+  "installer_sha256": "FILL_FROM_INSTALLER_CHECKSUMS",
+  "engine_sha256": "FILL_FROM_BUILD_PROVENANCE",
+  "engine_backend": "cpu-only-no-vulkan-acceptance",
+  "physical_os": "Windows 11 x64 - operator to record build",
+  "model_tested": "operator-enter-small-local-GGUF-name-only",
+  "test_results": {
+    "install_and_launch": {
+      "status": "NOT_TESTED",
+      "evidence": ""
+    },
+    "real_model_load_and_chat": {
+      "status": "NOT_TESTED",
+      "evidence": ""
+    },
+    "saved_ansf_goal_and_review_only_plan": {
+      "status": "NOT_TESTED",
+      "evidence": ""
+    },
+    "explicit_plan_review_no_effect": {
+      "status": "NOT_TESTED",
+      "evidence": ""
+    },
+    "native_file_picker_and_second_fresh_step_confirmation": {
+      "status": "NOT_TESTED",
+      "evidence": ""
+    },
+    "refused_step_after_cancelled_consent": {
+      "status": "NOT_TESTED",
+      "evidence": ""
+    },
+    "model_selected_reviewed_git_head": {
+      "status": "NOT_TESTED",
+      "evidence": ""
+    },
+    "independent_direct_git_head_oracle": {
+      "status": "NOT_TESTED",
+      "evidence": ""
+    },
+    "durable_restart_and_no_old_grant_reuse": {
+      "status": "NOT_TESTED",
+      "evidence": ""
+    },
+    "interrupted_step_recorded_uncertain_no_auto_replay": {
+      "status": "NOT_TESTED",
+      "evidence": ""
+    },
+    "uninstaller_preserved_main_lu_profile_and_user_models": {
+      "status": "NOT_TESTED",
+      "evidence": ""
+    }
+  },
+  "intentionally_not_closed": [
+    "AMD Vulkan GPU offload",
+    "Windows Job Object whole descendant tree termination",
+    "Linux cgroup-v2 OS custody",
+    "production signed or legally reviewed redistribution",
+    "automatic sequential multi-step continuation"
+  ],
+  "guidance": "Record PASS, FAIL or NOT_TESTED with sanitized screenshots/log names. No personal file paths, tokens, secrets or unreviewed screenshots in public GH. Do not replay uncertain effects to force PASS."
+}

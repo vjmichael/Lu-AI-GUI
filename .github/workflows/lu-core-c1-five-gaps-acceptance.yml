@@ -1,0 +1,130 @@
+name: Lu C1 Five-Gap Consolidated Native Acceptance
+on:
+  workflow_dispatch:
+  workflow_call:
+permissions:
+  contents: read
+concurrency:
+  group: lu-core-c1-final-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  source-identity:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Exact source lock and original CI cleanup hostile tests
+        shell: bash
+        env:
+          EXPECTED_SOURCE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          mkdir -p c1-evidence
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SOURCE_SHA"
+          printf 'C1_SOURCE_SHA=%s\n' "$EXPECTED_SOURCE_SHA" | tee c1-evidence/source-sha.txt
+          node scripts/verify-source-tree.mjs 2>&1 | tee c1-evidence/source-lock.log
+          node --test scripts/lu-ci-superseded-queue.test.mjs 2>&1 | tee c1-evidence/queue-hostile-tests.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lu-c1-source-and-ci-queue
+          path: c1-evidence/
+          if-no-files-found: warn
+          retention-days: 14
+  native-consolidated:
+    needs: source-identity
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Native frozen-source proof
+        shell: bash
+        env:
+          EXPECTED_SOURCE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          mkdir -p c1-evidence
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SOURCE_SHA"
+          node scripts/verify-source-tree.mjs 2>&1 | tee c1-evidence/native-source-lock.log
+          printf 'C1_SOURCE_SHA=%s\nRUNNER_OS=%s\n' "$EXPECTED_SOURCE_SHA" "$RUNNER_OS" > c1-evidence/original-native-sha.txt
+      - name: Original host-scoped FTS5/C06 current-revision and injection tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --test ansf_cognitum_bridge -- --nocapture 2>&1 | tee c1-evidence/ansf-c06-original.log
+      - name: True Tesseract TSV confidence and hostile input tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --lib native_ocr::tests -- --nocapture 2>&1 | tee c1-evidence/ocr-tsv.log
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --lib vision_routing::tests -- --nocapture 2>&1 | tee c1-evidence/vision-host-scope.log
+      - name: Current native 25-useful-read and stream loop guard regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --test native_loop_progress_acceptance -- --nocapture 2>&1 | tee c1-evidence/loop-progress-original.log
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --lib agent_tool_loop::semantic_progress_tests -- --nocapture 2>&1 | tee c1-evidence/oracle-progress.log
+      - name: Persistent llama.cpp durable start and original owned-worker cancellation
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --lib backend_restart_ledger::tests -- --nocapture 2>&1 | tee c1-evidence/restart-reopen.log
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --lib persistent_llama_backend::tests -- --nocapture 2>&1 | tee c1-evidence/llama-watchdog-and-gate.log
+      - name: Prepare non-executable placeholder for source-only Tauri compile
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = 'lu-desktop/src-tauri/resources/lu-inference'
+          New-Item -ItemType Directory -Force -Path $root | Out-Null
+          foreach($name in @('llama-server.exe','msvcp140.dll','vcruntime140.dll','vcruntime140_1.dll')){
+            Set-Content -LiteralPath (Join-Path $root $name) -Value 'NOT_AN_ENGINE_CI_PLACEHOLDER' -NoNewline
+          }
+      - name: Compile actual Windows desktop wiring without claiming installed/physical acceptance
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Push-Location lu-desktop
+          npm ci
+          if($LASTEXITCODE -ne 0){throw 'npm dependencies failed'}
+          npm run build
+          if($LASTEXITCODE -ne 0){throw 'React build failed'}
+          npm run check
+          if($LASTEXITCODE -ne 0){throw 'React typecheck failed'}
+          Pop-Location
+          cargo check --locked --manifest-path lu-desktop/src-tauri/Cargo.toml 2>&1 | Tee-Object -FilePath c1-evidence/windows-desktop-compile.log
+          if($LASTEXITCODE -ne 0){throw 'Desktop Tauri compile failed'}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lu-c1-five-gaps-${{ matrix.os }}
+          path: c1-evidence/
+          if-no-files-found: warn
+          retention-days: 14

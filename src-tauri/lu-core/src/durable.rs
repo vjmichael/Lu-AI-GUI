@@ -99,6 +99,7 @@ impl DurableDispatcher<'_> {
             .map_err(journal_error)?;
 
         let call_id = invocation.call_id.clone();
+        let tool_id = invocation.tool_id.clone();
         let response = self.registry.dispatch(invocation, authorizer).await;
         match &response {
             Ok(_) => {
@@ -111,6 +112,15 @@ impl DurableDispatcher<'_> {
                 self.journal
                     .mark_applied(&call_id, &encoded)
                     .map_err(journal_error)?;
+            }
+            Err(DispatchError::Execution(failure))
+                if tool_id==crate::native_archive_tree_tool::TOOL_ID
+                    && failure.code=="OPERATION_CANCELLED" =>
+            {
+                // Only Lu's own built-in archive extractor emits this code
+                // before the destination mkdir. Other tools' cancellation
+                // messages can NEVER downgrade a potentially partial write.
+                self.journal.mark_failed(&call_id).map_err(journal_error)?;
             }
             Err(DispatchError::Execution(_)) => {
                 // We cannot infer from a tool error whether partial effects

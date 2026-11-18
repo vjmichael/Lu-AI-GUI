@@ -1,0 +1,9 @@
+[package]
+name = "lu-file-scan-worker-acceptance"
+version = "0.1.0"
+edition = "2021"
+publish = false
+# This harness compiles the EXACT production desktop file scanner, without
+# requiring its separate, still-unpublished llama-server installation bundle.
+[dependencies]
+sha2 = "0.10"

@@ -1,0 +1,103 @@
+name: Lu C6.2A Windows browser candidate and independent review receipt (UNAPPROVED)
+on:
+  workflow_dispatch:
+  workflow_call:
+permissions:
+  contents: read
+concurrency:
+  group: lu-c62a-browser-candidate-${{ github.sha }}
+  cancel-in-progress: false
+jobs:
+  source-and-authorization:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify canonical source lock and unchanged human Browser authority
+        shell: bash
+        env:
+          EXACT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXACT_SHA"
+          node scripts/verify-source-tree.mjs
+          node --test scripts/lu-c62-browser-bundle-source.test.mjs lu-desktop/tests/browser-staging.test.mjs lu-desktop/tests/browser-native-authorization.test.mjs lu-desktop/tests/p0-browser-bundle.test.mjs lu-desktop/tests/p0-browser-real-ci-gate.test.mjs
+          node --test tests/lu-browser-worker.test.mjs
+  windows-headed-browser-candidate:
+    needs: source-and-authorization
+    runs-on: windows-2025
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Refuse wrong source or unreviewed production browser package
+        shell: pwsh
+        env:
+          EXPECTED_SHA: ${{ github.sha }}
+        run: |
+          if((git rev-parse HEAD).Trim() -cne $env:EXPECTED_SHA){throw 'Wrong C6.2 source'}
+          node scripts/verify-source-tree.mjs
+          if($LASTEXITCODE -ne 0){throw 'C6.2 source lock mismatch'}
+          $stub=Get-Content 'lu-desktop/src-tauri/resources/lu-browser/manifest.json' -Raw|ConvertFrom-Json
+          if($stub.status -ne 'not-packaged'){throw 'Unreviewed browser already admitted into compiled Lu'}
+      - name: Provision exactly Playwright 1.64.1 and real headed Chromium
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          npm install --prefix src-tauri/lu-core/workers --no-save --no-package-lock --no-audit --no-fund playwright@1.64.1
+          if($LASTEXITCODE -ne 0){throw 'Pinned Playwright not installed'}
+          node src-tauri/lu-core/workers/node_modules/playwright/cli.js install --no-shell chromium
+          if($LASTEXITCODE -ne 0){throw 'Pinned headed Chromium not installed'}
+      - name: Assemble complete content-hashed Windows x64 browser candidate
+        shell: pwsh
+        run: |
+          node lu-desktop/scripts/assemble-browser-ci-candidate.mjs
+          if($LASTEXITCODE -ne 0){throw 'Browser candidate assembler failed'}
+      - name: Verify every Chromium/Node/Playwright byte and hostile worker protocol
+        shell: pwsh
+        env:
+          LU_BROWSER_REQUIRE_CANDIDATE: '1'
+        run: |
+          node --test lu-desktop/tests/browser-ci-candidate.test.mjs
+          if($LASTEXITCODE -ne 0){throw 'Browser manifest/worker negative tests failed'}
+          node --test lu-desktop/tests/browser-ci-executable.test.mjs
+          if($LASTEXITCODE -ne 0){throw 'Real bundled headed Chromium/human challenge test failed'}
+      - name: Publish separately reviewable exact candidate identity only
+        shell: pwsh
+        env:
+          EXPECTED_SHA: ${{ github.sha }}
+        run: |
+          $ErrorActionPreference='Stop'
+          $root='out/lu-browser-candidate'
+          $manifest=(Get-FileHash -LiteralPath "$root/manifest.json" -Algorithm SHA256).Hash.ToLowerInvariant()
+          $expected=(Get-Content -LiteralPath "$root/manifest.sha256" -Raw).Trim()
+          $report=Get-Content -LiteralPath "$root/candidate-summary.json" -Raw|ConvertFrom-Json
+          if($manifest -cne $expected -or $manifest -cne $report.manifestSha256 -or
+            $report.status -ne 'candidate' -or $report.platform -ne 'win32' -or
+            $report.arch -ne 'x64' -or $report.playwrightVersion -ne '1.64.1'){
+            throw 'Candidate identity or trust boundary mismatched'
+          }
+          "C62A_SOURCE_SHA=$env:EXPECTED_SHA" >> $env:GITHUB_STEP_SUMMARY
+          "C62A_WINDOWS_CANDIDATE_MANIFEST_SHA256=$manifest" >> $env:GITHUB_STEP_SUMMARY
+          "C62A_FILES=$($report.files)" >> $env:GITHUB_STEP_SUMMARY
+          'C62A_CANDIDATE_UNAPPROVED=1. Owner/source review plus independently pinned bytes required before packaging.' >> $env:GITHUB_STEP_SUMMARY
+      - name: Preserve the actual reviewable Chromium, Node, Playwright and worker bytes
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Lu-C62A-UNAPPROVED-Windows-Browser-${{ github.sha }}
+          path: out/lu-browser-candidate/
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0

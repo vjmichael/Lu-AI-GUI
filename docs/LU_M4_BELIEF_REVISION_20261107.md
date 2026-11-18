@@ -1,0 +1,7 @@
+## M4-P02/P03: original-source claims, contradiction and correction (source candidate)
+
+The `ansf_belief_revision` Rust module adds immutable, derived claim rows inside the **original ANSF SQLite book**. All claims have original entry ID, project/task/subject/predicate, assertion value, application version, time-bounded expiry (at most 365 days), original content hash and, for independently verified claims, an actual source-linked task checkpoint plus journal APPLIED receipt and trusted independent outcome validator. A report in a chat or assistant narrative is **Reported**, never automatically confirmed.
+
+A separate scoped query compares the full bounded set of active claims. Two different live values become **Contradicted**; neither is silently selected. Historical source edits or expiry or version changes become **Stale**. An actual newer human-sourced statement may **Supersede** an older claim; an authenticated user correction appends an immutable **Retracted** edge without destroying the earlier text. These states are stable across SQLite reopen.
+
+This stage does **not** give past messages fresh authority, run a tool, or claim that any model has judged semantic truth. Desktop/model-facing read-only integration and real local inference remain M4-P04; restart and installed Windows acceptance remain M4-P05. Native CI must prove the Rust implementation compiles before P02/P03 is considered accepted.

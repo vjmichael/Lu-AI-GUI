@@ -1,0 +1,35 @@
+name: Lu ANSF Direct IDs and External Artifact References
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify-source:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node scripts/verify-source-tree.mjs
+  native:
+    needs: verify-source
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib ansf_source_ids::tests -- --nocapture
+      - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib ansf_artifact_links::tests -- --nocapture
+      - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test ansf -- --nocapture
+      - run: cargo test --manifest-path lu-desktop/tests/native-chat/Cargo.toml -- --nocapture

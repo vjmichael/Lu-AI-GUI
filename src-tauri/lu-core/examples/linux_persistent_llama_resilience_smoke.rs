@@ -38,6 +38,7 @@ fn request(text: &str, max_new_tokens: u32) -> GenerationRequest {
     GenerationRequest {
         prompt: format!("<|im_start|>user\n{text}<|im_end|>\n<|im_start|>assistant\n"),
         max_new_tokens,
+        history: Vec::new(),
     }
 }
 fn generate_text(host: &mut InferenceHost<PersistentLlamaBackend>) -> Result<(), String> {
@@ -81,6 +82,7 @@ fn run() -> Result<(), String> {
         startup_timeout: Duration::from_secs(120),
         request_timeout: Duration::from_secs(180),
         api_key: env::var("LU_SERVER_API_KEY").map_err(|e| e.to_string())?,
+        load_observer: None,
     })?;
     let mut host = InferenceHost::new(engine);
     host.load(admissions.current().unwrap())

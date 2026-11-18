@@ -1,0 +1,150 @@
+# Lu Universal Reader — completion plan and source-of-truth
+
+**Scope:** one native Reader family. No MCP, Python interpreter, shell, Docker,
+external reader app or separate model-facing tools per format. First-party
+adapters own format parsing; hostile source text never carries instructions
+or authorization. For images, verified native model vision first; OCR only
+for text extraction.
+
+**Status as of Nov 4, 2026:** substantial source implementation exists on
+`lu/tools-11-background-task-status-20261104`, draft PR #27. The earlier
+Reader matrix passed Windows and Linux at commit `9707e69`. Newer
+model-facing desktop Q&A and range changes need *exact-head* CI and real
+installed-app acceptance. Never equate a CI compile with a successful
+real-model tool call.
+
+
+## Follow-on tools workflow pass — OCR, Reader, image interface (2026-11-06)
+
+**Owner priority:** continue native source development; old GH operations and installed acceptance are lower priority. This work is source code committed in the stacked `lu/reader-ocr-image-closeout-20261106` branch, not a release or native-test claim.
+
+| Work order | Functionality implemented with existing components | User interaction / invariant |
+| --- | --- | --- |
+| OCR-PAGES-03 | Extend the **existing** offline, reviewed PDF OCR command to accept 1–8 consecutive pages (1–32). It calls the previously pinned Poppler + Tesseract chain for each page, preserving each page's distinct original PDF SHA-256, rendered PNG SHA-256, OCR text hash, OCR engine and rasterizer hashes. The entire batch fails on any page failure, with the same single conversation-owned cancellation token. | One OS-picked PDF and **one native approval**; page selector in the image viewer; each unverified page remains individually editable/reviewed and inserted into the chat draft separately. A source is never reopened between pages. Without the approved rasterizer binary, OCR refuses the operation. No automatic citation authority. |
+| READER-SELECT-03 | Connect the existing `native_reader::read_selected_bytes`, `read_plain_text_window` and digest-based Reader continuation to the regular native `lu_reader_pick_document` command. Reader now admits the UI-supplied read **selector only**, plus an offset and expected SHA-256. Complex document reads remain bounded to 200,000 extracted characters; ordinary UTF-8/UTF-16 text can continue through the full 8 MiB input. | Desktop `Reader section` input accepts `page:N`, `chapter:N`, `notes:N`, `sheet:Name`, `range:Sheet!A1:D10` and no selector for general text. `Continue Reader` reopens an **OS picker** and refuses a different source SHA-256. No model-provided filesystem path or silent grants. Picker filenames reject controls and bidirectional overrides. |
+| IMAGE-POINTER-06 | Add a bounded native **arrow** annotation using the same immutable staged operations; source-pixel mapping now also works on the **staged native preview**, so crop/rotate/resize editors can drag their next rectangle directly on current staged dimensions. Reuses preview identity key, current plan, native geometry validation and operator-approved new-file export. | Staged overlay is keyed to the exact preview/chat/assembly; changes clear stale selections. Selecting never writes pixels, files, prompts or tool grants. Original-image drag remains the separate OCR/original-coordinate input. |
+
+**Verification boundary:** New unit/contract fixtures updated. No fresh native Windows/Linux build, installed NSIS acceptance, licensed PDF rasterizer installation or real OCR/document corpus performed in this pass. Those gates are deferred, not green. No FFMPEG or network fallback.
+
+**Truly open product gaps:** PDF ToUnicode/CMap/object-stream decoding; long-form Office extraction beyond the conservative cap; historical .doc/.xls/.ppt import; rich EPUB/RTF typography and accessibility; OCR confidence/paragraph geometry and robust scanned-PDF corpus/packaging; image text/brush layers or generative edits; independent runtime containment assurance. Do not duplicate already working read-only parsers, existing OCR engines, revision history, or preview/export flows.
+
+## OCR source implementation — region, scanned-PDF page and cancellation (2026-11-06)
+
+**Work order OCR-CLOSE-02 — implemented in source, acceptance deferred.** Extended the existing digest-pinned Tesseract OCR kernel rather than introducing a second worker. `recognize_pinned_image_cancellable` shares a bounded, stdin/stdout, host-owned process runner with an optional, separately pinned Poppler `pdftocairo` rasterizer. Windows children are spawned suspended and assigned to Lu's kill-on-close Job Object; Unix children run in a private process group and are killed/reaped on cancellation, timeout or exit. Host activity is tracked per conversation with a Stop OCR action; the old selected-image and attached-image routes now pass cancellation and release their registry entry after completion/error.
+
+The new native-attached-region command crops only the **original** host-admitted PNG/JPEG, retaining the original SHA-256 plus a distinct derived crop hash, exact bounded coordinates and unverified transcript digest. An explicitly selected PDF page (1–32) may be rasterized at <=2048 pixels by a separately license-reviewed, SHA-pinned Poppler executable supplied through the existing installer-owned `lu-ocr` resource set. PDF bytes are pinned through the existing Reader native picker **before** consent; one PNG is passed in-memory to the existing Tesseract. No arbitrary system PATH, shell, URL fetch, PDF save or model file grants. The reviewed Windows staging manifest can optionally supply `pdftocairo.exe` and `LU_OCR_PDF_RENDER_SHA256`. Without that exact resource, PDF OCR **fails closed**. Neither rasterization nor OCR establishes verified document text or trusted model instructions.
+
+**Open:** authentic license-reviewed PDF renderer distribution, Linux OCR package staging, installed multi-page OCR usability and real-file accuracy, rigorous OS worker sandbox beyond process containment, malicious PDF resource limits and truly progressive large corpus. Testing artifacts are authored but not executed in this work order.
+
+## Reader source continuation — RTF and EPUB (2026-11-06)
+
+**Work order READER-CLOSE-02 — source implemented, independent acceptance deferred.** Reused the same model-visible `lu.reader.read`, native picker, immutable source SHA-256, caller-supplied `expected_source_sha256` paging and capability/policy checks. Added conservative read-only **RTF Windows-1252/RTF Unicode** extraction with nested group and control parsing, object/font-table suppression, bounded expansion and explicit unsupported encoding. Added **EPUB text spine** with the existing ZIP central-directory admission (12 MiB max total expansion), validated EPUB MIME/container, package-root scoped paths, encrypted-book rejection, chapter ordering and `chapter:N` selection. XHTML body text is extracted without script execution, resource loading or CSS interpretation. Standard Reader selectors for PDF pages, sheet ranges and slide notes are unchanged. The desktop Reader picker now admits ODT, RTF and EPUB extensions.
+
+**Not done:** no rich RTF formatting fidelity, multimedia EPUB presentation, DRM bypass, PDF font CMaps/xref object streams, arbitrary 200K+ whole-Office text extraction, large corpus/parser sandboxing or external office compatibility guarantees. Do not treat a conservative adapter as 100% fidelity.
+
+## 2026-11-06 source continuation (not native acceptance)
+
+This is an updated implementation checkpoint on `lu/reader-ocr-image-closeout-20261106`, stacked on the IMAGE-WS-PREVIEW branch. The older status matrix below is retained as historical design context. The **existing** pinned Tesseract offline OCR worker is now reusable from the already-admitted original image in Image Workspace, with explicit native review, exact digest and chat/image scoped display. Reader adds ODT text, ODS A1 sheet ranges, and selected PPTX/ODP speaker notes (`notes:2`). Native PNG/JPEG decoding preflights OCR source dimensions. All extracted OCR words remain unverified human-review data; screenshots and PDF image pages are not silently treated as textual truth.
+
+The subsequent OCR hardening pass now **byte-pins the native-picked image before consent**, validates Unix inode/Windows reparse attributes and shows the pinned SHA in the consent dialog. The UI offers a bounded editable transcription excerpt and rejects a corrected insertion exceeding the 16 KiB chat-draft budget. Raw OCR hashes remain distinct from user edits. Real installed OCR/runtime/large scanned-document acceptance is still open.
+
+Remaining source gaps are substantial: real scanned-PDF rasterization and OCR (not just embedded image extraction), complex PDF ToUnicode/CMaps/object streams, secure worker-isolated hostile parsing, more large Office document progressive reading, accessible charts/formulas/layout and long-tail format adapters. Native Windows/Linux, physical Windows installation, GGUF/MMProj and real corpus acceptance have **not** been run on this source. Historical `RDR-04 Not implemented` is superseded only for PNG/JPEG offline OCR and does not imply scanned-PDF completion.
+
+## Already implemented in source
+
+- `src-tauri/lu-core/src/native_reader.rs`: bounded format dispatch,
+  UTF-8/UTF-16 text, typed failure, selected section dispatch.
+- `native_reader_docx.rs`: bounded DOCX body text, paragraphs and tables;
+  no macros/external relationship execution.
+- `native_reader_openxml.rs`, `native_reader_office.rs`:
+  ZIP admission, XLSX sheet/cell/shared string/formula extraction and
+  PPTX ordered slide text. XLSX A1 range selectors have been added.
+- `native_reader_odf.rs`: initial ODS cells/formulas/repeated blank
+  rows/columns and ODP slide text, with ODF content MIME checks.
+- `native_reader_pdf.rs`: intentionally limited classic PDF text layer
+  with page anchors, literal/hex text operators and plain/Flate streams.
+  It explicitly rejects unreadable/scanned/complex PDF inputs.
+- `native_reader_tool.rs`: `lu.reader.read` Protobuf tool,
+  inspect-only, bounded character-offset paging, sheet/range/slide/page
+  selectors, source SHA-256 pinning, cap-rooted workspace operations and
+  immutable one-file snapshots. Tool registration **is not authorization**.
+- `native_reader_turn.rs`: read-only, persisted-user-verifier-gated
+  one-document model tool loop, bound conversation/task scope, journaled
+  model interactions, automatic revocation. Desktop Reader requests now
+  persist a unique host-minted `ReaderUser` journal event, not just matching
+  user text; queued turns retain exact scope even after later messages.
+- `lu-desktop/src-tauri/src/reader_desktop.rs`: explicit native-picker
+  experimental 'Ask Reader' Q&A using the existing supervised tool loop,
+  per-turn pinned bytes, real queued generation IDs and cancellation of
+  underlying multi-step backend generations.
+- `lu-desktop/web/main.jsx`: normal 'Read file' manual attachment and
+  separate opt-in 'Ask Reader' button. Normal chat generation remains
+  unchanged. Structured Reader Q&A does **not** stream partial tokens yet.
+- `src-tauri/lu-core/src/vision_routing.rs`: native-vision-first policy
+  requires backend + model/projector + live image-probe evidence; the
+  actual host attestation and probe publishing remain unimplemented.
+
+## Remaining acceptance gates (priority order)
+
+| Gate | Work | Close criteria | Status |
+| --- | --- | --- | --- |
+| RDR-01 | Core native read-only tool turn | Real model JSON→Protobuf Reader request; exact persisted turn authorization; 0 cross-file access; no grants after finish/revoke | Implemented/test harness; live model acceptance open |
+| RDR-02 | Desktop Reader Q&A | Windows build, file dialog, queued chat switch, cancel at tool step, saved final and restart, no synthetic user turns | Opt-in source path in branch; installed-app test open |
+| RDR-03 | PDF completeness | Position/page provenance for real producer PDFs; CMaps/ToUnicode, bounded nested pages, cross-reference/object streams where safe; explicit scanned detection | Bounded nested /Pages tree traversal with Catalog, parent, cycle and Count guards added in source on a separate draft; CMaps/cross-reference/object streams and scanned-page OCR remain open |
+| RDR-04 | Document photo/scanned PDF OCR | Offline, pinned native OCR worker with strict deadlines, page/image budgets and process termination; no implicit system package; cross-platform fixtures | Not implemented |
+| RDR-05 | Progressive reading | Reliable inspect/catalog→section→bounded reads for large input, backpressure, page/range indexes, searchable source anchors, no 200K extracted-character ceiling | Full-source UTF-8/UTF-16 text paging up to 8 MiB implemented; PDF/Office remain limited to 200K extraction, true stream-backed parsing/backpressure open |
+| RDR-06 | Rich workbook/deck scope | XLSX/ODS cell ranges, cached-value/formula distinctions, dates, hidden/merged cells, slide notes/tables/charts and accessible visual references | XLSX range initial; other advanced features open |
+| RDR-07 | Native visual-model evidence | Per-session actual image Q&A probe, backend feature proof, invalidate evidence on model/projector/backend/session changes | Policy implemented, live probe not wired |
+| RDR-08 | Parser containment | Host-owned sandbox worker for risky PDF/Office/OCR parsing, hard CPU/memory budgets, worker kill/recovery, hostile documents and fuzzing | In-process bounded adapters; worker isolation open |
+| RDR-09 | Compatibility adapters | ODT, RTF, EPUB, legacy DOC/XLS/PPT, optional macro-enabled Office as *read-only* with macros rejected | Not implemented |
+| RDR-10 | End-to-end acceptance | Real files from Office/LibreOffice/popular PDF writers, 50+ representative + hostile fixtures, Windows installed NSIS, Linux native, local GGUF and MMProj | Synthetic unit tests pass; real installed acceptance open |
+
+**Minimum viable Reader closeout:** RDR-01, RDR-02, RDR-03, RDR-04,
+RDR-05, RDR-08 and RDR-10. RDR-06 can close incrementally by feature;
+RDR-07 controls the native-vision route and is required before claiming
+vision automatically detected. RDR-09 is a *long-tail compatibility* gate,
+not a reason to block a useful alpha.
+
+## Verification
+
+- GitHub workflow:
+  `.github/workflows/lu-tools-11-background.yml`.
+- Native tests: `cargo test --locked --manifest-path
+  src-tauri/lu-core/Cargo.toml --lib native_reader -- --nocapture`;
+  additionally `native_reader_docx`, `native_reader_openxml`,
+  `native_reader_office`, `native_reader_odf`, `native_reader_pdf`,
+  `native_reader_tool` and `native_reader_turn`.
+- Desktop tests:
+  `node --test lu-desktop/tests/reader-desktop.test.mjs`;
+  Windows `cargo check` host and install/launch acceptance with authentic
+  packaged inference engine **are separate tests**.
+- A passing Linux unit suite or a Windows Rust compile does not establish
+  that Qwen emits valid structured tool calls, that Vulkan is active, or that
+  the NSIS installation works. Always test on the physical Windows machine.
+
+## Reader interaction semantics
+
+1. Ordinary attachment: operator chooses a file, native code extracts a
+   bounded initial excerpt into the chat draft. No model filesystem grant.
+2. Ask Reader: operator chooses exactly one file **for this turn**.
+   The original path never enters the model tool schema; Lu pins an immutable
+   in-memory copy, verifies the exact host-minted ID and text of its durable
+   `ReaderUser` event (not merely the most recent matching prompt), opens only
+   `lu.reader.read` with `ReadWorkspace`, journals every action and
+   automatically revokes on completion/failure/cancellation.
+3. `inspect_only` returns metadata without source text. For text formats,
+   `offset_chars` now pages the full admitted source up to 8 MiB without the
+   previous 200K-character cutoff; PDF/Office still have bounded adapters.
+   A subsequent `offset_chars` request can pin `expected_source_sha256` to reject
+   changed source revisions. `selector` accepts `sheet:Name`,
+   `range:Sales!A1:D50` (XLSX), `slide:2` and `page:3` on formats
+   supporting those selections.
+4. Untrusted source material must not alter host permission policy or the
+   identity of user/assistant/chat turns.
+
+## Do not accidentally expand promises
+
+Reader is one *extensible interface* for document formats. It does not
+magically understand arbitrary unknown binary formats, re-render all charts,
+recalculate workbook formulas, perform vision on a text-only GGUF, or execute
+macros. Unsupported and unreadable sections must be reported explicitly.

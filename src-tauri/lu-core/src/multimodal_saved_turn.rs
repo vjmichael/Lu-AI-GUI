@@ -345,7 +345,7 @@ pub fn build_structured_chat_request(
         || prompt.len() > MAX_PROMPT_BYTES
         || !(1..=32768).contains(&max_new_tokens)
         || images.len() > MAX_IMAGES
-        || history.len() > 16
+        || history.len() > crate::inference_wire::MAX_INFERENCE_HISTORY_TURNS
     {
         return Err(MultimodalError::InvalidGeneration);
     }
@@ -355,7 +355,8 @@ pub fn build_structured_chat_request(
         context_bytes = context_bytes.saturating_add(turn.text.len());
         if !matches!(turn.role.as_str(), "user" | "assistant")
             || turn.text.trim().is_empty()
-            || context_bytes > 15 * 1024
+            || turn.text.len()>crate::inference_wire::MAX_INFERENCE_HISTORY_ENTRY_BYTES
+            || context_bytes > crate::inference_wire::MAX_INFERENCE_HISTORY_BYTES
         {
             return Err(MultimodalError::InvalidGeneration);
         }
@@ -386,10 +387,22 @@ pub fn build_structured_chat_request(
     } else {
         messages.push(json!({"role":"user","content":parts}));
     }
-    Ok(
-        json!({"messages":messages,"max_tokens":max_new_tokens,"temperature":0.0,"stream":true})
-            .to_string(),
-    )
+    // Vision is an observation task. Hybrid Qwen-family chat templates can
+    // use the entire short response budget for internal reasoning, returning
+    // no final visible token. llama.cpp supports both explicit options.
+    // Keep the standard text/tool path unchanged so agent reasoning remains.
+    // Neither option substitutes for proof of actual image understanding.
+    let mut request=json!({
+        "messages":messages,
+        "max_tokens":max_new_tokens,
+        "temperature":0.0,
+        "stream":true
+    });
+    if !images.is_empty() {
+        request["chat_template_kwargs"]=json!({"enable_thinking":false});
+        request["reasoning_effort"]=json!("none");
+    }
+    Ok(request.to_string())
 }
 
 /// Compatibility wrapper for the existing saved multimodal turn parser.
@@ -432,7 +445,13 @@ pub fn parse_chat_sse_frame(frame: &[u8]) -> Result<ChatEvent, MultimodalError> 
     if data == "[DONE]" {
         return Ok(ChatEvent::Done);
     }
-    let json: Value = serde_json::from_str(data).map_err(|_| MultimodalError::InvalidChatEvent)?;
+    // Engine SSE is external JSON, not trusted internal Protobuf. The
+    // bounded event must be one unambiguous object (no duplicate fields at
+    // ANY depth), otherwise refuse it before emitting model text.
+    let json = Value::Object(
+        crate::model_json_boundary::parse_exact_boundary_object(data, 64 * 1024)
+            .map_err(|_| MultimodalError::InvalidChatEvent)?,
+    );
     if json.get("error").is_some() {
         return Err(MultimodalError::InvalidChatEvent);
     }
@@ -587,6 +606,8 @@ mod tests {
         let body = build_llama_chat_request(&turn, 128).unwrap();
         let payload: Value = serde_json::from_str(&body).unwrap();
         assert_eq!(payload["messages"][0]["content"][1]["type"], "image_url");
+        assert_eq!(payload["chat_template_kwargs"]["enable_thinking"], false);
+        assert_eq!(payload["reasoning_effort"], "none");
         assert!(payload["messages"][0]["content"][1]["image_url"]["url"]
             .as_str()
             .unwrap()
@@ -616,6 +637,22 @@ mod tests {
             parse_chat_sse_frame(b"data: {\"content\":\"pretend image text\"}\n\n"),
             Err(MultimodalError::InvalidChatEvent)
         );
+    }
+    #[test]
+    fn external_engine_sse_refuses_ambiguous_duplicate_and_partial_json() {
+        for frame in [
+            br#"data: {"choices":[{"delta":{"content":"safe","content":"unsafe"},"finish_reason":null}]}
+
+"#.as_slice(),
+            br#"data: {"choices":[{"delta":{"content":"safe"},"finish_reason":null}],"choices":[]}
+
+"#.as_slice(),
+            br#"data: {"choices":[{"delta":{"content":"partial"},"finish_reason":null}] 
+
+"#.as_slice(),
+        ] {
+            assert_eq!(parse_chat_sse_frame(frame), Err(MultimodalError::InvalidChatEvent));
+        }
     }
     #[test]
     fn image_only_turn_is_supported_but_no_prompt_is_forbidden() {
@@ -679,4 +716,18 @@ mod tests {
         )
         .is_err());
     }
+    #[test]
+    fn structured_image_and_text_history_accepts_current_ipc_limits_only(){
+        let turns=(0..32).map(|index|crate::inference_host::ChatTurn{
+            role:if index%2==0{"user"}else{"assistant"}.into(),
+            text:"host-persisted conversation evidence".repeat(10),
+        }).collect::<Vec<_>>();
+        assert!(build_structured_chat_request("Continue",&turns,&[],512).is_ok());
+        let mut too_many=turns;
+        too_many.push(crate::inference_host::ChatTurn{
+            role:"user".into(),text:"extra history".into()
+        });
+        assert!(build_structured_chat_request("Continue",&too_many,&[],512).is_err());
+    }
+
 }

@@ -5,3 +5,5 @@ src-tauri/gen/
 src-tauri/resources/lu-inference/*.exe
 src-tauri/resources/lu-inference/*.dll
 *.log
+
+src-tauri/icons/icon.png

@@ -3,8 +3,20 @@
 //! display-only, never silently promoted to completed context.
 use crate::chat_store::ChatMessage;
 
-const MAX_CONTEXT_BYTES: usize = 15 * 1024;
-const MAX_PRIOR_TURNS: usize = 16;
+const DEFAULT_CONTEXT_BYTES: usize = 15 * 1024;
+const MAX_CONTEXT_BYTES: usize = 64 * 1024;
+const MAX_HISTORY_ENTRY_BYTES: usize = 15 * 1024;
+const MAX_PRIOR_TURNS: usize = 32;
+
+/// Context is a HOST-SELECTED GGUF load profile, not a model instruction.
+/// This is a conservative byte budget, NOT a tokenizer measurement or a
+/// promise that an arbitrary model prompt fits its actual token window.
+fn history_byte_budget(context_tokens:u32,output_tokens:u32)->usize{
+    let spare=context_tokens.saturating_sub(output_tokens)
+        .saturating_sub(1024);
+    (spare as usize).saturating_mul(2)
+        .clamp(DEFAULT_CONTEXT_BYTES,MAX_CONTEXT_BYTES)
+}
 
 /// Build canonical, journal-derived roles for Lu's native Protobuf request.
 /// This never serializes a `User:` / `Assistant:` transcript into one string.
@@ -13,8 +25,22 @@ pub fn typed_history(
     previous: &[ChatMessage],
     current: &str,
 ) -> Vec<lu_core::wire::proto::InferenceChatTurn> {
+    typed_history_for_model(previous,current,4096,512)
+}
+
+/// Use the actual loaded model's host-pinned context/output admission.
+/// Extended contexts can carry more native typed history without ever
+/// flattening untrusted content into privileged system instructions.
+pub fn typed_history_for_model(
+    previous: &[ChatMessage],
+    current: &str,
+    context_tokens:u32,
+    output_tokens:u32,
+) -> Vec<lu_core::wire::proto::InferenceChatTurn> {
+    let limit=history_byte_budget(context_tokens,output_tokens);
     let mut out = Vec::new();
     let mut bytes = current.len();
+    if bytes>=limit { return out; }
     for entry in previous.iter().rev() {
         if !matches!(entry.role.as_str(), "user" | "assistant")
             || (entry.role == "assistant" && entry.interrupted)
@@ -22,10 +48,13 @@ pub fn typed_history(
         {
             continue;
         }
-        // Keep history bounded by the same limits enforced by Lu Core IPC.
-        if out.len() >= MAX_PRIOR_TURNS || bytes + entry.text.len() > MAX_CONTEXT_BYTES {
-            break;
+        // Never send an oversized single source row through Protobuf.
+        // Skip it rather than discard older short and relevant turns.
+        if entry.text.len()>MAX_HISTORY_ENTRY_BYTES
+            || bytes.saturating_add(entry.text.len())>limit {
+            continue;
         }
+        if out.len()>=MAX_PRIOR_TURNS {break}
         bytes += entry.text.len();
         out.push(lu_core::wire::proto::InferenceChatTurn {
             role: entry.role.clone(),
@@ -34,6 +63,64 @@ pub fn typed_history(
     }
     out.reverse();
     out
+}
+
+/// Unprivileged model-facing proposal hints until the native typed-tool catalog
+/// is carried in inference IPC. The real saved user prompt remains unchanged.
+/// A proposal is text data, NEVER a filesystem action or an authority grant.
+/// Wave 3: introduce only an inert model action proposal when the actual
+/// current user request unambiguously names a supported operation.
+pub fn model_native_action_hint(prompt:&str)->String{
+    if crate::native_action_proposal::classify_current_user_action(prompt).is_none(){
+        return prompt.to_owned()
+    }
+    const HINT:&str=r#"
+
+[Lu native file-operation REVIEW proposal, unprivileged]
+If the human explicitly requested one supported operation and you have enough information, output one exact JSON object ONLY:
+{"kind":"propose_native_action","action":"ONE_ACTION","purpose":"brief original user reason"}
+ONE_ACTION must equal exactly one of: copy_file, move_file, trash_file, extract_archive, extract_archive_batch, split_archive, create_document, revise_office, batch_office, create_text_file, edit_text_file. It cannot be a list.
+For create_text_file or edit_text_file, additionally include exactly:
+"textFileDraft":{"fileName":"safe-basename.ext","content":"COMPLETE UTF-8 contents"}
+This is whole-file text, not a patch, path or selection of an OS directory. Use a format-consistent basename and syntactically correct JSON if the file is .json. For edit_text_file NEVER invent the old text or a partial replacement: if you cannot provide the entire correct new file, ask the human for it.
+For create_document only, optionally supply:
+"documentDraft":{"format":"docx","title":"short title","content":"complete text"} (or pptx).
+For revise_office only, optionally supply:
+"officePatch":{"kind":"word_text","textIndex":0,"slideNumber":1,"sheetNumber":1,"address":"A1","expectedOld":"exact original text","newValue":"replacement"}
+For batch_office only, optionally supply "officeBatch" as 2-8 such changes.
+Do NOT include a path, OS directory, permission, grant, tool ID, command, arguments or executable code. The ONLY filename allowed is the untrusted textFileDraft.fileName, validated again by Lu; for all other actions the human chooses the exact source using a native picker. A proposal does NOT make or authorize a filesystem change. Lu will show a separate human review, native OS selection, exact source bytes and hashes, and one-use native approval with independently checked journal results. If details are uncertain, give a normal answer or ask a question, not fabricated proposal JSON.
+[/Lu native operation review proposal]"#;
+    if prompt.len()+HINT.len()>16*1024{return prompt.to_owned()}
+    format!("{prompt}{HINT}")
+}
+pub fn model_file_creation_hint(prompt: &str) -> String {
+    // Only the actual user's leading request determines whether a model
+    // receives a write-proposal hint. Attached text is untrusted document
+    // content and cannot request execution or mutate the advertised contract.
+    let current_user=prompt.split("\n\n[Attached text file:").next().unwrap_or(prompt);
+    let lower=current_user.to_ascii_lowercase();
+    let subject=["file","document","readme","config","source code","script",
+        ".json",".jsonl",".md",".txt",".py",".rs",".toml",".yaml",".yml",
+        ".csv",".ts",".js",".html",".css"]
+        .iter().any(|word|lower.contains(word));
+    let explicit_edit=["edit","modify","revise","update","replace","change",
+        "patch","correct","fix"].iter().any(|verb|lower.contains(verb));
+    let explicit_create=["create","write","save","export","generate"]
+        .iter().any(|verb|lower.contains(verb));
+    let negated=["do not create","don't create","do not save","don't save",
+        "do not write","don't write","do not edit","don't edit",
+        "do not modify","don't modify","do not change","don't change",
+        "do not replace","don't replace"]
+        .iter().any(|phrase|lower.contains(phrase));
+    const CREATE_HINT:&str="\n\n[Lu new-file proposal contract, unprivileged]\nIf and only if the user requested creating a NEW local UTF-8 text file and provided enough content, output exactly one JSON object with only these fields: {\"kind\":\"propose_create_file\",\"file_name\":\"appropriate.ext\",\"purpose\":\"brief description\",\"content\":\"complete UTF-8 text\"}. Choose the extension from the intended format (.json must contain valid JSON, .md Markdown, .py Python, etc.). Do not provide a directory, absolute path, file handle, user approval, or tool grant. This can only create a file that does NOT already exist. Lu will ask the user to choose a folder and confirm before performing a write. Never claim it was saved merely by proposing JSON. If insufficient content, ask rather than fabricate. [/Lu new-file proposal contract]";
+    const EDIT_HINT:&str="\n\n[Lu existing-file edit proposal contract, unprivileged]\nIf and only if the user explicitly requests editing an EXISTING local UTF-8 text file and you can supply the COMPLETE proposed replacement text, output exactly one JSON object with only these fields: {\"kind\":\"propose_edit_file\",\"file_name\":\"existing-name.ext\",\"purpose\":\"brief reason\",\"content\":\"complete replacement UTF-8 text\"}. This is NOT a patch fragment. Select a meaningful filename/extension and syntactically valid content (.json must be valid JSON). Do not invent original-file bytes, a directory, host path, file handle, approval or grant; you cannot modify files yourself. Lu will require the human to select the matching existing file using a native picker, show ALL old/new bytes and changes, obtain a separate native confirmation, and perform a journaled conflict-checked write. If you lack enough information for a complete replacement, ask for it instead of returning a proposal. Never claim an edit occurred because you proposed one. [/Lu existing-file edit proposal contract]";
+    let exploratory=["how do i ","how can i ","how to ","what is ","what does "]
+        .iter().any(|prefix|lower.trim_start().starts_with(prefix));
+    if !subject||negated||exploratory {return prompt.to_owned();}
+    let hint=if explicit_edit {EDIT_HINT}
+        else if explicit_create {CREATE_HINT} else {return prompt.to_owned()};
+    if prompt.len()+hint.len()>16*1024 {return prompt.to_owned();}
+    format!("{prompt}{hint}")
 }
 
 #[cfg(test)]
@@ -46,6 +133,46 @@ mod tests {
             interrupted,
             cancelled: interrupted,
         }
+    }
+    #[test]
+    fn native_review_hints_are_only_for_explicit_user_operations(){
+        let p=model_native_action_hint("Move the file notes.md");
+        assert!(p.contains("propose_native_action"));
+        assert!(p.contains("Do NOT include a path"));
+        for text in ["How do I move a file?", "Do not delete this file",
+            "What is a tar archive?"]{
+            assert_eq!(model_native_action_hint(text),text);
+        }
+    }
+    #[test]
+    fn native_text_file_hint_is_review_only_and_has_no_direct_effect_permission(){
+        let hint=model_native_action_hint("Edit notes.md");
+        assert!(hint.contains("edit_text_file"));
+        assert!(hint.contains("textFileDraft"));
+        assert!(hint.contains("Do NOT include a path"));
+        assert!(!hint.contains("automatic execution granted"));
+        assert_eq!(model_native_action_hint("Do not edit notes.md"),"Do not edit notes.md");
+    }
+    #[test]
+    fn file_tool_hint_only_on_explicit_create_save_requests() {
+        assert_eq!(model_file_creation_hint("What is a file?"), "What is a file?");
+        assert_eq!(model_file_creation_hint("Do not create a file"), "Do not create a file");
+        let prompt=model_file_creation_hint("Save the report to a Markdown file");
+        assert!(prompt.contains("propose_create_file"));
+        assert!(prompt.contains("does NOT already exist"));
+        assert!(prompt.contains("choose a folder and confirm"));
+    }
+    #[test]
+    fn explicit_edit_prompts_receive_only_an_inert_replacement_proposal() {
+        let p=model_file_creation_hint("Edit notes.md to correct the grammar");
+        assert!(p.contains("propose_edit_file"));
+        assert!(p.contains("COMPLETE proposed replacement"));
+        assert!(!p.contains("propose_create_file"));
+        assert_eq!(model_file_creation_hint("Don't edit notes.md"),"Don't edit notes.md");
+        assert_eq!(model_file_creation_hint("How do I edit notes.md?"),
+            "How do I edit notes.md?");
+        assert_eq!(model_file_creation_hint("What is an update to a JSON file?"),
+            "What is an update to a JSON file?");
     }
     #[test]
     fn empty_history_yields_no_prior_turns() {
@@ -86,4 +213,38 @@ mod tests {
         let prior = typed_history(&previous, "Tell me about songs");
         assert_eq!(prior[0].role, "user");
     }
+    #[test]
+    fn extended_loaded_context_uses_more_real_typed_history_but_never_unbounded() {
+        let previous=(0..60).map(|i|
+            msg(if i%2==0{"user"}else{"assistant"},&format!("Turn {i}: {}", "x".repeat(1800)),false)
+        ).collect::<Vec<_>>();
+        let baseline=typed_history(&previous,"What changed?");
+        let extended=typed_history_for_model(&previous,"What changed?",32768,1024);
+        assert!(extended.len()>baseline.len());
+        assert!(extended.len()<=MAX_PRIOR_TURNS);
+        assert!(extended.iter().map(|t|t.text.len()).sum::<usize>()<=MAX_CONTEXT_BYTES);
+        assert_eq!(extended.last().unwrap().text,previous.last().unwrap().text);
+        assert_eq!(baseline.last().unwrap().text,previous.last().unwrap().text);
+    }
+    #[test]
+    fn one_oversized_recent_entry_does_not_erase_older_safe_history() {
+        let previous=[
+            msg("user","I approved the checked source",false),
+            msg("assistant",&"Z".repeat(20*1024),false),
+            msg("user","Review the next step",false),
+            msg("assistant","unverified partial",true),
+        ];
+        let history=typed_history_for_model(&previous,"Continue",32768,512);
+        assert_eq!(history.len(),2);
+        assert_eq!(history[0].text,"I approved the checked source");
+        assert_eq!(history[1].text,"Review the next step");
+    }
+    #[test]
+    fn default_model_context_keeps_the_old_budget() {
+        assert_eq!(history_byte_budget(4096,512),DEFAULT_CONTEXT_BYTES);
+        assert_eq!(history_byte_budget(262144,4096),MAX_CONTEXT_BYTES);
+        let prior=[msg("user","source data",false)];
+        assert!(typed_history_for_model(&prior,&"z".repeat(MAX_CONTEXT_BYTES),262144,512).is_empty());
+    }
+
 }

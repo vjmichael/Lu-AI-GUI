@@ -1,15 +1,18 @@
 use lu_core::{AnsfStore, ContinuityError, ContinuityStore, TaskCheckpoint};
 use std::{
     path::PathBuf,
+    sync::atomic::{AtomicU64, Ordering},
     time::{SystemTime, UNIX_EPOCH},
 };
+
+static NEXT_TEMP: AtomicU64 = AtomicU64::new(0);
 
 fn temp() -> PathBuf {
     let t = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_nanos();
-    std::env::temp_dir().join(format!("lu-continuity-{}-{t}.sqlite", std::process::id()))
+    std::env::temp_dir().join(format!("lu-continuity-{}-{t}-{}.sqlite", std::process::id(), NEXT_TEMP.fetch_add(1, Ordering::SeqCst)))
 }
 fn sample() -> TaskCheckpoint {
     TaskCheckpoint {

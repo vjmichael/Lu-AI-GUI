@@ -1,0 +1,74 @@
+name: Lu AGENT-01I Fresh Continuation Intent Native Candidate
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: lu-agent01i-${{ github.event.pull_request.head.ref || github.ref_name }}
+  cancel-in-progress: true
+jobs:
+  native-fresh-intent:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify exact source tree and ref
+        shell: bash
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          node scripts/verify-source-tree.mjs
+          mkdir -p agent01i-evidence
+          printf 'HEAD=%s\nOS=%s\n' "$EXPECTED_HEAD" "$RUNNER_OS" > agent01i-evidence/source.txt
+      - name: AGENT-01I source boundary and native host wiring checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --test lu-desktop/tests/agent01i-fresh-continuation.test.mjs \
+            2>&1 | tee agent01i-evidence/source-boundary.log
+          grep -Fq '# pass 8' agent01i-evidence/source-boundary.log
+          grep -Fq '# fail 0' agent01i-evidence/source-boundary.log
+      - name: Compile actual Lu Core and run native continuation tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --lib agent_continuation_intent::tests -- --nocapture \
+            2>&1 | tee agent01i-evidence/native-continuation.log
+          grep -Fq 'test agent_continuation_intent::tests::scope_and_sha_are_strict_and_lowercase ... ok' agent01i-evidence/native-continuation.log
+          grep -Fq 'test agent_continuation_intent::tests::durable_intent_is_immutable_and_not_execution_authority ... ok' agent01i-evidence/native-continuation.log
+          grep -Fq 'test agent_continuation_intent::tests::immutable_child_link_survives_restart_and_rejects_duplicate_or_wrong_human ... ok' agent01i-evidence/native-continuation.log
+          grep -Fq 'test result: ok. 3 passed; 0 failed;' agent01i-evidence/native-continuation.log
+      - name: Compile actual installed-host Tauri command path
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo check --locked --manifest-path lu-desktop/src-tauri/Cargo.toml \
+            2>&1 | tee agent01i-evidence/tauri-compile.log
+          echo 'AGENT-01I desktop native host compiled on this runner, not installed on user hardware.' >> "$GITHUB_STEP_SUMMARY"
+      - name: Preserve acceptance boundary
+        shell: bash
+        run: |
+          echo 'AGENT-01I stages immutable continuation and distinct child plan, but these unit/source checks alone do not demonstrate real Qwen tool choice, OS Git, independent oracles, installed NSIS or physical Windows acceptance. Separate E1-P07 real Qwen two-step gate is mandatory; automatic continuation stays disabled.' >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lu-agent01i-native-${{ matrix.os }}
+          path: agent01i-evidence/
+          retention-days: 14
+          if-no-files-found: warn

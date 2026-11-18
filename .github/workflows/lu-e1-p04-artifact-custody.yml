@@ -1,0 +1,100 @@
+name: Lu E1-P04 Real Worker Artifact Custody Windows Linux
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: lu-e1-p04-custody-${{ github.event.pull_request.head.ref || github.ref_name }}
+  cancel-in-progress: true
+jobs:
+  source:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Assert exact E1 source checkout identity
+        shell: bash
+        env:
+          EXPECTED_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          actual="$(git rev-parse HEAD)"
+          test "$actual" = "$EXPECTED_SOURCE_SHA"
+          printf 'LU_E1_SOURCE_HEAD=%s\n' "$actual"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node scripts/verify-source-tree.mjs
+  genuine-os-child:
+    needs: source
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Assert exact E1 source checkout identity
+        shell: bash
+        env:
+          EXPECTED_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          actual="$(git rev-parse HEAD)"
+          test "$actual" = "$EXPECTED_SOURCE_SHA"
+          printf 'LU_E1_SOURCE_HEAD=%s\n' "$actual"
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - name: Build reviewed first-party OOXML producer and adversarial binaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo build --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --example e1_reviewed_artifact_worker \
+            --example e1_artifact_slow_worker \
+            --example e1_artifact_invalid_worker
+      - name: Exact native protocol and independent office parser regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p e1-p04-custody-evidence
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --lib native_background_process::tests -- --nocapture 2>&1 \
+            | tee e1-p04-custody-evidence/stdout-protocol.log
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --test e1_artifact_custody -- --nocapture 2>&1 \
+            | tee e1-p04-custody-evidence/structure-regression.log
+      - name: Genuine OS worker pipe to real DOCX/XLSX publication and cancellation
+        shell: bash
+        run: |
+          set -euo pipefail
+          suffix=""
+          if [[ "$RUNNER_OS" == "Windows" ]]; then suffix=".exe"; fi
+          export LU_E1_ARTIFACT_WORKER="$GITHUB_WORKSPACE/src-tauri/lu-core/target/debug/examples/e1_reviewed_artifact_worker${suffix}"
+          export LU_E1_ARTIFACT_SLOW_WORKER="$GITHUB_WORKSPACE/src-tauri/lu-core/target/debug/examples/e1_artifact_slow_worker${suffix}"
+          export LU_E1_ARTIFACT_INVALID_WORKER="$GITHUB_WORKSPACE/src-tauri/lu-core/target/debug/examples/e1_artifact_invalid_worker${suffix}"
+          test -s "$LU_E1_ARTIFACT_WORKER"
+          test -s "$LU_E1_ARTIFACT_SLOW_WORKER"
+          test -s "$LU_E1_ARTIFACT_INVALID_WORKER"
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --test e1_artifact_custody -- --ignored --nocapture 2>&1 \
+            | tee e1-p04-custody-evidence/real-worker-publication.log
+          grep -Eq 'test result: ok\. 5 passed; 0 failed;' e1-p04-custody-evidence/real-worker-publication.log || {
+            echo 'E1_NATIVE_ACCEPTANCE_INCOMPLETE: expected 5 real tests' >&2
+            exit 1
+          }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lu-e1-p04-owned-artifact-${{ matrix.os }}
+          path: e1-p04-custody-evidence/
+          if-no-files-found: warn
+          retention-days: 14

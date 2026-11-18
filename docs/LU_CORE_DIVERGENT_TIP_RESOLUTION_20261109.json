@@ -1,0 +1,312 @@
+{
+  "schema": "lu-r00-divergent-tip-resolution-v1",
+  "repository": "vjmichael/Lu-AI-GUI",
+  "originalCoreCompareSha": "a7d82f13fd62ba460be9b204ba7574b9dcf87dcf",
+  "currentConvergenceBranch": "lu/r00-core-convergence-20261109",
+  "date": "2026-11-09",
+  "sourceOfTruth": "GitHub side-branch comparisons pinned to original Core head; source-level reconciliation decisions only",
+  "warning": "Disposition is NOT Git ancestry, a merged PR, native acceptance, installed application or permission.",
+  "counts": {
+    "originalDivergent": 22,
+    "selectivelyAdopted": 2,
+    "supersededOrHistoric": 14,
+    "deferred": 6
+  },
+  "entries": [
+    {
+      "pr": 3,
+      "branch": "lu/repo01-source-identity-gate-20261103",
+      "sourceSha": "45f4db62d1f47c1d070fddd6565612d61c6d2e56",
+      "sourceCommitsNotInOriginalCore": 3,
+      "disposition": "SUPERSEDED_CORE",
+      "finding": "REPO-01 verifier and malicious-edit tests already byte-identical; separate early workflow unnecessary",
+      "evidencePath": [
+        "scripts/source-identity.mjs",
+        "tests/source-identity.test.mjs"
+      ],
+      "decision": "Keep current frozen-source gate; do not add auto CI",
+      "nativeAcceptanceForTip": false
+    },
+    {
+      "pr": 6,
+      "branch": "lu/nvp-independent-inference-contract-20261103",
+      "sourceSha": "80c1a5aa33dac5839985f7e297ea860d6d3fa922",
+      "sourceCommitsNotInOriginalCore": 10,
+      "disposition": "DEFERRED_DLC",
+      "finding": "NVP source-seal experiment concerns post-v1 film interoperability, not alpha Core",
+      "evidencePath": [
+        "docs/LU_NVP_INTEROPERABILITY_BOUNDARY_20261103.md"
+      ],
+      "decision": "Keep original PR for NVP/DLC contract review",
+      "nativeAcceptanceForTip": false
+    },
+    {
+      "pr": 10,
+      "branch": "lu/dlc-interop-01-cross-platform-contract-20261103",
+      "sourceSha": "9cc0904904870c3860057f8130dda3872c0403d9",
+      "sourceCommitsNotInOriginalCore": 19,
+      "disposition": "DEFERRED_DLC",
+      "finding": "Old cross-platform DLC interop code/proto would expand current Core surface and is not integrated/accepted",
+      "evidencePath": [
+        "src-tauri/lu-core/src/dlc_interop.rs"
+      ],
+      "decision": "Do not expose an unapproved IPC to live Lu",
+      "nativeAcceptanceForTip": false
+    },
+    {
+      "pr": 11,
+      "branch": "lu/dlc-api-first-party-host-contract-20261103",
+      "sourceSha": "5eca23b61f41a34b813d854577078b4fbe4d41c6",
+      "sourceCommitsNotInOriginalCore": 10,
+      "disposition": "DEFERRED_DLC",
+      "finding": "First-party DLC host schema is explicitly proposed, not a released Core API",
+      "evidencePath": [
+        "docs/contracts/lu-dlc-host-v1.proposed.proto"
+      ],
+      "decision": "Retain RFC in Git history for later design approval",
+      "nativeAcceptanceForTip": false
+    },
+    {
+      "pr": 15,
+      "branch": "lu/tools-04-archive-inspection-20261104",
+      "sourceSha": "6e17793c52fd81dbaf8fbbbcd2d2f50cfe6e6ff5",
+      "sourceCommitsNotInOriginalCore": 51,
+      "disposition": "SUPERSEDED_CORE",
+      "finding": "Archive-inspect source and tests exist in the newer Core with later format authority controls",
+      "evidencePath": [
+        "src-tauri/lu-core/src/native_archive_inspect.rs"
+      ],
+      "decision": "Keep newer archive reader and task-group tests",
+      "nativeAcceptanceForTip": false
+    },
+    {
+      "pr": 16,
+      "branch": "lu/tools-05-schema-validation-20261104",
+      "sourceSha": "7a77bbdb8aed3bf46f4ed68f87e940761c240d67",
+      "sourceCommitsNotInOriginalCore": 16,
+      "disposition": "DEFERRED_OPTIONAL_TOOL",
+      "finding": "Original standalone JSON Schema 2020-12 validator would require the absent jsonschema dependency and protobuf/locked migration; Core currently has JSON boundary validation but not an equivalent full JSON Schema validator",
+      "evidencePath": [
+        "src-tauri/lu-core/src/native_schema_validation.rs"
+      ],
+      "decision": "Explicit optional-tool parity gap; integrate only as its own authenticated utility acceptance",
+      "nativeAcceptanceForTip": false
+    },
+    {
+      "pr": 17,
+      "branch": "lu/tools-06-environment-discovery-20261104",
+      "sourceSha": "a3dca4b968cf72a4e699da3311d47035de5145d2",
+      "sourceCommitsNotInOriginalCore": 12,
+      "disposition": "SUPERSEDED_HOST_INVENTORY",
+      "finding": "Current environment_context host metadata exists; old model-facing check_env is not required for foundational tools or a permission grant",
+      "evidencePath": [
+        "lu-desktop/src-tauri/src/environment_context.rs"
+      ],
+      "decision": "Do not leak executable paths or reintroduce a second tool catalog",
+      "nativeAcceptanceForTip": false
+    },
+    {
+      "pr": 18,
+      "branch": "lu/tools-07-ocr-fallback-20261104",
+      "sourceSha": "ad7bf9f483713de1e94d51205041a9cd500ba606",
+      "sourceCommitsNotInOriginalCore": 20,
+      "disposition": "SUPERSEDED_VISION_ROUTE",
+      "finding": "Current native_ocr and vision_routing provide chosen host OCR/media support; old Tesseract fallback module not blindly wired into model",
+      "evidencePath": [
+        "src-tauri/lu-core/src/native_ocr.rs",
+        "src-tauri/lu-core/src/vision_routing.rs"
+      ],
+      "decision": "Retain vision-first host authorization; test actual multimodal/OCR separately",
+      "nativeAcceptanceForTip": false
+    },
+    {
+      "pr": 19,
+      "branch": "lu/tools-08-loop-guard-20261104",
+      "sourceSha": "62992c9ac20bed96e815ba732c94ebf186899a1e",
+      "sourceCommitsNotInOriginalCore": 38,
+      "disposition": "SUPERSEDED_BY_BOUNDED_LOOP",
+      "finding": "Old progress-aware loop_guard is not in current Core; current agent_tool_loop limits 32 steps and identical results but is not full long-horizon progress attribution",
+      "evidencePath": [
+        "src-tauri/lu-core/src/agent_tool_loop.rs"
+      ],
+      "decision": "Record long-horizon evidence-driven loop guard as future performance task; no silent unlimited execution",
+      "nativeAcceptanceForTip": false
+    },
+    {
+      "pr": 20,
+      "branch": "lu/backend-control-cancellation-design-20261104",
+      "sourceSha": "ed24da5d00047f846989d9fc54fd0c4939e980bd",
+      "sourceCommitsNotInOriginalCore": 92,
+      "disposition": "DEFERRED_BACKEND",
+      "finding": "Old vLLM control/stream-cycle backend alternatives are outside current pinned local GGUF alpha; current inference_supervisor handles host cancellation",
+      "evidencePath": [
+        "src-tauri/lu-core/src/inference_supervisor.rs"
+      ],
+      "decision": "Do not import unverified alternate backend or revive process automatically",
+      "nativeAcceptanceForTip": false
+    },
+    {
+      "pr": 21,
+      "branch": "lu/c06-c07-ansf-fts5-bridge-20261104",
+      "sourceSha": "5afe669aa9a43dfe30cba11c583f1649f0a39ae3",
+      "sourceCommitsNotInOriginalCore": 9,
+      "disposition": "DEFERRED_COGNITUM",
+      "finding": "Cognitum C06 bridge is a later optional research addon, not current ANSF authorization or Core alpha dependency",
+      "evidencePath": [
+        "src-tauri/lu-core/src/ansf_cognitum_bridge.rs"
+      ],
+      "decision": "Retain independent bridge proposal for Lu 2.x/3.x",
+      "nativeAcceptanceForTip": false
+    },
+    {
+      "pr": 22,
+      "branch": "lu/tools-04-archive-ci-replay-20261104",
+      "sourceSha": "cb04fe12b75fd75334049cd78f41bfbb135032cf",
+      "sourceCommitsNotInOriginalCore": 27,
+      "disposition": "SUPERSEDED_CORE",
+      "finding": "Archive test and Git inspect paths exist with later authority/oracle; old replay workflow no longer authoritative",
+      "evidencePath": [
+        "src-tauri/lu-core/tests/native_archive_inspect.rs"
+      ],
+      "decision": "Run current grouped native tests only",
+      "nativeAcceptanceForTip": false
+    },
+    {
+      "pr": 26,
+      "branch": "lu/tools-10-citation-integrity-20261104",
+      "sourceSha": "19af8fe3e411e4a4175e285ce1c6c2130c36fe4d",
+      "sourceCommitsNotInOriginalCore": 303,
+      "disposition": "SUPERSEDED_CORE",
+      "finding": "Later Core already contains 24 identical browser/source files plus newer browser and research authority paths; older 303-commit experimental branch must not overwrite them",
+      "evidencePath": [
+        "src-tauri/lu-core/src/browser_authorized_execution.rs",
+        "src-tauri/lu-core/src/web_research_evidence.rs"
+      ],
+      "decision": "Preserve current host-scoped origin and citation verification; real headed browser acceptance open",
+      "nativeAcceptanceForTip": false
+    },
+    {
+      "pr": 27,
+      "branch": "lu/tools-11-background-task-status-20261104",
+      "sourceSha": "5fef956d6a81fb2c9843e116465847fa1251f690",
+      "sourceCommitsNotInOriginalCore": 206,
+      "disposition": "SUPERSEDED_CORE",
+      "finding": "Later Core has native background control, TaskStore, Reader and desktop paths; earlier worker/GUI implementation differs but is not primary",
+      "evidencePath": [
+        "src-tauri/lu-core/src/native_background_process.rs",
+        "src-tauri/lu-core/src/native_reader.rs"
+      ],
+      "decision": "Keep newer task/reader implementation and Windows installed validation",
+      "nativeAcceptanceForTip": false
+    },
+    {
+      "pr": 28,
+      "branch": "lu/aiw-operational-memory-20261105",
+      "sourceSha": "c67d5f7abdaa1427102d0c9ad8ae98f19cf0bc5a",
+      "sourceCommitsNotInOriginalCore": 18,
+      "disposition": "SUPERSEDED_MEMORY_ARCH",
+      "finding": "Operational_memory v0 JSON-style records overlap with ANSF/SQLite immutable originals and verified procedures; not an authority source",
+      "evidencePath": [
+        "src-tauri/lu-core/src/operational_memory.rs"
+      ],
+      "decision": "Do not create a competing memory persistence or grant path",
+      "nativeAcceptanceForTip": false
+    },
+    {
+      "pr": 29,
+      "branch": "lu/aiw-foundational-audit-20261105",
+      "sourceSha": "7d1f965d10b407851fa5ddec2f059b806a9d10df",
+      "sourceCommitsNotInOriginalCore": 9,
+      "disposition": "HISTORICAL_AUDIT",
+      "finding": "Foundational codebase audit is historical design evidence, not executable feature code",
+      "evidencePath": [
+        "docs/LU_AIW_FOUNDATIONAL_CODEBASE_AUDIT_20261105.md"
+      ],
+      "decision": "Preserve original PR reference without rewriting current design precedence",
+      "nativeAcceptanceForTip": false
+    },
+    {
+      "pr": 35,
+      "branch": "lu/image-workspace-01-contract-20261105",
+      "sourceSha": "d26b7175012bebde97f7fb715e918b5386e08f84",
+      "sourceCommitsNotInOriginalCore": 28,
+      "disposition": "SUPERSEDED_IMAGE_INTENT",
+      "finding": "Current image_edit_intent module and tests exist but differ from older draft due subsequent non-destructive work",
+      "evidencePath": [
+        "lu-desktop/web/image_edit_intent.mjs"
+      ],
+      "decision": "Retain current original-preserving image approval boundary",
+      "nativeAcceptanceForTip": false
+    },
+    {
+      "pr": 44,
+      "branch": "lu/wave2-file-archive-operations-20261105",
+      "sourceSha": "d46948d68ef6fdef5827cad5799c82ff36ee1397",
+      "sourceCommitsNotInOriginalCore": 6,
+      "disposition": "SUPERSEDED_WITH_NEWER_FIXES",
+      "finding": "Wave2 source includes 12 byte-identical files and older archive/Office UI work; current native transfer uses atomic rename and stronger cleanup",
+      "evidencePath": [
+        "src-tauri/lu-core/src/native_file_transfer.rs",
+        "src-tauri/lu-core/src/native_archive_process.rs"
+      ],
+      "decision": "Do not revert current no-clobber and cap-handle fixes",
+      "nativeAcceptanceForTip": false
+    },
+    {
+      "pr": 61,
+      "branch": "lu/v1-observe-learn-20261106",
+      "sourceSha": "e13054c815f6b9abe3d0238dbd2caeed846148e7",
+      "sourceCommitsNotInOriginalCore": 11,
+      "disposition": "SELECTIVELY_ADOPTED",
+      "finding": "Imported reviewed Windows test handle cleanup, collision-safe SQLite temp IDs and strict required Chromium artifact checks; current Observe consent and newer archive tests preserved",
+      "evidencePath": [
+        "lu-desktop/src-tauri/src/archive_desktop.rs",
+        "lu-desktop/tests/browser-ci-candidate.test.mjs"
+      ],
+      "decision": "Native Windows acceptance still required; do not import old workflow fanout",
+      "nativeAcceptanceForTip": false
+    },
+    {
+      "pr": 112,
+      "branch": "lu/ci-queue-hygiene-20261107",
+      "sourceSha": "ab19729eadd795ea78863ad4601cd38d386dc988",
+      "sourceCommitsNotInOriginalCore": 1,
+      "disposition": "SUPERSEDED_CI_POLICY",
+      "finding": "Current Node lu-ci-superseded-queue script requires exact branch, head lease, queued-only receipt and recheck; old Python cleanup and auto-trigger variants not needed",
+      "evidencePath": [
+        "scripts/lu-ci-superseded-queue.mjs",
+        "scripts/lu-ci-group-policy.mjs"
+      ],
+      "decision": "Preserve manual task-group CI, never cancel running/current-head jobs",
+      "nativeAcceptanceForTip": false
+    },
+    {
+      "pr": 133,
+      "branch": "lu/e1-p08c-delegated-cgroup-custody-20261108",
+      "sourceSha": "ec88d4dba411b9c84091d7c77bd50eb52701858e",
+      "sourceCommitsNotInOriginalCore": 29,
+      "disposition": "SELECTIVELY_ADOPTED",
+      "finding": "Retained production AGENT-01L custodian; imported old P08C nested-subtree kill/cleanup case into host-only helper and kernel/PIDFD test; alternate guardian not copied",
+      "evidencePath": [
+        "src-tauri/lu-win-worker-job/src/bin/lu-linux-cgroup-guard.rs",
+        "benchmarks/e1/agent01l_cgroup_escape_crash_acceptance.py"
+      ],
+      "decision": "Delegated kernel positive test and hostile migration confinement remain OPEN",
+      "nativeAcceptanceForTip": false
+    },
+    {
+      "pr": 191,
+      "branch": "lu/r00-open-pr-graph-gate-matrix-20261109",
+      "sourceSha": "7c434b27caeac72eece67c4b6b55ed786ff2b6c0",
+      "sourceCommitsNotInOriginalCore": 32,
+      "disposition": "SUPERSEDED_R00",
+      "finding": "New convergence graph contains 183 PRs and current dependency classification, accepted canonical main ledger is preserved; old 175-PR snapshot stale",
+      "evidencePath": [
+        "docs/LU_CORE_OPEN_PR_STACK_20261109.json",
+        "docs/LU_DEVELOPMENT_LEDGER.md"
+      ],
+      "decision": "Continue exact-head graph refresh, not blind metadata overwrite",
+      "nativeAcceptanceForTip": false
+    }
+  ]
+}

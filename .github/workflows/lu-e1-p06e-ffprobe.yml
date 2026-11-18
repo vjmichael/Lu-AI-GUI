@@ -1,0 +1,123 @@
+name: Lu E1-P06E Real Reviewed FFprobe Media Inspection
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: lu-e1-p06e-ffprobe-${{ github.event.pull_request.head.ref || github.ref_name }}
+  cancel-in-progress: true
+jobs:
+  source:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Assert exact source before native execution
+        shell: bash
+        env:
+          EXACT_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXACT_SOURCE_SHA"
+          echo "E1_P06E_EXACT_SOURCE_HEAD=$EXACT_SOURCE_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node scripts/verify-source-tree.mjs
+  genuine-ffprobe:
+    needs: source
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 65
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Provision real CI-only FFmpeg and FFprobe native tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            choco install ffmpeg --yes --no-progress
+          elif [[ "$RUNNER_OS" == "Linux" ]]; then
+            sudo apt-get update -qq
+            sudo apt-get install -y --no-install-recommends ffmpeg
+          else
+            echo "Unsupported runner: $RUNNER_OS" >&2
+            exit 1
+          fi
+          command -v ffmpeg
+          command -v ffprobe
+      - name: Assert actual SHA and find real host FFmpeg/FFprobe binaries
+        shell: bash
+        env:
+          EXACT_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXACT_SOURCE_SHA"
+          python - <<'PY'
+          import hashlib,os,shutil
+          for env_key,exe in [("LU_E1_P06_FFPROBE","ffprobe"),("LU_E1_P06_FFMPEG","ffmpeg")]:
+              found=shutil.which(exe)
+              if not found:
+                  raise RuntimeError("Required native runner application absent: "+exe)
+              path=os.path.realpath(found)
+              if not os.path.isabs(path) or not os.path.isfile(path):
+                  raise RuntimeError("Installed executable is not an OS file: "+exe)
+              h=hashlib.sha256()
+              with open(path,"rb") as src:
+                  for chunk in iter(lambda: src.read(65536),b""):
+                      h.update(chunk)
+              with open(os.environ["GITHUB_ENV"],"a",encoding="utf-8") as output:
+                  output.write(f"{env_key}={path}\n")
+              print("E1_P06E_REAL_OS_BINARY",exe,"sha256",h.hexdigest())
+          PY
+      - name: Parse sealed FFprobe data and reject unsafe media references
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p e1-p06e-evidence
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --lib native_app_typed_ffprobe::tests::strict_media_parser -- --nocapture \
+            2>&1 | tee e1-p06e-evidence/parser.log
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --lib native_background_process::tests::media_input_hash_refuses -- --nocapture \
+            2>&1 | tee e1-p06e-evidence/media-hash.log
+      - name: Execute actual WAV/MP4 media inspections with reviewed child supervisor
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --lib native_app_typed_ffprobe::tests -- --ignored --nocapture \
+            2>&1 | tee e1-p06e-evidence/native-ffprobe.log
+          grep -Eq 'test result: ok\. 5 passed; 0 failed;' e1-p06e-evidence/native-ffprobe.log || {
+            echo "E1_P06E_NATIVE_ACCEPTANCE_INCOMPLETE: expected five actual-media tests" >&2
+            exit 1
+          }
+      - name: Retain typed FFprobe and earlier external Git stdout regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --lib native_background_process::tests::thirdparty_stdout_capture_is_bounded_and_one_use \
+            -- --nocapture 2>&1 | tee e1-p06e-evidence/stdout-regression.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lu-e1-p06e-actual-media-${{ matrix.os }}
+          path: e1-p06e-evidence/
+          retention-days: 14
+          if-no-files-found: warn

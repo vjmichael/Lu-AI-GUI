@@ -1,3 +1,6 @@
+#![cfg(unix)]
+// Linux PCI sysfs names include colons and are invalid Windows filenames.
+// Keep this OS-specific test active on Linux, but never run it on Windows.
 use lu_core::linux_device_hints::inspect_linux_pci;
 use std::{fs, path::PathBuf};
 

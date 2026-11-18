@@ -10,10 +10,12 @@ use crate::{
     multimodal_saved_turn::PinnedImage,
     projector_identity::{projector_filename_for_model, projector_ref_for_model},
     wire::proto,
+    warm_model_residency::{WarmDecision, WarmResidencyPolicy},
 };
 use std::{
     collections::HashMap,
     sync::{Arc, Mutex},
+    time::{Duration, Instant},
 };
 
 #[derive(Debug, PartialEq, Eq)]
@@ -44,16 +46,19 @@ pub struct SupervisorStatus {
 struct Active {
     generation_id: String,
     cancellation: Cancellation,
+    cache_scope: Option<String>,
 }
 struct SessionControl {
     active: Option<Active>,
     closing: bool,
+    idle_since: Option<Instant>,
 }
 struct Session<B: InferenceBackend> {
     session_id: String,
     model_ref: String,
     pid: Option<u32>,
     engine: Mutex<InferenceBridge<B>>,
+    max_output_tokens: u32,
     control: Mutex<SessionControl>,
 }
 /// Always release a generation reservation on return or panic; never leave
@@ -71,6 +76,7 @@ impl<B: InferenceBackend> Drop for GenerationCleanup<B> {
                 .is_some_and(|a| a.generation_id == self.generation_id)
             {
                 control.active = None;
+                control.idle_since = Some(Instant::now());
             }
         }
     }
@@ -84,7 +90,9 @@ pub struct TrustedInferenceSupervisor<B: InferenceBackend + Send + 'static> {
     context_tokens: u32,
     models: Mutex<HashMap<String, AdmittedModel>>,
     projectors: Mutex<HashMap<String, AdmittedProjector>>,
-    factory: Arc<dyn Fn() -> Result<B, String> + Send + Sync>,
+    // The host chooses a validated profile for the admitted model exactly
+    // once, before starting its pinned backend. No model-issued flags.
+    factory: Arc<dyn Fn(&str) -> Result<(B,u32,u32), String> + Send + Sync>,
     current: Mutex<Option<Arc<Session<B>>>>,
 }
 impl<B: InferenceBackend + Send + 'static> TrustedInferenceSupervisor<B> {
@@ -93,6 +101,20 @@ impl<B: InferenceBackend + Send + 'static> TrustedInferenceSupervisor<B> {
         context_tokens: u32,
         models: Vec<(String, AdmittedModel)>,
         factory: impl Fn() -> Result<B, String> + Send + Sync + 'static,
+    ) -> Result<Self, SupervisorError> {
+        Self::new_with_model_profile(backend_id,context_tokens,models,move |_| {
+            Ok((factory()?,context_tokens,32_768))
+        })
+    }
+
+    /// R23 adaptation: exactly one host-owned model-specific context/output
+    /// snapshot is bound to the pinned backend and wire load request.
+    /// This overload preserves the existing no-profile factory for old hosts.
+    pub fn new_with_model_profile(
+        backend_id: String,
+        context_tokens: u32,
+        models: Vec<(String, AdmittedModel)>,
+        factory: impl Fn(&str) -> Result<(B,u32,u32), String> + Send + Sync + 'static,
     ) -> Result<Self, SupervisorError> {
         if models.len() > 64 || context_tokens < 256 {
             return Err(SupervisorError::InvalidRequest);
@@ -247,12 +269,17 @@ impl<B: InferenceBackend + Send + 'static> TrustedInferenceSupervisor<B> {
         } else {
             None
         };
-        let backend = (self.factory)().map_err(|_| SupervisorError::Backend)?;
+        let (backend,model_context_tokens,max_output_tokens) =
+            (self.factory)(model_ref).map_err(|_| SupervisorError::Backend)?;
+        if !(256..=1_048_576).contains(&model_context_tokens)
+            || !(1..=32_768).contains(&max_output_tokens) {
+            return Err(SupervisorError::InvalidRequest);
+        }
         let mut engine = InferenceBridge::new(
             backend,
             session_id.clone(),
             self.backend_id.clone(),
-            self.context_tokens,
+            model_context_tokens,
         )?;
         let request = Self::frame(
             request_id,
@@ -260,7 +287,7 @@ impl<B: InferenceBackend + Send + 'static> TrustedInferenceSupervisor<B> {
                 model_ref: model_ref.into(),
                 backend_id: self.backend_id.clone(),
                 projector_ref: projector_ref.clone(),
-                context_tokens: self.context_tokens,
+                context_tokens: model_context_tokens,
             }),
         );
         let frame = engine.load_with_projector(
@@ -277,9 +304,11 @@ impl<B: InferenceBackend + Send + 'static> TrustedInferenceSupervisor<B> {
             model_ref: model_ref.into(),
             pid,
             engine: Mutex::new(engine),
+            max_output_tokens,
             control: Mutex::new(SessionControl {
                 active: None,
                 closing: false,
+                idle_since: Some(Instant::now()),
             }),
         }));
         Ok(frame)
@@ -313,6 +342,9 @@ impl<B: InferenceBackend + Send + 'static> TrustedInferenceSupervisor<B> {
         history: &[proto::InferenceChatTurn],
     ) -> Result<(), SupervisorError> {
         let session = self.session(session_id)?;
+        if max_new_tokens > session.max_output_tokens {
+            return Err(SupervisorError::InvalidRequest);
+        }
         let frame = Self::frame(
             request_id,
             proto::inference_frame::Body::Generate(proto::InferenceGenerateRequest {
@@ -332,12 +364,38 @@ impl<B: InferenceBackend + Send + 'static> TrustedInferenceSupervisor<B> {
         if control.closing || control.active.is_some() {
             return Err(SupervisorError::Busy);
         }
+        control.idle_since = None;
         control.active = Some(Active {
             generation_id: generation_id.into(),
             cancellation: Cancellation::default(),
+            cache_scope: None,
         });
         Ok(())
     }
+    /// Only the desktop host may bind the current generation to the current
+    /// conversation. An unbound turn always disables KV reuse. No model
+    /// supplied fields, permissions or prior-session cache identity count.
+    pub fn bind_reserved_cache_scope(
+        &self,
+        session_id: &str,
+        generation_id: &str,
+        trusted_scope: &str,
+    ) -> Result<(), SupervisorError> {
+        if trusted_scope.is_empty() || trusted_scope.len() > 192 ||
+            !trusted_scope.bytes().all(|ch| ch.is_ascii_alphanumeric()
+                || matches!(ch, b'-' | b'_' | b':' | b'.')) {
+            return Err(SupervisorError::InvalidRequest);
+        }
+        let session=self.session(session_id)?;
+        let mut control=session.control.lock().map_err(|_|SupervisorError::Poisoned)?;
+        if control.closing { return Err(SupervisorError::Busy); }
+        let active=control.active.as_mut().ok_or(SupervisorError::WrongGeneration)?;
+        if active.generation_id != generation_id { return Err(SupervisorError::WrongGeneration); }
+        if active.cache_scope.is_some() { return Err(SupervisorError::InvalidRequest); }
+        active.cache_scope=Some(trusted_scope.to_owned());
+        Ok(())
+    }
+
     fn image_frame(
         session_id: &str,
         generation_id: &str,
@@ -410,6 +468,9 @@ impl<B: InferenceBackend + Send + 'static> TrustedInferenceSupervisor<B> {
         history: &[proto::InferenceChatTurn],
     ) -> Result<(), SupervisorError> {
         let session = self.session(session_id)?;
+        if max_new_tokens > session.max_output_tokens {
+            return Err(SupervisorError::InvalidRequest);
+        }
         Self::image_frame(
             session_id,
             generation_id,
@@ -426,9 +487,11 @@ impl<B: InferenceBackend + Send + 'static> TrustedInferenceSupervisor<B> {
         if control.closing || control.active.is_some() {
             return Err(SupervisorError::Busy);
         }
+        control.idle_since = None;
         control.active = Some(Active {
             generation_id: generation_id.into(),
             cancellation: Cancellation::default(),
+            cache_scope: None,
         });
         Ok(())
     }
@@ -494,8 +557,9 @@ impl<B: InferenceBackend + Send + 'static> TrustedInferenceSupervisor<B> {
             generation_id: generation_id.into(),
         };
         let result = match session.engine.lock() {
-            Ok(mut engine) => engine
-                .generate_with_verified_images(&frame, &images, cancellation, emit)
+            Ok(mut engine) => engine.set_trusted_cache_scope(None)
+                .and_then(|()|engine.generate_with_verified_images(
+                    &frame, &images, cancellation, emit))
                 .map_err(Into::into),
             Err(_) => Err(SupervisorError::Poisoned),
         };
@@ -522,6 +586,50 @@ impl<B: InferenceBackend + Send + 'static> TrustedInferenceSupervisor<B> {
             emit,
         )
     }
+    /// Execute a previously reserved, current-session browser proposal
+    /// generation. The model proposes typed calls; only the native Registry
+    /// and per-turn authority may authorize subsequent operations.
+    pub fn run_reserved_browser_function_calls(
+        &self,
+        session_id:&str,
+        generation_id:&str,
+        request_id:&str,
+        prompt:String,
+        max_new_tokens:u32,
+        history:Vec<proto::InferenceChatTurn>,
+        admitted_read_schemas:&[serde_json::Value],
+    )->Result<Vec<crate::browser_tool_stream::CompletedToolCall>,SupervisorError>{
+        let session=self.session(session_id)?;
+        let frame=Self::frame(
+            request_id,
+            proto::inference_frame::Body::Generate(proto::InferenceGenerateRequest{
+                session_id:session_id.into(),
+                generation_id:generation_id.into(),
+                prompt,max_new_tokens,
+                images:Vec::new(),history,
+            }),
+        );
+        validate_frame(&frame).map_err(|_|SupervisorError::InvalidRequest)?;
+        let cancellation={
+            let control=session.control.lock().map_err(|_|SupervisorError::Poisoned)?;
+            let active=control.active.as_ref().ok_or(SupervisorError::WrongGeneration)?;
+            if active.generation_id!=generation_id{
+                return Err(SupervisorError::WrongGeneration);
+            }
+            active.cancellation.clone()
+        };
+        let _cleanup=GenerationCleanup{
+            session:Arc::clone(&session),
+            generation_id:generation_id.into(),
+        };
+        let outcome={
+            let mut engine=session.engine.lock().map_err(|_|SupervisorError::Poisoned)?;
+            engine.set_trusted_cache_scope(None)?;
+            engine.generate_browser_function_calls(&frame,cancellation,admitted_read_schemas)
+                .map_err(SupervisorError::Bridge)
+        };
+        outcome
+    }
     pub fn run_reserved_with_history(
         &self,
         session_id: &str,
@@ -545,7 +653,7 @@ impl<B: InferenceBackend + Send + 'static> TrustedInferenceSupervisor<B> {
             }),
         );
         validate_frame(&frame).map_err(|_| SupervisorError::InvalidRequest)?;
-        let cancellation = {
+        let (cancellation, cache_scope) = {
             let control = session
                 .control
                 .lock()
@@ -557,7 +665,7 @@ impl<B: InferenceBackend + Send + 'static> TrustedInferenceSupervisor<B> {
             if active.generation_id != generation_id {
                 return Err(SupervisorError::WrongGeneration);
             }
-            active.cancellation.clone()
+            (active.cancellation.clone(), active.cache_scope.clone())
         };
         let _cleanup = GenerationCleanup {
             session: Arc::clone(&session),
@@ -565,8 +673,8 @@ impl<B: InferenceBackend + Send + 'static> TrustedInferenceSupervisor<B> {
         };
         // Never hold session control while the actual inference runs.
         let outcome = match session.engine.lock() {
-            Ok(mut engine) => engine
-                .generate(&frame, cancellation, emit)
+            Ok(mut engine) => engine.set_trusted_cache_scope(cache_scope.as_deref())
+                .and_then(|()|engine.generate(&frame, cancellation, emit))
                 .map_err(Into::into),
             Err(_) => Err(SupervisorError::Poisoned),
         };
@@ -661,6 +769,65 @@ impl<B: InferenceBackend + Send + 'static> TrustedInferenceSupervisor<B> {
             control.closing = false;
         }
         result
+    }
+    /// A failed final journal commit must invalidate the previous successful
+    /// llama.cpp cache parent before the next generation acquires this engine.
+    /// The original session ID is required; no untrusted request can invoke it.
+    pub fn invalidate_prefix_cache(&self,session_id:&str)->Result<(),SupervisorError>{
+        let session=self.session(session_id)?;
+        session.engine.lock().map_err(|_|SupervisorError::Poisoned)?
+            .invalidate_prefix_cache();
+        Ok(())
+    }
+
+    /// Poll from the trusted host (not from an AI/tool request). A resident
+    /// backend remains loaded across turns until this decision evicts it or
+    /// the user explicitly ejects it. Pressure may shorten the grace period,
+    /// but never cancels or interrupts a reserved generation.
+    pub fn evict_warm_if_needed(
+        &self,
+        request_id: &str,
+        policy: WarmResidencyPolicy,
+        available_ram_mib: Option<u64>,
+    ) -> Result<WarmDecision, SupervisorError> {
+        let snapshot = {
+            let current = self.current.lock().map_err(|_| SupervisorError::Poisoned)?;
+            let Some(session) = current.as_ref() else {
+                return Ok(WarmDecision::RetainActive);
+            };
+            let control = session.control.lock().map_err(|_| SupervisorError::Poisoned)?;
+            let idle_for: Option<Duration> = control.idle_since.map(|t| t.elapsed());
+            let decision = policy.decide(
+                true, control.active.is_some() || control.closing,
+                idle_for, available_ram_mib,
+            );
+            (session.session_id.clone(), decision)
+        };
+        match snapshot.1 {
+            WarmDecision::EvictIdleTimeout | WarmDecision::EvictMeasuredPressure => {
+                // unload rechecks the current session and its active reservation
+                // under the original supervisor lock; racing sends remain safe.
+                match self.unload(&snapshot.0, request_id) {
+                    Ok(_) => Ok(snapshot.1),
+                    Err(SupervisorError::Busy | SupervisorError::WrongSession
+                        | SupervisorError::Unavailable) => Ok(WarmDecision::RetainActive),
+                    Err(error) => Err(error),
+                }
+            }
+            decision => Ok(decision),
+        }
+    }
+
+    /// Explicit host-only OS sampling. Unknown pressure never fabricates a
+    /// low-memory reading; normal idle timeout still applies.
+    pub fn poll_warm_residency(
+        &self,
+        request_id: &str,
+        policy: WarmResidencyPolicy,
+    ) -> Result<WarmDecision, SupervisorError> {
+        self.evict_warm_if_needed(
+            request_id, policy, crate::native_resource_pressure::available_ram(),
+        )
     }
     pub fn status(&self) -> Result<SupervisorStatus, SupervisorError> {
         let current = self.current.lock().map_err(|_| SupervisorError::Poisoned)?;
@@ -780,6 +947,23 @@ mod tests {
             .reserve_generation("s-1", "g-2", "gen-2", "hello", 32)
             .unwrap();
         assert_eq!(
+            supervisor.bind_reserved_cache_scope("s-2","g-2","c-one"),
+            Err(SupervisorError::WrongSession)
+        );
+        assert_eq!(
+            supervisor.bind_reserved_cache_scope("s-1","g-wrong","c-one"),
+            Err(SupervisorError::WrongGeneration)
+        );
+        assert_eq!(
+            supervisor.bind_reserved_cache_scope("s-1","g-2","invalid/scope"),
+            Err(SupervisorError::InvalidRequest)
+        );
+        supervisor.bind_reserved_cache_scope("s-1","g-2","c-one").unwrap();
+        assert_eq!(
+            supervisor.bind_reserved_cache_scope("s-1","g-2","c-other"),
+            Err(SupervisorError::InvalidRequest)
+        );
+        assert_eq!(
             supervisor.cancel("s-1", "g-nope", "cancel-bad"),
             Err(SupervisorError::Bridge(BridgeError::UnauthorizedGeneration))
         );
@@ -865,5 +1049,73 @@ mod tests {
             "host shutdown must unload the resident backend"
         );
         fs::remove_dir_all(directory).unwrap();
+    }
+}
+#[cfg(test)]
+mod profile_load_contract_tests{
+    use super::*;
+    use crate::inference_host::{EngineError,GenerationRequest,TokenChunk};
+    use crate::model_admission::ModelAdmissionManager;
+    use std::{fs,io::Write,sync::{Arc,atomic::{AtomicUsize,Ordering}}};
+    struct ProfileBackend(Arc<AtomicUsize>);
+    impl InferenceBackend for ProfileBackend {
+        fn load(&mut self, _:&AdmittedModel)->Result<(),String>{Ok(())}
+        fn unload(&mut self){self.0.fetch_add(1,Ordering::SeqCst);}
+        fn generate(&mut self,_:&GenerationRequest,_:&Cancellation,
+            _:&mut dyn FnMut(TokenChunk)->Result<(),EngineError>)
+            ->Result<(),String>{Ok(())}
+    }
+    #[test]
+    fn loaded_profile_applies_wire_context_and_max_tokens_to_one_model(){
+        let path=std::env::temp_dir().join(format!(
+            "lu-model-profile-supervisor-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        fs::create_dir_all(&path).unwrap();
+        let mut f=fs::File::create(path.join("model.gguf")).unwrap();
+        f.write_all(b"GGUF").unwrap();
+        f.write_all(&3u32.to_le_bytes()).unwrap();
+        f.write_all(&1u64.to_le_bytes()).unwrap();
+        f.write_all(&1u64.to_le_bytes()).unwrap();
+        drop(f);
+        let mut mgr=ModelAdmissionManager::new();
+        mgr.admit(&path,"model.gguf").unwrap();
+        let model=mgr.current().unwrap().clone();
+        let released=Arc::new(AtomicUsize::new(0));
+        let receipt=Arc::clone(&released);
+        let sup=TrustedInferenceSupervisor::new_with_model_profile(
+            "llama-cpu".into(),4096,
+            vec![("m-0123456789abcdef0123456789abcdef".into(),model)],
+            move |model_id|{
+                if model_id!="m-0123456789abcdef0123456789abcdef" {
+                    return Err("unknown model".into());
+                }
+                Ok((ProfileBackend(Arc::clone(&receipt)),8192,1024))
+            }
+        ).unwrap();
+        let frame=sup.load(
+            "m-0123456789abcdef0123456789abcdef",
+            "session-1".into(),"profile-load"
+        ).unwrap();
+        let parsed=crate::inference_wire::decode_frame(&frame).unwrap();
+        // Actual successful model-load event comes through the existing
+        // bridge; the current model context also must reject an over-budget
+        // requested generation without reaching the engine.
+        assert!(parsed.body.is_some());
+        assert_eq!(
+            sup.reserve_generation("session-1","gen-over","req-over","hi",1025),
+            Err(SupervisorError::InvalidRequest)
+        );
+        sup.reserve_generation("session-1","gen-ok","req-ok","hi",1024).unwrap();
+        // Completing (or interrupting) the actual reserved engine call
+        // releases the generation lease before model unload.
+        let _ = sup.run_reserved(
+            "session-1","gen-ok","req-ok","hi".into(),1024,|_|Ok(())
+        );
+        assert_eq!(sup.status().unwrap().generation_id,None);
+        sup.unload("session-1","unload-ok").unwrap();
+        assert_eq!(released.load(Ordering::SeqCst),1);
+        fs::remove_dir_all(path).unwrap();
     }
 }

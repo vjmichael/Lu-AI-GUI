@@ -1,0 +1,59 @@
+name: Lu P07 Research Citation Style Native
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: lu-p07-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  native-p07:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify exact tracked source SHA
+        run: node scripts/verify-source-tree.mjs
+      - name: Test real catalog-verified evidence before style formatting
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib web_research_styles::tests -- --nocapture
+      - name: Test existing source and passage verification invariant
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib web_research_evidence::tests -- --nocapture
+      - name: Compile actual P07 React and native Research/Tauri host on Windows
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          Push-Location lu-desktop
+          if (Test-Path 'package-lock.json') {
+            npm ci
+          } else {
+            npm install --no-package-lock --ignore-scripts --no-audit --no-fund
+          }
+          if ($LASTEXITCODE -ne 0) { throw 'P07 frontend dependencies failed' }
+          npm run build
+          if ($LASTEXITCODE -ne 0) { throw 'P07 React build failed' }
+          npm run check
+          if ($LASTEXITCODE -ne 0) { throw 'P07 React contract checks failed' }
+          Pop-Location
+          $path='lu-desktop/src-tauri/tauri.conf.json'
+          $cfg=Get-Content $path -Raw | ConvertFrom-Json
+          # Static compilation is not a distributable, signed or installed engine.
+          $cfg.bundle.resources=@{}
+          $cfg | ConvertTo-Json -Depth 50 | Set-Content $path -Encoding utf8
+          cargo check --locked --manifest-path lu-desktop/src-tauri/Cargo.toml
+          if ($LASTEXITCODE -ne 0) { throw 'P07 native Research host compiler failed' }
+          cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib p07_bibliography_reopens_sealed_crossref_catalog_offline_after_restart -- --nocapture
+          if ($LASTEXITCODE -ne 0) { throw 'P07 installed-host offline bibliography restart test failed' }
+          cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib p07_catalog_revision_reopens_offline_and_rejects_stale_human_consent -- --nocapture
+          if ($LASTEXITCODE -ne 0) { throw 'P07 native revision-restart/stale-consent test failed' }
+      - name: Verify no model fabricated citations or academic locator claims
+        run: node --test lu-desktop/tests/p07-research-styles.test.mjs

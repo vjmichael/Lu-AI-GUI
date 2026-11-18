@@ -1,0 +1,1060 @@
+name: Lu CORE-MERGE-C4 one-SHA native security recovery and real Qwen
+
+on:
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+# Manual/reusable only. The existing REPO-01 workflow holds the one-time
+# exact PR #235 SHA admission marker; no independent heavy PR trigger.
+concurrency:
+  group: lu-core-merge-c4-${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.sha }}
+  cancel-in-progress: false
+
+jobs:
+  exact-source-admission:
+    if: >-
+      github.event.pull_request.number == 235 &&
+      github.event.pull_request.draft &&
+      github.event.pull_request.head.ref == 'lu/p0-next-typed-criterion-review-20261113' &&
+      contains(github.event.pull_request.body, format('LU_CORE_C4_GROUP_SHA={0}', github.event.pull_request.head.sha)) &&
+      !contains(github.event.changes.body.from, format('LU_CORE_C4_GROUP_SHA={0}', github.event.pull_request.head.sha))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Admit only exact unmodified source and one human-marked SHA
+        env:
+          EXACT_HEAD: ${{ github.event.pull_request.head.sha }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXACT_HEAD"
+          grep -Fxq "LU_CORE_C4_GROUP_SHA=$EXACT_HEAD" <<< "$PR_BODY"
+          node scripts/verify-source-tree.mjs
+          mkdir -p c4-source-evidence
+          git rev-parse HEAD > c4-source-evidence/commit.txt
+          sha256sum source-tree.lock.json > c4-source-evidence/source-lock-sha256.txt
+          printf 'C4_SHA=%s\nADMISSION=EXACT_SHA_ONLY\n' "$EXACT_HEAD" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lu-c4-source-admission
+          path: c4-source-evidence/
+          retention-days: 14
+          if-no-files-found: warn
+
+  native-planner-ipc-desktop:
+    needs: exact-source-admission
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 145
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Linux Tauri 2 native build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev libayatana-appindicator3-dev \
+            librsvg2-dev libgtk-3-dev libssl-dev patchelf cmake \
+            poppler-utils tesseract-ocr tesseract-ocr-eng \
+            python3-pil python3-reportlab fonts-dejavu-core
+      - name: Windows CI-only nonfunctional engine resource placeholders
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $root='lu-desktop/src-tauri/resources/lu-inference'
+          New-Item -ItemType Directory -Force -Path $root | Out-Null
+          foreach($name in @('llama-server.exe','msvcp140.dll','vcruntime140.dll','vcruntime140_1.dll')) {
+            Set-Content -LiteralPath (Join-Path $root $name) -Value 'NOT_AN_ENGINE_CI_PLACEHOLDER' -NoNewline
+          }
+      - name: Exact SHA and native source-contract regressions
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          mkdir -p c4-native-evidence
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          node scripts/verify-source-tree.mjs
+          node --test \
+            lu-desktop/tests/agent01g-approved-step-integration.test.mjs \
+            lu-desktop/tests/agent01h-next-step-preview.test.mjs \
+            lu-desktop/tests/agent01k-independent-recovery.test.mjs \
+            lu-desktop/tests/reviewed-tool-feedback.test.mjs \
+            lu-desktop/tests/task-board.test.mjs \
+            scripts/core01f-bridge-review.test.mjs \
+            scripts/core-merge-c1-family-contracts.test.mjs \
+            lu-desktop/tests/browser-native-authorization.test.mjs \
+            lu-desktop/tests/browser-model-read.test.mjs \
+            lu-desktop/tests/browser-research-evidence.test.mjs \
+            lu-desktop/tests/browser-visibility-settings.test.mjs \
+            lu-desktop/tests/research-citation-enforcement.test.mjs \
+            lu-desktop/tests/research-roadmap-acceptance.test.mjs \
+            tests/lu-browser-worker.test.mjs \
+            lu-desktop/tests/reader-desktop.test.mjs \
+            lu-desktop/tests/p06-observe-privacy.test.mjs \
+            lu-desktop/tests/workspace-desktop.test.mjs \
+            lu-desktop/tests/image-edit-intent.test.mjs \
+            lu-desktop/tests/r21-image-ux.test.mjs \
+            lu-desktop/tests/p08-archive-split.test.mjs \
+            2>&1 | tee c4-native-evidence/frontend-contracts.log
+      - name: Linux first-party root-owned fixture code compilation (not a kernel positive)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile \
+            scripts/lu-sec06c-agent01l-fixture-launcher.py \
+            scripts/lu-sec06c-agent01l-fixture-manager.py
+          bash -n scripts/install-lu-agent01l-native-fixture.sh
+          node --test lu-desktop/tests/agent01l-linux-cgroup-v2.test.mjs \
+            2>&1 | tee c4-native-evidence/agent01l-os-source.log
+          cargo build --locked --manifest-path src-tauri/lu-win-worker-job/Cargo.toml \
+            --features e1-p08-crash-fixture \
+            --bin lu-linux-cgroup-guard --bin lu-e1-p08-linux-cgroup-crash-parent \
+            2>&1 | tee c4-native-evidence/agent01l-native-fixture-build.log
+      - name: Current React desktop bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd lu-desktop
+          npm ci --no-audit --no-fund
+          npm run build
+      - name: Original Rust model/tool Protobuf, plan and receipt regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --test native_agent_tool_turn -- --nocapture \
+            2>&1 | tee c4-native-evidence/typed-tool-turn.log
+          # C1/C2: original TOOLS-05/06/08 hostile cases, same protected
+          # registry and current no-replay authority on Windows and Linux.
+          for suite in native_schema_validation native_environment_discovery native_stream_loop; do
+            cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+              --test "$suite" -- --nocapture \
+              2>&1 | tee "c4-native-evidence/${suite}.log"
+          done
+          # C2: original human schema/data and one fixed program are the
+          # entire read-only utility authority. The model is never the grant.
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --lib native_core_utility_turn::tests -- --nocapture \
+            2>&1 | tee c4-native-evidence/c2-core-utility-turn.log
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --lib agent_reviewed_broker_bridge::tests -- --nocapture \
+            2>&1 | tee c4-native-evidence/plan-native-broker.log
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --lib agent_deliverable_receipts::tests -- --nocapture \
+            2>&1 | tee c4-native-evidence/independent-deliverables.log
+          # C1/C3: original plan, human revision and recovery invariants
+          # must remain enforced beside the actual selected native broker.
+          for family in agent_plan_ledger agent_plan_revisions agent_recovery_decision; do
+            cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+              --lib "${family}::tests" -- --nocapture \
+              2>&1 | tee "c4-native-evidence/c3-${family}.log"
+          done
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --test host_reviewed_route_durable -- --nocapture \
+            2>&1 | tee c4-native-evidence/durable-tool-ipc.log
+          # C1/C2: original G02 host-owned Workspace inference was inherited
+          # byte-exact. Re-run its original authority and lifecycle tests;
+          # source continuity alone cannot establish accepted behavior.
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --lib workspace_inference::tests -- --nocapture \
+            2>&1 | tee c4-native-evidence/g02-host-owned-inference.log
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --lib workspace::tests -- --nocapture \
+            2>&1 | tee c4-native-evidence/g02-workspace-lifecycle.log
+          # Recovered original OPMEM harness compiles the SAME production
+          # module in isolation from the full inference-worker API on both
+          # Windows and Linux. This does not admit a tool or a new workspace.
+          cargo test --manifest-path tests/operational-memory-harness/Cargo.toml \
+            --test operational_memory -- --nocapture \
+            2>&1 | tee c4-native-evidence/opmem-original-independent.log
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --test operational_memory -- --nocapture \
+            2>&1 | tee c4-native-evidence/opmem-original-integrated.log
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --test native_workspace_read_turn -- --nocapture \
+            2>&1 | tee c4-native-evidence/original-workspace-tool-turn.log
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --test native_archive_tree_authority -- --nocapture \
+            2>&1 | tee c4-native-evidence/original-archive-authority.log
+      - name: Original compiled desktop command and task completion reconciliation
+        # Independent check: still gather native host diagnostics after a
+        # separate lu-core test fails. The job remains FAILED on that test.
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo check --locked --manifest-path lu-desktop/src-tauri/Cargo.toml \
+            2>&1 | tee c4-native-evidence/tauri-check.log
+          cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml \
+            --lib project_task_verified_evidence::tests -- --nocapture \
+            2>&1 | tee c4-native-evidence/task-criterion-reconciliation.log
+          grep -Eq 'test result: ok\. 12 passed; 0 failed;' \
+            c4-native-evidence/task-criterion-reconciliation.log || {
+            echo 'CORE_C3_COMPLETION_TESTS_MISSING_OR_FAILED' >&2
+            exit 1
+          }
+          # C1/C3 desktop ANSF->human source->plan handoff, including stale
+          # task leases, original-turn binding and denied automatic replay.
+          # Use the ACTUAL Rust module paths, not a guessed ::tests suffix.
+          # A no-op "0 passed" is an acceptance failure, even if cargo exits 0.
+          for spec in \
+            "project_task_agent_handoff::task_method_tests|project_task_agent_handoff|9" \
+            "agent_plan_admission::tests|agent_plan_admission|8" \
+            "agent_plan_continuation_desktop::phase2_multistep_tests|agent_plan_continuation_desktop|3"; do
+            IFS='|' read -r family label expected_count <<< "$spec"
+            cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml \
+              --lib "$family" -- --nocapture \
+              2>&1 | tee "c4-native-evidence/c3-${label}.log"
+            if ! grep -Eq "test result: ok\\. ${expected_count} passed; 0 failed;" \
+                "c4-native-evidence/c3-${label}.log"; then
+              echo "CORE_C3_ORIGINAL_TEST_FAMILY_MISSING: $family" >&2
+              exit 1
+            fi
+          done
+          cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml \
+            --lib browser_model_desktop::tests -- --nocapture \
+            2>&1 | tee c4-native-evidence/browser-original-contracts.log
+          cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml \
+            --lib environment_context::tests -- --nocapture \
+            2>&1 | tee c4-native-evidence/ambient-host-runtime-context.log
+          cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml \
+            --lib core_utility_desktop::tests -- --nocapture \
+            2>&1 | tee c4-native-evidence/c2-desktop-utility-routing.log
+      - name: C1 exact-source Browser Reader Observe original native behavior
+        # Keep independent results even if a different family fails. Each
+        # original test runs, is logged and contributes to a failed job status.
+        # This is NOT headed Chromium, scanned-PDF OCR, or installed WGC proof.
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p c4-native-evidence
+          failures=0
+          run_case() {
+            local name="$1"
+            shift
+            if "$@" 2>&1 | tee "c4-native-evidence/c1-${name}.log"; then
+              echo "C1_NATIVE_${name}=PASS" >> "$GITHUB_STEP_SUMMARY"
+            else
+              failures=$((failures+1))
+              echo "C1_NATIVE_${name}=FAIL" >> "$GITHUB_STEP_SUMMARY"
+            fi
+          }
+          core=(cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml)
+          # Original Browser model codec, supervision, native origin/firewall,
+          # citation evidence, restart and bounded web research behaviors.
+          run_case browser-units "${core[@]}" --lib browser_ -- --nocapture
+          for suite in web_research_acceptance web_research_citation_acceptance web_research_roadmap_acceptance; do
+            run_case "browser-${suite}" "${core[@]}" --test "$suite" -- --nocapture
+          done
+          run_case browser-evidence "${core[@]}" --lib web_research_ -- --nocapture
+          # Original Reader text/Office/PDF parser, immutable page/source,
+          # format, authorizer, and source identity tests. Actual scanned
+          # PDF OCR fixture requires separately admitted real local binaries.
+          run_case reader-units "${core[@]}" --lib native_reader_ -- --nocapture
+          run_case reader-ocr "${core[@]}" --lib native_ocr::tests -- --nocapture
+          # Preserve original P06 consent, forgetting, egress, source purity,
+          # process-loss handling and local-only image admission checks.
+          run_case observe-units "${core[@]}" --lib native_observe_ -- --nocapture
+          run_case observe-awareness "${core[@]}" --lib native_awareness_lane::tests -- --nocapture
+          run_case observe-gui-identity "${core[@]}" --lib native_gui_verification::tests -- --nocapture
+          run_case observe-p06 "${core[@]}" --lib p06_ -- --nocapture
+          run_case observe-durable-provenance "${core[@]}" --lib observe_session_provenance_is_durable_after_stop_and_note_forget -- --nocapture
+          run_case observe-private-frame "${core[@]}" --lib native_local_observe_image_pipe_is_private_one_shot_bounded_and_not_in_sqlite -- --nocapture
+          run_case observe-host-image "${core[@]}" --lib os_owned_image_pipe_enters_real_png_admission_and_remains_off_network -- --nocapture
+          run_case observe-reject-truncated "${core[@]}" --lib malformed_or_truncated_observed_pixels_never_produce_image_proof -- --nocapture
+          exit "$failures"
+      - name: C1 original image-only scanned PDF with real Poppler/Tesseract
+        # Original previously ignored native_reader_ocr_acceptance is
+        # genuinely executed with pinned host binaries/data. The PDF is
+        # generated as two RASTER image objects, never a text layer.
+        # A real recognition failure is a FAILED native job, not a skip.
+        if: always() && runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p c4-native-evidence
+          /usr/bin/python3 -m py_compile scripts/lu-c1-scanned-pdf-fixture.py
+          test -f /usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf
+          test -f /usr/share/tesseract-ocr/5/tessdata/eng.traineddata
+          export LU_READER_PDFTOPPM="$(readlink -f "$(command -v pdftoppm)")"
+          export LU_READER_TESSERACT="$(readlink -f "$(command -v tesseract)")"
+          export LU_READER_TESSDATA=/usr/share/tesseract-ocr/5/tessdata
+          test -x "$LU_READER_PDFTOPPM" && test -x "$LU_READER_TESSERACT"
+          tmp="$(mktemp -d "$RUNNER_TEMP/lu-c1-scanned-pdf.XXXXXX")"
+          trap 'rm -rf "$tmp"' EXIT
+          export LU_READER_SCANNED_PDF="$tmp/original-image-only.pdf"
+          /usr/bin/python3 scripts/lu-c1-scanned-pdf-fixture.py "$LU_READER_SCANNED_PDF" \
+            2>&1 | tee c4-native-evidence/c1-scanned-pdf-source.log
+          test "$(pdfinfo "$LU_READER_SCANNED_PDF" | awk '/^Pages:/{print $2}')" = 2
+          pdfimages -list "$LU_READER_SCANNED_PDF" \
+            | tee c4-native-evidence/c1-scanned-pdf-image-only.log
+          test "$(pdfimages -list "$LU_READER_SCANNED_PDF" | awk 'NR>2{n++}END{print n+0}')" = 2
+          # A source with a selectable PDF text layer is NOT scanned OCR.
+          if pdftotext "$LU_READER_SCANNED_PDF" - | tr -d '\f\r\n\t ' | grep -q .; then
+            echo 'C1_SCANNED_PDF_REFUSED_TEXT_LAYER' >&2
+            exit 1
+          fi
+          sha256sum "$LU_READER_SCANNED_PDF" "$LU_READER_PDFTOPPM" \
+            "$LU_READER_TESSERACT" "$LU_READER_TESSDATA/eng.traineddata" \
+            > c4-native-evidence/c1-scanned-pdf-original-sha256.txt
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --test native_reader_ocr_acceptance \
+            scanned_pdf_preserves_original_source_and_per_page_ocr_identity \
+            -- --ignored --exact --nocapture \
+            2>&1 | tee c4-native-evidence/c1-scanned-pdf-original-native.log
+          grep -Eq 'test result: ok\. 1 passed; 0 failed;' \
+            c4-native-evidence/c1-scanned-pdf-original-native.log
+          echo 'C1_ORIGINAL_SCANNED_PDF_POPPLER_TESSERACT=PASS_REAL_NATIVE' >> "$GITHUB_STEP_SUMMARY"
+      - name: C1 original desktop Reader and Observe source authority
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p c4-native-evidence
+          failures=0
+          for family in reader_desktop observe_desktop; do
+            if cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml \
+              --lib "${family}::tests" -- --nocapture \
+              2>&1 | tee "c4-native-evidence/c1-${family}.log"; then
+              echo "C1_DESKTOP_${family}=PASS" >> "$GITHUB_STEP_SUMMARY"
+            else
+              failures=$((failures+1))
+              echo "C1_DESKTOP_${family}=FAIL" >> "$GITHUB_STEP_SUMMARY"
+            fi
+          done
+          exit "$failures"
+      - name: C1 original protected Linux P06 finite-operation broker admission
+        # Root-owned installed SEC-06C sources, never same-UID fallback.
+        if: always() && runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile \
+            scripts/lu-sec06c-owned-native-launcher.py \
+            scripts/lu-sec06c-owned-native-worker.py \
+            scripts/lu-sec06c-owned-kernel-manager.py \
+            scripts/lu-sec06c-owned-git-launcher.py \
+            scripts/lu-sec06c-owned-git-worker.py
+          test "$(id -u)" -ne 0
+          test -f /usr/bin/python3
+          sudo install -d -o root -g root -m 0755 /usr/libexec/lu
+          sudo install -o root -g root -m 0755 scripts/lu-sec06c-owned-kernel-manager.py /usr/libexec/lu/lu-sec06c-owned-kernel-manager
+          sudo install -o root -g root -m 0755 scripts/lu-sec06c-owned-native-launcher.py /usr/libexec/lu/lu-sec06c-launch-native
+          sudo install -o root -g root -m 0755 scripts/lu-sec06c-owned-native-worker.py /usr/libexec/lu/lu-sec06c-owned-native-worker
+          sudo install -o root -g root -m 0755 scripts/lu-sec06c-owned-git-launcher.py /usr/libexec/lu/lu-sec06c-launch-git
+          sudo install -o root -g root -m 0755 scripts/lu-sec06c-owned-git-worker.py /usr/libexec/lu/lu-sec06c-owned-git-worker
+          # Only the two exact reviewed hostile Python acceptance strings
+          # exist in this ephemeral root-owned runner; not an installer part.
+          printf 'LU_P06_ACCEPTANCE_ONLY_V1\n' | sudo tee /usr/libexec/lu/lu-sec06c-p06-acceptance-marker >/dev/null
+          sudo chown root:root /usr/libexec/lu/lu-sec06c-p06-acceptance-marker
+          sudo chmod 0444 /usr/libexec/lu/lu-sec06c-p06-acceptance-marker
+          printf '%s ALL=(root) NOPASSWD: /usr/libexec/lu/lu-sec06c-launch-native *\n' "$USER" | sudo tee /etc/sudoers.d/lu-c4-p06-native >/dev/null
+          printf '%s ALL=(root) NOPASSWD: /usr/libexec/lu/lu-sec06c-launch-git *\n' "$USER" | sudo tee /etc/sudoers.d/lu-c4-p06-git >/dev/null
+          sudo chmod 0440 /etc/sudoers.d/lu-c4-p06-native /etc/sudoers.d/lu-c4-p06-git
+          sudo visudo -cf /etc/sudoers.d/lu-c4-p06-native
+          sudo visudo -cf /etc/sudoers.d/lu-c4-p06-git
+          test "$(stat -c %u /usr/libexec/lu/lu-sec06c-launch-native)" = 0
+          test "$(stat -c %u /usr/libexec/lu/lu-sec06c-p06-acceptance-marker)" = 0
+          test "$(cat /usr/libexec/lu/lu-sec06c-p06-acceptance-marker)" = LU_P06_ACCEPTANCE_ONLY_V1
+      - name: C1 original P06A-D installed Git and Python, watchdog and verified-stop contracts
+        # Preserve original independent process tests, not merely Cargo's
+        # zero-ignored default. A failed earlier family cannot hide this gap.
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p c4-native-evidence
+          python - <<'PY'
+          import os,shutil,sys
+          git=shutil.which("git")
+          if not git: raise RuntimeError("Actual installed Git is required")
+          for key,path in {
+            "LU_E1_P06_GIT":os.path.realpath(git),
+            "LU_E1_P06_PYTHON":os.path.realpath("/usr/bin/python3") if sys.platform=="linux" else os.path.realpath(sys.executable),
+          }.items():
+            if not os.path.isabs(path) or not os.path.isfile(path):
+              raise RuntimeError("Genuine native reviewed executable missing: "+key)
+            with open(os.environ["GITHUB_ENV"],"a",encoding="utf-8") as output:
+              output.write(key+"="+path+"\n")
+          PY
+          # GitHub's GITHUB_ENV takes effect only in subsequent steps.
+          # These original real-binary assertions run in this SAME step.
+          # Re-resolve the two verified, host-installed binaries into this
+          # shell's environment; never supply a test-side fake executable.
+          export LU_E1_P06_GIT="$(python -c 'import os,shutil; p=shutil.which("git"); print(os.path.realpath(p) if p else "")')"
+          if [[ "$RUNNER_OS" == "Linux" ]]; then
+            export LU_E1_P06_PYTHON="$(readlink -f /usr/bin/python3)"
+            export LU_SEC06C_BROKER_DEBUG=1
+          else
+            export LU_E1_P06_PYTHON="$(python -c 'import os,sys; print(os.path.realpath(sys.executable))')"
+          fi
+          test -f "$LU_E1_P06_GIT" && test -f "$LU_E1_P06_PYTHON"
+          failures=0
+          run_original() {
+            local name="$1"
+            local count="$2"
+            shift 2
+            if "$@" 2>&1 | tee "c4-native-evidence/c1-${name}.log" &&
+              grep -Eq "test result: ok\\. ${count} passed; 0 failed;" "c4-native-evidence/c1-${name}.log"; then
+              echo "C1_ORIGINAL_${name}=PASS" >> "$GITHUB_STEP_SUMMARY"
+            else
+              failures=$((failures+1))
+              echo "C1_ORIGINAL_${name}=FAIL" >> "$GITHUB_STEP_SUMMARY"
+            fi
+          }
+          core=(cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml)
+          if [[ "$RUNNER_OS" == "Linux" ]]; then
+            core+=(--features p06-protected-acceptance)
+          fi
+          run_original p06b-real-version 6 "${core[@]}" --lib native_app_version_execution::tests -- --ignored --nocapture
+          run_original p06d-real-git 5 "${core[@]}" --lib native_app_typed_git::tests -- --ignored --nocapture
+          if [[ "$RUNNER_OS" == "Linux" ]]; then
+            run_original p06-finite-denials 1 \
+              cargo test --locked --manifest-path src-tauri/lu-win-worker-job/Cargo.toml \
+              --features p06-protected-acceptance --lib \
+              p06_acceptance_only_two_exact_python_operations_not_generic_code -- --nocapture
+          fi
+          run_original llama-watchdog 1 "${core[@]}" --lib persistent_llama_backend::tests::original_watchdog_kills_exact_owned_child_even_when_decoder_blocks -- --nocapture
+          run_original llama-slots 1 "${core[@]}" --lib persistent_llama_backend::tests::original_slot_verification_rejects_busy_multiple_and_forged_idleness -- --nocapture
+          exit "$failures"
+      - name: C1 original Windows WGC frame redaction and OS identity worker tests
+        if: always() && runner.os == 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p c4-native-evidence
+          # This historical standalone worker has no committed Cargo.lock.
+          # Do not pretend its dependency graph is pinned by the Core lock.
+          cargo test --manifest-path src-tauri/lu-observe-capture-worker/Cargo.toml \
+            --bin lu-observe-capture-worker frame_geometry_tests -- --nocapture \
+            2>&1 | tee c4-native-evidence/c1-original-windows-wgc-worker.log
+          echo 'C1_WGC_UNIT=SOURCE_TEST_ONLY_NOT_PHYSICAL_CAPTURE' >> "$GITHUB_STEP_SUMMARY"
+      - name: Current UI source and typed-Protobuf history check after native compilation
+        # Keep collecting the original frontend receipt even if Rust fails;
+        # never suppress the failed status in final grouped reconciliation.
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          (cd lu-desktop && npm run check) 2>&1 | tee c4-native-evidence/desktop-ui-check.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lu-c4-native-${{ matrix.os }}
+          path: c4-native-evidence/
+          retention-days: 14
+          if-no-files-found: warn
+
+  original-security-recovery:
+    needs: exact-source-admission
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 100
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Enforce original source and run actual journal/recovery tests
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          mkdir -p c4-recovery-evidence
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          node scripts/verify-source-tree.mjs
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --lib agent_host_scheduler::tests -- --nocapture \
+            2>&1 | tee c4-recovery-evidence/scheduler.log
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --lib agent_os_custody::tests -- --nocapture \
+            2>&1 | tee c4-recovery-evidence/original-os-custody.log
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --lib agent_continuation_intent::tests -- --nocapture \
+            2>&1 | tee c4-recovery-evidence/one-use-recovery.log
+          cargo test --manifest-path lu-desktop/tests/native-reviewed-recovery/Cargo.toml \
+            --lib reviewed_app_recovery::tests -- --nocapture \
+            2>&1 | tee c4-recovery-evidence/task-journal-restart.log
+      - name: Original kernel Win32 Job Object descendant and restart acceptance
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked --manifest-path src-tauri/lu-win-worker-job/Cargo.toml \
+            --lib agent01l_kernel_job_tests -- --nocapture \
+            2>&1 | tee c4-recovery-evidence/windows-job-kernel.log
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --lib native_background_process::tests::agent01l_real_git_job_attests_original_turn_and_reopens_without_replay \
+            -- --nocapture 2>&1 | tee c4-recovery-evidence/windows-git-restart.log
+      - name: Linux escaped process-group negative control
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 benchmarks/e1/e1_p08_setsid_escape_probe.py \
+            2>&1 | tee c4-recovery-evidence/linux-killpg-escape.log
+          grep -Fq 'E1_P08_GROUP_ESCAPE_PROVEN=1' \
+            c4-recovery-evidence/linux-killpg-escape.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lu-c4-recovery-${{ matrix.os }}
+          path: c4-recovery-evidence/
+          retention-days: 14
+          if-no-files-found: warn
+
+  linux-real-cgroup:
+    # AGENT-01L original POSITIVE escaped-descendant proof requires a
+    # deliberately prepared native cgroup-v2 runner. Hosted Ubuntu provides
+    # the mount but not a secure, delegatable worker subtree (exit 78).
+    # A missing repo readiness variable makes this job SKIPPED, not PASS;
+    # exact-sha-consolidated-reconciliation still requires its SUCCESS.
+    # This does NOT replace the original test with root-owned Git or PGID.
+    if: >-
+      needs.exact-source-admission.result == 'success' &&
+      vars.LU_CGROUP_POSITIVE_RUNNER_READY == 'true'
+    needs: exact-source-admission
+    runs-on: [self-hosted, linux, x64, lu-cgroup-v2-delegated]
+    timeout-minutes: 115
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Exact source, kernel cgroup and original finite root-owned broker preflight
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          mkdir -p c4-linux-kernel-evidence
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          node scripts/verify-source-tree.mjs
+          test -f /sys/fs/cgroup/cgroup.controllers
+          cat /proc/self/cgroup > c4-linux-kernel-evidence/cgroup.txt
+          python3 -m py_compile \
+            scripts/lu-sec06c-owned-git-launcher.py \
+            scripts/lu-sec06c-owned-git-worker.py \
+            scripts/lu-sec06c-owned-kernel-manager.py \
+            scripts/lu-sec06c-agent01l-fixture-launcher.py \
+            scripts/lu-sec06c-agent01l-fixture-manager.py \
+            benchmarks/e1/agent01l_cgroup_escape_crash_acceptance.py
+          cargo build --locked --manifest-path src-tauri/lu-win-worker-job/Cargo.toml \
+            --features e1-p08-crash-fixture \
+            --bin lu-linux-cgroup-guard --bin lu-e1-p08-linux-cgroup-crash-parent
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --lib sec06c --no-run
+      - name: Verify exact installed original root-owned SEC-06C Git and fixed crash-fixture adapters
+        shell: bash
+        run: |
+          set -euo pipefail
+          for pair in \
+            'lu-sec06c-owned-kernel-manager.py:lu-sec06c-owned-kernel-manager' \
+            'lu-sec06c-owned-git-launcher.py:lu-sec06c-launch-git' \
+            'lu-sec06c-owned-git-worker.py:lu-sec06c-owned-git-worker' \
+            'lu-sec06c-agent01l-fixture-launcher.py:lu-sec06c-launch-agent01l-fixture' \
+            'lu-sec06c-agent01l-fixture-manager.py:lu-sec06c-agent01l-fixture-manager'; do
+            source="scripts/$(printf '%s' "$pair" | cut -d : -f 1)"
+            installed="/usr/libexec/lu/$(printf '%s' "$pair" | cut -d : -f 2)"
+            test -f "$installed" && test ! -L "$installed"
+            test "$(stat -c '%u' "$installed")" = 0
+            test $(( 8#$(stat -c '%a' "$installed") & 0022 )) = 0
+            cmp -s "$source" "$installed"
+          done
+          test "$(stat -c '%u' /usr/libexec/lu)" = 0
+          test -f /sys/fs/cgroup/cgroup.controllers
+          sudo -n -l /usr/libexec/lu/lu-sec06c-launch-agent01l-fixture --host-pid 123 --profile /tmp/lu-agent01l-cgroup-finite
+          sudo -n -l /usr/libexec/lu/lu-sec06c-launch-git --nonce aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+          manifest=/usr/libexec/lu/lu-agent01l-fixture-host.sha256
+          test -f "$manifest" && test ! -L "$manifest"
+          test "$(stat -c '%u' "$manifest")" = 0
+          test $(( 8#$(stat -c '%a' "$manifest") & 0022 )) = 0
+          expected="$(cat "$manifest")"
+          actual="$(sha256sum src-tauri/lu-win-worker-job/target/debug/lu-e1-p08-linux-cgroup-crash-parent | cut -d ' ' -f 1)"
+          test "$expected" = "$actual"
+      - name: Real delegated kernel cgroup survives host kill and reaps escaped descendant
+        shell: bash
+        env:
+          LU_AGENT01L_REQUIRE_OS_OWNED_FIXTURE: '1'
+        run: |
+          set -euo pipefail
+          python3 benchmarks/e1/agent01l_cgroup_escape_crash_acceptance.py \
+            --guard "$GITHUB_WORKSPACE/src-tauri/lu-win-worker-job/target/debug/lu-linux-cgroup-guard" \
+            --parent "$GITHUB_WORKSPACE/src-tauri/lu-win-worker-job/target/debug/lu-e1-p08-linux-cgroup-crash-parent" \
+            2>&1 | tee c4-linux-kernel-evidence/kernel-crash-escape.log
+          grep -Fq 'AGENT01L_NATIVE_CGROUP_ESCAPED_DESCENDANT_PASS=1' \
+            c4-linux-kernel-evidence/kernel-crash-escape.log
+      - name: Original native Git worker under delegated cgroup and restart/replay denial
+        shell: bash
+        env:
+          LU_AGENT01L_TEST_CGROUP_GUARD: ${{ github.workspace }}/src-tauri/lu-win-worker-job/target/debug/lu-linux-cgroup-guard
+        run: |
+          set -euo pipefail
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --lib native_background_process::tests::agent01l_linux_real_git_cgroup_custody_after_restart \
+            -- --ignored --nocapture \
+            2>&1 | tee c4-linux-kernel-evidence/native-cgroup-git-restart.log
+          grep -Fq 'test result: ok. 1 passed; 0 failed;' \
+            c4-linux-kernel-evidence/native-cgroup-git-restart.log
+      - name: Fail closed on absent cgroup delegation
+        if: failure()
+        shell: bash
+        run: |
+          if grep -Fq 'AGENT01L_CGROUP_DELEGATION_NOT_AVAILABLE=1' c4-linux-kernel-evidence/kernel-crash-escape.log 2>/dev/null; then
+            echo 'Delegated cgroup-v2 kernel capability unavailable: real Linux custody is NOT accepted.' >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo 'Original Linux kernel/native or finite root-owned worker acceptance FAILED or did not run. See original logs.' >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lu-c4-linux-real-kernel-custody
+          path: c4-linux-kernel-evidence/
+          retention-days: 14
+          if-no-files-found: warn
+
+  linux-original-root-owned-git:
+    needs: exact-source-admission
+    runs-on: ubuntu-24.04
+    timeout-minutes: 95
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify original Linux source and finite root-owned broker test compilation
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          mkdir -p c4-linux-kernel-evidence
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          node scripts/verify-source-tree.mjs
+          python3 -m py_compile             scripts/lu-sec06c-owned-git-launcher.py             scripts/lu-sec06c-owned-git-worker.py             scripts/lu-sec06c-owned-kernel-manager.py
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml             --lib sec06c --no-run
+      - name: Ephemeral root-owned finite Git broker and real original worker journals
+        shell: bash
+        env:
+          LU_SEC06C_BROKER_DEBUG: '1'
+        run: |
+          set -euo pipefail
+          sudo install -d -o root -g root -m 0755 /usr/libexec/lu
+          sudo install -o root -g root -m 0755 scripts/lu-sec06c-owned-git-launcher.py /usr/libexec/lu/lu-sec06c-launch-git
+          sudo install -o root -g root -m 0755 scripts/lu-sec06c-owned-git-worker.py /usr/libexec/lu/lu-sec06c-owned-git-worker
+          sudo install -o root -g root -m 0755 scripts/lu-sec06c-owned-kernel-manager.py /usr/libexec/lu/lu-sec06c-owned-kernel-manager
+          printf '%s ALL=(root) NOPASSWD: /usr/libexec/lu/lu-sec06c-launch-git *\n' "$USER" | sudo tee /etc/sudoers.d/lu-sec06c-c4 >/dev/null
+          sudo chmod 0440 /etc/sudoers.d/lu-sec06c-c4
+          sudo visudo -cf /etc/sudoers.d/lu-sec06c-c4
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --lib sec06c_root_owned_reviewed_git_worker_original_journal \
+            -- --ignored --nocapture \
+            2>&1 | tee c4-linux-kernel-evidence/root-owned-git.log
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --lib sec06c_root_owned_git_cancel_original_journal \
+            -- --ignored --nocapture \
+            2>&1 | tee c4-linux-kernel-evidence/root-owned-cancel.log
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --lib sec06c_owned_git_host_sigkill_recovery_original_journal \
+            -- --ignored --nocapture \
+            2>&1 | tee c4-linux-kernel-evidence/root-owned-sigkill.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lu-c4-linux-root-owned-git
+          path: c4-linux-kernel-evidence/
+          retention-days: 14
+          if-no-files-found: warn
+
+  genuine-local-qwen:
+    needs: exact-source-admission
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    env:
+      LU_E1_P07_LLAMA_PORT: '18972'
+      # The genuine first tool is a mandatory native observation; never
+      # use the transport's fail-closed unconstrained/raw default.
+      LU_E1_P07_RESPONSE_PROTOCOL: json_schema
+      MODEL_SHA256: 7af3fdf842f87b24672f8a7f1dd50404043f0bfb71093ff91c31d2b49df4631d
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install actual independent FFprobe and pin Lu source identity
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          mkdir -p c4-qwen-evidence
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          node scripts/verify-source-tree.mjs
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends ffmpeg cmake
+          command -v git
+          command -v ffprobe
+          echo "LU_E1_P07_GIT=$(command -v git)" >> "$GITHUB_ENV"
+          echo "LU_E1_P07_FFPROBE=$(command -v ffprobe)" >> "$GITHUB_ENV"
+      - name: Compile pinned actual llama.cpp CPU server
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --depth 1 --branch b12143 https://github.com/ggml-org/llama.cpp.git "$RUNNER_TEMP/c4-llama-source"
+          test "$(git -C "$RUNNER_TEMP/c4-llama-source" rev-parse HEAD)" = 2bc46baa9207d098d03741ac394e7faaf1a955b6
+          cmake -S "$RUNNER_TEMP/c4-llama-source" -B "$RUNNER_TEMP/c4-llama-build" \
+            -DCMAKE_BUILD_TYPE=Release -DGGML_NATIVE=OFF -DGGML_VULKAN=OFF \
+            -DLLAMA_CURL=OFF -DLLAMA_BUILD_SERVER=ON -DLLAMA_BUILD_TESTS=OFF
+          cmake --build "$RUNNER_TEMP/c4-llama-build" --target llama-server --parallel 3
+          sha256sum "$RUNNER_TEMP/c4-llama-build/bin/llama-server" \
+            > c4-qwen-evidence/llama-engine-sha256.txt
+      - name: Pin actual Qwen3 0.6B GGUF bytes
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fL --retry 4 --retry-delay 5 --connect-timeout 30 \
+            https://huggingface.co/QuantFactory/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B.Q4_K_M.gguf \
+            -o "$RUNNER_TEMP/c4-qwen.gguf"
+          printf '%s  %s\n' "$MODEL_SHA256" "$RUNNER_TEMP/c4-qwen.gguf" | sha256sum -c -
+          sha256sum "$RUNNER_TEMP/c4-qwen.gguf" > c4-qwen-evidence/model-sha256.txt
+      - name: Start actual offline GGUF local server
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$RUNNER_TEMP/c4-llama-build/bin/llama-server" \
+            -m "$RUNNER_TEMP/c4-qwen.gguf" --host 127.0.0.1 \
+            --port "$LU_E1_P07_LLAMA_PORT" -c 8192 -ngl 0 \
+            > c4-qwen-evidence/llama-server.log 2>&1 &
+          echo "$!" > "$RUNNER_TEMP/c4-llama.pid"
+          ready=0
+          for i in $(seq 1 180); do
+            if ! kill -0 "$(cat "$RUNNER_TEMP/c4-llama.pid")" 2>/dev/null; then exit 1; fi
+            if curl -fsS --max-time 2 "http://127.0.0.1:$LU_E1_P07_LLAMA_PORT/health" \
+              > c4-qwen-evidence/health.json; then ready=1; break; fi
+            sleep 2
+          done
+          test "$ready" = 1
+      - name: Provision fixed root-owned reviewed Git and FFprobe admission for actual GGUF tool execution
+        shell: bash
+        run: |
+          set -euo pipefail
+          # The real model's request MUST reach the same production SEC-06C
+          # custody boundary as a human-reviewed native desktop request.
+          # Never fall back to an unmanaged same-UID Git/FFprobe subprocess.
+          python3 -m py_compile             scripts/lu-sec06c-owned-git-launcher.py             scripts/lu-sec06c-owned-git-worker.py             scripts/lu-sec06c-owned-probe-launcher.py             scripts/lu-sec06c-owned-probe-worker.py             scripts/lu-sec06c-owned-kernel-manager.py
+          sudo install -d -o root -g root -m 0755 /usr/libexec/lu
+          sudo install -o root -g root -m 0755 scripts/lu-sec06c-owned-git-launcher.py /usr/libexec/lu/lu-sec06c-launch-git
+          sudo install -o root -g root -m 0755 scripts/lu-sec06c-owned-git-worker.py /usr/libexec/lu/lu-sec06c-owned-git-worker
+          sudo install -o root -g root -m 0755 scripts/lu-sec06c-owned-probe-launcher.py /usr/libexec/lu/lu-sec06c-launch-probe
+          sudo install -o root -g root -m 0755 scripts/lu-sec06c-owned-probe-worker.py /usr/libexec/lu/lu-sec06c-owned-probe-worker
+          sudo install -o root -g root -m 0755 scripts/lu-sec06c-owned-kernel-manager.py /usr/libexec/lu/lu-sec06c-owned-kernel-manager
+          printf '%s ALL=(root) NOPASSWD: /usr/libexec/lu/lu-sec06c-launch-git *\n' "$USER" | sudo tee /etc/sudoers.d/lu-c4-gguf-git >/dev/null
+          printf '%s ALL=(root) NOPASSWD: /usr/libexec/lu/lu-sec06c-launch-probe *\n' "$USER" | sudo tee /etc/sudoers.d/lu-c4-gguf-probe >/dev/null
+          sudo chmod 0440 /etc/sudoers.d/lu-c4-gguf-git /etc/sudoers.d/lu-c4-gguf-probe
+          sudo visudo -cf /etc/sudoers.d/lu-c4-gguf-git
+          sudo visudo -cf /etc/sudoers.d/lu-c4-gguf-probe
+          test "$(id -u)" -ne 0
+          test "$(stat -c %u /usr/libexec/lu/lu-sec06c-launch-git)" = 0
+          test "$(stat -c %u /usr/libexec/lu/lu-sec06c-launch-probe)" = 0
+      - name: Prove local b12143 llama.cpp enforces actual model grammar before native tool acceptance
+        shell: bash
+        run: |
+          set -euo pipefail
+          PYTHONPATH=benchmarks/e1 python3 -m unittest -v test_e1_p07_llama_completion \
+            2>&1 | tee c4-qwen-evidence/typed-grammar-source-contract.log
+          PYTHONPATH=benchmarks/e1 python3 - <<'PY'
+          import os
+          from e1_p07_llama_completion import (
+              assert_grammar_enforced,assert_tool_grammar_enforced,
+          )
+          port=int(os.environ["LU_E1_P07_LLAMA_PORT"])
+          assert_grammar_enforced(port)
+          assert_tool_grammar_enforced(port)
+          print("C4_GENUINE_LLAMA_JSON_TOOL_GRAMMAR_ENFORCED=1")
+          PY
+      - name: Genuine Qwen planning and original host native plan-tool-oracle-restart sequence
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 benchmarks/e1/agent01g_qwen_plan_probe.py \
+            --port "$LU_E1_P07_LLAMA_PORT" \
+            --output c4-qwen-evidence/plan-probe.json \
+            2>&1 | tee c4-qwen-evidence/plan-probe.log
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --test e1_reviewed_model_tools \
+            agent01g_genuine_gguf_requires_fresh_ansf_review_native_git_oracle_and_restart \
+            -- --ignored --nocapture \
+            2>&1 | tee c4-qwen-evidence/original-plan-native.log
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --test e1_reviewed_model_tools \
+            agent01i_genuine_qwen_two_fresh_approvals_independent_git_and_restart \
+            -- --ignored --nocapture \
+            2>&1 | tee c4-qwen-evidence/two-step-native.log
+          # One saved original ANSF goal, two DIFFERENT real model-directed
+          # native independent worker/oracle methods and separate approvals.
+          # Test-only consent is NOT a real operator's task-completion dialog.
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --test e1_reviewed_model_tools \
+            c3_genuine_gguf_one_task_git_head_then_wav_pcm_with_recovery \
+            -- --ignored --exact --nocapture \
+            2>&1 | tee c4-qwen-evidence/c3-one-real-goal-git-wav.log
+          grep -Eq 'test result: ok\. 1 passed; 0 failed;' \
+            c4-qwen-evidence/c3-one-real-goal-git-wav.log
+          grep -Fq 'CORE_C3_REAL_QWEN_ONE_GOAL_GIT_HEAD_AND_WAV_PCM_ORACLES_PASS' \
+            c4-qwen-evidence/c3-one-real-goal-git-wav.log
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --test e1_reviewed_model_tools \
+            genuine_gguf_independently_selects_git_and_media_tools_and_survives_journal_restart \
+            -- --ignored --nocapture \
+            2>&1 | tee c4-qwen-evidence/real-model-choice.log
+          # Original TOOLS-05/06: real pinned GGUF must choose the exact
+          # authorized catalog name/arguments, receive typed native feedback,
+          # and only then finalize. No scripted tool reply or host-selected call.
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --test e1_reviewed_model_tools \
+            genuine_qwen_selects_original_schema_and_environment_native_tools \
+            -- --ignored --nocapture \
+            2>&1 | tee c4-qwen-evidence/original-schema-env-real-qwen.log
+      - name: Stop local GGUF and disclose excluded physical 27B Radeon gate
+        if: always()
+        shell: bash
+        run: |
+          if test -f "$RUNNER_TEMP/c4-llama.pid"; then
+            kill "$(cat "$RUNNER_TEMP/c4-llama.pid")" 2>/dev/null || true
+          fi
+          echo 'Hosted Qwen3-0.6B CPU is a genuine loaded GGUF test, NOT Qwen 3.8 27B Radeon Vulkan, installed NSIS, or physical owner acceptance.' >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lu-c4-genuine-qwen-gguf
+          path: c4-qwen-evidence/
+          retention-days: 14
+          if-no-files-found: warn
+
+  c3-installed-native-task-board:
+    # Actual source-pinned NSIS executable, WebView2 accessible controls and
+    # separate OS-owned conservative whole-task decision dialog. The test's
+    # scripted CI operator does NOT count as independent live human completion.
+    needs: [exact-source-admission, native-planner-ipc-desktop, genuine-local-qwen]
+    if: >-
+      needs.exact-source-admission.result == 'success' &&
+      needs.native-planner-ipc-desktop.result == 'success' &&
+      needs.genuine-local-qwen.result == 'success'
+    runs-on: windows-2025
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Exact frozen source and pinned original NSIS builder
+        shell: pwsh
+        env:
+          C3_EXPECTED_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          $ErrorActionPreference='Stop'
+          if((git rev-parse HEAD).Trim() -cne $env:C3_EXPECTED_SHA){throw 'Wrong C3 commit'}
+          node scripts/verify-source-tree.mjs
+          if($LASTEXITCODE -ne 0){throw 'C3 source identity mismatch'}
+          $nsis=Join-Path ([Environment]::GetFolderPath('ProgramFilesX86')) 'NSIS\makensis.exe'
+          if(-not(Test-Path -LiteralPath $nsis)){
+            choco install nsis --version=3.11.0 --yes --no-progress --limit-output
+            if($LASTEXITCODE -ne 0){throw 'Pinned NSIS not installed'}
+          }
+          $out=Join-Path $env:RUNNER_TEMP 'c3-genuine-installer'
+          & scripts/build-agent01g-physical-windows-nsis.ps1 -SourceSha $env:C3_EXPECTED_SHA -OutputDirectory $out
+          if($LASTEXITCODE -ne 0){throw 'Genuine original NSIS build failed'}
+          $receipt=Get-Content (Join-Path $out 'installer-checksums.json') -Raw|ConvertFrom-Json
+          if($receipt.sourceSha -cne $env:C3_EXPECTED_SHA -or -not $receipt.genuineInstallerProduced){
+            throw 'Original pinned NSIS provenance missing'
+          }
+          $installer=Join-Path $out $receipt.installerName
+          if((Get-FileHash $installer -Algorithm SHA256).Hash.ToLowerInvariant() -cne $receipt.installerSha256){
+            throw 'Generated installer hash mismatch'
+          }
+          $target=Join-Path $env:RUNNER_TEMP 'c3-installed-Lu'
+          if(Test-Path $target){throw 'Cannot overwrite prior installed application'}
+          $process=Start-Process -FilePath $installer -ArgumentList @('/S',('/D='+$target)) -PassThru
+          if(-not $process.WaitForExit(600000)){$process.Kill($true);throw 'NSIS timed out'}
+          if($process.ExitCode -ne 0){throw 'Native NSIS install failed'}
+          $installed=Join-Path $target 'lu-desktop.exe'
+          if((Get-FileHash $installed -Algorithm SHA256).Hash.ToLowerInvariant() -cne $receipt.appSha256){
+            throw 'Actual installed executable changed'
+          }
+          $engine=Join-Path $target 'lu-inference\llama-server.exe'
+          if((Get-FileHash $engine -Algorithm SHA256).Hash.ToLowerInvariant() -cne $receipt.engineSha256){
+            throw 'Pinned packaged CPU engine changed'
+          }
+          "C3_INSTALLED_EXE=$installed" >> $env:GITHUB_ENV
+          "C3_INSTALLED_SHA=$($receipt.appSha256)" >> $env:GITHUB_ENV
+          "C3_INSTALLED_DIR=$target" >> $env:GITHUB_ENV
+          New-Item -ItemType Directory -Path (Join-Path $env:RUNNER_TEMP 'c3-installed-evidence') | Out-Null
+          Copy-Item (Join-Path $out 'installer-checksums.json') (Join-Path $env:RUNNER_TEMP 'c3-installed-evidence\installer.json')
+      - name: Independently create disposable original two-project ANSF task-board fixture
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $env:LU_PLAN06_INSTALLED_PROFILE=Join-Path $env:APPDATA 'org.lu.agent01g.devtest'
+          $env:LU_PLAN06_INSTALLED_PROJECTS=Join-Path $env:RUNNER_TEMP 'c3-original-projects'
+          $env:LU_PLAN06_INSTALLED_SEED_RECEIPT=Join-Path $env:RUNNER_TEMP 'c3-installed-evidence\original-seed.json'
+          if(Test-Path $env:LU_PLAN06_INSTALLED_PROFILE){throw 'Refuse non-disposable ANSF user profile'}
+          $native='lu-desktop/src-tauri/resources/lu-inference'
+          New-Item -Path $native -ItemType Directory -Force|Out-Null
+          foreach($dll in @('msvcp140.dll','vcruntime140.dll','vcruntime140_1.dll')){
+            if(Test-Path (Join-Path $native $dll)){throw 'Refuse existing genuine DLL replacement'}
+            Set-Content -LiteralPath (Join-Path $native $dll) -Value 'CI_FIXTURE_NONFUNCTIONAL' -NoNewline
+          }
+          cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib project_task_board_desktop::tests::export_dual_project_installed_ui_fixture -- --ignored --exact --nocapture
+          if($LASTEXITCODE -ne 0){throw 'Original fixture producer failed'}
+          "C3_PROFILE=$env:LU_PLAN06_INSTALLED_PROFILE" >> $env:GITHUB_ENV
+          "C3_SEED=$env:LU_PLAN06_INSTALLED_SEED_RECEIPT" >> $env:GITHUB_ENV
+      - name: Original installed WebView2 and real OS native completion refusal cancellation replan restart
+        shell: pwsh
+        timeout-minutes: 38
+        run: |
+          $ErrorActionPreference='Stop'
+          & scripts/c3-windows-installed-native-completion.ps1 -InstalledExe $env:C3_INSTALLED_EXE -ExpectedSha256 $env:C3_INSTALLED_SHA -ProfileDir $env:C3_PROFILE -SeedReceipt $env:C3_SEED -EvidenceDir (Join-Path $env:RUNNER_TEMP 'c3-installed-evidence\uia') -DisposableWindowsConfirmed
+          if($LASTEXITCODE -ne 0){throw 'Actual installed native C3 task-decision interaction failed'}
+          $proof=Get-Content (Join-Path $env:RUNNER_TEMP 'c3-installed-evidence\uia\c3-windows-native-completion.json') -Raw|ConvertFrom-Json
+          if($proof.acceptance -cne 'PASS_C3_REAL_INSTALLED_NATIVE_NEGATIVE_COMPLETION' -or
+             $proof.actualHumanCompletion -cne 'NOT_TESTED' -or
+             -not $proof.testFixtureSyntheticNotRealGguf){
+            throw 'Installed UI proof missing or dishonest human completion claim'
+          }
+          echo 'C3_INSTALLED_NEGATIVE_OS_UI_PASS=1; REAL_HUMAN_POSITIVE_TASK_DECISION_OPEN=1' >> $env:GITHUB_STEP_SUMMARY
+      - name: Original uninstall preserving signed source decision journal
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $before=Join-Path $env:C3_PROFILE 'ansf\library.db'
+          if(-not(Test-Path $before)){throw 'Missing original persisted ANSF after native UI'}
+          $uninstall=Join-Path $env:C3_INSTALLED_DIR 'UninstallLuAGENT01GPhysicalTest.exe'
+          if(-not(Test-Path $uninstall)){throw 'Actual uninstaller missing'}
+          $proc=Start-Process $uninstall -ArgumentList '/S' -PassThru
+          if(-not $proc.WaitForExit(180000)){$proc.Kill($true);throw 'Uninstall timed out'}
+          if($proc.ExitCode -ne 0){throw 'Uninstaller returned nonzero'}
+          if(-not(Test-Path $before)){throw 'Uninstall destroyed original human decision history'}
+          python -c "import sqlite3,sys; d=sqlite3.connect('file:'+sys.argv[1]+'?mode=ro',uri=True); a=d.execute('SELECT event_json,no_execution_authority FROM ansf_project_task_completion_decisions').fetchall(); assert len(a)==2 and all(v==1 for _,v in a)" $before
+          if($LASTEXITCODE -ne 0){throw 'Original completion journal failed independent post-uninstall readback'}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lu-c3-real-installed-windows-native-task-completion
+          path: ${{ runner.temp }}/c3-installed-evidence/
+          retention-days: 14
+          if-no-files-found: warn
+
+  exact-sha-consolidated-reconciliation:
+    if: always() && needs.exact-source-admission.result == 'success'
+    needs:
+      - exact-source-admission
+      - native-planner-ipc-desktop
+      - original-security-recovery
+      - linux-real-cgroup
+      - linux-original-root-owned-git
+      - genuine-local-qwen
+      - c3-installed-native-task-board
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Explicit all-or-nothing original grouped result
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha }}
+          SOURCE: ${{ needs.exact-source-admission.result }}
+          NATIVE: ${{ needs.native-planner-ipc-desktop.result }}
+          RECOVERY: ${{ needs.original-security-recovery.result }}
+          LINUX: ${{ needs.linux-real-cgroup.result }}
+          ROOT_GIT: ${{ needs.linux-original-root-owned-git.result }}
+          QWEN: ${{ needs.genuine-local-qwen.result }}
+          C3_INSTALLED: ${{ needs.c3-installed-native-task-board.result }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            echo "## CORE-MERGE-C4 grouped immutable SHA"
+            echo "Source: $EXPECTED_SHA"
+            echo "Source admission: $SOURCE"
+            echo "Windows/Linux native: $NATIVE"
+            echo "Windows/Linux security and recovery: $RECOVERY"
+            echo "Linux delegated kernel cgroup: $LINUX"
+            if [[ "$LINUX" != success ]]; then
+              echo "LINUX_DELEGATED_CGROUP_POSITIVE_OPEN=1; dedicated native runner and original escaped-descendant evidence required. A skipped job is NOT accepted."
+            fi
+            echo "Original independently root-owned Git worker: $ROOT_GIT"
+            echo "Actual pinned Qwen GGUF: $QWEN"
+            echo "Hosted installed Windows native C3 decision UI (test-only operator): $C3_INSTALLED"
+            echo "Installed Windows and physical owner Qwen 27B remain separately open."
+          } >> "$GITHUB_STEP_SUMMARY"
+          test "$SOURCE" = success
+          test "$NATIVE" = success
+          test "$RECOVERY" = success
+          test "$LINUX" = success
+          test "$ROOT_GIT" = success
+          test "$QWEN" = success
+          test "$C3_INSTALLED" = success

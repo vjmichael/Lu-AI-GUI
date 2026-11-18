@@ -146,3 +146,61 @@ fn scope_revocation_is_immediate_and_bumps_revision() {
         Err(PolicyError::InvalidGrant)
     ));
 }
+
+#[tokio::test]
+async fn host_accessibility_does_not_mint_task_authority() {
+    // This native tool has a real OS-accessible host-selected root.
+    // Neither filesystem accessibility nor registry discovery grants a model
+    // authority to read it. The host selects a root for this specific tool,
+    // not an application-wide operating-environment sandbox.
+    let root = std::env::temp_dir().join(format!(
+        "lu-access-not-authority-{}-{}",
+        std::process::id(),
+        SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos()
+    ));
+    fs::create_dir_all(&root).unwrap();
+    fs::write(root.join("host-file.txt"), "approved test data").unwrap();
+    assert_eq!(fs::read_to_string(root.join("host-file.txt")).unwrap(), "approved test data");
+
+    let registry = NativeToolRegistry::new();
+    let catalog = register_bundled_file_tools(&registry, &root).unwrap();
+    let advertised = BTreeSet::from(["lu_files_read_text".to_owned()]);
+    let request = catalog.encode_call(
+        &advertised,
+        "lu_files_read_text",
+        "read-host-file",
+        Some("authorized-turn"),
+        r#"{"path":"host-file.txt"}"#,
+    ).unwrap();
+    let policy = PolicyEngine::new();
+    // OS allows access, but the authenticated task has no authority yet.
+    assert!(matches!(
+        registry.dispatch(request.clone(), &policy).await,
+        Err(DispatchError::Denied(_))
+    ));
+    policy.grant(grant(
+        "lu.files.read_text",
+        "authorized-turn",
+        ToolEffect::ReadWorkspace,
+    )).unwrap();
+    assert!(registry.dispatch(request.clone(), &policy).await.is_ok());
+
+    // A distinct task cannot ride another task's approved OS capability.
+    let mut unrelated = request.clone();
+    unrelated.workspace_id = Some("unrelated-turn".into());
+    assert!(matches!(
+        registry.dispatch(unrelated, &policy).await,
+        Err(DispatchError::Denied(_))
+    ));
+    policy.revoke_scope("authorized-turn").unwrap();
+    assert!(matches!(
+        registry.dispatch(request, &policy).await,
+        Err(DispatchError::Denied(_))
+    ));
+    // Native file tools hold an opened directory capability. Explicitly
+    // release both the model catalog and tool registry before deleting the
+    // fixture: Windows correctly refuses removal of still-open directories.
+    drop(catalog);
+    drop(registry);
+    fs::remove_dir_all(root).unwrap();
+}

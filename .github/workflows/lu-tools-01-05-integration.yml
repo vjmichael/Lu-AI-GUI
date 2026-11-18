@@ -1,0 +1,125 @@
+name: Lu TOOLS 01–05 unified native integration
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: lu-tools-01-05-native-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  lock-audit:
+    name: Confirm reproducible Cargo.lock (ubuntu-latest)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Resolve Core and desktop graphs, fail if lockfiles need changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo metadata --format-version 1 --manifest-path src-tauri/lu-core/Cargo.toml > /dev/null
+          cargo metadata --format-version 1 --manifest-path lu-desktop/src-tauri/Cargo.toml > /dev/null
+          if ! git diff --quiet -- src-tauri/lu-core/Cargo.lock lu-desktop/src-tauri/Cargo.lock; then
+            echo 'LU_LOCKFILE_DRIFT: commit the exact Cargo-resolved diff, never accept a mutated checkout'
+            git diff -- src-tauri/lu-core/Cargo.lock lu-desktop/src-tauri/Cargo.lock
+            exit 1
+          fi
+          echo 'LU_LOCKFILES_MATCH'
+  native:
+    name: Native tool/authorization suite (${{ matrix.os }})
+    needs: lock-audit
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Bind trusted Git executable (Linux fixtures)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: echo "LU_TOOLS03_TEST_GIT_PATH=$(command -v git)" >> "$GITHUB_ENV"
+      - name: Bind trusted Git executable (Windows fixtures)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $git = (Get-Command git.exe -ErrorAction Stop).Source
+          Add-Content -Path $env:GITHUB_ENV -Value "LU_TOOLS03_TEST_GIT_PATH=$git"
+      - name: Native Rust Core tests
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib --tests -- --nocapture
+      - name: P01 compile and test cap-scoped filesystem metadata discovery (native)
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_file_discovery -- --nocapture
+      - name: Checked hostile archive/member tests
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test native_archive_inspect -- --nocapture
+  desktop:
+    name: Native Windows desktop host compile
+    needs: lock-audit
+    runs-on: windows-latest
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Stage CI-only nonfunctional Tauri engine resource files
+        shell: pwsh
+        run: |
+          # Compilation only; never an installable or valid inference engine.
+          $root = 'lu-desktop/src-tauri/resources/lu-inference'
+          New-Item -ItemType Directory -Force -Path $root | Out-Null
+          foreach ($name in @('llama-server.exe','msvcp140.dll','vcruntime140.dll','vcruntime140_1.dll')) {
+            Set-Content -LiteralPath (Join-Path $root $name) -Value 'NOT_AN_ENGINE_CI_PLACEHOLDER' -NoNewline
+          }
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Build real React UI for Tauri compile
+        working-directory: lu-desktop
+        shell: pwsh
+        run: |
+          if (Test-Path package-lock.json) { npm ci } else { npm install --no-audit --no-fund }
+          npm run build
+      - name: Check full Tauri desktop compile
+        run: cargo check --locked --manifest-path lu-desktop/src-tauri/Cargo.toml
+      - name: Compile Windows desktop Rust tests
+        run: cargo test --locked --no-run --manifest-path lu-desktop/src-tauri/Cargo.toml
+  frontend:
+    name: Frontend and dual-feature UX regression tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install UI dependencies using existing Lu fallback
+        run: if test -f package-lock.json; then npm ci; else npm install --no-audit --no-fund; fi
+        working-directory: lu-desktop
+      - name: Bundle both file edits and Reader/background UI
+        run: npm run build
+        working-directory: lu-desktop
+      - name: Build actual production scanner acceptance worker
+        run: cargo build --locked --manifest-path lu-desktop/tests/native-file-scan/Cargo.toml
+      - name: P01 verify frontend workspace discovery and authority contracts
+        run: node --test lu-desktop/tests/filesystem-discovery.test.mjs lu-desktop/tests/workspace-desktop.test.mjs
+      - name: Run UI regressions
+        run: npm run test:ui
+        working-directory: lu-desktop
+  source-tree:
+    name: Verify exact repository content lock
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Read-only source hash inventory check
+        run: node scripts/verify-source-tree.mjs

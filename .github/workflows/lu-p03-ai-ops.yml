@@ -1,0 +1,52 @@
+name: Lu P03 AI Operations + Native Model Manager
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: lu-p03-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  native-p03:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Verify exact source inventory
+        run: node scripts/verify-source-tree.mjs
+      - name: Test P03 native capability routing and digest-guarded context
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib ai_operations -- --nocapture
+      - name: Test bounded actual GGUF KV metadata parser
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib gguf_metadata_summary -- --nocapture
+      - name: Test pinned model provider metadata and license review
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib model_provider_catalog -- --nocapture
+      - name: Test fail-closed backend selection and multimodal task routing
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib compute_runtime -- --nocapture
+      - name: Verify P03 desktop-host/UI source contracts
+        run: node --test lu-desktop/tests/p03-ai-ops.test.mjs
+      - name: Build actual P03 React settings pane
+        if: matrix.os == 'windows-latest'
+        working-directory: lu-desktop
+        run: |
+          npm install --no-package-lock --ignore-scripts --no-audit --no-fund
+          npm run build
+      - name: Compile full Windows Rust desktop host without unverified packaged engine
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          $path='lu-desktop/src-tauri/tauri.conf.json'
+          $cfg=Get-Content $path -Raw | ConvertFrom-Json
+          $cfg.bundle.resources=@{}
+          $cfg | ConvertTo-Json -Depth 50 | Set-Content $path -Encoding utf8
+          cargo check --locked --manifest-path lu-desktop/src-tauri/Cargo.toml
+          cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib p03_local_model_inspection -- --nocapture
+      - name: Record deferred installed-engine, model transfer and physical GPU gates
+        if: matrix.os == 'windows-latest'
+        run: echo "CI tested real source/native host, not a pinned installed NSIS/GGUF/MMProj engine, P05 verified model download or physical GPU offload"

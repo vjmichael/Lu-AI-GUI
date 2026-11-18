@@ -1,0 +1,52 @@
+name: Lu P08 Archive Split Native
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: lu-p08-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  native-p08:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify exact frozen Git source
+        run: node scripts/verify-source-tree.mjs
+      - name: Run physical archive-byte roundtrip and safety regressions
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test native_archive_split -- --nocapture
+      - name: Compile all Lu Core archive primitives
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_archive_split -- --nocapture
+      - name: Check P08 human-owned UI and output claims
+        run: node --test lu-desktop/tests/p08-archive-split.test.mjs
+      - name: Compile real React and Windows native Tauri archive commands
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          Push-Location lu-desktop
+          npm install --no-package-lock --ignore-scripts --no-audit --no-fund
+          if ($LASTEXITCODE -ne 0) { throw 'P08 frontend install failed' }
+          npm run build
+          if ($LASTEXITCODE -ne 0) { throw 'P08 frontend build failed' }
+          npm run check
+          if ($LASTEXITCODE -ne 0) { throw 'P08 frontend contracts failed' }
+          Pop-Location
+          $path='lu-desktop/src-tauri/tauri.conf.json'
+          $cfg=Get-Content $path -Raw | ConvertFrom-Json
+          $cfg.bundle.resources=@{}
+          $cfg | ConvertTo-Json -Depth 50 | Set-Content $path -Encoding utf8
+          cargo check --locked --manifest-path lu-desktop/src-tauri/Cargo.toml
+          if ($LASTEXITCODE -ne 0) { throw 'P08 native desktop compilation failed' }
+      - name: No installed-app, native spanned-format or massive archive acceptance inferred
+        run: echo "Bounded native files/CI only; no installed NSIS or large physical workload acceptance"

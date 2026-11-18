@@ -1,0 +1,18 @@
+[package]
+name = "lu-operational-memory-harness"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.88"
+publish = false
+
+[lib]
+name = "lu_core"
+path = "src/lib.rs"
+
+[dependencies]
+rusqlite = { version = "0.32", features = ["bundled"] }
+sha2 = "0.10"
+
+[[test]]
+name = "operational_memory"
+path = "../../src-tauri/lu-core/tests/operational_memory.rs"

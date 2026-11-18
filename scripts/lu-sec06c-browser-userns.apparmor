@@ -1,0 +1,12 @@
+# SEC-06C temporary native acceptance profile for one installed reviewed Chromium.
+# The binary lives under root-owned /usr/lib/lu/browser; no glob and no
+# user-writable path matches. Ubuntu 24.04 otherwise rejects the Chromium
+# user-namespace sandbox. This grants userns ONLY to this exact Chrome path.
+# The root-owned SEC-06C cgroup remains authoritative for every descendant.
+# This CI profile is NOT a reviewed production-release confinement policy.
+abi <abi/4.0>,
+include <tunables/global>
+
+profile lu-sec06c-chromium /usr/lib/lu/browser/chrome flags=(unconfined) {
+  userns,
+}

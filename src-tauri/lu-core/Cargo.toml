@@ -15,11 +15,23 @@ serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 tokio = { version = "1", features = ["rt", "rt-multi-thread"] }
 prost = "0.14"
+jsonschema = { version = "=0.55.0", default-features = false }
+regex = "1.11"
 rusqlite = { version = "0.32", features = ["bundled"] }
 sha2 = "0.10"
+flate2 = "1.1.9"
+crc32fast = "1.5.0"
+quick-xml = "0.41.0"
+zip = { version = "=9.3.0", default-features = false, features = ["deflate-flate2"] }
 base64 = "0.22"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
 ed25519-dalek = "2.1"
+lu-win-worker-job = { path = "../lu-win-worker-job" }
+
+# Nondefault CI-only compatibility proof for original P06 Python process
+# timeouts, cancellation and bounded output, within SEC-06C kernel custody.
+[features]
+p06-protected-acceptance = ["lu-win-worker-job/p06-protected-acceptance"]
 
 [build-dependencies]
 prost-build = "0.14"
@@ -28,6 +40,3 @@ protoc-bin-vendored = "3"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt", "sync"] }
-
-[target.'cfg(windows)'.dependencies]
-lu-win-worker-job = { path = "../lu-win-worker-job" }

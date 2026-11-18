@@ -1,0 +1,162 @@
+name: Lu v1.0 Observe and Learn — native policy
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  source:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node scripts/verify-source-tree.mjs
+      - name: Check optional Windows WGC installer resource overlay syntax
+        shell: bash
+        run: |
+          node -e "const fs=require('fs');const x=JSON.parse(fs.readFileSync('lu-desktop/src-tauri/tauri.observe.capture.conf.json'));if(x.bundle.resources['resources/lu-observe-capture-worker.exe']!=='lu-observe-capture-worker.exe')process.exit(1)"
+          grep -Fq 'LU_OBSERVE_CAPTURE_WORKER_SHA256' scripts/package-observe-capture-windows.ps1
+      - run: grep -Fx 'pub mod native_observe_learn;' src-tauri/lu-core/src/lib.rs
+  native-linux:
+    needs: source
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_observe_learn::tests -- --nocapture
+      - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_observe_ansf::tests -- --nocapture
+      - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_observe_scope::tests -- --nocapture
+      - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_awareness_lane::tests -- --nocapture
+      - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib awareness_notes_are_durable_chat_scoped_and_not_training_data -- --nocapture
+      - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_gui_verification::tests -- --nocapture
+      - shell: bash
+        run: git diff --exit-code -- src-tauri/lu-core/Cargo.lock
+  native-windows:
+    needs: source
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_observe_learn::tests -- --nocapture
+      - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_observe_ansf::tests -- --nocapture
+      - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_observe_scope::tests -- --nocapture
+      - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_awareness_lane::tests -- --nocapture
+      - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib awareness_notes_are_durable_chat_scoped_and_not_training_data -- --nocapture
+      - name: Native Windows Job Object cancellation and durable worker receipts
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_background_process::tests -- --nocapture
+      - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_gui_verification::tests -- --nocapture
+      - shell: bash
+        run: git diff --exit-code -- src-tauri/lu-core/Cargo.lock
+  desktop-ui:
+    needs: source
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - working-directory: lu-desktop
+        run: |
+          npm install --no-package-lock --ignore-scripts --no-audit --no-fund
+          npm run build
+          npm run check
+          npm run test:ui
+  desktop-windows:
+    needs: [source, desktop-ui]
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Use engine-free code-only desktop host config
+        shell: pwsh
+        run: |
+          $path='lu-desktop/src-tauri/tauri.conf.json'
+          $cfg=Get-Content -LiteralPath $path -Raw | ConvertFrom-Json
+          $cfg.bundle.resources=@{}
+          $cfg | ConvertTo-Json -Depth 50 | Set-Content -LiteralPath $path -Encoding utf8
+          Write-Output 'Code compilation only: no model engine, Vulkan, NSIS or installed GPU acceptance claimed'
+      - working-directory: lu-desktop
+        run: |
+          npm install --no-package-lock --ignore-scripts --no-audit --no-fund
+          npm run build
+      - name: Native Windows capture frame geometry and privacy bounds tests
+        run: cargo test --manifest-path src-tauri/lu-observe-capture-worker/Cargo.toml --bin lu-observe-capture-worker frame_geometry_tests -- --nocapture
+      - name: Foreground HWND and process-instance recheck is part of native worker
+        shell: bash
+        run: |
+          grep -Fq -- '--lu-observe-foreground-one-shot' src-tauri/lu-observe-capture-worker/src/main.rs
+          grep -Fq 'process_instance::born_at(pid)?!=born' src-tauri/lu-observe-capture-worker/src/main.rs
+          grep -Fq 'Lu-WGC-whole-frame-redacted-v2' src-tauri/lu-observe-capture-worker/src/main.rs
+      - name: Compile Windows.Graphics.Capture picker and D3D11 one-shot worker
+        run: cargo build --release --manifest-path src-tauri/lu-observe-capture-worker/Cargo.toml
+      - name: Reject unattended or forged capture worker invocations
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $worker=Join-Path $env:GITHUB_WORKSPACE 'src-tauri/lu-observe-capture-worker/target/release/lu-observe-capture-worker.exe'
+          if (!(Test-Path -LiteralPath $worker)) { throw 'Capture worker binary missing' }
+          $cases=@(
+            @(),
+            @('--lu-observe-one-shot','short'),
+            @('--lu-observe-foreground-one-shot','not-a-32-hex-nonce'),
+            @('--arbitrary-capture','00112233445566778899aabbccddeeff')
+          )
+          foreach ($argsList in $cases) {
+            $output=@(& $worker @argsList 2>$null)
+            if ($LASTEXITCODE -ne 1 -or $output.Count -gt 0) {
+              throw 'Capture worker did not reject unauthorized invocation without pixel output'
+            }
+          }
+          # Do not mistake intentionally rejected child exit 1 for a CI failure.
+          exit 0
+      - name: Preserve exact resolved Windows worker dependency graph as CI evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: lu-observe-capture-dependency-lock-${{ github.sha }}
+          retention-days: 7
+          if-no-files-found: error
+          path: src-tauri/lu-observe-capture-worker/Cargo.lock
+      - name: Pin compiled Windows capture worker digest for desktop host
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $worker='src-tauri/lu-observe-capture-worker/target/release/lu-observe-capture-worker.exe'
+          if (!(Test-Path -LiteralPath $worker)) {throw 'Real WGC worker not built'}
+          $sha=(Get-FileHash -Algorithm SHA256 -LiteralPath $worker).Hash.ToLowerInvariant()
+          if ($sha.Length -ne 64) {throw 'Unusable worker digest'}
+          Add-Content -Path $env:GITHUB_ENV -Value "LU_OBSERVE_CAPTURE_WORKER_SHA256=$sha"
+          Set-Content -LiteralPath 'lu-observe-capture-worker.sha256' -Value $sha -NoNewline
+      - run: cargo check --locked --manifest-path lu-desktop/src-tauri/Cargo.toml
+      - run: cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib observe_desktop::tests -- --nocapture
+      - name: Publish compiled Windows picker for isolated native evaluation
+        uses: actions/upload-artifact@v4
+        with:
+          name: lu-observe-capture-win-x64-${{ github.sha }}
+          if-no-files-found: error
+          retention-days: 7
+          path: |
+            src-tauri/lu-observe-capture-worker/target/release/lu-observe-capture-worker.exe
+            lu-observe-capture-worker.sha256
+      - name: Check desktop source lockfile
+        shell: bash
+        run: git diff --exit-code -- lu-desktop/src-tauri/Cargo.lock

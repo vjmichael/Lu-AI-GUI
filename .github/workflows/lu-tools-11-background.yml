@@ -1,0 +1,111 @@
+name: Lu P02 Background Scheduler + Guardian Native Acceptance
+on:
+  workflow_dispatch:
+# A new branch commit supersedes old source identities; cancel redundant
+# runs instead of compiling stale commits on both platforms.
+concurrency:
+  group: lu-tools-11-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  native-background:
+    name: Background schedule/Guardian (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Test real native task status and authority
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_background_status -- --nocapture
+      - name: Verify model-visible scoped background status and terminal receipts
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_background_result -- --nocapture
+      - name: Verify host-bound one-shot start/cancel against real owned workers
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_background_control -- --nocapture
+      - name: P02 test durable queued work, Resource Guardian admission, recurrence and restart review
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_background_scheduler -- --nocapture
+      - name: P01 ensure native metadata discovery still compiles with P02
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_file_discovery -- --nocapture
+      - name: P02 verify native read-only host pressure probes
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_resource_pressure -- --nocapture
+      - name: P02 verify atomic SHA-256 result handoff and scoped receipts
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib p02_verified_result_tests -- --nocapture
+      - name: P02 verify isolated native platform resource probe ABI
+        run: cargo test --offline --manifest-path src-tauri/lu-win-worker-job/Cargo.toml -- --nocapture
+      - name: P02 sample actual Windows host CPU and RAM without pretending GPU/installed acceptance
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          $evidence = Join-Path $env:RUNNER_TEMP 'lu-p02-windows-host-telemetry.json'
+          & ./scripts/p02-native-windows-evidence.ps1 -EvidenceFile $evidence | Out-Null
+          $sample = Get-Content -LiteralPath $evidence -Raw | ConvertFrom-Json
+          if ($sample.availableRamMiB -le 0 -or
+              $sample.observedCpuPercent -lt 0 -or
+              $sample.observedCpuPercent -gt 100 -or
+              $sample.installedAppPathAndResponsiveWindow -or
+              $sample.gpu.status -ne 'not_requested') {
+            throw 'P02 native OS telemetry source or separation is invalid'
+          }
+          Write-Host 'Native Windows CPU/RAM observed. No installed app, inference GPU, or VRAM acceptance claimed.'
+      - name: Verify durable task store regressions
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test task_checkpoints -- --nocapture
+      - name: Verify operator task dashboard regression
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib dashboard_tests -- --nocapture
+      - name: Verify durable cancelled state and schema migration
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib cancellation_tests -- --nocapture
+      - name: Run real owned-process lifecycle and cancellation tests
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_background_process -- --nocapture
+      - name: Verify all terminal outcomes and durable notification replay
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib terminal_notification_tests -- --nocapture
+      - name: Verify explicit default-off auto-continuation preferences
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib task_auto_continue_tests -- --nocapture
+      - name: Verify P02 native scheduler and Background Tasks pane contracts
+        run: node --test lu-desktop/tests/background-scheduler.test.mjs lu-desktop/tests/background-pane.test.mjs
+      - name: Install frontend dependencies
+        if: matrix.os == 'windows-latest'
+        working-directory: lu-desktop
+        run: npm install --no-package-lock --ignore-scripts --no-audit --no-fund
+      - name: Build desktop Background Tasks pane
+        if: matrix.os == 'windows-latest'
+        working-directory: lu-desktop
+        run: npm run build
+      - name: Test actual production scanner module (portable)
+        run: cargo test --locked --manifest-path lu-desktop/tests/native-file-scan/Cargo.toml -- --nocapture
+      - name: Build native worker from production scanner source
+        run: cargo build --locked --manifest-path lu-desktop/tests/native-file-scan/Cargo.toml
+      - name: End-to-end actual worker scans 12 MiB fixture
+        run: node --test lu-desktop/tests/background-worker-e2e.test.mjs
+      - name: Detect authentic desktop engine resources
+        if: matrix.os == 'windows-latest'
+        id: engine
+        shell: pwsh
+        run: |
+          $found = Test-Path 'lu-desktop/src-tauri/resources/lu-inference/llama-server.exe'
+          "present=$($found.ToString().ToLower())" >> $env:GITHUB_OUTPUT
+      - name: Compile full desktop host with authentic resources
+        if: matrix.os == 'windows-latest' && steps.engine.outputs.present == 'true'
+        run: cargo check --locked --manifest-path lu-desktop/src-tauri/Cargo.toml
+      - name: Compile full desktop Rust host with no packaged engine in CI only
+        if: matrix.os == 'windows-latest' && steps.engine.outputs.present != 'true'
+        shell: pwsh
+        run: |
+          $path = 'lu-desktop/src-tauri/tauri.conf.json'
+          $cfg = Get-Content $path -Raw | ConvertFrom-Json
+          $cfg.bundle.resources = @{}
+          $cfg | ConvertTo-Json -Depth 50 | Set-Content $path -Encoding utf8
+          cargo check --locked --manifest-path lu-desktop/src-tauri/Cargo.toml
+      - name: Execute native Windows Reader-turn journal identity regression
+        if: matrix.os == 'windows-latest'
+        run: cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib reader -- --nocapture
+      - name: Record unavailable installed-desktop prerequisite
+        if: matrix.os == 'windows-latest' && steps.engine.outputs.present != 'true'
+        run: echo "Desktop host compiled with a temporary CI-only no-resources config; installed-app and real inference-engine acceptance remain BLOCKED."
+      - name: Verify source identity
+        run: git rev-parse HEAD

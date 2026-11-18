@@ -1,0 +1,586 @@
+//! PLAN-07B: real local GGUF-only generation from audited PLAN07A source
+//! snapshot; prompt, original response and identity are immutable ANSF data.
+//! No model tool route, no task authorizer, no acceptance or Git mutation.
+use super::*;
+use lu_core::{project_task_update_model as suggestions,
+    project_task_updates as updates,project_evidence_graph as graph,
+    project_status_classifier as status,project_task_synthesis as synthesis};
+use rusqlite::{Connection,params,OptionalExtension,TransactionBehavior};
+
+fn task_window_only(caller:&tauri::WebviewWindow)->Result<(),String>{
+    if caller.label()!="task-list"{
+        return Err("PLAN07B_REQUIRES_INDEPENDENT_OPERATOR_TASK_WINDOW".into())
+    }
+    Ok(())
+}
+fn init(conn:&Connection)->Result<(),String>{
+    conn.execute_batch("CREATE TABLE IF NOT EXISTS ansf_project_task_update_model_suggestions(
+        suggestion_sha256 TEXT PRIMARY KEY,
+        preview_sha256 TEXT NOT NULL,
+        register_id TEXT NOT NULL,
+        expected_register_sha256 TEXT NOT NULL,
+        graph_sha256 TEXT NOT NULL,
+        status_sha256 TEXT NOT NULL,
+        model_ref TEXT NOT NULL,
+        session_id TEXT NOT NULL,
+        generation_id TEXT NOT NULL,
+        original_prompt_sha256 TEXT NOT NULL,
+        original_reply_sha256 TEXT NOT NULL,
+        original_prompt_text BLOB NOT NULL,
+        original_reply_text BLOB NOT NULL,
+        suggestion_json BLOB NOT NULL,
+        no_completion_authority INTEGER NOT NULL CHECK(no_completion_authority=1),
+        no_execution_authority INTEGER NOT NULL CHECK(no_execution_authority=1)
+    );").map_err(|_|"PLAN07B_ANSF_SCHEMA_FAILED".to_string())
+}
+fn equal_native(a:&(graph::EvidenceGraph,status::StatusReport),
+    b:&(graph::EvidenceGraph,status::StatusReport))->Result<bool,String>{
+    Ok(synthesis::same_observed_sources(&a.0,&b.0)?&&
+        a.1.complete==b.1.complete&&
+        serde_json::to_value(&a.1.findings).map_err(|_|"PLAN07B_OLD_STATUS_ENCODE")?==
+        serde_json::to_value(&b.1.findings).map_err(|_|"PLAN07B_NEW_STATUS_ENCODE")?)
+}
+pub(super) fn persist(profile:&Path,proof:&suggestions::ModelSuggestion,
+    exact_prompt:&str,raw:&str)->Result<(),String>{
+    let (preview,register,_,g,s)=project_updates_desktop::reload_audited(
+        profile,&proof.preview_sha256)?;
+    if proof.expected_register_sha256!=register.latest_sha256{
+        return Err("PLAN07B_REGISTER_CHANGED_BEFORE_PERSIST".into())
+    }
+    if exact_prompt!=suggestions::prompt(&preview,&g,&s)?{
+        return Err("PLAN07B_PROMPT_MISMATCH_BEFORE_PERSIST".into())
+    }
+    suggestions::audit(proof,&preview,&g,&s,raw)?;
+    let bytes=serde_json::to_vec(proof).map_err(|_|"PLAN07B_RECEIPT_ENCODE")?;
+    if bytes.len()>80*1024||raw.len()>suggestions::MAX_REPLY||exact_prompt.len()>22000{
+        return Err("PLAN07B_IMMUTABLE_RECEIPT_BUDGET".into())
+    }
+    let mut conn=project_register_desktop::library(profile)?;
+    init(&conn)?;
+    let tx=conn.transaction_with_behavior(TransactionBehavior::Immediate)
+        .map_err(|_|"PLAN07B_SQLITE_IMMEDIATE_BEGIN")?;
+    // Recheck latest register identity INSIDE the write transaction. A
+    // concurrent correction cannot be bypassed by a stale model run.
+    let latest:Option<String>=tx.query_row(
+        "SELECT latest_sha256 FROM ansf_project_task_register_revisions
+         WHERE register_id=?1 ORDER BY register_revision DESC LIMIT 1",
+        [&proof.register_id],|row|row.get(0)
+    ).optional().map_err(|_|"PLAN07B_SQLITE_LATEST_LOOKUP")?;
+    if latest.as_deref()!=Some(proof.expected_register_sha256.as_str()){
+        return Err("PLAN07B_REGISTER_EDITED_DURING_INFERENCE".into())
+    }
+    tx.execute("INSERT OR IGNORE INTO ansf_project_task_update_model_suggestions(
+        suggestion_sha256,preview_sha256,register_id,expected_register_sha256,
+        graph_sha256,status_sha256,model_ref,session_id,generation_id,
+        original_prompt_sha256,original_reply_sha256,original_prompt_text,
+        original_reply_text,suggestion_json,no_completion_authority,no_execution_authority)
+        VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,1,1)",
+        params![
+            proof.digest_sha256,proof.preview_sha256,proof.register_id,
+            proof.expected_register_sha256,proof.graph_sha256,proof.status_sha256,
+            proof.original_model_ref,proof.original_session_id,proof.original_generation_id,
+            proof.original_prompt_sha256,proof.original_reply_sha256,
+            exact_prompt.as_bytes(),raw.as_bytes(),bytes
+        ]
+    ).map_err(|_|"PLAN07B_IMMUTABLE_INSERT_FAILED")?;
+    let (saved_prompt,saved_reply,saved): (Vec<u8>,Vec<u8>,Vec<u8>)=tx.query_row(
+        "SELECT original_prompt_text,original_reply_text,suggestion_json
+         FROM ansf_project_task_update_model_suggestions
+         WHERE suggestion_sha256=?1",
+        [&proof.digest_sha256],|row|Ok((row.get(0)?,row.get(1)?,row.get(2)?))
+    ).map_err(|_|"PLAN07B_IMMUTABLE_READBACK_MISSING")?;
+    if saved_prompt!=exact_prompt.as_bytes()||saved_reply!=raw.as_bytes()||
+        saved!=bytes{
+        return Err("PLAN07B_ORIGINAL_PROMPT_REPLY_COLLISION".into())
+    }
+    tx.commit().map_err(|_|"PLAN07B_RECEIPT_TRANSACTION_FAILED")?;
+    Ok(())
+}
+pub(super) fn read_latest(profile:&Path,preview_id:&str)
+ ->Result<Option<suggestions::ModelSuggestion>,String>{
+    let (preview,register,_,g,s)=project_updates_desktop::reload_audited(
+        profile,preview_id)?;
+    let conn=project_register_desktop::library(profile)?;
+    init(&conn)?;
+    let row:Option<(Vec<u8>,Vec<u8>,Vec<u8>)>=conn.query_row(
+        "SELECT original_prompt_text,original_reply_text,suggestion_json
+         FROM ansf_project_task_update_model_suggestions WHERE preview_sha256=?1
+         AND expected_register_sha256=?2
+         ORDER BY rowid DESC LIMIT 1",
+        params![preview_id,register.latest_sha256],
+        |row|Ok((row.get(0)?,row.get(1)?,row.get(2)?))
+    ).optional().map_err(|_|"PLAN07B_LATEST_SUGGESTION_QUERY")?;
+    let Some((old_prompt,reply,bytes))=row else{return Ok(None)};
+    if old_prompt.len()>22000||reply.len()>suggestions::MAX_REPLY||
+        bytes.len()>80*1024{
+        return Err("PLAN07B_OVERSIZED_SAVED_MODEL_RECEIPT".into())
+    }
+    let p=String::from_utf8(old_prompt).map_err(|_|"PLAN07B_PROMPT_NOT_UTF8")?;
+    let raw=String::from_utf8(reply).map_err(|_|"PLAN07B_REPLY_NOT_UTF8")?;
+    let proof:suggestions::ModelSuggestion=serde_json::from_slice(&bytes)
+        .map_err(|_|"PLAN07B_SAVED_SUGGESTION_NOT_JSON")?;
+    if p!=suggestions::prompt(&preview,&g,&s)?||
+        proof.preview_sha256!=preview_id||
+        proof.expected_register_sha256!=register.latest_sha256{
+        return Err("PLAN07B_SAVED_SUGGESTION_STALE_SOURCE".into())
+    }
+    suggestions::audit(&proof,&preview,&g,&s,&raw)?;
+    Ok(Some(proof))
+}
+#[tauri::command]
+pub(crate) async fn lu_project_update_model_latest(
+    caller:tauri::WebviewWindow,state:State<'_,Arc<DesktopState>>,
+    preview_sha256:String
+)->Result<Option<suggestions::ModelSuggestion>,String>{
+    task_window_only(&caller)?;
+    let profile=project_register_desktop::profile(state.inner())?;
+    tauri::async_runtime::spawn_blocking(move||
+        read_latest(&profile,&preview_sha256))
+        .await.map_err(|_|"PLAN07B_REOPEN_RECEIPT_INTERRUPTED")?
+}
+#[tauri::command]
+pub(crate) fn lu_project_update_model_cancel(
+    caller:tauri::WebviewWindow,state:State<'_,Arc<DesktopState>>
+)->Result<bool,String>{
+    task_window_only(&caller)?;
+    // A renderer cannot supply chat, generation or session identity.
+    // The host owns the exact PLAN-07B queue label.
+    let Some((session_id,generation_id,phase))=
+        state.generation_queue.cancel_for_chat(
+            "lu-plan07b-host-suggestions"
+        )? else{return Ok(false)};
+    if phase==CancelState::Active{
+        match state.supervisor.cancel(
+            &session_id,&generation_id,&next_id("req-")
+        ){
+            Ok(())|Err(SupervisorError::WrongGeneration)=>{},
+            Err(e)=>return Err(format!("PLAN07B_CANCEL_SUPERVISOR_ERROR: {e:?}")),
+        }
+    }
+    Ok(true)
+}
+
+#[tauri::command]
+pub(crate) async fn lu_project_update_model_suggest(
+    app:AppHandle,caller:tauri::WebviewWindow,
+    state:State<'_,Arc<DesktopState>>,preview_sha256:String
+)->Result<Option<suggestions::ModelSuggestion>,String>{
+    task_window_only(&caller)?;
+    if !graph::valid_digest(&preview_sha256){
+        return Err("PLAN07B_INVALID_OPERATOR_PREVIEW_ID".into())
+    }
+    let owner=Arc::clone(state.inner());
+    let ready=owner.supervisor.status()
+        .map_err(|e|format!("PLAN07B_REAL_GGUF_UNAVAILABLE: {e:?}"))?;
+    if ready.phase!=lu_core::inference_host::EnginePhase::Ready||
+       ready.session_id.is_none()||ready.model_ref.is_none(){
+        return Err("PLAN07B_LOCAL_GGUF_NOT_READY".into())
+    }
+    let profile=project_register_desktop::profile(&owner)?;
+    let check_preview=preview_sha256.clone();
+    let original_profile=profile.clone();
+    let (native_preview,_,_,native_graph,native_status)=
+        tauri::async_runtime::spawn_blocking(move||
+            project_updates_desktop::reload_audited(&original_profile,&check_preview)
+        ).await.map_err(|_|"PLAN07B_ORIGINAL_PREVIEW_INTERRUPTED")??;
+    let planned_prompt=suggestions::prompt(
+        &native_preview,&native_graph,&native_status)?;
+    let prompt_hash=format!("{:x}",Sha256::digest(planned_prompt.as_bytes()));
+    if !project_register_desktop::confirm(&app,
+        "Lu — Local GGUF evidence suggestions",
+        format!("Ask the currently loaded LOCAL GGUF to propose HUMAN evidence \
+        review steps for this original project?\n\nNative source HEAD: {}\n\
+        Original review SHA: {}\nPrompt SHA: {}\nCandidates: {}\n\n\
+        Model text is UNTRUSTED; it cannot certify completion, authorize execution, \
+        edit task histories or create issues. Choose the SAME original project \
+        next, and Lu will recheck the actual source before and after inference.",
+        native_preview.current_head.as_deref().unwrap_or("not verified"),
+        native_preview.digest_sha256,prompt_hash,native_preview.candidates.len())
+    ).await?{return Ok(None)}
+    let picker=app.clone();
+    let chosen=tauri::async_runtime::spawn_blocking(move||
+        picker.dialog().file().blocking_pick_folder()
+    ).await.map_err(|_|"PLAN07B_NATIVE_FOLDER_PICKER_INTERRUPTED")?;
+    let Some(chosen)=chosen else{return Ok(None)};
+    let root=chosen.into_path().map_err(|_|"PLAN07B_NATIVE_PROJECT_PATH_INVALID")?;
+    let sid=ready.session_id.ok_or("PLAN07B_GGUF_SESSION_MISSING")?;
+    let model=ready.model_ref.ok_or("PLAN07B_GGUF_MODEL_MISSING")?;
+    tauri::async_runtime::spawn_blocking(move||{
+        // One complete native source read before generation. No renderer
+        // supplied paths, web, historical chat or mutable tool privileges.
+        let original=project_status_desktop::classify_selected(&root)?;
+        if !equal_native(&(native_graph.clone(),native_status.clone()),&original)?{
+            return Err("PLAN07B_SOURCE_CHANGED_BEFORE_MODEL".into())
+        }
+        let (preview,register,_,g,s)=project_updates_desktop::reload_audited(
+            &profile,&preview_sha256)?;
+        if preview.expected_register_sha256!=register.latest_sha256||
+            !equal_native(&(g.clone(),s.clone()),&original)?{
+            return Err("PLAN07B_STALE_PREVIEW_BEFORE_GGUF".into())
+        }
+        let prompt=suggestions::prompt(&preview,&g,&s)?;
+        let before=owner.supervisor.status()
+            .map_err(|_|"PLAN07B_GGUF_STATUS_UNAVAILABLE")?;
+        if before.phase!=lu_core::inference_host::EnginePhase::Ready||
+           before.session_id.as_deref()!=Some(sid.as_str())||
+           before.model_ref.as_deref()!=Some(model.as_str()){
+            return Err("PLAN07B_LOCAL_MODEL_CHANGED".into())
+        }
+        let generation=next_id("g-");let request=next_id("req-");
+        let (ticket,_)=owner.generation_queue.enqueue(
+            &sid,"lu-plan07b-host-suggestions",&generation)?;
+        ticket.wait_for_slot()?;
+        if ticket.cancelled(){return Err("PLAN07B_OPERATOR_GENERATION_CANCELLED".into())}
+        let history=vec![];
+        owner.supervisor.reserve_generation_with_history(
+            &sid,&generation,&request,&prompt,2560,&history)
+            .map_err(|e|format!("PLAN07B_REAL_GGUF_RESERVATION_FAILED: {e:?}"))?;
+        if ticket.cancelled(){
+            let _=owner.supervisor.cancel(&sid,&generation,&next_id("req-"));
+            return Err("PLAN07B_OPERATOR_GENERATION_CANCELLED".into())
+        }
+        let mut raw=String::new();
+        let emit=|wire:Vec<u8>|->Result<(),BridgeError>{
+            let frame=decode_frame(&wire).map_err(BridgeError::Wire)?;
+            if let Some(proto::inference_frame::Body::Event(event))=frame.body{
+                if let Some(proto::inference_event::Kind::TextChunk(chunk))=event.kind{
+                    if raw.len().saturating_add(chunk.text.len())>suggestions::MAX_REPLY{
+                        return Err(BridgeError::WrongOperation)
+                    }
+                    raw.push_str(&chunk.text);
+                }
+            }
+            Ok(())
+        };
+        owner.supervisor.run_reserved_with_history(
+            &sid,&generation,&request,prompt.clone(),2560,history,emit)
+            .map_err(|e|format!("PLAN07B_ACTUAL_GGUF_INFERENCE_FAILED: {e:?}"))?;
+        if ticket.cancelled(){return Err("PLAN07B_GENERATION_CANCELLED".into())}
+        let validated=suggestions::validate(&preview,&g,&s,&raw,&prompt,
+            &model,&sid,&generation)
+            .map_err(|e|format!("PLAN07B_GGUF_OUTPUT_REJECTED: {e}"))?;
+        let after=project_status_desktop::classify_selected(&root)?;
+        if !equal_native(&(g,s),&after)?{
+            return Err("PLAN07B_SOURCE_CHANGED_DURING_GGUF".into())
+        }
+        let current=owner.supervisor.status()
+            .map_err(|_|"PLAN07B_GGUF_STATUS_LOST")?;
+        if current.session_id.as_deref()!=Some(sid.as_str())||
+           current.model_ref.as_deref()!=Some(model.as_str()){
+            return Err("PLAN07B_GGUF_SESSION_CHANGED_AFTER_GENERATION".into())
+        }
+        if ticket.cancelled(){
+            return Err("PLAN07B_CANCELLED_BEFORE_IMMUTABLE_PERSIST".into())
+        }
+        persist(&profile,&validated,&prompt,&raw)?;
+        Ok(Some(validated))
+    }).await.map_err(|_|"PLAN07B_GGUF_WORKER_THREAD_INTERRUPTED")?
+}
+
+#[cfg(test)]
+mod tests{
+    use super::*;
+    use lu_core::{project_task_synthesis as synth,project_task_register as register};
+    #[test]
+    fn original_ansf_model_bytes_readback_tamper_refusal_and_stale_register(){
+        let profile=std::env::temp_dir().join(format!(
+            "lu-plan07b-original-{}",std::process::id()));
+        let root=profile.join("source-project");
+        let _=fs::remove_dir_all(&profile);
+        fs::create_dir_all(root.join("docs")).unwrap();
+        fs::create_dir_all(profile.join("ansf")).unwrap();
+        fs::write(root.join("docs/REQUIREMENTS.md"),
+            b"# Original\n- [ ] Must include src/work.rs\n").unwrap();
+        let conn=Connection::open(profile.join("ansf/library.db")).unwrap();
+        conn.execute_batch("CREATE TABLE preserved_memory(value INTEGER);
+            INSERT INTO preserved_memory VALUES(7072);").unwrap();
+        drop(conn);
+        let (g,s)=project_status_desktop::classify_selected(&root).unwrap();
+        let ctx=synth::build_capsule(&g,&s).unwrap();
+        let req=&ctx.requirements[0];
+        let original_reply=serde_json::json!({"schema":synth::RAW_SCHEMA,"tasks":[{
+            "requirementId":req.requirement_id,"status":req.status,
+            "summary":"Inspect original host evidence",
+            "description":"Verify named source path with independent native receipts",
+            "priority":"P1","group":"01 Original source",
+            "evidenceIds":[req.requirement_id],"dependencyIndices":[],
+            "acceptanceCriteria":"Independently review exact original named source file",
+            "blockedBy":"No accepted native source proof exists yet"
+        }]}).to_string();
+        let proposal=synth::validate_model_response(&g,&s,&original_reply,
+            &synth::model_prompt(&ctx).unwrap(),
+            "m-test-not-a-genuine-model","s-test","g-test").unwrap();
+        project_task_desktop::persist_proposal(&profile,&g,&s,&proposal,&original_reply).unwrap();
+        let imported=register::import(&proposal).unwrap();
+        let registered=project_register_desktop::persist(
+            &profile,&proposal,&imported,None).unwrap();
+        let preview=project_updates_desktop::analyze_selected(
+            &profile,&root,&registered.register_id).unwrap();
+        let (_checked,_,_,current_g,current_s)=
+            project_updates_desktop::reload_audited(
+                &profile,&preview.digest_sha256).unwrap();
+        let p=suggestions::prompt(&preview,&current_g,&current_s).unwrap();
+        let candidate=&preview.candidates[0];
+        let raw=serde_json::json!({
+            "schema":suggestions::RAW_SCHEMA,
+            "previewSha256":preview.digest_sha256,
+            "candidates":[{
+                "taskId":candidate.task_id,
+                "requirementId":candidate.original_requirement_id,
+                "status":candidate.current_status,
+                "action":"collect_evidence",
+                "evidenceIds":[candidate.original_requirement_id],
+                "reason":"Independently review unchanged original source evidence",
+                "nextEvidence":"Collect a native original file presence and test receipt"
+            }]
+        }).to_string();
+        let proof=suggestions::validate(&preview,&current_g,&current_s,&raw,&p,
+            "m-test-not-a-genuine-model","s-test","g-test").unwrap();
+        persist(&profile,&proof,&p,&raw).unwrap();
+        persist(&profile,&proof,&p,&raw).unwrap();
+        let reopened=read_latest(&profile,&preview.digest_sha256).unwrap().unwrap();
+        assert_eq!(reopened.digest_sha256,proof.digest_sha256);
+        assert!(reopened.no_completion_authority&&reopened.no_execution_authority);
+        let conn=project_register_desktop::library(&profile).unwrap();
+        let memory:i64=conn.query_row(
+            "SELECT value FROM preserved_memory",[],|r|r.get(0)).unwrap();
+        assert_eq!(memory,7072);
+        let original_raw:Vec<u8>=conn.query_row(
+            "SELECT original_reply_text FROM ansf_project_task_update_model_suggestions",
+            [],|r|r.get(0)).unwrap();
+        assert_eq!(original_raw,raw.as_bytes());
+        let n:i64=conn.query_row(
+            "SELECT COUNT(*) FROM ansf_project_task_update_model_suggestions",
+            [],|r|r.get(0)).unwrap();
+        assert_eq!(n,1);
+        drop(conn);
+        // A forged original reply cannot be made genuine merely by leaving
+        // the suggestion JSON/hash unchanged. Reopen must revalidate bytes.
+        let c=project_register_desktop::library(&profile).unwrap();
+        c.execute("UPDATE ansf_project_task_update_model_suggestions
+            SET original_reply_text=X'7b6e6f7065' WHERE suggestion_sha256=?1",
+            [&proof.digest_sha256]).unwrap();
+        drop(c);
+        assert!(read_latest(&profile,&preview.digest_sha256).is_err());
+        let c=project_register_desktop::library(&profile).unwrap();
+        c.execute("UPDATE ansf_project_task_update_model_suggestions
+            SET original_reply_text=?1 WHERE suggestion_sha256=?2",
+            params![raw.as_bytes(),proof.digest_sha256]).unwrap();
+        drop(c);
+        assert!(read_latest(&profile,&preview.digest_sha256).unwrap().is_some());
+        // The original register can be human-corrected, but the old model
+        // suggestion is then stale, never automatically carried forward.
+        let corrected=register::human_correct(&registered,&proposal,
+            &proposal.tasks[0].task_id,1,&register::HumanCorrection{
+                summary:"Human corrected original source name".into(),
+                description:"Explicitly review source presence and native integration".into(),
+                priority:"P0".into(),blocked_by:"Require new independent evidence".into(),
+                acceptance_criteria:"Verify original file independently against current source".into(),
+                reason:"Human changed original verification scope".into()
+            }).unwrap();
+        project_register_desktop::persist(
+            &profile,&proposal,&corrected,Some(&registered.latest_sha256)).unwrap();
+        assert!(read_latest(&profile,&preview.digest_sha256).is_err());
+        assert!(persist(&profile,&proof,&p,&raw).is_err());
+        let conn=project_register_desktop::library(&profile).unwrap();
+        conn.execute("UPDATE ansf_project_task_update_model_suggestions
+            SET original_reply_text=X'7b6e6f7065'
+            WHERE suggestion_sha256=?1",
+            [&proof.digest_sha256]).unwrap();
+        drop(conn);
+        // Source changed or not, a mutated original reply must never pass
+        // the immutable replay audit when its register lease is restored.
+        let old:Option<(Vec<u8>,)>={
+            let c=project_register_desktop::library(&profile).unwrap();
+            c.query_row("SELECT original_reply_text
+                FROM ansf_project_task_update_model_suggestions",
+                [],|r|Ok((r.get(0)?,))).optional().unwrap()
+        };
+        assert_eq!(old.unwrap().0,b"{nope");
+        fs::remove_dir_all(profile).unwrap();
+    }
+    #[test]
+    #[ignore="requires explicit disposable original ANSF and real pinned GGUF later"]
+    fn export_real_qwen_original_ansf_prompt_fixture(){
+        let profile=std::path::PathBuf::from(std::env::var("LU_PLAN07B_REAL_PROFILE")
+            .expect("Requires disposable original ANSF profile"));
+        let fixture=std::path::PathBuf::from(std::env::var("LU_PLAN07B_REAL_FIXTURE")
+            .expect("Requires an unused original fixture output path"));
+        assert_eq!(std::env::var("LU_PLAN07B_REAL_DISPOSABLE").unwrap(),"YES");
+        assert!(!profile.exists()&&!fixture.exists(),"Never overwrite a real operator ANSF");
+        let root=profile.join("original-project");
+        fs::create_dir_all(root.join("docs")).unwrap();
+        fs::create_dir_all(root.join("src")).unwrap();
+        fs::create_dir_all(profile.join("ansf")).unwrap();
+        let requirement=b"# Original project requirements\n- [ ] Must include src/critical.rs\n";
+        fs::write(root.join("docs/REQUIREMENTS.md"),requirement).unwrap();
+        let c=Connection::open(profile.join("ansf/library.db")).unwrap();
+        c.execute_batch("CREATE TABLE saved_human_memory(value TEXT NOT NULL);
+            INSERT INTO saved_human_memory VALUES('KEEP_REAL_QWEN_07B');").unwrap();
+        drop(c);
+        let (g,s)=project_status_desktop::classify_selected(&root).unwrap();
+        let capsule=synth::build_capsule(&g,&s).unwrap();
+        assert_eq!(capsule.requirements.len(),1);
+        let req=&capsule.requirements[0];
+        // This is explicitly a SYNTHETIC BASELINE PLAN-05 proposal
+        // imported only to construct a disposable task register. It is NOT
+        // a claimed genuine model response to PLAN-07B.
+        let baseline=serde_json::json!({"schema":synth::RAW_SCHEMA,"tasks":[{
+            "requirementId":req.requirement_id,"status":req.status,
+            "summary":"Review exact required source",
+            "description":"Examine the original source and independent verification",
+            "priority":"P1","group":"01 Source inspection",
+            "evidenceIds":[req.requirement_id],"dependencyIndices":[],
+            "acceptanceCriteria":"Verify the original named source file through a native recheck",
+            "blockedBy":"Original required file not yet present"
+        }]}).to_string();
+        let proposal=synth::validate_model_response(&g,&s,&baseline,
+            &synth::model_prompt(&capsule).unwrap(),
+            "m-test-only-synthetic-baseline","s-test-only","g-test-only").unwrap();
+        project_task_desktop::persist_proposal(&profile,&g,&s,&proposal,&baseline).unwrap();
+        let initial=register::import(&proposal).unwrap();
+        let saved=project_register_desktop::persist(
+            &profile,&proposal,&initial,None).unwrap();
+        assert_eq!(saved.events.len(),1);
+        // Actual original filesystem transition (not a model-reported
+        // success). New source triggers a PLAN-07A native delta.
+        fs::write(root.join("src/critical.rs"),b"fn critical_source() {}\n").unwrap();
+        let preview=project_updates_desktop::analyze_selected(
+            &profile,&root,&saved.register_id).unwrap();
+        assert!(preview.semantic_change,"Real source evidence must differ");
+        let (_,still,_,new_g,new_s)=project_updates_desktop::reload_audited(
+            &profile,&preview.digest_sha256).unwrap();
+        assert_eq!(still.latest_sha256,saved.latest_sha256);
+        let prompt=suggestions::prompt(&preview,&new_g,&new_s).unwrap();
+        let output=serde_json::json!({
+            "schema":"lu-plan07b-genuine-qwen-original-ansf-fixture-v1",
+            "baselineOriginalModel":"SYNTHETIC_BASELINE_NOT_A_GENUINE_MODEL_OUTPUT",
+            "prompt":prompt,
+            "sourceScopeSha256":saved.scope_sha256,
+            "sourceGraphSha256":new_g.sha256,
+            "sourceStatusSha256":new_s.digest_sha256,
+            "sourceHead":new_g.selected_head,
+            "previewSha256":preview.digest_sha256,
+            "registerId":saved.register_id,
+            "registerSha256":saved.latest_sha256,
+            "originalTaskIds":proposal.tasks.iter()
+                .map(|t|t.task_id.clone()).collect::<Vec<_>>(),
+            "taskEventsBefore":saved.events.len(),
+            "originalModelOutputNotYetGenerated":true,
+            "noCompletionAuthority":true,
+            "noExecutionAuthority":true
+        });
+        let file=std::fs::OpenOptions::new().write(true).create_new(true)
+            .open(&fixture).unwrap();
+        serde_json::to_writer_pretty(file,&output).unwrap();
+        println!("PLAN07B_REAL_GGUF_ORIGINAL_HOST_FIXTURE_READY=1");
+    }
+    #[test]
+    #[ignore="requires a genuine loaded-GGUF reply, original ANSF and cancellation receipt"]
+    fn verify_real_qwen_reply_cancellation_and_original_ansf_no_task_acceptance(){
+        let profile=std::path::PathBuf::from(std::env::var("LU_PLAN07B_REAL_PROFILE")
+            .expect("Original disposable ANSF profile required"));
+        let fixture=std::path::PathBuf::from(std::env::var("LU_PLAN07B_REAL_FIXTURE")
+            .expect("Original native fixture required"));
+        let reply=std::path::PathBuf::from(std::env::var("LU_PLAN07B_REAL_REPLY")
+            .expect("Real llama.cpp reply required"));
+        let cancelled=std::path::PathBuf::from(std::env::var("LU_PLAN07B_REAL_CANCEL")
+            .expect("Actual aborted streaming request receipt required"));
+        let oracle=std::path::PathBuf::from(std::env::var("LU_PLAN07B_REAL_ORACLE")
+            .expect("Independent acceptance receipt output required"));
+        assert_eq!(std::env::var("LU_PLAN07B_REAL_DISPOSABLE").unwrap(),"YES");
+        assert!(!oracle.exists(),"Never overwrite original acceptance proof");
+        let f:serde_json::Value=serde_json::from_slice(&fs::read(fixture).unwrap()).unwrap();
+        assert_eq!(f["schema"],"lu-plan07b-genuine-qwen-original-ansf-fixture-v1");
+        assert_eq!(f["baselineOriginalModel"],
+            "SYNTHETIC_BASELINE_NOT_A_GENUINE_MODEL_OUTPUT");
+        let cancellation:serde_json::Value=serde_json::from_slice(
+            &fs::read(cancelled).unwrap()).unwrap();
+        assert_eq!(cancellation["schema"],"lu-plan07b-real-qwen-stream-cancel-v1");
+        assert_eq!(cancellation["realEngineHealthAfterAbort"],true);
+        assert_eq!(cancellation["singleModelSlotRecoveredIdleAfterAbort"],true);
+        assert_eq!(cancellation["realStreamingHttpRequestObserved"],true);
+        assert_eq!(cancellation["clientClosedOriginalStreamBeforeCompletion"],true);
+        assert_eq!(cancellation["noSyntheticModelResponse"],true);
+        let raw=String::from_utf8(fs::read(&reply).unwrap()).unwrap();
+        assert!(!raw.is_empty(),"Genuine original model reply absent");
+        let id=f["previewSha256"].as_str().unwrap();
+        let (preview,register,_,g,s)=project_updates_desktop::reload_audited(
+            &profile,id).unwrap();
+        let prompt=f["prompt"].as_str().unwrap();
+        assert_eq!(suggestions::prompt(&preview,&g,&s).unwrap(),prompt);
+        assert_eq!(f["registerSha256"].as_str(),Some(register.latest_sha256.as_str()));
+        assert_eq!(f["sourceScopeSha256"].as_str(),Some(register.scope_sha256.as_str()));
+        assert_eq!(f["sourceGraphSha256"].as_str(),Some(g.sha256.as_str()));
+        assert_eq!(f["sourceStatusSha256"].as_str(),Some(s.digest_sha256.as_str()));
+        let before=project_register_desktop::library(&profile).unwrap();
+        let old:i64=before.query_row(
+            "SELECT COUNT(*) FROM ansf_project_task_register_revisions
+             WHERE register_id=?1",
+            [&register.register_id],|r|r.get(0)).unwrap();
+        assert_eq!(old,1);
+        let before_model:i64=before.query_row(
+            "SELECT COUNT(*) FROM sqlite_master
+             WHERE type='table' AND name='ansf_project_task_update_model_suggestions'",
+            [],|r|r.get(0)).unwrap();
+        if before_model==1{
+            let count:i64=before.query_row(
+                "SELECT COUNT(*) FROM ansf_project_task_update_model_suggestions",
+                [],|r|r.get(0)).unwrap();
+            assert_eq!(count,0,"Cancelled stream must not write Lu model receipt");
+        }
+        drop(before);
+        // A REAL model reply can be rejected by host validation. This is
+        // acceptance, not an occasion to rewrite/fix synthetic JSON.
+        let proof=suggestions::validate(&preview,&g,&s,&raw,prompt,
+            "m-pinned-real-qwen3-0.6b","s-real-llama-cpu","g-real-qwen-output").unwrap();
+        suggestions::audit(&proof,&preview,&g,&s,&raw).unwrap();
+        assert!(proof.suggestions.iter().all(|x|x.suggested_only&&
+            !x.independently_accepted&&!x.task_complete&&!x.execution_authorized));
+        persist(&profile,&proof,prompt,&raw).unwrap();
+        let reopened=read_latest(&profile,id).unwrap().unwrap();
+        assert_eq!(reopened.digest_sha256,proof.digest_sha256);
+        assert_eq!(reopened.original_reply_sha256,
+            format!("{:x}",Sha256::digest(raw.as_bytes())));
+        assert!(reopened.no_completion_authority&&reopened.no_execution_authority);
+        let conn=project_register_desktop::library(&profile).unwrap();
+        let after_count:i64=conn.query_row(
+            "SELECT COUNT(*) FROM ansf_project_task_register_revisions
+             WHERE register_id=?1",
+            [&register.register_id],|r|r.get(0)).unwrap();
+        assert_eq!(after_count,old,"Real model must never revise task acceptance");
+        let (_,after,_)=project_register_desktop::load_register(
+            &conn,&register.register_id).unwrap().unwrap();
+        assert_eq!(after.latest_sha256,register.latest_sha256);
+        let revision=register::latest(&after,&proof.suggestions[0].task_id).unwrap();
+        assert!(!revision.independently_verified_requirement);
+        assert!(!revision.execution_authorized);
+        let keep:String=conn.query_row(
+            "SELECT value FROM saved_human_memory",[],|r|r.get(0)).unwrap();
+        assert_eq!(keep,"KEEP_REAL_QWEN_07B");
+        drop(conn);
+        assert_eq!(reopened.original_prompt_sha256,
+            format!("{:x}",Sha256::digest(prompt.as_bytes())));
+        let output=serde_json::json!({
+            "schema":"lu-plan07b-independent-real-qwen-ansf-oracle-v1",
+            "realGgufOutputObserved":true,
+            "originalReplySha256":proof.original_reply_sha256,
+            "originalPromptSha256":proof.original_prompt_sha256,
+            "suggestionSha256":proof.digest_sha256,
+            "originalRegisterSha256":register.latest_sha256,
+            "registerSha256After":after.latest_sha256,
+            "registerRevisionsBefore":old,
+            "registerRevisionsAfter":after_count,
+            "originalMemoryPreserved":true,
+            "streamAbortedBeforeCompletion":true,
+            "acceptedTasks":0,"executedTasks":0,
+            "originalGgufReplyNotReplaced":true,
+            "noCompletionAuthority":true,"noExecutionAuthority":true
+        });
+        let file=std::fs::OpenOptions::new().create_new(true).write(true)
+            .open(oracle).unwrap();
+        serde_json::to_writer_pretty(file,&output).unwrap();
+        println!("PLAN07B_REAL_GGUF_ORIGINAL_ANSF_CANCEL_AND_NO_COMPLETION_PASS=1");
+    }
+
+}

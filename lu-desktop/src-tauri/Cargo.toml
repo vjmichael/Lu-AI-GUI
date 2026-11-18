@@ -7,6 +7,15 @@ publish = false
 license = "Apache-2.0"
 description = "Independent Lu-native Windows desktop, without Jan runtime dependencies"
 
+# Explicit non-release development evaluation of one source-pinned Windows CPU
+# llama.cpp build. Compile-time engine SHA-256 + byte size are mandatory; never
+# enable this feature for normal alpha, v1.0, or Vulkan production packaging.
+[features]
+physical_win_cpu_eval = []
+# Explicit separate CPU+Vulkan dual-engine current-preview package.
+# Requires physical_win_cpu_eval for independently pinned CPU SHA.
+dual_win_preview = ["physical_win_cpu_eval"]
+
 [build-dependencies]
 tauri-build = { version = "2.6.3", features = [] }
 
@@ -14,9 +23,13 @@ tauri-build = { version = "2.6.3", features = [] }
 tauri = { version = "2.11.5", features = [] }
 tauri-plugin-dialog = "2.7.1"
 lu-core = { path = "../../src-tauri/lu-core" }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+rusqlite = { version = "0.32", features = ["bundled"] }
 sha2 = "0.10"
+prost = "0.14"
+cap-std = "4.0.3"
 rand = "0.8"
 base64 = "0.22"
 

@@ -1,0 +1,15 @@
+{
+  "kind": "LOCAL_DIAGNOSTIC_GGUF_GIT_NATIVE_EFFECT_NOT_LU_HOST_ACCEPTANCE",
+  "model": "qwen2.5-0.5b-instruct-q2_k.gguf",
+  "engine_version": "llama-server 0.5.0-dev",
+  "source_ref": ".git/refs/heads/main",
+  "independent_expected_head": "c8eb50347f1c41e551f4d148c994d624e36850e4",
+  "authorized_scope": "read-only Git HEAD in one host-selected fixture repo",
+  "status": "incomplete",
+  "model_first_message": {
+    "role": "assistant",
+    "content": "{\"name\": \"read_git_head\", \"arguments\": {\"host\": \"your_host\", \"repo\": \"your_repo\"}}"
+  },
+  "error": "RuntimeError: model did not select exactly one native tool",
+  "engine_child_exited": true
+}

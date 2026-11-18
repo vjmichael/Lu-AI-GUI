@@ -1,0 +1,35 @@
+{
+  "kind": "LOCAL_DIAGNOSTIC_GGUF_GIT_NATIVE_EFFECT_NOT_LU_HOST_ACCEPTANCE",
+  "model": "qwen2.5-0.5b-instruct-q2_k.gguf",
+  "engine_version": "llama-server 0.5.0-dev",
+  "source_ref": ".git/refs/heads/main",
+  "independent_expected_head": "c8eb50347f1c41e551f4d148c994d624e36850e4",
+  "authorized_scope": "read-only Git HEAD in one host-selected fixture repo",
+  "status": "completed",
+  "model_first_message": {
+    "role": "assistant",
+    "content": "",
+    "tool_calls": [
+      {
+        "type": "function",
+        "function": {
+          "name": "read_git_head",
+          "arguments": "{}"
+        },
+        "id": "IJoigGF76GlyUAgS8tuVjX75IweLZc9g"
+      }
+    ]
+  },
+  "native_child_exited": true,
+  "native_child_exit_code": 0,
+  "native_tool_stdout": "c8eb50347f1c41e551f4d148c994d624e36850e4",
+  "native_tool_stdout_sha256": "eb916c1198b767b3380d044bffe1bcdf977e7db30b8df09359bb5f99832fc828",
+  "independent_source_verified": true,
+  "independent_check": "read / .git/HEAD -> refs/heads/main (without subprocess Git for source oracle)",
+  "verified_method": "real git subprocess + direct on-disk reference read",
+  "tool_calls": 1,
+  "model_final_message": "The current Git HEAD commit in your approved local repository is `c8eb50347f1c41e551f4d148c994d624e36850e4`. This commit is verified to be independent of any other source.",
+  "model_answer_contains_verified_head": true,
+  "model_answer_exact_head": false,
+  "engine_child_exited": true
+}

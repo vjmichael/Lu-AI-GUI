@@ -1,0 +1,192 @@
+name: Lu Desktop CI
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: lu-ci-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  source-identity:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify exact committed development-source manifest
+        run: node scripts/verify-source-tree.mjs
+      - name: R00 task-group CI fanout and queue policy regression
+        if: hashFiles('scripts/lu-ci-group-policy.mjs') != ''
+        run: |
+          node --test scripts/lu-ci-group-policy.test.mjs scripts/lu-ci-superseded-queue.test.mjs
+          node scripts/lu-ci-group-policy.mjs
+      - name: Check manifest versions
+        shell: bash
+        run: |
+          set -euo pipefail
+          node - <<'NODE'
+          const fs=require('node:fs');
+          const p=JSON.parse(fs.readFileSync('lu-desktop/package.json','utf8'));
+          const t=JSON.parse(fs.readFileSync('lu-desktop/src-tauri/tauri.conf.json','utf8'));
+          const c=fs.readFileSync('lu-desktop/src-tauri/Cargo.toml','utf8');
+          console.log('Lu source version:',p.version);
+          // Current published tree is not the unpublished alpha.3-dev snapshot.
+          // Test the actual committed revision without pretending convergence.
+          if (p.version!==t.version || !c.includes('version = "'+p.version+'"')) {
+            throw Error('Mixed source versions: not an eligible release candidate');
+          }
+          NODE
+  frontend:
+    needs: source-identity
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: lu-desktop
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: |
+          if test -f package-lock.json; then npm ci; else npm install --no-audit --no-fund; fi
+      - run: npm run build
+      - run: npm run check
+      - name: Build actual production scanner acceptance worker
+        working-directory: lu-desktop
+        run: cargo build --locked --manifest-path tests/native-file-scan/Cargo.toml
+      - run: npm run test:ui
+  chat-journal-portable:
+    name: Portable native chat journal security tests
+    needs: source-identity
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - name: Test the production chat journal without GUI dependencies
+        run: cargo test --manifest-path lu-desktop/tests/native-chat/Cargo.toml
+  auth-portable:
+    name: Trusted desktop user-turn to native tool dispatch
+    needs: source-identity
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - name: Test real persisted chat authority and bounded read dispatch
+        run: cargo test --manifest-path lu-desktop/tests/native-auth/Cargo.toml
+  diagnostics-portable:
+    needs: source-identity
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - name: Portable native diagnostics regression
+        run: cargo test --manifest-path lu-desktop/tests/native-dx/Cargo.toml
+  native-core:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - run: sudo apt-get update && sudo apt-get install -y protobuf-compiler pkg-config libssl-dev
+      - name: Bind real trusted system Git for native-core integration tests
+        shell: bash
+        run: |
+          exe=$(readlink -f "$(command -v git)")
+          test -x "$exe"
+          echo "LU_TOOLS03_TEST_GIT_PATH=$exe" >> "$GITHUB_ENV"
+      - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml
+  windows-host:
+    needs: source-identity
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - name: Strip developer-local Cargo vendor setting if present
+        shell: pwsh
+        run: |
+          $p='lu-desktop/src-tauri/.cargo/config.toml'
+          if (Test-Path $p) {
+            if ((Get-Content $p -Raw) -match '/mnt/data/|local-vendor') { Remove-Item $p }
+          }
+      - name: Stage nonfunctional CI-only Tauri resource placeholders
+        shell: pwsh
+        run: |
+          # These files enable cargo check without distributing or executing
+          # unverified engine binaries. Full NSIS packaging MUST stage the
+          # exact signed/hash-pinned payload via stage-engine.mjs.
+          $root='lu-desktop/src-tauri/resources/lu-inference'
+          New-Item -ItemType Directory -Force -Path $root | Out-Null
+          foreach ($name in @('llama-server.exe','msvcp140.dll','vcruntime140.dll','vcruntime140_1.dll')) {
+            Set-Content -LiteralPath (Join-Path $root $name) -Value 'NOT_AN_ENGINE_CI_PLACEHOLDER' -NoNewline
+          }
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Build actual React frontend for Tauri macro validation
+        working-directory: lu-desktop
+        shell: pwsh
+        run: |
+          if (Test-Path package-lock.json) { npm ci } else { npm install --no-audit --no-fund }
+          npm run build
+      - name: Verify Windows native file handle identity and reparse refusal
+        shell: pwsh
+        run: cargo test --manifest-path lu-desktop/tests/native-auth/Cargo.toml windows_native_picker -- --nocapture
+      - name: Windows trusted desktop existing-file edit and backup acceptance
+        shell: pwsh
+        run: cargo test --manifest-path lu-desktop/tests/native-auth/Cargo.toml desktop_edit -- --nocapture
+      - name: Windows separately authorized desktop restore with prior-byte custody
+        shell: pwsh
+        run: cargo test --manifest-path lu-desktop/tests/native-auth/Cargo.toml desktop_rollback -- --nocapture
+      - name: Windows rollback approval ledger one-shot and restart denial
+        shell: pwsh
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib rollback_approval_ledger::tests
+      - name: Windows atomic create-new and no-overwrite Rust regressions
+        shell: pwsh
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test native_atomic_write
+      - name: Windows authenticated create-new journal/replay regressions
+        shell: pwsh
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test native_create_new_authority
+      - name: Windows write approval ledger crash/restart regressions
+        shell: pwsh
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test write_approval_ledger
+      - name: Windows user Documents defaults and verified file link regressions
+        shell: pwsh
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test document_preferences
+      - name: Windows deterministic preflight for existing text edits
+        shell: pwsh
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test edit_safety
+      - name: Windows durable edit review ledger and restart invalidation
+        shell: pwsh
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib edit_approval_ledger::tests
+      - name: Windows authorized existing-edit commit, rollback and journal regression
+        shell: pwsh
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test native_edit_existing_authority
+      - name: Windows by-handle FileId, hardlink and alternate-stream adversarial tests
+        shell: pwsh
+        run: cargo test --manifest-path src-tauri/lu-win-worker-job/Cargo.toml --lib file_guard::tests -- --nocapture
+      - name: Windows ACL, creation-time and no-write-lease native FFI acceptance
+        shell: pwsh
+        run: cargo test --manifest-path src-tauri/lu-win-worker-job/Cargo.toml --lib metadata_guard::tests -- --nocapture
+      - name: Windows native edit recovery, publication seal and competing-rename evidence
+        shell: pwsh
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_edit_existing::tests::windows_ -- --nocapture
+      - name: Windows picker-to-authorized-effect same-byte FileId swap refusal
+        shell: pwsh
+        run: cargo test --manifest-path lu-desktop/tests/native-auth/Cargo.toml windows_selected_same_byte_identity_swap -- --nocapture
+      - name: Windows native transaction-entry selected identity refusal
+        shell: pwsh
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_edit_existing::tests::native_ -- --nocapture
+      - name: Compile check only (NOT distributable or GPU-tested)
+        run: |
+          cargo check --locked --manifest-path lu-desktop/src-tauri/Cargo.toml
+          cargo test --locked --no-run --manifest-path lu-desktop/src-tauri/Cargo.toml
+      - name: Execute Windows native JSON proposal boundary tests
+        shell: pwsh
+        run: cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib json_boundary_tests -- --nocapture

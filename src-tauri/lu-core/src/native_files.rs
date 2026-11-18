@@ -8,7 +8,7 @@
 //! shipping these tools in the general desktop.
 
 use std::{
-    io::Read,
+    io::{Read, Seek, SeekFrom},
     path::{Path, PathBuf},
     sync::Arc,
 };
@@ -68,6 +68,12 @@ fn descriptor(id: &str, name: &str, input: &str, output: &str) -> ToolDescriptor
 struct FileRead {
     descriptor: ToolDescriptor,
     root: Arc<Dir>,
+    pinned: Option<Arc<PinnedRead>>,
+}
+
+struct PinnedRead {
+    name: String,
+    handle: std::sync::Mutex<std::fs::File>,
 }
 
 struct DirectoryList {
@@ -103,6 +109,7 @@ fn relative_path(raw: &str, allow_empty: bool) -> Result<PathBuf, ToolFailure> {
 fn perform_read(
     root: &Dir,
     request: proto::ReadTextFileRequest,
+    pinned: Option<&PinnedRead>,
 ) -> Result<ToolOutput, ToolFailure> {
     let cap = request.max_bytes.unwrap_or(DEFAULT_READ_BYTES);
     if cap == 0 || cap > MAX_READ_BYTES {
@@ -112,30 +119,37 @@ fn perform_read(
         ));
     }
     let path = relative_path(&request.path, false)?;
-    let metadata = root
-        .symlink_metadata(&path)
-        .map_err(|e| failure("FILE_ACCESS", format!("cannot inspect file: {e}")))?;
-    if metadata.file_type().is_symlink() {
-        return Err(failure(
-            "SYMLINK_REFUSED",
-            "symlink files are not supported",
-        ));
-    }
-    let mut file = root
-        .open(&path)
-        .map_err(|e| failure("FILE_ACCESS", format!("cannot open file: {e}")))?;
-    if !file
-        .metadata()
-        .map_err(|e| failure("FILE_ACCESS", e.to_string()))?
-        .is_file()
-    {
-        return Err(failure("NOT_FILE", "path must identify a regular file"));
-    }
     let mut data = Vec::new();
-    file.by_ref()
-        .take(u64::from(cap) + 1)
-        .read_to_end(&mut data)
-        .map_err(|e| failure("FILE_ACCESS", format!("cannot read file: {e}")))?;
+    if let Some(pinned) = pinned {
+        if path != Path::new(&pinned.name) {
+            return Err(failure("TARGET_MISMATCH", "call differs from the approved file handle"));
+        }
+        let mut handle = pinned.handle.lock()
+            .map_err(|_| failure("FILE_ACCESS", "pinned file handle unavailable"))?;
+        if !handle.metadata()
+            .map_err(|e| failure("FILE_ACCESS", e.to_string()))?
+            .is_file()
+        {
+            return Err(failure("NOT_FILE", "approved file handle is not a regular file"));
+        }
+        handle.seek(SeekFrom::Start(0))
+            .map_err(|e| failure("FILE_ACCESS", e.to_string()))?;
+        (&mut *handle).take(u64::from(cap) + 1).read_to_end(&mut data)
+            .map_err(|e| failure("FILE_ACCESS", format!("cannot read approved handle: {e}")))?;
+    } else {
+        let metadata = root.symlink_metadata(&path)
+            .map_err(|e| failure("FILE_ACCESS", format!("cannot inspect file: {e}")))?;
+        if metadata.file_type().is_symlink() {
+            return Err(failure("SYMLINK_REFUSED", "symlink files are not supported"));
+        }
+        let mut file = root.open(&path)
+            .map_err(|e| failure("FILE_ACCESS", format!("cannot open file: {e}")))?;
+        if !file.metadata().map_err(|e| failure("FILE_ACCESS", e.to_string()))?.is_file() {
+            return Err(failure("NOT_FILE", "path must identify a regular file"));
+        }
+        file.by_ref().take(u64::from(cap) + 1).read_to_end(&mut data)
+            .map_err(|e| failure("FILE_ACCESS", format!("cannot read file: {e}")))?;
+    }
     let truncated = data.len() > cap as usize;
     if truncated {
         data.truncate(cap as usize);
@@ -226,10 +240,11 @@ impl NativeTool for FileRead {
 
     fn invoke(&self, invocation: ToolInvocation) -> ToolFuture<'_> {
         let root = Arc::clone(&self.root);
+        let pinned = self.pinned.clone();
         Box::pin(async move {
             let input = proto::ReadTextFileRequest::decode(invocation.input.bytes.as_slice())
                 .map_err(|e| failure("BAD_PROTOBUF", format!("invalid read request: {e}")))?;
-            tokio::task::spawn_blocking(move || perform_read(&root, input))
+            tokio::task::spawn_blocking(move || perform_read(&root, input, pinned.as_deref()))
                 .await
                 .map_err(|e| failure("WORKER_FAILED", e.to_string()))?
         })
@@ -345,6 +360,36 @@ pub fn register_bundled_file_tools(
     registry: &NativeToolRegistry,
     authorized_root: &Path,
 ) -> Result<ModelToolCatalog, FileBundleError> {
+    register_bundled_file_tools_inner(registry, authorized_root, None)
+}
+
+/// A native OS-picker read is bound to an already opened handle, not a path
+/// that can be replaced after the user's approval. The trusted host must open
+/// and validate this handle, and may not expose it to the model.
+pub fn register_bundled_file_tools_pinned(
+    registry: &NativeToolRegistry,
+    authorized_root: &Path,
+    name: &str,
+    file: std::fs::File,
+) -> Result<ModelToolCatalog, FileBundleError> {
+    let path = relative_path(name, false)
+        .map_err(|e| FileBundleError::InvalidRoot(e.message))?;
+    if path.components().count() != 1 || !file.metadata()
+        .map_err(|e| FileBundleError::InvalidRoot(e.to_string()))?.is_file() {
+        return Err(FileBundleError::InvalidRoot("approved pinned file invalid".into()));
+    }
+    let pin = Arc::new(PinnedRead {
+        name: name.to_owned(),
+        handle: std::sync::Mutex::new(file),
+    });
+    register_bundled_file_tools_inner(registry, authorized_root, Some(pin))
+}
+
+fn register_bundled_file_tools_inner(
+    registry: &NativeToolRegistry,
+    authorized_root: &Path,
+    pinned: Option<Arc<PinnedRead>>,
+) -> Result<ModelToolCatalog, FileBundleError> {
     let root = authorized_root
         .canonicalize()
         .map_err(|e| FileBundleError::InvalidRoot(e.to_string()))?;
@@ -376,6 +421,7 @@ pub fn register_bundled_file_tools(
                 Arc::new(FileRead {
                     descriptor: read,
                     root: Arc::clone(&root),
+                    pinned,
                 }),
                 Arc::new(DirectoryList {
                     descriptor: list,

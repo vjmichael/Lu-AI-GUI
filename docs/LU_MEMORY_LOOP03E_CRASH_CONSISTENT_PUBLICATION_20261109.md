@@ -1,0 +1,84 @@
+# MEMORY-LOOP-03E — Crash-consistent reviewed memory publication
+
+Date: 2026-11-09. **Source implementation candidate; native acceptance OPEN.**
+
+The earlier MEMORY-LOOP-03D writer registers the exact original-turn verified Git/FFprobe journal reference before finishing derived ANSF procedure and belief writes. A crash there can leave an indexed but incomplete projection. The original SQLite effect journal is immutable history, not a permission or a recoverable tool request.
+
+03E adds a second durable publication marker to the host-only index, written **only after** the continuity checkpoint, independent receipt link and required M4 projections complete. Every current-human model-memory lookup requires that marker and independently confirms the indexed checkpoint contains the exact original effect, tool and receipt SHA. Missing/legacy markers, corrupt checkpoint identities and changed journals fail closed; no fallback to older indexed rows or the general chat journal is allowed. Existing pre-03E unmarked rows stay quarantined. Repeating the old worker report cannot auto-publish it, which might bypass a later human correction. Changed-source CCM blockers may be published as **historical blocked evidence** after the blocking checkpoint, never promoted as a successful new procedure.
+
+All statuses remain historical NOT_RECHECKED; no old grant, current source freshness, automatic tool retry, native UI approval or execution authority is added.
+
+## Consolidated acceptance
+The existing **manual** lu-memory-loop03b-native.yml Windows/Linux task-group matrix includes this module's negative SQLite test as well as real Git/FFprobe protected worker tests, Cargo, Node/Python and source lock. Run once at exact group-end head and inspect logs/artifacts. **Not yet executed on this source SHA**; no Windows/Linux, installed NSIS, 7B+ or actual GGUF pass claimed.
+
+**Unfinished 03E-R2:** under exclusive profile ownership, independently validate original TaskStore human-turn binding, immutable worker receipt/oracle and corrections before any operator-reviewed, read-only reconstruction. Never replay ambiguous/UNCERTAIN effects or silently re-promote invalidated history. Kernel descendant custody and full installed normal-Send recovery remain separate gates.
+
+## 03E-R2 initial read-only task-origin attestation
+
+Before inspecting a historical source, 03E now calls Lu's **existing E1-P15 read-only reviewed-turn continuity inspector** on the fixed original task/effect journal pair. The inspector validates the TaskStore singleton original chat/turn binding independently of the effect receipt. Missing or mismatched task files, unsafe linked journals, and a forged different chat owner cause fail-closed unavailability, even if the original effect, oracle and checkpoint are intact. Native tests create real task journal identities for synthetic fixtures, then tamper a stored human origin and require denial. This is **read-only origin attestation**, not full operator-controlled reconstruction or permission to repair a previously unpublished projection. The unimplemented reconstruction remains explicitly OPEN.
+
+
+## 03E-R2 — atomic original intent and exclusive startup reconstruction
+
+**Source implementation candidate; native OS acceptance OPEN.** The original reviewed index entry and complete, deterministic projection intent (checkpoint, verified procedure, verified belief, original expiry, source and receipt identity) are serialized and durably inserted **in one SQLite transaction in the same index database**. The index does not have an executable permission or authorization field.
+
+The ANSF book and continuity checkpoint use **separate SQLite WAL databases**, so Lu cannot claim a cross-database ACID commit for the materializations. Instead, it applies the immutable intent idempotently in those databases and publishes the indexed history to normal model recall only after all projections succeed.
+
+While DesktopOwner owns the exclusive profile lease during startup, 03E-R2 scans at most 64 incomplete indexed intents. Every reconstructed source must match the original authenticated human turn and latest source revision, original TaskStore binding, APPLIED receipt, independent method-specific oracle, and unchanged checkpoint identity. The presence of any later authenticated human turn (including a correction), exact procedure invalidation or claim retraction, expiry, later checkpoint or untrusted/legacy intent **blocks reconstruction and requests human review**. No native tool, process, task resume, existing approval, or model call is executed. Older 03D records lacking the atomic intent are quarantined, not guessed.
+
+The operator can inspect these statuses within the existing **Native tool activity** panel. The status API authenticates the chat, is read-only, and surfaces recovery outcomes with explicit no-execution/no-retry policy. The pre-existing manual 03B/03C/03D Windows/Linux task-group gate now includes 03E source/UI contract checks and the same Rust test-module filter. Source-level implementation is not installed, GGUF, compiler, kernel-custody or actual independent Windows/Linux acceptance.
+
+
+### Durable operator audit
+
+The exclusive reconciler now saves a bounded audit decision per original reviewed effect. A successfully reconstructed record writes the recovery decision in the **same SQLite transaction as its publication marker**. A refused or legacy record stores only a review-required audit status, not a new permission or proof. On subsequent startups the Native tool activity pane can still show the last 64 reviewed decisions; all statuses describe historical recovery at the recorded time, never current source freshness.
+
+## Work Mode gate repairs
+
+Local execution found a stale Rust test count in the Node guard and a benchmark
+assertion that confused a historical nested denial with the top-level host
+decision. The comparison now checks the parsed JSON at the correct level and
+requires both arms to carry identical historical evidence. Node passed 14/14,
+Python passed 31/31, standalone Rust policy passed 7/7, and the desktop bundle
+and its 59 checks passed. The Linux worker helper also required a variadic C
+`open` declaration and a unit-valued `pre_exec` registration block. Desktop
+native recovery remains open pending system dependencies and the grouped run.
+
+The full Linux Core library suite also exposed invalid observation event
+labels in the plan ledger. The writer now uses the event names allowed by
+the existing SQLite schema, preserving compatibility with existing profiles.
+The scheduler and broker tests assert the denial actually reached by their
+fixtures. The media test restores the approved bytes before testing the
+unsupported container path, so it exercises format detection separately
+from the changed-source hash check.
+
+## Linux reviewed worker integration evidence
+
+The E1 reviewed-worker integration suite reproduced a real FFprobe failure.
+The Ubuntu FFprobe binary could not map ICU under the generic 256 MiB
+Linux address-space ceiling. The host-validated media probe now uses a
+bounded 512 MiB Linux ceiling. Worker admission, Windows Job limits,
+source verification, and tool authority are unaffected. The revocation
+test checks for an empty capability set, which is the authority API's
+denial representation for a known revoked turn.
+
+The six opt-in Linux integration cases passed with system Git, FFprobe
+and FFmpeg. They exercise reviewed Git and WAV receipts, packed history,
+tracked state, MP4/AAC independent verification and a scripted reviewed
+model turn. Seven cases were filtered. This run did not exercise a loaded
+GGUF, the Tauri recovery suite, or Windows custody.
+
+The Linux desktop build subsequently compiled and ran against a local
+Ubuntu library sysroot. Repairs covered the generated PNG icon, memory
+lookup signatures, reply revision values and the no-proposal plan view.
+The recovery fixture now simulates loss of the whole derived store without
+bypassing its immutability trigger and verifies that the audit remains
+visible on a second startup. The G5 fixture uses production per-turn
+scope and task journal naming. Nine recovery tests, seven memory-context
+tests, one positive Git corpus test, five message revision tests, eight
+plan progress tests and the opt-in native G5 restart test passed. The
+three exported corpora passed the benchmark input validator.
+
+## Real Actions policy failure and repair (2026-11-09)
+
+PR #198 exact-head REPO-01 run [42701783858](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42701783858) failed its actual grouped-CI policy test: the narrowly scoped temporary `push` trigger on the heavy memory acceptance workflow still violated `HEAVY_WORKFLOW_AUTOMATIC_FANOUT`. Frozen source verification passed, but the policy test's failure is genuine. The fix restores **manual workflow_dispatch only**, rather than weakening tests or allowing automatic native fanout. Native matrix [42701772029](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42701772029) had both jobs queued at inspection; it is pinned to its old head `2ab7a6fa...`. No Windows/Linux compiler failures can be claimed without actual job logs. This repair changes the branch SHA; the existing queued native run cannot establish native acceptance for the repaired head. A fresh **single** manual exact-head dispatch, native logs, and independent artifacts are mandatory before PR promotion.

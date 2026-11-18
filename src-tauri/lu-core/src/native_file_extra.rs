@@ -31,9 +31,9 @@ const STAT_IN: &str = "type.googleapis.com/lu.v1.FileStatRequest";
 const STAT_OUT: &str = "type.googleapis.com/lu.v1.FileStatResult";
 const SEARCH_IN: &str = "type.googleapis.com/lu.v1.SearchTextRequest";
 const SEARCH_OUT: &str = "type.googleapis.com/lu.v1.SearchTextResult";
-const MAX_FILES: u32 = 64;
+const MAX_FILES: u32 = 256;
 const MAX_MATCHES: u32 = 128;
-const MAX_ENTRIES: usize = 256;
+const MAX_ENTRIES: usize = 1_024;
 const MAX_FILE_BYTES: u64 = 64 * 1024;
 
 fn bad(code: &str, message: impl Into<String>) -> ToolFailure {
@@ -84,119 +84,510 @@ fn stat(root: &Dir, path: String) -> Result<ToolOutput, ToolFailure> {
     })
 }
 
+// One finite, human-rooted scan. Errors and omitted source scope cannot be
+// converted to a complete "no match" observation.
+const MAX_DIRECTORIES: u32 = 128;
+const MAX_SEARCH_BYTES: u64 = 8 * 1024 * 1024;
+const MAX_SEARCH_OUTPUT_BYTES: usize = 48 * 1024;
+const MAX_SEARCH_MILLIS: u64 = 3_000;
+
+fn note(reasons: &mut Vec<String>, code: &str, partial: &mut bool) {
+    *partial = true;
+    if reasons.len() < 16 && !reasons.iter().any(|x| x == code) {
+        reasons.push(code.to_owned());
+    }
+}
+
+// A searched entry is always exactly one component below a directory handle.
+// Dot-paths, hidden data, VCS internals and credential material are excluded.
+fn denied_search_name(name: &str) -> bool {
+    let lower = name.to_ascii_lowercase();
+    name.starts_with('.')
+        || matches!(lower.as_str(),
+            "node_modules" | "target" | "__pycache__" | "venv" |
+            "credentials" | "id_rsa" | "id_ed25519" |
+            "secrets" | "secrets.json" | "secrets.toml")
+        || lower.ends_with(".pem") || lower.ends_with(".key")
+        || validate_path(name, false).is_err()
+}
+
+fn is_reparse(meta: &cap_std::fs::Metadata) -> bool {
+    #[cfg(windows)]
+    {
+        use cap_std::fs::MetadataExt;
+        return meta.file_attributes() & 0x400 != 0;
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = meta;
+        false
+    }
+}
+
+fn same_file_identity(a: &cap_std::fs::Metadata, b: &cap_std::fs::Metadata) -> bool {
+    if a.is_file() != b.is_file() || a.is_dir() != b.is_dir()
+        || a.len() != b.len() || a.modified().ok() != b.modified().ok() {
+        return false;
+    }
+    #[cfg(unix)]
+    {
+        use cap_std::fs::MetadataExt;
+        a.dev() == b.dev() && a.ino() == b.ino()
+    }
+    #[cfg(windows)]
+    {
+        use cap_std::fs::MetadataExt;
+        // This is a conservative check, not a substitute for native
+        // file-ID / no-follow Windows handle acceptance.
+        a.file_attributes() == b.file_attributes()
+            && a.creation_time() == b.creation_time()
+            && a.last_write_time() == b.last_write_time()
+    }
+    #[cfg(not(any(unix, windows)))]
+    { true }
+}
+
+fn same_mount(root: &cap_std::fs::Metadata, item: &cap_std::fs::Metadata) -> bool {
+    #[cfg(unix)]
+    {
+        use cap_std::fs::MetadataExt;
+        root.dev() == item.dev()
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = (root,item);
+        true
+    }
+}
+
+fn open_search_directory(root: &Dir, folder: &Path) -> Result<Dir, ToolFailure> {
+    let mut current = root.try_clone()
+        .map_err(|_| bad("FILE_ACCESS", "cannot clone authorized directory"))?;
+    for component in folder.components() {
+        let std::path::Component::Normal(name) = component else {
+            return Err(bad("INVALID_PATH", "invalid search directory"));
+        };
+        let text = name.to_str().ok_or_else(|| bad("INVALID_PATH", "invalid directory name"))?;
+        if denied_search_name(text) {
+            return Err(bad("DENIED_SCOPE", "hidden or protected workspace directory"));
+        }
+        let before = current.symlink_metadata(text)
+            .map_err(|_| bad("FILE_ACCESS", "search directory unavailable"))?;
+        if !before.is_dir() || before.file_type().is_symlink() || is_reparse(&before) {
+            return Err(bad("DENIED_SCOPE", "directory link or reparse point denied"));
+        }
+        // cap-std's root-relative canonicalization prevents ambient escapes.
+        // Exact leaf identity rejects a non-concurrent symlink alias.
+        if current.canonicalize(text).ok().as_deref() != Some(Path::new(text)) {
+            return Err(bad("DENIED_SCOPE", "directory alias refused"));
+        }
+        // On Linux the leaf directory itself is opened with O_NOFOLLOW
+        // and O_DIRECTORY against the held parent handle, so a symlink
+        // swapped into place between stat and open cannot be traversed.
+        #[cfg(target_os="linux")]
+        let child = {
+            use cap_std::fs::OpenOptionsExt;
+            const O_DIRECTORY: i32 = 0o200000;
+            const O_NOFOLLOW: i32 = 0o400000;
+            let mut opts = cap_std::fs::OpenOptions::new();
+            opts.read(true).custom_flags(O_DIRECTORY | O_NOFOLLOW);
+            let file = current.open_with(text, &opts)
+                .map_err(|_| bad("DENIED_SCOPE", "unsafe search directory open"))?;
+            if !file.metadata().is_ok_and(|m| m.is_dir()) {
+                return Err(bad("DENIED_SCOPE", "opened search component not a directory"));
+            }
+            Dir::from_std_file(file.into_std())
+        };
+        #[cfg(not(target_os="linux"))]
+        let child = current.open_dir(text)
+            .map_err(|_| bad("FILE_ACCESS", "cannot open search directory"))?;
+        let opened = child.dir_metadata()
+            .map_err(|_| bad("FILE_ACCESS", "cannot inspect opened directory"))?;
+        if !same_file_identity(&before,&opened) || is_reparse(&opened) {
+            return Err(bad("DENIED_SCOPE", "search directory changed during open"));
+        }
+        current = child;
+    }
+    Ok(current)
+}
+
 fn search(root: &Dir, req: proto::SearchTextRequest) -> Result<ToolOutput, ToolFailure> {
+    search_with_cancel(root, req, || false, std::time::Instant::now())
+}
+
+fn search_with_cancel<F: Fn() -> bool>(
+    root: &Dir, req: proto::SearchTextRequest, cancelled: F,
+    started: std::time::Instant,
+) -> Result<ToolOutput, ToolFailure> {
+    use sha2::{Digest, Sha256};
     let count = req.max_files.unwrap_or(32);
     let max_hits = req.max_matches.unwrap_or(40);
     if !(1..=MAX_FILES).contains(&count) || !(1..=MAX_MATCHES).contains(&max_hits) {
         return Err(bad("INVALID_LIMIT", "invalid search size limit"));
     }
-    if req.query.is_empty() || req.query.len() > 256 || req.query.chars().any(char::is_control) {
-        return Err(bad(
-            "INVALID_QUERY",
-            "expected a bounded, literal UTF-8 phrase",
-        ));
+    if req.query.is_empty() || req.query.len() > 256 ||
+        req.query.chars().any(char::is_control) {
+        return Err(bad("INVALID_QUERY", "expected a bounded literal UTF-8 query"));
     }
-    let folder = validate_path(&req.path, true).map_err(|e| bad("INVALID_PATH", e))?;
-    let directory = if folder.as_os_str().is_empty() {
-        Path::new(".")
-    } else {
-        folder.as_path()
-    };
-    let mut candidates = Vec::new();
-    let mut truncated = false;
-    for (visited_entries, entry) in root
-        .read_dir(directory)
-        .map_err(|_| bad("FILE_ACCESS", "cannot open search directory"))?
-        .enumerate()
-    {
-        if visited_entries >= MAX_ENTRIES {
-            truncated = true;
-            break;
-        }
-        let entry = entry.map_err(|_| bad("FILE_ACCESS", "cannot read directory entry"))?;
-        if !entry
-            .file_type()
-            .map_err(|_| bad("FILE_ACCESS", "cannot inspect entry"))?
-            .is_file()
-        {
-            continue; // Never traverse directories or symlinks.
-        }
-        let filename = entry.file_name();
-        let Some(name) = filename.to_str() else {
-            continue;
-        };
-        let relative = if req.path.is_empty() {
-            name.to_owned()
-        } else {
-            format!("{}/{}", req.path, name)
-        };
-        if validate_path(&relative, false).is_ok() {
-            candidates.push(relative);
-        }
+    let suffix = req.file_suffix.as_deref().unwrap_or("");
+    if suffix.len() > 64 ||
+        suffix.chars().any(|c| !(c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))) {
+        return Err(bad("INVALID_FILTER", "invalid literal filename suffix"));
     }
-    candidates.sort();
+    let folder = validate_path(&req.path, true)
+        .map_err(|e| bad("INVALID_PATH", e))?;
+    if cancelled() {
+        return Err(bad("CANCELLED", "search cancelled before filesystem access"));
+    }
+    let first = open_search_directory(root, &folder)?;
+    let mount = root.dir_metadata()
+        .map_err(|_| bad("FILE_ACCESS", "workspace root metadata unavailable"))?;
+    let first_meta = first.dir_metadata()
+        .map_err(|_| bad("FILE_ACCESS", "search root metadata unavailable"))?;
+    if !same_mount(&mount, &first_meta) {
+        return Err(bad("DENIED_SCOPE", "search directory crosses filesystem boundary"));
+    }
+    let mut queue = std::collections::VecDeque::from([(req.path.clone(), first)]);
     let mut hits = Vec::new();
+    let mut limitations = Vec::new();
     let mut scanned_files = 0_u32;
-    for name in candidates {
-        if scanned_files >= count {
-            truncated = true;
+    let mut scanned_directories = 0_u32;
+    let mut visited_entries = 0_usize;
+    let mut skipped_entries = 0_u32;
+    let mut read_bytes = 0_u64;
+    let mut output_bytes = 0_usize;
+    let mut truncated = false;
+    'walk: while let Some((prefix, dir)) = queue.pop_front() {
+        if cancelled() { return Err(bad("CANCELLED", "search cancellation requested")); }
+        if started.elapsed().as_millis() >= u128::from(MAX_SEARCH_MILLIS) {
+            note(&mut limitations, "TIME_BUDGET", &mut truncated);
             break;
         }
-        let path = validate_path(&name, false).map_err(|e| bad("INVALID_PATH", e))?;
-        let Ok(meta) = root.symlink_metadata(&path) else {
-            continue;
-        };
-        if !meta.is_file() || meta.file_type().is_symlink() {
-            continue;
+        if scanned_directories >= MAX_DIRECTORIES {
+            note(&mut limitations, "DIRECTORY_LIMIT", &mut truncated);
+            break;
         }
-        let Ok(mut file) = root.open(&path) else {
-            continue;
+        scanned_directories += 1;
+        let mut entries = Vec::new();
+        let reader = match dir.read_dir(".") {
+            Ok(r) => r,
+            Err(_) => {
+                note(&mut limitations, "DIRECTORY_UNREADABLE", &mut truncated);
+                skipped_entries = skipped_entries.saturating_add(1);
+                continue;
+            }
         };
-        if !file.metadata().is_ok_and(|m| m.is_file()) {
-            continue;
-        }
-        scanned_files += 1;
-        let mut bytes = Vec::new();
-        file.by_ref()
-            .take(MAX_FILE_BYTES + 1)
-            .read_to_end(&mut bytes)
-            .map_err(|_| bad("FILE_ACCESS", "cannot read search target"))?;
-        if bytes.len() > MAX_FILE_BYTES as usize {
-            bytes.truncate(MAX_FILE_BYTES as usize);
-            truncated = true;
-        }
-        let Ok(text) = String::from_utf8(bytes) else {
-            continue;
-        };
-        for (line, content) in text.lines().enumerate() {
-            if content.contains(&req.query) {
-                if hits.len() == max_hits as usize {
-                    truncated = true;
-                    break;
+        for entry in reader {
+            if cancelled() { return Err(bad("CANCELLED", "search cancellation requested")); }
+            if started.elapsed().as_millis() >= u128::from(MAX_SEARCH_MILLIS) {
+                note(&mut limitations, "TIME_BUDGET", &mut truncated);
+                break 'walk;
+            }
+            if visited_entries >= MAX_ENTRIES {
+                note(&mut limitations, "ENTRY_LIMIT", &mut truncated);
+                break 'walk;
+            }
+            visited_entries += 1;
+            let entry = match entry {
+                Ok(e) => e,
+                Err(_) => {
+                    note(&mut limitations, "ENTRY_UNREADABLE", &mut truncated);
+                    skipped_entries = skipped_entries.saturating_add(1);
+                    continue;
                 }
-                hits.push(proto::SearchTextHit {
-                    path: name.clone(),
-                    line_number: (line + 1) as u32,
-                    excerpt: content.chars().take(240).collect(),
-                });
+            };
+            let Some(name) = entry.file_name().to_str().map(str::to_owned) else {
+                note(&mut limitations, "INVALID_NAME", &mut truncated);
+                skipped_entries = skipped_entries.saturating_add(1);
+                continue;
+            };
+            if denied_search_name(&name) { continue; }
+            entries.push(name);
+        }
+        entries.sort_unstable();
+        for name in entries {
+            if cancelled() { return Err(bad("CANCELLED", "search cancellation requested")); }
+            if started.elapsed().as_millis() >= u128::from(MAX_SEARCH_MILLIS) {
+                note(&mut limitations, "TIME_BUDGET", &mut truncated);
+                break 'walk;
+            }
+            let relative = if prefix.is_empty() { name.clone() }
+                else { format!("{prefix}/{name}") };
+            if relative.len() > 1024 {
+                note(&mut limitations, "RESULT_PATH_LIMIT", &mut truncated);
+                skipped_entries = skipped_entries.saturating_add(1);
+                continue;
+            }
+            let meta = match dir.symlink_metadata(&name) {
+                Ok(m) => m,
+                Err(_) => {
+                    note(&mut limitations, "ENTRY_CHANGED_OR_UNREADABLE", &mut truncated);
+                    skipped_entries = skipped_entries.saturating_add(1);
+                    continue;
+                }
+            };
+            if meta.file_type().is_symlink() || is_reparse(&meta) {
+                note(&mut limitations, "LINK_EXCLUDED", &mut truncated);
+                skipped_entries = skipped_entries.saturating_add(1);
+                continue;
+            }
+            if meta.is_dir() {
+                if req.recursive.unwrap_or(false) {
+                    if queue.len() + scanned_directories as usize >= MAX_DIRECTORIES as usize {
+                        note(&mut limitations, "DIRECTORY_LIMIT", &mut truncated);
+                    } else if !same_mount(&mount, &meta) {
+                        note(&mut limitations, "MOUNT_EXCLUDED", &mut truncated);
+                        skipped_entries = skipped_entries.saturating_add(1);
+                    } else {
+                        match open_search_directory(&dir, Path::new(&name)) {
+                            Ok(child) => queue.push_back((relative,child)),
+                            Err(_) => {
+                                note(&mut limitations, "DIRECTORY_CHANGED_OR_DENIED", &mut truncated);
+                                skipped_entries = skipped_entries.saturating_add(1);
+                            }
+                        }
+                    }
+                }
+                continue;
+            }
+            if !meta.is_file() || (!suffix.is_empty() && !name.ends_with(suffix)) {
+                continue;
+            }
+            if !same_mount(&mount, &meta) {
+                note(&mut limitations, "MOUNT_EXCLUDED", &mut truncated);
+                skipped_entries = skipped_entries.saturating_add(1);
+                continue;
+            }
+            if scanned_files >= count {
+                note(&mut limitations, "FILE_LIMIT", &mut truncated);
+                break 'walk;
+            }
+            if meta.len() > MAX_FILE_BYTES {
+                note(&mut limitations, "FILE_SIZE_LIMIT", &mut truncated);
+                skipped_entries = skipped_entries.saturating_add(1);
+                continue;
+            }
+            if read_bytes.saturating_add(meta.len()) > MAX_SEARCH_BYTES {
+                note(&mut limitations, "TOTAL_BYTE_LIMIT", &mut truncated);
+                break 'walk;
+            }
+            let mut opts = cap_std::fs::OpenOptions::new();
+            opts.read(true);
+            #[cfg(target_os="linux")]
+            {
+                use cap_std::fs::OpenOptionsExt;
+                // Linux O_NOFOLLOW: no final-component symlink swap during open.
+                opts.custom_flags(0o400000);
+            }
+            let mut file = match dir.open_with(&name,&opts) {
+                Ok(f) => f,
+                Err(_) => {
+                    note(&mut limitations, "FILE_CHANGED_OR_DENIED", &mut truncated);
+                    skipped_entries = skipped_entries.saturating_add(1);
+                    continue;
+                }
+            };
+            let opened = match file.metadata() {
+                Ok(m) => m,
+                Err(_) => {
+                    note(&mut limitations, "FILE_CHANGED_OR_DENIED", &mut truncated);
+                    skipped_entries = skipped_entries.saturating_add(1);
+                    continue;
+                }
+            };
+            if !same_file_identity(&meta,&opened) || !opened.is_file()
+                || is_reparse(&opened) {
+                note(&mut limitations, "FILE_CHANGED_OR_DENIED", &mut truncated);
+                skipped_entries = skipped_entries.saturating_add(1);
+                continue;
+            }
+            let mut bytes = Vec::new();
+            let read = file.by_ref().take(MAX_FILE_BYTES + 1).read_to_end(&mut bytes);
+            if read.is_err() {
+                note(&mut limitations, "FILE_UNREADABLE", &mut truncated);
+                skipped_entries = skipped_entries.saturating_add(1);
+                continue;
+            }
+            read_bytes = read_bytes.saturating_add(bytes.len() as u64);
+            let after = match file.metadata() {
+                Ok(m) => m,
+                Err(_) => {
+                    note(&mut limitations, "FILE_CHANGED", &mut truncated);
+                    skipped_entries = skipped_entries.saturating_add(1);
+                    continue;
+                }
+            };
+            if bytes.len() as u64 != opened.len() ||
+                !same_file_identity(&opened,&after) ||
+                !same_file_identity(&meta,&after) {
+                note(&mut limitations, "FILE_CHANGED", &mut truncated);
+                skipped_entries = skipped_entries.saturating_add(1);
+                continue;
+            }
+            scanned_files += 1;
+            let Ok(text) = std::str::from_utf8(&bytes) else {
+                note(&mut limitations, "INVALID_UTF8", &mut truncated);
+                skipped_entries = skipped_entries.saturating_add(1);
+                continue;
+            };
+            let sha256_hex = format!("{:x}",Sha256::digest(&bytes));
+            for (line, content) in text.lines().enumerate() {
+                if cancelled() { return Err(bad("CANCELLED", "search cancellation requested")); }
+                if started.elapsed().as_millis() >= u128::from(MAX_SEARCH_MILLIS) {
+                    note(&mut limitations, "TIME_BUDGET", &mut truncated);
+                    break 'walk;
+                }
+                if content.contains(&req.query) {
+                    if hits.len() >= max_hits as usize {
+                        note(&mut limitations, "MATCH_LIMIT", &mut truncated);
+                        break 'walk;
+                    }
+                    // Preserve the actual matched phrase even when it
+                    // starts far beyond the front of a long line. The query
+                    // is at most 256 UTF-8 bytes; 60 chars of left context
+                    // plus 256 query chars fit in this bounded excerpt.
+                    let at = content.find(&req.query).unwrap_or(0);
+                    let start_char = content[..at].chars().count().saturating_sub(60);
+                    let excerpt: String = content.chars().skip(start_char).take(320).collect();
+                    let estimated_bytes = relative.chars().count().saturating_mul(12)
+                        .saturating_add(excerpt.chars().count().saturating_mul(12))
+                        .saturating_add(256);
+                    if output_bytes.saturating_add(estimated_bytes) > MAX_SEARCH_OUTPUT_BYTES {
+                        note(&mut limitations, "RESULT_BYTE_LIMIT", &mut truncated);
+                        break 'walk;
+                    }
+                    output_bytes += estimated_bytes;
+                    hits.push(proto::SearchTextHit {
+                        path: relative.clone(),
+                        line_number: (line + 1) as u32,
+                        excerpt,
+                        sha256_hex: sha256_hex.clone(),
+                        size_bytes: bytes.len() as u64,
+                    });
+                }
+            }
+            if hits.len() >= max_hits as usize {
+                note(&mut limitations, "MATCH_LIMIT", &mut truncated);
+                break 'walk;
             }
         }
-        if hits.len() >= max_hits as usize {
-            truncated = true;
-            break;
-        }
+    }
+    if !queue.is_empty() {
+        note(&mut limitations, "SCOPE_REMAINS", &mut truncated);
     }
     let reply = proto::SearchTextResult {
-        hits,
-        scanned_files,
-        truncated,
+        hits,scanned_files,truncated,scanned_directories,limitations,
+        read_bytes,skipped_entries,
     };
     Ok(ToolOutput {
         payload: ProtoPayload {
-            type_url: SEARCH_OUT.into(),
-            bytes: reply.encode_to_vec(),
+            type_url: SEARCH_OUT.into(),bytes: reply.encode_to_vec(),
         },
     })
+}
+
+
+#[derive(Clone,Debug,serde::Serialize)]
+#[serde(rename_all="camelCase")]
+pub struct ApprovedCpuSearchHit {
+    pub path:String,
+    pub line_number:u32,
+    pub excerpt:String,
+    pub sha256_hex:String,
+    pub size_bytes:u64,
+}
+
+#[derive(Clone,Debug,serde::Serialize)]
+#[serde(rename_all="camelCase")]
+pub struct ApprovedCpuSearch {
+    pub status:String,
+    pub hits:Vec<ApprovedCpuSearchHit>,
+    pub scanned_files:u32,
+    pub scanned_directories:u32,
+    pub read_bytes:u64,
+    pub skipped_entries:u32,
+    pub limitations:Vec<String>,
+}
+
+/// Only the native host may call this after a fresh owner OS directory
+/// selection and original human request. A path in a prompt is NOT a grant.
+/// Reuses the identical TOOLS-09 bounded/no-follow/mount-aware scanner; no
+/// external process, GGUF, extra tool registry, or implicit model authority.
+pub fn search_host_approved_workspace_cpu(
+    original_host_selected_root:&Path, literal_query:&str,
+)->Result<ApprovedCpuSearch,ToolFailure>{
+    if literal_query.len()<2 || literal_query.len()>128
+       || literal_query.chars().any(char::is_control){
+        return Err(bad("INVALID_QUERY","CPU literal request is not bounded"))
+    }
+    let metadata=std::fs::symlink_metadata(original_host_selected_root)
+        .map_err(|_|bad("DENIED_SCOPE","native-selected directory unavailable"))?;
+    if !metadata.is_dir() || metadata.file_type().is_symlink(){
+        return Err(bad("DENIED_SCOPE","native-selected directory is unsafe"))
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        if metadata.file_attributes() & 0x400 != 0 {
+            return Err(bad("DENIED_SCOPE","native-selected directory reparse denied"))
+        }
+    }
+    // Linux: pin the originally picked leaf atomically as a real directory.
+    // A symlink swapped after preflight must not redirect the search root.
+    #[cfg(target_os="linux")]
+    let root={
+        use std::os::unix::fs::{OpenOptionsExt as _,MetadataExt as _};
+        use cap_std::fs::MetadataExt as _;
+        let mut opts=std::fs::OpenOptions::new();
+        opts.read(true).custom_flags(0o200000 | 0o400000); // O_DIRECTORY|O_NOFOLLOW
+        let file=opts.open(original_host_selected_root)
+            .map_err(|_|bad("DENIED_SCOPE","selected directory changed or unavailable"))?;
+        let opened=file.metadata()
+            .map_err(|_|bad("DENIED_SCOPE","selected directory metadata unavailable"))?;
+        if !opened.is_dir()||opened.dev()!=metadata.dev()||
+            opened.ino()!=metadata.ino(){
+            return Err(bad("DENIED_SCOPE","selected directory changed during admission"))
+        }
+        Dir::from_std_file(file)
+    };
+    #[cfg(not(target_os="linux"))]
+    let root=Dir::open_ambient_dir(original_host_selected_root,ambient_authority())
+        .map_err(|_|bad("DENIED_SCOPE","cannot open native-selected root"))?;
+    if !root.dir_metadata().is_ok_and(|m|m.is_dir()&&!is_reparse(&m)){
+        return Err(bad("DENIED_SCOPE","selected root is not a safe opened directory"))
+    }
+    let request=proto::SearchTextRequest{
+        path:String::new(),
+        query:literal_query.into(),
+        max_files:Some(256),
+        max_matches:Some(16),
+        recursive:Some(true),
+        file_suffix:None,
+    };
+    let result=search(&root,request)?;
+    let scanned=proto::SearchTextResult::decode(result.payload.bytes.as_slice())
+        .map_err(|_|bad("BAD_PROTOBUF","CPU search output invalid"))?;
+    Ok(ApprovedCpuSearch{
+        status:if scanned.truncated{"PARTIAL"}else{"COMPLETE"}.into(),
+        hits:scanned.hits.into_iter().map(|hit|ApprovedCpuSearchHit{
+            path:hit.path,line_number:hit.line_number,excerpt:hit.excerpt,
+            sha256_hex:hit.sha256_hex,size_bytes:hit.size_bytes,
+        }).collect(),
+        scanned_files:scanned.scanned_files,
+        scanned_directories:scanned.scanned_directories,
+        read_bytes:scanned.read_bytes,
+        skipped_entries:scanned.skipped_entries,
+        limitations:scanned.limitations,
+    })
+}
+
+// A dropped model/tool future must signal a running bounded blocking scan.
+// This is cooperative cancellation, not a promise to abort a kernel-blocked IO.
+struct SearchDropGuard(Arc<std::sync::atomic::AtomicBool>);
+impl Drop for SearchDropGuard {
+    fn drop(&mut self) {
+        self.0.store(true, std::sync::atomic::Ordering::Relaxed);
+    }
 }
 
 struct InspectTool {
@@ -211,6 +602,9 @@ impl NativeTool for InspectTool {
         let root = Arc::clone(&self.root);
         let is_stat = self.descriptor.id == STAT;
         Box::pin(async move {
+            let cancelled = Arc::new(std::sync::atomic::AtomicBool::new(false));
+            let _cancel_on_drop = SearchDropGuard(Arc::clone(&cancelled));
+            let cancellation_in_worker = Arc::clone(&cancelled);
             tokio::task::spawn_blocking(move || {
                 if is_stat {
                     let args = proto::FileStatRequest::decode(call.input.bytes.as_slice())
@@ -219,7 +613,9 @@ impl NativeTool for InspectTool {
                 } else {
                     let args = proto::SearchTextRequest::decode(call.input.bytes.as_slice())
                         .map_err(|_| bad("BAD_PROTOBUF", "invalid search arguments"))?;
-                    search(&root, args)
+                    search_with_cancel(&root, args,
+                        || cancellation_in_worker.load(std::sync::atomic::Ordering::Relaxed),
+                        std::time::Instant::now())
                 }
             })
             .await
@@ -267,7 +663,7 @@ impl ModelToolCodec for SearchCodec {
     fn encode(&self, args: &Map<String, Value>) -> Result<ProtoPayload, ModelToolError> {
         expect_fields(
             args,
-            &["path", "query", "max_files", "max_matches"],
+            &["path", "query", "max_files", "max_matches", "recursive", "file_suffix"],
             &["query"],
         )?;
         let path = match args.get("path") {
@@ -289,11 +685,23 @@ impl ModelToolCodec for SearchCodec {
                 "invalid search query".into(),
             ));
         }
+        let recursive = match args.get("recursive") {
+            None => None,
+            Some(Value::Bool(v)) => Some(*v),
+            _ => return Err(ModelToolError::InvalidArguments("recursive must be boolean".into())),
+        };
+        let file_suffix = match args.get("file_suffix") {
+            None => None,
+            Some(Value::String(v)) if v.len() <= 64 && v.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-')) => Some(v.clone()),
+            _ => return Err(ModelToolError::InvalidArguments("invalid filename suffix".into())),
+        };
         let input = proto::SearchTextRequest {
             path: path.into(),
             query: query.into(),
             max_files: Some(optional_uint(args, "max_files", 32, MAX_FILES)?),
             max_matches: Some(optional_uint(args, "max_matches", 40, MAX_MATCHES)?),
+            recursive,
+            file_suffix,
         };
         Ok(ProtoPayload {
             type_url: SEARCH_IN.into(),
@@ -308,11 +716,22 @@ impl ModelToolCodec for SearchCodec {
             .into_iter()
             .map(|hit| {
                 json!({
-                    "path":hit.path,"line_number":hit.line_number,"excerpt":hit.excerpt,
+                    "path":hit.path,"line_number":hit.line_number,
+                    "excerpt":hit.excerpt,"sha256_hex":hit.sha256_hex,
+                    "size_bytes":hit.size_bytes,
                 })
             })
             .collect();
-        Ok(json!({"hits":hits,"scanned_files":result.scanned_files,"truncated":result.truncated}))
+        Ok(json!({
+            "hits":hits,
+            "scanned_files":result.scanned_files,
+            "scanned_directories":result.scanned_directories,
+            "truncated":result.truncated,
+            "status":if result.truncated {"PARTIAL"} else {"COMPLETE"},
+            "limitations":result.limitations,
+            "read_bytes":result.read_bytes,
+            "skipped_entries":result.skipped_entries
+        }))
     }
 }
 
@@ -382,14 +801,108 @@ pub fn register_inspection_tools(
         .map_err(|e| format!("cannot publish stat schema: {e:?}"))?;
     catalog.insert(registry, ModelToolDefinition {
         name: "lu_files_search_text".into(), native_tool_id: SEARCH.into(),
-        description: "Search literal UTF-8 text within one directory (nonrecursive, maximum 64 files and 128 matches).".into(),
+        description: "Search approved workspace literal UTF-8 with optional recursion and suffix filter. Scope, time, byte and file limits yield PARTIAL with explicit limitation codes; hits carry source SHA-256. Hidden entries and links are excluded. A prior hit never grants file access.".into(),
         parameters: json!({"type":"object","properties":{
             "path":{"type":"string","description":"Workspace directory; omit for root"},
             "query":{"type":"string","description":"Literal phrase, up to 256 UTF-8 bytes"},
             "max_files":{"type":"integer","minimum":1,"maximum":MAX_FILES},
-            "max_matches":{"type":"integer","minimum":1,"maximum":MAX_MATCHES}
+            "max_matches":{"type":"integer","minimum":1,"maximum":MAX_MATCHES},
+            "recursive":{"type":"boolean"},
+            "file_suffix":{"type":"string","maxLength":64}
         },"required":["query"],"additionalProperties":false}),
         codec: Arc::new(SearchCodec),
     }).map_err(|e| format!("cannot publish search schema: {e:?}"))?;
     Ok(())
 }
+
+
+#[cfg(test)]
+mod recursive_search_tests {
+    use super::*;
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static NEXT: AtomicU64 = AtomicU64::new(0);
+
+    fn fixture() -> (PathBuf, Dir) {
+        let path = std::env::temp_dir().join(format!(
+            "lu-recursive-search-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed)
+        ));
+        std::fs::create_dir_all(path.join("nested").join("deeper")).unwrap();
+        std::fs::write(path.join("top.rs"), "needle first\n").unwrap();
+        std::fs::write(path.join("nested").join("middle.txt"), "needle second\n").unwrap();
+        std::fs::write(path.join("nested").join("deeper").join("last.rs"), "needle third\n").unwrap();
+        std::fs::write(path.join(".secret"), "needle secret\n").unwrap();
+        let dir = Dir::open_ambient_dir(&path, ambient_authority()).unwrap();
+        (path, dir)
+    }
+
+    fn request(recursive: bool, suffix: Option<&str>) -> proto::SearchTextRequest {
+        proto::SearchTextRequest {
+            path: String::new(),
+            query: "needle".into(),
+            max_files: Some(16),
+            max_matches: Some(16),
+            recursive: Some(recursive),
+            file_suffix: suffix.map(str::to_owned),
+        }
+    }
+
+    #[test]
+    fn recursive_search_remains_opt_in_and_scoped() {
+        let (path, dir) = fixture();
+        let plain = search(&dir, request(false, None)).unwrap();
+        let plain = proto::SearchTextResult::decode(plain.payload.bytes.as_slice()).unwrap();
+        assert_eq!(plain.scanned_directories, 1);
+        assert_eq!(plain.hits.len(), 1);
+        assert_eq!(plain.hits[0].path, "top.rs");
+        let recursive = search(&dir, request(true, None)).unwrap();
+        let recursive = proto::SearchTextResult::decode(recursive.payload.bytes.as_slice()).unwrap();
+        assert_eq!(recursive.scanned_directories, 3);
+        assert_eq!(recursive.hits.len(), 3);
+        assert!(!recursive.truncated);
+        let filtered = search(&dir, request(true, Some(".rs"))).unwrap();
+        let filtered = proto::SearchTextResult::decode(filtered.payload.bytes.as_slice()).unwrap();
+        assert_eq!(filtered.hits.len(), 2);
+        assert!(filtered.hits.iter().all(|h| h.path.ends_with(".rs")));
+        drop(dir);
+        std::fs::remove_dir_all(path).unwrap();
+    }
+
+    #[test]
+    fn recursion_limits_and_invalid_filters_do_not_silently_succeed() {
+        let (path, dir) = fixture();
+        let mut req = request(true, None);
+        req.max_matches = Some(1);
+        let result = search(&dir, req).unwrap();
+        let result = proto::SearchTextResult::decode(result.payload.bytes.as_slice()).unwrap();
+        assert!(result.truncated);
+        let mut req = request(true, Some("../secret"));
+        assert!(search(&dir, req.clone()).is_err());
+        req.file_suffix = None;
+        req.path = "../outside".into();
+        assert!(search(&dir, req).is_err());
+        drop(dir);
+        std::fs::remove_dir_all(path).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlinks_are_not_recursed_or_listed() {
+        use std::os::unix::fs::symlink;
+        let (path, dir) = fixture();
+        symlink("nested", path.join("alias")).unwrap();
+        symlink("top.rs", path.join("alias.rs")).unwrap();
+        let result = search(&dir, request(true, None)).unwrap();
+        let result = proto::SearchTextResult::decode(result.payload.bytes.as_slice()).unwrap();
+        assert_eq!(result.hits.len(), 3);
+        assert!(result.hits.iter().all(|h| !h.path.starts_with("alias")));
+        drop(dir);
+        std::fs::remove_dir_all(path).unwrap();
+    }
+}
+
+// TOOLS-09: native original workspace search hostile-scope test matrix.
+#[cfg(test)]
+#[path = "tools09_search_adversarial_tests.rs"]
+mod tools09_search_adversarial_tests;

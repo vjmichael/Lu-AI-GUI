@@ -1,0 +1,226 @@
+name: Lu E1-P08 Reviewed Application Restart Recovery
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: lu-e1-p08-${{ github.event.pull_request.head.ref || github.ref_name }}
+  cancel-in-progress: true
+jobs:
+  portable-recovery:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 75
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify exact frozen source and recovery fixture
+        shell: bash
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          node scripts/verify-source-tree.mjs
+      - name: ANSF visible chat restart recovery and original-turn authorization regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --manifest-path lu-desktop/tests/native-chat/Cargo.toml \
+            --lib reviewed_restart_notice_is_chat_scoped_visible_and_idempotent \
+            -- --nocapture
+      - name: Run genuine TaskStore and EffectJournal restart regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p e1-p08-evidence
+          cargo test --manifest-path lu-desktop/tests/native-reviewed-recovery/Cargo.toml \
+            --lib reviewed_app_recovery::tests -- --nocapture \
+            2>&1 | tee e1-p08-evidence/native-recovery.log
+          grep -Eq 'test result: ok\. [34] passed; 0 failed;' e1-p08-evidence/native-recovery.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lu-e1-p08-native-${{ matrix.os }}
+          path: e1-p08-evidence/
+          retention-days: 14
+          if-no-files-found: warn
+  windows-tauri:
+    needs: portable-recovery
+    runs-on: windows-2025
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: CI-only nonfunctional inference resource placeholders
+        shell: pwsh
+        run: |
+          $root='lu-desktop/src-tauri/resources/lu-inference'
+          New-Item -ItemType Directory -Force -Path $root | Out-Null
+          foreach ($name in @('llama-server.exe','msvcp140.dll','vcruntime140.dll','vcruntime140_1.dll')) {
+            Set-Content -LiteralPath (Join-Path $root $name) -Value 'NOT_AN_ENGINE_CI_PLACEHOLDER' -NoNewline
+          }
+      - name: Build frontend and check native startup code
+        working-directory: lu-desktop
+        shell: pwsh
+        run: |
+          if (Test-Path package-lock.json) { npm ci } else { npm install --no-audit --no-fund }
+          npm run build
+          npm run check
+      - name: Compile actual Tauri desktop and execute recovery tests
+        shell: pwsh
+        run: |
+          cargo check --locked --manifest-path lu-desktop/src-tauri/Cargo.toml
+          cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib reviewed_app_recovery::tests -- --nocapture
+
+  linux-guardian-crash-recovery:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Assert source commit, frozen manifest, and Linux OS
+        shell: bash
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(uname -s)" = Linux
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          node scripts/verify-source-tree.mjs
+          mkdir -p e1-p08-guardian-evidence
+          printf 'SOURCE_HEAD=%s\n' "$EXPECTED_HEAD" > e1-p08-guardian-evidence/source.txt
+      - name: Build actual first-party Linux orphan guardian and crash parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo build --manifest-path src-tauri/lu-win-worker-job/Cargo.toml \
+            --features e1-p08-crash-fixture \
+            --bin lu-linux-group-guard --bin lu-e1-p08-linux-crash-parent
+          sha256sum src-tauri/lu-win-worker-job/target/debug/lu-linux-group-guard \
+            src-tauri/lu-win-worker-job/target/debug/lu-e1-p08-linux-crash-parent \
+            > e1-p08-guardian-evidence/native-binary-sha256.txt
+      - name: Force real Linux host crash and prove descendant death, not SQLite state
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile benchmarks/e1/e1_p08_linux_group_guard.py
+          python3 benchmarks/e1/e1_p08_linux_group_guard.py \
+            --guard "$GITHUB_WORKSPACE/src-tauri/lu-win-worker-job/target/debug/lu-linux-group-guard" \
+            --parent "$GITHUB_WORKSPACE/src-tauri/lu-win-worker-job/target/debug/lu-e1-p08-linux-crash-parent" \
+            2>&1 | tee e1-p08-guardian-evidence/linux-crash-recovery.log
+          grep -q 'E1_P08_LINUX_ORPHAN_GUARD_PASS=1' \
+            e1-p08-guardian-evidence/linux-crash-recovery.log
+      - name: Kernel negative control — setsid descendant must escape killpg
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile benchmarks/e1/e1_p08_setsid_escape_probe.py
+          python3 benchmarks/e1/e1_p08_setsid_escape_probe.py \
+            2>&1 | tee e1-p08-guardian-evidence/setsid-escape-negative-control.log
+          grep -q 'E1_P08_GROUP_ESCAPE_PROVEN=1' \
+            e1-p08-guardian-evidence/setsid-escape-negative-control.log
+      - name: Do not claim proof when actual Linux evidence is missing
+        if: always()
+        shell: bash
+        run: |
+          if ! test -f e1-p08-guardian-evidence/linux-crash-recovery.log; then
+            echo 'Linux group guardian crash acceptance OPEN: no real OS evidence.' >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lu-e1-p08-real-linux-crash-grandchild
+          path: e1-p08-guardian-evidence/
+          retention-days: 14
+          if-no-files-found: warn
+
+  linux-guardian-reviewed-tools:
+    needs: linux-guardian-crash-recovery
+    runs-on: ubuntu-24.04
+    timeout-minutes: 65
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Provision actual FFprobe for Linux guardian-worker CI
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends ffmpeg
+          command -v ffprobe
+      - name: Assert frozen exact source and installed real applications
+        shell: bash
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          node scripts/verify-source-tree.mjs
+          command -v git
+          command -v ffprobe
+          echo "LU_E1_P07_GIT=$(readlink -f "$(command -v git)")" >> "$GITHUB_ENV"
+          echo "LU_E1_P07_FFPROBE=$(readlink -f "$(command -v ffprobe)")" >> "$GITHUB_ENV"
+      - name: Build and bind first-party process-group lifetime guardian
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo build --manifest-path src-tauri/lu-win-worker-job/Cargo.toml \
+            --bin lu-linux-group-guard
+          path="$GITHUB_WORKSPACE/src-tauri/lu-win-worker-job/target/debug/lu-linux-group-guard"
+          test -x "$path"
+          echo "LU_E1_P08_TEST_GUARD_BINARY=$path" >> "$GITHUB_ENV"
+      - name: Exercise real Git and FFprobe via guardian-owned native Lu supervisor
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p e1-p08-guardian-tools
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --test e1_reviewed_model_tools \
+            actual_model_selected_reviewed_git_and_media_tools_return_verified_receipts \
+            -- --ignored --nocapture 2>&1 | tee e1-p08-guardian-tools/real-reviewed-apps.log
+          grep -Eq 'test result: ok\. 1 passed; 0 failed;' \
+            e1-p08-guardian-tools/real-reviewed-apps.log
+          printf 'LINUX_GROUP_GUARD=STAGED_AND_USED\n' > e1-p08-guardian-tools/guard-state.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lu-e1-p08-guardian-reviewed-native-git-ffprobe
+          path: e1-p08-guardian-tools/
+          retention-days: 14
+          if-no-files-found: warn

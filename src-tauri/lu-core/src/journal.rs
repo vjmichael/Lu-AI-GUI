@@ -46,6 +46,20 @@ impl EffectState {
     }
 }
 
+/// E1-P10 independent host outcome. This is never inferred from the
+/// worker exit code, model FinalAnswer or a normal EffectState::Applied.
+#[derive(Debug,Clone,Copy,PartialEq,Eq)]
+pub enum IndependentOutcomeVerdict{Verified,Unsupported,Conflict}
+impl IndependentOutcomeVerdict{
+    fn as_str(self)->&'static str{
+        match self{
+            Self::Verified=>"VERIFIED",
+            Self::Unsupported=>"UNSUPPORTED",
+            Self::Conflict=>"CONFLICT",
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum JournalError {
     Database(String),
@@ -115,7 +129,17 @@ impl EffectJournal {
                 receipt BLOB,
                 updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
-            CREATE INDEX IF NOT EXISTS lu_effects_by_state ON lu_effects(state);",
+            CREATE INDEX IF NOT EXISTS lu_effects_by_state ON lu_effects(state);
+            CREATE TABLE IF NOT EXISTS lu_independent_outcomes (
+                call_id TEXT PRIMARY KEY NOT NULL,
+                receipt_sha256 TEXT NOT NULL,
+                verdict TEXT NOT NULL
+                  CHECK(verdict IN ('VERIFIED','UNSUPPORTED','CONFLICT')),
+                method TEXT NOT NULL,
+                observed_sha256 TEXT,
+                checked_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY(call_id) REFERENCES lu_effects(call_id)
+            );",
         )?;
         Ok(Self {
             connection: Mutex::new(connection),
@@ -207,6 +231,74 @@ impl EffectJournal {
         )
     }
 
+    /// Bind a second, host-only factual observation to the EXACT already
+    /// APPLIED worker receipt. Writes a different durable SQLite table but
+    /// does NOT alter the effect's original execution classification. An
+    /// identical replay is idempotent, a conflicting replay is refused.
+    /// NEVER use this table as a substitute for process custody/reaping.
+    pub fn record_independent_outcome(
+        &self,call_id:&str,receipt:&[u8],verdict:IndependentOutcomeVerdict,
+        method:&str,observed_sha256:Option<&str>,
+    )->Result<(),JournalError>{
+        if call_id.trim().is_empty()||call_id.len()>128||receipt.is_empty()
+            ||receipt.len()>8*1024*1024
+            ||!matches!(method,
+                "GIT_HEAD_DIRECT_V1"|"GIT_BRANCH_DIRECT_V1"|
+                "WAV_PCM_DIRECT_V1"|"GIT_STATUS_UNSUPPORTED_V1"|
+                "GIT_HISTORY_UNSUPPORTED_V1"|"GIT_HISTORY_LOOSE_DAG_V1"|
+            "GIT_HISTORY_OBJECT_DAG_V2"|"GIT_STATUS_INDEX_TREE_V1"|
+            "MP4_BOXES_DIRECT_V1"|"MP4_UNSUPPORTED_V1"){
+            return Err(JournalError::InvalidTransition)
+        }
+        let valid_sha=|s:&str|s.len()==64&&s.bytes().all(|b|
+            b.is_ascii_digit()||(b'a'..=b'f').contains(&b));
+        if observed_sha256.is_some_and(|v|!valid_sha(v))
+            ||(verdict==IndependentOutcomeVerdict::Verified)
+                !=observed_sha256.is_some(){
+            return Err(JournalError::InvalidTransition)
+        }
+        if verdict==IndependentOutcomeVerdict::Verified
+            &&method.ends_with("_UNSUPPORTED_V1")
+            ||verdict!=IndependentOutcomeVerdict::Unsupported
+                &&method.ends_with("_UNSUPPORTED_V1"){
+            return Err(JournalError::InvalidTransition)
+        }
+        let receipt_sha=format!("{:x}",Sha256::digest(receipt));
+        let mut conn=self.connection.lock().map_err(|_|JournalError::Poisoned)?;
+        let tx=conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let existing=tx.query_row(
+            "SELECT state,receipt FROM lu_effects WHERE call_id=?1",
+            params![call_id],
+            |row|Ok((row.get::<_,String>(0)?,row.get::<_,Option<Vec<u8>>>(1)?))
+        ).optional()?;
+        let Some((state,bytes))=existing else{return Err(JournalError::InvalidTransition)};
+        if state!="APPLIED"||bytes.as_deref()!=Some(receipt){
+            return Err(JournalError::InvalidTransition)
+        }
+        let inserted=tx.execute(
+            "INSERT OR IGNORE INTO lu_independent_outcomes
+                (call_id,receipt_sha256,verdict,method,observed_sha256)
+             VALUES (?1,?2,?3,?4,?5)",
+            params![call_id,receipt_sha,verdict.as_str(),method,observed_sha256],
+        )?;
+        if inserted==0{
+            let (hash,old_verdict,old_method,old_observed):(
+                String,String,String,Option<String>
+            )=tx.query_row(
+                "SELECT receipt_sha256,verdict,method,observed_sha256
+                 FROM lu_independent_outcomes WHERE call_id=?1",
+                params![call_id],
+                |row|Ok((row.get(0)?,row.get(1)?,row.get(2)?,row.get(3)?))
+            )?;
+            if hash!=receipt_sha||old_verdict!=verdict.as_str()
+                ||old_method!=method||old_observed.as_deref()!=observed_sha256{
+                return Err(JournalError::DuplicateIdConflict)
+            }
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
     /// Run only after the previous Lu process is known to have stopped.
     /// Otherwise, this could misclassify a still-running tool as uncertain.
     /// Never silently retry these effects.
@@ -218,6 +310,56 @@ impl EffectJournal {
             [],
         )?;
         Ok(count)
+    }
+
+    /// MEMORY-LOOP-03B: historical, read-only second-witness lookup.
+    /// A task checkpoint and APPLIED receipt alone are insufficient.
+    /// Reopen the original journal, compare the actual receipt bytes,
+    /// source-oracle method for the exact reviewed tool, and independently
+    /// observed digest. This is NOT a live source check or OS custody proof.
+    pub fn independent_verified_receipt(
+        &self,call_id:&str,tool_id:&str,receipt_sha256:&str
+    )->Result<bool,JournalError>{
+        let valid_sha=|s:&str|s.len()==64&&s.bytes().all(|b|
+            b.is_ascii_digit()||(b'a'..=b'f').contains(&b));
+        if call_id.is_empty()||call_id.len()>128||
+           !valid_sha(receipt_sha256){return Ok(false)}
+        let conn=self.connection.lock().map_err(|_|JournalError::Poisoned)?;
+        let row:Option<(String,String,Option<Vec<u8>>,String,String,String,Option<String>)>=
+            conn.query_row(
+                "SELECT e.tool_id,e.state,e.receipt,o.verdict,
+                        o.method,o.receipt_sha256,o.observed_sha256
+                 FROM lu_effects e
+                 JOIN lu_independent_outcomes o ON o.call_id=e.call_id
+                 WHERE e.call_id=?1",
+                [call_id],|r|Ok((
+                    r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,
+                    r.get(4)?,r.get(5)?,r.get(6)?
+                ))
+            ).optional()?;
+        let Some((stored_tool,state,bytes,verdict,method,observed_receipt,observed_source))=
+            row else{return Ok(false)};
+        let expected_method=match tool_id{
+            "lu.reviewed.git.head"=>method=="GIT_HEAD_DIRECT_V1",
+            "lu.reviewed.git.branch"=>method=="GIT_BRANCH_DIRECT_V1",
+            "lu.reviewed.git.status"=>method=="GIT_STATUS_INDEX_TREE_V1",
+            "lu.reviewed.git.history"=>
+                matches!(method.as_str(),
+                    "GIT_HISTORY_LOOSE_DAG_V1"|"GIT_HISTORY_OBJECT_DAG_V2"),
+            "lu.reviewed.media.facts"=>
+                matches!(method.as_str(),"WAV_PCM_DIRECT_V1"|"MP4_BOXES_DIRECT_V1"),
+            _=>false,
+        };
+        let Some(receipt)=bytes else{return Ok(false)};
+        if receipt.is_empty()||receipt.len()>8*1024*1024{
+            return Ok(false)
+        }
+        let actual=format!("{:x}",Sha256::digest(&receipt));
+        let source_is_valid=observed_source.as_deref()
+            .is_some_and(valid_sha);
+        Ok(stored_tool==tool_id&&state=="APPLIED"&&verdict=="VERIFIED"
+            &&expected_method&&source_is_valid
+            &&actual==receipt_sha256&&actual==observed_receipt)
     }
 
     pub fn get(&self, call_id: &str) -> Result<Option<EffectRecord>, JournalError> {
@@ -248,5 +390,110 @@ impl EffectJournal {
             })),
             None => Ok(None),
         }
+    }
+}
+
+#[cfg(test)]
+mod independent_outcome_tests{
+    use super::*;
+    use crate::contracts::{ProtoPayload,ToolInvocation};
+    use std::{fs,time::{SystemTime,UNIX_EPOCH}};
+    #[test]
+    fn historical_second_witness_requires_matching_tool_method_and_unchanged_receipt(){
+        let root=std::env::temp_dir().join(format!("lu-03b-witness-{}-{}",
+            std::process::id(),SystemTime::now().duration_since(UNIX_EPOCH)
+                .unwrap().as_nanos()));
+        fs::create_dir_all(&root).unwrap();
+        let path=root.join("journal.sqlite");
+        let call=ToolInvocation{
+            call_id:"reviewed-03b-gh".into(),tool_id:"lu.reviewed.git.head".into(),
+            workspace_id:None,
+            input:ProtoPayload{type_url:"lu.test".into(),bytes:vec![2]},
+        };
+        let receipt=b"real-original-receipt";
+        let receipt_sha=format!("{:x}",Sha256::digest(receipt));
+        let source_sha=format!("{:x}",Sha256::digest(b"independent-source"));
+        {
+            let db=EffectJournal::open(&path).unwrap();
+            db.prepare(&call).unwrap();
+            assert!(!db.independent_verified_receipt(
+                &call.call_id,&call.tool_id,&receipt_sha).unwrap());
+            db.mark_executing(&call.call_id).unwrap();
+            db.mark_applied(&call.call_id,receipt).unwrap();
+            assert!(!db.independent_verified_receipt(
+                &call.call_id,&call.tool_id,&receipt_sha).unwrap());
+            db.record_independent_outcome(
+                &call.call_id,receipt,IndependentOutcomeVerdict::Verified,
+                "GIT_HEAD_DIRECT_V1",Some(&source_sha)).unwrap();
+            assert!(db.independent_verified_receipt(
+                &call.call_id,&call.tool_id,&receipt_sha).unwrap());
+            assert!(!db.independent_verified_receipt(
+                &call.call_id,"lu.reviewed.git.branch",&receipt_sha).unwrap());
+            assert!(!db.independent_verified_receipt(
+                &call.call_id,&call.tool_id,&"0".repeat(64)).unwrap());
+        }
+        // All results are re-read from SQLite. A changed oracle digest,
+        // mismatched method or damaged original receipt invalidates recall.
+        let db=EffectJournal::open(&path).unwrap();
+        let conn=Connection::open(&path).unwrap();
+        conn.execute(
+            "UPDATE lu_independent_outcomes SET receipt_sha256=?1 WHERE call_id=?2",
+            params!["0".repeat(64),call.call_id]
+        ).unwrap();
+        assert!(!db.independent_verified_receipt(
+            &call.call_id,&call.tool_id,&receipt_sha).unwrap());
+        conn.execute(
+            "UPDATE lu_independent_outcomes SET receipt_sha256=?1,method='GIT_BRANCH_DIRECT_V1'
+             WHERE call_id=?2",params![receipt_sha,call.call_id]
+        ).unwrap();
+        assert!(!db.independent_verified_receipt(
+            &call.call_id,&call.tool_id,&receipt_sha).unwrap());
+        drop(conn);drop(db);
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn outcome_is_separate_durable_receipt_and_rejects_forged_promotion(){
+        let root=std::env::temp_dir().join(format!("lu-p10-outcome-{}-{}",
+            std::process::id(),SystemTime::now().duration_since(UNIX_EPOCH)
+                .unwrap().as_nanos()));
+        fs::create_dir_all(&root).unwrap();
+        let file=root.join("effects.sqlite");
+        let call=ToolInvocation{call_id:"host-worker-1".into(),
+            tool_id:"lu.reviewed.git.head".into(),workspace_id:None,
+            input:ProtoPayload{type_url:"test".into(),bytes:vec![1]}};
+        let digest=format!("{:x}",Sha256::digest(b"direct-HEAD"));
+        {
+            let journal=EffectJournal::open(&file).unwrap();
+            journal.prepare(&call).unwrap();
+            assert_eq!(journal.record_independent_outcome(
+                &call.call_id,b"worker-claim",IndependentOutcomeVerdict::Verified,
+                "GIT_HEAD_DIRECT_V1",Some(&digest)),Err(JournalError::InvalidTransition));
+            journal.mark_executing(&call.call_id).unwrap();
+            journal.mark_applied(&call.call_id,b"worker-claim").unwrap();
+            journal.record_independent_outcome(
+                &call.call_id,b"worker-claim",IndependentOutcomeVerdict::Verified,
+                "GIT_HEAD_DIRECT_V1",Some(&digest)).unwrap();
+            journal.record_independent_outcome(
+                &call.call_id,b"worker-claim",IndependentOutcomeVerdict::Verified,
+                "GIT_HEAD_DIRECT_V1",Some(&digest)).unwrap();
+            assert_eq!(journal.record_independent_outcome(
+                &call.call_id,b"changed",IndependentOutcomeVerdict::Verified,
+                "GIT_HEAD_DIRECT_V1",Some(&digest)),Err(JournalError::InvalidTransition));
+            assert_eq!(journal.record_independent_outcome(
+                &call.call_id,b"worker-claim",IndependentOutcomeVerdict::Conflict,
+                "GIT_HEAD_DIRECT_V1",None),Err(JournalError::DuplicateIdConflict));
+        }
+        {
+            let journal=EffectJournal::open(&file).unwrap();
+            assert_eq!(journal.get(&call.call_id).unwrap().unwrap().state,
+                EffectState::Applied);
+            let conn=rusqlite::Connection::open(&file).unwrap();
+            let count:i64=conn.query_row(
+                "SELECT COUNT(*) FROM lu_independent_outcomes
+                 WHERE verdict='VERIFIED' AND call_id='host-worker-1'",
+                [],|row|row.get(0)).unwrap();
+            assert_eq!(count,1);
+        }
+        fs::remove_dir_all(root).unwrap();
     }
 }

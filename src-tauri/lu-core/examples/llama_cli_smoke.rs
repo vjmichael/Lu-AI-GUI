@@ -47,6 +47,7 @@ fn run() -> Result<(), String> {
         GenerationRequest {
             prompt: "Give a short English greeting.".into(),
             max_new_tokens: 32,
+            history: Vec::new(),
         },
         Cancellation::default(),
         |chunk| {

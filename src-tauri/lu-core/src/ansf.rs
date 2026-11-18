@@ -177,6 +177,11 @@ impl AnsfStore {
                SELECT RAISE(ABORT,'ANSF source entries are immutable');
              END;",
         )?;
+        crate::ansf_goals::initialize_goal_schema(&conn)?;
+        crate::ansf_artifact_links::initialize_artifact_schema(&conn)?;
+        crate::ansf_live_chat::initialize_live_chat_schema(&conn)?;
+        crate::ansf_goal_records::initialize_goal_record_schema(&conn)?;
+        crate::ansf_semantic::initialize_semantic_schema(&conn)?;
         Ok(Self {
             conn: Mutex::new(conn),
         })
@@ -398,6 +403,44 @@ impl AnsfStore {
         .map_err(Into::into)
     }
 
+    /// Efficient model-context source window. Uses the existing ANSF
+    /// (session_id,id) index and never scans or materializes the full book.
+    /// Assistant progress/cancelled partial text is not an entry. Use only
+    /// CURRENT user/assistant revisions, never superseded source wording
+    /// in the model's implicit context. Explicit history/search remains
+    /// immutable and can still inspect the originals on human request.
+    pub fn recent_context_entries(
+        &self,session_id:&str,limit:usize
+    )->Result<Vec<Entry>,AnsfError>{
+        if !valid_id(session_id)||limit==0||limit>128{
+            return Err(AnsfError::InvalidInput)
+        }
+        let conn=self.conn.lock().map_err(|_|AnsfError::Locked)?;
+        let mut stmt=conn.prepare(
+            "SELECT e.id,e.session_id,e.chapter_id,e.message_id,e.role,e.summary,e.content
+             FROM ansf_entries e WHERE e.session_id=?1
+               AND e.role IN ('user','assistant')
+               AND NOT EXISTS (
+                 SELECT 1 FROM ansf_entry_edits changed
+                 WHERE changed.session_id=e.session_id
+                   AND changed.original_entry_id=e.id
+               )
+               AND NOT EXISTS (
+                 SELECT 1 FROM ansf_entry_edits old
+                 JOIN ansf_entry_edits newer
+                   ON newer.session_id=old.session_id
+                  AND newer.original_entry_id=old.original_entry_id
+                  AND newer.revision_number>old.revision_number
+                 WHERE old.session_id=e.session_id
+                   AND old.revised_entry_id=e.id
+               )
+             ORDER BY e.id DESC LIMIT ?2"
+        )?;
+        let rows=stmt.query_map(params![session_id,limit as i64],Self::map_entry)?;
+        let mut result=rows.collect::<Result<Vec<_>,_>>()?;
+        result.reverse();
+        Ok(result)
+    }
     /// Cursor pagination for virtual scrolling: older blocks remain on disk.
     /// Entry IDs are stable, not array offsets.
     pub fn page_after(
@@ -416,6 +459,102 @@ impl AnsfStore {
              ORDER BY id LIMIT ?3",
         )?;
         let rows = stmt.query_map(params![session_id, after_id, limit as i64], Self::map_entry)?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+    }
+
+    /// Stable backwards pagination of original user/assistant message entries
+    /// for the independent human history browser. No page offset is based on
+    /// renderer array indexes, and no stored summary replaces source text.
+    /// Cursor i64::MAX means newest. No full transcript is materialized.
+    pub fn page_before(
+        &self,session_id:&str,before_id:i64,limit:usize
+    )->Result<(Vec<Entry>,bool),AnsfError>{
+        if !valid_id(session_id)||before_id<=0||limit==0||limit>64{
+            return Err(AnsfError::InvalidInput)
+        }
+        let conn=self.conn.lock().map_err(|_|AnsfError::Locked)?;
+        let mut stmt=conn.prepare(
+            "SELECT id,session_id,chapter_id,message_id,role,summary,content
+             FROM ansf_entries
+             WHERE session_id=?1 AND id<?2 AND role IN ('user','assistant')
+             ORDER BY id DESC LIMIT ?3"
+        )?;
+        let mut rows=stmt.query_map(
+            params![session_id,before_id,(limit+1) as i64],Self::map_entry
+        )?.collect::<Result<Vec<_>,_>>()?;
+        let has_more=rows.len()>limit;
+        rows.truncate(limit);
+        rows.reverse();
+        Ok((rows,has_more))
+    }
+
+    /// Forward cursor for the independently navigable history pane. Nothing
+    /// newer is inferred from a summary; each page reads original ANSF rows.
+    pub fn original_page_after(
+        &self,session_id:&str,after_id:i64,limit:usize
+    )->Result<(Vec<Entry>,bool),AnsfError>{
+        if !valid_id(session_id)||after_id<0||limit==0||limit>64{
+            return Err(AnsfError::InvalidInput)
+        }
+        let conn=self.conn.lock().map_err(|_|AnsfError::Locked)?;
+        let mut stmt=conn.prepare(
+            "SELECT id,session_id,chapter_id,message_id,role,summary,content
+             FROM ansf_entries
+             WHERE session_id=?1 AND id>?2 AND role IN ('user','assistant')
+             ORDER BY id ASC LIMIT ?3"
+        )?;
+        let mut rows=stmt.query_map(
+            params![session_id,after_id,(limit+1) as i64],Self::map_entry
+        )?.collect::<Result<Vec<_>,_>>()?;
+        let has_more=rows.len()>limit;
+        rows.truncate(limit);
+        Ok((rows,has_more))
+    }
+
+    /// FTS retrieval for CURRENT messages only. Immutable originals and
+    /// intermediate edits remain addressable through search()/read_entry(),
+    /// but default model recall must not surface superseded user wording.
+    /// Filter revisions in SQL BEFORE ranking/limit; filtering a four-hit
+    /// result in the desktop would silently miss valid current matches.
+    pub fn search_current_messages(
+        &self,
+        session_id: &str,
+        query: &str,
+        limit: usize,
+    ) -> Result<Vec<Entry>, AnsfError> {
+        if !valid_id(session_id)
+            || query.trim().is_empty()
+            || query.len() > 256
+            || limit == 0
+            || limit > MAX_PAGE
+        {
+            return Err(AnsfError::InvalidInput);
+        }
+        let conn = self.conn.lock().map_err(|_| AnsfError::Locked)?;
+        let mut stmt = conn.prepare(
+            "SELECT e.id,e.session_id,e.chapter_id,e.message_id,e.role,e.summary,e.content
+             FROM ansf_entries_fts f JOIN ansf_entries e ON e.id=f.rowid
+             WHERE ansf_entries_fts MATCH ?1 AND e.session_id=?2
+               AND NOT EXISTS (
+                 SELECT 1 FROM ansf_entry_edits original_edit
+                 WHERE original_edit.session_id=e.session_id
+                   AND original_edit.original_entry_id=e.id
+               )
+               AND NOT EXISTS (
+                 SELECT 1 FROM ansf_entry_edits old_revision
+                 JOIN ansf_entry_edits newer
+                   ON newer.session_id=old_revision.session_id
+                  AND newer.original_entry_id=old_revision.original_entry_id
+                  AND newer.revision_number>old_revision.revision_number
+                 WHERE old_revision.session_id=e.session_id
+                   AND old_revision.revised_entry_id=e.id
+               )
+             ORDER BY bm25(ansf_entries_fts),e.id LIMIT ?3",
+        )?;
+        let rows = stmt.query_map(
+            params![query, session_id, limit as i64],
+            Self::map_entry,
+        )?;
         rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
     }
 

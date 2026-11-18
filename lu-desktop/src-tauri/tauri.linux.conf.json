@@ -1,0 +1,21 @@
+{
+  "bundle": {
+    "targets": [
+      "deb",
+      "rpm"
+    ],
+    "resources": null,
+    "linux": {
+      "deb": {
+        "files": {
+          "/usr/share/polkit-1/actions/org.lu.desktop.observe-learn.policy": "../../scripts/linux/org.lu.desktop.observe-learn.policy"
+        }
+      },
+      "rpm": {
+        "files": {
+          "/usr/share/polkit-1/actions/org.lu.desktop.observe-learn.policy": "../../scripts/linux/org.lu.desktop.observe-learn.policy"
+        }
+      }
+    }
+  }
+}

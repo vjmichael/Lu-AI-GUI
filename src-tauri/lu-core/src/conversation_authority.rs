@@ -308,6 +308,50 @@ impl ConversationAuthority {
         Ok(operation())
     }
 
+    /// P0-AUTH: atomic host-owned *launch admission* for a separately
+    /// approved READ + EXECUTE worker. The two capabilities must come from
+    /// the SAME current ANSF user task, scope and policy. The read guard
+    /// remains held only while the host starts and registers the OS child,
+    /// so revoke_task/revoke_conversation cannot notify observers before
+    /// the newly launched child becomes visible to their kill callback.
+    ///
+    /// The closure MUST be a synchronous, bounded OS launch/registration:
+    /// no model inference, network requests, modal UI, waiting for child
+    /// exit, callbacks that revoke authority, or arbitrary user code here.
+    /// Never interpret a returned closure value as a new permission.
+    pub fn with_authorized_worker_launch<R>(
+        &self,
+        origin: &BoundCallOrigin,
+        read: &ToolInvocation,
+        read_descriptor: &ToolDescriptor,
+        execute: &ToolInvocation,
+        execute_descriptor: &ToolDescriptor,
+        policy: &dyn ToolAuthorizer,
+        launch_and_register: impl FnOnce() -> R,
+    ) -> Result<R, AuthorizationError> {
+        if read.call_id == execute.call_id
+            || read_descriptor.effect != ToolEffect::ReadWorkspace
+            || execute_descriptor.effect != ToolEffect::ExecuteCode
+            || read.workspace_id != execute.workspace_id
+            || read.input.type_url != read_descriptor.input_type_url
+            || execute.input.type_url != execute_descriptor.input_type_url
+        {
+            return Err(AuthorizationError::new(
+                "reviewed launch needs distinct exact read and execute authority",
+            ));
+        }
+        // Host policy can call external providers: do this BEFORE locking
+        // native authority, then inspect the final immutable task record
+        // again once the short launch fence is held.
+        self.authorize_worker_call(origin, read, read_descriptor, policy)?;
+        self.authorize_worker_call(origin, execute, execute_descriptor, policy)?;
+        let tasks = self.tasks.read()
+            .map_err(|_| AuthorizationError::new("reviewed launch authority unavailable"))?;
+        Self::check_internal(&tasks, origin, read, read_descriptor)?;
+        Self::check_internal(&tasks, origin, execute, execute_descriptor)?;
+        Ok(launch_and_register())
+    }
+
     /// For a model-facing tool catalog, filter candidate tools by the
     /// currently authenticated task. This MUST NOT be used to approve an
     /// action: dispatch_bound independently re-checks these conditions.
@@ -395,5 +439,118 @@ impl ToolAuthorizer for BoundAuthorizer<'_> {
         self.authority
             .authorize_internal(self.origin, invocation, descriptor)?;
         self.host_policy.authorize(invocation, descriptor)
+    }
+}
+
+#[cfg(test)]
+mod p0_auth_launch_tests {
+    use super::*;
+    use crate::contracts::{ProtoPayload,AuthorizationError};
+    use std::time::Duration;
+    struct OriginalHuman;
+    impl TrustedUserTurnVerifier for OriginalHuman{
+        fn verify_user_turn(&self,chat:&str,turn:&str)->bool{
+            chat=="c-test"&&turn=="g-test"
+        }
+    }
+    struct AllowReview;
+    impl ToolAuthorizer for AllowReview{
+        fn authorize(&self,_:&ToolInvocation,_:&ToolDescriptor)
+            ->Result<(),AuthorizationError>{Ok(())}
+    }
+    fn original()->(ConversationAuthority,BoundCallOrigin,
+        ToolInvocation,ToolDescriptor,ToolInvocation,ToolDescriptor){
+        let auth=ConversationAuthority::new();
+        let origin=BoundCallOrigin{
+            conversation_id:"c-test".into(),user_turn_id:"g-test".into(),
+            task_id:"task-one".into()
+        };
+        let reader=ToolDescriptor{
+            id:"lu.reviewed.file".into(),display_name:"Read".into(),
+            effect:ToolEffect::ReadWorkspace,
+            input_type_url:"lu.auth.read".into(),
+            output_type_url:"lu.auth.read.reply".into()
+        };
+        let execute=ToolDescriptor{
+            id:"lu.reviewed.execute".into(),display_name:"Execute".into(),
+            effect:ToolEffect::ExecuteCode,
+            input_type_url:"lu.auth.exec".into(),
+            output_type_url:"lu.auth.exec.reply".into()
+        };
+        auth.open_user_task(TaskAuthority{
+            conversation_id:origin.conversation_id.clone(),
+            user_turn_id:origin.user_turn_id.clone(),
+            task_id:origin.task_id.clone(),
+            execution_scope_id:"host-only-scope".into(),
+            capabilities:vec![
+                AuthorizedCapability{tool_id:reader.id.clone(),
+                    effect:ToolEffect::ReadWorkspace},
+                AuthorizedCapability{tool_id:execute.id.clone(),
+                    effect:ToolEffect::ExecuteCode}
+            ],expires_at:None,
+        },&OriginalHuman).unwrap();
+        let read=ToolInvocation{
+            call_id:"read-one".into(),tool_id:reader.id.clone(),
+            workspace_id:Some("host-only-scope".into()),
+            input:ProtoPayload{type_url:reader.input_type_url.clone(),
+                bytes:vec![1]}
+        };
+        let run=ToolInvocation{
+            call_id:"exec-one".into(),tool_id:execute.id.clone(),
+            workspace_id:Some("host-only-scope".into()),
+            input:ProtoPayload{type_url:execute.input_type_url.clone(),
+                bytes:vec![2]}
+        };
+        (auth,origin,read,reader,run,execute)
+    }
+    #[test]
+    fn revoked_or_mismatched_authority_cannot_enter_host_os_launch(){
+        let (auth,origin,read,read_d,run,exec_d)=original();
+        let launched=std::sync::atomic::AtomicBool::new(false);
+        let different=ToolInvocation{
+            workspace_id:Some("other-chat".into()),..run.clone()
+        };
+        assert!(auth.with_authorized_worker_launch(
+            &origin,&read,&read_d,&different,&exec_d,&AllowReview,
+            ||launched.store(true,std::sync::atomic::Ordering::SeqCst)
+        ).is_err());
+        assert!(!launched.load(std::sync::atomic::Ordering::SeqCst));
+        auth.revoke_task(&origin.task_id).unwrap();
+        assert!(auth.with_authorized_worker_launch(
+            &origin,&read,&read_d,&run,&exec_d,&AllowReview,
+            ||launched.store(true,std::sync::atomic::Ordering::SeqCst)
+        ).is_err());
+        assert!(!launched.load(std::sync::atomic::Ordering::SeqCst));
+    }
+    #[test]
+    fn concurrent_revocation_cannot_finish_before_registered_child_is_visible(){
+        let (auth,origin,read,read_d,run,exec_d)=original();
+        let (entered_tx,entered_rx)=std::sync::mpsc::channel();
+        let (release_tx,release_rx)=std::sync::mpsc::channel();
+        let (revoker_tx,revoker_rx)=std::sync::mpsc::channel();
+        let (done_tx,done_rx)=std::sync::mpsc::channel();
+        std::thread::scope(|scope|{
+            let authorized=auth.clone();
+            scope.spawn(move||{
+                authorized.with_authorized_worker_launch(
+                    &origin,&read,&read_d,&run,&exec_d,&AllowReview,||{
+                        entered_tx.send(()).unwrap();
+                        release_rx.recv().unwrap();
+                    }
+                ).unwrap();
+            });
+            entered_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+            let revoke=auth.clone();
+            scope.spawn(move||{
+                revoker_tx.send(()).unwrap();
+                revoke.revoke_task("task-one").unwrap();
+                done_tx.send(()).unwrap();
+            });
+            revoker_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+            assert!(done_rx.recv_timeout(Duration::from_millis(30)).is_err(),
+                "task revocation cannot finish while short launch is fenced");
+            release_tx.send(()).unwrap();
+            done_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+        });
     }
 }

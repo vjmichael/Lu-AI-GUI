@@ -1,0 +1,230 @@
+use cap_std::{ambient_authority,fs::Dir};
+use lu_core::native_iso9660::{inspect_iso,extract_iso_file_new,IsoError};
+use std::{fs,path::PathBuf,sync::atomic::{AtomicU64,Ordering}};
+static NEXT:AtomicU64=AtomicU64::new(0);
+const S:usize=2048;
+fn lebe32(out:&mut[u8],v:u32){
+    out[..4].copy_from_slice(&v.to_le_bytes());
+    out[4..8].copy_from_slice(&v.to_be_bytes());
+}
+fn lebe16(out:&mut[u8],v:u16){
+    out[..2].copy_from_slice(&v.to_le_bytes());
+    out[2..4].copy_from_slice(&v.to_be_bytes());
+}
+fn record(extent:u32,size:u32,name:&[u8],dir:bool)->Vec<u8>{
+    let len=33+name.len()+(name.len()%2==0) as usize;
+    let mut r=vec![0u8;len];
+    r[0]=len as u8;
+    lebe32(&mut r[2..10],extent);
+    lebe32(&mut r[10..18],size);
+    r[25]=if dir{2}else{0};
+    lebe16(&mut r[28..32],1);
+    r[32]=name.len() as u8;
+    r[33..33+name.len()].copy_from_slice(name);
+    r
+}
+fn image_with_name(name:&[u8])->Vec<u8>{
+    let mut b=vec![0u8;22*S];
+    let p=16*S;
+    b[p]=1;
+    b[p+1..p+6].copy_from_slice(b"CD001");
+    b[p+6]=1;
+    lebe32(&mut b[p+80..p+88],22);
+    lebe16(&mut b[p+128..p+132],2048);
+    let root=record(20,2048,&[0],true);
+    b[p+156..p+156+root.len()].copy_from_slice(&root);
+    let records=[
+        record(20,2048,&[0],true),
+        record(20,2048,&[1],true),
+        record(21,11,name,false),
+    ];
+    let mut pos=20*S;
+    for r in records{b[pos..pos+r.len()].copy_from_slice(&r);pos+=r.len();}
+    b[21*S..21*S+11].copy_from_slice(b"hello world");
+    b
+}
+fn fixture()->(PathBuf,Dir){
+    let path=std::env::temp_dir().join(format!("lu-iso-{}-{}",std::process::id(),NEXT.fetch_add(1,Ordering::SeqCst)));
+    fs::create_dir_all(&path).unwrap();
+    let dir=Dir::open_ambient_dir(&path,ambient_authority()).unwrap();
+    (path,dir)
+}
+#[test]
+fn list_iso9660_and_extract_exact_regular_file_without_mounting(){
+    let (root,dir)=fixture();
+    fs::write(root.join("disc.iso"),image_with_name(b"README.TXT;1")).unwrap();
+    let m=inspect_iso(&dir,"disc.iso",16).unwrap();
+    assert_eq!(m.total_entries,1);
+    assert_eq!(m.entries[0].path,"README.TXT");
+    assert_eq!(m.entries[0].bytes,11);
+    assert!(!m.truncated);
+    let receipt=extract_iso_file_new(&dir,"disc.iso","README.TXT",&dir,
+        "copy.txt","transaction-123456789").unwrap();
+    assert_eq!(receipt.bytes_written,11);
+    assert_eq!(fs::read(root.join("copy.txt")).unwrap(),b"hello world");
+    assert!(extract_iso_file_new(&dir,"disc.iso","README.TXT",&dir,
+        "copy.txt","transaction-987654321").is_err());
+    assert_eq!(fs::read(root.join("copy.txt")).unwrap(),b"hello world");
+    drop(dir);fs::remove_dir_all(root).unwrap();
+}
+#[test]
+fn rejects_traversal_and_malformed_primary_volume(){
+    let (root,dir)=fixture();
+    fs::write(root.join("disc.iso"),image_with_name(b"../BAD;1")).unwrap();
+    assert_eq!(inspect_iso(&dir,"disc.iso",16).unwrap_err(),IsoError::UnsafeEntry);
+    let mut invalid=image_with_name(b"README.TXT;1");
+    invalid[16*S+1]=b'X';
+    fs::write(root.join("disc.iso"),invalid).unwrap();
+    assert_eq!(inspect_iso(&dir,"disc.iso",16).unwrap_err(),IsoError::InvalidImage);
+    assert_eq!(inspect_iso(&dir,"../disc.iso",16).unwrap_err(),IsoError::BadName);
+    drop(dir);fs::remove_dir_all(root).unwrap();
+}
+#[test]
+fn iso_list_limit_does_not_grant_more_read_authority(){
+    let (root,dir)=fixture();
+    fs::write(root.join("disc.iso"),image_with_name(b"README.TXT;1")).unwrap();
+    assert_eq!(inspect_iso(&dir,"disc.iso",0).unwrap_err(),IsoError::TooLarge);
+    assert_eq!(inspect_iso(&dir,"disc.iso",257).unwrap_err(),IsoError::TooLarge);
+    assert_eq!(extract_iso_file_new(&dir,"disc.iso","UNKNOWN",&dir,
+        "new.txt","transaction-123456789").unwrap_err(),IsoError::NotFound);
+    assert!(!root.join("new.txt").exists());
+    drop(dir);fs::remove_dir_all(root).unwrap();
+}
+#[cfg(unix)]
+#[test]
+fn iso_image_source_must_not_be_symlink(){
+    use std::os::unix::fs::symlink;
+    let (root,dir)=fixture();
+    fs::write(root.join("real.iso"),image_with_name(b"README.TXT;1")).unwrap();
+    symlink("real.iso",root.join("alias.iso")).unwrap();
+    assert_eq!(inspect_iso(&dir,"alias.iso",16).unwrap_err(),IsoError::NotFile);
+    drop(dir);fs::remove_dir_all(root).unwrap();
+}
+
+#[tokio::test]
+async fn iso_extraction_requires_exact_grant_and_durable_receipt(){
+    use std::sync::Arc;
+    use prost::Message;
+    use lu_core::{
+        contracts::{ProtoPayload,ToolEffect,ToolInvocation},
+        conversation_authority::{
+            AuthorizedCapability,BoundCallOrigin,ConversationAuthority,TaskAuthority,
+            TrustedUserTurnVerifier,
+        },
+        journal::{EffectJournal,EffectState},
+        model::ModelToolCatalog,
+        native_iso9660::iso_member_digest,
+        native_iso_extract_tool::{
+            register_iso_extractor,ExactIsoExtractPolicy,TOOL_ID,INPUT,OUTPUT,
+        },
+        policy::{CapabilityGrant,PolicyEngine},
+        registry::{DispatchError,NativeToolRegistry},
+        wire::proto,
+    };
+    struct Verifier;
+    impl TrustedUserTurnVerifier for Verifier{
+        fn verify_user_turn(&self,c:&str,u:&str)->bool{
+            c=="chat-authenticated" && u=="g-human-1"
+        }
+    }
+    let (root,dir)=fixture();
+    fs::write(root.join("disc.iso"),image_with_name(b"README.TXT;1")).unwrap();
+    let digest=iso_member_digest(&dir,"disc.iso","README.TXT").unwrap();
+    let directory=Arc::new(dir);
+    let registry=NativeToolRegistry::new();
+    let mut catalog=ModelToolCatalog::new();
+    register_iso_extractor(
+        &registry,&mut catalog,Arc::clone(&directory),Arc::clone(&directory)
+    ).unwrap();
+    let journal=EffectJournal::open(&root.join("effects.sqlite")).unwrap();
+    let authority=ConversationAuthority::new();
+    let policy=PolicyEngine::new();
+    let origin=BoundCallOrigin{
+        conversation_id:"chat-authenticated".into(),
+        user_turn_id:"g-human-1".into(),task_id:"iso-task-01".into(),
+    };
+    authority.open_user_task(TaskAuthority{
+        conversation_id:origin.conversation_id.clone(),
+        user_turn_id:origin.user_turn_id.clone(),
+        task_id:origin.task_id.clone(),execution_scope_id:"approved-output".into(),
+        capabilities:vec![AuthorizedCapability{
+            tool_id:TOOL_ID.into(),effect:ToolEffect::WriteWorkspace,
+        }],expires_at:None,
+    },&Verifier).unwrap();
+    policy.grant(CapabilityGrant{
+        tool_id:TOOL_ID.into(),effect:ToolEffect::WriteWorkspace,
+        scope_id:"approved-output".into(),expires_at:None,
+    }).unwrap();
+    let fence=ExactIsoExtractPolicy{
+        host_policy:&policy,source_name:"disc.iso",member_path:"README.TXT",
+        target_name:"approved.txt",expected_sha256:&digest,
+        trusted_source_root:&directory,
+    };
+    let request=|name:&str,id:&str|ToolInvocation{
+        call_id:id.into(),tool_id:TOOL_ID.into(),
+        workspace_id:Some("approved-output".into()),
+        input:ProtoPayload{
+            type_url:INPUT.into(),
+            bytes:proto::IsoExtractRequest{
+                source_name:"disc.iso".into(),member_path:"README.TXT".into(),
+                target_name:name.into(),expected_sha256:digest.clone(),
+            }.encode_to_vec(),
+        },
+    };
+    let wrong=request("elsewhere.txt","iso-bad-target-01");
+    assert!(matches!(authority.dispatch_bound_durable(
+        &registry,&journal,wrong,origin.clone(),&fence
+    ).await,Err(DispatchError::Denied(_))));
+    assert!(!root.join("elsewhere.txt").exists());
+    let approved=request("approved.txt","iso-approved-001");
+    let output=authority.dispatch_bound_durable(
+        &registry,&journal,approved.clone(),origin.clone(),&fence
+    ).await.unwrap();
+    assert_eq!(output.payload.type_url,OUTPUT);
+    let receipt=proto::IsoExtractResult::decode(output.payload.bytes.as_slice()).unwrap();
+    assert_eq!(receipt.bytes_written,11);
+    assert_eq!(receipt.sha256,digest);
+    assert_eq!(fs::read(root.join("approved.txt")).unwrap(),b"hello world");
+    assert_eq!(journal.get(&approved.call_id).unwrap().unwrap().state,EffectState::Applied);
+    assert_eq!(authority.dispatch_bound_durable(
+        &registry,&journal,approved.clone(),origin.clone(),&fence
+    ).await.unwrap(),output);
+    authority.revoke_task(&origin.task_id).unwrap();
+    assert!(matches!(authority.dispatch_bound_durable(
+        &registry,&journal,approved,origin,&fence
+    ).await,Err(DispatchError::Denied(_))));
+    drop(journal);drop(catalog);drop(registry);drop(directory);
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn streams_large_iso_member_and_rejects_changed_preview_hash(){
+    use lu_core::native_iso9660::{
+        iso_member_digest,extract_iso_file_new_checked,
+    };
+    let (root,dir)=fixture();
+    let amount=1_250_000usize;
+    let sectors=((21*S+amount+S-1)/S) as u32;
+    let mut data=image_with_name(b"PAYLOAD.BIN;1");
+    data.resize(sectors as usize*S,0);
+    lebe32(&mut data[16*S+80..16*S+88],sectors);
+    // Root directory contains the two special entries, both 34 bytes.
+    let entry_size_offset=20*S+68+10;
+    lebe32(&mut data[entry_size_offset..entry_size_offset+8],amount as u32);
+    data[21*S..21*S+amount].fill(0x5a);
+    fs::write(root.join("large.iso"),data).unwrap();
+    let digest=iso_member_digest(&dir,"large.iso","PAYLOAD.BIN").unwrap();
+    assert_eq!(extract_iso_file_new_checked(
+        &dir,"large.iso","PAYLOAD.BIN",&dir,"output.bin",
+        "transaction-123456789",&"0".repeat(64)
+    ).unwrap_err(),IsoError::SourceChanged);
+    assert!(!root.join("output.bin").exists());
+    let receipt=extract_iso_file_new_checked(
+        &dir,"large.iso","PAYLOAD.BIN",&dir,"output.bin",
+        "transaction-987654321",&digest
+    ).unwrap();
+    assert_eq!(receipt.bytes_written,amount);
+    assert_eq!(fs::metadata(root.join("output.bin")).unwrap().len(),amount as u64);
+    assert_eq!(fs::read(root.join("output.bin")).unwrap(),vec![0x5a;amount]);
+    drop(dir);fs::remove_dir_all(root).unwrap();
+}
