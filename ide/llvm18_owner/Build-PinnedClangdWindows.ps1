@@ -22,8 +22,21 @@ $devShell=Join-Path $vs 'Common7/Tools/Microsoft.VisualStudio.DevShell.dll'
 if (!(Test-Path -LiteralPath $devShell -PathType Leaf)) { throw 'DENIED: VS developer shell unavailable' }
 Import-Module -Name $devShell
 Enter-VsDevShell -VsInstallPath $vs -SkipAutomaticLocation -DevCmdArguments '-arch=x64 -host_arch=x64'
-$cl=(Get-Command cl.exe -CommandType Application -ErrorAction Stop).Source
-$ninja=(Get-Command ninja.exe -CommandType Application -ErrorAction Stop).Source
+# Get-Command can emit multiple ApplicationInfo objects on hosted runners.
+# Resolve one scalar executable per tool; never stringify an array into CMake.
+$cl=[string](Get-Command cl.exe -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
+$ninja=Join-Path $vs 'Common7/IDE/CommonExtensions/Microsoft/CMake/Ninja/ninja.exe'
+if (!(Test-Path -LiteralPath $ninja -PathType Leaf)) {
+  $ninja=[string](Get-Command ninja.exe -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
+}
+if (!(Test-Path -LiteralPath $cl -PathType Leaf) -or !(Test-Path -LiteralPath $ninja -PathType Leaf)) {
+  throw 'DENIED: resolved compiler or Ninja is not one executable'
+}
+$ninjaVersion=@(& $ninja --version 2>&1)
+if ($LASTEXITCODE -ne 0 -or $ninjaVersion.Count -ne 1 -or [string]$ninjaVersion[0] -notmatch '^\d+\.\d+(?:\.\d+)?(?:[A-Za-z0-9.+-]*)$') {
+  throw 'DENIED: resolved Ninja version command failed'
+}
+Write-Host ('E2_CLANGD_NINJA_VERSION='+[string]$ninjaVersion[0])
 if (!$cl.StartsWith($vs+[IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase) -or $env:VSCMD_ARG_TGT_ARCH -ne 'x64') { throw 'DENIED: compiler not bound to selected x64 workload' }
 Write-Host ('E2_CLANGD_NATIVE_VS_WORKLOAD_VERSION='+$instances[0].installationVersion)
 $flags=@('-S',(Join-Path $root 'llvm'),'-B',$out,'-G','Ninja','-DCMAKE_BUILD_TYPE=Release',('-DCMAKE_C_COMPILER='+$cl),('-DCMAKE_CXX_COMPILER='+$cl),('-DCMAKE_MAKE_PROGRAM='+$ninja),'-DLLVM_ENABLE_PROJECTS=clang;clang-tools-extra','-DLLVM_TARGETS_TO_BUILD=X86','-DLLVM_ENABLE_ZLIB=OFF','-DLLVM_ENABLE_ZSTD=OFF','-DLLVM_ENABLE_LIBXML2=OFF','-DLLVM_INCLUDE_TESTS=OFF','-DCLANG_INCLUDE_TESTS=OFF','-DCLANG_TOOLS_EXTRA_INCLUDE_TESTS=OFF')
@@ -45,7 +58,7 @@ if (!(Test-Path (Join-Path $resource 'include/stddef.h') -PathType Leaf)) { thro
 New-Item -ItemType Directory -Force -Path (Join-Path $bundle 'lib/clang') | Out-Null
 Copy-Item -LiteralPath $resource -Destination (Join-Path $bundle 'lib/clang/20') -Recurse
 $sha={ param([string]$p) (Get-FileHash -LiteralPath $p -Algorithm SHA256).Hash.ToLowerInvariant() }
-$receipt=[ordered]@{schema='lu.ide.clangd20-ci-source.v1';upstreamCommit=$pin;vsVersion=$instances[0].installationVersion;compilerSha256=(& $sha $cl);patchedProcessSha256=(& $sha (Join-Path $root 'llvm/lib/Support/Windows/Process.inc'));patcherSha256=(& $sha 'ide/llvm18_owner/apply_clangd20_windows_startup.py');clangdSha256=(& $sha (Join-Path $bundle 'bin/clangd.exe'));releaseApproved=$false;nativeAccepted=$false}
+$receipt=[ordered]@{schema='lu.ide.clangd20-ci-source.v1';upstreamCommit=$pin;vsVersion=$instances[0].installationVersion;compilerSha256=(& $sha $cl);ninjaSha256=(& $sha $ninja);patchedProcessSha256=(& $sha (Join-Path $root 'llvm/lib/Support/Windows/Process.inc'));patcherSha256=(& $sha 'ide/llvm18_owner/apply_clangd20_windows_startup.py');clangdSha256=(& $sha (Join-Path $bundle 'bin/clangd.exe'));releaseApproved=$false;nativeAccepted=$false}
 [IO.File]::WriteAllText((Join-Path $bundle 'clangd-source-provenance.json'),($receipt | ConvertTo-Json),[Text.UTF8Encoding]::new($false))
 Add-Content -LiteralPath $env:GITHUB_ENV -Value ('LU_IDE_E2_PINNED_LSP_BUNDLE='+$bundle)
 Add-Content -LiteralPath $env:GITHUB_ENV -Value ('LU_IDE_E2_PINNED_READOBJ='+(Join-Path $bin 'llvm-readobj.exe'))

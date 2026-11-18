@@ -1566,18 +1566,75 @@ try {
         Deny 'dev01_not_original_867_file_fixture'
       }
       function Dev01-Input([string]$label,[string]$value) {
-        $item=Find-Control $label 'Edit' 18 -Exact
-        if (!$item.Current.IsEnabled -or !$item.Current.IsKeyboardFocusable) { Deny 'dev01_native_text_input_not_focusable' }
-        Reveal-NativeControl $item
-        $item.SetFocus()
-        if (!$item.Current.HasKeyboardFocus -or $item.Current.IsOffscreen -or
-            $item.Current.Name -cne $label -or
-            [P04NativeWebViewWindows]::GetForegroundWindow() -ne $proc.MainWindowHandle) {
+        # WebView2 focus/scroll changes are asynchronous and can invalidate
+        # a previously returned UIA element. Reacquire the exact live field.
+        $hwnd=$proc.MainWindowHandle
+        if ($hwnd -eq [IntPtr]::Zero) { Deny 'dev01_native_input_window_missing' }
+        $focused=$false
+        for ($attempt=0; $attempt -lt 3 -and !$focused; $attempt++) {
+          [void][P04NativeWebViewWindows]::SetForegroundWindow($hwnd)
+          $item=Find-Control $label 'Edit' 8 -Exact
+          if (!$item.Current.IsEnabled -or !$item.Current.IsKeyboardFocusable) { Deny 'dev01_native_text_input_not_focusable' }
+          try {
+            Reveal-NativeControl $item
+            $item=Find-Control $label 'Edit' 5 -Exact
+            $item.SetFocus()
+          } catch {}
+          Start-Sleep -Milliseconds 300
+          $item=Find-Control $label 'Edit' 5 -Exact
+          if ($item.Current.IsOffscreen -or !$item.Current.IsEnabled -or
+              $item.Current.Name -cne $label -or
+              [P04NativeWebViewWindows]::GetForegroundWindow() -ne $hwnd) { continue }
+          if (!$item.Current.HasKeyboardFocus -and $attempt -gt 0) {
+            # Real mouse input only after the native UIA hit-test proves the
+            # exact field (or its descendant), inside the installed window.
+            try {
+              $rect=$item.Current.BoundingRectangle
+              $bounds=(WindowRoot).Current.BoundingRectangle
+              if ($rect.Width -lt 5 -or $rect.Height -lt 5) { continue }
+              $point=[System.Windows.Point]::new([Math]::Round($rect.Left+$rect.Width/2),[Math]::Round($rect.Top+$rect.Height/2))
+              if (!$bounds.Contains($point) -or !$rect.Contains($point)) { continue }
+              $hit=[System.Windows.Automation.AutomationElement]::FromPoint($point)
+              $walker=[System.Windows.Automation.TreeWalker]::RawViewWalker
+              $exactHit=$false
+              for ($depth=0; $hit -and $depth -lt 8; $depth++) {
+                if ($hit.Equals($item)) { $exactHit=$true; break }
+                $hit=$walker.GetParent($hit)
+              }
+              if (!$exactHit -or [P04NativeWebViewWindows]::GetForegroundWindow() -ne $hwnd) { continue }
+              [System.Windows.Forms.Cursor]::Position=[System.Drawing.Point]::new([int]$point.X,[int]$point.Y)
+              [P04NativeWebViewWindows]::mouse_event(2,0,0,0,[UIntPtr]::Zero)
+              [P04NativeWebViewWindows]::mouse_event(4,0,0,0,[UIntPtr]::Zero)
+            } catch {}
+          }
+          $deadline=(Get-Date).AddSeconds(4)
+          do {
+            $item=Find-Control $label 'Edit' 2 -Exact
+            $actual=[System.Windows.Automation.AutomationElement]::FocusedElement
+            if ($item.Current.IsEnabled -and !$item.Current.IsOffscreen -and
+                $item.Current.Name -ceq $label -and
+                [P04NativeWebViewWindows]::GetForegroundWindow() -eq $hwnd -and
+                ($item.Current.HasKeyboardFocus -or ($actual -and $actual.Equals($item)))) {
+              $focused=$true; break
+            }
+            Start-Sleep -Milliseconds 150
+          } while ((Get-Date) -lt $deadline)
+        }
+        if (!$focused -or [P04NativeWebViewWindows]::GetForegroundWindow() -ne $hwnd) {
           Deny 'dev01_native_text_input_focus_not_verified'
         }
         [System.Windows.Forms.SendKeys]::SendWait('^a')
         [System.Windows.Forms.SendKeys]::SendWait($value)
-        Start-Sleep -Milliseconds 400
+        $deadline=(Get-Date).AddSeconds(8)
+        do {
+          $fresh=Find-Control $label 'Edit' 2 -Exact
+          if ($fresh.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern).Current.Value -ceq $value) {
+            Write-Host ('DEV01_NATIVE_TEXT_INPUT_READBACK=verified;field='+$label)
+            return
+          }
+          Start-Sleep -Milliseconds 200
+        } while ((Get-Date) -lt $deadline)
+        Deny 'dev01_native_text_input_readback_mismatch'
       }
       function Dev01-Confirm([string]$message) {
         # Real owned OS dialog, never an inaccessible WebView script alert.

@@ -44,3 +44,27 @@ test('actual installed NSIS/DEB must contain source-bound resolved and upstream 
   assert.match(linux, /THIRD_PARTY_LICENSES\/upstream-fetch\.json/);
   assert.match(linux, /native_four_feature_installed_os_regression_failed/);
 });
+
+// Source regression only: real installed UI and protected native execution remain mandatory.
+test('DEV01 and pinned clangd retain fail-closed native repair boundaries', () => {
+  const win = text('../fixtures/Test-Wo8NativeDesktopUI.ps1');
+  const input = win.split('function Dev01-Input(')[1].split('function Dev01-Confirm(')[0];
+  assert.match(input, /Find-Control \$label 'Edit' 2 -Exact/);
+  assert.match(input, /FocusedElement/);
+  assert.match(input, /FromPoint\(\$point\)/);
+  assert.match(input, /\$exactHit/);
+  assert.match(input, /GetForegroundWindow\(\)/);
+  assert.match(input, /ValuePattern.*Current\.Value -ceq \$value/);
+  assert.doesNotMatch(input, /\.SetValue\(/);
+  const linux = text('../fixtures/dev01_modern_linux_installed_atspi.py');
+  const confirm = linux.split('def owned_confirmation(')[1].split('def verify_fixture(')[0];
+  assert.match(confirm, /getApplication\(\)\.get_process_id\(\) == pid/);
+  assert.match(confirm, /message_seen and len\(buttons\) == 1/);
+  assert.match(confirm, /_active_confirmation_window\(proc\) != \(active, pid, title\)/);
+  assert.match(confirm, /action\.doAction\(indices\[0\]\)/);
+  assert.doesNotMatch(confirm, /native\.activate\(/);
+  const clangd = text('../../llvm18_owner/Build-PinnedClangdWindows.ps1');
+  assert.match(clangd, /Get-Command ninja\.exe[^\n]+Select-Object -First 1/);
+  assert.match(clangd, /Test-Path -LiteralPath \$ninja -PathType Leaf/);
+  assert.match(clangd, /ninjaSha256=/);
+});

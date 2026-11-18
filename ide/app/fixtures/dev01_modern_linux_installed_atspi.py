@@ -57,12 +57,17 @@ def enter(label, value):
     native.type_text(value)
 
 
-def owned_confirmation(proc, message):
-    # The exact visible native modal must belong to the installed app.
-    native.accessible(message, seconds=18)
+def _active_confirmation_window(proc):
     active = subprocess.check_output(
         ["xdotool", "getactivewindow"], text=True, timeout=5
     ).strip()
+    if not active.isdigit():
+        deny("confirmation_has_no_native_window")
+    title = subprocess.check_output(
+        ["xdotool", "getwindowname", active], text=True, timeout=5
+    ).strip()
+    if title != "Lu IDE · Confirm source file action":
+        deny("confirmation_wrong_native_title")
     pid = subprocess.check_output(
         ["xdotool", "getwindowpid", active], text=True, timeout=5
     ).strip()
@@ -71,7 +76,7 @@ def owned_confirmation(proc, message):
     child = int(pid)
     for _ in range(14):
         if child == proc.pid:
-            break
+            return active, int(pid), title
         status = Path("/proc") / str(child) / "status"
         if not status.is_file():
             deny("confirmation_owner_gone")
@@ -82,13 +87,79 @@ def owned_confirmation(proc, message):
         if parent is None:
             deny("confirmation_owner_unknown")
         child = int(parent.split(":", 1)[1].strip())
-    else:
-        deny("confirmation_not_owned_by_installed_desktop")
-    button = native.accessible("Apply file action", role="button", seconds=12)
-    if not native._native_dialog_ancestor(button):
-        deny("confirmation_action_not_in_native_dialog")
-    native.activate("Apply file action", role="button")
-    print("DEV01_MODERN_LINUX_NATIVE_OWNED_CONFIRMATION=OBSERVED", flush=True)
+    deny("confirmation_not_owned_by_installed_desktop")
+
+
+def _showing(node):
+    state = node.getState()
+    return all(state.contains(flag) for flag in (
+        pyatspi.STATE_VISIBLE, pyatspi.STATE_SHOWING))
+
+
+def _confirmation_nodes(root):
+    stack = [(root, 0)]
+    inspected = 0
+    while stack and inspected < 256:
+        node, depth = stack.pop()
+        inspected += 1
+        yield node
+        if depth < 12:
+            stack.extend((child, depth + 1) for child in native.children_of(node))
+
+
+def owned_confirmation(proc, message):
+    # GTK/rfd can expose a real native modal as a frame/window rather than
+    # an AT-SPI dialog role. Bind it to the active exact X11 title and owned
+    # PID, then inspect only that native accessible window's descendants.
+    # Never select a same-named global button, webview control, or keyboard
+    # fallback; confirmation is dispatched once from the scoped button.
+    native.accessible(message, seconds=18)
+    active, pid, title = _active_confirmation_window(proc)
+    deadline = time.monotonic() + 12
+    while time.monotonic() < deadline:
+        roots = []
+        for node in native.elements():
+            try:
+                if ((node.name or "").strip() == title
+                        and node.getRoleName().casefold() in
+                        ("dialog", "frame", "window", "alert")
+                        and _showing(node)
+                        and node.getApplication().get_process_id() == pid):
+                    roots.append(node)
+            except Exception:
+                continue
+        if len(roots) == 1:
+            buttons = []
+            message_seen = False
+            for node in _confirmation_nodes(roots[0]):
+                try:
+                    if not _showing(node):
+                        continue
+                    name = " ".join((node.name or "").split())
+                    if name == " ".join(message.split()):
+                        message_seen = True
+                    if (name == "Apply file action"
+                            and "button" in node.getRoleName().casefold()
+                            and all(node.getState().contains(flag) for flag in
+                                    (pyatspi.STATE_ENABLED, pyatspi.STATE_SENSITIVE))):
+                        buttons.append(node)
+                except Exception:
+                    continue
+            if message_seen and len(buttons) == 1:
+                action = buttons[0].queryAction()
+                indices = [i for i in range(action.nActions)
+                           if action.getName(i).casefold() in
+                           ("click", "press", "activate")]
+                if len(indices) != 1:
+                    deny("confirmation_native_action_ambiguous")
+                if _active_confirmation_window(proc) != (active, pid, title):
+                    deny("confirmation_native_window_changed")
+                if not action.doAction(indices[0]):
+                    deny("confirmation_native_action_denied")
+                print("DEV01_MODERN_LINUX_NATIVE_OWNED_CONFIRMATION=OBSERVED", flush=True)
+                return
+        time.sleep(0.25)
+    deny("confirmation_exact_owned_modal_or_action_not_verified")
 
 
 def verify_fixture():
