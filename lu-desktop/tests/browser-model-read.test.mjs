@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
+const coordinator=readFileSync(new URL('../src-tauri/src/turn_coordinator.rs',import.meta.url),'utf8');
 
 const file=(relative)=>readFileSync(new URL(relative,import.meta.url),'utf8');
 const host=file('../src-tauri/src/lib.rs');
@@ -44,7 +45,7 @@ test('Browser Stop revokes the task and interrupts the queued or active model re
   assert.match(bridge,/if ticket\.cancelled\(\)\|\|!grant_current\(/);
   // Simplified Lu chat removed the legacy explicit browser button. Original
   // human chat intent is routed by the host, never by an ambient UI control.
-  assert.match(host,/browser_model_desktop::explicit_browse_origin/);
+  assert.match(coordinator,/browser_model_desktop::explicit_browse_origin/);
   assert.doesNotMatch(ui,/Let Lu inspect this approved browser/);
 });
 test('Preview is bounded untrusted evidence, never raw screenshots or invented citations',()=>{

@@ -70,6 +70,7 @@ pub struct ReaderTurnSession{
     turn:NativeToolTurn,
     policy:ReaderOnlyHostPolicy,
     task_id:String,
+    origin:BoundCallOrigin,
 }
 impl ReaderTurnSession{
     #[allow(clippy::too_many_arguments)]
@@ -108,16 +109,24 @@ impl ReaderTurnSession{
             expires_at:Some(expiry),
         },verifier).map_err(|_|ReaderTurnAdmissionError::AuthorityUnavailable)?;
         let allowed=BTreeSet::from([READER_MODEL_TOOL_NAME.to_owned()]);
-        let turn=NativeToolTurn::new_read_only(&catalog,&registry,&authority,
-            origin,task_id.into(),&allowed).map_err(|e|match e{
+        let mut turn=NativeToolTurn::new_read_only(&catalog,&registry,&authority,
+            origin.clone(),task_id.into(),&allowed).map_err(|e|match e{
                 ToolTurnError::Unauthorized(_)=>ReaderTurnAdmissionError::AuthorityUnavailable,
                 _=>ReaderTurnAdmissionError::ModelCatalog,
             })?;
+        // A dispatched error is not a successful observation. The host must
+        // never publish a factual answer or seed source reuse from a failed read.
+        turn.require_observed_tool_result();
         Ok(Self{
             registry,catalog,authority,turn,
             policy:ReaderOnlyHostPolicy{filename:filename.to_owned()},
-            task_id:task_id.into(),
+            task_id:task_id.into(),origin,
         })
+    }
+    /// Exact registered and granted Reader contract, not pre-grant inventory.
+    pub fn capabilities(&self)->Result<Vec<crate::native_capability_inventory::NativeCapabilityView>,crate::native_capability_inventory::CapabilityInventoryError>{
+        crate::native_capability_inventory::discover_turn_capabilities(&self.registry,&self.catalog,&self.authority,
+            &self.origin,true)
     }
     /// The caller owns the current model session and cancellation resource.
     /// Only the final, verified answer may be appended to chat history.
@@ -192,6 +201,11 @@ mod tests{
         let mut session=ReaderTurnSession::new(
             &Verify(true),"chat-a","human-1","task-1","memo.md",
             b"Only the approved snapshot".to_vec()).unwrap();
+        let live=session.capabilities().unwrap();
+        assert_eq!(live.len(),1);
+        assert_eq!(live[0].public_name,"lu_reader_read");
+        assert_eq!(live[0].native_tool_id,"lu.reader.read");
+        assert_eq!(live[0].effect,"read_workspace");
         let mut model=Scripted{replies:VecDeque::from(vec![
             r#"{"kind":"tool","name":"lu_reader_read","arguments":{"path":"memo.md","max_chars":500}}"#.into(),
             r#"{"kind":"final","text":"The approved document was read."}"#.into(),

@@ -412,11 +412,47 @@ pub(crate) fn register_bundled_file_tools_from_dir(
 ) -> Result<ModelToolCatalog, FileBundleError> {
     register_bundled_file_tools_from_dir_inner(registry, root, None)
 }
+pub(crate) fn registration_contracts()->Vec<crate::native_capability_inventory::RegistrationContract>{
+    let read = descriptor(READ_ID, "Read UTF-8 file", READ_INPUT, READ_OUTPUT);
+    let list = descriptor(LIST_ID, "List directory entries", LIST_INPUT, LIST_OUTPUT);
+    vec![crate::native_capability_inventory::RegistrationContract::new(read,ModelToolDefinition {
+                name: "lu_files_read_text".into(),
+                native_tool_id: READ_ID.into(),
+                description: "Read a UTF-8 text file within the authorized workspace.".into(),
+                parameters: json!({
+                    "type": "object",
+                    "properties": {
+                        "path": { "type": "string", "description": "Workspace-relative file path" },
+                        "max_bytes": { "type": "integer", "minimum": 1, "maximum": MAX_READ_BYTES }
+                    },
+                    "required": ["path"],
+                    "additionalProperties": false
+                }),
+                codec: Arc::new(ReadCodec),
+            }),
+        crate::native_capability_inventory::RegistrationContract::new(list,ModelToolDefinition {
+        name: "lu_files_list_directory".into(),
+        native_tool_id: LIST_ID.into(),
+        description: "List files and directories within the authorized workspace.".into(),
+        parameters: json!({
+            "type": "object",
+            "properties": {
+                "path": { "type": "string", "description": "Workspace-relative directory path; omit for workspace root" },
+                "limit": { "type": "integer", "minimum": 1, "maximum": MAX_LIST_LIMIT }
+            },
+            "required": [],
+            "additionalProperties": false
+        }),
+        codec: Arc::new(ListCodec),
+    })]
+}
+
 fn register_bundled_file_tools_from_dir_inner(
     registry: &NativeToolRegistry, root: Arc<Dir>, pinned: Option<Arc<PinnedRead>>,
 ) -> Result<ModelToolCatalog, FileBundleError> {
-    let read = descriptor(READ_ID, "Read UTF-8 file", READ_INPUT, READ_OUTPUT);
-    let list = descriptor(LIST_ID, "List directory entries", LIST_INPUT, LIST_OUTPUT);
+    let mut contracts=registration_contracts().into_iter();
+    let (read,read_definition)=contracts.next().expect("fixed registration family").into_parts();
+    let (list,list_definition)=contracts.next().expect("fixed registration family").into_parts();
     registry
         .register(
             ModuleManifest {
@@ -446,37 +482,9 @@ fn register_bundled_file_tools_from_dir_inner(
     catalog
         .insert(
             registry,
-            ModelToolDefinition {
-                name: "lu_files_read_text".into(),
-                native_tool_id: READ_ID.into(),
-                description: "Read a UTF-8 text file within the authorized workspace.".into(),
-                parameters: json!({
-                    "type": "object",
-                    "properties": {
-                        "path": { "type": "string", "description": "Workspace-relative file path" },
-                        "max_bytes": { "type": "integer", "minimum": 1, "maximum": MAX_READ_BYTES }
-                    },
-                    "required": ["path"],
-                    "additionalProperties": false
-                }),
-                codec: Arc::new(ReadCodec),
-            },
+            read_definition,
         )
         .map_err(FileBundleError::Model)?;
-    catalog.insert(registry, ModelToolDefinition {
-        name: "lu_files_list_directory".into(),
-        native_tool_id: LIST_ID.into(),
-        description: "List files and directories within the authorized workspace.".into(),
-        parameters: json!({
-            "type": "object",
-            "properties": {
-                "path": { "type": "string", "description": "Workspace-relative directory path; omit for workspace root" },
-                "limit": { "type": "integer", "minimum": 1, "maximum": MAX_LIST_LIMIT }
-            },
-            "required": [],
-            "additionalProperties": false
-        }),
-        codec: Arc::new(ListCodec),
-    }).map_err(FileBundleError::Model)?;
+    catalog.insert(registry, list_definition).map_err(FileBundleError::Model)?;
     Ok(catalog)
 }

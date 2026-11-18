@@ -12,12 +12,17 @@ mod memory_desktop;
 mod file_scan_worker;
 pub use file_scan_worker::run_file_scan_worker;
 mod generation_queue;
+mod native_turn_lifecycle;
 mod stream_delivery;
 mod background_context;
 mod environment_context;
 mod core_utility_desktop;
 mod host_clock;
 mod perf01_router;
+mod turn_coordinator;
+mod capability_discovery_desktop;
+mod capability_negotiation;
+mod turn_authority;
 mod perf01_telemetry;
 mod causal_diagnostic;
 mod diagnostic_archive;
@@ -89,6 +94,8 @@ mod archive_desktop;
 mod archive_batch_desktop;
 mod archive_split_desktop;
 mod archive_process_worker;
+#[cfg(target_os="linux")]
+mod linux_engine_package;
 pub use archive_process_worker::run_archive_process_worker;
 mod document_create_desktop;
 mod office_revision_desktop;
@@ -741,6 +748,7 @@ struct ActiveBrowserGrant {
     /// must cancel the model slot as well as the owned Chromium process.
     active_read:Option<(String,String)>, // (model session ID, generation ID)
     starting:bool,
+    revocation_watermark:i64,
 }
 struct DesktopState {
     models_dir: PathBuf,
@@ -1157,31 +1165,37 @@ impl DesktopState {
             .resource_dir()
             .map_err(|e| e.to_string())?
             .join("lu-inference");
+        #[cfg(not(target_os="linux"))]
         for (name, sha, bytes) in runtime_engine_files() {
             check_file(&engine_dir.join(name), sha, bytes)?;
         }
         // The packaged preview has TWO separately source-pinned binaries.
         // The user chooses CPU/Vulkan in Settings and restarts Lu; the model
         // cannot choose an executable, filesystem path or backend grant.
-        #[cfg(feature = "dual_win_preview")]
+        #[cfg(all(not(target_os="linux"), feature = "dual_win_preview"))]
         let selected_engine=preview_engine_choice::read_choice(&root)?;
-        #[cfg(not(feature = "dual_win_preview"))]
+        #[cfg(all(not(target_os="linux"), not(feature = "dual_win_preview")))]
         let selected_engine=preview_engine_choice::BackendChoice::Cpu;
-        #[cfg(feature = "dual_win_preview")]
+        #[cfg(all(not(target_os="linux"), feature = "dual_win_preview"))]
         let (executable,selected_engine_sha,backend_label) = match selected_engine {
             preview_engine_choice::BackendChoice::Cpu=>(
                 engine_dir.join("llama-server.exe"),
-                ENGINE_SHA256,"llama-cpu-preview"
+                ENGINE_SHA256.to_owned(),"llama-cpu-preview"
             ),
             preview_engine_choice::BackendChoice::Vulkan=>(
                 engine_dir.join("llama-server-vulkan.exe"),
-                VULKAN_ENGINE_SHA256,"llama-vulkan-preview"
+                VULKAN_ENGINE_SHA256.to_owned(),"llama-vulkan-preview"
             )
         };
-        #[cfg(not(feature = "dual_win_preview"))]
+        #[cfg(all(not(target_os="linux"), not(feature = "dual_win_preview")))]
         let (executable,selected_engine_sha,backend_label)=(
-            engine_dir.join("llama-server.exe"),ENGINE_SHA256,"llama-pinned"
+            engine_dir.join("llama-server.exe"),ENGINE_SHA256.to_owned(),"llama-pinned"
         );
+        #[cfg(target_os="linux")]
+        let (executable,selected_engine_sha,backend_label)={
+            let (path,sha)=linux_engine_package::verify(&engine_dir)?;
+            (path,sha,"llama-cpu-linux-pinned")
+        };
         let catalog_path = root.join("model-index.json");
         let mut models = checked_catalog(&catalog_path)?;
         if scan_unindexed_models(&models_dir, &mut models)? > 0 {
@@ -1245,9 +1259,14 @@ impl DesktopState {
                 key_hasher.update([0]);
                 key_hasher.update(model_ref.as_bytes());
                 let host_backend_key=format!("llama.{:x}",key_hasher.finalize());
+                #[cfg(target_os="linux")]
+                {
+                    let (actual,sha)=linux_engine_package::verify(&engine_dir)?;
+                    if actual!=executable || sha!=selected_engine_sha {return Err("Linux CPU runtime identity changed".into());}
+                }
                 let backend=PersistentLlamaBackend::new(PersistentEngineConfig {
                     executable: executable.clone(),
-                    expected_sha256: decode_sha(selected_engine_sha)?,
+                    expected_sha256: decode_sha(&selected_engine_sha)?,
                     threads: NonZeroUsize::new(profile.threads as usize).unwrap(),
                     context_tokens: profile.context_tokens,
                     startup_timeout: Duration::from_secs(180),
@@ -1996,7 +2015,7 @@ async fn lu_submit_image_turn(app:AppHandle,caller:tauri::WebviewWindow,state:St
     }
     let result=if linked_refs.is_empty(){
         lu_generate_impl(app,state,session_id,chat_id.clone(),prompt,image_refs,
-            512,Some(false),Some(false),Some(submission_id.clone()),
+            512,turn_coordinator::SendMode::Ordinary,Some(submission_id.clone()),
             Some((diagnostic_ref.clone(),started))).await
     }else{
         // Linked turns never enter renderer-text or native-intent dispatch.
@@ -3025,7 +3044,8 @@ fn browser_origin_list(raw:&str)->Result<Vec<String>,String>{
 /// Browser mode call this; no string from a model/webpage mints permission.
 async fn start_browser_for_exact_turn(
     app:AppHandle,owner:Arc<DesktopState>,
-    chat_id:String,origins:String,turn_id:String
+    chat_id:String,origins:String,turn_id:String,
+    queued:Option<(&generation_queue::Ticket,&str,i64)>
 )->Result<native_browser_host::BrowserRuntimeView,String>{
     use lu_core::{
         conversation_authority::{TaskAuthority,AuthorizedCapability},
@@ -3036,6 +3056,8 @@ async fn start_browser_for_exact_turn(
     let allowed=browser_origin_list(&origins)?;
     owner.browser_runtime.require_launch_ready()?;
     let persisted=owner.chats.trusted_user_turn_text(&chat_id,&turn_id).ok_or("Browser turn is no longer authenticated")?;
+    let watermark=owner.chats.p0_auth_requested_watermark(&chat_id)?;
+    if queued.is_some_and(|(_,_,expected)|expected!=watermark){return Err("Cancelled Browser grant before consent".into())}
     let search=browser_model_desktop::public_search_intent(&persisted)?;
     if search.as_ref().is_some_and(|search|allowed!=vec![search.origin.to_owned()]){return Err("Public search provider differs from the original turn".into());}
     {
@@ -3058,7 +3080,16 @@ async fn start_browser_for_exact_turn(
                 "Authorize selected origins".into(),"Cancel".into()
             )).blocking_show()
     }).await.map_err(|_|"Browser approval dialog failed")?;
-    if !approved{return Err("Browser grant cancelled".into());}
+    if !approved{return Err("Cancelled Browser grant".into());}
+    if owner.chats.p0_auth_requested_watermark(&chat_id)?!=watermark{return Err("Cancelled Browser grant during consent".into())}
+    if let Some((ticket,sid,_))=queued{
+        ticket.verify_active_foreground(sid,&chat_id,&turn_id)?;
+        if ticket.cancelled()||owner.chats.latest_authenticated_user_turn_id(&chat_id).as_deref()!=Some(turn_id.as_str())||
+            owner.chats.trusted_user_turn_text(&chat_id,&turn_id).as_deref()!=Some(persisted.as_str())||
+            owner.supervisor.status().map_err(|_|"Model unavailable")?.session_id.as_deref()!=Some(sid){
+            return Err("Cancelled or stale Browser grant after consent".into())
+        }
+    }
     owner.observe.deny_observation_network_egress(&chat_id)?;
     let task_id=next_id("browser-task-");
     let scope_id=next_id("browser-scope-");
@@ -3080,13 +3111,15 @@ async fn start_browser_for_exact_turn(
         *state=Some(ActiveBrowserGrant{
             task_id:task_id.clone(),chat_id:chat_id.clone(),
             user_turn_id:turn_id.clone(),origins:allowed.clone(),
-            active_read:None,starting:true,
+            active_read:None,starting:true,revocation_watermark:watermark,
         });
     }
     let launch_owner=Arc::clone(&owner);
     let launch_task_id=task_id.clone();
     let result=tauri::async_runtime::spawn_blocking(move||{
         launch_owner.observe.deny_observation_network_egress(&chat_id)?;
+        if launch_owner.chats.p0_auth_requested_watermark(&chat_id)?!=watermark||
+            !launch_owner.browser_grant.lock().map_err(|_|"Browser grant unavailable")?.as_ref().is_some_and(|g|g.task_id==launch_task_id){return Err("Cancelled Browser before launch".into())}
         launch_owner.browser_runtime.launch_for_native_grant(
             allowed,&launch_owner.browser_preferences,
             &chat_id,&turn_id,&launch_task_id,public_search
@@ -3124,7 +3157,7 @@ async fn lu_browser_start(
     let owner=Arc::clone(state.inner());
     let turn_id=owner.chats.latest_authenticated_user_turn_id(&chat_id)
         .ok_or("Browser requires an authenticated human message in this conversation")?;
-    start_browser_for_exact_turn(app,owner,chat_id,origins,turn_id).await
+    start_browser_for_exact_turn(app,owner,chat_id,origins,turn_id,None).await
 }
 /// User-owned visibility controls, distinct from browser page tool calls.
 #[tauri::command]
@@ -4556,8 +4589,12 @@ async fn lu_m3_embedding_enable(
            meta.len()==0||meta.len()>2*1024*1024*1024{
             return Err("Selected embedding GGUF is missing, unsafe or exceeds 2 GiB".into())
         }
-        let engine=app.path().resource_dir().map_err(|e|e.to_string())?
-            .join("lu-inference").join("llama-server.exe");
+        let engine_dir=app.path().resource_dir().map_err(|e|e.to_string())?
+            .join("lu-inference");
+        #[cfg(not(target_os="linux"))]
+        let (engine,embedding_engine_sha)=(engine_dir.join("llama-server.exe"),ENGINE_SHA256.to_owned());
+        #[cfg(target_os="linux")]
+        let (engine,embedding_engine_sha)=linux_engine_package::verify(&engine_dir)?;
         let accepted=app.dialog().message(format!(
             "Load this local GGUF as Lu's independent semantic embedding model?\n\n\
              {}\n\nNo conversation text leaves your computer. \
@@ -4587,7 +4624,7 @@ async fn lu_m3_embedding_enable(
         let key=key_bytes.iter().map(|b|format!("{b:02x}"))
             .collect::<String>();
         let config=lu_core::ansf_embedding_worker::LocalEmbeddingConfig{
-            engine,engine_sha256:decode_sha(ENGINE_SHA256)?,
+            engine,engine_sha256:decode_sha(&embedding_engine_sha)?,
             model,model_sha256,api_key:key,dimensions:0,
             threads:2,startup_timeout:Duration::from_secs(180),
             request_timeout:Duration::from_secs(90)
@@ -5101,8 +5138,10 @@ async fn lu_generate(
     plan_only: Option<bool>,
     submission_id:Option<String>,
 ) -> Result<String, String> {
+    // Compatibility flags are decoded only at the old RPC boundary.
+    let mode=turn_coordinator::SendMode::from_legacy(read_only_workspace,plan_only)?;
     lu_generate_impl(app,state,session_id,chat_id,prompt,image_refs,max_new_tokens,
-        read_only_workspace,plan_only,submission_id,None).await
+        mode,submission_id,None).await
 }
 
 // The internal diagnostic context is minted only by the native image
@@ -5110,13 +5149,13 @@ async fn lu_generate(
 async fn lu_generate_impl(
     app:AppHandle,state:State<'_,Arc<DesktopState>>,session_id:String,chat_id:String,
     prompt:String,image_refs:Vec<String>,max_new_tokens:u32,
-    read_only_workspace:Option<bool>,plan_only:Option<bool>,submission_id:Option<String>,
+    mode:turn_coordinator::SendMode,submission_id:Option<String>,
     cp01_trace:Option<(String,std::time::Instant)>,
 )->Result<String,String>{
     // This correlation key never authorizes tools or content. It only
     // deduplicates a human image Send within its original chat.
     if let Some(id)=submission_id.as_deref(){
-        if image_refs.is_empty()||plan_only.unwrap_or(false)||read_only_workspace.unwrap_or(false){
+        if image_refs.is_empty()||mode!=turn_coordinator::SendMode::Ordinary{
             return Err("Image submission requires an ordinary image message".into())
         }
         let gid=image_submission_generation(&chat_id,id)?;
@@ -5133,16 +5172,11 @@ async fn lu_generate_impl(
         exact_draft_manifest(state.inner(),&chat_id,&image_refs)?;
         linked_attachment_intake::exact_draft(state.inner(),&chat_id,&[])?;
     }
-    let document_context=contains_document_context(&prompt);
-    if document_context&&(plan_only.unwrap_or(false)||read_only_workspace.unwrap_or(false)){
-        return Err("Send attached documents with an ordinary chat message.".into())
-    }
-    if !document_context {
-    if plan_only.unwrap_or(false){
-        if !image_refs.is_empty()||read_only_workspace.unwrap_or(false)
-            ||max_new_tokens==0||max_new_tokens>2048{
-            return Err("Draft planning requires text only and bounded generation".into())
-        }
+    // CP-05A: route selection is not authorization. Every branch below
+    // retains its existing native human-turn verification and scope checks.
+    use turn_coordinator::TurnRoute;
+    match turn_coordinator::select(&prompt,&image_refs,max_new_tokens,mode)? {
+      TurnRoute::Plan=>{
         let goal=state.goal_memory.as_ref()
             .map_err(|_|"Original ANSF goals unavailable")?
             .snapshot(&state.chats,&chat_id)?;
@@ -5153,26 +5187,13 @@ async fn lu_generate_impl(
         }
         return generate_internal(app,Arc::clone(state.inner()),session_id,chat_id,
             prompt,image_refs,max_new_tokens,GenerationOrigin::Human,true,None,None,Vec::new()).await
-    }
-    // P0D: exactly worded current-human workspace request enters the
-    // ORIGINAL TOOLS-09 scanner only after a fresh native OS folder picker.
-    // This branch needs no model, and is never a WebView filesystem grant.
-    if let perf01_router::Route::ApprovedWorkspaceLiteral(needle)=
-        perf01_router::classify(
-            &prompt,!image_refs.is_empty(),
-            read_only_workspace.unwrap_or(false)||plan_only.unwrap_or(false)
-        ){
-        if max_new_tokens!=512 {
-            return Err("CPU workspace search uses fixed 512-token Send".into())
-        }
+      }
+      TurnRoute::CpuWorkspace(needle)=>{
         return workspace_desktop::cpu_search_workspace_for_chat(
             app,Arc::clone(state.inner()),session_id,chat_id,prompt,needle
         ).await;
-    }
-    if matches!(perf01_router::classify(
-        &prompt,!image_refs.is_empty(),
-        read_only_workspace.unwrap_or(false)||plan_only.unwrap_or(false)
-    ),perf01_router::Route::CurrentChatCounts){
+      }
+      TurnRoute::CpuChatCounts=>{
         if !(1..=4096).contains(&max_new_tokens){
             return Err("Invalid bounded CPU chat-count request".into())
         }
@@ -5212,15 +5233,8 @@ async fn lu_generate_impl(
             });
             Ok(result.answer)
         }).await.map_err(|_|"CPU indexed count worker interrupted")?;
-    }
-    // PERF-01 P0D: deterministic supervisor metadata, not an inference,
-    // not an inference-engine capability/progress claim and no tool grant.
-    if matches!(
-        perf01_router::classify(
-            &prompt,!image_refs.is_empty(),
-            read_only_workspace.unwrap_or(false)||plan_only.unwrap_or(false)
-        ),perf01_router::Route::LocalModelStatus
-    ){
+      }
+      TurnRoute::CpuModelStatus=>{
         if !(1..=4096).contains(&max_new_tokens){
             return Err("Invalid CPU model status request limits".into())
         }
@@ -5273,15 +5287,8 @@ async fn lu_generate_impl(
             });
             Ok(answer)
         }).await.map_err(|_|"CPU model status worker interrupted")?;
-    }
-    // PERF-01 P0D: exact current-human literal query, original ANSF
-    // search, same-chat source IDs, and NO inference or GPU wake.
-    // Do not treat a frontend classification as a tool or permission grant.
-    if let perf01_router::Route::CurrentChatLiteral(needle)=
-        perf01_router::classify(
-            &prompt,!image_refs.is_empty(),
-            read_only_workspace.unwrap_or(false)||plan_only.unwrap_or(false)
-        ){
+      }
+      TurnRoute::CpuChatLiteral(needle)=>{
         if !(1..=4096).contains(&max_new_tokens){
             return Err("Invalid CPU retrieval output limit".into())
         }
@@ -5331,13 +5338,8 @@ async fn lu_generate_impl(
             });
             Ok(answer)
         }).await.map_err(|_|"CPU retrieval worker interrupted")?;
-    }
-    // CPU-only read-only host utility: the native device clock is the
-    // authoritative current observation, not Qwen's training cutoff or
-    // a string hallucinated during inference. No model process, shell,
-    // network or OS permission grant is created.
-    if image_refs.is_empty() && !read_only_workspace.unwrap_or(false)
-        && host_clock::explicit_current_time_request(&prompt){
+      }
+      TurnRoute::CpuClock=>{
         if !(1..=4096).contains(&max_new_tokens){
             return Err("Invalid current-time request limits".into());
         }
@@ -5382,102 +5384,39 @@ async fn lu_generate_impl(
             });
             Ok(answer)
         }).await.map_err(|_|"Native current-time utility interrupted")?;
-    }
-    // Ordinary explicit human requests for one public HTTPS URL may enter
-    // the already-existing scoped native browser tool loop. Lu still requires
-    // a verified, separately packaged browser and new native human approval
-    // for the exact origin; URLs in prompt text confer no authority.
-    if !read_only_workspace.unwrap_or(false) && image_refs.is_empty()
-        && max_new_tokens==512 {
-        if let Some(search)=browser_model_desktop::public_search_intent(&prompt)?{
-            return browser_model_desktop::lu_generate_browser(app,state,session_id,chat_id,prompt,search.origin.into(),512).await;
-        }
-        if let Some(origin)=browser_model_desktop::explicit_browse_origin(&prompt){
-            return browser_model_desktop::lu_generate_browser(
-                app,state,session_id,chat_id,prompt,origin,512
-            ).await;
-        }
-    }
-    // Git inspection is a separate read-only, host-scoped capability.
-    // It is never inferred from retrieved text, background turns, or a
-    // general workspace grant. The native picker is still mandatory.
-    if !read_only_workspace.unwrap_or(false)&&image_refs.is_empty() &&
-        max_new_tokens==512 &&
-        workspace_desktop::explicit_read_git_request(&prompt){
-        workspace_desktop::validate_workspace_send_request(
-            &prompt,&image_refs,max_new_tokens,
-        ).map_err(str::to_owned)?;
+      }
+      TurnRoute::Browser(origin)=>{
+        return browser_model_desktop::lu_generate_browser(app,state,session_id,chat_id,prompt,origin,512).await;
+      }
+      TurnRoute::Git=>{
         return workspace_desktop::ask_git_for_chat(
             app,Arc::clone(state.inner()),session_id,chat_id,prompt,
-        ).await?.ok_or_else(||"Git repository was not selected".into())
-    }
-    // Direct exact-file Reader outranks directory routing.
-    if !read_only_workspace.unwrap_or(false)&&image_refs.is_empty()&&max_new_tokens==512&&
-        reader_desktop::explicit_reader_file_path(&prompt).is_some(){
+        ).await?.ok_or_else(||"Git repository was not selected".into());
+      }
+      TurnRoute::Reader{exact}=>{
         return reader_desktop::ask_reader_for_chat(
             app,Arc::clone(state.inner()),session_id,chat_id,prompt,
-        ).await?.ok_or_else(||"Reader document was not approved".into())
-    }
-    let requested_workspace=read_only_workspace.unwrap_or(false) ||
-        (image_refs.is_empty() &&
-            workspace_desktop::explicit_read_workspace_request(&prompt));
-    if requested_workspace{
-        // Wave 3: only an operator-set boolean or a conservative HOST
-        // classification may offer a picker. The actual
-        // directory can *only* be selected in the native picker, and the
-        // existing WorkspaceReadTurnSession grants read-only capabilities for
-        // exactly one authenticated USER turn; no file writes are enabled.
-        workspace_desktop::validate_workspace_send_request(
-            &prompt,&image_refs,max_new_tokens,
-        ).map_err(str::to_owned)?;
+        ).await?.ok_or_else(||if exact {"Reader document was not approved"}else{"Reader document was not selected"}.into());
+      }
+      TurnRoute::Workspace=>{
         return workspace_desktop::ask_workspace_for_chat(
             app,Arc::clone(state.inner()),session_id,chat_id,prompt,
-        ).await?.ok_or_else(||"Workspace folder was not selected".into())
-    }
-    if image_refs.is_empty()&&max_new_tokens==512 &&
-        reader_desktop::explicit_reader_document_request(&prompt){
-        return reader_desktop::ask_reader_for_chat(
-            app,Arc::clone(state.inner()),session_id,chat_id,prompt,
-        ).await?.ok_or_else(||"Reader document was not selected".into())
-    }
-    // P0-TOOLS-04: exact current human asks to inspect one local PDF or
-    // PNG/JPEG can enter the TWO new narrowly reviewed application adapters.
-    // Lu will still open a fresh OS picker, show the exact source/executable
-    // hash in a second native dialog and grant only this tool pair to the
-    // original authenticated turn. The model never supplies any argv/path.
-    if !read_only_workspace.unwrap_or(false)&&image_refs.is_empty()&&
-        max_new_tokens==512{
-        if let Some(kind)=reviewed_app_desktop::explicit_specialist_request(&prompt){
-            return reviewed_app_desktop::lu_reviewed_app_ask(
-                app,state,session_id,chat_id,prompt,kind.into()
-            ).await?.ok_or_else(||
-                "Specialist source selection was cancelled".into())
-        }
-    }
-    // Media inspection is now a normal-chat, model-neutral capability route.
-    // Text only triggers the native file-picker request; it supplies no
-    // filepath, command, tool ID, effect result or durable grant.
-    if !read_only_workspace.unwrap_or(false)&&image_refs.is_empty()
-        &&max_new_tokens==512&&reviewed_app_desktop::explicit_media_metadata_request(&prompt){
+        ).await?.ok_or_else(||"Workspace folder was not selected".into());
+      }
+      TurnRoute::Specialist(kind)=>{
         return reviewed_app_desktop::lu_reviewed_app_ask(
-            app,state,session_id,chat_id,prompt,"media".into()
-        ).await?.ok_or_else(||"Media file was not selected".into())
-    }
-    // TOOLS-05/06: explicit original-human structured JSON check or single
-    // fixed host candidate availability refresh. Neither a generic
-    // conversation nor retrieved text opens this one-read-only-tool scope.
-    // Native model arguments are checked against the human's exact values.
-    if !read_only_workspace.unwrap_or(false)&&image_refs.is_empty()
-        &&max_new_tokens==512{
-        if let Some(request)=core_utility_desktop::explicit_core_utility_request(&prompt){
-            return core_utility_desktop::ask_utility_for_chat(
-                app,Arc::clone(state.inner()),session_id,chat_id,prompt,request
-            ).await
-        }
-    }
+            app,state,session_id,chat_id,prompt,kind.into()
+        ).await?.ok_or_else(||if kind=="media"{"Media file was not selected"}else{"Specialist source selection was cancelled"}.into());
+      }
+      TurnRoute::Utility(request)=>{
+        return core_utility_desktop::ask_utility_for_chat(
+            app,Arc::clone(state.inner()),session_id,chat_id,prompt,request
+        ).await;
+      }
+      TurnRoute::Model=>{}
     } // no native intent routing from attached document text
-    // The UI's fixed 512-token Send still enables deterministic host
-    // utilities above. Only the real GGUF lane uses the loaded model's
+    // Native routes are independent of the renderer's numeric Send budget.
+    // Only the ordinary GGUF lane uses the loaded model's
     // host-saved output budget; an unbound renderer cannot invent one.
     let model_limit=loaded_output_limit(state.inner(),&session_id)?;
     generate_internal(app,Arc::clone(state.inner()),session_id,chat_id,
@@ -5754,6 +5693,18 @@ async fn generate_internal(
             if loaded.session_id.as_deref()!=Some(sid.as_str()){
                 return Err("Model changed while waiting for context admission".into())
             }
+            // CP-05D: one optional bounded selection on original text only.
+            // The existing ticket and authenticated event are reused for
+            // any separately approved negotiated native read/utility lane.
+            let no_negotiated_selection=if origin==GenerationOrigin::Human&&!plan_only&&images.is_empty()&&linked.is_empty()&&manifest.is_empty()&&
+                !contains_document_context(&prompt){
+                match capability_negotiation::try_read_turn(&app,&state,&sid,&chat_id,&gid,&prompt,&ticket)?{
+                    capability_negotiation::NegotiationOutcome::Completed(answer)=>return Ok(answer),
+                    capability_negotiation::NegotiationOutcome::NoSelection=>true,
+                    capability_negotiation::NegotiationOutcome::Skipped=>false,
+                }
+            }else{false};
+            if ticket.cancelled(){return Err("Cancelled capability negotiation".into())}
             let loaded_ref=loaded.model_ref.as_deref()
                 .ok_or("Loaded model identity unavailable")?;
             let loaded_profile=state.inference_profiles.lock()
@@ -5794,6 +5745,19 @@ async fn generate_internal(
                 }
                 proposed
             };
+            if no_negotiated_selection{
+                model_prompt.push_str("\n[Lu host: no native inspection was authorized or performed in this turn. Do not claim to have inspected any local files, repository, document or device, checked any local program, validated supplied data using a native utility, browsed the Internet, or inspected metadata with a reviewed application. Ask for clarification if the request requires such inspection.]\n");
+            }
+            // CP-05B: a current human capability question gets a fresh,
+            // descriptive factory/runtime/policy inventory, never a callable
+            // schema, grant, resource handle or successful execution claim.
+            if origin==GenerationOrigin::Human&&!plan_only&&images.is_empty()&&!document_context&&
+                capability_discovery_desktop::explicit_discovery_request(&prompt){
+                let context=capability_discovery_desktop::fresh_model_context(&state,&prompt);
+                if model_prompt.len().saturating_add(context.len())<=16*1024{
+                    model_prompt.push_str(&context);
+                }
+            }
             // M2: ANSF context is a verified projection of human-origin
             // ChatStore memory events. It is DATA, never authority.
             match state.goal_memory.as_ref(){
@@ -10246,8 +10210,43 @@ pub fn run() {
             lu_model_inference_profile,
             lu_model_save_inference_profile
         ])
-        .run(tauri::generate_context!())
-        .expect("Lu native desktop failed");
+        .build(tauri::generate_context!())
+        .expect("Lu native desktop failed")
+        .run(|app, event| {
+            // Tauri can exit while watchdog-owned state still holds the backend.
+            // Reap the resident Linux engine explicitly on graceful application exit.
+            #[cfg(target_os = "linux")]
+            if matches!(event, tauri::RunEvent::Exit) {
+                if let Some(state) = app.try_state::<Arc<DesktopState>>() {
+                    // Prevent late queue completion and additional admissions before
+                    // asking the real inference supervisor to stop.
+                    let _ = state.generation_queue.close();
+                    if let Ok(readers) = state.reader_generations.lock() {
+                        for reader in readers.values() { reader.cancellation.cancel(); }
+                    }
+                    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+                    loop {
+                        let Ok(status) = state.supervisor.status() else { break };
+                        let Some(session) = status.session_id else { break };
+                        if let Some(generation) = status.generation_id {
+                            let _ = state.supervisor.cancel(&session, &generation, &next_id("exit-cancel-"));
+                            if std::time::Instant::now() >= deadline {
+                                eprintln!("Lu inference exit: cancellation did not settle before shutdown");
+                                break;
+                            }
+                            std::thread::sleep(std::time::Duration::from_millis(100));
+                        } else {
+                            if let Err(error) = state.supervisor.unload(&session, &next_id("exit-unload-")) {
+                                eprintln!("Lu inference exit: unload failed: {error:?}");
+                            }
+                            break;
+                        }
+                    }
+                }
+            }
+            #[cfg(not(target_os = "linux"))]
+            let _ = (app, event);
+        });
 }
 
 #[cfg(test)]

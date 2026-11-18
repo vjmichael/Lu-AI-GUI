@@ -35,6 +35,29 @@ pub(crate) fn explicit_specialist_request(text:&str)->Option<&'static str>{
     }
     None
 }
+pub(crate) fn reviewed_mode_id(mode:&str)->Option<&'static str>{
+    use lu_core::native_reviewed_app_tool::{DESKTOP_MEDIA_TOOL_ID,DESKTOP_PDF_TOOL_ID,DESKTOP_IMAGE_TOOL_ID};
+    match mode{"media"=>Some(DESKTOP_MEDIA_TOOL_ID),"pdf"=>Some(DESKTOP_PDF_TOOL_ID),"image"=>Some(DESKTOP_IMAGE_TOOL_ID),_=>None}
+}
+/// Only the original human's unambiguous file type and requested facts
+/// determine which reviewed fixed program could be offered. The model can
+/// decline but cannot pick a different program, resource, flags or path.
+pub(crate) fn negotiable_specialist_mode(prompt:&str)->Option<&'static str>{
+    let p=prompt.trim().to_ascii_lowercase();
+    if p.is_empty()||p.len()>8192||p.contains("<|")||p.contains("[attached ")||
+        ["do not ","don't ","never ","without ","how to ","explain ","convert ","edit ","export ","upload ","download ","run ","execute "].iter().any(|bad|p.contains(bad)){return None}
+    let pdf=["my pdf","this pdf","local pdf","selected pdf"].iter().any(|v|p.contains(v));
+    let image=["my png","this png","my jpeg","this jpeg","my jpg","this jpg","my image file","this image file","selected image file"].iter().any(|v|p.contains(v));
+    let media=["my wav","this wav","local wav","my mp4","this mp4","local mp4","my audio file","this audio file","my video file","this video file","my media file","this media file"].iter().any(|v|p.contains(v));
+    if [pdf,image,media].into_iter().filter(|v|*v).count()!=1{return None}
+    if let Some(mode)=explicit_specialist_request(prompt){return Some(mode)}
+    if explicit_media_metadata_request(prompt){return Some("media")}
+    if !["how many ","how long ","what ","which ","can you tell ","could you tell "].iter().any(|v|p.starts_with(v)){return None}
+    if pdf&&["pages","page count","pdf version","metadata"].iter().any(|v|p.contains(v)){Some("pdf")}
+    else if image&&["dimensions","width","height","resolution","metadata","image type"].iter().any(|v|p.contains(v)){Some("image")}
+    else if media&&["how long ","duration","codec","dimensions","resolution","channels","sample rate","metadata"].iter().any(|v|p.contains(v)){Some("media")}
+    else{None}
+}
 #[cfg(test)]
 mod specialist_intent_tests{
     use super::*;
@@ -99,11 +122,10 @@ mod media_intent_tests{
 
 
 use lu_core::{
-    agent_tool_loop::ToolDispatchCheckpoint,
     contracts::{AuthorizationError,ToolAuthorizer,ToolDescriptor,ToolEffect,ToolInvocation},
     conversation_authority::{
         AuthorizedCapability,BoundCallOrigin,ConversationAuthority,
-        TaskAuthority,TrustedUserTurnVerifier,
+        TaskAuthority,
     },
     inference_host::Cancellation,
     journal::EffectJournal,
@@ -121,17 +143,8 @@ use lu_core::{
 };
 use std::{collections::BTreeSet,sync::{Arc,Mutex},time::{Duration,SystemTime}};
 
-struct PersistedReviewedHumanTurn<'a>{
-    chats:&'a ChatStore,
-    conversation_id:&'a str,user_turn_id:&'a str,expected_text:&'a str,
-}
-impl TrustedUserTurnVerifier for PersistedReviewedHumanTurn<'_>{
-    fn verify_user_turn(&self,chat:&str,turn:&str)->bool{
-        chat==self.conversation_id&&turn==self.user_turn_id
-            &&self.chats.trusted_user_turn_text(chat,turn)
-                .as_deref()==Some(self.expected_text)
-    }
-}
+use crate::turn_authority::PersistedHumanTurn;
+use lu_core::conversation_authority::TrustedUserTurnVerifier;
 struct ReviewedDesktopPolicy{
     approved:BTreeSet<String>,
     host:Arc<DesktopState>,
@@ -163,9 +176,6 @@ impl ToolAuthorizer for ReviewedDesktopPolicy{
         Ok(())
     }
 }
-#[derive(Clone,serde::Serialize)]
-#[serde(rename_all="camelCase")]
-struct ReviewedToolProgress{chat_id:String,generation_id:String,phase:String}
 #[derive(Clone,serde::Serialize)]
 #[serde(rename_all="camelCase")]
 struct ReviewedToolCapabilities{
@@ -200,7 +210,7 @@ fn hash_file(path:&Path,max_bytes:u64)->Result<String,String>{
     if counted!=meta.len(){return Err("Selected file changed during review".into())}
     Ok(format!("{:x}",digest.finalize()))
 }
-fn reviewed_ffprobe_binary()->Result<PathBuf,String>{
+pub(crate) fn reviewed_ffprobe_binary()->Result<PathBuf,String>{
     #[cfg(windows)]
     let candidates:&[&str]=&[
         r"C:\Program Files\ffmpeg\bin\ffprobe.exe",
@@ -226,7 +236,7 @@ fn reviewed_ffprobe_binary()->Result<PathBuf,String>{
     }
     Err("FFprobe is not installed at a host-approved location".into())
 }
-fn reviewed_specialist_binary(
+pub(crate) fn reviewed_specialist_binary(
     kind:lu_core::native_app_typed_specialist::SpecialistKind
 )->Result<PathBuf,String>{
     use lu_core::native_app_typed_specialist::SpecialistKind;
@@ -268,11 +278,11 @@ fn reviewed_specialist_record(
     use lu_core::native_app_typed_specialist::{HostReviewedSpecialistProbe,SpecialistKind};
     let (name,exe_id,read_id,app)=match kind{
         SpecialistKind::PdfInfo=>(
-            "pdf","lu.reviewed.pdf.info","lu.reviewed.pdf.file-read",
+            "pdf",lu_core::native_reviewed_app_tool::DESKTOP_PDF_TOOL_ID,"lu.reviewed.pdf.file-read",
             "host-reviewed-pdfinfo"
         ),
         SpecialistKind::ImageExif=>(
-            "image","lu.reviewed.image.info","lu.reviewed.image.file-read",
+            "image",lu_core::native_reviewed_app_tool::DESKTOP_IMAGE_TOOL_ID,"lu.reviewed.image.file-read",
             "host-reviewed-exiftool"
         )
     };
@@ -332,7 +342,7 @@ fn reviewed_media_record(
         approved_media_path:root.to_path_buf(),
         media_sha256:file_sha.into(),
         reviewed_container:container,
-        execute_tool_id:"lu.reviewed.media.facts".into(),
+        execute_tool_id:lu_core::native_reviewed_app_tool::DESKTOP_MEDIA_TOOL_ID.into(),
         read_tool_id:"lu.reviewed.media.file-read".into(),
         stdout_limit:16_384,timeout_seconds:15,
     }
@@ -595,7 +605,7 @@ pub(crate) async fn lu_agent_run_reviewed_step(
             revision_sha,step_index,
             deliverable_id:selection.deliverable_id,
             operation:reviewed_op
-        })
+        }),None
     ).await
 }
 /// Existing ordinary reviewed-app asks remain separate and unrestricted by
@@ -606,13 +616,29 @@ pub(crate) async fn lu_reviewed_app_ask(
     session_id:String,chat_id:String,prompt:String,mode:String,
 )->Result<Option<String>,String>{
     reviewed_app_ask_internal(
-        app,Arc::clone(state.inner()),session_id,chat_id,prompt,mode,None
+        app,Arc::clone(state.inner()),session_id,chat_id,prompt,mode,None,None
     ).await
+}
+struct NegotiatedReviewed<'a>{
+    gid:&'a str,ticket:&'a generation_queue::Ticket,
+    cancellation:&'a Cancellation,current_step:&'a Arc<Mutex<Option<String>>>,
+    choice:&'a crate::capability_negotiation::ReadCandidate,watermark:i64,
+}
+/// Reuse the existing original-source picker, executable pin, consent,
+/// durable broker, worker and verification path, not an alternate launcher.
+pub(crate) fn execute_negotiated_reviewed(app:&AppHandle,host:&Arc<DesktopState>,sid:&str,chat:&str,gid:&str,
+    prompt:&str,ticket:&generation_queue::Ticket,cancellation:&Cancellation,current_step:&Arc<Mutex<Option<String>>>,
+    choice:&crate::capability_negotiation::ReadCandidate,watermark:i64)->Result<String,String>{
+    let mode=negotiable_specialist_mode(prompt).ok_or("No exact reviewed specialist subject")?;
+    if reviewed_mode_id(mode)!=Some(choice.native_tool_id.as_str()){return Err("Reviewed capability does not match human request".into())}
+    tauri::async_runtime::block_on(reviewed_app_ask_internal(app.clone(),host.clone(),sid.into(),chat.into(),prompt.into(),mode.into(),None,
+        Some(NegotiatedReviewed{gid,ticket,cancellation,current_step,choice,watermark})))?
+        .ok_or_else(||"Cancelled reviewed resource approval".into())
 }
 async fn reviewed_app_ask_internal(
     app:AppHandle,host:Arc<DesktopState>,
     session_id:String,chat_id:String,prompt:String,mode:String,
-    scheduled:Option<ApprovedStepTarget>,
+    scheduled:Option<ApprovedStepTarget>,negotiated:Option<NegotiatedReviewed<'_>>,
 )->Result<Option<String>,String>{
     if !matches!(mode.as_str(),"git"|"media"|"pdf"|"image"){
         return Err("Unsupported reviewed application operation".into())
@@ -621,6 +647,18 @@ async fn reviewed_app_ask_internal(
     // racing those human interactions invalidates this exact old invocation.
     // A future, separately approved human turn takes its own new baseline.
     let revocation_watermark=host.chats.p0_auth_requested_watermark(&chat_id)?;
+    let check=||->Result<(),String>{
+        if let Some(n)=negotiated.as_ref(){
+            n.ticket.verify_active_foreground(&session_id,&chat_id,n.gid)?;
+            if n.ticket.cancelled()||n.cancellation.is_cancelled()||n.watermark!=revocation_watermark||
+                host.chats.p0_auth_requested_watermark(&chat_id)?!=n.watermark||
+                !PersistedHumanTurn::current_chat(&host.chats,&chat_id,n.gid,&prompt).verify_user_turn(&chat_id,n.gid)||
+                host.supervisor.status().map_err(|_|"Model unavailable")?.session_id.as_deref()!=Some(session_id.as_str()){
+                return Err("Cancelled or stale reviewed capability".into())
+            }
+        }Ok(())
+    };
+    check()?;
     // Planned steps remain restricted to the existing independently
     // accepted Git/FFprobe operations; neither specialist is smuggled
     // into an older plan revision or granted historical worker permission.
@@ -645,6 +683,7 @@ async fn reviewed_app_ask_internal(
             chooser.dialog().file().blocking_pick_folder()
         }
     }).await.map_err(|_|"Native reviewed-app picker unavailable")?;
+    check()?;
     let Some(picked)=picked else{return Ok(None)};
     let selected=picked.into_path()
         .map_err(|_|"Native file picker returned unsupported resource")?;
@@ -754,14 +793,31 @@ async fn reviewed_app_ask_internal(
             return Err("Specialist source or installed utility changed during approval".into())
         }
     }
-    let gid=next_id("g-");
+    if negotiated.is_some()&&mode=="media"{
+        let identity=media_sha.as_deref().ok_or("Media identity unavailable")?;
+        let info=format!("Authorize one read-only metadata inspection?\n\nSource: {}\nSource SHA-256: {}\nProgram: {}\nProgram SHA-256: {}\nNo edits, network, or future operations.",selected.display(),identity,executable.display(),exe_sha);
+        let dialog=app.clone();
+        let yes=tauri::async_runtime::spawn_blocking(move||dialog.dialog().message(info)
+            .title("Lu — Review media application").buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom("Authorize one read".into(),"Cancel".into())).blocking_show()).await.map_err(|_|"Native media approval unavailable")?;
+        if !yes{return Ok(None)}
+        if hash_file(&selected,256*1024*1024)?!=identity||hash_file(&executable,1024*1024*1024)?!=exe_sha{return Err("Media source or executable changed during approval".into())}
+    }
+    check()?;
+    let is_negotiated=negotiated.is_some();
+    let chosen=negotiated.as_ref().map(|n|n.choice.clone());
+    let gid=negotiated.as_ref().map(|n|n.gid.to_owned()).unwrap_or_else(||next_id("g-"));
+    // Only the legacy wrapper owns a fresh queue reservation. The negotiated
+    // lane already owns the live original human turn and cancellation entry.
+    let standalone=if let Some(n)=negotiated.as_ref(){
+        host.chats.append_progress(&chat_id,n.gid,chat_store::REVIEWED_QUEUE_MARKER)?;
+        None
+    }else{
     let (ticket,position)=host.generation_queue
-        .enqueue(&session_id,&chat_id,&gid)?;
-    host.chats.append_user_with_turn_id(&chat_id,&gid,&prompt)?;
-    // Durable, indexed pre-execution marker. If Lu stops between Send and
-    // creating the separate worker journals, the next exclusive startup can
-    // still identify and annotate this exact authenticated human turn.
-    host.chats.append_progress(&chat_id,&gid,chat_store::REVIEWED_QUEUE_MARKER)?;
+        .enqueue_with_class_committing(&session_id,&chat_id,&gid,TurnClass::Foreground,||{
+            host.chats.append_user_with_turn_id(&chat_id,&gid,&prompt)?;
+            // Preserve the durable pre-execution marker before queue visibility.
+            host.chats.append_progress(&chat_id,&gid,chat_store::REVIEWED_QUEUE_MARKER)
+        })?;
     let cancellation=Cancellation::default();
     let current_step=Arc::new(Mutex::new(None));
     host.reader_generations.lock()
@@ -776,11 +832,13 @@ async fn reviewed_app_ask_internal(
         chat_id:chat_id.clone(),generation_id:gid.clone(),
         phase:"queued",position,
     });
+    Some((ticket,cancellation,current_step))};
     let emitted=app.clone();
     let gid_run=gid.clone();
-    let result=tauri::async_runtime::spawn_blocking(move||{
+    let execute=move |ticket:&generation_queue::Ticket,cancellation:Cancellation,current_step:Arc<Mutex<Option<String>>>|{
         let work=(||->Result<String,String>{
-            ticket.wait_for_slot()?;
+            if !is_negotiated{ticket.wait_for_slot()?;}
+            ticket.verify_active_foreground(&session_id,&chat_id,&gid_run)?;
             if host.chats.p0_auth_requested_watermark(&chat_id)?
                 !=revocation_watermark{
                 return Err("Cancelled reviewed application turn during approval or queue".into())
@@ -793,10 +851,8 @@ async fn reviewed_app_ask_internal(
             if status.session_id.as_deref()!=Some(session_id.as_str()){
                 return Err("Model session changed while queued".into())
             }
-            let verifier=PersistedReviewedHumanTurn{
-                chats:&host.chats,conversation_id:&chat_id,
-                user_turn_id:&gid_run,expected_text:&prompt,
-            };
+            let verifier=if is_negotiated{PersistedHumanTurn::current_chat(&host.chats,&chat_id,&gid_run,&prompt)}else{PersistedHumanTurn::queued_chat(&host.chats,&chat_id,&gid_run,&prompt)};
+            if !verifier.verify_user_turn(&chat_id,&gid_run){return Err("Original reviewed human turn changed".into())}
             let authority=ConversationAuthority::new();
             let origin=BoundCallOrigin{
                 conversation_id:chat_id.clone(),
@@ -1019,33 +1075,26 @@ async fn reviewed_app_ask_internal(
                 item.effect!="execute_code"){
                 return Err("Reviewed app capability admission was incomplete".into())
             }
+            if let Some(choice)=chosen.as_ref(){
+                if available.len()!=1||!crate::capability_negotiation::matches_live(choice,&available){return Err("Selected reviewed capability changed after approval".into())}
+            }
             let _=emitted.emit("lu-native-turn-capabilities",ReviewedToolCapabilities{
                 chat_id:chat_id.clone(),generation_id:gid_run.clone(),tools:available,
             });
             let audit=ModelTurnJournal::open(
                 &host.catalog_path.with_file_name("lu-reviewed-app-model-audit.sqlite")
             ).map_err(|_|"Reviewed model audit unavailable")?;
-            let notify=Arc::clone(&current_step);
-            let step_app=emitted.clone();
-            let chat=chat_id.clone();
-            let generation=gid_run.clone();
-            let observer=Arc::new(move|step:&str|{
-                if let Ok(mut guard)=notify.lock(){
-                    *guard=Some(step.to_string())
-                }
-                let _=step_app.emit("lu-native-tool-progress",ReviewedToolProgress{
-                    chat_id:chat.clone(),generation_id:generation.clone(),
-                    phase:"model_step".into(),
-                });
-            });
+            let progress=crate::native_turn_lifecycle::NativeTurnProgress::new(
+                &emitted,&chat_id,&gid_run,&current_step);
+            let observer=progress.model_observer();
             let mut model=SupervisorModelStep::new(
                 &host.supervisor,session_id.clone(),gid_run.clone()
             ).map_err(|e|format!("Reviewed model bridge: {e:?}"))?
                 .with_step_start_observer(observer);
-            let _=emitted.emit("lu-generation-start",GenerationEvent{
+            if !is_negotiated{let _=emitted.emit("lu-generation-start",GenerationEvent{
                 chat_id:chat_id.clone(),generation_id:gid_run.clone(),
                 phase:"running",position:0,
-            });
+            });}
             let model_prompt=if let Some(target)=scheduled.as_ref(){
                 let saved=host.goal_memory.as_ref()
                     .map_err(|_|"Current source-backed ANSF memory unavailable")?
@@ -1116,19 +1165,7 @@ async fn reviewed_app_ask_internal(
                      Human: {prompt}"
                 )
             };
-            let dispatch_app=emitted.clone();
-            let dispatch_chat=chat_id.clone();
-            let dispatch_gen=gid_run.clone();
-            let dispatch=move|step:ToolDispatchCheckpoint|{
-                let phase=match step{
-                    ToolDispatchCheckpoint::Entered=>"tool_started",
-                    ToolDispatchCheckpoint::Returned=>"tool_returned",
-                };
-                let _=dispatch_app.emit("lu-native-tool-progress",ReviewedToolProgress{
-                    chat_id:dispatch_chat.clone(),
-                    generation_id:dispatch_gen.clone(),phase:phase.into(),
-                });
-            };
+            let dispatch=progress.dispatch_observer();
             let answer=tauri::async_runtime::block_on(
                 reviewed.run_journaled_observed(
                     &model_prompt,&mut model,&cancellation,&audit,&dispatch
@@ -1241,12 +1278,13 @@ async fn reviewed_app_ask_internal(
                 return Err("Cancelled reviewed application turn before publication".into())
             }
             let answer_text=format!("{}{}",answer.answer,host_verified_note);
-            host.chats.append_progress(&chat_id,&gid_run,&answer_text)?;
-            // This final ANSF book terminal event is ordered under the same
-            // native catalog lock as P0-AUTH's durable REQUESTED row. No
-            // cancellation can interleave between the check and publication.
-            host.chats.complete_reviewed_if_not_revoked(
-                &chat_id,&gid_run,revocation_watermark)?;
+            // Stop is ordered by the generation queue; P0-AUTH's durable
+            // revocation is independently checked in the catalog mutex.
+            ticket.commit_completed(&session_id,||{
+                host.chats.append_progress(&chat_id,&gid_run,&answer_text)?;
+                host.chats.complete_reviewed_if_not_revoked(
+                    &chat_id,&gid_run,revocation_watermark)
+            })?;
             // Release only AFTER source evidence, exact historical claim,
             // and the conversation-visible host witness are all durable.
             // The plan cannot be re-admitted with prior authority.
@@ -1267,7 +1305,7 @@ async fn reviewed_app_ask_internal(
                     &chat_id,&gid_run,
                     "Reviewed application request was cancelled. No operation will be replayed."
                 );
-                let _=host.chats.cancel(&chat_id,&gid_run);
+                if !is_negotiated{let _=host.chats.cancel(&chat_id,&gid_run);}
             }else{
                 let _=host.chats.append_progress(
                     &chat_id,&gid_run,
@@ -1280,17 +1318,70 @@ async fn reviewed_app_ask_internal(
             Err(e) if e.contains("Cancelled")=>"cancelled",
             Err(_)=>"failed",
         };
-        let _=emitted.emit("lu-generation-finish",GenerationEvent{
-            chat_id:chat_id.clone(),generation_id:gid_run.clone(),phase,position:0,
-        });
-        let _=host.reader_generations.lock().map(|mut rows|rows.remove(&gid_run));
+        if !is_negotiated{
+            let _=emitted.emit("lu-generation-finish",GenerationEvent{
+                chat_id:chat_id.clone(),generation_id:gid_run.clone(),phase,position:0,
+            });
+            let _=host.reader_generations.lock().map(|mut rows|rows.remove(&gid_run));
+        }
         work
-    }).await.map_err(|_|"Reviewed app task worker unavailable")?;
+    };
+    let result=if let Some(n)=negotiated{
+        // Run the shared synchronous executor outside the async runtime;
+        // scoped join preserves the borrowed original ticket and control.
+        std::thread::scope(|scope|scope.spawn(move||execute(n.ticket,n.cancellation.clone(),n.current_step.clone())).join())
+            .map_err(|_|"Reviewed app execution thread interrupted")?
+    }else{
+        let (ticket,cancellation,current_step)=standalone.ok_or("Reviewed queue ownership missing")?;
+        tauri::async_runtime::spawn_blocking(move||execute(&ticket,cancellation,current_step)).await.map_err(|_|"Reviewed app task worker unavailable")?
+    };
     result.map(Some)
 }
 #[cfg(test)]
 mod tests{
     use super::*;
+    #[test]
+    #[ignore="requires real installed host-approved pdfinfo and ffprobe; registry/authority admission only, no protected process launch"]
+    fn cp05d3_reviewed_pdf_and_media_admit_only_exact_pinned_original_and_paired_grants(){
+        use lu_core::native_app_typed_specialist::SpecialistKind;
+        struct TestPolicy(BTreeSet<String>);
+        impl ToolAuthorizer for TestPolicy{fn authorize(&self,c:&ToolInvocation,d:&ToolDescriptor)->Result<(),AuthorizationError>{
+            if c.tool_id==d.id&&self.0.contains(&d.id){Ok(())}else{Err(AuthorizationError::new("test exact grant"))}
+        }}
+        let root=std::env::temp_dir().join(next_id("cp05d3-reviewed-"));fs::create_dir_all(&root).unwrap();
+        let chats=ChatStore::open(&root.join("chats")).unwrap();
+        for (mode,human,binary,source) in [
+            ("pdf","How many pages are in my PDF?",reviewed_specialist_binary(SpecialistKind::PdfInfo).unwrap(),root.join("source.pdf")),
+            ("media","How long is my WAV?",reviewed_ffprobe_binary().unwrap(),root.join("source.wav")),
+        ]{
+            if mode=="pdf"{fs::write(&source,b"%PDF-1.4\n1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n2 0 obj\n<< /Type /Pages /Kids [] /Count 0 >>\nendobj\ntrailer\n<< /Root 1 0 R >>\n%%EOF\n").unwrap();}
+            else{let mut wav=b"RIFF".to_vec();wav.extend_from_slice(&38u32.to_le_bytes());wav.extend_from_slice(b"WAVEfmt ");wav.extend_from_slice(&16u32.to_le_bytes());wav.extend_from_slice(&1u16.to_le_bytes());wav.extend_from_slice(&1u16.to_le_bytes());wav.extend_from_slice(&8000u32.to_le_bytes());wav.extend_from_slice(&16000u32.to_le_bytes());wav.extend_from_slice(&2u16.to_le_bytes());wav.extend_from_slice(&16u16.to_le_bytes());wav.extend_from_slice(b"data");wav.extend_from_slice(&2u32.to_le_bytes());wav.extend_from_slice(&0i16.to_le_bytes());fs::write(&source,wav).unwrap();}
+            let chat=chats.create_chat().unwrap().chat_id;let gid=next_id("g-");let queue=Arc::new(generation_queue::GenerationQueue::default());
+            let (ticket,_)=queue.enqueue_with_class_committing("session",&chat,&gid,TurnClass::Foreground,||chats.append_user_with_turn_id(&chat,&gid,human)).unwrap();ticket.wait_for_slot().unwrap();
+            assert_eq!(negotiable_specialist_mode(human),Some(mode));
+            let verifier=PersistedHumanTurn::current_chat(&chats,&chat,&gid,human);
+            let exe_sha=hash_file(&binary,1024*1024*1024).unwrap();let input_sha=hash_file(&source,32*1024*1024).unwrap();
+            let (media,specialist,read_id)=if mode=="pdf"{
+                let r=reviewed_specialist_record(&source,&binary,&exe_sha,&input_sha,&gid,SpecialistKind::PdfInfo);let read=r.read_tool_id.clone();(None,Some(r),read)
+            }else{let r=reviewed_media_record(&source,&binary,&exe_sha,&input_sha,&gid,ReviewedContainer::Wave);let read=r.read_tool_id.clone();(Some(r),None,read)};
+            let execute_id=reviewed_mode_id(mode).unwrap();let origin=BoundCallOrigin{conversation_id:chat.clone(),user_turn_id:gid.clone(),task_id:gid.clone()};
+            let tasks=Arc::new(lu_core::tasks::TaskStore::open(&root.join(format!("lu-reviewed-task-{gid}.sqlite"))).unwrap());
+            tasks.bind_reviewed_human_turn(&chat,&gid).unwrap();let effects=Arc::new(EffectJournal::open(&root.join(format!("lu-reviewed-effects-{gid}.sqlite"))).unwrap());
+            let supervisor=Arc::new(lu_core::native_background_process::BackgroundProcessSupervisor::new_for_reviewed_host(tasks.clone(),root.clone()));
+            let open=|paired:bool|{let authority=ConversationAuthority::new();let mut capabilities=vec![AuthorizedCapability{tool_id:execute_id.into(),effect:ToolEffect::ExecuteCode}];
+                if paired{capabilities.push(AuthorizedCapability{tool_id:read_id.clone(),effect:ToolEffect::ReadWorkspace})}
+                authority.open_user_task(TaskAuthority{conversation_id:chat.clone(),user_turn_id:gid.clone(),task_id:gid.clone(),execution_scope_id:gid.clone(),capabilities,expires_at:Some(SystemTime::now()+Duration::from_secs(30))},&verifier).unwrap();authority};
+            let policy:Arc<dyn ToolAuthorizer>=Arc::new(TestPolicy(BTreeSet::from([execute_id.to_owned(),read_id.clone()])));
+            assert!(ReviewedApplicationTurnSession::from_verified_host_task(open(false),origin.clone(),gid.clone(),tasks.clone(),supervisor.clone(),effects.clone(),policy.clone(),vec![],media.clone(),specialist.clone()).is_err());
+            let authority=open(true);let session=ReviewedApplicationTurnSession::from_verified_host_task(authority.clone(),origin.clone(),gid.clone(),tasks,supervisor,effects,policy,vec![],media,specialist).unwrap();
+            let caps=session.capabilities().unwrap();assert_eq!(caps.len(),1);assert_eq!(caps[0].native_tool_id,execute_id);assert_eq!(caps[0].effect,"execute_code");assert!(!caps[0].task_outcome_verified);
+            let schemas=session.schemas().unwrap();assert_eq!(schemas.len(),1);assert_eq!(schemas[0].pointer("/function/parameters/additionalProperties").and_then(|v|v.as_bool()),Some(false));
+            assert!(schemas[0].pointer("/function/parameters/properties").unwrap().as_object().unwrap().is_empty());
+            assert_eq!(hash_file(&source,32*1024*1024).unwrap(),input_sha);assert_eq!(chats.history(&chat).unwrap().iter().filter(|m|m.role=="user").count(),1);
+            authority.revoke_task(&gid).unwrap();assert!(session.capabilities().map(|caps|caps.is_empty()).unwrap_or(true));
+        }
+        drop(chats);fs::remove_dir_all(root).unwrap();
+    }
     #[test]
     fn claimed_step_lifecycle_drop_records_uncertain_cancel_intent(){
         use lu_core::{

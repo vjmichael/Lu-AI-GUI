@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
+const coordinator=readFileSync(new URL('../src-tauri/src/turn_coordinator.rs',import.meta.url),'utf8');
 import {
   isHostCpuWorkspaceLookup,isHostCpuChatCountsQuestion,
   isHostCpuChatLookup,isHostModelStatusQuestion
@@ -39,11 +40,12 @@ test('PERF01 P0D native host independently reclassifies current human text first
   assert.match(router,/ApprovedWorkspaceLiteral\(String\)/);
   assert.match(router,/CurrentChatCounts/);
   assert.match(router,/explicit_cpu_workspace_query\(input\)/);
-  assert.match(host,/perf01_router::Route::ApprovedWorkspaceLiteral\(needle\)/);
+  assert.match(coordinator,/perf01_router::Route::ApprovedWorkspaceLiteral\(needle\)/);
+  assert.match(host,/TurnRoute::CpuWorkspace\(needle\)/);
   assert.match(host,/workspace_desktop::cpu_search_workspace_for_chat\(/);
   assert.match(host,/perf01_router::count_current_chat\(&host\.chats,&chat_id\)/);
-  assert.match(ui,/isHostCpuWorkspaceLookup\(prompt\)/);
-  assert.match(ui,/isHostCpuChatCountsQuestion\(prompt\)/);
+  assert.match(ui,/isModelFreeSendQuestion\(prompt\)/);
+  assert.match(ui,/isModelFreeSendQuestion\(prompt\)/);
 });
 test('PERF01 P0D CPU workspace only reads via fresh native consent, pinned capability and same-session fence',()=>{
   assert.match(workspace,/blocking_pick_folder\(\)/);

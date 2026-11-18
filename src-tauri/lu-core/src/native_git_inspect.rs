@@ -583,6 +583,35 @@ impl ModelToolCodec for DiffCodec {
 /// and (2) the trusted canonical Git binary location. No model can choose
 /// these. This method registers schemas; discovery never implies execution
 /// authorization. The caller must separately grant ReadWorkspace per turn.
+pub(crate) fn registration_contracts()->Vec<crate::native_capability_inventory::RegistrationContract>{
+    let descriptor = |id: &str, name: &str, input: &str, output: &str| ToolDescriptor {
+        id: id.into(), display_name: name.into(), effect: ToolEffect::ReadWorkspace,
+        input_type_url: input.into(), output_type_url: output.into(),
+    };
+    let st = descriptor(STATUS, "Inspect Git worktree status", STATUS_IN, STATUS_OUT);
+    let lg = descriptor(LOG, "Inspect recent Git commits", LOG_IN, LOG_OUT);
+    let df = descriptor(DIFF, "Inspect Git tracked diff", DIFF_IN, DIFF_OUT);
+    let defs: Vec<(&str, &str, &str, &str, Value, Arc<dyn ModelToolCodec>)> = vec![
+        ("lu_git_status", STATUS, "Read working tree changes without modifying Git.",
+            STATUS_IN, json!({"type":"object","properties":{
+                "max_entries":{"type":"integer","minimum":1,"maximum":MAX_STATUS_ENTRIES}
+            },"required":[],"additionalProperties":false}), Arc::new(StatusCodec)),
+        ("lu_git_log", LOG, "Read the latest committed history.",
+            LOG_IN, json!({"type":"object","properties":{
+                "limit":{"type":"integer","minimum":1,"maximum":MAX_LOG_COMMITS}
+            },"required":[],"additionalProperties":false}), Arc::new(LogCodec)),
+        ("lu_git_diff", DIFF, "Read bounded tracked Git diff; optional relative path.",
+            DIFF_IN, json!({"type":"object","properties":{
+                "path":{"type":"string","description":"Optional repo-relative tracked file path"},
+                "max_bytes":{"type":"integer","minimum":1,"maximum":MAX_DIFF_BYTES}
+            },"required":[],"additionalProperties":false}), Arc::new(DiffCodec)),
+    ];
+    [st,lg,df].into_iter().zip(defs).map(|(descriptor,(name,id,description,_input,parameters,codec))|
+        crate::native_capability_inventory::RegistrationContract::new(descriptor,ModelToolDefinition{
+            name:name.into(),native_tool_id:id.into(),description:description.into(),parameters,codec,
+        })).collect()
+}
+
 pub fn register_git_inspection_tools(
     registry: &NativeToolRegistry,
     catalog: &mut ModelToolCatalog,
@@ -592,13 +621,10 @@ pub fn register_git_inspection_tools(
     let approved = Arc::new(ApprovedGit::open(
         authorized_repository, trusted_git_executable,
     )?);
-    let descriptor = |id: &str, name: &str, input: &str, output: &str| ToolDescriptor {
-        id: id.into(), display_name: name.into(), effect: ToolEffect::ReadWorkspace,
-        input_type_url: input.into(), output_type_url: output.into(),
-    };
-    let st = descriptor(STATUS, "Inspect Git worktree status", STATUS_IN, STATUS_OUT);
-    let lg = descriptor(LOG, "Inspect recent Git commits", LOG_IN, LOG_OUT);
-    let df = descriptor(DIFF, "Inspect Git tracked diff", DIFF_IN, DIFF_OUT);
+    let mut contracts=registration_contracts().into_iter();
+    let (st,st_definition)=contracts.next().expect("fixed Git family").into_parts();
+    let (lg,lg_definition)=contracts.next().expect("fixed Git family").into_parts();
+    let (df,df_definition)=contracts.next().expect("fixed Git family").into_parts();
     registry.register(
         ModuleManifest {
             id: MODULE.into(), display_name: "Lu native read-only Git".into(),
@@ -616,26 +642,8 @@ pub fn register_git_inspection_tools(
         ],
     ).map_err(|e| format!("Git inspection registry refused: {e:?}"))?;
 
-    let defs: Vec<(&str, &str, &str, &str, Value, Arc<dyn ModelToolCodec>)> = vec![
-        ("lu_git_status", STATUS, "Read working tree changes without modifying Git.",
-            STATUS_IN, json!({"type":"object","properties":{
-                "max_entries":{"type":"integer","minimum":1,"maximum":MAX_STATUS_ENTRIES}
-            },"required":[],"additionalProperties":false}), Arc::new(StatusCodec)),
-        ("lu_git_log", LOG, "Read the latest committed history.",
-            LOG_IN, json!({"type":"object","properties":{
-                "limit":{"type":"integer","minimum":1,"maximum":MAX_LOG_COMMITS}
-            },"required":[],"additionalProperties":false}), Arc::new(LogCodec)),
-        ("lu_git_diff", DIFF, "Read bounded tracked Git diff; optional relative path.",
-            DIFF_IN, json!({"type":"object","properties":{
-                "path":{"type":"string","description":"Optional repo-relative tracked file path"},
-                "max_bytes":{"type":"integer","minimum":1,"maximum":MAX_DIFF_BYTES}
-            },"required":[],"additionalProperties":false}), Arc::new(DiffCodec)),
-    ];
-    for (name, id, description, _input, parameters, codec) in defs {
-        catalog.insert(registry, ModelToolDefinition {
-            name:name.into(), native_tool_id:id.into(), description:description.into(),
-            parameters, codec,
-        }).map_err(|e| format!("Git model schema refused: {e:?}"))?;
+    for definition in [st_definition,lg_definition,df_definition]{
+        catalog.insert(registry,definition).map_err(|e| format!("Git model schema refused: {e:?}"))?;
     }
     Ok(())
 }

@@ -5,7 +5,6 @@
  //! by the existing supervised native tool loops. No new execution runtime.
 use super::*;
 use lu_core::{
-    agent_tool_loop::ToolDispatchCheckpoint,
     conversation_authority::TrustedUserTurnVerifier,
     inference_host::Cancellation,
     model_json_boundary::{parse_exact_boundary_object,parse_host_tool_feedback_boundary,MAX_BOUNDARY_JSON_BYTES},
@@ -15,27 +14,22 @@ use lu_core::{
 };
 use std::sync::{Arc,Mutex};
 
-#[derive(Clone,serde::Serialize)]
-#[serde(rename_all="camelCase")]
-struct CoreUtilityProgress{chat_id:String,generation_id:String,phase:String}
 
-struct OriginalUtilityHumanTurn<'a>{
-    chats:&'a ChatStore,
-    chat:&'a str,
-    turn:&'a str,
-    text:&'a str,
-}
-impl TrustedUserTurnVerifier for OriginalUtilityHumanTurn<'_>{
-    fn verify_user_turn(&self,chat:&str,turn:&str)->bool{
-        chat==self.chat && turn==self.turn &&
-        self.chats.trusted_user_turn_text(chat,turn).as_deref()==Some(self.text) &&
-        self.chats.latest_authenticated_user_turn_id(chat).as_deref()==Some(turn)
-    }
-}
-
+use crate::turn_authority::PersistedHumanTurn;
 /// Deliberately small task classifier, not a generative planner. A positive
 /// result selects ONE read-only tool and one exact source value, not a grant.
 pub(crate) fn explicit_core_utility_request(text:&str)->Option<CoreUtilityRequest>{
+    parse_core_utility_request(text,false)
+}
+/// General selection can propose a natural question, but never supply the
+/// program ID, schema, or data. Reconstruct the bounded input from human bytes.
+pub(crate) fn negotiable_core_utility_request(text:&str)->Option<CoreUtilityRequest>{
+    parse_core_utility_request(text,true)
+}
+pub(crate) fn utility_native_id(request:&CoreUtilityRequest)->&'static str{
+    match request{CoreUtilityRequest::Validate{..}=>"lu.validate.schema",CoreUtilityRequest::CheckProgram{..}=>"lu.exec.check_env"}
+}
+fn parse_core_utility_request(text:&str,negotiated:bool)->Option<CoreUtilityRequest>{
     let trimmed=text.trim();
     if trimmed.is_empty()||trimmed.len()>8192 ||
         trimmed.contains("<|") || trimmed.contains("[Attached text file:") ||
@@ -53,7 +47,8 @@ pub(crate) fn explicit_core_utility_request(text:&str)->Option<CoreUtilityReques
     // missing schema or data and calling its own example an observed check.
     if let Some(brace)=trimmed.find('{'){
         let heading=lower[..brace].trim();
-        if (heading.starts_with("validate ")||heading.starts_with("check ")) &&
+        if (heading.starts_with("validate ")||heading.starts_with("check ")||
+            (negotiated&&(heading.starts_with("could you validate ")||heading.starts_with("can you check ")||heading.starts_with("does ")))) &&
             heading.contains("json") && heading.contains("schema"){
             let object=parse_exact_boundary_object(&trimmed[brace..],8192).ok()?;
             if object.len()!=2{return None}
@@ -70,10 +65,13 @@ pub(crate) fn explicit_core_utility_request(text:&str)->Option<CoreUtilityReques
         "locally","installed here","available here",
     ].iter().any(|term|lower.contains(term));
     let action=lower.starts_with("check ")||lower.starts_with("verify ")||
-        lower.starts_with("is ");
+        lower.starts_with("is ")||(negotiated&&["could you tell me whether ","can you tell me if ",
+            "could you check whether ","can you check if ","do i have "].iter().any(|p|lower.starts_with(p)));
     let presence=["installed","available","present"].iter()
         .any(|term|lower.contains(term));
     if !localized||!action||!presence{return None}
+    if negotiated&&(trimmed.contains(['/','\\',':'])){return None}
+
     let words=lower.split(|c:char|!c.is_ascii_alphanumeric())
         .filter(|s|!s.is_empty()).collect::<Vec<_>>();
     let matched=crate::environment_context::fixed_ambient_program_candidates()
@@ -107,8 +105,8 @@ pub(crate) async fn ask_utility_for_chat(
     }
     let gid=next_id("g-");
     let (ticket,position)=state.generation_queue
-        .enqueue(&session_id,&chat_id,&gid)?;
-    state.chats.append_user_with_turn_id(&chat_id,&gid,&prompt)?;
+        .enqueue_with_class_committing(&session_id,&chat_id,&gid,TurnClass::Foreground,
+            ||state.chats.append_user_with_turn_id(&chat_id,&gid,&prompt))?;
     let cancellation=Cancellation::default();
     let current_step=Arc::new(Mutex::new(None));
     state.reader_generations.lock()
@@ -136,90 +134,7 @@ pub(crate) async fn ask_utility_for_chat(
                 current.model_ref!=initial.model_ref{
                 return Err("Core utility model changed while queued".into())
             }
-            let verifier=OriginalUtilityHumanTurn{
-                chats:&host.chats,chat:&chat_id,turn:&gid,text:&prompt,
-            };
-            if !verifier.verify_user_turn(&chat_id,&gid){
-                return Err("Core utility original current turn no longer authenticated".into())
-            }
-            // Grants exist only after a saved exact human turn and expire
-            // automatically at end of the one supervised model/tool session.
-            let mut turn=CoreUtilityTurn::new(
-                &verifier,&chat_id,&gid,&gid,canonical
-            )?;
-            let capabilities=turn.capabilities()?;
-            if capabilities.len()!=1 || capabilities[0].effect!="read_workspace"{
-                return Err("Core utility advertised unexpected capabilities".into())
-            }
-            let label=capabilities[0].public_name.as_str();
-            if !matches!(label,"lu_validate_schema"|"lu_check_env"){
-                return Err("Core utility model schema was widened".into())
-            }
-            let model_prompt=if label=="lu_validate_schema"{
-                format!("Use only the registered lu_validate_schema tool to validate \
-                    the exact ORIGINAL human-supplied schema and data. Never \
-                    invent missing JSON, change the input, write files or \
-                    claim remote schema checks. First obtain real native \
-                    feedback. An invalid instance is different from a failed \
-                    tool. Then explain the bounded issues. \
-                    Original human request: {prompt}")
-            }else{
-                format!("Use only lu_check_env for the single program explicitly \
-                    named in the original human request. Host-approved file \
-                    presence is NOT proof of installation, version, usable \
-                    runtime, GPU operation or permission to execute. Do not \
-                    invoke commands, search PATH, install or guess paths. \
-                    Obtain the native observation before answering. \
-                    Original human request: {prompt}")
-            };
-            let audit=ModelTurnJournal::open(
-                &host.catalog_path.with_file_name("lu-core-utility-model-audit.sqlite")
-            ).map_err(|_|"Core utility model audit unavailable")?;
-            let observed=Arc::clone(&current_step);
-            let notify_app=event_app.clone();
-            let notify_chat=chat_id.clone();
-            let notify_gid=gid.clone();
-            let observer=Arc::new(move|step:&str|{
-                if let Ok(mut id)=observed.lock(){*id=Some(step.into())}
-                let _=notify_app.emit("lu-native-tool-progress",CoreUtilityProgress{
-                    chat_id:notify_chat.clone(),generation_id:notify_gid.clone(),
-                    phase:"model_step".into()
-                });
-            });
-            let mut model=SupervisorModelStep::new(
-                &host.supervisor,session_id.clone(),gid.clone()
-            ).map_err(|e|format!("Core utility model bridge unavailable: {e:?}"))?
-                .with_step_start_observer(observer);
-            let _=event_app.emit("lu-generation-start",GenerationEvent{
-                chat_id:chat_id.clone(),generation_id:gid.clone(),
-                phase:"running",position:0,
-            });
-            let progress_app=event_app.clone();
-            let progress_chat=chat_id.clone();
-            let progress_gid=gid.clone();
-            let dispatch=move|event:ToolDispatchCheckpoint|{
-                let phase=match event{
-                    ToolDispatchCheckpoint::Entered=>"tool_started",
-                    ToolDispatchCheckpoint::Returned=>"tool_returned",
-                };
-                let _=progress_app.emit("lu-native-tool-progress",CoreUtilityProgress{
-                    chat_id:progress_chat.clone(),generation_id:progress_gid.clone(),
-                    phase:phase.into()
-                });
-            };
-            let result=tauri::async_runtime::block_on(
-                turn.run_journaled_observed(&model_prompt,&mut model,
-                    &cancellation,&audit,&dispatch)
-            ).map_err(|e|format!("Core utility native turn failed: {e:?}"))?;
-            if cancellation.is_cancelled()||ticket.cancelled(){
-                return Err("Cancelled utility turn after model feedback".into())
-            }
-            if result.tool_calls==0{
-                return Err("Model did not use the exact approved utility".into())
-            }
-            host.chats.append_progress(&chat_id,&gid,&result.answer)?;
-            host.chats.complete(&chat_id,&gid)?;
-            Ok(result.answer)
+            execute_approved_utility(&event_app,&host,session_id,chat_id.clone(),gid.clone(),prompt,canonical,&ticket,&cancellation,&current_step,None)
         })();
         if let Err(error)=&work{
             if error.contains("Cancelled"){
@@ -242,6 +157,74 @@ pub(crate) async fn ask_utility_for_chat(
         work
     }).await.map_err(|_|"Core utility model worker unavailable")?;
     outcome
+}
+
+/// Recompute the host-owned input after separate native consent. No second
+/// human message, queue ticket, arbitrary PATH, or model-supplied arguments.
+pub(crate) fn execute_negotiated_utility(app:&AppHandle,host:&Arc<DesktopState>,session:&str,chat:&str,gid:&str,prompt:&str,
+    ticket:&generation_queue::Ticket,cancellation:&Cancellation,current_step:&Arc<Mutex<Option<String>>>,choice:&crate::capability_negotiation::ReadCandidate)->Result<String,String>{
+    let request=negotiable_core_utility_request(prompt).ok_or("No exact original utility input")?;
+    if utility_native_id(&request)!=choice.native_tool_id{return Err("Selected utility differs from original human input".into())}
+    execute_approved_utility(app,host,session.into(),chat.into(),gid.into(),prompt.into(),request,ticket,cancellation,current_step,Some(choice))
+}
+#[allow(clippy::too_many_arguments)]
+fn execute_approved_utility(event_app:&AppHandle,host:&Arc<DesktopState>,session_id:String,chat_id:String,gid:String,prompt:String,
+    canonical:CoreUtilityRequest,ticket:&generation_queue::Ticket,cancellation:&Cancellation,current_step:&Arc<Mutex<Option<String>>>,selected:Option<&crate::capability_negotiation::ReadCandidate>)->Result<String,String>{
+            if ticket.cancelled()||cancellation.is_cancelled(){return Err("Cancelled utility turn".into())}
+            let current=host.supervisor.status().map_err(|_|"Core utility model unavailable")?;
+            if current.session_id.as_deref()!=Some(session_id.as_str()){return Err("Core utility model changed".into())}
+            let verifier=PersistedHumanTurn::current_chat(&host.chats,&chat_id,&gid,&prompt);
+            if !verifier.verify_user_turn(&chat_id,&gid){
+                return Err("Core utility original current turn no longer authenticated".into())
+            }
+            // Grants exist only after a saved exact human turn and expire
+            // automatically at end of the one supervised model/tool session.
+            let mut turn=CoreUtilityTurn::new(
+                &verifier,&chat_id,&gid,&gid,canonical
+            )?;
+            let capabilities=turn.capabilities()?;
+            if capabilities.len()!=1 || capabilities[0].effect!="read_workspace"{
+                return Err("Core utility advertised unexpected capabilities".into())
+            }
+            if let Some(choice)=selected{
+                if !crate::capability_negotiation::matches_live(choice,&capabilities){return Err("Selected utility is not in the live approved registry".into())}
+            }
+            let label=capabilities[0].public_name.as_str();
+            if !matches!(label,"lu_validate_schema"|"lu_check_env"){
+                return Err("Core utility model schema was widened".into())
+            }
+            let model_prompt=utility_model_prompt(label,&prompt);
+            let audit=ModelTurnJournal::open(
+                &host.catalog_path.with_file_name("lu-core-utility-model-audit.sqlite")
+            ).map_err(|_|"Core utility model audit unavailable")?;
+            let progress=crate::native_turn_lifecycle::NativeTurnProgress::new(
+                &event_app,&chat_id,&gid,&current_step);
+            let observer=progress.model_observer();
+            let mut model=SupervisorModelStep::new(
+                &host.supervisor,session_id.clone(),gid.clone()
+            ).map_err(|e|format!("Core utility model bridge unavailable: {e:?}"))?
+                .with_step_start_observer(observer);
+            if selected.is_none(){let _=event_app.emit("lu-generation-start",GenerationEvent{
+                chat_id:chat_id.clone(),generation_id:gid.clone(),
+                phase:"running",position:0,
+            });}
+            let dispatch=progress.dispatch_observer();
+            let result=tauri::async_runtime::block_on(
+                turn.run_journaled_observed(&model_prompt,&mut model,
+                    &cancellation,&audit,&dispatch)
+            ).map_err(|e|format!("Core utility native turn failed: {e:?}"))?;
+            if cancellation.is_cancelled()||ticket.cancelled(){
+                return Err("Cancelled utility turn after model feedback".into())
+            }
+            if result.tool_calls==0{
+                return Err("Model did not use the exact approved utility".into())
+            }
+            ticket.commit_completed(&session_id,||{
+                if !verifier.verify_user_turn(&chat_id,&gid){return Err("Utility original request changed".into())}
+                host.chats.append_progress(&chat_id,&gid,&result.answer)?;
+                host.chats.complete(&chat_id,&gid)
+            })?;
+            Ok(result.answer)
 }
 
 /// C1→C3: carry the ORIGINAL native utility's bounded feedback into a later
@@ -285,6 +268,7 @@ pub(crate) fn prior_utility_observation_for_human(
         let mut final_count=0usize;
         let mut human_request_count=0usize;
         let mut human_request_seq=0i64;
+        let mut current_reference_prompt=false;
         let mut suspicious=false;
         let mut request_seq=0i64;
         let mut feedback_seq=0i64;
@@ -294,6 +278,9 @@ pub(crate) fn prior_utility_observation_for_human(
                 ModelAuditKind::UserRequest=>{
                     human_request_count+=1;
                     human_request_seq=event.sequence;
+                    // A reference-style historic reply must be tied to the
+                    // exact host-built prompt of the saved original human turn.
+                    current_reference_prompt=event.payload==utility_model_prompt(name,&original);
                 }
                 ModelAuditKind::ModelOutput=>{
                     match serde_json::from_str::<serde_json::Value>(&event.payload){
@@ -325,7 +312,8 @@ pub(crate) fn prior_utility_observation_for_human(
         }
         let matching=tool_request.as_ref().is_some_and(|value|
             value["kind"]=="tool"&&value["name"]==name&&
-            value["arguments"]==expected_args &&
+            (value["arguments"]==expected_args || (current_reference_prompt &&
+                value["arguments"]==serde_json::json!({"source":"current_request"}))) &&
             value.as_object().is_some_and(|o|o.len()==3)
         );
         let observed=tool_reply.as_ref().and_then(|value|{
@@ -459,6 +447,16 @@ mod tests{
         assert_eq!(prior_utility_observation_for_human(
             &reopened,&root,&chat,&now,followup).unwrap().unwrap(),before);
         let sql=rusqlite::Connection::open(&file).unwrap();
+        // New model references are only historic evidence if the saved host
+        // prompt is exactly the one produced for the authenticated turn.
+        sql.execute("UPDATE lu_model_boundary_audit SET payload=?1 WHERE kind='USER_REQUEST'",
+            [utility_model_prompt("lu_validate_schema",original)]).unwrap();
+        sql.execute("UPDATE lu_model_boundary_audit SET payload=?1 WHERE kind='MODEL_OUTPUT'",
+            [r#"{"kind":"tool","name":"lu_validate_schema","arguments":{"source":"current_request"}}"#]).unwrap();
+        assert_eq!(prior_utility_observation_for_human(&reopened,&root,&chat,&now,followup).unwrap().unwrap(),before);
+        sql.execute("UPDATE lu_model_boundary_audit SET payload=?1 WHERE kind='USER_REQUEST'",
+            [utility_model_prompt("lu_validate_schema","unrelated human request")]).unwrap();
+        assert!(!prior_utility_observation_for_human(&reopened,&root,&chat,&now,followup).unwrap().unwrap().contains("validAtObservation"));
         sql.execute("UPDATE lu_model_boundary_audit
                      SET payload=?1 WHERE kind='MODEL_OUTPUT'",
             [r#"{"kind":"tool","name":"lu_validate_schema","arguments":{"schema":{"type":"string"},"data":42}}"#]).unwrap();
@@ -559,4 +557,19 @@ mod tests{
             assert!(explicit_core_utility_request(text).is_none(),"unapproved: {text}");
         }
     }
+}
+
+/// Shared production/acceptance prompt; never establishes authority.
+pub(crate) fn utility_model_prompt(label:&str,prompt:&str)->String{
+    if label=="lu_validate_schema"{
+                format!("Use lu_validate_schema with source=current_request. Lu already bound \
+                    the original schema and data; do not copy or change them. \
+                    After native feedback, explain the actual validation result. \
+                    Original human request: {prompt}")
+            }else{
+                format!("Use lu_check_env with source=current_request; Lu already bound the named \
+                    program. Do not run commands, search PATH or guess paths. \
+                    After native feedback explain file presence only, not \
+                    verified installation, runtime or version. Original human request: {prompt}")
+            }
 }

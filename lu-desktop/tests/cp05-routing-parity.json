@@ -1,0 +1,150 @@
+[
+  {
+    "prompt": "What time is it?",
+    "route": "cpu-clock"
+  },
+  {
+    "prompt": "Search this chat for: needle",
+    "route": "cpu-chat:needle"
+  },
+  {
+    "prompt": "Show current chat counts",
+    "route": "cpu-counts"
+  },
+  {
+    "prompt": "Show local model status",
+    "route": "cpu-status"
+  },
+  {
+    "prompt": "Search this folder for: needle",
+    "route": "cpu-workspace:needle"
+  },
+  {
+    "prompt": "Search my Downloads for: needle",
+    "route": "cpu-workspace:needle"
+  },
+  {
+    "prompt": "Search \"D:\\Research Notes 日本語\" for: needle",
+    "route": "cpu-workspace:needle"
+  },
+  {
+    "prompt": "Search the web for rust docs",
+    "route": "browser:https://www.google.com"
+  },
+  {
+    "prompt": "Search DuckDuckGo for rust docs",
+    "route": "browser:https://html.duckduckgo.com"
+  },
+  {
+    "prompt": "Browse https://example.org",
+    "route": "browser:https://example.org"
+  },
+  {
+    "prompt": "Check git status in this repository",
+    "route": "git"
+  },
+  {
+    "prompt": "Read /home/operator/report.pdf",
+    "route": "reader-exact"
+  },
+  {
+    "prompt": "Read C:\\Users\\Example\\report.pdf",
+    "route": "reader-exact"
+  },
+  {
+    "prompt": "Summarize this PDF document",
+    "route": "reader-picker"
+  },
+  {
+    "prompt": "List files in this folder",
+    "route": "workspace"
+  },
+  {
+    "prompt": "Please navigate to C:\\Users\\Example\\Downloads\\SingleGalaxy",
+    "route": "workspace"
+  },
+  {
+    "prompt": "Inspect C:\\Projects\\Lu",
+    "route": "workspace"
+  },
+  {
+    "prompt": "Browse \\\\server\\share\\folder",
+    "route": "workspace"
+  },
+  {
+    "prompt": "Browse /home/operator/Research Notes",
+    "route": "workspace"
+  },
+  {
+    "prompt": "Inspect the codec and duration of my local WAV file",
+    "route": "specialist:media"
+  },
+  {
+    "prompt": "Check if python is installed on this computer",
+    "route": "utility:lu.exec.check_env"
+  },
+  {
+    "prompt": "What information is on https://example.org/report?",
+    "route": "model"
+  },
+  {
+    "prompt": "How many pages are in my PDF?",
+    "route": "model"
+  },
+  {
+    "prompt": "What are the dimensions of my PNG?",
+    "route": "model"
+  },
+  {
+    "prompt": "How long is my WAV?",
+    "route": "model"
+  },
+  {
+    "prompt": "What does my memo say?",
+    "route": "model"
+  },
+  {
+    "prompt": "Tell me a story",
+    "route": "model"
+  },
+  {
+    "prompt": "Explain how Windows paths work",
+    "route": "model"
+  },
+  {
+    "prompt": "Do not open C:\\Users\\Example",
+    "route": "model"
+  },
+  {
+    "prompt": "Never inspect C:\\secret",
+    "route": "model"
+  },
+  {
+    "prompt": "Do not browse https://example.org",
+    "route": "model"
+  },
+  {
+    "prompt": "List files in this folder without tools",
+    "route": "model"
+  },
+  {
+    "prompt": "Search this chat for: needle without tools",
+    "route": "model"
+  },
+  {
+    "prompt": "Search this folder for: needle without tools",
+    "route": "model"
+  },
+  {
+    "prompt": "Search the web for rust without using tools",
+    "route": "model"
+  },
+  {
+    "prompt": "What time is it?\n[Attached text file: doc]",
+    "route": "model"
+  },
+  {
+    "prompt": "Search the web for /home/key",
+    "route": "error"
+  }
+]

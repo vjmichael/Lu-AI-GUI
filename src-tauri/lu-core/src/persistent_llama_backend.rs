@@ -91,6 +91,51 @@ pub struct PersistentLlamaBackend {
     durable_spawn_gate: Option<HostEngineSpawnGate>,
     #[cfg(windows)]
     job: Option<lu_win_worker_job::Job>,
+    #[cfg(target_os = "linux")]
+    lifetime: Option<LinuxEngineLifetime>,
+}
+
+// Linux PR_SET_PDEATHSIG is tied to the *creating thread*, not merely
+// the process. Keep that thread alive independent of async load callers.
+// The same existing native pre-exec guard closes the fork/prctl parent race.
+// This protects the direct trusted llama-server process, not an arbitrary
+// descendant tree or a sandbox for untrusted external tools.
+#[cfg(target_os = "linux")]
+struct LinuxEngineLifetime {
+    release: Option<std::sync::mpsc::Sender<()>>,
+    owner: Option<thread::JoinHandle<()>>,
+}
+#[cfg(target_os = "linux")]
+impl LinuxEngineLifetime {
+    fn spawn(mut command: Command) -> std::io::Result<(Child, Self)> {
+        let (release, held) = std::sync::mpsc::channel::<()>();
+        let (report, ready) = std::sync::mpsc::sync_channel(0);
+        let owner = thread::Builder::new().name("lu-engine-lifetime".into()).spawn(move || {
+            let result = lu_win_worker_job::unix_owned::bind_owned_worker_pre_exec(
+                &mut command, std::process::id(), None,
+            ).and_then(|()| command.spawn());
+            match report.send(result) {
+                Ok(()) => { let _ = held.recv(); }
+                Err(error) => {
+                    // No host accepted custody. Never leave a running engine.
+                    if let Ok(mut child) = error.0 {
+                        let _ = child.kill();
+                        let _ = child.wait();
+                    }
+                }
+            }
+        })?;
+        let lifetime = Self { release: Some(release), owner: Some(owner) };
+        let child = ready.recv().map_err(|_| std::io::Error::other("engine lifetime thread unavailable"))??;
+        Ok((child, lifetime))
+    }
+}
+#[cfg(target_os = "linux")]
+impl Drop for LinuxEngineLifetime {
+    fn drop(&mut self) {
+        self.release.take();
+        if let Some(owner) = self.owner.take() { let _ = owner.join(); }
+    }
 }
 
 /// Only the trusted host may enroll a durable, profile-local attempt gate.
@@ -230,6 +275,8 @@ impl PersistentLlamaBackend {
             durable_spawn_gate: None,
             #[cfg(windows)]
             job: None,
+            #[cfg(target_os = "linux")]
+            lifetime: None,
         })
     }
     /// Bind a trusted application-profile SQLite circuit before any future
@@ -573,6 +620,11 @@ impl InferenceBackend for PersistentLlamaBackend {
         if let Some(gate)=self.durable_spawn_gate.as_ref(){
             gate.check_before_spawn()?;
         }
+        #[cfg(target_os = "linux")]
+        let (child, lifetime) = LinuxEngineLifetime::spawn(command).map_err(|e| e.to_string())?;
+        #[cfg(target_os = "linux")]
+        { self.lifetime = Some(lifetime); }
+        #[cfg(not(target_os = "linux"))]
         #[allow(unused_mut)]
         let mut child = command.spawn().map_err(|e| e.to_string())?;
         #[cfg(windows)]
@@ -610,6 +662,8 @@ impl InferenceBackend for PersistentLlamaBackend {
             let _ = owned.kill();
             let _ = owned.wait();
         }
+        #[cfg(target_os = "linux")]
+        { self.lifetime = None; }
         self.port = None;
         self.pinned_model_file = None;
         self.pinned_projector_file = None;
@@ -674,6 +728,16 @@ impl InferenceBackend for PersistentLlamaBackend {
         cancel: &Cancellation,
         emit: &mut dyn FnMut(TokenChunk) -> Result<(), EngineError>,
     ) -> Result<(), String> {
+        self.generate_text(request, None, cancel, emit)
+    }
+    fn generate_constrained(&mut self, request: &GenerationRequest, schema: &serde_json::Value,
+        cancel: &Cancellation, emit: &mut dyn FnMut(TokenChunk) -> Result<(), EngineError>) -> Result<(), String> {
+        self.generate_text(request, Some(schema), cancel, emit)
+    }
+}
+impl PersistentLlamaBackend {
+    fn generate_text(&mut self, request: &GenerationRequest, schema: Option<&serde_json::Value>,
+        cancel: &Cancellation, emit: &mut dyn FnMut(TokenChunk) -> Result<(), EngineError>) -> Result<(), String> {
         if cancel.is_cancelled() {
             return Err("generation cancelled".into());
         }
@@ -688,7 +752,11 @@ impl InferenceBackend for PersistentLlamaBackend {
         .map_err(|_| "invalid structured text request".to_string())?;
         let mut json:serde_json::Value=serde_json::from_str(&body)
             .map_err(|_|"invalid structured text JSON")?;
-        let attempt=self.cache_gate.begin_text(trusted_scope.as_deref(),&mut json)
+        // Per-request only, and do not reuse a plain-chat prefix cache.
+        if let Some(schema) = schema {
+            json["response_format"] = serde_json::json!({"type":"json_schema","json_schema":{"name":"lu_native_reply","schema":schema}});
+        }
+        let attempt=self.cache_gate.begin_text(if schema.is_some() { None } else { trusted_scope.as_deref() },&mut json)
             .map_err(str::to_owned)?;
         self.sampling.apply(&mut json);
         let body=json.to_string();
@@ -723,6 +791,31 @@ impl Drop for PersistentLlamaBackend {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_engine_lifetime_outlives_ephemeral_load_thread_and_kills_on_release() {
+        let (mut child, lifetime) = thread::spawn(|| {
+            let mut command = Command::new("/usr/bin/sleep");
+            command.arg("30");
+            LinuxEngineLifetime::spawn(command).unwrap()
+        }).join().unwrap();
+        assert!(child.try_wait().unwrap().is_none(), "loader thread exit must not kill resident engine");
+        drop(lifetime);
+        let deadline = Instant::now() + Duration::from_secs(3);
+        loop {
+            if let Some(status) = child.try_wait().unwrap() {
+                use std::os::unix::process::ExitStatusExt;
+                assert_eq!(status.signal(), Some(9));
+                break;
+            }
+            if Instant::now() >= deadline {
+                let _ = child.kill(); let _ = child.wait();
+                panic!("kernel parent-thread guard did not terminate child");
+            }
+            thread::sleep(Duration::from_millis(20));
+        }
+    }
 
     #[test]
     fn original_durable_start_gate_blocks_third_pre_spawn_attempt_after_reopen(){

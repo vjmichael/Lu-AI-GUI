@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
+const authority=readFileSync(new URL('../src-tauri/src/turn_authority.rs',import.meta.url),'utf8');
+const coordinator=readFileSync(new URL('../src-tauri/src/turn_coordinator.rs',import.meta.url),'utf8');
 const host=readFileSync(new URL('../src-tauri/src/lib.rs',import.meta.url),'utf8');
 const route=readFileSync(new URL('../src-tauri/src/workspace_desktop.rs',import.meta.url),'utf8');
 const ui=readFileSync(new URL('../web/main.jsx',import.meta.url),'utf8');
@@ -13,7 +15,7 @@ test('Ask Workspace is native-folder-picked and never accepts WebView file paths
   assert.match(route,/WorkspaceReadTurnSession::new_git\(/);
   assert.match(ui,/invoke\('lu_workspace_ask_directory',\{/);
   // Chat-first UX removed the old specialist button. Host intent and picker remain.
-  assert.match(host,/workspace_desktop::explicit_read_workspace_request\(&prompt\)/);
+  assert.match(coordinator,/workspace_desktop::explicit_read_workspace_request\(prompt\)/);
   assert.doesNotMatch(ui,/Ask Workspace<\/button>/);
   assert.ok(!ui.includes("invoke('lu_workspace_ask_directory',{path:"));
   assert.ok(!ui.includes("invoke('lu_workspace_ask_directory',{folder:"));
@@ -21,7 +23,8 @@ test('Ask Workspace is native-folder-picked and never accepts WebView file paths
 
 test('authenticated human turn, queued cancellation and final answer remain host-owned',()=>{
   assert.match(route,/append_user_with_turn_id\(&chat_id,&generation_id,&prompt\)/);
-  assert.match(route,/trusted_user_turn_text\(conversation_id,user_turn_id\)/);
+  assert.match(route,/PersistedHumanTurn::queued_chat/);
+  assert.match(authority,/trusted_user_turn_text\(chat,turn\)/);
   assert.match(route,/ticket.wait_for_slot\(\)\?/);
   assert.match(route,/ReaderRunControl\{/);
   assert.match(route,/reader_generations\.lock\(\)/);
@@ -38,7 +41,7 @@ test('workspace selection is opt-in and normal Send remains a separate path',()=
   assert.match(host,/workspace_desktop::ask_workspace_for_chat\(/);
   assert.match(route,/append_user_with_turn_id\(&chat_id,&generation_id,&prompt\)/);
   assert.match(route,/blocking_pick_folder\(\)/);
-  assert.match(host,/workspace_desktop::explicit_read_workspace_request\(&prompt\)/);
+  assert.match(coordinator,/workspace_desktop::explicit_read_workspace_request\(prompt\)/);
   assert.match(route,/read_workspace/);
 });
 
@@ -49,7 +52,7 @@ test('P01 native filename/metadata discovery is advertised only in a scoped work
   assert.match(route,/WorkspaceReadTurnSession::new_git\(/);
   assert.doesNotMatch(route,/register_discovery_tool\(/);
   assert.match(route,/blocking_pick_folder\(\)/);
-  assert.match(host,/workspace_desktop::explicit_read_workspace_request\(&prompt\)/);
+  assert.match(coordinator,/workspace_desktop::explicit_read_workspace_request\(prompt\)/);
   assert.match(route,/read_workspace/);
 });
 

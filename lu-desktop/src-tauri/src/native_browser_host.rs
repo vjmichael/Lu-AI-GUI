@@ -388,6 +388,15 @@ impl DesktopBrowserHost {
     }
     /// Host call only. The native Tauri API must not accept a model-supplied
     /// executable, browser profile, PID or uncontrolled origin grant.
+    /// CP-05B: inspect current reviewed bytes and OS prerequisites only.
+    /// Unlike status/launch readiness, discovery never reconciles profiles,
+    /// invokes worker IPC, starts processes or grants an origin.
+    pub(crate) fn discovery_runtime_evidence(&self)->lu_core::native_capability_inventory::RuntimeEvidence{
+        use lu_core::native_capability_inventory::RuntimeEvidence;
+        if !self.package_verified(){return RuntimeEvidence::Missing}
+        if Self::require_browser_kernel_custody().is_err(){return RuntimeEvidence::ProbeUnavailable}
+        RuntimeEvidence::PinnedPackagePresent
+    }
     pub fn require_launch_ready(&self)->Result<(),String>{
         if !self.package_verified(){
             return Err("Lu browser runtime unavailable: missing reviewed, pinned package".into());

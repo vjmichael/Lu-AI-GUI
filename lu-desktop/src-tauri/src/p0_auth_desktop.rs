@@ -158,13 +158,21 @@ fn stop_scoped(owner:&DesktopState,chat:&str)->Vec<DomainResult>{
             if let Some(ref controller)=reader{
                 controller.cancellation.cancel();
             }
-            let step=reader.as_ref().and_then(|r|
-                r.current_step.lock().ok().and_then(|x|x.clone())
-            ).unwrap_or_else(||generation.clone());
+            // A nested tool may be running with no active inference step.
+            // Never fall back to the outer generation ID for that controller.
             let cancel=if phase==CancelState::Active{
-                owner.supervisor.cancel(
-                    &session,&step,&next_id("req-")
-                ).is_ok()
+                match reader.as_ref(){
+                    Some(r) if r.session_id!=session=>false,
+                    Some(r)=>match r.current_step.lock().map(|step|step.clone()){
+                        Ok(step)=>match step.as_ref(){
+                            Some(id)=>matches!(owner.supervisor.cancel(
+                                &session,id,&next_id("req-")),Ok(())|Err(SupervisorError::WrongGeneration)),
+                            None=>true, // cooperative cancellation requested, not a reap receipt
+                        },
+                        Err(_)=>false,
+                    },
+                    None=>owner.supervisor.cancel(&session,&generation,&next_id("req-")).is_ok(),
+                }
             }else{true};
             let state=if !cancel{"STOP_UNCERTAIN_RECONCILE"}
                 else if phase==CancelState::Queued{"MODEL_CANCELLED_QUEUE_ONLY"}

@@ -23,7 +23,7 @@ import {MESSAGE_REACTIONS,DEFAULT_APPEARANCE,CHAT_APPEARANCE_PRESETS,safeAppeara
 import {revisionsBySequence,canEdit,provenanceLabel,draftReplyTarget,correctedMessageFollowUp} from './message_revisions.mjs';
 import {parseHumanReplanOutline,humanReplanDefaultOutline,REPLAN_REASONS} from './agent_replan.mjs';
 import {SettingsWindow,ModelLibraryWindow} from './native_windows.jsx';
-import {isHostCurrentTimeQuestion,isHostCpuChatLookup,isHostModelStatusQuestion,isHostCpuWorkspaceLookup,isHostCpuChatCountsQuestion} from './native_intent.mjs';
+import {isModelFreeSendQuestion} from './native_intent.mjs';
 import {TaskBoardWindow} from './task_board.jsx';
 import {LU_TABS,HistoryTab,friendlyError,formatTaskState,taskName} from './unified_tabs.jsx';
 
@@ -783,7 +783,6 @@ function App() {
   const [browserVisibility,setBrowserVisibility] = useState('automatic_hidden');
   const [browserPreferenceError,setBrowserPreferenceError] = useState('');
   const [browserRuntime,setBrowserRuntime] = useState(null);
-  const [browserOrigins,setBrowserOrigins]=useState('https://example.org');
   const [browserBusy,setBrowserBusy]=useState(false);
   const [browserReadBusy,setBrowserReadBusy]=useState(false);
   const [browserReadResult,setBrowserReadResult]=useState(null);
@@ -891,16 +890,6 @@ function App() {
   const [backgroundTerminalNotice,setBackgroundTerminalNotice] = useState(null);
   const [autoBackgroundContinuation,setAutoBackgroundContinuation] = useState(false);
   const [working, setWorking] = useState(false);
-  // An opt-in for exactly one ordinary Send. This boolean is never authority:
-  // the host still requires an actual native directory picker.
-  const [workspaceToolsNextSend,setWorkspaceToolsNextSend] = useState(false);
-  // One-turn model-side plan proposal. No tool grants or automatic execution.
-  const [planDraftNextSend,setPlanDraftNextSend] = useState(false);
-  // One Send only. Native host shows an OS picker and reviews exact program
-  // and selected resource; no JS/model path can become execution authority.
-  const [reviewedAppNextSend,setReviewedAppNextSend] = useState(null);
-  // Explicit one-turn Browser opt-in; native dialog remains the grant.
-  const [browserResearchNextSend,setBrowserResearchNextSend]=useState(false);
   const [modelLoadTrace, setModelLoadTrace] = useState(null);
   const [modelMemorySample,setModelMemorySample] = useState(null);
   const [lastHostLoadReply, setLastHostLoadReply] = useState(0);
@@ -1000,16 +989,10 @@ function App() {
   const loadedModel = models.find(m => m.modelRef === runtime.modelRef);
   const viewedDraftImage=imageViewer && images.find(im=>im.imageRef===imageViewer.imageRef);
   const loaded = runtime.phase === 'Ready' || runtime.phase === 'Generating';
-  // Only two host-validated, read-only and model-free shortcuts are shown:
-  // native clock and exact literal search of this original ANSF chat.
-  // The Rust host independently rejects mismatched mode/session/scope.
-  const modelFreeClockAllowed=!loaded && !runtime.sessionId &&
-    (isHostCurrentTimeQuestion(prompt)||isHostCpuChatLookup(prompt)||
-      isHostModelStatusQuestion(prompt)||isHostCpuWorkspaceLookup(prompt)||
-      isHostCpuChatCountsQuestion(prompt)) &&
-    images.length===0 && textFiles.length===0 &&
-    !planDraftNextSend && !browserResearchNextSend && !reviewedAppNextSend &&
-    !workspaceToolsNextSend;
+  // Presentation-only affordance for the five exact CPU shortcuts. The
+  // native coordinator alone admits the original request and any scope.
+  const modelFreeSendAllowed=!loaded && !runtime.sessionId &&
+    isModelFreeSendQuestion(prompt) && images.length===0 && textFiles.length===0;
   const busy = working || runtime.phase === 'Generating' || Object.keys(jobs).length > 0;
   const wave2FileBusy = archiveBusy || documentCreateBusy || officeRevisionBusy ||
     fileTransferBusy || trashBusy;
@@ -4382,41 +4365,10 @@ function App() {
     const origin=currentChat.current||'new';
     if(working||jobsRef.current[origin]||pendingSends.current.has(origin)||
        draftMutations.current.has(origin)||attachmentChatCreation.current||
-       (!runtime.sessionId&&!modelFreeClockAllowed)||!draftText.current.trim())return;
+       (!runtime.sessionId&&!modelFreeSendAllowed)||!draftText.current.trim())return;
     const snapshot=snapshotDraft(readComposerDraft(origin));
-    const input=snapshot.prompt.trim();
-    const usePlanDraft=planDraftNextSend;
-    const useBrowserResearch=browserResearchNextSend;
-    const useReviewedApp=reviewedAppNextSend;
-    // Explicit human folder requests may enter existing native read-only
-    // workspace mode. The path text is never authority; user selects an
-    // actual directory through Lu's fresh native OS folder picker.
-    // This flag is only the historical explicit user opt-in. Ordinary
-    // user requests are classified by the native lu_generate host, which
-    // prioritizes approved Git, Reader, media and HTTPS Browser routes
-    // before workspace. Renderer heuristics never choose a tool scope.
-    const useWorkspaceTools=workspaceToolsNextSend;
-    if([Boolean(useWorkspaceTools),Boolean(useBrowserResearch),Boolean(useReviewedApp),Boolean(usePlanDraft)].filter(Boolean).length>1){
-      setError('Choose only one native workspace, reviewed app or Browser mode for this turn.');return;
-    }
-    if(usePlanDraft&&(images.length||textFiles.length||input.length>8192)){
-      setError('Draft plan mode requires a text-only original human request, at most 8192 characters.');return;
-    }
-    if(usePlanDraft&&!m2Context?.goalId){
-      setError('Set a saved ANSF goal before asking Lu to draft a plan.');return;
-    }
-    if(useBrowserResearch&&(images.length||textFiles.length||input.length>12*1024)){
-      setError('Browser research requires a text-only question of at most 12 KiB.');return;
-    }
-    if (useWorkspaceTools && (images.length || textFiles.length)){
-      setError('Workspace tools require a text-only question. Remove attachments or turn off workspace tools.');return;
-    }
-    if (useWorkspaceTools && input.length>8192){
-      setError('Workspace tool questions must be at most 8192 characters.');return;
-    }
-    if (useReviewedApp && (images.length || textFiles.length || input.length>8192)){
-      setError('Reviewed application tools require a text-only question no longer than 8192 characters.');return;
-    }
+    // Ordinary Send never chooses a lane or supplies scope. Native routing
+    // uses original human text; all tool authority is independently granted.
     let submitted,refs;
     try {
       submitted=attachmentSubmissionText(snapshot);
@@ -4437,12 +4389,6 @@ function App() {
     }catch(error){
       pendingSends.current.delete(origin);refreshComposerState();setError(String(error));return;
     }
-    // One-shot mode flags never become retry permission. A new explicit
-    // Send is required for a failed non-image/tool request.
-    if (useWorkspaceTools) setWorkspaceToolsNextSend(false);
-    if (usePlanDraft) setPlanDraftNextSend(false);
-    if (useBrowserResearch) setBrowserResearchNextSend(false);
-    if (useReviewedApp) setReviewedAppNextSend(null);
     noticeForChat(activeId,null);
     if(currentChat.current===activeId)setError('');
     if(attempt.nonce){
@@ -4455,19 +4401,11 @@ function App() {
       phase:'submitting',position:0,text:''}}));
     let completed=false;
     try{
-      const output=useReviewedApp
-        ? await invoke('lu_reviewed_app_ask',{sessionId:runtime.sessionId,chatId:activeId,prompt:input,mode:useReviewedApp})
-        : useBrowserResearch
-          ? await invoke('lu_generate_browser',{sessionId:runtime.sessionId,chatId:activeId,
-              prompt:input,origins:browserOrigins,maxNewTokens:512})
-          : await invoke('lu_generate',{sessionId:runtime.sessionId??'',chatId:activeId,
-              prompt:submitted,imageRefs:[],maxNewTokens:512,readOnlyWorkspace:useWorkspaceTools,planOnly:usePlanDraft});
-      if(output===null&&useReviewedApp){/* native picker denied; keep draft */}
-      else if(typeof output!=='string')throw Error('Lu did not return a text response');
-      else{
-        completed=true;
-        writeComposerDraft(activeId,clearSubmittedDraft(readComposerDraft(activeId),snapshot));
-      }
+      const output=await invoke('lu_generate',{sessionId:runtime.sessionId??'',chatId:activeId,
+        prompt:submitted,imageRefs:[],maxNewTokens:512});
+      if(typeof output!=='string')throw Error('Lu did not return a text response');
+      completed=true;
+      writeComposerDraft(activeId,clearSubmittedDraft(readComposerDraft(activeId),snapshot));
     }catch(error){
       if(currentChat.current===activeId&&!/Cancelled|Canceled/i.test(String(error)))setError(String(error));
     }finally{
@@ -4476,7 +4414,6 @@ function App() {
         const samples=await invoke('lu_perf01_recent',{chatId:activeId,limit:1}).catch(()=>[]);
         if(samples.length&&currentChat.current===activeId)setPerfLatestByChat(prev=>({...prev,[activeId]:samples[0]}));
       }
-      if(usePlanDraft)await refreshToolActivity(activeId).catch(error=>{if(currentChat.current===activeId)setError(String(error));});
     }
   }
   async function openSavedAttachment(entry,im){
@@ -6570,7 +6507,7 @@ function App() {
             {/* Goal and task planning remain host capabilities, not chat controls. */}
             {chatBusy ? <button className="dangerButton" type="button" onClick={cancel}
                 disabled={!visibleJob.generationId || visibleJob.phase==='submitting' || visibleJob.cancelling}>{visibleJob.cancelling ? 'Stopping…' : visibleJob.phase === 'queued' ? 'Cancel queued' : 'Cancel'}</button>
-              : <button className="primaryButton" type="submit" disabled={working || Boolean(visibleAttempt) || composerMutating || (!loaded && !modelFreeClockAllowed) || !prompt.trim()}>Send</button>}
+              : <button className="primaryButton" type="submit" disabled={working || Boolean(visibleAttempt) || composerMutating || (!loaded && !modelFreeSendAllowed) || !prompt.trim()}>Send</button>}
           </div></form>}
       </div>
     </main>

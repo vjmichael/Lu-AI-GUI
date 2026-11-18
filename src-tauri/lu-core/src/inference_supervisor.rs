@@ -668,6 +668,14 @@ impl<B: InferenceBackend + Send + 'static> TrustedInferenceSupervisor<B> {
         history: Vec<proto::InferenceChatTurn>,
         emit: impl FnMut(Vec<u8>) -> Result<(), BridgeError>,
     ) -> Result<(), SupervisorError> {
+        self.run_reserved_output_schema(session_id, generation_id, request_id, prompt, max_new_tokens, history, None, emit)
+    }
+    fn run_reserved_output_schema(
+        &self, session_id: &str, generation_id: &str, request_id: &str,
+        prompt: String, max_new_tokens: u32, history: Vec<proto::InferenceChatTurn>,
+        schema: Option<&serde_json::Value>,
+        emit: impl FnMut(Vec<u8>) -> Result<(), BridgeError>,
+    ) -> Result<(), SupervisorError> {
         let session = self.session(session_id)?;
         let frame = Self::frame(
             request_id,
@@ -703,7 +711,7 @@ impl<B: InferenceBackend + Send + 'static> TrustedInferenceSupervisor<B> {
         // Never hold session control while the actual inference runs.
         let outcome = match session.engine.lock() {
             Ok(mut engine) => engine.set_trusted_cache_scope(cache_scope.as_deref())
-                .and_then(|()|engine.generate(&frame, cancellation, emit))
+                .and_then(|()|engine.generate_with_output_schema(&frame, &[], schema, cancellation, emit))
                 .map_err(Into::into),
             Err(_) => Err(SupervisorError::Poisoned),
         };
@@ -733,6 +741,16 @@ impl<B: InferenceBackend + Send + 'static> TrustedInferenceSupervisor<B> {
             max_new_tokens,
             emit,
         )
+    }
+    /// Host-only per-generation schema, never accepted from protobuf or model.
+    pub(crate) fn generate_constrained(
+        &self, session_id: &str, generation_id: String, request_id: &str,
+        prompt: String, max_new_tokens: u32, schema: &serde_json::Value,
+        emit: impl FnMut(Vec<u8>) -> Result<(), BridgeError>,
+    ) -> Result<(), SupervisorError> {
+        if !schema.is_object() || schema.to_string().len() > 128 * 1024 { return Err(SupervisorError::InvalidRequest); }
+        self.reserve_generation(session_id, &generation_id, request_id, &prompt, max_new_tokens)?;
+        self.run_reserved_output_schema(session_id, &generation_id, request_id, prompt, max_new_tokens, Vec::new(), Some(schema), emit)
     }
     pub fn cancel(
         &self,

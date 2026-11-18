@@ -446,9 +446,8 @@ pub fn register_archive_inspection_tool(
         .map_err(|_| "trusted archive workspace root cannot be opened")?);
     register_archive_inspection_tool_from_dir(registry,catalog,root)
 }
-pub(crate) fn register_archive_inspection_tool_from_dir(
-    registry:&NativeToolRegistry,catalog:&mut ModelToolCatalog,root:Arc<Dir>,
-)->Result<(),String>{
+
+pub(crate) fn registration_contract()->crate::native_capability_inventory::RegistrationContract{
     let descriptor = ToolDescriptor {
         id: LIST.into(),
         display_name: "Inspect approved archive and package contents (read-only)".into(),
@@ -456,19 +455,7 @@ pub(crate) fn register_archive_inspection_tool_from_dir(
         input_type_url: INPUT.into(),
         output_type_url: OUTPUT.into(),
     };
-    registry.register(
-        ModuleManifest {
-            id: MODULE.into(),
-            display_name: "Lu Core archive inspection".into(),
-            contract_version: CORE_CONTRACT_VERSION,
-            kind: ModuleKind::Core,
-            tools: vec![descriptor.clone()],
-            panels: vec![],
-            workflows: vec![],
-        },
-        vec![Arc::new(ArchiveListing { descriptor, root })],
-    ).map_err(|_| "archive registry refused native tool")?;
-    catalog.insert(registry, ModelToolDefinition {
+    crate::native_capability_inventory::RegistrationContract::new(descriptor,ModelToolDefinition {
         name: "lu_archive_list".into(),
         native_tool_id: LIST.into(),
         description: "Read-only inspect ZIP, ISO9660, TAR, CPIO, ar, DEB, RPM, 7z and RAR/RAR5; fail closed on encrypted or unsafe entries; no execution or extraction.".into(),
@@ -482,6 +469,25 @@ pub(crate) fn register_archive_inspection_tool_from_dir(
             "additionalProperties":false
         }),
         codec: Arc::new(ArchiveCodec),
-    }).map_err(|_| "archive JSON/Protobuf schema registration refused")?;
+    })
+}
+
+pub(crate) fn register_archive_inspection_tool_from_dir(
+    registry:&NativeToolRegistry,catalog:&mut ModelToolCatalog,root:Arc<Dir>,
+)->Result<(),String>{
+    let (descriptor,definition)=registration_contract().into_parts();
+    registry.register(
+        ModuleManifest {
+            id: MODULE.into(),
+            display_name: "Lu Core archive inspection".into(),
+            contract_version: CORE_CONTRACT_VERSION,
+            kind: ModuleKind::Core,
+            tools: vec![descriptor.clone()],
+            panels: vec![],
+            workflows: vec![],
+        },
+        vec![Arc::new(ArchiveListing { descriptor, root })],
+    ).map_err(|_| "archive registry refused native tool")?;
+    catalog.insert(registry, definition).map_err(|_| "archive JSON/Protobuf schema registration refused")?;
     Ok(())
 }

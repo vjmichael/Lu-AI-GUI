@@ -57,6 +57,12 @@ impl InferenceBackend for StreamFixture {
         Ok(())
     }
     fn unload(&mut self) {}
+    // Deliberate synthetic transport fixture, not real constrained decoding.
+    fn generate_constrained(&mut self, request: &GenerationRequest, schema: &serde_json::Value,
+        cancel: &Cancellation, emit: &mut dyn FnMut(TokenChunk) -> Result<(), EngineError>) -> Result<(), String> {
+        assert!(schema.to_string().contains("lu_files_read_text"));
+        self.generate(request, cancel, emit)
+    }
     fn generate(
         &mut self,
         request: &GenerationRequest,
@@ -758,5 +764,80 @@ async fn policy_denied_tool_feedback_terminates_without_model_retry() {
         && e.payload.contains("PERMISSION_DENIED")));
     assert!(audit.last().unwrap().payload.contains("POLICY_DENIED"));
     drop(journal); drop(turn); drop(catalog); drop(registry); drop(authority);
+    remove_workspace(root);
+}
+
+#[tokio::test]
+async fn returned_tool_feedback_is_audited_before_cancellation_or_revocation_stops_continuation() {
+    for revoke in [false, true] {
+        let root = sandbox();
+        let (registry, catalog, authority, origin) = tools_and_authority(&root);
+        let mut turn = NativeToolTurn::new(&catalog, &authority, origin,
+            "thread:conversation-test".into(),
+            &BTreeSet::from(["lu_files_read_text".into()])).unwrap();
+        let journal = ModelTurnJournal::open(&root.join("cp05c.sqlite")).unwrap();
+        let cancel = Cancellation::default();
+        struct OneCall(usize);
+        impl ModelStepGenerator for OneCall {
+            fn generate_step(&mut self, _: &str, _: u32, _: &Cancellation)
+                -> Result<String, NativeGenerationError> {
+                self.0 += 1;
+                assert_eq!(self.0, 1, "must not continue a stopped turn");
+                Ok(r#"{"kind":"tool","name":"lu_files_read_text","arguments":{"path":"notes.txt"}}"#.into())
+            }
+        }
+        let observe = |stage| if stage == ToolDispatchCheckpoint::Returned {
+            if revoke { authority.revoke_task("task-test").unwrap(); }
+            else { cancel.cancel(); }
+        };
+        let mut model = OneCall(0);
+        let services = NativeTurnServices { catalog: &catalog, registry: &registry,
+            authority: &authority, host_policy: &Permitted };
+        let result = run_supervised_native_turn_journaled_observed("Read notes.txt", &mut turn,
+            &mut model, &services, &cancel, &journal, &observe).await;
+        let expected = if revoke { NativeGenerationError::ModelReply(lu_core::agent_tool_loop::ToolTurnError::Revoked) }
+            else { NativeGenerationError::Cancelled };
+        assert_eq!(result, Err(expected));
+        assert_eq!(model.0, 1);
+        assert_eq!(turn.step_count(), 1);
+        let audit = journal.events_for("conversation-test", "task-test").unwrap();
+        assert_eq!(audit[audit.len()-2].kind, ModelAuditKind::ToolFeedback);
+        assert!(audit[audit.len()-2].payload.contains("Lu evidence marker"));
+        assert_eq!(audit.last().unwrap().kind, ModelAuditKind::GenerationFailure);
+        assert!(audit.iter().all(|event| event.kind != ModelAuditKind::FinalAnswer));
+        assert_eq!(turn.ensure_continuation_authorized(&authority),
+            Err(lu_core::agent_tool_loop::ToolTurnError::AlreadyFinished));
+        drop(journal); drop(turn); drop(catalog); drop(registry); drop(authority);
+        remove_workspace(root);
+    }
+}
+
+#[tokio::test]
+async fn inference_failure_closes_controller_and_cannot_be_reused() {
+    let root = sandbox();
+    let (registry, catalog, authority, origin) = tools_and_authority(&root);
+    let mut turn = NativeToolTurn::new(&catalog, &authority, origin,
+        "thread:conversation-test".into(),
+        &BTreeSet::from(["lu_files_read_text".into()])).unwrap();
+    struct Failed(usize);
+    impl ModelStepGenerator for Failed {
+        fn generate_step(&mut self, _: &str, _: u32, _: &Cancellation)
+            -> Result<String, NativeGenerationError> {
+            self.0 += 1;
+            Err(NativeGenerationError::InferenceFailed)
+        }
+    }
+    let mut model = Failed(0);
+    let services = NativeTurnServices { catalog: &catalog, registry: &registry,
+        authority: &authority, host_policy: &Permitted };
+    let cancellation = Cancellation::default();
+    assert_eq!(run_supervised_native_turn("Read notes.txt", &mut turn, &mut model,
+        &services, &cancellation).await, Err(NativeGenerationError::InferenceFailed));
+    assert_eq!(run_supervised_native_turn("Read notes.txt", &mut turn, &mut model,
+        &services, &cancellation).await,
+        Err(NativeGenerationError::ModelReply(lu_core::agent_tool_loop::ToolTurnError::AlreadyFinished)));
+    assert_eq!(model.0, 1);
+    assert_eq!(turn.step_count(), 0);
+    drop(turn); drop(catalog); drop(registry); drop(authority);
     remove_workspace(root);
 }

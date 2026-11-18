@@ -128,6 +128,18 @@ impl CoreUtilityTurn{
                 (ENV_ID.to_owned(),"lu_check_env".to_owned(),ExactInput::Program(program))
             }
         };
+        // Binding happens once, from the authenticated original human input.
+        // The model requests the native operation with an explicit reference;
+        // the unchanged per-turn authorizer checks the resulting bytes again.
+        let fixed=match &exact {
+            ExactInput::Schema{schema,data}=>serde_json::json!({
+                "schema":serde_json::from_slice::<Value>(schema).map_err(|_|"Invalid original schema")?,
+                "data":serde_json::from_slice::<Value>(data).map_err(|_|"Invalid original instance")?
+            }),
+            ExactInput::Program(program)=>serde_json::json!({"program":program}),
+        };
+        catalog.bind_current_input(&registry,&name,fixed.as_object().ok_or("Invalid fixed input")?.clone())
+            .map_err(|_| "Could not bind original utility input")?;
         let descriptor=registry.tools()
             .map_err(|_|"Core utility registry unavailable")?;
         if descriptor.len()!=1 || descriptor[0].id!=tool_id ||
@@ -210,6 +222,26 @@ mod tests{
         let journal=ModelTurnJournal::open(&path).unwrap();
         (path,journal)
     }
+    #[test]
+    fn approved_reference_encodes_exact_original_and_rejects_overrides(){
+        let turn=CoreUtilityTurn::new(&Original,"c-original","g-original","g-original",
+            CoreUtilityRequest::Validate{schema:json!({"type":"integer"}),data:json!(42)}).unwrap();
+        let allowed=BTreeSet::from(["lu_validate_schema".to_owned()]);
+        let call=|raw:&str|turn.catalog.encode_call(&allowed,"lu_validate_schema","call-test",Some("g-original"),raw);
+        let exact=call(r#"{"source":"current_request"}"#).unwrap();
+        let typed=proto::SchemaValidateRequest::decode(exact.input.bytes.as_slice()).unwrap();
+        assert_eq!(typed.schema_json,b"{\"type\":\"integer\"}");
+        assert_eq!(typed.instance_json,b"42");
+        let descriptor=turn.registry.tools().unwrap().remove(0);
+        assert!(turn.policy.authorize(&exact,&descriptor).is_ok());
+        for input in [r#"{}"#,r#"{"source":"prior_request"}"#,r#"{"source":"current_request","data":0}"#,
+            r#"{"source":"current_request","source":"current_request"}"#,r#"{"schema":{"type":"integer"},"data":42}"#] {
+            assert!(call(input).is_err(),"accepted {input}");
+        }
+        let mut substituted=exact;
+        substituted.input.bytes=proto::SchemaValidateRequest{schema_json:typed.schema_json,instance_json:b"0".to_vec()}.encode_to_vec();
+        assert!(turn.policy.authorize(&substituted,&descriptor).is_err());
+    }
     #[tokio::test]
     async fn original_schema_is_the_only_data_that_model_may_validate(){
         let mut turn=CoreUtilityTurn::new(&Original,"c-original","g-original",
@@ -232,7 +264,7 @@ mod tests{
             }).unwrap();
         let (path,journal)=audit();
         let mut replies=Replies(VecDeque::from(vec![
-            r#"{"kind":"tool","name":"lu_validate_schema","arguments":{"schema":{"type":"integer"},"data":42}}"#.into(),
+            r#"{"kind":"tool","name":"lu_validate_schema","arguments":{"source":"current_request"}}"#.into(),
             r#"{"kind":"final","text":"The exact supplied data matches the supplied schema."}"#.into()
         ]));
         let result=turn.run_journaled_observed("Validate this exact user schema/data",
@@ -281,7 +313,7 @@ mod tests{
             }).unwrap();
         let (path,journal)=audit();
         let mut chosen=Replies(VecDeque::from(vec![
-            r#"{"kind":"tool","name":"lu_check_env","arguments":{"program":"python"}}"#.into(),
+            r#"{"kind":"tool","name":"lu_check_env","arguments":{"source":"current_request"}}"#.into(),
             r#"{"kind":"final","text":"The approved candidate presence was checked; this does not prove runtime execution."}"#.into()
         ]));
         let report=current.run_journaled_observed(
@@ -303,7 +335,7 @@ mod tests{
         revoked.authority.revoke_task("g-original").unwrap();
         let (path,journal)=audit();
         let mut model=Replies(VecDeque::from(vec![
-            r#"{"kind":"tool","name":"lu_validate_schema","arguments":{"schema":{"type":"integer"},"data":42}}"#.into()
+            r#"{"kind":"tool","name":"lu_validate_schema","arguments":{"source":"current_request"}}"#.into()
         ]));
         assert!(revoked.run_journaled_observed("Validate original JSON",
             &mut model,&Cancellation::default(),&journal,&|_|{}).await.is_err());
@@ -314,7 +346,7 @@ mod tests{
         let cancel=Cancellation::default();cancel.cancel();
         let (path,journal)=audit();
         let mut model=Replies(VecDeque::from(vec![
-            r#"{"kind":"tool","name":"lu_validate_schema","arguments":{"schema":{"type":"integer"},"data":42}}"#.into()
+            r#"{"kind":"tool","name":"lu_validate_schema","arguments":{"source":"current_request"}}"#.into()
         ]));
         assert!(cancelled.run_journaled_observed("Validate original JSON",
             &mut model,&cancel,&journal,&|_|{}).await.is_err());

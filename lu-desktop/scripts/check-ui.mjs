@@ -4,6 +4,7 @@ const ui = readFileSync(new URL('../web/main.jsx', import.meta.url), 'utf8');
 const windows = readFileSync(new URL('../web/native_windows.jsx', import.meta.url), 'utf8');
 const researchHost = readFileSync(new URL('../src-tauri/src/research_desktop.rs', import.meta.url), 'utf8');
 const host = readFileSync(new URL('../src-tauri/src/lib.rs', import.meta.url), 'utf8');
+const coordinator = readFileSync(new URL('../src-tauri/src/turn_coordinator.rs', import.meta.url), 'utf8');
 const workspaceHost = readFileSync(new URL('../src-tauri/src/workspace_desktop.rs', import.meta.url), 'utf8');
 const store = readFileSync(new URL('../src-tauri/src/ansf_chat_store.rs', import.meta.url), 'utf8');
 const css = readFileSync(new URL('../web/styles.css', import.meta.url), 'utf8');
@@ -40,7 +41,7 @@ const tests = [
     host.includes('async fn lu_browser_start(') &&
     host.includes('owner.browser_authority.open_user_task(') &&
     host.includes('owner.browser_runtime.require_launch_ready()?') &&
-    host.includes('browser_model_desktop::explicit_browse_origin(&prompt)') &&
+    coordinator.includes('browser_model_desktop::explicit_browse_origin(prompt)') && host.includes('TurnRoute::Browser(origin)') &&
     host.includes('start_browser_for_exact_turn(') &&
     host.includes('Browser grant')],
   ['Observe awareness lane stays confined to native Settings and never grants an AI task',
@@ -99,16 +100,16 @@ const tests = [
     host.includes('fn lu_image_workspace_export(') &&
     css.includes('.imageViewerDialog')],
   ['Wave 4 explicit Git inspections reuse an OS picker, bounded typed tools and no general Git authority',
-    host.includes('workspace_desktop::explicit_read_git_request(&prompt)') &&
+    coordinator.includes('workspace_desktop::explicit_read_git_request(prompt)') && host.includes('turn_coordinator::select(') &&
     host.includes('workspace_desktop::ask_git_for_chat(') &&
     workspaceHost.includes('WorkspaceReadTurnSession::new_git(') &&
     workspaceHost.includes('trusted_git_executable()') &&
     host.includes('workspace_desktop::ask_git_for_chat(')],
   ['Wave 3 ordinary Send can open trusted Reader for explicit document interpretation',
-    host.includes('reader_desktop::explicit_reader_document_request(&prompt)') &&
+    coordinator.includes('reader_desktop::explicit_reader_document_request(prompt)') && host.includes('turn_coordinator::select(') &&
     host.includes('reader_desktop::ask_reader_for_chat(')],
   ['Wave 3 ordinary text can offer a native workspace picker without model permission or attachment instructions',
-    host.includes('workspace_desktop::explicit_read_workspace_request(&prompt)') &&
+    coordinator.includes('workspace_desktop::explicit_read_workspace_request(prompt)') && host.includes('turn_coordinator::select(') &&
     host.includes('workspace_desktop::ask_workspace_for_chat(')],
   ['Wave 3 tool discovery comes from the actual authorized native registry, never from model names',
     ui.includes("listen('lu-native-turn-capabilities'") &&
@@ -130,18 +131,16 @@ const tests = [
     ui.includes('Review with native controls') &&
     host.includes('state.native_actions.stage(') &&
     host.includes('fn lu_accept_native_action_proposal(')],
-  ['Wave 3 normal Send one-turn workspace route is explicitly opt-in and uses native picker',
-    /readOnlyWorkspace:\s*useWorkspaceTools/.test(send) &&
-    send.includes('const useWorkspaceTools=workspaceToolsNextSend;') &&
+  ['Wave 3 ordinary Send uses one host coordinator and native workspace picker',
+    !/readOnlyWorkspace:|planOnly:|workspaceToolsNextSend|browserResearchNextSend|reviewedAppNextSend|planDraftNextSend/.test(ui) &&
     !ui.includes('chatToolsDrawer') &&
-    send.includes('if (useWorkspaceTools) setWorkspaceToolsNextSend(false)') &&
-    send.indexOf('if (useWorkspaceTools) setWorkspaceToolsNextSend(false)') < send.indexOf("await invoke('lu_generate'") &&
-    send.includes('if (useWorkspaceTools && (images.length || textFiles.length))') &&
-    /let requested_workspace=read_only_workspace.unwrap_or\(false\)\s*\|\|\s*\(image_refs.is_empty\(\)\s*&&\s*workspace_desktop::explicit_read_workspace_request\(&prompt\)\);/.test(host) &&
-    /if requested_workspace\{[\s\S]*?workspace_desktop::validate_workspace_send_request\([\s\S]*?return workspace_desktop::ask_workspace_for_chat\(/.test(host) &&
+    send.includes("await invoke('lu_generate'") &&
+    !/lu_generate_browser|lu_reviewed_app_ask/.test(send) &&
+    /if workspace\|\|\(!images&&workspace_desktop::explicit_read_workspace_request\(prompt\)\)/.test(coordinator) &&
+    /if workspace\|\|\(!images&&workspace_desktop::explicit_read_workspace_request\(prompt\)\)\{[\s\S]*?workspace_desktop::validate_workspace_send_request\([\s\S]*?return Ok\(TurnRoute::Workspace\)/.test(coordinator) && /TurnRoute::Workspace=>\{[\s\S]*?return workspace_desktop::ask_workspace_for_chat\(/.test(host) &&
     workspaceHost.includes('blocking_pick_folder()') &&
     workspaceHost.includes('ApprovedWorkspace::hold(path)') && workspaceHost.includes('blocking_show()') &&
-    workspaceHost.includes('state.chats.append_user_with_turn_id(&chat_id,&generation_id,&prompt)?') &&
+    /enqueue_with_class_committing\(&session_id,&chat_id,&generation_id,TurnClass::Foreground,\s*\|\|state\.chats\.append_user_with_turn_id\(&chat_id,&generation_id,&prompt\)\)\?/.test(workspaceHost) &&
     workspaceHost.includes('ask_scoped_read_for_chat(app,state,session_id,chat_id,prompt,false).await')],
   ['native GGUF import and generate remain Lu-only', ui.includes("invoke('lu_import_model')") && ui.includes("invoke('lu_generate'")],
   ['no Jan execution paths introduced', !/jan_llama|JanInference|jan-cowork/.test(ui + host)],
@@ -156,7 +155,8 @@ const tests = [
   ['submitted draft clears only on exact saved receipt or successful text reply; rejected/uncertain draft is retained',
     send.includes('const snapshot=snapshotDraft(readComposerDraft(origin));') &&
     send.includes('writeComposerDraft(activeId,clearSubmittedDraft(readComposerDraft(activeId),snapshot))') &&
-    send.includes("else if(typeof output!=='string')throw Error(") &&
+    send.includes("if(typeof output!=='string')throw Error(") &&
+    send.indexOf("if(typeof output!=='string')throw Error(") < send.indexOf("writeComposerDraft(activeId,clearSubmittedDraft(readComposerDraft(activeId),snapshot))") &&
     imageAdmission.includes("if(receiptDecision(attempt,receipt)!=='saved')return false;") &&
     imageAdmission.includes('writeComposerDraft(target,clearSubmittedDraft(old,attempt.snapshot))') &&
     lifecycle.includes("if(!sameSubmittedDraft(current,original))return current;") &&

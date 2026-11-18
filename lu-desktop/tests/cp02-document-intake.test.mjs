@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
+const coordinator=readFileSync(new URL('../src-tauri/src/turn_coordinator.rs',import.meta.url),'utf8');
 import {ATTACHMENT_ACCEPT, DOCUMENT_EXTENSIONS, MAX_DOCUMENT_BYTES, supportedDocumentName, documentFilePayload, documentDraftItem} from '../web/document_attachment_input.mjs';
 import {buildSubmittedPrompt} from '../web/attachment_drafts.mjs';
 test('a single supported attachment list covers common native Reader formats',()=>{
@@ -54,7 +55,8 @@ test('native original-file entrypoints share admission and document text cannot 
   assert.match(host,/linked_attachment_intake::model_context\(&prompt,&linked\)/);
   assert.match(host,/append_user_with_attachment_drafts\(&chat_id,&generation_id,&prompt,&manifest,&linked\)/);
   assert.match(host,/let document_context=!linked.is_empty\(\)\|\|contains_document_context\(&prompt\)/);
-  assert.match(host,/if !document_context \{[\s\S]*?native intent routing from attached document text/);
+  assert.match(coordinator,/if crate::contains_document_context\(prompt\)\{[\s\S]*?return Ok\(TurnRoute::Model\)/);
+  assert.match(host,/match turn_coordinator::select\(/);
   assert.match(host,/if origin==GenerationOrigin::Human&&!plan_only&&!document_context/);
   assert.match(host,/if !plan_only&&!document_context/);
 });

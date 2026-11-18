@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
+const coordinator=readFileSync(new URL('../src-tauri/src/turn_coordinator.rs',import.meta.url),'utf8');
 import {isHostCurrentTimeQuestion,isHostCpuChatLookup,isHostModelStatusQuestion} from '../web/native_intent.mjs';
 
 const hostClock=readFileSync(new URL('../src-tauri/src/host_clock.rs',import.meta.url),'utf8');
@@ -25,10 +26,11 @@ test('CORE-01D model-free clock accepts only complete original time questions',(
   assert.doesNotMatch(hostClock,/\.iter\(\)\.any\(\|q\|s\.starts_with\(q\)\)/);
 });
 test('normal Send keeps host authority, existing ANSF and CPU boundaries',()=>{
-  assert.match(host,/host_clock::explicit_current_time_request\(&prompt\)/);
-  assert.match(host,/perf01_router::classify\(/);
+  assert.match(coordinator,/host_clock::explicit_current_time_request\(prompt\)/);
+  assert.match(coordinator,/perf01_router::classify\(/);
+  assert.match(host,/match turn_coordinator::select\(/);
   assert.match(host,/append_user_with_turn_id\(&chat_id,&gid,&prompt\)/);
-  assert.match(ui,/isHostCurrentTimeQuestion\(prompt\)/);
+  assert.match(ui,/isModelFreeSendQuestion\(prompt\)/);
   assert.equal(isHostCpuChatLookup('Search this chat for: evidence'),true);
   assert.equal(isHostModelStatusQuestion('Show local model status'),true);
   assert.equal(isHostCpuChatLookup('What time is it and search this chat'),false);

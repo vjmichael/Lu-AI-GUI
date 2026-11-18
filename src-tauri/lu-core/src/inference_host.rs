@@ -97,6 +97,11 @@ pub trait InferenceBackend {
         cancel: &Cancellation,
         emit: &mut dyn FnMut(TokenChunk) -> Result<(), EngineError>,
     ) -> Result<(), String>;
+    /// Host-owned output schema; unsupported engines fail closed.
+    fn generate_constrained(&mut self, _request: &GenerationRequest, _schema: &serde_json::Value,
+        _cancel: &Cancellation, _emit: &mut dyn FnMut(TokenChunk) -> Result<(), EngineError>) -> Result<(), String> {
+        Err("backend does not support constrained generation".into())
+    }
     /// Browser proposals require structured function-call support. Other
     /// engines cannot fall back to parsing arbitrary model prose as commands.
     fn generate_browser_function_calls(
@@ -208,8 +213,17 @@ impl<B: InferenceBackend> InferenceHost<B> {
         &mut self,
         request: GenerationRequest,
         cancel: Cancellation,
-        mut emit: impl FnMut(TokenChunk) -> Result<(), EngineError>,
+        emit: impl FnMut(TokenChunk) -> Result<(), EngineError>,
     ) -> Result<(), EngineError> {
+        self.generate_with_output_schema(request, None, cancel, emit)
+    }
+    pub(crate) fn generate_with_output_schema(
+        &mut self, request: GenerationRequest, schema: Option<&serde_json::Value>,
+        cancel: Cancellation, mut emit: impl FnMut(TokenChunk) -> Result<(), EngineError>,
+    ) -> Result<(), EngineError> {
+        if schema.is_some_and(|s| !s.is_object() || s.to_string().len() > 128 * 1024) {
+            return Err(EngineError::InvalidRequest);
+        }
         if self.phase != EnginePhase::Ready {
             return Err(EngineError::NotLoaded);
         }
@@ -226,12 +240,14 @@ impl<B: InferenceBackend> InferenceHost<B> {
         }
         self.phase = EnginePhase::Generating;
         self.cancellation = Some(cancel.clone());
-        let result = self.backend.generate(&request, &cancel, &mut |chunk| {
-            if cancel.is_cancelled() {
-                return Err(EngineError::Cancelled);
-            }
+        let mut forward = |chunk| {
+            if cancel.is_cancelled() { return Err(EngineError::Cancelled); }
             emit(chunk)
-        });
+        };
+        let result = match schema {
+            Some(schema) => self.backend.generate_constrained(&request, schema, &cancel, &mut forward),
+            None => self.backend.generate(&request, &cancel, &mut forward),
+        };
         self.cancellation = None;
         self.phase = EnginePhase::Ready;
         if cancel.is_cancelled() {

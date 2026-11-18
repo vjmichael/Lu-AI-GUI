@@ -258,7 +258,18 @@ impl NativeTool for ReaderTool{
         })
     }
 }
-struct ReaderCodec;
+struct ReaderCodec {
+    // None is the original multi-document workspace catalog. Some limits
+    // a pinned document's selector to the formats its parser actually accepts.
+    selector_prefixes: Option<&'static [&'static str]>,
+}
+fn selector_prefixes(format:crate::native_reader::ReaderFormat)->&'static [&'static str] {
+    use crate::native_reader::ReaderFormat::*;
+    match format {
+        Xlsx|Ods=>&["sheet:","range:"], Pptx|Odp=>&["slide:","notes:"],
+        Epub=>&["chapter:"], Pdf=>&["page:"], _=>&[],
+    }
+}
 impl ModelToolCodec for ReaderCodec{
     fn input_type_url(&self)->&'static str{INPUT_TYPE}
     fn output_type_url(&self)->&'static str{OUTPUT_TYPE}
@@ -294,6 +305,10 @@ impl ModelToolCodec for ReaderCodec{
             _=>return Err(ModelToolError::InvalidArguments(
                 "selector must be a string of up to 160 characters".into())),
         };
+        if !selector.is_empty() && self.selector_prefixes.is_some_and(|prefixes|
+            !prefixes.iter().any(|prefix| selector.starts_with(prefix))) {
+            return Err(ModelToolError::InvalidArguments("selector is not supported for the approved document format".into()));
+        }
         let expected_source_sha256=match args.get("expected_source_sha256"){
             None=>"",
             Some(Value::String(s)) if s.len()==64
@@ -381,26 +396,14 @@ pub fn register_reader_pinned(
         filename:filename.to_owned(),bytes:Arc::new(bytes),
     },None)
 }
-fn register_reader_source(
-    registry:&NativeToolRegistry,source:ReaderSource,
-    observed:Option<ReaderSourceObserver>,
-)->Result<ModelToolCatalog,String>{
+
+pub(crate) fn registration_contract()->crate::native_capability_inventory::RegistrationContract{
     let descriptor=ToolDescriptor{
         id:TOOL_ID.into(),display_name:"Read document text".into(),
         effect:ToolEffect::ReadWorkspace,
         input_type_url:INPUT_TYPE.into(),output_type_url:OUTPUT_TYPE.into(),
     };
-    registry.register(ModuleManifest{
-        id:"lu.reader".into(),display_name:"Lu Reader".into(),
-        contract_version:CORE_CONTRACT_VERSION,
-        kind:ModuleKind::Core,tools:vec![descriptor.clone()],
-        panels:vec![],workflows:vec![],
-    },vec![Arc::new(ReaderTool{
-        descriptor,source:Arc::new(source),observed
-    }) as Arc<dyn NativeTool>])
-        .map_err(|e:RegistryError|format!("{e:?}"))?;
-    let mut catalog=ModelToolCatalog::new();
-    catalog.insert(registry,ModelToolDefinition{
+    crate::native_capability_inventory::RegistrationContract::new(descriptor,ModelToolDefinition{
         name:"lu_reader_read".into(),native_tool_id:TOOL_ID.into(),
         description:"Read authorized text, PDF text layers, DOCX/ODT/RTF/EPUB text, XLSX/ODS sheet or A1 cell ranges, PPTX/ODP slides and explicitly selected speaker notes, JSON, CSV and source files. Scanned PDFs and image OCR require separate explicit offline review.".into(),
         parameters:json!({"type":"object","properties":{
@@ -412,8 +415,48 @@ fn register_reader_source(
             "selector":{"type":"string","maxLength":160,"description":"Optional sheet:Revenue, range:Revenue!A1:D50, slide:2, notes:2, page:3 or chapter:4; limits extraction to the chosen section"},
             "expected_source_sha256":{"type":"string","description":"Optional digest from prior Reader response; refuses changed files between paged reads"}
         },"required":["path"],"additionalProperties":false}),
-        codec:Arc::new(ReaderCodec),
-    }).map_err(|e|format!("{e:?}"))?;
+        codec:Arc::new(ReaderCodec{selector_prefixes:None}),
+    })
+}
+
+fn register_reader_source(
+    registry:&NativeToolRegistry,source:ReaderSource,
+    observed:Option<ReaderSourceObserver>,
+)->Result<ModelToolCatalog,String>{
+    let (descriptor,mut definition)=registration_contract().into_parts();
+    if let ReaderSource::Pinned{filename,bytes}=&source {
+        let format=crate::native_reader::classify(filename,&bytes[..bytes.len().min(16)]);
+        let prefixes=selector_prefixes(format);
+        if let Some(properties)=definition.parameters.get_mut("properties").and_then(Value::as_object_mut) {
+            // Pinned bytes cannot drift during a turn. Do not ask the model to
+            // invent a fingerprint or repeat limits that the native host owns.
+            properties.remove("expected_source_sha256");
+            properties.remove("max_bytes");
+            properties.insert("path".into(),json!({"type":"string","const":filename}));
+            // A short UTF-8 plain document fits the normal read window. The
+            // full-content operation needs no pagination or inspection knobs.
+            // Retain the underlying codec's historic bounded request support.
+            if format==crate::native_reader::ReaderFormat::PlainText
+                && bytes.len()<=DEFAULT_CHARS as usize && std::str::from_utf8(bytes).is_ok() {
+                for key in ["max_chars","offset_chars","inspect_only"] { properties.remove(key); }
+            }
+            if prefixes.is_empty() { properties.remove("selector"); }
+            else { properties.get_mut("selector").expect("registered selector")["description"] =
+                json!(format!("Optional; omit unless a specific section was requested. Accepted prefixes: {}",prefixes.join(", "))); }
+        }
+        definition.codec=Arc::new(ReaderCodec{selector_prefixes:Some(prefixes)});
+    }
+    registry.register(ModuleManifest{
+        id:"lu.reader".into(),display_name:"Lu Reader".into(),
+        contract_version:CORE_CONTRACT_VERSION,
+        kind:ModuleKind::Core,tools:vec![descriptor.clone()],
+        panels:vec![],workflows:vec![],
+    },vec![Arc::new(ReaderTool{
+        descriptor,source:Arc::new(source),observed
+    }) as Arc<dyn NativeTool>])
+        .map_err(|e:RegistryError|format!("{e:?}"))?;
+    let mut catalog=ModelToolCatalog::new();
+    catalog.insert(registry,definition).map_err(|e|format!("{e:?}"))?;
     Ok(catalog)
 }
 #[cfg(test)]
@@ -496,6 +539,29 @@ mod tests{
             .await.unwrap().payload.bytes.as_slice()).unwrap();
         assert!(output.text.is_empty());
         assert_eq!(output.total_extracted_chars,310_000);
+    }
+    #[test]
+    fn pinned_reader_catalog_never_offers_irrelevant_selectors(){
+        let registry=NativeToolRegistry::new();
+        let catalog=register_reader_pinned(&registry,"memo.txt",b"actual text".to_vec()).unwrap();
+        let allowed=std::collections::BTreeSet::from(["lu_reader_read".to_owned()]);
+        let schemas=catalog.live_schemas(&allowed,&registry).unwrap();
+        assert!(schemas[0].pointer("/function/parameters/properties/selector").is_none());
+        assert_eq!(schemas[0].pointer("/function/parameters/properties").unwrap().as_object().unwrap().len(),1);
+        assert_eq!(schemas[0].pointer("/function/parameters/properties/path/const").unwrap(),"memo.txt");
+        assert!(catalog.encode_call(&allowed,"lu_reader_read","read",None,r#"{"path":"memo.txt","selector":"notes:2"}"#).is_err());
+        assert!(catalog.encode_call(&allowed,"lu_reader_read","read",None,r#"{"path":"memo.txt","max_chars":500}"#).is_ok());
+        let registry=NativeToolRegistry::new();
+        let catalog=register_reader_pinned(&registry,"long.txt",vec![b'a';DEFAULT_CHARS as usize+1]).unwrap();
+        let schemas=catalog.live_schemas(&allowed,&registry).unwrap();
+        assert!(schemas[0].pointer("/function/parameters/properties/offset_chars").is_some());
+        assert!(schemas[0].pointer("/function/parameters/properties/expected_source_sha256").is_none());
+        let registry=NativeToolRegistry::new();
+        let catalog=register_reader_pinned(&registry,"memo.pdf",b"%PDF-1.7".to_vec()).unwrap();
+        let schemas=catalog.live_schemas(&allowed,&registry).unwrap();
+        assert!(schemas[0].pointer("/function/parameters/properties/selector/description").unwrap().as_str().unwrap().contains("page:"));
+        assert!(catalog.encode_call(&allowed,"lu_reader_read","read",None,r#"{"path":"memo.pdf","selector":"notes:2"}"#).is_err());
+        assert!(catalog.encode_call(&allowed,"lu_reader_read","read",None,r#"{"path":"memo.pdf","selector":"page:2"}"#).is_ok());
     }
     #[tokio::test]
     async fn pinned_document_never_opens_other_paths_or_mutated_disk_content(){

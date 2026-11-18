@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
+const coordinator=readFileSync(new URL('../src-tauri/src/turn_coordinator.rs',import.meta.url),'utf8');
 
 const core=readFileSync(new URL('../../src-tauri/lu-core/src/native_background_scheduler.rs',import.meta.url),'utf8');
 const queue=readFileSync(new URL('../src-tauri/src/generation_queue.rs',import.meta.url),'utf8');
@@ -11,15 +12,16 @@ const telemetry=readFileSync(new URL('../src-tauri/src/perf01_telemetry.rs',impo
 test('P4 CPU-first Send pathways precede the sole model queue and remain model-free',()=>{
   const cpuSection=desktop.slice(desktop.indexOf('async fn lu_generate('),
     desktop.indexOf('async fn generate_internal('));
-  const p=cpuSection.indexOf('perf01_router::classify(');
+  const p=cpuSection.indexOf('turn_coordinator::select(');
+  assert.match(coordinator,/perf01_router::classify\(/);
   const modelSection=desktop.slice(desktop.indexOf('async fn generate_internal('));
   const m=modelSection.indexOf('enqueue_with_class_committing(');
   assert.ok(p>=0 && m>=0,'native CPU classifier and transactional host-bound human model queue exist');
   assert.match(modelSection,/enqueue_with_class_committing\([\s\S]*?TurnClass::Foreground/);
   assert.match(modelSection,/TurnClass::Background/);
-  assert.match(cpuSection,/Route::CurrentChatCounts/);
-  assert.match(cpuSection,/Route::CurrentChatLiteral/);
-  assert.match(cpuSection,/Route::LocalModelStatus/);
+  assert.match(cpuSection,/TurnRoute::CpuChatCounts/);
+  assert.match(cpuSection,/TurnRoute::CpuChatLiteral/);
+  assert.match(cpuSection,/TurnRoute::CpuModelStatus/);
   assert.match(cpuSection,/host_clock::fresh_local_clock_answer/);
   assert.match(cpuSection,/workspace_desktop::cpu_search_workspace_for_chat/);
   assert.doesNotMatch(cpuSection,/\.load\(&model_ref/);

@@ -218,9 +218,12 @@ impl WorkspaceReadTurnSession{
             }).collect(),
             expires_at:Some(expires_at),
         },verifier).map_err(|_|WorkspaceReadError::AuthorityUnavailable)?;
-        let turn=NativeToolTurn::new_read_only(
+        let mut turn=NativeToolTurn::new_read_only(
             &catalog,&registry,&authority,origin.clone(),task_id.into(),&names
         ).map_err(|_:ToolTurnError|WorkspaceReadError::CatalogUnavailable)?;
+        // A dispatched error is not a successful observation. The host must
+        // never publish a factual answer or seed source reuse from a failed read.
+        turn.require_observed_tool_result();
         Ok(Self {
             registry,catalog,authority,turn,
             policy:ReadOnlyPolicy{ids},task_id:task_id.into(),

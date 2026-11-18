@@ -632,13 +632,7 @@ pub fn register_reviewed_application_tools(
             }),
             _=>unreachable!(),
         };
-        let descriptor=ToolDescriptor{
-            id:record.execute_tool_id,
-            display_name:operation.description().into(),
-            effect:ToolEffect::ExecuteCode,
-            input_type_url:operation.input().into(),
-            output_type_url:operation.output().into(),
-        };
+        let descriptor=reviewed_descriptor(operation,record.execute_tool_id);
         append_tool(
             &mut descriptors,&mut native,&mut definitions,
             descriptor,operation,backend,&authority,&origin,&policy,&effects,
@@ -669,13 +663,7 @@ pub fn register_reviewed_application_tools(
             media_sha256:record.media_sha256,
             reviewed_container:record.reviewed_container,
         });
-        let descriptor=ToolDescriptor{
-            id:record.execute_tool_id,
-            display_name:operation.description().into(),
-            effect:ToolEffect::ExecuteCode,
-            input_type_url:operation.input().into(),
-            output_type_url:operation.output().into(),
-        };
+        let descriptor=reviewed_descriptor(operation,record.execute_tool_id);
         append_tool(
             &mut descriptors,&mut native,&mut definitions,
             descriptor,operation,backend,&authority,&origin,&policy,&effects,
@@ -707,13 +695,7 @@ pub fn register_reviewed_application_tools(
             source_sha256:record.input_sha256,
             kind:record.kind,
         });
-        let descriptor=ToolDescriptor{
-            id:record.execute_tool_id,
-            display_name:operation.description().into(),
-            effect:ToolEffect::ExecuteCode,
-            input_type_url:operation.input().into(),
-            output_type_url:operation.output().into(),
-        };
+        let descriptor=reviewed_descriptor(operation,record.execute_tool_id);
         append_tool(&mut descriptors,&mut native,&mut definitions,
             descriptor,operation,backend,&authority,&origin,&policy,&effects);
     }
@@ -736,6 +718,32 @@ pub fn register_reviewed_application_tools(
     Ok(registered)
 }
 #[allow(clippy::too_many_arguments)]
+fn reviewed_definition(operation:Operation,id:&str)->ModelToolDefinition{
+    let name=operation.name();
+    ModelToolDefinition{
+        name:name.into(),native_tool_id:id.into(),
+        description:operation.description().into(),
+        // It is impossible to propose a file path or binary via this JSON.
+        parameters:json!({
+            "type":"object","properties":{},
+            "required":[],"additionalProperties":false
+        }),
+        codec:Arc::new(ReviewedCodec(operation)),
+    }
+ }
+fn reviewed_descriptor(operation:Operation,id:String)->ToolDescriptor{
+    ToolDescriptor{id,display_name:operation.description().into(),effect:ToolEffect::ExecuteCode,
+        input_type_url:operation.input().into(),output_type_url:operation.output().into()}
+}
+pub const DESKTOP_MEDIA_TOOL_ID:&str="lu.reviewed.media.facts";
+pub const DESKTOP_PDF_TOOL_ID:&str="lu.reviewed.pdf.info";
+pub const DESKTOP_IMAGE_TOOL_ID:&str="lu.reviewed.image.info";
+pub(crate) fn ordinary_registration_contracts()->Vec<crate::native_capability_inventory::RegistrationContract>{
+    [(Operation::MediaFacts,DESKTOP_MEDIA_TOOL_ID),(Operation::PdfFacts,DESKTOP_PDF_TOOL_ID),
+     (Operation::ImageFacts,DESKTOP_IMAGE_TOOL_ID)].into_iter().map(|(op,id)|
+        crate::native_capability_inventory::RegistrationContract::new(reviewed_descriptor(op,id.into()),reviewed_definition(op,id))).collect()
+}
+
 fn append_tool(
     descriptors:&mut Vec<ToolDescriptor>,
     implementations:&mut Vec<Arc<dyn NativeTool>>,
@@ -745,17 +753,7 @@ fn append_tool(
     authority:&ConversationAuthority,origin:&BoundCallOrigin,
     policy:&Arc<dyn ToolAuthorizer>,effects:&Arc<EffectJournal>,
 ){
-    let name=operation.name();
-    definitions.push(ModelToolDefinition{
-        name:name.into(),native_tool_id:descriptor.id.clone(),
-        description:operation.description().into(),
-        // It is impossible to propose a file path or binary via this JSON.
-        parameters:json!({
-            "type":"object","properties":{},
-            "required":[],"additionalProperties":false
-        }),
-        codec:Arc::new(ReviewedCodec(operation)),
-    });
+    definitions.push(reviewed_definition(operation,&descriptor.id));
     implementations.push(Arc::new(ReviewedTool{
         descriptor:descriptor.clone(),operation,
         origin:origin.clone(),authority:authority.clone(),

@@ -2,7 +2,7 @@
 //! No production file writes and no generic model-selected shell execution.
 
 use lu_core::{
-    agent_tool_loop::{NativeToolTurn, ToolTurnOutcome},
+    agent_tool_loop::{NativeToolTurn, ToolTurnOutcome, ToolTurnError},
     native_workspace_read_turn::WorkspaceReadTurnSession,
     contracts::{AuthorizationError, ToolAuthorizer, ToolDescriptor, ToolEffect, ToolInvocation},
     conversation_authority::{
@@ -235,22 +235,18 @@ async fn unsafe_model_git_arguments_and_unapproved_dispatch_are_refused() {
         &catalog, &auth, origin, "git-scope".into(), &permitted,
     ).unwrap();
     auth.revoke_task("git-task").unwrap();
-    // The model-facing tool-turn adapter intentionally returns a paired
-    // typed permission-denied tool result instead of exposing a raw dispatch
-    // error or leaving the transcript with an unanswered tool call.
-    let denial = turn.handle_model_reply(
+    // A revoked original turn is stopped before parsing or dispatch by
+    // the existing continuation-authority fence. Do not fabricate a paired
+    // tool result or consume a dispatch step for a call that never entered.
+    let entered=std::sync::atomic::AtomicBool::new(false);
+    let denial=turn.handle_model_reply_observed(
         r#"{"kind":"tool","name":"lu_git_log","arguments":{"limit":1}}"#,
-        &catalog, &registry, &auth, &Allow,
-    ).await.expect("revoked authority must yield a structured denial");
-    let ToolTurnOutcome::ToolResult { data, .. } = denial else {
-        panic!("revoked grant must produce a structured denied tool result");
-    };
-    assert_eq!(data["ok"], false);
-    assert_eq!(data["error"]["code"], "PERMISSION_DENIED");
-    assert_eq!(data["error"]["retryable"], false);
-    // Attempted calls consume a dispatch step even when permission is
-    // revoked. No native Git effect was authorized or performed.
-    assert_eq!(turn.step_count(), 1);
+        &catalog,&registry,&auth,&Allow,
+        &|_|{entered.store(true,Ordering::SeqCst);},
+    ).await;
+    assert!(matches!(denial,Err(ToolTurnError::Revoked)));
+    assert_eq!(turn.step_count(),0);
+    assert!(!entered.load(Ordering::SeqCst));
     drop(turn); drop(auth); drop(catalog); drop(registry);
     teardown(root);
 }

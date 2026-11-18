@@ -80,11 +80,13 @@ impl Drop for ProbeLease {
 fn grant_current(
     owner:&DesktopState,task_id:&str,chat_id:&str,user_turn_id:&str
 )->bool{
+    let watermark=owner.chats.p0_auth_requested_watermark(chat_id).ok();
     owner.observe.deny_observation_network_egress(chat_id).is_ok()&&
+    owner.chats.latest_authenticated_user_turn_id(chat_id).as_deref()==Some(user_turn_id)&&
     owner.browser_grant.lock().ok()
         .and_then(|g|g.as_ref().map(|g|
             !g.starting&&g.task_id==task_id&&g.chat_id==chat_id
-              &&g.user_turn_id==user_turn_id))
+              &&g.user_turn_id==user_turn_id&&watermark==Some(g.revocation_watermark)))
         .unwrap_or(false)
 }
 /// A direct user button is the only entrypoint. A page/model cannot select
@@ -317,6 +319,20 @@ pub(crate) fn explicit_browse_origin(prompt:&str)->Option<String>{
     Some(origin)
 }
 
+/// For ordinary model negotiation only: the origin must be named by the
+/// original human. No inference of a domain, search query, or private path.
+pub(crate) fn negotiated_browser_origin(prompt:&str)->Option<String>{
+    if let Ok(Some(search))=public_search_intent(prompt){return Some(search.origin.into())}
+    if let Some(origin)=explicit_browse_origin(prompt){return Some(origin)}
+    let p=prompt.trim();let low=p.to_ascii_lowercase();
+    if !["what does ","what is on ","what information is on ","what can you find on ","what information can you find on "].iter().any(|prefix|low.starts_with(prefix)){
+        return None
+    }
+    // Use the original URL(s) only; the synthetic verb is a parser adapter,
+    // not a query or a model-supplied scope.
+    explicit_browse_origin(&format!("browse {p}"))
+}
+
 /// Fixed provider, exact human query. No model or history-derived network input.
 pub(crate) const PUBLIC_SEARCH_ORIGIN:&str="https://www.google.com";
 pub(crate) const HTML_SEARCH_ORIGIN:&str="https://html.duckduckgo.com";
@@ -432,7 +448,6 @@ pub(crate) async fn lu_generate_browser(
     origins:String,
     max_new_tokens:u32,
 )->Result<String,String>{
-    use std::collections::{BTreeMap,HashSet};
     if prompt.trim().is_empty()||prompt.len()>12*1024
        ||!(1..=4096).contains(&max_new_tokens){
         return Err("Browser research prompt exceeds trusted limits".into());
@@ -453,17 +468,34 @@ pub(crate) async fn lu_generate_browser(
     }
     owner.chats.history(&chat_id)?;
     let gid=next_id("g-");
-    let (ticket,position)=owner.generation_queue.enqueue(
-        &session_id,&chat_id,&gid
+    let (ticket,position)=owner.generation_queue.enqueue_with_class_committing(
+        &session_id,&chat_id,&gid,TurnClass::Foreground,
+        ||owner.chats.append_user_with_turn_id(&chat_id,&gid,&prompt)
     )?;
-    owner.chats.append_user_with_turn_id(&chat_id,&gid,&prompt)?;
     let _=app.emit("lu-generation-queued",GenerationEvent{
         chat_id:chat_id.clone(),generation_id:gid.clone(),
         phase:"queued",position,
     });
     tauri::async_runtime::spawn_blocking(move||{
+        execute_browser_ticket(app,owner,session_id,chat_id,prompt,origins,max_new_tokens,gid,&ticket,None,None)
+    }).await.map_err(|_|"Browser generation worker stopped")?
+}
+
+/// Same native Browser executor for both explicit and negotiated ordinary Send.
+/// No extra queue entry or human event in the negotiated path.
+fn execute_browser_ticket(app:AppHandle,owner:Arc<DesktopState>,session_id:String,
+    chat_id:String,prompt:String,origins:String,max_new_tokens:u32,gid:String,
+    ticket:&generation_queue::Ticket,choice:Option<&crate::capability_negotiation::ReadCandidate>,expected_watermark:Option<i64>)->Result<String,String>{
+    use std::collections::{BTreeMap,HashSet};
+    let scope=BrowserOriginScope::from_host_grant(browser_origin_list(&origins)?)
+        .map_err(|_|"Browser research requires exact public HTTPS origins")?;
+    let search=public_search_intent(&prompt)?;
+    if search.as_ref().is_some_and(|search|scope.origins()!=vec![search.origin.to_owned()]){return Err("Public search requires the host-selected provider".into())}
         let result=(||->Result<String,String>{
-            ticket.wait_for_slot()?;
+            if choice.is_none(){ticket.wait_for_slot()?;}
+            ticket.verify_active_foreground(&session_id,&chat_id,&gid)?;
+            let watermark=owner.chats.p0_auth_requested_watermark(&chat_id)?;
+            if expected_watermark.is_some_and(|w|w!=watermark){return Err("Cancelled Browser grant before execution".into())}
             if ticket.cancelled(){return Err("Cancelled queued Browser research".into());}
             let events=owner.chats.history(&chat_id)?;
             if !events.last().is_some_and(|event|event.role=="user"&&event.text==prompt)
@@ -481,11 +513,12 @@ pub(crate) async fn lu_generate_browser(
             let started=tauri::async_runtime::block_on(
                 start_browser_for_exact_turn(
                     app.clone(),Arc::clone(&owner),chat_id.clone(),
-                    origins,gid.clone()
+                    origins,gid.clone(),Some((ticket,&session_id,watermark))
                 )
             )?;
+            if ticket.cancelled(){return Err("Cancelled Browser startup".into());}
             if !started.running{return Err("Browser did not start".into());}
-            {
+            let task_id={
                 let mut grant=owner.browser_grant.lock()
                     .map_err(|_|"Browser grant lock unavailable")?;
                 let current=grant.as_mut().ok_or("Browser permission revoked")?;
@@ -493,13 +526,11 @@ pub(crate) async fn lu_generate_browser(
                     return Err("Browser authority changed at startup".into());
                 }
                 current.active_read=Some((session_id.clone(),gid.clone()));
-            }
+                current.task_id.clone()
+            };
             let policy=Arc::new(BrowserReadOnlyPolicy);
             let registry=NativeToolRegistry::new();
             let mut catalog=ModelToolCatalog::new();
-            let task_id=owner.browser_grant.lock()
-                .map_err(|_|"Browser grant lock unavailable")?
-                .as_ref().ok_or("Browser task revoked")?.task_id.clone();
             register_scoped_browser_tools(
                 &registry,&mut catalog,ScopedBrowserTask{
                     authority:owner.browser_authority.clone(),
@@ -515,13 +546,22 @@ pub(crate) async fn lu_generate_browser(
                 }
             ).map_err(|_|"Scoped Browser model tools unavailable")?;
             let allowed=BTreeSet::from(["lu_browser_read".to_owned()]);
-            let schemas=catalog.schemas(&allowed)
+            if let Some(choice)=choice{
+                let live=lu_core::native_capability_inventory::discover_turn_capabilities(
+                    &registry,&catalog,&owner.browser_authority,&BoundCallOrigin{
+                        conversation_id:chat_id.clone(),user_turn_id:gid.clone(),task_id:task_id.clone()
+                    },false).map_err(|_|"Browser live capability unavailable")?;
+                if live.len()!=1||!crate::capability_negotiation::matches_live(choice,&live){
+                    return Err("Selected Browser capability changed after approval".into())
+                }
+            }
+            let schemas=catalog.live_schemas(&allowed,&registry)
                 .map_err(|_|"Browser model tool schema unavailable")?;
             if schemas.len()!=1{return Err("Browser read tool catalog invalid".into());}
-            let _=app.emit("lu-generation-start",GenerationEvent{
+            if choice.is_none(){let _=app.emit("lu-generation-start",GenerationEvent{
                 chat_id:chat_id.clone(),generation_id:gid.clone(),
                 phase:"running",position:0,
-            });
+            });}
             let deadline=std::time::Instant::now()+Duration::from_secs(600);
             let mut recent=Vec::<String>::new();
             let mut evidence=BTreeMap::<String,(String,BrowserCitationSource)>::new();
@@ -544,7 +584,7 @@ pub(crate) async fn lu_generate_browser(
                 let request_id=next_id("req-browser-");
                 owner.supervisor.reserve_generation_with_history(
                     &session_id,&gid,&request_id,&asked,max_new_tokens,
-                    if attempts==0{&history}else{&[]}
+                    if attempts==0&&choice.is_none(){&history}else{&[]}
                 ).map_err(|_|"Browser model could not be reserved")?;
                 if ticket.cancelled(){
                     let _=owner.supervisor.cancel(
@@ -553,7 +593,7 @@ pub(crate) async fn lu_generate_browser(
                 }
                 owner.supervisor.run_reserved_browser_function_calls(
                     &session_id,&gid,&request_id,asked,max_new_tokens,
-                    if attempts==0{history.clone()}else{Vec::new()},&schemas
+                    if attempts==0&&choice.is_none(){history.clone()}else{Vec::new()},&schemas
                 ).map_err(|e|format!("Structured Browser model failed: {e:?}"))?
                 };
                 if generated.is_empty(){
@@ -776,7 +816,7 @@ pub(crate) async fn lu_generate_browser(
             });
             Ok(answer)
         })();
-        if result.is_err(){
+        if result.as_ref().is_err_and(|e|choice.is_none()||!e.contains("Cancelled")){
             let _=owner.chats.cancel(&chat_id,&gid);
         }
         // Revoke this exact turn; never reuse the Browser session, model
@@ -797,12 +837,29 @@ pub(crate) async fn lu_generate_browser(
             Err(e) if e.contains("Cancelled")=>"cancelled",
             Err(_)=>"failed",
         };
-        let _=app.emit("lu-generation-finish",GenerationEvent{
+        if choice.is_none(){let _=app.emit("lu-generation-finish",GenerationEvent{
             chat_id:chat_id.clone(),generation_id:gid.clone(),
             phase,position:0,
-        });
+        });}
         result
-    }).await.map_err(|_|"Browser generation worker stopped")?
+
+}
+
+pub(crate) fn execute_negotiated_browser(app:&AppHandle,owner:&Arc<DesktopState>,sid:&str,chat:&str,gid:&str,
+    prompt:&str,ticket:&generation_queue::Ticket,cancel:&lu_core::inference_host::Cancellation,
+    current_step:&Arc<Mutex<Option<String>>>,choice:&crate::capability_negotiation::ReadCandidate,watermark:i64)->Result<String,String>{
+    let origin=negotiated_browser_origin(prompt).ok_or("No exact original public HTTPS scope")?;
+    ticket.verify_active_foreground(sid,chat,gid)?;
+    if cancel.is_cancelled()||ticket.cancelled()||owner.chats.p0_auth_requested_watermark(chat)?!=watermark{return Err("Cancelled Browser negotiation".into())}
+    owner.observe.deny_observation_network_egress(chat)?;
+    owner.browser_runtime.require_launch_ready()?;
+    if owner.browser_grant.lock().map_err(|_|"Browser grant unavailable")?.is_some(){return Err("Stop the existing Browser before starting research".into())}
+    // Browser's existing supervisor uses the original generation ID.
+    // The selection step has ended; Stop targets this exact owned generation.
+    *current_step.lock().map_err(|_|"Browser cancellation target unavailable")?=Some(gid.into());
+    let result=execute_browser_ticket(app.clone(),owner.clone(),sid.into(),chat.into(),prompt.into(),origin,512,gid.into(),ticket,Some(choice),Some(watermark));
+    *current_step.lock().map_err(|_|"Browser cancellation target unavailable")?=None;
+    result
 }
 
 fn public_search_final_user(prompt:&str)->String{

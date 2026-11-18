@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
+const coordinator=readFileSync(new URL('../src-tauri/src/turn_coordinator.rs',import.meta.url),'utf8');
 
 const core=readFileSync(new URL('../../src-tauri/lu-core/src/native_file_discovery.rs',
   import.meta.url),'utf8');
@@ -58,7 +59,7 @@ test('P01 query supports filters, case-insensitive names and paged content',()=>
   assert.match(core,/exact_name/);
   assert.match(desktop,/indexed filename discovery/);
   assert.match(ui,/async function askWorkspaceDirectory\(\)/);
-  assert.match(desktop,/explicit_read_workspace_request\(/);
+  assert.match(coordinator,/explicit_read_workspace_request\(/);
 });
 
 test('P01 does not convert cached discovery into read or write authorization',()=>{

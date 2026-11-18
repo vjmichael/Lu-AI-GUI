@@ -1,17 +1,3 @@
-// Explicit local folder intent is UI routing only, NEVER a filesystem grant.
-// A native per-turn OS directory picker still admits the reviewed workspace.
-export function routeExplicitLocalFolderRequest(value){
-  if(typeof value!=='string'||value.length>8192)return false;
-  const text=value.trim();
-  if(!text||text.includes('[Attached text file:')||text.includes('<|'))return false;
-  if(/\b(?:do not|don't|never|without)\s+(?:open|navigate|browse|inspect|list|search|explore)\b/i.test(text))return false;
-  const explicitVerb=/\b(?:open|inspect|navigate\s+to|go\s+to|browse|explore|look\s+in|search\s+in|list\s+(?:files\s+)?in|show\s+(?:the\s+)?contents\s+of)\b/i;
-  if(!explicitVerb.test(text.slice(0,140)))return false;
-  const drive=/(?:^|[\s"'])(?:[A-Za-z]:\\)(?:[^<>\r\n]*)/;
-  const unc=/(?:^|[\s"'])(?:\\\\[A-Za-z0-9._-]+\\[A-Za-z0-9._$-]+)/;
-  return drive.test(text)||unc.test(text);
-}
-
 /**
  * Presentation-only recognition of one deterministic OS-clock request while
  * no GGUF model is loaded. The Tauri host independently reclassifies the
@@ -83,4 +69,17 @@ export function isHostCpuWorkspaceLookup(value){
 /** Indexed current-ANSF counts, never cross-chat search or task authority. */
 export function isHostCpuChatCountsQuestion(value){
   return typeof value==='string'&&value.trim()==='Show current chat counts';
+}
+
+/** Presentation only. Keep the native explicit-no-tools veto in the shared
+ * parity fixture; a positive UI affordance never authorizes native dispatch. */
+export function isModelFreeSendQuestion(value){
+  if(typeof value!=='string')return false;
+  const lower=value.toLowerCase();
+  if(["no tool","without tools","without any tools","without using tools",
+      "do not use tools","don't use tools","do not call tools","don't call tools",
+      "without specialists","without any specialists","do not use specialists",
+      "never call a tool"].some(term=>lower.includes(term)))return false;
+  return isHostCurrentTimeQuestion(value)||isHostCpuChatLookup(value)||
+    isHostModelStatusQuestion(value)||isHostCpuWorkspaceLookup(value)||isHostCpuChatCountsQuestion(value);
 }

@@ -535,23 +535,14 @@ pub(crate) fn register_discovery_tool_from_dir(
 )->Result<(),String>{
     register_discovery_with_cache(registry,catalog,root,Arc::new(Mutex::new(Index::new())))
 }
-fn register_discovery_with_cache(
-    registry:&NativeToolRegistry,catalog:&mut ModelToolCatalog,root:Arc<Dir>,
-    cache:Arc<Mutex<Index>>,
-)->Result<(),String>{
-    let content=Arc::new(Mutex::new(TextCache::new()));
+
+pub(crate) fn registration_contract()->crate::native_capability_inventory::RegistrationContract{
     let descriptor=ToolDescriptor{
         id:ID.into(),display_name:"Find workspace files by name, metadata or bounded text".into(),
         effect:ToolEffect::ReadWorkspace,
         input_type_url:INPUT.into(),output_type_url:OUTPUT.into(),
     };
-    registry.register(ModuleManifest{
-        id:"lu.file_discovery".into(),display_name:"Lu indexed workspace discovery".into(),
-        contract_version:CORE_CONTRACT_VERSION,kind:ModuleKind::Core,
-        tools:vec![descriptor.clone()],panels:vec![],workflows:vec![],
-    },vec![Arc::new(DiscoveryTool{descriptor,root,cache,content})])
-        .map_err(|e|format!("Cannot register discovery tool: {e:?}"))?;
-    catalog.insert(registry,ModelToolDefinition{
+    crate::native_capability_inventory::RegistrationContract::new(descriptor,ModelToolDefinition{
         name:"lu_files_discover".into(),native_tool_id:ID.into(),
         description:"Locate files and folders in the human-selected workspace by filename, partial path, suffix, type, size or modification date, using a reusable bounded read-only metadata index. Optional literal content_query scans up to 96 small files/4 MiB and returns untrusted excerpts. Set refresh=true to force reconciliation. Hidden files and symlinks excluded. A discovered path is NOT permission to open or modify it.".into(),
         parameters:json!({"type":"object","properties":{
@@ -568,7 +559,22 @@ fn register_discovery_with_cache(
             "content_after":{"type":"string","maxLength":4096,"description":"For continued content search only, the next_content_after path from the previous partial result"}
         },"additionalProperties":false}),
         codec:Arc::new(DiscoveryCodec),
-    }).map_err(|e|format!("Cannot publish discovery schema: {e:?}"))?;
+    })
+}
+
+fn register_discovery_with_cache(
+    registry:&NativeToolRegistry,catalog:&mut ModelToolCatalog,root:Arc<Dir>,
+    cache:Arc<Mutex<Index>>,
+)->Result<(),String>{
+    let content=Arc::new(Mutex::new(TextCache::new()));
+    let (descriptor,definition)=registration_contract().into_parts();
+    registry.register(ModuleManifest{
+        id:"lu.file_discovery".into(),display_name:"Lu indexed workspace discovery".into(),
+        contract_version:CORE_CONTRACT_VERSION,kind:ModuleKind::Core,
+        tools:vec![descriptor.clone()],panels:vec![],workflows:vec![],
+    },vec![Arc::new(DiscoveryTool{descriptor,root,cache,content})])
+        .map_err(|e|format!("Cannot register discovery tool: {e:?}"))?;
+    catalog.insert(registry,definition).map_err(|e|format!("Cannot publish discovery schema: {e:?}"))?;
     Ok(())
 }
 #[cfg(test)]

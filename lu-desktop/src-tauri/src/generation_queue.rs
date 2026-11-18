@@ -32,6 +32,7 @@ pub enum TurnClass { Foreground, Background }
 
 #[derive(Default)]
 struct State {
+    closing: bool,
     foreground_waiting: VecDeque<String>,
     background_waiting: VecDeque<String>,
     active: Option<String>,
@@ -140,6 +141,7 @@ impl GenerationQueue {
         commit: impl FnOnce() -> Result<(), String>,
     ) -> Result<(Ticket, usize), String> {
         let mut state = self.state.lock().map_err(|_| "generation queue poisoned")?;
+        if state.closing { return Err("application is closing".into()); }
         if state.jobs.len() >= MAX_JOBS {
             return Err("generation queue full (8 turns maximum)".into());
         }
@@ -191,6 +193,20 @@ impl GenerationQueue {
             },
             position,
         ))
+    }
+
+    /// Host-only shutdown: fence new admissions and completion commits, and
+    /// wake every waiter. Existing tickets still unwind through normal cleanup.
+    pub fn close(&self) -> Result<(), String> {
+        let mut state = self.state.lock().map_err(|_| "generation queue poisoned")?;
+        state.closing = true;
+        for job in state.jobs.values_mut() {
+            if !job.completed { job.cancelled = true; }
+        }
+        state.foreground_waiting.clear();
+        state.background_waiting.clear();
+        self.ready.notify_all();
+        Ok(())
     }
 
     pub fn cancel(&self, session_id: &str, generation_id: &str) -> Result<CancelState, String> {
@@ -388,6 +404,16 @@ impl Ticket {
                 .map_err(|_| "generation queue poisoned")?;
         }
     }
+    /// Verifies the already-active original foreground reservation without
+    /// waiting again or minting another generation. No new authority.
+    pub(crate) fn verify_active_foreground(&self,session:&str,chat:&str,generation:&str)->Result<(),String>{
+        let state=self.queue.state.lock().map_err(|_|"generation queue poisoned")?;
+        if self.id!=generation||state.active.as_deref()!=Some(generation)||
+            !state.jobs.get(generation).is_some_and(|j|j.session_id==session&&j.chat_id==chat&&j.class==TurnClass::Foreground&&!j.cancelled&&!j.completed){
+            return Err("Cancelled or mismatched active foreground ticket".into())
+        }
+        Ok(())
+    }
     /// Final ANSF progress+complete commit and a concurrent native Stop are
     /// ordered by this same queue mutex. Cancellation wins if it was
     /// recorded first; a post-commit Stop cannot change a complete answer.
@@ -428,6 +454,20 @@ impl Drop for Ticket {
 mod tests {
     use super::*;
     use std::{sync::mpsc, thread, time::Duration};
+    #[test]
+    fn application_close_cancels_active_and_waiting_and_fences_new_admission() {
+        let q = Arc::new(GenerationQueue::default());
+        let (active, _) = q.enqueue("s", "a", "g1").unwrap();
+        active.wait_for_slot().unwrap();
+        let (waiting, _) = q.enqueue("s", "b", "g2").unwrap();
+        q.close().unwrap();
+        assert!(active.cancelled());
+        assert!(waiting.wait_for_slot().is_err());
+        assert!(active.commit_completed("s", || panic!("close allowed completion")).is_err());
+        assert!(q.enqueue_with_class_committing("s", "c", "g3", TurnClass::Foreground,
+            || panic!("close allowed admission")).is_err());
+        q.close().unwrap();
+    }
     #[test]
     fn admission_failure_never_publishes_or_consumes_capacity() {
         let q = Arc::new(GenerationQueue::default());

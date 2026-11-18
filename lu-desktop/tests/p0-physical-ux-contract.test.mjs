@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
+const coordinator=readFileSync(new URL('../src-tauri/src/turn_coordinator.rs',import.meta.url),'utf8');
 
 const ui=readFileSync(new URL('../web/main.jsx',import.meta.url),'utf8');
 const rust=readFileSync(new URL('../src-tauri/src/lib.rs',import.meta.url),'utf8');
@@ -64,8 +65,8 @@ test('emoji reactions are contextual and open a picker below message',()=>{
 test('specialist manual buttons are not mounted in composer; host native routes remain',()=>{
   assert.doesNotMatch(ui,/chatToolsDrawer|<summary>Tools<\/summary>/);
   assert.match(rust,/fn lu_native_route_catalog\(/);
-  assert.match(rust,/reviewed_app_desktop::explicit_media_metadata_request/);
-  assert.match(rust,/workspace_desktop::explicit_read_workspace_request\(&prompt\)/);
+  assert.match(coordinator,/reviewed_app_desktop::explicit_media_metadata_request/);
+  assert.match(coordinator,/workspace_desktop::explicit_read_workspace_request\(prompt\)/);
   assert.doesNotMatch(ui,/routeExplicitLocalFolderRequest\(input\)/);
 });
 

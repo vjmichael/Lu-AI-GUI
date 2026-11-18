@@ -152,6 +152,7 @@ impl HostProgramInventory {
         true
     }
 
+    pub(crate) fn registration_ids(&self)->BTreeSet<String>{self.selected.keys().cloned().collect()}
     pub fn check(&self, id: &str) -> Result<ProgramObservation, String> {
         let files = self.selected.get(id).ok_or("program not in approved host inventory")?;
         let present = files.iter().any(|p| Self::is_candidate_present(p));
@@ -262,13 +263,8 @@ impl ModelToolCodec for EnvironmentCodec {
 /// Host approves candidate filenames before registration and independently
 /// grants this task's CheckEnv use; schema discovery never grants execution.
 /// The returned inventory is also usable by the host to build ambient context.
-pub fn register_environment_discovery_tool(
-    registry: &NativeToolRegistry,
-    catalog: &mut ModelToolCatalog,
-    specs: Vec<HostProgramSpec>,
-) -> Result<Arc<HostProgramInventory>, String> {
-    let inventory = Arc::new(HostProgramInventory::new(specs)?);
-    let allowed: BTreeSet<_> = inventory.selected.keys().cloned().collect();
+
+pub(crate) fn registration_contract(allowed:BTreeSet<String>)->crate::native_capability_inventory::RegistrationContract{
     let descriptor = ToolDescriptor {
         id: TOOL_ID.into(),
         display_name: "Inspect host-approved runtime availability".into(),
@@ -277,18 +273,8 @@ pub fn register_environment_discovery_tool(
         effect: ToolEffect::ReadWorkspace,
         input_type_url: INPUT.into(), output_type_url: OUTPUT.into(),
     };
-    registry.register(
-        ModuleManifest {
-            id: MODULE.into(), display_name: "Lu native execution preflight".into(),
-            contract_version: CORE_CONTRACT_VERSION, kind: ModuleKind::Core,
-            tools: vec![descriptor.clone()], panels: vec![], workflows: vec![],
-        },
-        vec![Arc::new(EnvironmentCheck {
-            descriptor, inventory: Arc::clone(&inventory),
-        })],
-    ).map_err(|e| format!("environment registry admission refused: {e:?}"))?;
     let ids = allowed.iter().cloned().collect::<Vec<_>>();
-    catalog.insert(registry, ModelToolDefinition {
+    crate::native_capability_inventory::RegistrationContract::new(descriptor,ModelToolDefinition {
         name: MODEL_NAME.into(),
         native_tool_id: TOOL_ID.into(),
         description: "Refresh host-approved runtime file presence only; does not execute programs.".into(),
@@ -302,6 +288,27 @@ pub fn register_environment_discovery_tool(
             "additionalProperties":false
         }),
         codec: Arc::new(EnvironmentCodec { allowed }),
-    }).map_err(|e| format!("environment model schema admission refused: {e:?}"))?;
+    })
+}
+
+pub fn register_environment_discovery_tool(
+    registry: &NativeToolRegistry,
+    catalog: &mut ModelToolCatalog,
+    specs: Vec<HostProgramSpec>,
+) -> Result<Arc<HostProgramInventory>, String> {
+    let inventory = Arc::new(HostProgramInventory::new(specs)?);
+    let allowed=inventory.registration_ids();
+    let (descriptor,definition)=registration_contract(allowed).into_parts();
+    registry.register(
+        ModuleManifest {
+            id: MODULE.into(), display_name: "Lu native execution preflight".into(),
+            contract_version: CORE_CONTRACT_VERSION, kind: ModuleKind::Core,
+            tools: vec![descriptor.clone()], panels: vec![], workflows: vec![],
+        },
+        vec![Arc::new(EnvironmentCheck {
+            descriptor, inventory: Arc::clone(&inventory),
+        })],
+    ).map_err(|e| format!("environment registry admission refused: {e:?}"))?;
+    catalog.insert(registry, definition).map_err(|e| format!("environment model schema admission refused: {e:?}"))?;
     Ok(inventory)
 }

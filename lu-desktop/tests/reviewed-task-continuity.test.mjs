@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
+const authority=readFileSync(new URL('../src-tauri/src/turn_authority.rs',import.meta.url),'utf8');
 import {explainReviewedContinuation} from '../web/reviewed_tool_feedback.mjs';
 
 const tasks=readFileSync(new URL('../../src-tauri/lu-core/src/tasks.rs',import.meta.url),'utf8');
@@ -15,9 +16,9 @@ test('P15-A: original human turn has a durable, immutable, host-only task bindin
   assert.match(tasks,/pub fn bind_reviewed_human_turn/);
   assert.match(tasks,/INSERT OR IGNORE INTO lu_reviewed_turn_origin/);
   assert.match(tasks,/existing\.0!=conversation_id\|\|existing\.1!=user_turn_id/);
-  assert.match(desktop,/PersistedReviewedHumanTurn/);
+  assert.match(desktop,/PersistedHumanTurn::queued_chat/);
   assert.match(desktop,/bind_reviewed_human_turn\(&chat_id,&gid_run\)/);
-  assert.match(desktop,/trusted_user_turn_text\(chat,turn\)/);
+  assert.match(authority,/trusted_user_turn_text\(chat,turn\)/);
 });
 
 test('P15-B: recovery joins task/checkpoint, actual reviewed worker and second independent outcome',()=>{

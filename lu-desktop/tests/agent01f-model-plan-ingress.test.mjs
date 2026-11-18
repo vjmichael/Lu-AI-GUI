@@ -10,7 +10,8 @@ test('explicit user opt-in reaches the existing loaded GGUF generation path',()=
   assert.match(host,/GenerationOrigin::Human,true/);
   assert.match(host,/agent_plan_admission::planning_prompt/);
   assert.match(host,/supervisor\.run_reserved_with_history/);
-  assert.match(web,/planOnly:\s*usePlanDraft/);
+  assert.doesNotMatch(web,/planOnly:|planDraftNextSend|usePlanDraft/);
+  assert.match(host,/SendMode::from_legacy\(read_only_workspace,plan_only\)/);
   assert.doesNotMatch(web,/aria-label="Draft plan with Lu"/);
 });
 test('model plan bytes are parsed only after a complete original model turn',()=>{

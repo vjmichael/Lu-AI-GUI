@@ -44,6 +44,26 @@ pub trait ModelToolCodec: Send + Sync {
     fn decode(&self, output: &ProtoPayload) -> Result<Value, ModelToolError>;
 }
 
+/// A narrowly scoped model-facing reference to arguments already bound by
+/// the trusted host. The raw model call still selects the actual tool; the
+/// original codec validates and encodes the host-owned immutable input.
+struct BoundCurrentInputCodec {
+    original: Arc<dyn ModelToolCodec>,
+    fixed: Map<String, Value>,
+}
+impl ModelToolCodec for BoundCurrentInputCodec {
+    fn input_type_url(&self) -> &'static str { self.original.input_type_url() }
+    fn output_type_url(&self) -> &'static str { self.original.output_type_url() }
+    fn encode(&self, args: &Map<String, Value>) -> Result<ProtoPayload, ModelToolError> {
+        expect_fields(args, &["source"], &["source"])?;
+        if args.get("source").and_then(Value::as_str) != Some("current_request") {
+            return Err(ModelToolError::InvalidArguments("expected current approved request reference".into()));
+        }
+        self.original.encode(&self.fixed)
+    }
+    fn decode(&self, output: &ProtoPayload) -> Result<Value, ModelToolError> { self.original.decode(output) }
+}
+
 pub struct ModelToolDefinition {
     /// OpenAI-compatible short tool name; must be unique among advertised tools.
     pub name: String,
@@ -72,26 +92,9 @@ impl ModelToolCatalog {
         registry: &NativeToolRegistry,
         definition: ModelToolDefinition,
     ) -> Result<(), ModelToolError> {
-        let valid_name = !definition.name.is_empty()
-            && definition.name.len() <= 64
-            && definition.name.bytes().enumerate().all(|(index, c)| {
-                c.is_ascii_alphabetic() || (index > 0 && (c.is_ascii_digit() || c == b'_'))
-            });
-        if !valid_name {
-            return Err(ModelToolError::InvalidToolName);
-        }
+        Self::validate_definition(&definition)?;
         if self.definitions.contains_key(&definition.name) {
             return Err(ModelToolError::DuplicateToolName(definition.name));
-        }
-        if definition.description.trim().is_empty() {
-            return Err(ModelToolError::InvalidSchema(definition.name));
-        }
-        // An explicit object schema with no additional properties is mandatory
-        // for first-party codecs. Model servers may ignore it; codecs must not.
-        if definition.parameters.get("type").and_then(Value::as_str) != Some("object")
-            || definition.parameters.get("additionalProperties") != Some(&Value::Bool(false))
-        {
-            return Err(ModelToolError::InvalidSchema(definition.name));
         }
         let descriptor = registry
             .tools()
@@ -101,12 +104,66 @@ impl ModelToolCatalog {
             .ok_or_else(|| {
                 ModelToolError::NoNativeImplementation(definition.native_tool_id.clone())
             })?;
-        if descriptor.input_type_url != definition.codec.input_type_url()
-            || descriptor.output_type_url != definition.codec.output_type_url()
-        {
-            return Err(ModelToolError::TypeMismatch(definition.native_tool_id));
-        }
+        Self::validate_contract(&descriptor,&definition)?;
         self.definitions.insert(definition.name.clone(), definition);
+        Ok(())
+    }
+
+    fn validate_definition(definition:&ModelToolDefinition)->Result<(),ModelToolError>{
+        let valid_name = !definition.name.is_empty()
+            && definition.name.len() <= 64
+            && definition.name.bytes().enumerate().all(|(index, c)| {
+                c.is_ascii_alphabetic() || (index > 0 && (c.is_ascii_digit() || c == b'_'))
+            });
+        if !valid_name {
+            return Err(ModelToolError::InvalidToolName);
+        }
+        if definition.description.trim().is_empty() {
+            return Err(ModelToolError::InvalidSchema(definition.name.clone()));
+        }
+        // An explicit object schema with no additional properties is mandatory
+        // for first-party codecs. Model servers may ignore it; codecs must not.
+        if definition.parameters.get("type").and_then(Value::as_str) != Some("object")
+            || definition.parameters.get("additionalProperties") != Some(&Value::Bool(false))
+        {
+            return Err(ModelToolError::InvalidSchema(definition.name.clone()));
+        }
+        Ok(())
+    }
+
+    /// Shared validation for inert registration plans and live registration.
+    /// This has no registry mutation or dispatch capability.
+    pub(crate) fn validate_contract(descriptor:&crate::contracts::ToolDescriptor,
+        definition:&ModelToolDefinition)->Result<(),ModelToolError>{
+        Self::validate_definition(definition)?;
+        if descriptor.id!=definition.native_tool_id ||
+            descriptor.input_type_url!=definition.codec.input_type_url() ||
+            descriptor.output_type_url!=definition.codec.output_type_url(){
+            return Err(ModelToolError::TypeMismatch(definition.native_tool_id.clone()));
+        }
+        Ok(())
+    }
+
+    /// Only the trusted host can project an exact-input utility's arguments
+    /// into a reference. This is a turn-local catalog, not a reusable grant.
+    /// Validate the complete original input and keep the same typed codec.
+    pub(crate) fn bind_current_input(&mut self, registry: &NativeToolRegistry,
+        name: &str, fixed: Map<String, Value>) -> Result<(), ModelToolError> {
+        let previous = self.definitions.get(name).ok_or_else(|| ModelToolError::UnknownTool(name.into()))?;
+        let descriptor = registry.tools().map_err(|_| ModelToolError::RegistryUnavailable)?
+            .into_iter().find(|d| d.id == previous.native_tool_id)
+            .ok_or_else(|| ModelToolError::NoNativeImplementation(previous.native_tool_id.clone()))?;
+        if descriptor.effect != ToolEffect::ReadWorkspace { return Err(ModelToolError::InvalidArguments("fixed input must be read-only".into())); }
+        let payload = previous.codec.encode(&fixed)?;
+        if payload.type_url != descriptor.input_type_url { return Err(ModelToolError::TypeMismatch(descriptor.id)); }
+        let definition = ModelToolDefinition {
+            name: previous.name.clone(), native_tool_id: previous.native_tool_id.clone(),
+            description: format!("{} The exact input is already bound to the current approved human request. Call with source=current_request; do not repeat or modify its data.", previous.description),
+            parameters: serde_json::json!({"type":"object","properties":{"source":{"type":"string","const":"current_request"}},"required":["source"],"additionalProperties":false}),
+            codec: Arc::new(BoundCurrentInputCodec {original: previous.codec.clone(), fixed}),
+        };
+        Self::validate_contract(&descriptor, &definition)?;
+        self.definitions.insert(name.into(), definition);
         Ok(())
     }
 

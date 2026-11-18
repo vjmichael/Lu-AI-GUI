@@ -294,6 +294,7 @@ impl NativeToolTurn {
         self.requires_observed_tool_result
     }
 
+    pub(crate) fn final_allowed(&self) -> bool { self.ensure_final_has_required_observation().is_ok() }
     fn ensure_final_has_required_observation(&self) -> Result<(), ToolTurnError> {
         if self.requires_observed_tool_result && !self.observed_tool_result {
             return Err(ToolTurnError::ObservationRequiredBeforeFinal);
@@ -362,6 +363,14 @@ impl NativeToolTurn {
         if self.done {
             return Err(ToolTurnError::AlreadyFinished);
         }
+        self.ensure_original_scope_authorized(authority)
+    }
+
+    /// Also usable after the model's final envelope closes this controller.
+    /// Closing a turn is not a substitute for the final scope check.
+    pub(crate) fn ensure_original_scope_authorized(
+        &self, authority: &ConversationAuthority,
+    ) -> Result<(), ToolTurnError> {
         let permitted = authority
             .permitted_tool_ids(&self.origin)
             .map_err(ToolTurnError::Unauthorized)?;
@@ -495,12 +504,7 @@ impl NativeToolTurn {
                     && text.len() <= 64
                     && text.bytes().all(|byte| byte.is_ascii_digit());
                 if plain_final && (error == JsonBoundaryError::Malformed || integer_final) {
-                    let current = authority
-                        .permitted_tool_ids(&self.origin)
-                        .map_err(ToolTurnError::Unauthorized)?;
-                    if current.is_empty() {
-                        return Err(ToolTurnError::Revoked);
-                    }
+                    self.ensure_original_scope_authorized(authority)?;
                     self.ensure_final_has_required_observation()?;
                     self.done = true;
                     return Ok(ToolTurnOutcome::FinalText(text.to_owned()));
@@ -523,12 +527,7 @@ impl NativeToolTurn {
                 .find_map(|name| object.get(name).and_then(Value::as_str))
                 .filter(|text| !text.trim().is_empty());
             if let Some(text) = display_text {
-                let current = authority
-                    .permitted_tool_ids(&self.origin)
-                    .map_err(ToolTurnError::Unauthorized)?;
-                if current.is_empty() {
-                    return Err(ToolTurnError::Revoked);
-                }
+                self.ensure_original_scope_authorized(authority)?;
                 self.ensure_final_has_required_observation()?;
                 self.done = true;
                 return Ok(ToolTurnOutcome::FinalText(text.to_owned()));
@@ -550,12 +549,7 @@ impl NativeToolTurn {
                 .ok_or(ToolTurnError::MalformedModelReply)?;
             // Revocation also blocks finalization. The outer host must validate
             // conversation ownership before persisting the final answer.
-            let current = authority
-                .permitted_tool_ids(&self.origin)
-                .map_err(ToolTurnError::Unauthorized)?;
-            if current.is_empty() {
-                return Err(ToolTurnError::Revoked);
-            }
+            self.ensure_original_scope_authorized(authority)?;
             self.ensure_final_has_required_observation()?;
             self.done = true;
             return Ok(ToolTurnOutcome::FinalText(text.to_owned()));

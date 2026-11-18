@@ -76,16 +76,38 @@ impl NativeTool for BrowserNativeTool{
 /// Only the host calls this after establishing a persisted authenticated USER
 /// task. Inserting a codec into the catalog is discovery, not authorization:
 /// ConversationAuthority and ToolAuthorizer are rechecked on every dispatch.
+pub(crate) fn registration_contracts()->Result<Vec<crate::native_capability_inventory::RegistrationContract>,String>{
+    let read=browser_descriptor(ToolEffect::NetworkRead)
+        .map_err(|_|"browser read descriptor unavailable")?;
+    let write=browser_descriptor(ToolEffect::NetworkWrite)
+        .map_err(|_|"browser interaction descriptor unavailable")?;
+    let mut result=Vec::new();
+    for (name,id,kind,description) in [
+        ("lu_browser_read",BROWSER_READ_TOOL,BrowserModelKind::Read,
+            "Read and navigate pages on user-approved HTTPS origins."),
+        ("lu_browser_interact",BROWSER_INTERACT_TOOL,BrowserModelKind::Interact,
+            "Interact with an approved browser page only with a separate NetworkWrite grant."),
+    ]{
+        let codec=Arc::new(BrowserModelCodec(kind));
+        let schema=codec.schema();
+        let descriptor=if id==BROWSER_READ_TOOL{read.clone()}else{write.clone()};
+        result.push(crate::native_capability_inventory::RegistrationContract::new(descriptor,ModelToolDefinition{
+            name:name.into(),native_tool_id:id.into(),description:description.into(),
+            parameters:schema,codec:codec as Arc<dyn ModelToolCodec>,
+        }));
+    }
+    Ok(result)
+}
+
 pub fn register_scoped_browser_tools(
     registry:&NativeToolRegistry,
     catalog:&mut ModelToolCatalog,
     task:ScopedBrowserTask,
 )->Result<(),String>{
     let task=Arc::new(task);
-    let read=browser_descriptor(ToolEffect::NetworkRead)
-        .map_err(|_|"browser read descriptor unavailable")?;
-    let write=browser_descriptor(ToolEffect::NetworkWrite)
-        .map_err(|_|"browser interaction descriptor unavailable")?;
+    let mut contracts=registration_contracts()?.into_iter();
+    let (read,read_definition)=contracts.next().expect("fixed browser family").into_parts();
+    let (write,write_definition)=contracts.next().expect("fixed browser family").into_parts();
     registry.register(ModuleManifest{
         id:"lu.web.browser".into(),display_name:"Lu owned research browser".into(),
         contract_version:CORE_CONTRACT_VERSION,kind:ModuleKind::Core,
@@ -95,18 +117,8 @@ pub fn register_scoped_browser_tools(
         Arc::new(BrowserNativeTool{descriptor:read,task:Arc::clone(&task)}) as Arc<dyn NativeTool>,
         Arc::new(BrowserNativeTool{descriptor:write,task}) as Arc<dyn NativeTool>,
     ]).map_err(|e|format!("browser registry declined registration: {e:?}"))?;
-    for (name,id,kind,description) in [
-        ("lu_browser_read",BROWSER_READ_TOOL,BrowserModelKind::Read,
-            "Read and navigate pages on user-approved HTTPS origins."),
-        ("lu_browser_interact",BROWSER_INTERACT_TOOL,BrowserModelKind::Interact,
-            "Interact with an approved browser page only with a separate NetworkWrite grant."),
-    ]{
-        let codec=Arc::new(BrowserModelCodec(kind));
-        let schema=codec.schema();
-        catalog.insert(registry,ModelToolDefinition{
-            name:name.into(),native_tool_id:id.into(),description:description.into(),
-            parameters:schema,codec:codec as Arc<dyn ModelToolCodec>,
-        }).map_err(|e|format!("browser model catalog refused registration: {e:?}"))?;
+    for definition in [read_definition,write_definition]{
+        catalog.insert(registry,definition).map_err(|e|format!("browser model catalog refused registration: {e:?}"))?;
     }
     Ok(())
 }

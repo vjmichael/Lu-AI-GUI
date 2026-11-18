@@ -84,3 +84,22 @@ async fn model_traversal_is_rejected_without_reading_outside_workspace(){
     assert!(result.is_err() || result.as_ref().is_ok_and(|r|r.tool_calls==0));
     drop(session);drop(journal);fs::remove_dir_all(root).unwrap();
 }
+
+#[tokio::test]
+async fn failed_read_cannot_be_promoted_to_successful_workspace_observation() {
+    let root=fixture();
+    let journal=ModelTurnJournal::open(&root.join("cp05c.sqlite")).unwrap();
+    let mut session=WorkspaceReadTurnSession::new(
+        &Verifier,"chat-a","human-1","task-3",&root).unwrap();
+    let mut model=Scripted(VecDeque::from(vec![
+        r#"{"kind":"tool","name":"lu_files_read_text","arguments":{"path":"absent.txt"}}"#.into(),
+        r#"{"kind":"final","text":"I read the missing file."}"#.into(),
+        r#"{"kind":"final","text":"I read the missing file."}"#.into(),
+        r#"{"kind":"final","text":"I read the missing file."}"#.into(),
+    ]));
+    assert!(session.run_journaled("Read approved file",&mut model,&Cancellation::default(),&journal).await.is_err());
+    let audit=journal.events_for("chat-a","task-3").unwrap();
+    assert!(audit.iter().any(|e|e.kind==lu_core::model_turn_journal::ModelAuditKind::ToolFeedback && e.payload.contains("\"ok\":false")));
+    assert!(audit.iter().all(|e|e.kind!=lu_core::model_turn_journal::ModelAuditKind::FinalAnswer));
+    drop(session);drop(journal);fs::remove_dir_all(root).unwrap();
+}

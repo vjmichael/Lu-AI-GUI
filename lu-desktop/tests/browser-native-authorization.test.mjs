@@ -8,6 +8,7 @@ import {readFileSync} from 'node:fs';
 const read=relative=>readFileSync(new URL(relative,import.meta.url),'utf8');
 const host=read('../src-tauri/src/lib.rs');
 const model=read('../src-tauri/src/browser_model_desktop.rs');
+const coordinator=read('../src-tauri/src/turn_coordinator.rs');
 const runtime=read('../src-tauri/src/native_browser_host.rs');
 const store=read('../src-tauri/src/chat_store.rs');
 const ui=read('../web/main.jsx');
@@ -29,9 +30,11 @@ test('browser is bound to a persisted authenticated human turn and read-only aut
 test('native modal and package integrity gate run before Chromium launch',()=>{
   assert.match(host,/Read-only Browser grant/);
   assert.match(host,/\.blocking_show\(\)/);
-  assert.match(host,/if !approved\{return Err\("Browser grant cancelled"/);
+  assert.match(host,/if !approved\{return Err\("Cancelled Browser grant"/);
   assert.match(host,/browser_runtime\.require_launch_ready\(\)\?/);
   assert.match(host,/browser_authority\.open_user_task/);
+  assert.match(host,/ticket\.verify_active_foreground\(sid,&chat_id,&turn_id\)/);
+  assert.match(host,/p0_auth_requested_watermark\(&chat_id\)\?!=watermark/);
   assert.match(host,/browser_runtime\.launch_for_native_grant/);
   assert.match(runtime,/fn package_verified\(&self\)->bool/);
   assert.match(runtime,/EMBEDDED_BROWSER_MANIFEST/);
@@ -84,19 +87,19 @@ test('CAPTCHA is human-owned and user watch/hide is never a model-facing network
 });
 test('Browser research creates a durable queued USER turn and revokes it on exit',()=>{
   assert.match(model,/async fn lu_generate_browser\(/);
-  assert.match(model,/generation_queue\.enqueue\(/);
+  assert.match(model,/generation_queue\.enqueue_with_class_committing\(\s*&session_id,&chat_id,&gid,TurnClass::Foreground,\s*\|\|owner\.chats\.append_user_with_turn_id\(&chat_id,&gid,&prompt\)\s*\)\?/);
   assert.match(model,/chats\.append_user_with_turn_id\(&chat_id,&gid,&prompt\)/);
   assert.match(model,/ticket\.wait_for_slot\(\)\?/);
   assert.match(model,/start_browser_for_exact_turn\(/);
   assert.match(model,/chats\.append_browser_observation\(/);
   assert.match(model,/supervisor\.run_reserved_with_history\(/);
   assert.match(model,/owner\.browser_authority\.revoke_task\(&grant\.task_id\)/);
-  assert.match(ui,/lu_generate_browser/);
+  assert.doesNotMatch(ui,/lu_generate_browser/);
 });
-test('Browser research opt-in is per Send and cannot become ordinary chat permission',()=>{
-  assert.match(ui,/browserResearchNextSend/);
-  assert.match(ui,/setBrowserResearchNextSend\(false\)/);
-  assert.match(ui,/useBrowserResearch\s*\?/);
+test('Browser is selected by the native host for ordinary Send, without renderer permission flags',()=>{
+  assert.doesNotMatch(ui,/browserResearchNextSend|useBrowserResearch|browserOrigins/);
+  assert.match(host,/TurnRoute::Browser\(origin\)/);
+  assert.match(host,/browser_model_desktop::lu_generate_browser\(app,state,session_id,chat_id,prompt,origin,512\)/);
   assert.match(ui,/lu_generate'\s*,/);
   assert.match(model,/Browser research requires exact public HTTPS origins/);
   assert.match(host,/fn browser_origin_list\(raw:&str\)/);
@@ -145,7 +148,7 @@ test('C1 original eight-origin research contract survives current native approva
   assert.match(scope,/self\.approved\.contains/);
   assert.match(model,/browser_origin_list\(&origins\)\?/);
   assert.match(model,/result_scope\.allows\(u\)/);
-  assert.match(ui,/origins:browserOrigins/);
+  assert.doesNotMatch(ui,/origins:browserOrigins/);
   // The automatic human-intent classifier is deliberately single-origin;
   // multi-origin research requires an explicit fresh native user approval.
   assert.match(model,/if origins\.len\(\)!=1 \{return None\}/);
@@ -180,5 +183,6 @@ test('public search provider is selected by authenticated human input and cannot
   assert.match(host,/search\.provider,allowed\.join\("\\n"\),search\.query/);
   assert.match(model,/scope\.origins\(\)!=vec!\[search\.origin\.to_owned\(\)\]/);
   assert.match(runtime,/approved_origins\.len\(\)!=1\|\|!super::browser_model_desktop::is_public_search_origin\(&approved_origins\[0\]\)/);
-  assert.match(host,/lu_generate_browser\(app,state,session_id,chat_id,prompt,search\.origin\.into\(\),512\)/);
+  assert.match(coordinator,/browser_model_desktop::public_search_intent\(prompt\)\?[\s\S]*?return Ok\(TurnRoute::Browser\(search\.origin\.into\(\)\)\)/);
+  assert.match(host,/TurnRoute::Browser\(origin\)=>\{[\s\S]*?lu_generate_browser\(app,state,session_id,chat_id,prompt,origin,512\)/);
 });

@@ -776,9 +776,7 @@ pub fn register_inspection_tools(
     register_inspection_tools_from_dir(registry, catalog, root)
 }
 
-pub(crate) fn register_inspection_tools_from_dir(
-    registry: &NativeToolRegistry, catalog: &mut ModelToolCatalog, root: Arc<Dir>,
-) -> Result<(), String> {
+pub(crate) fn registration_contracts()->Vec<crate::native_capability_inventory::RegistrationContract>{
     let descriptor = |id: &str, title: &str, input: &str, output: &str| ToolDescriptor {
         id: id.into(),
         display_name: title.into(),
@@ -788,6 +786,36 @@ pub(crate) fn register_inspection_tools_from_dir(
     };
     let stat = descriptor(STAT, "Inspect file metadata", STAT_IN, STAT_OUT);
     let search = descriptor(SEARCH, "Search workspace text", SEARCH_IN, SEARCH_OUT);
+    vec![crate::native_capability_inventory::RegistrationContract::new(stat,ModelToolDefinition {
+                name: "lu_files_stat".into(),
+                native_tool_id: STAT.into(),
+                description: "Inspect a file, directory or symlink in the scoped workspace.".into(),
+                parameters: json!({"type":"object",
+            "properties":{"path":{"type":"string"}},
+            "required":["path"],"additionalProperties":false}),
+                codec: Arc::new(StatCodec),
+            }),
+        crate::native_capability_inventory::RegistrationContract::new(search,ModelToolDefinition {
+        name: "lu_files_search_text".into(), native_tool_id: SEARCH.into(),
+        description: "Search approved workspace literal UTF-8 with optional recursion and suffix filter. Scope, time, byte and file limits yield PARTIAL with explicit limitation codes; hits carry source SHA-256. Hidden entries and links are excluded. A prior hit never grants file access.".into(),
+        parameters: json!({"type":"object","properties":{
+            "path":{"type":"string","description":"Workspace directory; omit for root"},
+            "query":{"type":"string","description":"Literal phrase, up to 256 UTF-8 bytes"},
+            "max_files":{"type":"integer","minimum":1,"maximum":MAX_FILES},
+            "max_matches":{"type":"integer","minimum":1,"maximum":MAX_MATCHES},
+            "recursive":{"type":"boolean"},
+            "file_suffix":{"type":"string","maxLength":64}
+        },"required":["query"],"additionalProperties":false}),
+        codec: Arc::new(SearchCodec),
+    })]
+}
+
+pub(crate) fn register_inspection_tools_from_dir(
+    registry: &NativeToolRegistry, catalog: &mut ModelToolCatalog, root: Arc<Dir>,
+) -> Result<(), String> {
+    let mut contracts=registration_contracts().into_iter();
+    let (stat,stat_definition)=contracts.next().expect("fixed registration family").into_parts();
+    let (search,search_definition)=contracts.next().expect("fixed registration family").into_parts();
     registry
         .register(
             ModuleManifest {
@@ -815,30 +843,10 @@ pub(crate) fn register_inspection_tools_from_dir(
     catalog
         .insert(
             registry,
-            ModelToolDefinition {
-                name: "lu_files_stat".into(),
-                native_tool_id: STAT.into(),
-                description: "Inspect a file, directory or symlink in the scoped workspace.".into(),
-                parameters: json!({"type":"object",
-            "properties":{"path":{"type":"string"}},
-            "required":["path"],"additionalProperties":false}),
-                codec: Arc::new(StatCodec),
-            },
+            stat_definition,
         )
         .map_err(|e| format!("cannot publish stat schema: {e:?}"))?;
-    catalog.insert(registry, ModelToolDefinition {
-        name: "lu_files_search_text".into(), native_tool_id: SEARCH.into(),
-        description: "Search approved workspace literal UTF-8 with optional recursion and suffix filter. Scope, time, byte and file limits yield PARTIAL with explicit limitation codes; hits carry source SHA-256. Hidden entries and links are excluded. A prior hit never grants file access.".into(),
-        parameters: json!({"type":"object","properties":{
-            "path":{"type":"string","description":"Workspace directory; omit for root"},
-            "query":{"type":"string","description":"Literal phrase, up to 256 UTF-8 bytes"},
-            "max_files":{"type":"integer","minimum":1,"maximum":MAX_FILES},
-            "max_matches":{"type":"integer","minimum":1,"maximum":MAX_MATCHES},
-            "recursive":{"type":"boolean"},
-            "file_suffix":{"type":"string","maxLength":64}
-        },"required":["query"],"additionalProperties":false}),
-        codec: Arc::new(SearchCodec),
-    }).map_err(|e| format!("cannot publish search schema: {e:?}"))?;
+    catalog.insert(registry, search_definition).map_err(|e| format!("cannot publish search schema: {e:?}"))?;
     Ok(())
 }
 

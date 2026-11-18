@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
+const authority=readFileSync(new URL('../src-tauri/src/turn_authority.rs',import.meta.url),'utf8');
 
 const ui=readFileSync(new URL('../web/main.jsx',import.meta.url),'utf8');
 const desktop=readFileSync(new URL('../src-tauri/src/reviewed_app_desktop.rs',import.meta.url),'utf8');
@@ -8,19 +9,19 @@ const host=readFileSync(new URL('../src-tauri/src/lib.rs',import.meta.url),'utf8
 const tool=readFileSync(new URL('../../src-tauri/lu-core/src/native_reviewed_app_tool.rs',import.meta.url),'utf8');
 
 test('single Send enters native host routing; reviewed application still needs OS picker',()=>{
-  assert.match(ui,/reviewedAppNextSend/);
+  assert.doesNotMatch(ui,/reviewedAppNextSend|useReviewedApp/);
   // P0-WIN-CHAT intentionally unmounted the legacy specialist buttons.
   // The ordinary Send routes through lu_generate and the native host
   // classifies the original human request. No JS text can be a tool grant.
-  assert.match(ui,/user requests are classified by the native lu_generate host/);
-  assert.match(ui,/Renderer heuristics never choose a tool scope/);
+  assert.match(ui,/Native routing/);
+  assert.match(ui,/all tool authority is independently granted/);
   assert.match(ui,/invoke\('lu_generate',\s*\{/);
-  assert.match(ui,/invoke\('lu_reviewed_app_ask',\s*\{/);
+  assert.doesNotMatch(ui,/invoke\('lu_reviewed_app_ask',\s*\{/);
   assert.match(desktop,/blocking_pick_file\(\)/);
   assert.match(desktop,/blocking_pick_folder\(\)/);
   assert.match(desktop,/matches!\(mode.as_str\(\),"git"\|"media"\|"pdf"\|"image"\)/);
-  assert.match(desktop,/PersistedReviewedHumanTurn/);
-  assert.match(desktop,/trusted_user_turn_text\(chat,turn\)/);
+  assert.match(desktop,/PersistedHumanTurn::queued_chat/);
+  assert.match(authority,/trusted_user_turn_text\(chat,turn\)/);
   assert.match(host,/lu_reviewed_app_ask,/);
   assert.doesNotMatch(ui,/invoke\('lu_reviewed_app_ask',\s*\{[^}]*\b(?:path|executable|argv|permission)\s*:/s);
 });

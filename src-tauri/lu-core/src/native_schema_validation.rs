@@ -294,10 +294,8 @@ impl ModelToolCodec for SchemaCodec {
 /// A trusted host must separately select and authorize this schema validation
 /// capability for the current persisted user turn. Native registry and model
 /// schemas are inert metadata; this call does not touch disk or the network.
-pub fn register_schema_validation_tool(
-    registry: &NativeToolRegistry,
-    catalog: &mut ModelToolCatalog,
-) -> Result<(), String> {
+
+pub(crate) fn registration_contract()->crate::native_capability_inventory::RegistrationContract{
     let descriptor = ToolDescriptor {
         id: TOOL.into(),
         display_name: "Validate supplied JSON data against JSON Schema".into(),
@@ -305,18 +303,7 @@ pub fn register_schema_validation_tool(
         effect: ToolEffect::ReadWorkspace,
         input_type_url: INPUT.into(), output_type_url: OUTPUT.into(),
     };
-    registry.register(
-        ModuleManifest {
-            id: MODULE.into(),
-            display_name: "Lu Core standard schema validation".into(),
-            contract_version: CORE_CONTRACT_VERSION,
-            kind: ModuleKind::Core,
-            tools: vec![descriptor.clone()],
-            panels: vec![], workflows: vec![],
-        },
-        vec![Arc::new(SchemaValidator { descriptor })],
-    ).map_err(|e| format!("native schema registration refused: {e:?}"))?;
-    catalog.insert(registry, ModelToolDefinition {
+    crate::native_capability_inventory::RegistrationContract::new(descriptor,ModelToolDefinition {
         name: "lu_validate_schema".into(),
         native_tool_id: TOOL.into(),
         description: "Check JSON data against a supplied Draft 2020-12 JSON Schema; never repair.".into(),
@@ -330,6 +317,25 @@ pub fn register_schema_validation_tool(
             "additionalProperties":false
         }),
         codec: Arc::new(SchemaCodec),
-    }).map_err(|e| format!("model schema registration refused: {e:?}"))?;
+    })
+}
+
+pub fn register_schema_validation_tool(
+    registry: &NativeToolRegistry,
+    catalog: &mut ModelToolCatalog,
+) -> Result<(), String> {
+    let (descriptor,definition)=registration_contract().into_parts();
+    registry.register(
+        ModuleManifest {
+            id: MODULE.into(),
+            display_name: "Lu Core standard schema validation".into(),
+            contract_version: CORE_CONTRACT_VERSION,
+            kind: ModuleKind::Core,
+            tools: vec![descriptor.clone()],
+            panels: vec![], workflows: vec![],
+        },
+        vec![Arc::new(SchemaValidator { descriptor })],
+    ).map_err(|e| format!("native schema registration refused: {e:?}"))?;
+    catalog.insert(registry, definition).map_err(|e| format!("model schema registration refused: {e:?}"))?;
     Ok(())
 }

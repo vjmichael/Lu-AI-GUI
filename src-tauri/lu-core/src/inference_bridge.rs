@@ -282,8 +282,16 @@ impl<B: InferenceBackend> InferenceBridge<B> {
         frame: &proto::InferenceFrame,
         images: &[PinnedImage],
         cancel: Cancellation,
+        emit: impl FnMut(Vec<u8>) -> Result<(), BridgeError>,
+    ) -> Result<(), BridgeError> {
+        self.generate_with_output_schema(frame, images, None, cancel, emit)
+    }
+    pub(crate) fn generate_with_output_schema(
+        &mut self, frame: &proto::InferenceFrame, images: &[PinnedImage],
+        schema: Option<&serde_json::Value>, cancel: Cancellation,
         mut emit: impl FnMut(Vec<u8>) -> Result<(), BridgeError>,
     ) -> Result<(), BridgeError> {
+        if schema.is_some() && !images.is_empty() { return Err(BridgeError::UnsupportedModality); }
         validate_frame(frame)?;
         let Some(proto::inference_frame::Body::Generate(request)) = frame.body.as_ref() else {
             return Err(BridgeError::WrongOperation);
@@ -367,7 +375,7 @@ impl<B: InferenceBackend> InferenceBridge<B> {
         };
         let result = if images.is_empty() {
             self.host
-                .generate(generation, cancel.clone(), &mut forward_chunk)
+                .generate_with_output_schema(generation, schema, cancel.clone(), &mut forward_chunk)
         } else {
             self.host
                 .generate_images(generation, images, cancel.clone(), &mut forward_chunk)

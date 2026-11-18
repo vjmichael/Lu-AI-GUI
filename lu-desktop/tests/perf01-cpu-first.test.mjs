@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
+const coordinator=readFileSync(new URL('../src-tauri/src/turn_coordinator.rs',import.meta.url),'utf8');
 import {isHostCpuChatLookup,isHostModelStatusQuestion} from '../web/native_intent.mjs';
 
 const read=(rel)=>readFileSync(new URL(rel,import.meta.url),'utf8');
@@ -26,8 +27,10 @@ test('P0D exact human CPU route works without loaded model and rejects other int
   ])assert.equal(isHostCpuChatLookup(value),false,value);
 });
 test('P0D original Tauri backend recomputes narrow intent and retains fresh session fence',()=>{
-  assert.match(host,/perf01_router::classify\(/);
-  assert.match(host,/perf01_router::Route::CurrentChatLiteral\(needle\)/);
+  assert.match(coordinator,/perf01_router::classify\(/);
+  assert.match(host,/match turn_coordinator::select\(/);
+  assert.match(coordinator,/perf01_router::Route::CurrentChatLiteral\(needle\)/);
+  assert.match(host,/TurnRoute::CpuChatLiteral\(needle\)/);
   assert.match(host,/owner\.chats\.history_window\(&chat_id,None,"older",1\)/);
   assert.match(host,/perf01_router::search_current_chat\(/);
   assert.match(host,/current\.session_id\.as_deref\(\)==Some\(session_id\.as_str\(\)\)/);
@@ -68,9 +71,9 @@ test('P0 diagnostics keep per-chat bounded original-only samples',()=>{
   assert.doesNotMatch(ui,/aria-label="Latest host-observed performance receipt"/);
 });
 test('P0D no-model UI is presentation-only; host remains authority',()=>{
-  assert.match(ui,/isHostCurrentTimeQuestion\(prompt\)\|\|isHostCpuChatLookup\(prompt\)/);
-  assert.match(ui,/!modelFreeClockAllowed/);
-  assert.match(ui,/readOnlyWorkspace:\s*useWorkspaceTools/);
+  assert.match(ui,/isModelFreeSendQuestion\(prompt\)/);
+  assert.match(ui,/!modelFreeSendAllowed/);
+  assert.doesNotMatch(ui,/readOnlyWorkspace:|workspaceToolsNextSend/);
   assert.match(router,/Route::ModelRequired\("NON_TEXT_OR_REVIEWED_MODE"\)/);
   assert.match(router,/MAX_SOURCE_SCAN_BYTES:usize=2\*1024\*1024/);
   assert.match(router,/MAX_SOURCE_ENTRIES:usize=640/);
@@ -94,9 +97,10 @@ test('P0D exact local model status remains CPU-only; ambiguous queries require G
     'Tell me what model I should download']){
     assert.equal(isHostModelStatusQuestion(q),false);
   }
-  assert.match(host,/perf01_router::Route::LocalModelStatus/);
+  assert.match(coordinator,/perf01_router::Route::LocalModelStatus/);
+  assert.match(host,/TurnRoute::CpuModelStatus/);
   assert.match(host,/NATIVE_MODEL_STATUS/);
   assert.match(host,/Model changed while reading CPU status/);
   assert.match(host,/no inference, new model load, GPU attestation or tool permission/);
-  assert.match(ui,/isHostModelStatusQuestion\(prompt\)/);
+  assert.match(ui,/isModelFreeSendQuestion\(prompt\)/);
 });

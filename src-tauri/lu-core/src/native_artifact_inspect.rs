@@ -270,20 +270,13 @@ pub fn register_artifact_inspection(
         .map_err(|_|"artifact root unavailable")?);
     register_artifact_inspection_from_dir(registry,catalog,root)
 }
-pub(crate) fn register_artifact_inspection_from_dir(
-    registry:&NativeToolRegistry,catalog:&mut ModelToolCatalog,root:Arc<Dir>,
-)->Result<(),String>{
+
+pub(crate) fn registration_contract()->crate::native_capability_inventory::RegistrationContract{
     let descriptor=ToolDescriptor{id:TOOL_ID.into(),
         display_name:"Verify bounded output file structure and digest".into(),
         effect:ToolEffect::ReadWorkspace,input_type_url:INPUT.into(),
         output_type_url:OUTPUT.into()};
-    registry.register(ModuleManifest{
-        id:"lu.artifact".into(),display_name:"Lu artifact verification".into(),
-        contract_version:CORE_CONTRACT_VERSION,kind:ModuleKind::Core,
-        tools:vec![descriptor.clone()],panels:vec![],workflows:vec![],
-    },vec![Arc::new(Inspector{descriptor,root})])
-        .map_err(|_|"artifact native registration denied")?;
-    catalog.insert(registry,ModelToolDefinition{
+    crate::native_capability_inventory::RegistrationContract::new(descriptor,ModelToolDefinition{
         name:"lu_artifact_inspect".into(),native_tool_id:TOOL_ID.into(),
         description:"Read-only inspect an EXISTING approved file: byte count, SHA-256, format/container structure. Never certifies file contents, layout, formulas or user task success. For JPG use jpeg format.".into(),
         parameters:json!({"type":"object","properties":{
@@ -292,7 +285,20 @@ pub(crate) fn register_artifact_inspection_from_dir(
             "expected_sha256":{"type":"string","description":"Optional expected full SHA-256"}
         },"required":["path","format"],"additionalProperties":false}),
         codec:Arc::new(Codec),
-    }).map_err(|_|"artifact model schema rejected")?;
+    })
+}
+
+pub(crate) fn register_artifact_inspection_from_dir(
+    registry:&NativeToolRegistry,catalog:&mut ModelToolCatalog,root:Arc<Dir>,
+)->Result<(),String>{
+    let (descriptor,definition)=registration_contract().into_parts();
+    registry.register(ModuleManifest{
+        id:"lu.artifact".into(),display_name:"Lu artifact verification".into(),
+        contract_version:CORE_CONTRACT_VERSION,kind:ModuleKind::Core,
+        tools:vec![descriptor.clone()],panels:vec![],workflows:vec![],
+    },vec![Arc::new(Inspector{descriptor,root})])
+        .map_err(|_|"artifact native registration denied")?;
+    catalog.insert(registry,definition).map_err(|_|"artifact model schema rejected")?;
     Ok(())
 }
 
