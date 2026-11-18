@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "cd5b8e7441b4288257ccbad028c68c0120c738a5",
+  "sourceCommitBeforeLock": "3229b2d3c06176782b31241c668bc9b859fc78a0",
   "trackedFileCount": 1957,
   "files": [
     {
@@ -1937,7 +1937,7 @@
     },
     {
       "path": "ide/app/src-tauri/src/lib.rs",
-      "blob": "67ad2a42712868c4c8935a39db7032f58a9ca106"
+      "blob": "7b1e326f2a8c9450c398e97fb7f2000697b52700"
     },
     {
       "path": "ide/app/src-tauri/src/lsp_backend.rs",
@@ -2337,7 +2337,7 @@
     },
     {
       "path": "ide/app/tests/reviewed_git_commit_form.test.mjs",
-      "blob": "db584cc2fe2e2c069f9519f3c292be9c3b0e3707"
+      "blob": "1f769705884c9d3921c20f29f6cf4b1b3c76644c"
     },
     {
       "path": "ide/app/tests/reviewed_multilang_adapters.test.mjs",
@@ -2345,7 +2345,7 @@
     },
     {
       "path": "ide/app/tests/standalone.test.mjs",
-      "blob": "d8c8975ef4a7fa4eb657a93905e71270d32220b6"
+      "blob": "4e49da199ecb45a13747f51d70e91886c8b8cdcd"
     },
     {
       "path": "ide/app/tests/supervisor_contract.test.mjs",
@@ -2501,7 +2501,7 @@
     },
     {
       "path": "ide/app/web/main.jsx",
-      "blob": "a784abcfb4eb96393a208162fa7676e822423c35"
+      "blob": "3b18f611560e054b196cc06b26f0ba58c996aa73"
     },
     {
       "path": "ide/app/web/native_build_output.js",
@@ -2533,7 +2533,7 @@
     },
     {
       "path": "ide/app/web/reviewed_git_commit_form.js",
-      "blob": "9e32baaf679d9d5eaa696a2f6ad6770bc4db674a"
+      "blob": "7c275382088e021416fe1a333242d2d0746cda66"
     },
     {
       "path": "ide/app/web/structured_test_evidence.js",
@@ -2577,7 +2577,7 @@
     },
     {
       "path": "ide/ci/merge02-reviewed-native-boundaries.json",
-      "blob": "bc10e26186ba352df14667539f28b06d28d0a7b7"
+      "blob": "c490d3d272455829b15f19cc2b91e45fd6d0819d"
     },
     {
       "path": "ide/ci/test_verify_reviewed_native_boundaries.py",
@@ -5877,11 +5877,11 @@
     },
     {
       "path": "scripts/core01-verify-scope.mjs",
-      "blob": "bfd334882b863f898c7c3c5381ee15ece87d9453"
+      "blob": "7fc53f6ee0542fd8a0b74ca56bf9f8c775b21873"
     },
     {
       "path": "scripts/core01-verify-scope.test.mjs",
-      "blob": "ef5e2190f4cfd56c5623eb5b3719dc6834bb5d84"
+      "blob": "cc24d89d8e3041d7b02b84e3c735de88a6bc03fc"
     },
     {
       "path": "scripts/core01f-acceptance-reconcile.mjs",
