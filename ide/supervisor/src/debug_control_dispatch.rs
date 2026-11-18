@@ -338,6 +338,97 @@ impl VerifiedCiBreakpointHit {
         &self.receipt_sha256
     }
 }
+/// A bounded slice of the authenticated DebuggerThread sideband. Each row
+/// represents a received exception whose exact matching ContinueDebugEvent
+/// succeeded (or the final, still-held exception). No DAP event may supply it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct StepOwnerRecord {
+    pub(crate) sequence: u64,
+    pub(crate) pid: u32,
+    pub(crate) tid: u32,
+    pub(crate) owner_tid: u32,
+    pub(crate) exception_code: u32,
+    pub(crate) first_chance: u32,
+    pub(crate) rip: u64,
+    pub(crate) address: u64,
+    pub(crate) continued: bool,
+}
+
+pub(crate) const MAX_STEP_OWNER_TRANSITIONS: usize = 32;
+
+/// Private proof of every OS exception/continue between the two held stops.
+/// A source-level step can require several internal single-step exceptions;
+/// merely comparing increasing sequence numbers is NOT a substitute for this.
+pub(crate) struct VerifiedStepOwnerAdvance {
+    from: StepOwnerRecord,
+    to: StepOwnerRecord,
+    digest: String,
+    transcript: String,
+}
+impl VerifiedStepOwnerAdvance {
+    pub(crate) fn verify(records: &[StepOwnerRecord]) -> Result<Self, ControlDenial> {
+        if records.len() < 2 || records.len() > MAX_STEP_OWNER_TRANSITIONS + 1 {
+            return Err(ControlDenial::NoIndependentStop);
+        }
+        let from = &records[0];
+        let to = records.last().unwrap();
+        let mut fingerprint = String::from("lu-ci-step-owner-chain-v1\n");
+        for (i, event) in records.iter().enumerate() {
+            if from.sequence == 0
+                || from.sequence.checked_add(i as u64) != Some(event.sequence)
+                || event.pid == 0
+                || event.pid != from.pid
+                || event.tid == 0
+                || event.tid != from.tid
+                || event.owner_tid == 0
+                || event.owner_tid != from.owner_tid
+                || !matches!(event.exception_code, 0x8000_0003 | 0x8000_0004)
+                || event.first_chance != 1
+                || event.rip == 0
+                || event.address == 0
+                || event.continued != (i + 1 < records.len())
+            {
+                return Err(ControlDenial::NoIndependentStop);
+            }
+            fingerprint.push_str(&format!(
+                "{}:{}:{}:{}:{}:{}:{}:{}:{}\n",
+                event.sequence,
+                event.pid,
+                event.tid,
+                event.owner_tid,
+                event.exception_code,
+                event.first_chance,
+                event.rip,
+                event.address,
+                event.continued
+            ));
+        }
+        Ok(Self {
+            from: from.clone(),
+            to: to.clone(),
+            digest: proof_sha(&fingerprint),
+            transcript: fingerprint,
+        })
+    }
+    fn matches(&self, from: &NativeControlStop, to: &NativeControlStop) -> bool {
+        fn rip_matches(record: &StepOwnerRecord, rip: u64) -> bool {
+            record.rip == rip
+                || (record.exception_code == 0x8000_0003
+                    && record.first_chance == 1
+                    && record.address == rip
+                    && rip.checked_add(1) == Some(record.rip))
+        }
+        self.from.sequence == from.owner_sequence
+            && self.to.sequence == to.owner_sequence
+            && self.from.pid == from.process_id
+            && self.to.pid == to.process_id
+            && self.from.tid == from.thread_id
+            && self.to.tid == to.thread_id
+            && rip_matches(&self.from, from.rip)
+            && rip_matches(&self.to, to.rip)
+            && hash64(&self.digest)
+    }
+}
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct NativeStepAck {
     pub(crate) correlated_response: bool,
@@ -353,30 +444,28 @@ pub(crate) struct VerifiedCiStepResult {
     evidence_sha256: String,
     from_seq: u64,
     to_seq: u64,
+    owner_chain_sha256: String,
+    evidence: String,
 }
 pub(crate) fn verify_independent_step_result(
     dispatched: &CiStepDispatch,
     after: &NativeControlStop,
     ack: NativeStepAck,
+    owner_chain: &VerifiedStepOwnerAdvance,
 ) -> Result<VerifiedCiStepResult, ControlDenial> {
     if !ack.correlated_response || !ack.new_dap_stop || ack.thread_id != dispatched.from.thread_id {
         return Err(ControlDenial::AckOnly);
     }
     if !valid_stop(after)
         || !same_fixed_job(&dispatched.from, after)
-        || after.owner_sequence
-            != dispatched
-                .from
-                .owner_sequence
-                .checked_add(1)
-                .ok_or(ControlDenial::NoIndependentStop)?
+        || !owner_chain.matches(&dispatched.from, after)
         || after.owner_receipt_sha256 == dispatched.from.owner_receipt_sha256
         || after.rip == dispatched.from.rip
     {
         return Err(ControlDenial::NoIndependentStop);
     }
     let fingerprint = format!(
-        "lu-ci-step-independent-v1\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}",
+        "lu-ci-step-independent-v2\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}",
         dispatched.claim.action_id_sha256,
         dispatched.claim.consumed_receipt_sha256,
         dispatched.from.job_id,
@@ -387,7 +476,9 @@ pub(crate) fn verify_independent_step_result(
         after.rip,
         dispatched.from.owner_sequence,
         after.owner_sequence,
-        after.line
+        after.line,
+        owner_chain.digest,
+        owner_chain.transcript
     );
     Ok(VerifiedCiStepResult {
         action_id_sha256: dispatched.claim.action_id_sha256.clone(),
@@ -395,6 +486,8 @@ pub(crate) fn verify_independent_step_result(
         evidence_sha256: proof_sha(&fingerprint),
         from_seq: dispatched.from.owner_sequence,
         to_seq: after.owner_sequence,
+        owner_chain_sha256: owner_chain.digest.clone(),
+        evidence: fingerprint,
     })
 }
 impl VerifiedCiStepResult {
@@ -402,11 +495,72 @@ impl VerifiedCiStepResult {
         self.action_id_sha256 == action
             && self.consumed_sha256 == receipt
             && hash64(&self.evidence_sha256)
-            && self.to_seq == self.from_seq + 1
+            && self.to_seq > self.from_seq
+            && self.to_seq - self.from_seq <= MAX_STEP_OWNER_TRANSITIONS as u64
+            && hash64(&self.owner_chain_sha256)
+            && proof_sha(&self.evidence) == self.evidence_sha256
+    }
+    pub(crate) fn evidence_bytes(&self) -> &[u8] {
+        self.evidence.as_bytes()
     }
     pub(crate) fn evidence_sha256(&self) -> &str {
         &self.evidence_sha256
     }
+}
+
+// Synthetic stop evidence is available only to portable unit tests; never
+// compiled into a native worker or used as Windows acceptance evidence.
+#[cfg(test)]
+pub(crate) fn test_step_result_from_claim(claim: ConsumedControlClaim) -> VerifiedCiStepResult {
+    let from = NativeControlStop {
+        job_id: claim.job_id.clone(),
+        plan_sha256: claim.plan_sha256.clone(),
+        build_receipt_sha256: "f".repeat(64),
+        running_receipt_sha256: "1".repeat(64),
+        owner_receipt_sha256: claim.owner_event_sha256.clone(),
+        source_snapshot_sha256: claim.source_snapshot_sha256.clone(),
+        process_id: claim.process_id,
+        thread_id: claim.thread_id,
+        rip: claim.stopped_rip,
+        line: claim.source_line,
+        frame_id: 9,
+        owner_sequence: claim.owner_sequence,
+        has_independent_pdb: true,
+        has_kernel_owner: true,
+        has_durable_receipts: true,
+    };
+    let mut to = from.clone();
+    to.owner_sequence += 2;
+    to.rip += 4;
+    to.line += 1;
+    to.owner_receipt_sha256 = "d".repeat(64);
+    let row = |sequence, rip, continued| StepOwnerRecord {
+        sequence,
+        pid: from.process_id,
+        tid: from.thread_id,
+        owner_tid: 99,
+        exception_code: 0x8000_0004,
+        first_chance: 1,
+        rip,
+        address: rip,
+        continued,
+    };
+    let chain = VerifiedStepOwnerAdvance::verify(&[
+        row(from.owner_sequence, from.rip, true),
+        row(from.owner_sequence + 1, from.rip + 2, true),
+        row(to.owner_sequence, to.rip, false),
+    ])
+    .unwrap();
+    let ack = NativeStepAck {
+        correlated_response: true,
+        new_dap_stop: true,
+        thread_id: from.thread_id,
+    };
+    let sent = CiControlSlot::admit(claim, from)
+        .unwrap()
+        .take_step()
+        .unwrap();
+    verify_independent_step_result(&sent, &to, ack, &chain).unwrap()
 }
 
 #[cfg(test)]
@@ -430,6 +584,71 @@ mod tests {
             has_kernel_owner: true,
             has_durable_receipts: true,
         }
+    }
+    fn owner_record(seq: u64, continued: bool) -> StepOwnerRecord {
+        let stop = stop(seq);
+        StepOwnerRecord {
+            sequence: seq,
+            pid: stop.process_id,
+            tid: stop.thread_id,
+            owner_tid: 99,
+            exception_code: 0x8000_0004,
+            first_chance: 1,
+            rip: stop.rip,
+            address: stop.rip,
+            continued,
+        }
+    }
+    fn tested_chain() -> VerifiedStepOwnerAdvance {
+        VerifiedStepOwnerAdvance::verify(&[owner_record(1, true), owner_record(2, false)]).unwrap()
+    }
+    #[test]
+    fn authentic_multi_exception_step_binds_every_continue_and_final_stop() {
+        let mut slot = CiControlSlot::admit(claim(), stop(1)).unwrap();
+        let sent = slot.take_step().unwrap();
+        let mut middle = owner_record(2, true);
+        middle.rip += 2;
+        middle.address = middle.rip;
+        let rows = [owner_record(1, true), middle, owner_record(3, false)];
+        let chain = VerifiedStepOwnerAdvance::verify(&rows).unwrap();
+        let proof = verify_independent_step_result(&sent, &stop(3), ack(), &chain).unwrap();
+        assert!(
+            proof.matches_consumption(sent.action_id_sha256(), &sent.claim.consumed_receipt_sha256)
+        );
+        assert!(verify_independent_step_result(&sent, &stop(3), ack(), &tested_chain()).is_err());
+        assert!(verify_independent_step_result(&sent, &stop(2), ack(), &chain).is_err());
+        let mut bad = rows.clone();
+        bad[1].sequence = 4;
+        assert!(VerifiedStepOwnerAdvance::verify(&bad).is_err());
+        let mut bad = rows.clone();
+        bad[1].continued = false;
+        assert!(VerifiedStepOwnerAdvance::verify(&bad).is_err());
+        let mut bad = rows.clone();
+        bad[1].tid += 1;
+        assert!(VerifiedStepOwnerAdvance::verify(&bad).is_err());
+        let mut bad = rows.clone();
+        bad[1].pid += 1;
+        assert!(VerifiedStepOwnerAdvance::verify(&bad).is_err());
+        let mut bad = rows.clone();
+        bad[1].owner_tid += 1;
+        assert!(VerifiedStepOwnerAdvance::verify(&bad).is_err());
+        let mut bad = rows.clone();
+        bad[1].exception_code = 0xc0000005;
+        assert!(VerifiedStepOwnerAdvance::verify(&bad).is_err());
+        let mut bad = rows.clone();
+        bad[2].continued = true;
+        assert!(VerifiedStepOwnerAdvance::verify(&bad).is_err());
+        let mut bad = rows.clone();
+        bad[2].first_chance = 0;
+        assert!(VerifiedStepOwnerAdvance::verify(&bad).is_err());
+        let mut bad = rows.clone();
+        bad[2].rip += 1;
+        let mismatched = VerifiedStepOwnerAdvance::verify(&bad).unwrap();
+        assert!(verify_independent_step_result(&sent, &stop(3), ack(), &mismatched).is_err());
+        let excessive = (1..=34)
+            .map(|seq| owner_record(seq, seq != 34))
+            .collect::<Vec<_>>();
+        assert!(VerifiedStepOwnerAdvance::verify(&excessive).is_err());
     }
     fn claim() -> ConsumedControlClaim {
         let operation = DebugReviewIntent::Step {
@@ -490,13 +709,13 @@ mod tests {
         let mut slot = CiControlSlot::admit(claim(), stop(1)).unwrap();
         let dispatch = slot.take_step().unwrap();
         assert!(matches!(
-            verify_independent_step_result(&dispatch, &stop(1), ack(),),
+            verify_independent_step_result(&dispatch, &stop(1), ack(), &tested_chain(),),
             Err(ControlDenial::NoIndependentStop)
         ));
         let mut b = stop(2);
         b.owner_receipt_sha256 = dispatch.from.owner_receipt_sha256.clone();
         assert!(matches!(
-            verify_independent_step_result(&dispatch, &b, ack(),),
+            verify_independent_step_result(&dispatch, &b, ack(), &tested_chain(),),
             Err(ControlDenial::NoIndependentStop)
         ));
     }
@@ -504,7 +723,8 @@ mod tests {
     fn independently_new_kernel_stop_and_pdb_bind_one_consumed_receipt() {
         let mut slot = CiControlSlot::admit(claim(), stop(1)).unwrap();
         let dispatched = slot.take_step().unwrap();
-        let result = verify_independent_step_result(&dispatched, &stop(2), ack()).unwrap();
+        let result =
+            verify_independent_step_result(&dispatched, &stop(2), ack(), &tested_chain()).unwrap();
         assert!(result.matches_consumption(
             dispatched.action_id_sha256(),
             &dispatched.claim.consumed_receipt_sha256,
@@ -518,7 +738,7 @@ mod tests {
         let mut next = stop(2);
         next.rip = sent.from.rip;
         assert!(matches!(
-            verify_independent_step_result(&sent, &next, ack()),
+            verify_independent_step_result(&sent, &next, ack(), &tested_chain()),
             Err(ControlDenial::NoIndependentStop)
         ));
     }
@@ -535,12 +755,12 @@ mod tests {
         let mut changed = stop(2);
         changed.plan_sha256 = "9".repeat(64);
         assert!(matches!(
-            verify_independent_step_result(&sent, &changed, ack(),),
+            verify_independent_step_result(&sent, &changed, ack(), &tested_chain(),),
             Err(ControlDenial::NoIndependentStop)
         ));
         let mut changed = stop(2);
         changed.has_independent_pdb = false;
-        assert!(verify_independent_step_result(&sent, &changed, ack()).is_err());
+        assert!(verify_independent_step_result(&sent, &changed, ack(), &tested_chain()).is_err());
     }
     #[test]
     fn no_reply_or_wrong_thread_cannot_be_accepted() {
@@ -553,7 +773,8 @@ mod tests {
                 correlated_response: true,
                 new_dap_stop: false,
                 thread_id: 22
-            }
+            },
+            &tested_chain()
         )
         .is_err());
         assert!(verify_independent_step_result(
@@ -563,7 +784,8 @@ mod tests {
                 correlated_response: true,
                 new_dap_stop: true,
                 thread_id: 23
-            }
+            },
+            &tested_chain()
         )
         .is_err());
     }

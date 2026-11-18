@@ -777,6 +777,8 @@ mod protected {
         let mut action_audit: Option<(String, String, String, String)> = None;
         #[cfg(all(windows, debug_assertions, feature = "dev046c-ci-control"))]
         let mut control_audit: Option<(String, String, String, String)> = None;
+        #[cfg(all(windows, debug_assertions, feature = "dev046c-ci-control"))]
+        let mut step_origin_receipt: Option<(u64, String)> = None;
         if verify_owner_event {
             #[cfg(all(windows, debug_assertions, feature = "dev045d5-ci-event-owner"))]
             {
@@ -829,14 +831,22 @@ mod protected {
                             "step" => {
                                 let (after, receipt) = dap.execute_one_protected_ci_step(
                                     &supervisor, &debug_job.job_id, &debug_plan, &target, &owner,
-                                ).map_err(|_| "DENIED: D6C new native LLDB stop/OS RIP/PDB and step result not independently verified")?;
+                                ).map_err(|err| format!("DENIED: D6C new native LLDB stop/OS RIP/PDB and step result not independently verified: {}", err.code()))?;
+                                // The private sideband verifier proves every
+                                // exact successful continuation, not just +1.
                                 if receipt.3 != "ResultVerified"
-                                    || after.owner_sequence != owner.owner_sequence + 1
+                                    || after.owner_sequence <= owner.owner_sequence
+                                    || after.owner_sequence - owner.owner_sequence > 32
                                     || after.native_owner_receipt_sha256
                                         == owner.native_owner_receipt_sha256
                                 {
                                     return Err("DENIED: D6C adapter acknowledgement substituted for a new owner event".into());
                                 }
+                                step_origin_receipt = owner_receipt.clone();
+                                println!(
+                                    "DEV046C_NATIVE_STEP_OWNER_SEQUENCE_DELTA={}",
+                                    after.owner_sequence - owner.owner_sequence
+                                );
                                 owner_receipt =
                                     Some((after.owner_sequence, after.native_owner_receipt_sha256));
                                 control_audit = Some(receipt);
@@ -1087,7 +1097,20 @@ mod protected {
                     "DENIED: D6C verified/uncertain control receipt not durable after restart"
                 })?;
             match ci_control {
-                Some("step") if phase == "ResultVerified" => {}
+                Some("step") if phase == "ResultVerified" => {
+                    let (sequence, hash) = step_origin_receipt
+                        .as_ref()
+                        .ok_or("DENIED: original pre-step owner receipt absent after restart")?;
+                    replay
+                        .verify_native_owner_receipt_after_restart(
+                            &debug_job.job_id,
+                            *sequence,
+                            hash,
+                        )
+                        .map_err(|_| {
+                            "DENIED: original pre-step owner receipt failed restart verification"
+                        })?;
+                }
                 Some("breakpoint") if phase == "ResultUncertain" => {}
                 _ => return Err(
                     "DENIED: native source control outcome asserted without matching OS witness"

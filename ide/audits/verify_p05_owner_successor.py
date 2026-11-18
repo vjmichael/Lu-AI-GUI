@@ -274,6 +274,29 @@ def project_checked_out_clangd_source(root, blobs):
     return projected, prior.decode("utf-8")
 
 
+E2_SMOKE_PATH = ".github/workflows/ide-e2-supervised-lsp.yml"
+E2_SMOKE_PRIOR_BLOB = "a29c605710c16b9fe8678f4072f79f12a4797d98"
+E2_SMOKE_CURRENT_BLOB = "6fa935c7dedd6c2bb54eb74dfba15ae0a0a40408"
+
+
+def project_checked_out_e2_smoke_source(root, blobs):
+    if blobs.get(E2_SMOKE_PATH) != E2_SMOKE_CURRENT_BLOB:
+        raise Denied("p05_e2_smoke_current_source_not_exact")
+    def read_blob(sha):
+        return subprocess.run(["git", "-C", str(root), "cat-file", "blob", sha],
+                              check=True, timeout=20, capture_output=True).stdout
+    prior, current = read_blob(E2_SMOKE_PRIOR_BLOB), read_blob(E2_SMOKE_CURRENT_BLOB)
+    command = b"python ide/packaging/verify_p06_candidate_lock.py --repo-root . --platform windows-2022"
+    if (original_blob_sha(prior) != E2_SMOKE_PRIOR_BLOB or
+            original_blob_sha(current) != E2_SMOKE_CURRENT_BLOB or
+            prior.count(command) != 2 or
+            current != prior.replace(command, command + b" --ide-merge02-successor")):
+        raise Denied("p05_e2_smoke_native_gate_drift")
+    projected = dict(blobs)
+    projected[E2_SMOKE_PATH] = E2_SMOKE_PRIOR_BLOB
+    return projected, prior.decode("utf-8")
+
+
 def compare_38_unchanged_and_replacements(baseline, current):
     if len(baseline) != 38 or set(baseline) != set(current):
         raise Denied("p05_expected_exact_38_original_workflows")
@@ -359,6 +382,7 @@ def verify(root: Path):
     scoped = json.loads(scoped_path.read_text(encoding="utf-8"))
     projected = project_checked_out_wo6_source(root, current)
     projected, prior_clangd = project_checked_out_clangd_source(root, projected)
+    projected, prior_e2_smoke = project_checked_out_e2_smoke_source(root, projected)
     result=compare_38_with_separate_scoped_source_dispositions(original,projected,scoped)
     result["clangdCurrentSourceRepairVerified"] = True
     result["clangdNativeAccepted"] = False
@@ -366,7 +390,7 @@ def verify(root: Path):
     result["wo6CurrentSourceRepairOwnerAuthorizationInferred"] = False
     for path in SCOPED_SOURCE_ONLY:
         historical=git("show",ORIGINAL+":"+path)
-        current_text=prior_clangd if path == CLANGD_PATH else (root/path).read_text(encoding="utf-8")
+        current_text = {CLANGD_PATH: prior_clangd, E2_SMOKE_PATH: prior_e2_smoke}.get(path, (root/path).read_text(encoding="utf-8"))
         verify_source_only_patch(path,historical,current_text)
     listed={x.get("path"):(x.get("original"),x.get("replacement"))
             for x in ledger.get("workflows",[])}

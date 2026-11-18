@@ -231,6 +231,26 @@ impl DapGateway {
             .ok_or(SupervisorError::NoContainment)?
             .verify_lldb_kernel_event_owner(pid, tid, rip)
     }
+    #[cfg(all(windows, debug_assertions, feature = "dev046c-ci-control"))]
+    pub(crate) fn verify_step_owner_advance(
+        &mut self,
+        original: &crate::windows_event_owner::OwnerEvent,
+        final_event: &crate::windows_event_owner::OwnerEvent,
+    ) -> Result<crate::debug_control_dispatch::VerifiedStepOwnerAdvance, SupervisorError> {
+        if self.session.phase() != DapPhase::Stopped
+            || !self
+                .session
+                .source_candidate()
+                .and_then(|f| f.instruction_address)
+                .is_some_and(|rip| final_event.matches_sampled_rip(rip))
+        {
+            return Err(SupervisorError::NoContainment);
+        }
+        self.process
+            .as_mut()
+            .ok_or(SupervisorError::NoContainment)?
+            .verify_step_owner_advance(original, final_event)
+    }
     #[cfg(windows)]
     pub(crate) fn verify_windows_native_debug_port(
         &mut self,

@@ -139,3 +139,21 @@ test('mounted CodeMirror retains native editor accessibility identity', () => {
     'mount may not erase the OS-visible source editor name');
   assert.match(editor, /role: 'textbox'/);
 });
+
+// The real GUI in 03E exposed a zero-height editor while all existing
+// source-contract tests passed. The chrome/footer must share only a bounded
+// fraction of the viewport, leaving the actual CodeMirror pane its own flex row.
+test('editor controls and recovery cannot collapse the native editor viewport', () => {
+  const css = readFileSync(fileURLToPath(new URL('../web/styles.css', import.meta.url)), 'utf8');
+  const chrome = source.indexOf('className="sourceEditorChrome"');
+  const grid = source.indexOf("className={'splitEditorGrid'");
+  const footer = source.indexOf('className="sourceEditorFooter"');
+  assert.ok(chrome > 0 && grid > chrome && footer > grid);
+  assert.match(css, /\.sourcePreview\.hasEditor>\.sourceEditorChrome\{max-height:35%;flex-shrink:0\}/);
+  assert.match(css, /\.sourcePreview\.hasEditor>\.sourceEditorFooter\{max-height:20%;flex-shrink:0\}/);
+  assert.match(css, /\.sourcePreview\.hasEditor>\.splitEditorGrid\{flex:1 1 0;min-height:0\}/);
+  assert.match(css, /\.sourceEditorChrome,\.sourceEditorFooter\{[^}]*overflow:auto/);
+  assert.match(source, /aria-expanded=\{sourceActionMode===mode && sourceActionProjectId===activeProject\?\.projectId\}/);
+  assert.match(source, /aria-controls="source-action-review"/);
+  assert.match(source, /id="source-action-review" className="sourceMutationForm"/);
+});

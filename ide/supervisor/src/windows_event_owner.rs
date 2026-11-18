@@ -98,6 +98,8 @@ pub(crate) struct OwnerEventLedger {
     next_sequence: u64,
     active: Option<OwnerEvent>,
     revoked: bool,
+    #[cfg(all(debug_assertions, feature = "dev046c-ci-control"))]
+    completed: std::collections::VecDeque<OwnerEvent>,
 }
 impl OwnerEventLedger {
     pub(crate) fn observe(&mut self, event: OwnerEvent) -> Result<(), SupervisorError> {
@@ -132,12 +134,69 @@ impl OwnerEventLedger {
                 {
                     return Err(denied());
                 }
+                #[cfg(all(debug_assertions, feature = "dev046c-ci-control"))]
+                {
+                    // Only an exact successfully continued RECEIVED event is
+                    // retained. Gaps, mismatches and failed ContinueDebugEvent
+                    // never become a step-transition witness.
+                    use crate::debug_control_dispatch::MAX_STEP_OWNER_TRANSITIONS;
+                    if self.completed.len() == MAX_STEP_OWNER_TRANSITIONS {
+                        self.completed.pop_front();
+                    }
+                    self.completed.push_back(old.clone());
+                }
                 self.active = None;
                 self.revoked = true;
             }
             _ => return Err(denied()),
         }
         Ok(())
+    }
+    #[cfg(all(debug_assertions, feature = "dev046c-ci-control"))]
+    fn step_advance(
+        &self,
+        original: &OwnerEvent,
+        final_event: &OwnerEvent,
+    ) -> Result<crate::debug_control_dispatch::VerifiedStepOwnerAdvance, SupervisorError> {
+        use crate::debug_control_dispatch::{
+            StepOwnerRecord, VerifiedStepOwnerAdvance, MAX_STEP_OWNER_TRANSITIONS,
+        };
+        let transitions = final_event
+            .seq
+            .checked_sub(original.seq)
+            .ok_or_else(denied)?;
+        if transitions == 0
+            || transitions > MAX_STEP_OWNER_TRANSITIONS as u64
+            || self.revoked
+            || self.active.as_ref() != Some(final_event)
+        {
+            return Err(denied());
+        }
+        let relevant = self
+            .completed
+            .iter()
+            .filter(|event| event.seq >= original.seq)
+            .collect::<Vec<_>>();
+        if relevant.len() as u64 != transitions || relevant.first().copied() != Some(original) {
+            return Err(denied());
+        }
+        let row = |e: &OwnerEvent, continued: bool| StepOwnerRecord {
+            sequence: e.seq,
+            pid: e.pid,
+            tid: e.tid,
+            owner_tid: e.owner_tid,
+            exception_code: e.exception_code,
+            first_chance: e.first_chance,
+            rip: e.rip,
+            address: e.exception_address,
+            continued,
+        };
+        let mut records = relevant
+            .into_iter()
+            .map(|e| row(e, true))
+            .collect::<Vec<_>>();
+        records.push(row(final_event, false));
+        VerifiedStepOwnerAdvance::verify(&records).map_err(|_| denied())
     }
     pub(crate) fn matching_stop(
         &self,
@@ -295,6 +354,8 @@ pub(crate) fn verify_persisted_owner_receipt(
 pub(crate) struct OwnerSideband {
     pub(crate) receiver: std::sync::mpsc::Receiver<Result<Option<OwnerEvent>, ()>>,
     pub(crate) ledger: OwnerEventLedger,
+    #[cfg(all(debug_assertions, feature = "dev046c-ci-control"))]
+    step_chain_poisoned: bool,
 }
 pub(crate) fn start_owner_pipe_reader(
     raw: usize,
@@ -373,10 +434,26 @@ pub(crate) fn start_owner_pipe_reader(
     Ok(OwnerSideband {
         receiver: rx,
         ledger: OwnerEventLedger::default(),
+        #[cfg(all(debug_assertions, feature = "dev046c-ci-control"))]
+        step_chain_poisoned: false,
     })
 }
 impl OwnerSideband {
     fn drain(&mut self, first_wait: bool) -> Result<(), SupervisorError> {
+        #[cfg(all(debug_assertions, feature = "dev046c-ci-control"))]
+        if self.step_chain_poisoned {
+            return Err(denied());
+        }
+        let result = self.drain_inner(first_wait);
+        #[cfg(all(debug_assertions, feature = "dev046c-ci-control"))]
+        if result.is_err() {
+            // Do not allow a consumed malformed record or lost pipe to be
+            // hidden by later apparently well-formed events.
+            self.step_chain_poisoned = true;
+        }
+        result
+    }
+    fn drain_inner(&mut self, first_wait: bool) -> Result<(), SupervisorError> {
         use std::sync::mpsc::TryRecvError;
         if first_wait {
             match self
@@ -447,6 +524,15 @@ impl OwnerSideband {
             }
         }
     }
+    #[cfg(all(debug_assertions, feature = "dev046c-ci-control"))]
+    pub(crate) fn verify_step_advance(
+        &mut self,
+        original: &OwnerEvent,
+        final_event: &OwnerEvent,
+    ) -> Result<crate::debug_control_dispatch::VerifiedStepOwnerAdvance, SupervisorError> {
+        self.drain(false)?;
+        self.ledger.step_advance(original, final_event)
+    }
     pub(crate) fn current(
         &mut self,
         pid: u32,
@@ -509,6 +595,46 @@ mod tests {
         assert!(ledger.observe(record(1, CONTINUED)).is_err());
         ledger.observe(record(2, RECEIVED)).unwrap();
         assert_eq!(ledger.matching_stop(55, 75, 0x140001123).unwrap().seq, 2);
+    }
+    #[cfg(all(debug_assertions, feature = "dev046c-ci-control"))]
+    #[test]
+    fn step_advance_requires_complete_native_continues_and_held_final_event() {
+        let mut ledger = OwnerEventLedger::default();
+        let original = record(1, RECEIVED);
+        let final_event = record(3, RECEIVED);
+        ledger.observe(original.clone()).unwrap();
+        assert!(ledger.step_advance(&original, &final_event).is_err());
+        ledger.observe(record(1, CONTINUED)).unwrap();
+        ledger.observe(record(2, RECEIVED)).unwrap();
+        ledger.observe(record(2, CONTINUED)).unwrap();
+        ledger.observe(final_event.clone()).unwrap();
+        assert!(ledger.step_advance(&original, &final_event).is_ok());
+        let mut forged = original.clone();
+        forged.rip += 1;
+        assert!(ledger.step_advance(&forged, &final_event).is_err());
+        ledger.observe(record(3, CONTINUED)).unwrap();
+        assert!(ledger.step_advance(&original, &final_event).is_err());
+    }
+    #[cfg(all(debug_assertions, feature = "dev046c-ci-control"))]
+    #[test]
+    fn malformed_sideband_poison_cannot_be_hidden_by_later_valid_events() {
+        let (tx, rx) = std::sync::mpsc::sync_channel(8);
+        let mut sideband = OwnerSideband {
+            receiver: rx,
+            ledger: OwnerEventLedger::default(),
+            step_chain_poisoned: false,
+        };
+        let original = record(1, RECEIVED);
+        let final_event = record(2, RECEIVED);
+        tx.send(Ok(Some(original.clone()))).unwrap();
+        assert!(sideband.current(55, 75, original.rip).is_ok());
+        tx.send(Err(())).unwrap();
+        assert!(sideband.current(55, 75, original.rip).is_err());
+        tx.send(Ok(Some(record(1, CONTINUED)))).unwrap();
+        tx.send(Ok(Some(final_event.clone()))).unwrap();
+        assert!(sideband
+            .verify_step_advance(&original, &final_event)
+            .is_err());
     }
     #[test]
     fn forged_nonce_bad_sequence_and_cross_thread_rejected() {
@@ -576,6 +702,8 @@ mod tests {
         let mut lost = OwnerSideband {
             receiver: rx,
             ledger: OwnerEventLedger::default(),
+            #[cfg(all(debug_assertions, feature = "dev046c-ci-control"))]
+            step_chain_poisoned: false,
         };
         assert!(lost.expect_pipe_eof_after_lldb_crash().is_err());
 
@@ -585,6 +713,8 @@ mod tests {
         let mut failed = OwnerSideband {
             receiver: rx,
             ledger: OwnerEventLedger::default(),
+            #[cfg(all(debug_assertions, feature = "dev046c-ci-control"))]
+            step_chain_poisoned: false,
         };
         assert!(failed.expect_pipe_eof_after_lldb_crash().is_err());
 
@@ -594,6 +724,8 @@ mod tests {
         let mut witnessed = OwnerSideband {
             receiver: rx,
             ledger: OwnerEventLedger::default(),
+            #[cfg(all(debug_assertions, feature = "dev046c-ci-control"))]
+            step_chain_poisoned: false,
         };
         assert!(witnessed.expect_pipe_eof_after_lldb_crash().is_ok());
     }

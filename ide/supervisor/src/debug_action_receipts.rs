@@ -25,6 +25,7 @@ const MAX_LOG_BYTES: u64 = 32 * 1024;
 const MAX_EVENTS: u64 = 12;
 const MAX_TTL_MS: u64 = 30_000;
 const MAX_ACTIONS_PER_RESTART: usize = 4096;
+const MAX_STEP_PROOF_BYTES: u64 = 8192;
 
 fn unsafe_link(meta: &fs::Metadata) -> bool {
     if meta.file_type().is_symlink() {
@@ -192,6 +193,79 @@ fn event_hash(e: &ActionEvent) -> Result<String, ApprovalDenial> {
         .map(|json| format!("{:x}", Sha256::digest(&json)))
         .map_err(|_| ApprovalDenial::JournalCorrupt)
 }
+// Historical v1 action records remain readable. Newly verified D6C
+// actions additionally require a durable, hash-bound raw owner-chain proof.
+fn step_outcome_hash(value: &str) -> Option<(&str, bool)> {
+    for (prefix, v2) in [
+        ("ci_independent_os_step:", false),
+        ("native_dialog_independent_os_step:", false),
+        ("ci_independent_os_step_v2:", true),
+        ("native_dialog_independent_os_step_v2:", true),
+    ] {
+        if let Some(hash) = value.strip_prefix(prefix) {
+            return hex64(hash).then_some((hash, v2));
+        }
+    }
+    None
+}
+
+fn verify_durable_step_proof(root: &Path, log: &[u8]) -> Result<(), ApprovalDenial> {
+    let last = log
+        .split(|b| *b == b'\n')
+        .filter(|line| !line.is_empty())
+        .last()
+        .ok_or(ApprovalDenial::JournalCorrupt)?;
+    let event: ActionEvent =
+        serde_json::from_slice(last).map_err(|_| ApprovalDenial::JournalCorrupt)?;
+    if event.phase != "ResultVerified" {
+        return Ok(());
+    }
+    let (hash, v2) =
+        step_outcome_hash(&event.outcome_code).ok_or(ApprovalDenial::JournalCorrupt)?;
+    if !v2 {
+        return Ok(());
+    }
+    if !hex64(&event.action_id_sha256) {
+        return Err(ApprovalDenial::JournalCorrupt);
+    }
+    let path = root.join(format!(
+        "lu-step-owner-proof-{}.receipt",
+        event.action_id_sha256
+    ));
+    let meta = fs::symlink_metadata(&path).map_err(|_| ApprovalDenial::JournalCorrupt)?;
+    if !meta.is_file() || unsafe_link(&meta) || meta.len() == 0 || meta.len() > MAX_STEP_PROOF_BYTES
+    {
+        return Err(ApprovalDenial::JournalCorrupt);
+    }
+    let mut bytes = Vec::new();
+    File::open(path)
+        .map_err(|_| ApprovalDenial::JournalCorrupt)?
+        .take(MAX_STEP_PROOF_BYTES + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|_| ApprovalDenial::JournalCorrupt)?;
+    if bytes.len() as u64 != meta.len() || format!("{:x}", Sha256::digest(&bytes)) != hash {
+        return Err(ApprovalDenial::JournalCorrupt);
+    }
+    let text = std::str::from_utf8(&bytes).map_err(|_| ApprovalDenial::JournalCorrupt)?;
+    let parts: Vec<_> = text.splitn(14, '\n').collect();
+    if parts.len() != 14
+        || parts[0] != "lu-ci-step-independent-v2"
+        || parts[1] != event.action_id_sha256
+        || parts[2] != event.previous_hash
+        || parts[3] != event.job_id
+        || parts[4] != event.plan_sha256
+        || parts[5] != event.owner_event_sha256
+        || parts[9].parse::<u64>().ok() != Some(event.owner_sequence)
+        || !hex64(parts[6])
+        || !hex64(parts[12])
+        || sha_text(parts[13]) != parts[12]
+        || !parts[13].starts_with("lu-ci-step-owner-chain-v1\n")
+    {
+        return Err(ApprovalDenial::JournalCorrupt);
+    }
+    Ok(())
+}
+
 fn verify_events(
     raw: &[u8],
     action: &str,
@@ -263,30 +337,11 @@ fn verify_events(
             "ResultUncertain" => {
                 e.outcome_code == "requires_independent_result_reconciliation_no_replay"
             }
-            "ResultVerified" => {
-                e.outcome_code.starts_with("ci_independent_os_step:")
-                    || e.outcome_code
-                        .starts_with("native_dialog_independent_os_step:")
-            }
+            "ResultVerified" => step_outcome_hash(&e.outcome_code).is_some(),
             _ => false,
         };
         if !known_outcome {
             return Err(ApprovalDenial::JournalCorrupt);
-        }
-        if e.phase == "ResultVerified" {
-            let Some(hash) = e
-                .outcome_code
-                .strip_prefix("ci_independent_os_step:")
-                .or_else(|| {
-                    e.outcome_code
-                        .strip_prefix("native_dialog_independent_os_step:")
-                })
-            else {
-                return Err(ApprovalDenial::JournalCorrupt);
-            };
-            if !hex64(hash) {
-                return Err(ApprovalDenial::JournalCorrupt);
-            }
         }
         let allowed = matches!(
             (phase, e.phase.as_str()),
@@ -375,6 +430,7 @@ pub(crate) fn inspect_action_receipts_after_restart(
         let first: ActionEvent =
             serde_json::from_slice(first_line).map_err(|_| ApprovalDenial::JournalCorrupt)?;
         let (_, last_hash, phase) = verify_events(&bytes, action, &first.preview_sha256)?;
+        verify_durable_step_proof(trusted_root, &bytes)?;
         result.push(RestartActionRecord {
             action_id_sha256: action.to_owned(),
             job_id: first.job_id,
@@ -439,6 +495,7 @@ pub(crate) fn verify_action_receipt_after_restart(
         &reference.action_id_sha256,
         &reference.preview_sha256,
     )?;
+    verify_durable_step_proof(trusted_root, &bytes)?;
     if hash != reference.last_receipt_sha256
         || phase != reference.final_phase
         || !matches!(
@@ -767,7 +824,40 @@ impl DebugActionApproval {
         } else {
             "native_dialog_independent_os_step"
         };
-        let outcome = format!("{label}:{}", proof.evidence_sha256());
+        // Persist full bounded evidence before the terminal result. A crash
+        // before ResultVerified leaves the original consumed action audit-only.
+        let root = self
+            .path
+            .parent()
+            .ok_or(ApprovalDenial::JournalUnavailable)?;
+        let metadata =
+            fs::symlink_metadata(root).map_err(|_| ApprovalDenial::JournalUnavailable)?;
+        if !root.is_absolute()
+            || !metadata.is_dir()
+            || unsafe_link(&metadata)
+            || proof.evidence_bytes().is_empty()
+            || proof.evidence_bytes().len() as u64 > MAX_STEP_PROOF_BYTES
+        {
+            return Err(ApprovalDenial::JournalCorrupt);
+        }
+        let path = root.join(format!(
+            "lu-step-owner-proof-{}.receipt",
+            self.action_id_sha256
+        ));
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&path)
+            .map_err(|_| ApprovalDenial::JournalUnavailable)?;
+        file.write_all(proof.evidence_bytes())
+            .and_then(|_| file.sync_all())
+            .map_err(|_| ApprovalDenial::JournalUnavailable)?;
+        drop(file);
+        let reopened = fs::read(&path).map_err(|_| ApprovalDenial::JournalCorrupt)?;
+        if reopened != proof.evidence_bytes() {
+            return Err(ApprovalDenial::JournalCorrupt);
+        }
+        let outcome = format!("{label}_v2:{}", proof.evidence_sha256());
         self.write_event("ResultVerified", &outcome, now_ms)?;
         self.state = State::Revoked;
         Ok(())
@@ -898,6 +988,43 @@ mod tests {
         verify_action_receipt_after_restart(&dir, &audit).unwrap();
         assert!(!a.has_live_dispatch_authority());
         clean(a, dir);
+    }
+    #[test]
+    fn multi_event_step_proof_must_survive_restart_byte_exactly() {
+        let (mut a, dir) = book();
+        let p = a.preview.preview_sha256.clone();
+        let c = a.challenge_sha256().to_owned();
+        a.decide(
+            NativeConsentMarker::for_unit_test(&p, &c, 7, 505, true),
+            7,
+            505,
+        )
+        .unwrap();
+        let claim = a.consume_for_receipt_test(&p, 7, 506).unwrap();
+        let proof = crate::debug_control_dispatch::test_step_result_from_claim(claim);
+        a.record_independent_ci_step_result(&proof, 507).unwrap();
+        let audit = a.audit_reference("ResultVerified").unwrap();
+        let path = dir.join(format!(
+            "lu-step-owner-proof-{}.receipt",
+            audit.action_id_sha256
+        ));
+        drop(a);
+        verify_action_receipt_after_restart(&dir, &audit).unwrap();
+        assert_eq!(
+            inspect_action_receipts_after_restart(&dir).unwrap()[0].phase,
+            "ResultVerified"
+        );
+        let exact = fs::read(&path).unwrap();
+        let mut bad = exact.clone();
+        bad.push(b'X');
+        fs::write(&path, bad).unwrap();
+        assert!(verify_action_receipt_after_restart(&dir, &audit).is_err());
+        assert!(inspect_action_receipts_after_restart(&dir).is_err());
+        fs::remove_file(&path).unwrap();
+        assert!(verify_action_receipt_after_restart(&dir, &audit).is_err());
+        fs::write(&path, exact).unwrap();
+        verify_action_receipt_after_restart(&dir, &audit).unwrap();
+        fs::remove_dir_all(dir).unwrap();
     }
     #[test]
     fn separate_intent_requires_new_nonce_new_approval_and_fresh_receipt() {

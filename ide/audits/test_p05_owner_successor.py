@@ -10,6 +10,7 @@ from verify_p05_owner_successor import (
     verify_source_only_patch, project_reviewed_wo6_current_source,
     WO6_PATH, WO6_PRIOR_OWNER_BLOB, WO6_CURRENT_SOURCE_BLOB,
     CLANGD_PATH, CLANGD_PRIOR_BLOB, CLANGD_CURRENT_BLOB, project_checked_out_clangd_source,
+    E2_SMOKE_PATH, E2_SMOKE_PRIOR_BLOB, E2_SMOKE_CURRENT_BLOB, project_checked_out_e2_smoke_source,
 )
 
 class OriginalAndOwnerSuccessor(unittest.TestCase):
@@ -174,6 +175,18 @@ class ClangdCurrentSourceTests(unittest.TestCase):
         self.assertIn("Get-Command clangd.exe", previous)
         with self.assertRaisesRegex(Denied, "p05_clangd_current_source_blob_not_exact"):
             project_checked_out_clangd_source(root, {CLANGD_PATH: "f" * 40})
+
+
+class E2SmokeCurrentSourceTests(unittest.TestCase):
+    def test_exact_lock_successor_projection(self):
+        root = Path(__file__).resolve().parents[2]
+        observed = {E2_SMOKE_PATH: E2_SMOKE_CURRENT_BLOB}
+        projected, previous = project_checked_out_e2_smoke_source(root, observed)
+        self.assertEqual(projected[E2_SMOKE_PATH], E2_SMOKE_PRIOR_BLOB)
+        self.assertEqual(observed[E2_SMOKE_PATH], E2_SMOKE_CURRENT_BLOB)
+        self.assertEqual(previous.count("--ide-merge02-successor"), 0)
+        with self.assertRaisesRegex(Denied, "p05_e2_smoke_current_source_not_exact"):
+            project_checked_out_e2_smoke_source(root, {E2_SMOKE_PATH: "f" * 40})
 
 
 if __name__=="__main__":

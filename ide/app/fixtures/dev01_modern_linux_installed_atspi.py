@@ -163,7 +163,7 @@ def modern_file_operations(proc):
 
 def modern_split_and_private_checkpoint():
     main_before, second_before = digest(SOURCE), digest(SECOND)
-    native.activate("second.rs")
+    native.activate_exact_source_file("second.rs")
     native.activate("Toggle split editor")
     native.accessible("Second editor file")
     native.accessible("Save second file")
@@ -196,7 +196,7 @@ def modern_split_and_private_checkpoint():
     print("DEV01_MODERN_LINUX_TWO_PANE_FOCUSED_SAVE=PASS", flush=True)
 
     native.activate("Toggle split editor")
-    native.activate("main.rs")
+    native.activate_exact_source_file("main.rs")
     native.focus_editor()
     original = digest(SOURCE)
     native.key("ctrl+End")
@@ -245,7 +245,7 @@ def main():
     try:
         native.accessible(ROOT.name, seconds=22)
         native.editor_project()
-        native.activate("main.rs")
+        native.activate_exact_source_file("main.rs")
         native.accessible("Recover preserved draft", seconds=25)
         native.activate("Recover preserved draft")
         native.accessible("Recovered private checkpoint to editor only", seconds=20)

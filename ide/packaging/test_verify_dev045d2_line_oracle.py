@@ -406,7 +406,7 @@ fail:
                                 str(source), "-o", str(exe)], check=True,
                                timeout=45, capture_output=True)
                 symbols = subprocess.check_output([nm, "-n", str(exe)],
-                                                   text=True, timeout=10)
+                                                   text=True, timeout=45)
                 matches = re.findall(r"(?m)^([0-9a-fA-F]+) [Tt] stopped_probe$", symbols)
                 self.assertEqual(len(matches), 1)
                 address = int(matches[0], 16) + 1

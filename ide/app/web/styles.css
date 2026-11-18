@@ -463,3 +463,17 @@ button:focus-visible{outline:2px solid #84c4fd;outline-offset:3px}
 .int04StoppedSource button:focus-visible{outline:2px solid #f6d48f;outline-offset:3px}
 .int04RecoveryNotice{border-left:2px solid #d2a56a;padding:7px 10px;
   line-height:1.5}
+
+/* IDE-MERGE-03E: editor chrome must not consume the editable viewport.
+   Keep the real buffer mounted and visible; each auxiliary region scrolls
+   independently, including at the installed GTK runner's 1280x800 screen. */
+.sourcePreview{min-height:0}
+.sourceEditorChrome,.sourceEditorFooter{min-width:0;min-height:0;overflow:auto;flex:0 1 auto;scrollbar-width:thin}
+.sourcePreview.hasEditor>.sourceEditorChrome{max-height:35%;flex-shrink:0}
+.sourcePreview.hasEditor>.sourceEditorFooter{max-height:20%;flex-shrink:0}
+.sourcePreview.hasEditor>.splitEditorGrid{flex:1 1 0;min-height:0}
+.sourceEditorChrome:focus-visible,.sourceEditorFooter:focus-visible{outline:2px solid #84c4fd;outline-offset:-2px}
+.sourcePreviewHeader{flex-wrap:wrap;gap:8px}
+.sourcePreviewHeader strong{max-width:100%}
+.sourcePreviewHeader .editorToolbar{min-width:0;max-width:100%;flex-wrap:wrap}
+.sourcePreviewHeader .editorToolbar>button{white-space:normal}

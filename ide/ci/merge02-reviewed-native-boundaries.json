@@ -87,8 +87,8 @@
     },
     {
       "path": "ide/packaging/audit_p05_reviewed_workflow_successor.py",
-      "sha": "809eb5cbda88d494fb334c1643c83b55a8f6cc7b",
-      "scope": "03D clangd exact source-only provenance and fixed diagnostics; no security or native acceptance promotion"
+      "sha": "4a9e7e7d5ca72b656551d2403272c0074cead627",
+      "scope": "03E exact E2 smoke lock-argument successor projection; original historical source and gates unchanged; not OS acceptance"
     },
     {
       "path": "ide/packaging/p05-merge02-pending-native-boundaries.json",
@@ -141,6 +141,11 @@
       "scope": "source or historical preservation test, not native acceptance"
     },
     {
+      "path": "ide/packaging/test_verify_dev045d2_line_oracle.py",
+      "sha": "81e0d32450a87c93326168365a2cfc1c6b589231",
+      "scope": "03E allow bounded 45-second real nm completion; native tool, ELF and hostile assertions unchanged; no acceptance promotion"
+    },
+    {
       "path": "ide/packaging/test_verify_language_servers.py",
       "sha": "bc2b9660918a74a4912d5652bcbd09798f6937d4",
       "scope": "native redistribution manifest still blocked pending full closure"
@@ -182,8 +187,8 @@
     },
     {
       "path": "ide/supervisor/examples/wo6_native_dap_acceptance.rs",
-      "sha": "421762228c0c02f40252ec1e0e9e7411e49f6b95",
-      "scope": "03D WO6/D5 exact three-phase cancellation and fresh replay identity; fixed and project native witness requirements retained; OS acceptance pending"
+      "sha": "7108698d1d2e3c5f986ec65bf5b81929ba173137",
+      "scope": "03E D6C bounded authenticated owner continuation chain, unchanged one-use and OS/PDB gates; source-only, native Windows pending"
     },
     {
       "path": "ide/supervisor/fixtures/debug/Probe-WindowsWo6FileDenial.ps1",
@@ -207,8 +212,18 @@
     },
     {
       "path": "ide/supervisor/src/dap_transport.rs",
-      "sha": "2e69f82b025c49338560bad623548ccc61f60461",
-      "scope": "03D WO6 fixed categorical launch protocol diagnostics and disk-journal ordering regression; no containment or release condition altered"
+      "sha": "805c30c4ac28a7c8c0e9eeee25cc861b0190159d",
+      "scope": "03E D6C bounded authenticated owner continuation chain, unchanged one-use and OS/PDB gates; source-only, native Windows pending"
+    },
+    {
+      "path": "ide/supervisor/src/debug_action_receipts.rs",
+      "sha": "014328af56463fe65bf2e9ffb86fac292e4ff533",
+      "scope": "03E D6C bounded authenticated owner continuation chain, unchanged one-use and OS/PDB gates; source-only, native Windows pending"
+    },
+    {
+      "path": "ide/supervisor/src/debug_control_dispatch.rs",
+      "sha": "253d0d70febb1333c0161028e75abccf2b4c5604",
+      "scope": "03E D6C bounded authenticated owner continuation chain, unchanged one-use and OS/PDB gates; source-only, native Windows pending"
     },
     {
       "path": "ide/supervisor/src/lib.rs",
@@ -219,6 +234,11 @@
       "path": "ide/supervisor/src/linux_lsp_worker.rs",
       "sha": "3db4460d38c79e3e39034ca149468f1c45a68652",
       "scope": "03B debugger-only one-CPU affinity before LLDB spawn; independent delegated cgroup and pids.max retained"
+    },
+    {
+      "path": "ide/supervisor/src/lsp_transport.rs",
+      "sha": "3690783eead1374d29fee8303ab3a165f493eac8",
+      "scope": "03E D6C bounded authenticated owner continuation chain, unchanged one-use and OS/PDB gates; source-only, native Windows pending"
     },
     {
       "path": "ide/supervisor/src/native_kernel_pc.rs",
@@ -232,8 +252,8 @@
     },
     {
       "path": "ide/supervisor/src/windows_event_owner.rs",
-      "sha": "5efa27ba364f2f7f09b2b325fbd169991e26df3d",
-      "scope": "Exact software breakpoint ownership, persisted receipt and disconnect distinction; source-only, OS acceptance pending"
+      "sha": "72c58fa2610a71156ab6bdba9f8fae3764d43ef0",
+      "scope": "03E D6C bounded authenticated owner continuation chain, unchanged one-use and OS/PDB gates; source-only, native Windows pending"
     },
     {
       "path": "ide/supervisor/src/windows_fin04w2_service.rs",
@@ -252,8 +272,8 @@
     },
     {
       "path": "ide/supervisor/src/windows_lsp_worker.rs",
-      "sha": "411028a517f5fc50f9781b977c2fc2f1e4e6d47a",
-      "scope": "03D clangd exact source-only provenance and fixed diagnostics; no security or native acceptance promotion"
+      "sha": "3a3ec763da193989e7f14a2ed509039cfb256351",
+      "scope": "03E D6C bounded authenticated owner continuation chain, unchanged one-use and OS/PDB gates; source-only, native Windows pending"
     }
   ]
 }

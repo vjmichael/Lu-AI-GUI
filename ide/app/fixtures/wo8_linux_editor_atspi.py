@@ -105,6 +105,31 @@ def accessible(name, role=None, seconds=20):
 
 def activate(name, role=None, timeout=20):
     obj = accessible(name, role, timeout)
+    # Editor chrome has its own scroll region. Bring the actual named native
+    # control into view before activation; never send keys to an invisible
+    # or unrelated widget. The action's independent outcome is still required.
+    try:
+        state = obj.getState()
+        if not state.contains(pyatspi.STATE_SHOWING):
+            component = obj.queryComponent()
+            try:
+                scrolled = component.scrollTo(pyatspi.SCROLL_ANYWHERE)
+            except Exception:
+                scrolled = False
+            if not scrolled:
+                if not state.contains(pyatspi.STATE_FOCUSABLE) or not component.grabFocus():
+                    deny("native_control_cannot_be_revealed_" + name.replace(" ", "_"))
+            deadline = time.monotonic() + 3
+            while time.monotonic() < deadline:
+                if obj.getState().contains(pyatspi.STATE_SHOWING):
+                    break
+                time.sleep(.1)
+            if not obj.getState().contains(pyatspi.STATE_SHOWING):
+                deny("native_control_not_showing_" + name.replace(" ", "_"))
+    except RuntimeError:
+        raise
+    except Exception:
+        deny("native_control_visibility_unverified_" + name.replace(" ", "_"))
     try:
         action = obj.queryAction()
         for index in range(action.nActions):
@@ -123,6 +148,32 @@ def activate(name, role=None, timeout=20):
 
 
 
+def _native_workflow_project_nodes():
+    # The portfolio lives deep inside the package/workflow panel. Do not
+    # accept similarly named checkboxes outside the actual portfolio group.
+    roots = []
+    for node in elements():
+        try:
+            if ((node.name or "").strip() == "Include registered, open projects"
+                    and (node.getRoleName() or "").casefold() in
+                    ("panel", "grouping", "group", "section", "form")
+                    and not _native_dialog_ancestor(node)
+                    and node.getState().contains(pyatspi.STATE_VISIBLE)):
+                roots.append(node)
+        except Exception:
+            continue
+    if len(roots) != 1:
+        return
+    stack = [(roots[0], 0)]
+    inspected = 0
+    while stack and inspected < 256:
+        node, depth = stack.pop()
+        inspected += 1
+        yield node
+        if depth < 16:
+            stack.extend((child, depth + 1) for child in children_of(node))
+
+
 def choose_open_workflow_project(display_name, seconds=20):
     """Select exactly one visible, enabled native portfolio checkbox.
 
@@ -132,9 +183,10 @@ def choose_open_workflow_project(display_name, seconds=20):
     name = display_name + " (open)"
     deadline = time.monotonic() + seconds
     issued = False
+    matched_at_least_once = False
     while time.monotonic() < deadline:
         matches = []
-        for node in elements():
+        for node in _native_workflow_project_nodes():
             try:
                 state = node.getState()
                 if ((node.name or "").strip() == name and
@@ -148,6 +200,7 @@ def choose_open_workflow_project(display_name, seconds=20):
                 continue
         if len(matches) == 1:
             node = matches[0]
+            matched_at_least_once = True
             if node.getState().contains(pyatspi.STATE_CHECKED):
                 return
             if not issued:
@@ -161,6 +214,9 @@ def choose_open_workflow_project(display_name, seconds=20):
                 if not indices or not action.doAction(indices[0]):
                     deny("workflow_checkbox_native_action_unavailable")
         time.sleep(0.25)
+    print("WO9_NATIVE_PORTFOLIO_DIAGNOSTIC=" +
+          ("dispatched_no_checked_state" if issued else
+           "matched_no_dispatch" if matched_at_least_once else "exact_visible_checkbox_not_found"), flush=True)
     deny("workflow_checkbox_exact_checked_state_not_observed")
 
 
@@ -1258,8 +1314,37 @@ def editor_project():
     print("IDE_G02_NATIVE_ACTIVE_EDITOR_BUTTON=verified_exact_project",
           flush=True)
     accessible("Source explorer and editor", seconds=15)
-    activate("main.rs")
+    activate_exact_source_file("main.rs")
     focus_editor()
+
+
+def activate_exact_source_file(filename, seconds=15):
+    # A tab-close button, status string or other file containing the name
+    # must never stand in for opening the exact fixture source row.
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        matches = []
+        for node in _native_source_editor_nodes():
+            try:
+                if (node.name or "").strip() != filename or "button" not in node.getRoleName().casefold():
+                    continue
+                state = node.getState()
+                if all(state.contains(flag) for flag in (pyatspi.STATE_VISIBLE, pyatspi.STATE_SHOWING,
+                                                       pyatspi.STATE_ENABLED, pyatspi.STATE_SENSITIVE)):
+                    matches.append(node)
+            except Exception:
+                continue
+        if len(matches) == 1:
+            node = matches[0]
+            action = node.queryAction()
+            for index in range(action.nActions):
+                if action.getName(index).casefold() in ("click", "press", "activate"):
+                    if not action.doAction(index):
+                        deny("native_exact_source_action_denied")
+                    return
+            deny("native_exact_source_action_unavailable")
+        time.sleep(.25)
+    deny("native_exact_source_file_unavailable_" + filename.replace(" ", "_"))
 
 
 def _native_source_editor_nodes():

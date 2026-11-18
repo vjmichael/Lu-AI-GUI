@@ -1002,6 +1002,27 @@ impl RestrictedLspProcess for WindowsLspProcess {
         crate::windows_kernel_pc::verify_lldb_event_owner_thread(self.process.0, event.owner_tid)?;
         Ok(event)
     }
+    #[cfg(all(debug_assertions, feature = "dev046c-ci-control"))]
+    fn verify_step_owner_advance(
+        &mut self,
+        original: &crate::windows_event_owner::OwnerEvent,
+        final_event: &crate::windows_event_owner::OwnerEvent,
+    ) -> Result<crate::debug_control_dispatch::VerifiedStepOwnerAdvance, SupervisorError> {
+        if !self.lease.alive()
+            || unsafe { WaitForSingleObject(self.process.0, 0) } != WAIT_TIMEOUT
+            || !crate::windows_kernel_pc::job_has_member(self.job.handle.0, final_event.pid)?
+        {
+            return Err(SupervisorError::NoContainment);
+        }
+        crate::windows_kernel_pc::verify_lldb_event_owner_thread(
+            self.process.0,
+            final_event.owner_tid,
+        )?;
+        self.event_sideband
+            .as_mut()
+            .ok_or(SupervisorError::NoContainment)?
+            .verify_step_advance(original, final_event)
+    }
     #[cfg(feature = "dap-transport")]
     fn corroborate_windows_debug_port(
         &mut self,
@@ -3176,7 +3197,30 @@ impl WindowsDapSession {
         // New compiler source and OS RIP must be independently verified by
         // EXACTLY the old D5 protected Job/PE/PDB/owner-receipt mechanism.
         // The adapter's positive ACK is not a successful step outcome.
-        let after = self.verify_real_lldb_event_owner_for_ci(supervisor, job_id, plan, target)?;
+        native_lsp_trace("d6c_correlated_step_stop_observed");
+        let after = self
+            .verify_real_lldb_event_owner_for_ci(supervisor, job_id, plan, target)
+            .map_err(|err| {
+                native_lsp_trace("d6c_independent_new_stop_denied");
+                err
+            })?;
+        native_lsp_trace("d6c_independent_new_stop_verified");
+        let final_event = self.gateway.verify_lldb_kernel_event_owner(
+            after.debuggee_pid,
+            after.debuggee_thread_id,
+            after.stopped_rip,
+        )?;
+        if final_event.seq != after.owner_sequence {
+            return Err(SupervisorError::NoContainment);
+        }
+        let owner_chain = self
+            .gateway
+            .verify_step_owner_advance(&at_send, &final_event)
+            .map_err(|err| {
+                native_lsp_trace("d6c_owner_continue_chain_denied");
+                err
+            })?;
+        native_lsp_trace("d6c_owner_continue_chain_verified");
         let new_stop =
             native_control_stop_from_owner(&after).map_err(|_| SupervisorError::NoContainment)?;
         let proof = verify_independent_step_result(
@@ -3187,11 +3231,16 @@ impl WindowsDapSession {
                 new_dap_stop: observed.new_stop_observed,
                 thread_id: observed.thread_id as u32,
             },
+            &owner_chain,
         )
-        .map_err(|_| SupervisorError::NoContainment)?;
+        .map_err(|_| {
+            native_lsp_trace("d6c_independent_step_result_denied");
+            SupervisorError::NoContainment
+        })?;
         action
             .record_independent_ci_step_result(&proof, crate::now_ms()?)
             .map_err(|_| SupervisorError::JournalUnavailable)?;
+        native_lsp_trace("d6c_step_result_receipt_synced");
         let audit = action
             .audit_reference("ResultVerified")
             .map_err(|_| SupervisorError::JournalCorrupt)?;

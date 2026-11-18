@@ -12,7 +12,7 @@ import time
 import pyatspi
 from wo8_linux_editor_atspi import (
     ROOT,SOURCE,accessible,activate,key,type_text,start,stop,
-    select_native_folder,editor_project,_native_source_editor_nodes,
+    select_native_folder,editor_project,_native_source_editor_nodes,activate_exact_source_file,
 )
 SECOND=ROOT/"second.rs"
 PRIMARY_SENTINEL="B4_LINUX_PRIMARY_ONLY"
@@ -86,7 +86,7 @@ def main():
     try:
         select_native_folder()
         editor_project()  # Picks main.rs through the real GTK chooser.
-        activate("second.rs")
+        activate_exact_source_file("second.rs")
         activate("Toggle split editor")
         accessible("Second editor file",seconds=15)
         accessible("Save second file",seconds=15)

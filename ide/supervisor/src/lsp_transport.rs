@@ -93,6 +93,14 @@ pub(crate) trait RestrictedLspProcess: Send {
     ) -> Result<crate::windows_event_owner::OwnerEvent, SupervisorError> {
         Err(SupervisorError::NoContainment)
     }
+    #[cfg(all(windows, debug_assertions, feature = "dev046c-ci-control"))]
+    fn verify_step_owner_advance(
+        &mut self,
+        _original: &crate::windows_event_owner::OwnerEvent,
+        _final_event: &crate::windows_event_owner::OwnerEvent,
+    ) -> Result<crate::debug_control_dispatch::VerifiedStepOwnerAdvance, SupervisorError> {
+        Err(SupervisorError::NoContainment)
+    }
     #[cfg(all(windows, feature = "dap-transport"))]
     fn corroborate_windows_debug_port(
         &mut self,

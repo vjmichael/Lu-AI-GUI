@@ -9275,11 +9275,12 @@ function App() {
               artifact hashes. A review is never a signed release or permission to execute.</p>
             <div className="continuityDocument">
               <h3>Projects in workflow</h3>
-              <fieldset className="taskGateGrid" disabled={workflowBusy}>
+              <fieldset className="taskGateGrid" aria-label="Include registered, open projects" disabled={workflowBusy}>
                 <legend>Include registered, open projects</legend>
                 {projects.filter(project => project.available).map(project =>
                   <label className="taskGateChoice" key={project.projectId}>
                     <input type="checkbox"
+                      aria-label={`${project.displayName} (${project.active ? 'open' : 'closed'})`}
                       checked={workflowProjectIds.includes(project.projectId)}
                       disabled={!project.active || (!workflowProjectIds.includes(project.projectId) &&
                         workflowProjectIds.length >= 8)}
@@ -11278,13 +11279,14 @@ function App() {
                 ['new-file','New file'],['new-folder','New folder'],['move','Move file'],
                 ['trash','Trash file'],['restore','Restore file'],
               ].map(([mode,label])=><button key={mode} type="button" className="ghostBtn"
-                aria-pressed={sourceActionMode===mode && sourceActionProjectId===activeProject?.projectId}
+                aria-expanded={sourceActionMode===mode && sourceActionProjectId===activeProject?.projectId}
+                aria-controls="source-action-review"
                 disabled={!activeProject?.active || sourceActionPending || explorerPending ||
                   !!savingKey || !!workspaceTransitionRef.current}
                 onClick={()=>void selectSourceAction(mode)}>{label}</button>)}
             </div>
             {sourceActionMode && sourceActionProjectId===activeProject?.projectId &&
-              <form className="sourceMutationForm" aria-label="Review source file action"
+              <form id="source-action-review" className="sourceMutationForm" aria-label="Review source file action"
                 onSubmit={event=>{event.preventDefault();void commitSourceAction();}}>
                 {sourceActionMode==='restore' ? <>
                   <label htmlFor="source-restore-entry">Recoverable source</label>
@@ -11431,7 +11433,8 @@ function App() {
             {!explorerPending && listing && listing.entries.length === 0 &&
               <p className="treeCaution">Empty directory.</p>}
           </div>
-          <div className="sourcePreview" role="region" aria-label="Source code editor">
+          <div className={'sourcePreview'+(activeTab && activeTab.projectId === activeProject?.projectId ? ' hasEditor' : '')} role="region" aria-label="Source code editor">
+            <div className="sourceEditorChrome" role="region" aria-label="Editor controls" tabIndex={0}>
             <p className="sourceWorkspaceStatus" role="status" aria-live="polite">
               {explorerPending ? 'Opening project files…' :
                 workspaceLayoutBusy ? 'Restoring saved workspace navigation…' :
@@ -11990,6 +11993,9 @@ function App() {
                   <span className="editorFindCount">Draft only · Undo available · Save required</span>
                 </div>}
               </div>}
+            </> : null}
+            </div>
+            {activeTab && activeTab.projectId === activeProject?.projectId ? <>
               <div className={'splitEditorGrid' + (splitEditorOpen ? ' enabled' : ' single')}>
                 <div className={'splitPrimaryPane' +
                     (focusedEditorPane==='primary'?' focused':'')}
@@ -12079,6 +12085,7 @@ function App() {
                   </div>}
                 </div>}
               </div>
+              <div className="sourceEditorFooter" role="region" aria-label="Editor information and recovery" tabIndex={0}>
               {projectProblemsOpen && <section id="projectProblemsPanel"
                 aria-labelledby="verifiedLspProblemsHeading"
                 className="lspProjectProblems" tabIndex={-1}
@@ -12205,6 +12212,7 @@ function App() {
                 Project files change only on explicit Save.
                 Preserved drafts contain source text in private local app data; they are not encrypted.
                 External source changes cause a revision conflict.
+              </div>
               </div>
             </> : <div className="sourcePreviewEmpty">
               <div className="emptySymbol">⌘</div>

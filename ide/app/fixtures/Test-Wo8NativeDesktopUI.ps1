@@ -159,7 +159,7 @@ function Warm-InstalledWebViewAccessibility {
   Deny 'installed_webview_accessibility_not_ready_after_native_focus'
 }
 
-function Find-Control([string]$query,[string]$kind,[int]$seconds=18) {
+function Find-Control([string]$query,[string]$kind,[int]$seconds=18,[switch]$Exact) {
   $start=Get-Date
   $end=$start.AddSeconds($seconds)
   $focusRecoveries=0
@@ -193,7 +193,8 @@ function Find-Control([string]$query,[string]$kind,[int]$seconds=18) {
                   $item.Current.IsKeyboardFocusable -and $type -eq 'ControlType.Edit') {return $item}
               continue
             }
-            if ($name -and $name.IndexOf($query,[StringComparison]::OrdinalIgnoreCase) -ge 0 -and
+            if ($name -and (($Exact -and $name -ceq $query) -or
+                (!$Exact -and $name.IndexOf($query,[StringComparison]::OrdinalIgnoreCase) -ge 0)) -and
                 (!$kind -or $type -eq ('ControlType.'+$kind))) {
               return $item
             }
@@ -256,47 +257,73 @@ function Find-Control([string]$query,[string]$kind,[int]$seconds=18) {
   }
   Deny ('ui_element_not_exposed_'+$query.Replace(' ','_'))
 }
+function Reveal-NativeControl($element) {
+  if (!$element.Current.IsOffscreen) {return}
+  # The editor now protects its viewport with independently scrollable
+  # chrome. Reveal actual native controls, never alter application state.
+  $scroll=$null
+  if ($element.TryGetCurrentPattern([System.Windows.Automation.ScrollItemPattern]::Pattern,[ref]$scroll)) {
+    $scroll.ScrollIntoView()
+  } elseif ($element.Current.IsKeyboardFocusable) {
+    $element.SetFocus()
+  }
+  Start-Sleep -Milliseconds 250
+}
 function Click([string]$label) {
+  $reviewToolbar=$label -cin @('Move file','Trash file','Restore file','Toggle split editor','Confirm separate local commit (no push)')
+  if ($reviewToolbar) {
+    # UIA Invoke is not guaranteed for Chromium disclosure/toggle buttons.
+    # Use exactly one real OS pointer action, with a verified hit on the
+    # named control in the foreground installed process. No retry after
+    # dispatch; the caller must still observe the actual review form,
+    # separate native consent and independent on-disk outcome.
+    $denial='ui_invoke_failure_'+$label.Replace(' ','_')
+    $hwnd=$proc.MainWindowHandle
+    if ($hwnd -eq [IntPtr]::Zero) {Deny $denial}
+    [void][P04NativeWebViewWindows]::SetForegroundWindow($hwnd)
+    $fresh=Find-Control $label 'Button' 12 -Exact
+    if (!$fresh.Current.IsEnabled) {Deny $denial}
+    try {Reveal-NativeControl $fresh} catch {Deny $denial}
+    $fresh=Find-Control $label 'Button' 6 -Exact
+    if (!$fresh.Current.IsEnabled -or $fresh.Current.IsOffscreen -or
+        $fresh.Current.Name -cne $label -or
+        [P04NativeWebViewWindows]::GetForegroundWindow() -ne $hwnd) {Deny $denial}
+    try {
+      $bounds=(WindowRoot).Current.BoundingRectangle
+      $rect=$fresh.Current.BoundingRectangle
+      if ($rect.Width -lt 5 -or $rect.Height -lt 5) {Deny $denial}
+      # Some WebView2 providers expose a bounding rectangle but not
+      # GetClickablePoint. The fallback must still pass the SAME exact
+      # native hit-test at the rounded coordinates actually dispatched.
+      try {$point=$fresh.GetClickablePoint()} catch {
+        $point=[System.Windows.Point]::new($rect.Left+$rect.Width/2,$rect.Top+$rect.Height/2)
+      }
+      $point=[System.Windows.Point]::new([Math]::Round($point.X),[Math]::Round($point.Y))
+      if (!$bounds.Contains($point) -or !$rect.Contains($point)) {Deny $denial}
+      $hit=[System.Windows.Automation.AutomationElement]::FromPoint($point)
+      $walker=[System.Windows.Automation.TreeWalker]::RawViewWalker
+      $exactHit=$false
+      for ($i=0;$hit -and $i -lt 8;$i++) {
+        if ($hit.Equals($fresh)) {$exactHit=$true; break}
+        $hit=$walker.GetParent($hit)
+      }
+      if (!$exactHit -or [P04NativeWebViewWindows]::GetForegroundWindow() -ne $hwnd) {Deny $denial}
+      [System.Windows.Forms.Cursor]::Position=[System.Drawing.Point]::new([int]$point.X,[int]$point.Y)
+      [P04NativeWebViewWindows]::mouse_event(2,0,0,0,[UIntPtr]::Zero)
+      [P04NativeWebViewWindows]::mouse_event(4,0,0,0,[UIntPtr]::Zero)
+      Write-Host 'WO8_SOURCE_TOOLBAR_EXACT_NATIVE_POINTER=attempted_not_acceptance'
+      return
+    } catch {Deny $denial}
+  }
   $element=Find-Control $label 'Button'
   if (!$element.Current.IsEnabled) { Deny ('button_disabled_'+$label.Replace(' ','_')) }
   try {
+    Reveal-NativeControl $element
+    $element=Find-Control $label 'Button'
+    if (!$element.Current.IsEnabled -or $element.Current.IsOffscreen) {Deny ('button_not_visible_'+$label.Replace(' ','_'))}
     $p=$element.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern)
     $p.Invoke()
-  } catch {
-    # An installed WebView2 UIA button can expose a live native element
-    # while its Invoke provider rejects a transient post-navigation call.
-    # Only demonstrated reviewed source-toolbar controls receive one real
-    # OS keyboard retry. Trash/Restore only open the review form: the
-    # separate OS consent and original disk/byte assertions still apply.
-    if ($label -cnotin @('Move file','Trash file','Restore file','Toggle split editor')) {
-      Deny ('ui_invoke_failure_'+$label.Replace(' ','_'))
-    }
-    $denial='ui_invoke_failure_'+$label.Replace(' ','_')
-    $fresh=Find-Control $label 'Button' 6
-    if (!$fresh.Current.IsEnabled -or !$fresh.Current.IsKeyboardFocusable) {
-      Deny $denial
-    }
-    $hwnd=$proc.MainWindowHandle
-    if ($hwnd -eq [IntPtr]::Zero) { Deny $denial }
-    [void][P04NativeWebViewWindows]::SetForegroundWindow($hwnd)
-    if ([P04NativeWebViewWindows]::GetForegroundWindow() -ne $hwnd) {
-      Deny $denial
-    }
-    try {
-      $fresh.SetFocus()
-      if (!$fresh.Current.HasKeyboardFocus -or $fresh.Current.IsOffscreen -or
-          $fresh.Current.Name -cne $label -or
-          [P04NativeWebViewWindows]::GetForegroundWindow() -ne $hwnd) {Deny $denial}
-      [System.Windows.Forms.SendKeys]::SendWait(' ')
-      if ($label -ceq 'Move file') {
-        Write-Host 'WO8_MOVE_FILE_OS_UIA_FOCUSED_KEYBOARD_RETRY=attempted_not_acceptance'
-      } elseif ($label -ceq 'Toggle split editor') {
-        Write-Host 'WO8_SPLIT_EDITOR_UIA_FOCUSED_KEYBOARD_RETRY=attempted_not_acceptance'
-      } else {
-        Write-Host 'WO8_SOURCE_REVIEW_UIA_FOCUSED_KEYBOARD_RETRY=attempted_not_acceptance'
-      }
-    } catch { Deny $denial }
-  }
+  } catch {Deny ('ui_invoke_failure_'+$label.Replace(' ','_'))}
 }
 function Require([string]$text) {
   [void](Find-Control $text '' 15)
@@ -902,23 +929,10 @@ try {
         Start-Sleep -Milliseconds 200
       } while ((Get-Date) -lt $deadline)
       if (!$confirm.Current.IsEnabled) { Deny 'button_disabled_Confirm_separate_local_commit' }
-      # A UIA Invoke return previously produced no submit dialog. Activate
-      # the real, exact HTML submit control using native keyboard input once;
-      # never retry a possibly submitted approval or use backend IPC.
-      $mainWindow=$proc.MainWindowHandle
-      [void][P04NativeWebViewWindows]::SetForegroundWindow($mainWindow)
-      if ($mainWindow -eq [IntPtr]::Zero -or
-          [P04NativeWebViewWindows]::GetForegroundWindow() -ne $mainWindow -or
-          $confirm.Current.Name -cne 'Confirm separate local commit (no push)' -or
-          !$confirm.Current.IsKeyboardFocusable -or $confirm.Current.IsOffscreen) {
-        Deny 'wo9_native_commit_submit_not_focusable'
-      }
-      $confirm.SetFocus()
-      if (!$confirm.Current.HasKeyboardFocus -or
-          [P04NativeWebViewWindows]::GetForegroundWindow() -ne $mainWindow) {
-        Deny 'wo9_native_commit_submit_focus_lost'
-      }
-      [System.Windows.Forms.SendKeys]::SendWait(' ')
+      # Use the same verified, exactly named and revealed native pointer
+      # action as the review toolbar. This submits only the review; the
+      # separate native one-use consent and independent Git checks follow.
+      Click 'Confirm separate local commit (no push)'
       Confirm-NativeOneUseDialog 'Confirm local Git commit' 'Commit exact staged file' 'WO9 installed reviewed Git source'
       Require 'Local commit'
       # Real Win UIA consent invokes asynchronously: the exact native Git
@@ -1552,9 +1566,15 @@ try {
         Deny 'dev01_not_original_867_file_fixture'
       }
       function Dev01-Input([string]$label,[string]$value) {
-        $item=Find-Control $label '' 18
-        if (!$item.Current.IsKeyboardFocusable) { Deny 'dev01_native_text_input_not_focusable' }
+        $item=Find-Control $label 'Edit' 18 -Exact
+        if (!$item.Current.IsEnabled -or !$item.Current.IsKeyboardFocusable) { Deny 'dev01_native_text_input_not_focusable' }
+        Reveal-NativeControl $item
         $item.SetFocus()
+        if (!$item.Current.HasKeyboardFocus -or $item.Current.IsOffscreen -or
+            $item.Current.Name -cne $label -or
+            [P04NativeWebViewWindows]::GetForegroundWindow() -ne $proc.MainWindowHandle) {
+          Deny 'dev01_native_text_input_focus_not_verified'
+        }
         [System.Windows.Forms.SendKeys]::SendWait('^a')
         [System.Windows.Forms.SendKeys]::SendWait($value)
         Start-Sleep -Milliseconds 400
