@@ -1,0 +1,147 @@
+name: Lu CP-05E5 closeout - original installed GGUF and exact browser review
+on:
+  push:
+    branches: [lu/cp01-attachment-transaction-20261116]
+    paths: ['.github/workflows/lu-cp05e-closeout.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: lu-cp05e-closeout-${{ github.sha }}
+  cancel-in-progress: false
+jobs:
+  independent-original-browser-byte-review:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify exact source, parse independent archive reviewer, preserve authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          node scripts/verify-source-tree.mjs
+          python3 -m py_compile scripts/cp05e5-review-browser.py
+          node --test scripts/lu-c62b-reviewed-browser-contract.test.mjs lu-desktop/tests/browser-native-authorization.test.mjs
+      - name: Fetch original candidate ZIP from successful same-SHA native cohort
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          curl -fsSL --retry 2 --connect-timeout 30 \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H 'Accept: application/vnd.github+json' \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/14477756536/zip" \
+            -o "$RUNNER_TEMP/cp05-browser-original.zip"
+          printf '%s  %s\n' ed6b67d11eb5dc464d807284f15e5f5cf87bf33b9a7a764d76051dc96381270b "$RUNNER_TEMP/cp05-browser-original.zip" | sha256sum -c -
+      - name: Independently inspect original ZIP, all components, canonical worker and proposed review digest
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/cp05e5-review-browser.py "$RUNNER_TEMP/cp05-browser-original.zip" cp05-browser-review
+          python3 - <<'PY'
+          import json, os
+          with open("cp05-browser-review/review-proposal.json") as f: r=json.load(f)
+          assert r["status"]=="EXACT_BYTES_REVIEWED_APPROVAL_PENDING" and r["approved"] is False
+          assert r["fileCount"]==482 and r["allFileHashes"] and r["archiveCrc"]
+          text="Original candidate: "+r["candidateManifestSha256"]+"\nProposed reviewed manifest (NOT approved): "+r["proposedReviewedManifestSha256"]+"\n"
+          with open(os.environ["GITHUB_STEP_SUMMARY"],"a") as f: f.write(text)
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cp05-original-browser-review-not-approval-${{ github.sha }}
+          path: cp05-browser-review/
+          if-no-files-found: error
+          retention-days: 14
+  installed-original-windows-gguf:
+    runs-on: windows-2025
+    timeout-minutes: 45
+    env:
+      ORIGINAL_SOURCE: '99203ea5a014118e27b8677c1e50924da27cffc9'
+      ORIGINAL_INSTALLER_ZIP_SHA: '9dce7473393c018f9988d24630a870e13cf009cde5e957bf4f530bbfb6485ed9'
+      MODEL_SHA: '7af3fdf842f87b24672f8a7f1dd50404043f0bfb71093ff91c31d2b49df4631d'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify exact harness source and native PowerShell/Python syntax
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          if((git rev-parse HEAD).Trim() -cne $env:GITHUB_SHA){throw 'Wrong acceptance-harness source'}
+          node scripts/verify-source-tree.mjs
+          if($LASTEXITCODE -ne 0){throw 'Exact source check failed'}
+          foreach($file in @('scripts/m3-windows-nsis-cycle.ps1','scripts/cp05e5-windows-installed-gguf.ps1')){
+            $tokens=$null;$errors=$null
+            [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $file).Path,[ref]$tokens,[ref]$errors)|Out-Null
+            if($errors.Count -ne 0){throw "Native PowerShell parser rejected $file : $errors"}
+          }
+          python -m py_compile scripts/cp05e5-installed-journal.py
+          if($LASTEXITCODE -ne 0){throw 'Installed journal oracle syntax error'}
+          node --test lu-desktop/tests/p0-installed-gui-smoke.test.mjs
+          if($LASTEXITCODE -ne 0){throw 'Original installed GUI contracts changed'}
+      - name: Fetch original accepted NSIS ZIP, never rebuild executable
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference='Stop'
+          $zip=Join-Path $env:RUNNER_TEMP 'cp05-original-installer.zip'
+          curl.exe --fail --silent --show-error --location --retry 2 --connect-timeout 30 -H "Authorization: Bearer $env:GH_TOKEN" -H 'Accept: application/vnd.github+json' "https://api.github.com/repos/$env:GITHUB_REPOSITORY/actions/artifacts/14477987847/zip" -o $zip
+          if($LASTEXITCODE -ne 0){throw 'Original NSIS artifact retrieval failed'}
+          if((Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant() -cne $env:ORIGINAL_INSTALLER_ZIP_SHA){throw 'Original artifact ZIP hash mismatch'}
+          $out=Join-Path $env:RUNNER_TEMP 'cp05-original-nsis'
+          Expand-Archive -LiteralPath $zip -DestinationPath $out
+          $check=Get-Content -LiteralPath (Join-Path $out 'installer-checksums.json') -Raw|ConvertFrom-Json
+          if($check.sourceSha -cne $env:ORIGINAL_SOURCE -or $check.installerName -cnotmatch '^Lu-AGENT01G-Physical-Windows-CPU-Test-99203ea5a014\.exe$'){throw 'Wrong original installer/source identity'}
+          $exe=Join-Path $out $check.installerName
+          if((Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash.ToLowerInvariant() -cne $check.installerSha256){throw 'Original installer hash mismatch'}
+          $prior=Get-Content -LiteralPath (Join-Path $out 'native-nsis-cycle-evidence/m3-nsis-cycle.json') -Raw|ConvertFrom-Json
+          if($prior.installer -ne 'PASS_REAL_NATIVE_PROCESS_EXIT' -or $prior.installedUiSmoke -ne 'PASS_INSTALLED_UNIFIED_TABS' -or $prior.packageRemoval -ne 'PASS_BINARIES_ABSENT' -or $prior.installerSha256 -cne $check.installerSha256){throw 'Original installer acceptance receipt mismatch'}
+          New-Item -ItemType Directory -Path cp05-closeout-evidence|Out-Null
+          Copy-Item -LiteralPath (Join-Path $out 'installer-checksums.json') -Destination cp05-closeout-evidence
+          Copy-Item -LiteralPath (Join-Path $out 'native-nsis-cycle-evidence/m3-nsis-cycle.json') -Destination cp05-closeout-evidence/original-nsis-cycle.json
+      - name: Download and hash previously exercised genuine Qwen3 0.6B Q4_K_M
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $model=Join-Path $env:RUNNER_TEMP 'cp05-pinned-qwen.gguf'
+          curl.exe --fail --silent --show-error --location --retry 4 --retry-delay 5 --connect-timeout 30 https://huggingface.co/QuantFactory/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B.Q4_K_M.gguf -o $model
+          if($LASTEXITCODE -ne 0 -or (Get-FileHash -LiteralPath $model -Algorithm SHA256).Hash.ToLowerInvariant() -cne $env:MODEL_SHA){throw 'Actual pinned GGUF unavailable or changed'}
+      - name: Genuine installed original NSIS model, approval, refusal, active Stop, normal close and forced host-death recovery
+        timeout-minutes: 25
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $out=Join-Path $env:RUNNER_TEMP 'cp05-original-nsis'
+          $check=Get-Content -LiteralPath (Join-Path $out 'installer-checksums.json') -Raw|ConvertFrom-Json
+          $model=Join-Path $env:RUNNER_TEMP 'cp05-pinned-qwen.gguf'
+          $evidence=Join-Path $env:GITHUB_WORKSPACE 'cp05-closeout-evidence/installed-cycle'
+          & scripts/m3-windows-nsis-cycle.ps1 -InstallerPath (Join-Path $out $check.installerName) -InstallerSha256 $check.installerSha256 -ExpectedLuSha256 $check.appSha256 -ExpectedEngineSha256 $check.engineSha256 -UninstallerName 'UninstallLuAGENT01GPhysicalTest.exe' -DisposableWindowsConfirmed -ExerciseInstalledGguf -GgufModelPath $model -GgufModelSha256 $env:MODEL_SHA -EvidenceDir $evidence
+          if($LASTEXITCODE -ne 0){throw 'Original installed GGUF witness failed or incomplete'}
+          $receipt=Get-Content -LiteralPath (Join-Path $evidence 'm3-nsis-cycle.json') -Raw|ConvertFrom-Json
+          if($receipt.installedGguf -ne 'PASS_INSTALLED_GGUF_NATIVE_CONSENT_AND_LIFECYCLE' -or $receipt.activeModelWorkersReaped -ne 'PASS_ORIGINAL_ACTIVE_GRACEFUL_AND_FORCED' -or $receipt.packageRemoval -ne 'PASS_BINARIES_ABSENT' -or $receipt.profilePreservation -ne 'PASS_UNTOUCHED_APPDATA_SENTINEL'){throw 'Missing required installed model and process receipts'}
+          "Original executable source: $env:ORIGINAL_SOURCE; harness source: $env:GITHUB_SHA. Hosted CPU native UI witness, not physical AMD/Vulkan acceptance." >> $env:GITHUB_STEP_SUMMARY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cp05-installed-original-windows-gguf-${{ github.sha }}
+          path: cp05-closeout-evidence/
+          if-no-files-found: warn
+          retention-days: 14

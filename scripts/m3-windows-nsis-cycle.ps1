@@ -13,6 +13,9 @@ param(
   [Parameter(Mandatory=$true)][ValidatePattern('^[A-Za-z0-9._-]+\.exe$')][string]$UninstallerName,
   [switch]$DisposableWindowsConfirmed,
   [switch]$ExerciseInstalledGui,
+  [switch]$ExerciseInstalledGguf,
+  [string]$GgufModelPath='',
+  [string]$GgufModelSha256='',
   [ValidateRange(30,1800)][int]$TimeoutSeconds=480,
   [string]$EvidenceDir=(Join-Path $env:TEMP ('Lu-M3-nsis-'+[guid]::NewGuid().ToString('N')))
 )
@@ -58,6 +61,7 @@ $record=[ordered]@{
   activeModelWorkersReaped='NOT_TESTED'
   webViewUiAndModelInference='NOT_TESTED'
   installedUiSmoke='NOT_TESTED'
+  installedGguf='NOT_TESTED'
   installationStateUncertain=$false
   profilePreservation='NOT_TESTED'
   removalObservedAfterMs=0
@@ -219,6 +223,39 @@ try{
       $record.errors=@($record.errors)+@('UI smoke: '+$_.Exception.Message)
     }
   }
+  if($ExerciseInstalledGguf){
+    $stage='installed-gguf'
+    $ggufDir=Join-Path $EvidenceDir 'cp05-installed-gguf'
+    $start=[Diagnostics.ProcessStartInfo]::new((Get-Process -Id $PID).Path)
+    $start.UseShellExecute=$false
+    foreach($arg in @('-NoProfile','-STA','-File',(Join-Path $PSScriptRoot 'cp05e5-windows-installed-gguf.ps1'),
+      '-InstalledExe',$app,'-ExpectedSha256',$ExpectedLuSha256,'-EngineSha256',$ExpectedEngineSha256,
+      '-ModelPath',$GgufModelPath,'-ModelSha256',$GgufModelSha256,'-ProfileIdentifier',$ProfileIdentifier,
+      '-EvidenceDir',$ggufDir,'-DisposableWindowsConfirmed')){
+      [void]$start.ArgumentList.Add([string]$arg)
+    }
+    try{
+      if(-not $GgufModelPath -or $GgufModelSha256 -cnotmatch '^[a-f0-9]{64}$'){throw 'Pinned actual GGUF required'}
+      $child=[Diagnostics.Process]::Start($start)
+      if($null -eq $child){throw 'GGUF acceptance worker did not start'}
+      if(-not $child.WaitForExit(1200000)){
+        $child.Kill($true);$null=$child.WaitForExit(15000)
+        throw 'Installed GGUF witness exceeded 20 minutes'
+      }
+      $observed=Get-Content -LiteralPath (Join-Path $ggufDir 'cp05-installed-gguf.json') -Raw|ConvertFrom-Json
+      if($child.ExitCode -ne 0 -or $observed.result -ne 'PASS_INSTALLED_GGUF_NATIVE_CONSENT_AND_LIFECYCLE' -or
+         $observed.appSha256 -ine $ExpectedLuSha256 -or $observed.engineSha256 -ine $ExpectedEngineSha256 -or
+         $observed.modelSha256 -ine $GgufModelSha256){
+        throw 'Installed GGUF/consent/lifecycle acceptance incomplete'
+      }
+      $record.installedGguf='PASS_INSTALLED_GGUF_NATIVE_CONSENT_AND_LIFECYCLE'
+      $record.webViewUiAndModelInference='PASS_REAL_INSTALLED_TOOL_AND_FINAL'
+      $record.activeModelWorkersReaped='PASS_ORIGINAL_ACTIVE_GRACEFUL_AND_FORCED'
+    }catch{
+      $record.installedGguf='FAIL_INSTALLED_GGUF_EVIDENCE'
+      $record.errors=@($record.errors)+@('GGUF witness: '+$_.Exception.Message)
+    }
+  }
   $stage='uninstall'
   $uninstaller=Join-Path $target $UninstallerName
   if(-not (Test-Path -LiteralPath $uninstaller -PathType Leaf)){
@@ -272,7 +309,7 @@ try{
   if($record.profilePreservation -ne 'PASS_UNTOUCHED_APPDATA_SENTINEL'){
     throw 'NSIS uninstall altered isolated AppData sentinel'
   }
-  $record.activeModelWorkersReaped='INCONCLUSIVE_NO_MODEL_LAUNCH_IN_THIS_CYCLE'
+  if(-not $ExerciseInstalledGguf){$record.activeModelWorkersReaped='INCONCLUSIVE_NO_MODEL_LAUNCH_IN_THIS_CYCLE'}
 }catch{
   $record.failureStage=$stage
   $record.errors=@($record.errors)+@($_.Exception.Message)
@@ -286,6 +323,7 @@ try{
 }
 if($record.packageRemoval -ne 'PASS_BINARIES_ABSENT'){exit 2}
 if($ExerciseInstalledGui -and $record.installedUiSmoke -ne 'PASS_INSTALLED_UNIFIED_TABS'){exit 3}
+if($ExerciseInstalledGguf -and $record.installedGguf -ne 'PASS_INSTALLED_GGUF_NATIVE_CONSENT_AND_LIFECYCLE'){exit 4}
 # Without explicit success, a prior native command's LASTEXITCODE survives
 # the script call and falsely marks a verified lifecycle receipt as failure.
 exit 0
