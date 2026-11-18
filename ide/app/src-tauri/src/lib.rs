@@ -3763,6 +3763,7 @@ async fn ide_workspace_layout_read(
 /// re-opens every saved source and compares its revision. No project write.
 #[tauri::command]
 async fn ide_workspace_layout_save(
+    app: AppHandle,
     registry: State<'_, Arc<IdeWorkspaceRegistry>>,
     layouts: State<'_, Arc<lu_ide_workspace::workspace_layout::WorkspaceLayoutStore>>,
     layout: lu_ide_workspace::workspace_layout::WorkspaceLayout,
@@ -3770,6 +3771,27 @@ async fn ide_workspace_layout_save(
     let registry = Arc::clone(registry.inner());
     let layouts = Arc::clone(layouts.inner());
     tauri::async_runtime::spawn_blocking(move || {
+        if layout.files.is_empty() || layout.files.len() > 48 {
+            return Err("B9_INVALID_LAYOUT".to_owned());
+        }
+        if layout.files.iter().any(|file| file.was_dirty)
+            && !app
+                .dialog()
+                .message(concat!(
+                    "Remember file tabs and pane layout only? Unsaved edits are NOT stored in ",
+                    "this layout. Use Preserve draft for private recovery before a restart."
+                ))
+                .title("Lu IDE · Remember tab layout")
+                .buttons(MessageDialogButtons::OkCancelCustom(
+                    "Remember navigation".into(),
+                    "Cancel".into(),
+                ))
+                .blocking_show()
+        {
+            return Err("B9_LAYOUT_NOT_CONFIRMED".to_owned());
+        }
+        // The existing store still independently validates path, revision,
+        // registered project custody, layout shape and private metadata write.
         layouts.save(&registry, layout).map_err(str::to_owned)
     })
     .await

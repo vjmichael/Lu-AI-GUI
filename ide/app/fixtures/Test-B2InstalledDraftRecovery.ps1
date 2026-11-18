@@ -332,7 +332,7 @@ try {
     throw 'No native private recovery surfaced after installed app restart'
   }
   ClickItem 'Recover preserved draft'
-  if($null -eq (FindItem 'Recovered private checkpoint into unsaved editor only' 15)) {
+  if($null -eq (FindItem 'Recovered private checkpoint into unsaved editor only. Review the draft before explicitly saving.' 15)) {
     throw 'Private draft was not explicitly recovered into installed editor'
   }
   $report.recoveredAfterRestart=$true

@@ -57,7 +57,7 @@ def enter(label, value):
     native.type_text(value)
 
 
-def _active_confirmation_window(proc):
+def _active_confirmation_window(proc, expected_title):
     active = subprocess.check_output(
         ["xdotool", "getactivewindow"], text=True, timeout=5
     ).strip()
@@ -66,7 +66,7 @@ def _active_confirmation_window(proc):
     title = subprocess.check_output(
         ["xdotool", "getwindowname", active], text=True, timeout=5
     ).strip()
-    if title != "Lu IDE · Confirm source file action":
+    if title != expected_title:
         deny("confirmation_wrong_native_title")
     pid = subprocess.check_output(
         ["xdotool", "getwindowpid", active], text=True, timeout=5
@@ -125,8 +125,9 @@ def _window_geometry(active):
 def _native_process_id(node):
     # Native GI/AT-SPI exposes process ID on the accessible or its application.
     # If neither interface supplies it, fail closed rather than guess ownership.
-    for candidate in (node, node.getApplication()):
+    for source in ("node", "application"):
         try:
+            candidate = node if source == "node" else node.getApplication()
             ident = int(candidate.get_process_id())
             if ident > 0:
                 return ident
@@ -158,14 +159,24 @@ def _exact_accessible_text(node, expected):
     return False
 
 
-def owned_confirmation(proc, message):
+def owned_confirmation(proc, message, expected_title="Lu IDE · Confirm source file action",
+                       caption="Apply file action"):
     # Independently verify active X11 title, PID lineage, geometry and the
     # exact message and button in one unique top-level native accessible.
     # GTK may expose GtkMessageDialog with the message as its accessible
     # name, or the visible label only through Text, not the X11 title.
-    native.accessible(message, seconds=18)
-    active, pid, title = _active_confirmation_window(proc)
-    geometry = _window_geometry(active)
+    # Wait only for the exact owned foreground window; do not rely on a
+    # global message name (some GTK labels expose text but no accessible name).
+    until = time.monotonic() + 18
+    while True:
+        try:
+            active, pid, title = _active_confirmation_window(proc, expected_title)
+            geometry = _window_geometry(active)
+            break
+        except (RuntimeError, OSError, ValueError, subprocess.SubprocessError):
+            if time.monotonic() >= until:
+                deny("confirmation_active_exact_native_window_not_verified")
+            time.sleep(0.25)
     expected = " ".join(message.split())
     deadline = time.monotonic() + 12
     counters = (0, 0, 0, 0, 0)
@@ -198,7 +209,7 @@ def owned_confirmation(proc, message):
                         continue
                     if _exact_accessible_text(node, expected):
                         message_seen = True
-                    if ((node.name or "").strip() == "Apply file action"
+                    if ((node.name or "").strip() == caption
                             and "button" in node.getRoleName().casefold()
                             and all(node.getState().contains(flag) for flag in
                                     (pyatspi.STATE_ENABLED, pyatspi.STATE_SENSITIVE))):
@@ -212,7 +223,7 @@ def owned_confirmation(proc, message):
                            ("click", "press", "activate")]
                 if len(indices) != 1:
                     deny("confirmation_native_action_ambiguous")
-                if (_active_confirmation_window(proc) != (active, pid, title)
+                if (_active_confirmation_window(proc, expected_title) != (active, pid, title)
                         or not _same_window_geometry(roots[0], _window_geometry(active))):
                     deny("confirmation_native_window_changed")
                 if not action.doAction(indices[0]):
@@ -296,7 +307,7 @@ def modern_file_operations(proc):
     print("DEV01_MODERN_LINUX_MOVE_TRASH_RESTORE_NO_CLOBBER=PASS", flush=True)
 
 
-def modern_split_and_private_checkpoint():
+def modern_split_and_private_checkpoint(proc):
     main_before, second_before = digest(SOURCE), digest(SECOND)
     native.activate_exact_source_file("second.rs")
     native.activate("Toggle split editor")
@@ -357,6 +368,9 @@ def modern_split_and_private_checkpoint():
             and "checkpoint=" in clipboard and DRAFT not in clipboard):
         deny("durable_private_non_disclosing_checkpoint_missing")
     native.activate("Remember open tabs for restart")
+    owned_confirmation(proc, "Remember file tabs and pane layout only? Unsaved edits are NOT stored in this layout. Use Preserve draft for private recovery before a restart.",
+                       expected_title="Lu IDE · Remember tab layout", caption="Remember navigation")
+    native.accessible("Remembered file tab layout for restart", seconds=20)
     if digest(SOURCE) != original:
         deny("private_checkpoint_or_tab_layout_wrote_original")
     print("DEV01_MODERN_LINUX_PRE_KILL_PRIVATE_CHECKPOINT=PASS", flush=True)
@@ -369,7 +383,7 @@ def main():
         native.select_native_folder()
         native.editor_project()
         modern_file_operations(first)
-        modern_split_and_private_checkpoint()
+        modern_split_and_private_checkpoint(first)
     finally:
         # Deliberate hard OS process death, not a graceful editor shutdown.
         if first.poll() is None:

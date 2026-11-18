@@ -6655,10 +6655,8 @@ function App() {
       setProblem('Cannot remember workspace: '+String(error));
       return;
     }
-    if (layout.files.some(file=>file.wasDirty) && !window.confirm(
-      'Remember file tabs and pane layout only? Unsaved edits are NOT stored in '+ 
-      'this layout. Use Preserve draft for private recovery before a restart.'))
-      return;
+    // Dirty navigation metadata requires the existing native host's fixed
+    // confirmation before app-data persistence, never a browser script modal.
     const token=Symbol('b9-remember');
     workspaceLayoutOp.current=token;
     setWorkspaceLayoutBusy(true);
@@ -11537,7 +11535,8 @@ function App() {
                 <span>Two distinct buffers · saves remain explicit</span>
               </>}
             </div>
-            <p className="treeCaution" aria-live="polite">
+            <p className="treeCaution" role="status" aria-live="polite"
+              aria-label={rememberedLayout ? 'Remembered file tab layout for restart' : 'No remembered tab layout'}>
               {rememberedLayout
                 ? 'Remembered '+rememberedLayout.files.length+
                   ' relative file paths privately. Restore explicitly rechecks saved disk files.'

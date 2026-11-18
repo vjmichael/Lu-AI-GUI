@@ -62,7 +62,7 @@ test('DEV01 and pinned clangd retain fail-closed native repair boundaries', () =
   assert.match(confirm, /_same_window_geometry\(node, geometry\)/);
   assert.match(confirm, /node\.parent\.getRoleName\(\)\.casefold\(\) != "application"/);
   assert.match(confirm, /message_seen and len\(buttons\) == 1/);
-  assert.match(confirm, /_active_confirmation_window\(proc\) != \(active, pid, title\)/);
+  assert.match(confirm, /_active_confirmation_window\(proc, expected_title\) != \(active, pid, title\)/);
   assert.match(confirm, /action\.doAction\(indices\[0\]\)/);
   assert.doesNotMatch(confirm, /native\.activate\(/);
   const clangd = text('../../llvm18_owner/Build-PinnedClangdWindows.ps1');
@@ -100,4 +100,19 @@ test('03G accessible status and native review selectors remain bound to actual U
   assert.match(b5linux,/text\.getText\(0,text\.characterCount\)==name/);
   assert.match(atspi,/yield from descendants\(groups\[0\]\)/);
   assert.match(atspi,/STATE_CHECKED/);
+});
+
+test('dirty tab layout requires genuine native metadata-only confirmation before host save', () => {
+  const web=text('../web/main.jsx');
+  const host=text('../src-tauri/src/lib.rs');
+  const route=host.split('async fn ide_workspace_layout_save(')[1].split('async fn ide_workspace_layout_clear(')[0];
+  const save=web.split('async function rememberWorkspaceForRestart()')[1].split('async function forgetRememberedWorkspace()')[0];
+  assert.doesNotMatch(save,/window\.confirm/);
+  assert.match(save,/invoke\('ide_workspace_layout_save',\{layout\}\)/);
+  assert.match(route,/file\.was_dirty/);
+  assert.match(route,/\.title\("Lu IDE · Remember tab layout"\)/);
+  assert.match(route,/B9_LAYOUT_NOT_CONFIRMED/);
+  assert.ok(route.indexOf('B9_LAYOUT_NOT_CONFIRMED')<route.indexOf('layouts.save(&registry, layout)'));
+  assert.match(text('../fixtures/Test-Wo8NativeDesktopUI.ps1'),/Confirm-NativeOneUseDialog 'Remember tab layout' 'Remember navigation'/);
+  assert.match(text('../fixtures/dev01_modern_linux_installed_atspi.py'),/expected_title="Lu IDE · Remember tab layout", caption="Remember navigation"/);
 });

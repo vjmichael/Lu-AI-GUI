@@ -1850,6 +1850,8 @@ try {
         Deny 'dev01_durable_private_reference_missing_or_disclosing'
       }
       Click 'Remember open tabs for restart'
+      Confirm-NativeOneUseDialog 'Remember tab layout' 'Remember navigation' 'Remember file tabs and pane layout only? Unsaved edits are NOT stored in this layout. Use Preserve draft for private recovery before a restart.'
+      Require 'Remembered file tab layout for restart'
       if ((Get-FileHash $source -Algorithm SHA256).Hash -ne $beforeDraft) {
         Deny 'dev01_remembered_layout_wrote_unsaved_source'
       }
