@@ -49,3 +49,14 @@ test('integrated 03H permits only the exact reviewed native confirmation test by
   assert.equal(reviewedAcceptanceFixture(path+'.bak',blob),false);
   assert.equal(forbiddenPath(path),true);
 });
+
+
+test('integrated 04B permits only exact CI handoff and hostile fixture source, never in Core-only scope', () => {
+  assert.equal(reviewedAcceptanceFixture('ide/packaging/b2_b4_installer_handoff.py','568a7513560e4282b10fda79f7268c235ab36329'),true);
+  assert.equal(reviewedAcceptanceFixture('ide/packaging/b2_b4_installer_handoff.py','a'.repeat(40)),false);
+  assert.equal(forbiddenPath('ide/packaging/b2_b4_installer_handoff.py'),true);
+  assert.equal(reviewedAcceptanceFixture('ide/packaging/test_b2_b4_installer_handoff.py','d6332db3e7d822911e05da28dd481272d155374b'),true);
+  assert.equal(reviewedAcceptanceFixture('ide/packaging/test_b2_b4_installer_handoff.py','a'.repeat(40)),false);
+  assert.equal(forbiddenPath('ide/packaging/test_b2_b4_installer_handoff.py'),true);
+  assert.equal(reviewedAcceptanceFixture('ide/packaging/other.py','a'.repeat(40)),false);
+});

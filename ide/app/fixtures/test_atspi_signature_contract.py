@@ -56,20 +56,26 @@ class AtspiSignatureContract(unittest.TestCase):
                   and node.name == "_native_workflow_project_nodes")
         class Node:
             name = "Include registered, open projects"
-            def __init__(self, role, children=()):
+            def __init__(self, role, children=(), name=None):
                 self.role, self.children = role, children
+                if name is not None: self.name = name
             def getRoleName(self): return self.role
             def getState(self): return SimpleNamespace(contains=lambda _: True)
         checkbox = Node("check box")
         legend = Node("label")
         root = Node("panel", [checkbox])
-        ns = {"elements": lambda: [legend, root],
+        region = Node("region", [legend, root], "Projects in workflow")
+        ns = {"elements": lambda: [region],
               "pyatspi": SimpleNamespace(STATE_VISIBLE=1),
               "_native_dialog_ancestor": lambda _: False,
               "children_of": lambda obj: obj.children}
         exec(compile(ast.Module(body=[fn], type_ignores=[]), "portfolio_scope", "exec"), ns)
         self.assertEqual(list(ns["_native_workflow_project_nodes"]()), [root, checkbox])
         ns["elements"] = lambda: [root, Node("grouping")]
+        self.assertEqual(list(ns["_native_workflow_project_nodes"]()), [])
+        ns["elements"] = lambda: [region, Node("region", [root], "Projects in workflow")]
+        self.assertEqual(list(ns["_native_workflow_project_nodes"]()), [])
+        ns["elements"] = lambda: [Node("region", [root, Node("grouping")], "Projects in workflow")]
         self.assertEqual(list(ns["_native_workflow_project_nodes"]()), [])
 
     def test_portfolio_toggle_observes_checked_state_and_never_double_toggles(self):
@@ -113,6 +119,28 @@ class AtspiSignatureContract(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "exact_checked_state_not_observed"):
             ns["choose_open_workflow_project"]("project", seconds=3)
         self.assertEqual(checkbox.count, 0)
+        # A real focused keyboard checkbox gets precisely one Space input,
+        # with checked-state readback and no AT-SPI toggle fallback.
+        class KeyboardCheckbox(Checkbox):
+            def queryComponent(self):
+                return SimpleNamespace(grabFocus=lambda: True)
+        native = KeyboardCheckbox()
+        ns["pyatspi"].STATE_FOCUSABLE = 6
+        ns["pyatspi"].STATE_FOCUSED = 7
+        ns["_native_workflow_project_nodes"] = lambda: [native]
+        keys = []
+        def key(value):
+            keys.append(value)
+            native.checked = native.should_check
+        ns["key"] = key
+        ns["choose_open_workflow_project"]("project", seconds=3)
+        self.assertEqual(keys, ["space"])
+        self.assertEqual(native.count, 0)
+        native.checked, native.should_check = False, False
+        with self.assertRaisesRegex(RuntimeError, "exact_checked_state_not_observed"):
+            ns["choose_open_workflow_project"]("project", seconds=3)
+        self.assertEqual(keys, ["space", "space"])
+        self.assertEqual(native.count, 0)
         for script in SCRIPTS[1:]:
             self.assertIn("ui.choose_open_workflow_project(", script.read_text(encoding="utf-8"))
 

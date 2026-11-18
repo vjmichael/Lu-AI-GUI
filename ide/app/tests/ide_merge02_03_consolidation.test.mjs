@@ -126,3 +126,26 @@ test('IDE-MERGE-02C same-head acceptance compiles offline vcpkg and retains orig
   assert.match(front,/response\.debuggerExecutionAuthorized!==false/);
   assert.match(compiler,/RuntimeProfile::VcpkgInstallOffline/);
 });
+
+
+test('IDE-MERGE-04 shares compiler intermediates only within original non-installed native jobs', () => {
+  const workflow=source('../../../.github/workflows/ide-group6f-integrated-native.yml');
+  const shared='CARGO_TARGET_DIR: ${{ runner.temp }}/ide-native-check-target';
+  const steps=[
+    'Native original Git and remote recovery fixture groups',
+    'IDE-MERGE-02C original editor, DAP and durable recovery native tests',
+    'Native host OS-vault type and desktop compile',
+  ];
+  assert.equal(workflow.split(shared).length-1,steps.length);
+  for(const name of steps) {
+    const step=workflow.split('      - name: '+name+'\n')[1].split('\n      - ')[0];
+    assert.ok(step.includes(shared),name);
+    assert.match(step,/CARGO_INCREMENTAL: 0/);
+    assert.match(step,/cargo (?:check|test) --locked/);
+    assert.doesNotMatch(step,/cargo (?:build|install) |tauri.*build|upload-artifact|download-artifact/);
+  }
+  const installed=workflow.slice(workflow.indexOf('  dev01-modern-real-installed-linux:'));
+  assert.ok(installed.startsWith('  dev01-modern-real-installed-linux:'));
+  assert.doesNotMatch(installed,/CARGO_TARGET_DIR|actions\/cache/);
+  assert.doesNotMatch(workflow,/actions\/cache|restore-keys|continue-on-error:\s*true/);
+});

@@ -229,13 +229,30 @@ def choose_open_workflow_project(display_name, seconds=20):
             if not issued:
                 # Exactly one native action; never blindly re-toggle on
                 # delayed UI readback. No application API or state injection.
+                # WebKit can expose an AT-SPI checkbox action which returns
+                # false even though the real keyboard control is available.
+                # Choose the input route *before* dispatch. If a verified
+                # focused checkbox exists, use one OS Space; otherwise retain
+                # the original native action. Never retry after either input.
+                keyboard_ready = False
+                try:
+                    keyboard_ready = (node.getState().contains(pyatspi.STATE_FOCUSABLE)
+                        and node.queryComponent().grabFocus()
+                        and node.getState().contains(pyatspi.STATE_FOCUSED)
+                        and node.getState().contains(pyatspi.STATE_SHOWING)
+                        and not node.getState().contains(pyatspi.STATE_CHECKED))
+                except Exception:
+                    keyboard_ready = False
                 issued = True
-                action = node.queryAction()
-                indices = [i for i in range(action.nActions)
-                           if action.getName(i).casefold() in
-                           ("toggle", "click", "press", "activate")]
-                if not indices or not action.doAction(indices[0]):
-                    deny("workflow_checkbox_native_action_unavailable")
+                if keyboard_ready:
+                    key("space")
+                else:
+                    action = node.queryAction()
+                    indices = [i for i in range(action.nActions)
+                               if action.getName(i).casefold() in
+                               ("toggle", "click", "press", "activate")]
+                    if not indices or not action.doAction(indices[0]):
+                        deny("workflow_checkbox_native_action_unavailable")
         time.sleep(0.25)
     print("WO9_NATIVE_PORTFOLIO_DIAGNOSTIC=" +
           ("dispatched_no_checked_state" if issued else

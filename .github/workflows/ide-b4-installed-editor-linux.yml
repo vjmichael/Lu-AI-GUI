@@ -5,11 +5,14 @@ on:
   pull_request:
     paths:
       - 'ide/app/**'
+      - 'ide/packaging/b2_b4_installer_handoff.py'
+      - 'ide/packaging/test_b2_b4_installer_handoff.py'
       - 'ide/docs/IDE_WORK_ORDER_08_INSTALLED_E2E_20261107.md'
       - '.github/workflows/ide-b4-installed-editor-linux.yml'
   workflow_dispatch:
 permissions:
   contents: read
+  actions: read
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
@@ -32,20 +35,33 @@ jobs:
       - name: Verify exact source checkout for native installed package
         run: |
           test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+      - name: Exercise exact-source installer handoff refusal and transport fixtures
+        run: python -m unittest discover -s ide/packaging -p test_b2_b4_installer_handoff.py -v
       - name: Install native Linux Tauri and graphical acceptance prerequisites
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev \
             libayatana-appindicator3-dev librsvg2-dev patchelf libssl-dev libgtk-3-dev \
             xvfb xauth xdotool xclip dbus-x11 x11-utils at-spi2-core python3-pyatspi openbox
-      - name: Fetch resolved Cargo sources before collecting license notices
-        run: |
-          cargo fetch --locked --manifest-path ide/app/src-tauri/Cargo.toml
-      - name: Build frontend and real native Linux Debian package
+      - name: Validate frontend before package admission
         working-directory: ide/app
         run: |
           npm ci --ignore-scripts --no-audit --no-fund
           npm run check
+      - name: Reuse exact-source peer package if ready (otherwise original build)
+        id: reuse
+        env:
+          SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          GH_TOKEN: ${{ github.token }}
+        run: python ide/packaging/b2_b4_installer_handoff.py consume --platform ubuntu-24.04 --lane b4
+      - name: Fetch resolved Cargo sources before collecting license notices
+        if: steps.reuse.outputs.reused == 'false'
+        run: |
+          cargo fetch --locked --manifest-path ide/app/src-tauri/Cargo.toml
+      - name: Build frontend and real native Linux Debian package
+        if: steps.reuse.outputs.reused == 'false'
+        working-directory: ide/app
+        run: |
           python ../packaging/verify_p06_checkout_lock.py --repo-root ../.. --platform ubuntu-24.04
           npm ci --ignore-scripts --no-audit --no-fund
           cargo fetch --locked --manifest-path src-tauri/Cargo.toml
@@ -54,6 +70,10 @@ jobs:
           python ../packaging/upstream_notice_receipt.py --repo-root ../.. --source-sha '${{ github.event.pull_request.head.sha || github.sha }}' --output src-tauri/upstream-notice-receipt.json
           python ../packaging/collect_verification_licenses.py --repo-root ../.. --output src-tauri/verification-notices --source-sha '${{ github.event.pull_request.head.sha || github.sha }}' --upstream-receipt src-tauri/upstream-notice-receipt.json
           npx --yes @tauri-apps/cli@2.12.4 build --config src-tauri/tauri.wo8.linux.conf.json --bundles deb
+      - name: Independently recheck exact lock and Tauri configuration
+        run: |
+          python ide/packaging/verify_p06_checkout_lock.py --repo-root . --platform ubuntu-24.04
+          python ide/packaging/verify_tauri_minor.py --repo-root .
       - name: Verify legal bytes and bind inventory to real Debian package digest
         env:
           SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
@@ -63,6 +83,11 @@ jobs:
           packages=(ide/app/src-tauri/target/release/bundle/deb/*.deb)
           [[ "${#packages[@]}" -eq 1 ]] || { echo "DENIED: only one Debian package accepted"; exit 2; }
           python ide/packaging/verify_p04_license_bundle.py --license-root ide/app/src-tauri/verification-notices --source-sha "$SOURCE_SHA" --require-upstream --artifact "${packages[0]}" --receipt ide/app/src-tauri/verification-package-receipt.json
+      - name: Record exact-source B2/B4 package handoff (not installed acceptance)
+        if: steps.reuse.outputs.reused == 'false'
+        env:
+          SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: python ide/packaging/b2_b4_installer_handoff.py record --platform ubuntu-24.04 --lane b4
       - name: Attach unsigned Debian and matching resolved dependency licenses
         uses: actions/upload-artifact@v4
         with:
@@ -71,6 +96,7 @@ jobs:
             ide/app/src-tauri/target/release/bundle/deb/*.deb
             ide/app/src-tauri/verification-notices/**
             ide/app/src-tauri/verification-package-receipt.json
+            ide/app/src-tauri/b2-b4-installer-handoff.json
           if-no-files-found: error
           retention-days: 7
       - name: Install exact unsigned Debian and exercise real GTK CodeMirror private draft persistence through OS AT-SPI
@@ -93,4 +119,13 @@ jobs:
           name: ide-b5-linux-real-installed-editor-performance
           path: ${{ runner.temp }}/ide-b5-linux-installed-performance.json
           if-no-files-found: warn
+          retention-days: 7
+
+      - name: Preserve verified peer producer identity (if reused)
+        if: always() && steps.reuse.outputs.reused == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: exact-peer-installer-producer-receipt
+          path: ${{ runner.temp }}/ide-b2-b4-producer.json
+          if-no-files-found: error
           retention-days: 7

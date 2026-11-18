@@ -248,16 +248,35 @@ try {
   Keys '^{END}'
   $report.edited=$true
   function Click-ClipboardAction([string]$caption) {
-    $button=FindItem $caption 15
-    if(!$button -or !$button.Current.IsEnabled -or !$button.Current.IsKeyboardFocusable -or
-       $button.Current.IsOffscreen -or $button.Current.Name -cne $caption -or
-       $button.Current.ControlType.ProgrammaticName -ne 'ControlType.Button') {
-      throw 'Exact installed clipboard action unavailable'
-    }
-    $button.SetFocus()
-    if(!$button.Current.HasKeyboardFocus -or [LuMouse]::GetForegroundWindow() -ne $mainHwnd) {
-      throw 'Native clipboard action lost foreground focus'
-    }
+    # Toolbar is inside a bounded scroll region. Reacquire an exact enabled
+    # button after revealing it; never issue a clipboard gesture to a stale
+    # provider node or another focused window.
+    $until=[DateTime]::UtcNow.AddSeconds(15)
+    $focused=$false
+    do {
+      $button=FindItem $caption 2
+      if($button -and $button.Current.IsEnabled -and $button.Current.IsKeyboardFocusable -and
+         $button.Current.Name -ceq $caption -and
+         $button.Current.ControlType.ProgrammaticName -eq 'ControlType.Button') {
+        try {
+          $scroll=$null
+          if($button.TryGetCurrentPattern([System.Windows.Automation.ScrollItemPattern]::Pattern,[ref]$scroll)) {
+            $scroll.ScrollIntoView()
+          }
+          $button.SetFocus()
+          Start-Sleep -Milliseconds 150
+          $fresh=FindItem $caption 2
+          $actual=[System.Windows.Automation.AutomationElement]::FocusedElement
+          if($fresh -and $fresh.Current.IsEnabled -and !$fresh.Current.IsOffscreen -and
+             $fresh.Current.Name -ceq $caption -and
+             $fresh.Current.ControlType.ProgrammaticName -eq 'ControlType.Button' -and
+             ($fresh.Current.HasKeyboardFocus -or ($actual -and $actual.Equals($fresh))) -and
+             [LuMouse]::GetForegroundWindow() -eq $mainHwnd) {$focused=$true;break}
+        } catch {}
+      }
+      Start-Sleep -Milliseconds 200
+    } while([DateTime]::UtcNow -lt $until)
+    if(!$focused) {throw 'Exact installed clipboard action unavailable'}
     Keys ' '
   }
   [System.Windows.Forms.Clipboard]::Clear()

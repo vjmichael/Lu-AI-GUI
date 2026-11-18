@@ -71,6 +71,11 @@ jobs:
           retention-days: 14
       - name: Native original Git and remote recovery fixture groups
         shell: bash
+        # Reuse Cargo fingerprints only inside this fresh exact-head runner job.
+        # Feature sets, commands and native evidence requirements stay distinct.
+        env:
+          CARGO_TARGET_DIR: ${{ runner.temp }}/ide-native-check-target
+          CARGO_INCREMENTAL: 0
         run: |
           set -euo pipefail
           for domain in \
@@ -99,6 +104,11 @@ jobs:
           echo "G06F_REMOTE_CAS_AND_PUBLICATION=NOT_TESTED"
       - name: IDE-MERGE-02C original editor, DAP and durable recovery native tests
         shell: bash
+        # Reuse Cargo fingerprints only inside this fresh exact-head runner job.
+        # Feature sets, commands and native evidence requirements stay distinct.
+        env:
+          CARGO_TARGET_DIR: ${{ runner.temp }}/ide-native-check-target
+          CARGO_INCREMENTAL: 0
         run: |
           set -euo pipefail
           for domain in editor workspace_layout dap_session dap_source_lines debug_target_review source_span; do
@@ -262,6 +272,11 @@ jobs:
           echo 'IDE_MERGE02C_ALL_FRONTEND_CONTRACTS=TEST_PASS_NOT_INSTALLED_ACCEPTANCE'
       - name: Native host OS-vault type and desktop compile
         shell: bash
+        # Reuse Cargo fingerprints only inside this fresh exact-head runner job.
+        # Feature sets, commands and native evidence requirements stay distinct.
+        env:
+          CARGO_TARGET_DIR: ${{ runner.temp }}/ide-native-check-target
+          CARGO_INCREMENTAL: 0
         run: |
           set -euo pipefail
           cargo check --locked --manifest-path ide/host/Cargo.toml \

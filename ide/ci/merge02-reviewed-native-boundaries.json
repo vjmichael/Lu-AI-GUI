@@ -96,6 +96,11 @@
       "scope": "03E exact E2 smoke lock-argument successor projection; original historical source and gates unchanged; not OS acceptance"
     },
     {
+      "path": "ide/packaging/b2_b4_installer_handoff.py",
+      "sha": "568a7513560e4282b10fda79f7268c235ab36329",
+      "scope": "04B read-only exact-head unsigned installer artifact handoff; host CI transport only; no release or installed grant"
+    },
+    {
       "path": "ide/packaging/p05-merge02-pending-native-boundaries.json",
       "sha": "510293d0df6b18150739cee0fbdcd58dc24cb392",
       "scope": "source or historical preservation test, not native acceptance"
@@ -109,6 +114,11 @@
       "path": "ide/packaging/python_semantic_native_benchmark.py",
       "sha": "c11c0b883eb26d976489146a8df73c7e8402a8fe",
       "scope": "source or historical preservation test, not native acceptance"
+    },
+    {
+      "path": "ide/packaging/test_b2_b4_installer_handoff.py",
+      "sha": "d6332db3e7d822911e05da28dd481272d155374b",
+      "scope": "04B hostile transport, exact-source, scheduling, receipt and independent installed workflow contract tests; source-only"
     },
     {
       "path": "ide/packaging/test_ide056_successor_lock.py",

@@ -956,13 +956,9 @@ try {
         Start-Sleep -Milliseconds 200
       } while ((Get-Date) -lt $deadline)
       if (!$confirm.Current.IsEnabled) { Deny 'button_disabled_Confirm_separate_local_commit' }
-      # Use the same verified, exactly named and revealed native pointer
-      # action as the review toolbar. This submits only the review; the
-      # separate native one-use consent and independent Git checks follow.
-      # Submit via the exact enabled button's genuine keyboard gesture.
-      # The real modal plus independent Git bytes remain the acceptance gate.
-      [void](Focus-ExactNativeControl 'Confirm separate local commit (no push)' 'Button')
-      [System.Windows.Forms.SendKeys]::SendWait(' ')
+      # Exactly one verified foreground pointer dispatch to the reviewed
+      # button; the native modal and independent Git bytes remain mandatory.
+      Click 'Confirm separate local commit (no push)'
       Confirm-NativeOneUseDialog 'Confirm local Git commit' 'Commit exact staged file' 'WO9 installed reviewed Git source'
       Require 'Local commit'
       # Real Win UIA consent invokes asynchronously: the exact native Git

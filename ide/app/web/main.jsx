@@ -8028,6 +8028,7 @@ function App() {
                 <p role="alert">A previous worker needs OS cleanup reconciliation.
                   New protected Build/Test jobs are blocked.</p>}
               <button className="primaryBtn" type="button"
+                aria-label="Request protected Build/Test"
                 disabled={!activeProject || !!buildStatus?.current || buildBusy ||
                   !isCurrentProtectedBuildPlan(selectedBuildPlan,projectRunProfiles,
                     buildStatus,activeProject?.projectId)}
@@ -11761,12 +11762,14 @@ function App() {
                   </button>
                   <button className="ghostBtn editorToolButton"
                     disabled={draftReferencePending || draftRecoveryBusy || explorerPending || !!savingKey}
+                    aria-label="Copy draft reference"
                     title="Copy an exact volatile CodeMirror buffer range; does not save source"
                     onClick={() => void copyDraftReference(activeTab)}>
                     {draftReferencePending ? 'Checking…' : 'Copy draft reference'}
                   </button>
                   <button className="ghostBtn editorToolButton"
                     disabled={draftReferencePending || draftRecoveryBusy || explorerPending || !!savingKey}
+                    aria-label="Preserve draft + copy durable reference"
                     title="Preserve complete draft under IDE-private app data and copy a durable immutable reference"
                     onClick={() => void preserveDraft(activeTab,true)}>
                     {draftReferencePending ? 'Preserving…' : 'Preserve draft + copy durable reference'}

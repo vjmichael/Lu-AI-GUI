@@ -92,7 +92,11 @@ test('03G accessible status and native review selectors remain bound to actual U
   assert.match(web,/role="region" aria-label="Projects in workflow"/);
   assert.match(web,/getAll\('relativeSourcePath'\)/);
   assert.match(web,/verifiedRelativeSourcePath\(submittedPath\)/);
-  assert.match(win,/Focus-ExactNativeControl 'Confirm separate local commit \(no push\)' 'Button'/);
+  const nativeCommit = win.split('# Exactly one verified foreground pointer dispatch')[1].split("Require 'Local commit'")[0];
+  assert.equal((nativeCommit.match(/Click 'Confirm separate local commit \(no push\)'/g)||[]).length,1);
+  assert.match(win,/\$hit\.Equals\(\$fresh\)/);
+  assert.match(win,/\$bounds\.Contains\(\$point\)/);
+  assert.match(win,/\$fresh\.Current\.Name -cne \$label/);
   assert.match(win,/Confirm-NativeOneUseDialog 'Confirm local Git commit'/);
   assert.match(b2win,/FocusedElement/);
   assert.match(b2win,/Native clipboard did not observe exact changed editor text/);

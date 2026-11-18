@@ -133,10 +133,12 @@ test('real esbuild production entry renders first project view with no native pr
 // stable contenteditable name. Pane identity must augment, not replace it.
 test('mounted CodeMirror retains native editor accessibility identity', () => {
   const editor = readFileSync(fileURLToPath(new URL('../web/code_editor.jsx', import.meta.url)), 'utf8');
-  assert.match(editor, /'aria-label': 'Source editor text'/);
-  assert.ok(editor.includes("view.contentDOM.setAttribute('aria-label','Source editor text · '+label);"));
-  assert.ok(!editor.includes("view.contentDOM.setAttribute('aria-label',label);"),
-    'mount may not erase the OS-visible source editor name');
+  assert.match(editor, /EditorView\.contentAttributes\.of\(view =>/);
+  assert.ok(editor.includes("view.dom.parentElement?.dataset.editorAccessibleLabel"));
+  assert.ok(editor.includes("? 'Source editor text · '+paneLabel : 'Source editor text'"));
+  assert.ok(editor.includes('data-editor-accessible-label={label}'));
+  assert.ok(!editor.includes("view.contentDOM.setAttribute('aria-label'"),
+    'editor identity must survive CodeMirror attribute reconciliation');
   assert.match(editor, /role: 'textbox'/);
 });
 

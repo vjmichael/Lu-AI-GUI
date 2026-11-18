@@ -97,8 +97,16 @@ export function createEditorState(text, filename, onChange, onSelectionChange) {
       ...(!lightweight ? [EditorView.lineWrapping] : []),
       // Native WebView accessibility: expose the actual editable surface to
       // keyboard and screen-reader users and black-box installed OS tests.
-      EditorView.contentAttributes.of({ 'aria-label': 'Source editor text',
-        'aria-multiline': 'true', role: 'textbox' }),
+      EditorView.contentAttributes.of(view => {
+        // The view is attached to its React host before CodeMirror computes
+        // these attributes, including on later transactions and focus changes.
+        // Keep identity in the facet, not a one-off DOM mutation that the
+        // editor's attribute reconciliation can replace.
+        const paneLabel = view.dom.parentElement?.dataset.editorAccessibleLabel;
+        return { 'aria-label': paneLabel && paneLabel.length <= 1100
+          ? 'Source editor text · '+paneLabel : 'Source editor text',
+          'aria-multiline': 'true', role: 'textbox' };
+      }),
       EditorView.theme({
         '&': { height: '100%', fontSize: '13px' },
         '.cm-scroller': { fontFamily: 'Consolas, "Cascadia Code", ui-monospace, monospace' },
@@ -143,11 +151,6 @@ export function CodeEditor({ editorState, tabIdentity, findRequest, replaceReque
       parent: container.current,
     });
     viewRef.current = view;
-    if (typeof label === 'string' && label.length<=1100) {
-      // Preserve the stable OS accessibility name while retaining the
-      // pane and filename for native screen readers and installed UI tests.
-      view.contentDOM.setAttribute('aria-label','Source editor text · '+label);
-    }
     const reportFocus=()=>onFocusedRef.current?.(pane,tabIdentity);
     view.dom.addEventListener('focusin',reportFocus);
     const reportLine = () => {
@@ -291,5 +294,6 @@ export function CodeEditor({ editorState, tabIdentity, findRequest, replaceReque
     view.focus();
   }, [completionApplyRequest, tabIdentity]);
 
-  return <div ref={container} className="codeEditorHost" aria-label="Source code editor" />;
+  return <div ref={container} className="codeEditorHost" aria-label="Source code editor"
+    data-editor-accessible-label={label} />;
 }

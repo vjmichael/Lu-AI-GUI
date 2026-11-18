@@ -5,11 +5,14 @@ on:
   pull_request:
     paths:
       - 'ide/app/**'
+      - 'ide/packaging/b2_b4_installer_handoff.py'
+      - 'ide/packaging/test_b2_b4_installer_handoff.py'
       - 'ide/docs/IDE_WORK_ORDER_08_INSTALLED_E2E_20261107.md'
       - '.github/workflows/ide-b4-installed-editor-windows.yml'
   workflow_dispatch:
 permissions:
   contents: read
+  actions: read
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
@@ -35,12 +38,21 @@ jobs:
           if ((git rev-parse HEAD).Trim() -ine '${{ github.event.pull_request.head.sha || github.sha }}') {
             throw 'DENIED: installed Windows source checkout is not exact pull-request head'
           }
+      - name: Exercise exact-source installer handoff refusal and transport fixtures
+        run: python -m unittest discover -s ide/packaging -p test_b2_b4_installer_handoff.py -v
       - name: Validate frontend and Rust host contract
         working-directory: ide/app
         run: |
           npm ci --ignore-scripts --no-audit --no-fund
           npm run check
+      - name: Reuse exact-source peer package if ready (otherwise original build)
+        id: reuse
+        env:
+          SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          GH_TOKEN: ${{ github.token }}
+        run: python ide/packaging/b2_b4_installer_handoff.py consume --platform windows-2022 --lane b4
       - name: Fetch resolved Cargo sources and embed third-party license notices
+        if: steps.reuse.outputs.reused == 'false'
         shell: pwsh
         env:
           SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
@@ -64,12 +76,20 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'DENIED: third-party verification licenses not generated' }
           Write-Host 'P04_UNSIGNED_INSTALLER_LICENSES=ACTUAL_RESOLVED_NOTICES_BUNDLED_NO_RELEASE_APPROVAL'
       - name: Build real default-disabled unsigned Windows NSIS
+        if: steps.reuse.outputs.reused == 'false'
         working-directory: ide/app
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
           npx --yes @tauri-apps/cli@2.12.4 build --config src-tauri/tauri.installed-smoke.conf.json --bundles nsis
           if ($LASTEXITCODE -ne 0) { throw 'DENIED: real installed E2E NSIS build failed' }
+      - name: Independently recheck exact lock and Tauri configuration
+        shell: pwsh
+        run: |
+          python ide/packaging/verify_p06_checkout_lock.py --repo-root . --platform windows-2022
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: consumer P06 lock mismatch' }
+          python ide/packaging/verify_tauri_minor.py --repo-root .
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: consumer Tauri minor mismatch' }
       - name: Verify all collected legal bytes against exact unsigned NSIS hash
         shell: pwsh
         env:
@@ -80,6 +100,11 @@ jobs:
           if ($setup.Count -ne 1) { throw 'DENIED: exact verified NSIS candidate required' }
           python ide/packaging/verify_p04_license_bundle.py --license-root ide/app/src-tauri/verification-notices --source-sha $env:SOURCE_SHA --require-upstream --artifact $setup[0].FullName --receipt ide/app/src-tauri/verification-package-receipt.json
           if ($LASTEXITCODE -ne 0) { throw 'DENIED: packaged Windows licenses do not match source and installer hash' }
+      - name: Record exact-source B2/B4 package handoff (not installed acceptance)
+        if: steps.reuse.outputs.reused == 'false'
+        env:
+          SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: python ide/packaging/b2_b4_installer_handoff.py record --platform windows-2022 --lane b4
       - name: Attach unsigned Windows NSIS and matching resolved license bundle
         uses: actions/upload-artifact@v4
         with:
@@ -88,6 +113,7 @@ jobs:
             ide/app/src-tauri/target/release/bundle/nsis/*setup.exe
             ide/app/src-tauri/verification-notices/**
             ide/app/src-tauri/verification-package-receipt.json
+            ide/app/src-tauri/b2-b4-installer-handoff.json
           if-no-files-found: error
           retention-days: 7
       - name: Parse real Windows UI acceptance fixture without executing it
@@ -195,4 +221,13 @@ jobs:
           name: ide-b5-windows-real-installed-editor-performance
           path: ${{ runner.temp }}/ide-b5-windows-installed-performance.json
           if-no-files-found: warn
+          retention-days: 7
+
+      - name: Preserve verified peer producer identity (if reused)
+        if: always() && steps.reuse.outputs.reused == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: exact-peer-installer-producer-receipt
+          path: ${{ runner.temp }}/ide-b2-b4-producer.json
+          if-no-files-found: error
           retention-days: 7

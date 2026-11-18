@@ -14,8 +14,12 @@ const CORE_PARENT = 'cfb501751fd3f0509c8aeed802ad2890c37baa3d';
 // merge tree may enter the
 // integrated scope. The original Core-only policy is unchanged.
 export function reviewedAcceptanceFixture(path, blob) {
-  return path === 'ide/app/fixtures/test_dev01_native_confirmation_scope.py' &&
-    blob === 'acfcd77984123f0a53770826e2bc408258b74b83';
+  const exact = new Map([
+    ['ide/app/fixtures/test_dev01_native_confirmation_scope.py', 'acfcd77984123f0a53770826e2bc408258b74b83'],
+    ['ide/packaging/b2_b4_installer_handoff.py', '568a7513560e4282b10fda79f7268c235ab36329'],
+    ['ide/packaging/test_b2_b4_installer_handoff.py', 'd6332db3e7d822911e05da28dd481272d155374b'],
+  ]);
+  return exact.has(path) && exact.get(path) === blob;
 }
 export function reviewedIdePath(path, parentPaths) {
   return parentPaths.has(path) && (/^ide\//.test(path) || /^\.github\/workflows\/ide-[^/]+\.yml$/.test(path))
