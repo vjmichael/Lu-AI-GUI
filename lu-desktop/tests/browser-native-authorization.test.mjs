@@ -171,3 +171,14 @@ test('C1 original evidence budgets forbid citations for navigation and omitted p
   assert.match(model,/audit_browser_research_answer\(&answer,&citation_sources\)/);
   assert.match(model,/if evidence\.is_empty\(\)/);
 });
+
+test('public search provider is selected by authenticated human input and cannot be silently substituted',()=>{
+  assert.match(model,/HTML_SEARCH_ORIGIN:&str="https:\/\/html\.duckduckgo\.com"/);
+  assert.match(host,/let persisted=owner\.chats\.trusted_user_turn_text\(&chat_id,&turn_id\)/);
+  assert.match(host,/let search=browser_model_desktop::public_search_intent\(&persisted\)\?/);
+  assert.match(host,/allowed!=vec!\[search\.origin\.to_owned\(\)\]/);
+  assert.match(host,/search\.provider,allowed\.join\("\\n"\),search\.query/);
+  assert.match(model,/scope\.origins\(\)!=vec!\[search\.origin\.to_owned\(\)\]/);
+  assert.match(runtime,/approved_origins\.len\(\)!=1\|\|!super::browser_model_desktop::is_public_search_origin\(&approved_origins\[0\]\)/);
+  assert.match(host,/lu_generate_browser\(app,state,session_id,chat_id,prompt,search\.origin\.into\(\),512\)/);
+});

@@ -319,12 +319,14 @@ pub(crate) fn explicit_browse_origin(prompt:&str)->Option<String>{
 
 /// Fixed provider, exact human query. No model or history-derived network input.
 pub(crate) const PUBLIC_SEARCH_ORIGIN:&str="https://www.google.com";
+pub(crate) const HTML_SEARCH_ORIGIN:&str="https://html.duckduckgo.com";
+pub(crate) fn is_public_search_origin(origin:&str)->bool{matches!(origin,PUBLIC_SEARCH_ORIGIN|HTML_SEARCH_ORIGIN)}
 #[derive(Debug,PartialEq,Eq)]
-pub(crate) struct PublicSearch{pub query:String,pub url:String}
+pub(crate) struct PublicSearch{pub query:String,pub url:String,pub origin:&'static str,pub path:&'static str,pub provider:&'static str}
 pub(crate) fn public_search_intent(prompt:&str)->Result<Option<PublicSearch>,String>{
     let text=prompt.trim();let lower=text.to_ascii_lowercase();
     let intent=["please ","could you ","can you ","would you "].iter().find_map(|p|lower.strip_prefix(p)).unwrap_or(&lower);
-    let prefixes=["search google for","search the internet for","search the web for","search online for","google search for","google"];
+    let prefixes=["search duckduckgo for","duckduckgo search for","duckduckgo","search google for","search the internet for","search the web for","search online for","google search for","google"];
     let Some(prefix)=prefixes.iter().find(|p|intent==**p||intent.strip_prefix(**p).is_some_and(|tail|tail.starts_with([' ',':'])))else{return Ok(None)};
     let query=text[lower.len()-intent.len()+prefix.len()..].trim_start_matches([' ',':']).trim();
     if query.is_empty()||query.len()>512||prompt.len()>640||prompt.chars().any(char::is_control)||lower.contains("[attached text file:")||query.contains(['`','\\','<','>']){return Err("Enter one public search query without attached content or local file paths".into());}
@@ -332,11 +334,12 @@ pub(crate) fn public_search_intent(prompt:&str)->Result<Option<PublicSearch>,Str
         return Err("Local files are not part of a public search request".into());
     }
     let encoded:String=query.as_bytes().iter().map(|&b|if b.is_ascii_alphanumeric()||b"-._~".contains(&b){(b as char).to_string()}else{format!("%{b:02X}")}).collect();
-    Ok(Some(PublicSearch{query:query.into(),url:format!("{PUBLIC_SEARCH_ORIGIN}/search?q={encoded}")}))
+    let (origin,path,provider)=if prefix.contains("duckduckgo"){(HTML_SEARCH_ORIGIN,"/html/","DuckDuckGo")}else{(PUBLIC_SEARCH_ORIGIN,"/search","Google")};
+    Ok(Some(PublicSearch{query:query.into(),url:format!("{origin}{path}?q={encoded}"),origin,path,provider}))
 }
 fn search_result_matches(search:&PublicSearch,url:&str)->bool{
     let Ok(url)=tauri::Url::parse(url)else{return false};
-    url.origin().ascii_serialization()==PUBLIC_SEARCH_ORIGIN&&url.path()=="/search"&&url.username().is_empty()&&url.password().is_none()&&url.fragment().is_none()&&url.query_pairs().map(|(k,v)|(k.into_owned(),v.into_owned())).eq(std::iter::once(("q".into(),search.query.clone())))
+    url.origin().ascii_serialization()==search.origin&&url.path()==search.path&&url.username().is_empty()&&url.password().is_none()&&url.fragment().is_none()&&url.query_pairs().map(|(k,v)|(k.into_owned(),v.into_owned())).eq(std::iter::once(("q".into(),search.query.clone())))
 }
 /// Require the same bounded provider receipt from navigation and immutable read.
 fn public_search_receipt(body:&serde_json::Value)->Result<serde_json::Value,String>{
@@ -395,13 +398,13 @@ fn prompt_browser_source(saved:&super::research_desktop::ResearchBrowserEvidence
 }
 fn public_search_failure(reason:Option<&str>)->&'static str{
     match reason{
-        Some("PUBLIC_SEARCH_CAPTCHA_REQUIRED")=>"Google requires human verification. No search evidence was accepted. Retry manually in your browser.",
-        Some("PUBLIC_SEARCH_CONSENT_REQUIRED")=>"Google requires additional consent. Lu did not accept it on your behalf.",
-        Some("PUBLIC_SEARCH_LOGIN_REQUIRED")=>"Google requires sign-in. Lu did not submit credentials or accept search evidence.",
+        Some("PUBLIC_SEARCH_CAPTCHA_REQUIRED")=>"The selected search provider requires human verification. No search evidence was accepted. Retry manually in your browser.",
+        Some("PUBLIC_SEARCH_CONSENT_REQUIRED")=>"The selected search provider requires additional consent. Lu did not accept it on your behalf.",
+        Some("PUBLIC_SEARCH_LOGIN_REQUIRED")=>"The selected search provider requires sign-in. Lu did not submit credentials or accept search evidence.",
         Some("PUBLIC_SEARCH_OFFLINE")=>"Public search is unavailable: the provider could not be reached securely.",
         Some("PUBLIC_SEARCH_PRIVATE_ADDRESS")=>"Public search blocked an unsafe provider address.",
-        Some("PUBLIC_SEARCH_REDIRECT_BLOCKED")=>"Google redirected the request. Lu did not follow it; no search evidence was accepted.",
-        Some("PUBLIC_SEARCH_PROVIDER_SCRIPT_REQUIRED")=>"Google requires an interactive browser. Lu did not execute provider scripts or accept search evidence.",
+        Some("PUBLIC_SEARCH_REDIRECT_BLOCKED")=>"The selected search provider redirected the request. Lu did not follow it; no search evidence was accepted.",
+        Some("PUBLIC_SEARCH_PROVIDER_SCRIPT_REQUIRED")=>"The selected search provider requires an interactive browser. Lu did not execute provider scripts or accept search evidence. For Google, you can manually use your browser or submit a new DuckDuckGo search for separate approval.",
         Some("PUBLIC_SEARCH_NO_RESULTS")=>"No recognizable search results were observed. No answer was synthesized.",
         _=>"Public search did not return verifiable result evidence. No answer was synthesized.",
     }
@@ -433,7 +436,7 @@ pub(crate) async fn lu_generate_browser(
         browser_origin_list(&origins)?
     ).map_err(|_|"Browser research requires exact public HTTPS origins")?;
     let search=public_search_intent(&prompt)?;
-    if search.is_some()&&scope.origins()!=vec![PUBLIC_SEARCH_ORIGIN.to_owned()]{return Err("Public search requires the host-selected provider".into());}
+    if search.as_ref().is_some_and(|search|scope.origins()!=vec![search.origin.to_owned()]){return Err("Public search requires the host-selected provider".into());}
     let owner=Arc::clone(state.inner());
     owner.browser_runtime.require_launch_ready()?;
     if owner.browser_grant.lock().map_err(|_|"Browser grant unavailable")?.is_some(){
@@ -883,7 +886,7 @@ mod tests{
     // exercises production runtime admission/custody, not the interactive
     // Tauri dialog. No fixture provider or fake inference is accepted.
     #[test]
-    #[ignore = "requires source-current reviewed browser, native OS custody, live Google and pinned genuine engine/model"]
+    #[ignore = "requires source-current reviewed browser, native OS custody, explicitly selected live provider and pinned genuine engine/model"]
     fn cp04b2_live_protected_provider_and_genuine_gguf(){
         use lu_core::{browser_preferences::BrowserPreferences,
             browser_visibility_settings::BrowserVisibilityPreference,
@@ -902,7 +905,7 @@ mod tests{
             browser.require_launch_ready().map_err(|e|format!("RUNTIME_GATE: {e}"))?;
             let prefs=BrowserPreferences::open(&root.join("preferences.sqlite")).map_err(|e|format!("{e:?}"))?;
             prefs.set_visibility(BrowserVisibilityPreference::AlwaysVisible).map_err(|e|format!("{e:?}"))?;
-            let prompt="google Rust programming language";
+            let prompt=match std::env::var("LU_CP04_LIVE_PROVIDER").as_deref(){Ok("duckduckgo")=>"duckduckgo Rust programming language",Ok("google")|Err(std::env::VarError::NotPresent)=>"google Rust programming language",_=>return Err("Unsupported explicit live acceptance provider".into())};
             let search=public_search_intent(prompt)?.ok_or("fixed public intent missing")?;
             let chats=ChatStore::open(&root)?;
             let chat_id=chats.create_chat()?.chat_id;
@@ -916,7 +919,7 @@ mod tests{
                     tool_id:BROWSER_READ_TOOL.into(),effect:ToolEffect::NetworkRead,
                 }],expires_at:Some(SystemTime::now()+Duration::from_secs(600)),
             },&chats).map_err(|e|format!("AUTHORITY_GATE: {e:?}"))?;
-            browser.launch_for_native_grant(vec![PUBLIC_SEARCH_ORIGIN.to_owned()],&prefs,&chat_id,&gid,&task_id,true)
+            browser.launch_for_native_grant(vec![search.origin.to_owned()],&prefs,&chat_id,&gid,&task_id,true)
                 .map_err(|e|format!("PROTECTED_BROWSER_LAUNCH_GATE: {e}"))?;
             let policy=Arc::new(BrowserReadOnlyPolicy);
             let registry=NativeToolRegistry::new();
@@ -924,7 +927,7 @@ mod tests{
             register_scoped_browser_tools(&registry,&mut catalog,ScopedBrowserTask{
                 authority:authority.clone(),origin:BoundCallOrigin{
                     conversation_id:chat_id.clone(),user_turn_id:gid.clone(),task_id:task_id.clone(),
-                },scope:BrowserOriginScope::from_host_grant(vec![PUBLIC_SEARCH_ORIGIN.to_owned()]).map_err(|e|format!("{e:?}"))?,
+                },scope:BrowserOriginScope::from_host_grant(vec![search.origin.to_owned()]).map_err(|e|format!("{e:?}"))?,
                 policy:policy.clone(),runner:Arc::clone(&browser) as Arc<dyn lu_core::native_browser_tool::BrowserTaskRunner>,
             }).map_err(|e|format!("REGISTRY_GATE: {e:?}"))?;
             let allowed=BTreeSet::from([BROWSER_READ_TOOL.to_owned()]);
@@ -955,6 +958,7 @@ mod tests{
             }
             let (record,source)=prompt_browser_source(&saved,text,receipt.as_ref())?;
             if !browser.stop()?{return Err("protected browser cleanup not verified".into())}
+            println!("CP04B2_LIVE_PROVIDER_ORIGIN {}",search.origin);
             println!("CP04B2_LIVE_PROVIDER_PASS receipt={}",receipt.as_ref().unwrap());
             let pinned=|name:&str,hash_name:&str|->Result<(PathBuf,[u8;32]),String>{
                 let path=PathBuf::from(std::env::var(name).map_err(|_|format!("missing {name}"))?);
@@ -1003,6 +1007,12 @@ mod tests{
     }
     #[test]
     fn cp04_public_search_literal_query(){
+        let ddg=public_search_intent("search DuckDuckGo for: 温度 & C++").unwrap().unwrap();
+        assert_eq!(ddg.origin,HTML_SEARCH_ORIGIN);
+        assert_eq!(ddg.url,"https://html.duckduckgo.com/html/?q=%E6%B8%A9%E5%BA%A6%20%26%20C%2B%2B");
+        assert!(search_result_matches(&ddg,&ddg.url));
+        assert!(!search_result_matches(&ddg,"https://www.google.com/search?q=%E6%B8%A9%E5%BA%A6%20%26%20C%2B%2B"));
+        assert!(public_search_intent("do not duckduckgo rain").unwrap().is_none());
         let a=public_search_intent("Please search the web for: 温度 & C++").unwrap().unwrap();
         assert_eq!(a.url,"https://www.google.com/search?q=%E6%B8%A9%E5%BA%A6%20%26%20C%2B%2B");
         assert!(search_result_matches(&a,&a.url));

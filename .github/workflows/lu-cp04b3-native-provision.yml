@@ -1,9 +1,18 @@
-name: Lu CP-04B3 repaired protected search runtime provisioning
+name: Lu CP-04B3 HTML provider provisioning (Google gate separate)
 on:
   push:
     branches: [lu/cp01-attachment-transaction-20261116]
     paths: ['.github/workflows/lu-cp04b3-native-provision.yml']
   workflow_dispatch:
+    inputs:
+      google_live:
+        description: "Run strict Google live gate (known script-required interstitial)"
+        type: boolean
+        default: false
+      rebuild_engine:
+        description: "Rebuild already verified pinned engine and model"
+        type: boolean
+        default: false
 permissions:
   contents: read
 concurrency:
@@ -62,18 +71,29 @@ jobs:
           if-no-files-found: error
           retention-days: 14
           compression-level: 0
-      - name: Actual Google provider compatibility (not protected production custody)
+      - name: Actual DuckDuckGo HTML provider compatibility (not protected production custody)
         shell: pwsh
         run: |
           $ErrorActionPreference='Stop'
           New-Item -ItemType Directory -Force cp04b3-provider-evidence|Out-Null
           $env:LU_CP04B_PLAYWRIGHT_MODULE=([uri](Resolve-Path 'out/lu-browser-candidate/node_modules/playwright/index.mjs').Path).AbsoluteUri
           $env:LU_CP04B_CHROMIUM=(Resolve-Path 'out/lu-browser-candidate/chrome.exe').Path
-          $env:LU_CP04B_LIVE_PUBLIC_SEARCH='1'
+          $env:LU_CP04B_LIVE_HTML_SEARCH='1'
           node --test tests/lu-public-search.test.mjs 2>&1 | Tee-Object -FilePath cp04b3-provider-evidence/live-provider.log
           $result=$LASTEXITCODE
           if($result -ne 0){throw 'Live provider or controlled browser gate failed, no live acceptance'}
-          if(-not(Select-String -Path cp04b3-provider-evidence/live-provider.log -Pattern '^ok [0-9]+ - live Google provider must return genuine bounded results$')){throw 'No non-skipped live provider pass'}
+          if(-not(Select-String -Path cp04b3-provider-evidence/live-provider.log -Pattern '^ok [0-9]+ - live DuckDuckGo HTML provider must return genuine bounded results$')){throw 'No non-skipped live provider pass'}
+      - name: Strict Google compatibility probe (separate, opt-in; not cleared by HTML provider)
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.google_live }}
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $env:LU_CP04B_PLAYWRIGHT_MODULE=([uri](Resolve-Path 'out/lu-browser-candidate/node_modules/playwright/index.mjs').Path).AbsoluteUri
+          $env:LU_CP04B_CHROMIUM=(Resolve-Path 'out/lu-browser-candidate/chrome.exe').Path
+          $env:LU_CP04B_LIVE_PUBLIC_SEARCH='1'
+          node --test --test-name-pattern='^live Google provider must return genuine bounded results$' tests/lu-public-search.test.mjs 2>&1 | Tee-Object -FilePath cp04b3-provider-evidence/live-google.log
+          if($LASTEXITCODE -ne 0){throw 'Google remains unavailable; no Google acceptance'}
+          if(-not(Select-String -Path cp04b3-provider-evidence/live-google.log -Pattern '^ok [0-9]+ - live Google provider must return genuine bounded results$')){throw 'No non-skipped Google pass'}
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -81,7 +101,54 @@ jobs:
           path: cp04b3-provider-evidence/
           if-no-files-found: warn
           retention-days: 14
+  native-provider-routing:
+    runs-on: windows-2025
+    timeout-minutes: 100
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - name: Verify exact source, build genuine frontend and stage compile-only engine placeholders
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p cp04-native-evidence
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          node scripts/verify-source-tree.mjs | tee cp04-native-evidence/source-lock.log
+          npm --prefix lu-desktop ci
+          npm --prefix lu-desktop run build
+          npm --prefix lu-desktop run check
+          root=lu-desktop/src-tauri/resources/lu-inference
+          for name in llama-server.exe msvcp140.dll vcruntime140.dll vcruntime140_1.dll; do
+            test ! -e "$root/$name"
+            printf 'NOT_AN_ENGINE_CP04_SOURCE_TEST_PLACEHOLDER' > "$root/$name"
+          done
+      - name: Execute native routing and browser authority regressions (live reviewed gate separate)
+        shell: bash
+        run: |
+          set -euo pipefail
+          for suite in browser_model_desktop::tests native_browser_host::tests; do
+            cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib "$suite" 2>&1 | tee "cp04-native-evidence/${suite%%::*}.log"
+            grep -Eq '^test result: ok\. [1-9][0-9]* passed; 0 failed;' "cp04-native-evidence/${suite%%::*}.log"
+          done
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lu-cp04-native-routing-${{ github.sha }}
+          path: cp04-native-evidence/
+          if-no-files-found: warn
+          retention-days: 14
+  # Exact engine/model provisioner unchanged. Reuse the prior native generation
+  # receipt and artifact from #44261533230; no redundant rebuild.
   engine-and-model:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.rebuild_engine }}
     runs-on: windows-2025
     timeout-minutes: 100
     steps:

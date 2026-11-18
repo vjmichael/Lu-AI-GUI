@@ -6,7 +6,8 @@ param(
   [Parameter(Mandatory=$true)][ValidatePattern('^[a-fA-F0-9]{64}$')][string]$EngineSha256,
   [Parameter(Mandatory=$true)][string]$ModelPath,
   [Parameter(Mandatory=$true)][ValidatePattern('^[a-fA-F0-9]{64}$')][string]$ModelSha256,
-  [Parameter(Mandatory=$true)][string]$EvidencePath
+  [Parameter(Mandatory=$true)][string]$EvidencePath,
+  [ValidateSet('google','duckduckgo')][string]$Provider='google'
 )
 $ErrorActionPreference='Stop'
 if($env:OS -ne 'Windows_NT'){throw 'Requires network-capable native Windows'}
@@ -52,15 +53,17 @@ try {
     if(-not(Test-Path -LiteralPath $resources[$name] -PathType Leaf)){throw "Missing genuine resource $name"}
     Copy-Item -LiteralPath $resources[$name] -Destination $path;$owned+= $path
   }
-  $env:LU_CP04B2_LIVE_ACCEPTANCE='1';$env:LU_SERVER_EXE=$EnginePath;$env:LU_SERVER_SHA256=$EngineSha256
+  $env:LU_CP04B2_LIVE_ACCEPTANCE='1';$env:LU_CP04_LIVE_PROVIDER=$Provider;$env:LU_SERVER_EXE=$EnginePath;$env:LU_SERVER_SHA256=$EngineSha256
   $env:LU_TEST_GGUF=$ModelPath;$env:LU_TEST_GGUF_SHA256=$ModelSha256;$env:LU_SERVER_API_KEY=[guid]::NewGuid().ToString('N')
   cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib cp04b2_live_protected_provider_and_genuine_gguf -- --ignored --nocapture 2>&1|Tee-Object -FilePath $EvidencePath
   if($LASTEXITCODE -ne 0){throw 'Protected native live provider-to-GGUF gate failed'}
+  $origin=if($Provider -eq 'google'){'https://www.google.com'}else{'https://html.duckduckgo.com'}
+  if(-not(Select-String -LiteralPath $EvidencePath -SimpleMatch ('CP04B2_LIVE_PROVIDER_ORIGIN '+$origin))){throw 'Live provider identity receipt missing'}
   if(-not(Select-String -LiteralPath $EvidencePath -Pattern 'CP04B2_LIVE_PROVIDER_PASS receipt=' ) -or -not(Select-String -LiteralPath $EvidencePath -Pattern 'CP04B2_GENUINE_GGUF_CITATION_PASS') -or -not(Select-String -LiteralPath $EvidencePath -Pattern 'test result: ok\. 1 passed; 0 failed;')){throw 'Missing actual native browser or GGUF receipt'}
 } finally {
   foreach($path in $owned){Remove-Item -LiteralPath $path -Force}
   if($staged){Remove-Item -LiteralPath $root -Recurse -Force;New-Item -ItemType Directory -Path $root|Out-Null;[IO.File]::WriteAllBytes($stub,$restoreManifest)}
   if($reviewed -and (Test-Path -LiteralPath $reviewed)){Remove-Item -LiteralPath $reviewed -Recurse -Force}
-  foreach($name in @('LU_BROWSER_CANDIDATE_DIR','LU_BROWSER_REVIEWED_OUT','LU_BROWSER_PACKAGE_DIR','LU_BROWSER_MANIFEST_SHA256','LU_CP04B2_LIVE_ACCEPTANCE','LU_SERVER_EXE','LU_SERVER_SHA256','LU_TEST_GGUF','LU_TEST_GGUF_SHA256','LU_SERVER_API_KEY')){Remove-Item "Env:$name" -ErrorAction SilentlyContinue}
+  foreach($name in @('LU_BROWSER_CANDIDATE_DIR','LU_BROWSER_REVIEWED_OUT','LU_BROWSER_PACKAGE_DIR','LU_BROWSER_MANIFEST_SHA256','LU_CP04B2_LIVE_ACCEPTANCE','LU_CP04_LIVE_PROVIDER','LU_SERVER_EXE','LU_SERVER_SHA256','LU_TEST_GGUF','LU_TEST_GGUF_SHA256','LU_SERVER_API_KEY')){Remove-Item "Env:$name" -ErrorAction SilentlyContinue}
   Pop-Location
 }

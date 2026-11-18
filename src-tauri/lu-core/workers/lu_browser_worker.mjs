@@ -22,14 +22,16 @@ export function approvedUrl(value, origins) {
   return url;
 }
 // CP-04B: public search is a deliberately narrower transport than general
-// browsing. Only the exact host-approved Google query goes on the wire. No
+// browsing. Only the exact host-approved provider query goes on the wire. No
 // cookies, proxy, redirect follow, page-controlled networking or request body.
 const SEARCH_ORIGIN='https://www.google.com';
+const HTML_SEARCH_ORIGIN='https://html.duckduckgo.com';
+const SEARCH_PROVIDERS=new Map([[SEARCH_ORIGIN,'/search'],[HTML_SEARCH_ORIGIN,'/html/']]);
 const SEARCH_MAX_BYTES=2*1024*1024;
 export function exactPublicSearchUrl(value) {
-  const url=approvedUrl(value,new Set([SEARCH_ORIGIN]));
+  const url=approvedUrl(value,new Set(SEARCH_PROVIDERS.keys()));
   const pairs=[...url.searchParams];
-  if(url.pathname!=='/search'||url.hash||pairs.length!==1||pairs[0][0]!=='q'||
+  if(url.pathname!==SEARCH_PROVIDERS.get(url.origin)||url.hash||pairs.length!==1||pairs[0][0]!=='q'||
      !pairs[0][1].trim()||Buffer.byteLength(pairs[0][1])>512||/[\x00-\x1f\x7f]/.test(pairs[0][1]))
     throw new BrowserGateError('PUBLIC_SEARCH_INVALID_QUERY');
   return url;
@@ -45,11 +47,12 @@ export function isPublicSearchIpv4(address) {
     !(a===198&&(b===18||b===19||(b===51&&c===100)))&&
     !(a===203&&b===0&&c===113);
 }
-export async function resolvePublicSearchAddress(resolve=lookup) {
+export async function resolvePublicSearchAddress(resolve=lookup,hostname='www.google.com') {
+  if(![...SEARCH_PROVIDERS.keys()].some(origin=>new URL(origin).hostname===hostname))throw new BrowserGateError('PUBLIC_SEARCH_PROVIDER_NOT_GRANTED');
   let timer;
   try {
     const records=await Promise.race([
-      resolve('www.google.com',{family:4,all:true,verbatim:true}),
+      resolve(hostname,{family:4,all:true,verbatim:true}),
       new Promise((_,reject)=>{timer=setTimeout(()=>reject(new BrowserGateError('PUBLIC_SEARCH_OFFLINE')),5000);})
     ]);
     if(!Array.isArray(records)||!records.length||records.length>64||
@@ -63,7 +66,7 @@ export async function resolvePublicSearchAddress(resolve=lookup) {
 }
 export async function fetchPinnedPublicSearch(value,{resolve=lookup,request=httpsRequest}={}) {
   const url=exactPublicSearchUrl(value);
-  const address=await resolvePublicSearchAddress(resolve);
+  const address=await resolvePublicSearchAddress(resolve,url.hostname);
   return await new Promise((resolveResult,reject)=>{
     let req,timer,settled=false;
     const finish=(error,result)=>{if(settled)return;settled=true;clearTimeout(timer);if(error){req?.destroy();reject(error);}else resolveResult(result);};
@@ -71,7 +74,7 @@ export async function fetchPinnedPublicSearch(value,{resolve=lookup,request=http
     timer=setTimeout(()=>fail('PUBLIC_SEARCH_OFFLINE'),12000);
     try {
       // This lookup returns precisely the checked address, not a second DNS
-      // lookup. TLS authenticates the original www.google.com hostname/SNI.
+      // lookup. TLS authenticates the original provider hostname/SNI.
       req=request({protocol:'https:',hostname:url.hostname,servername:url.hostname,
         port:443,path:url.pathname+url.search,method:'GET',agent:false,
         family:4,autoSelectFamily:false,rejectUnauthorized:true,
@@ -109,13 +112,19 @@ export function displayedSearchTarget(href,base) {
   if(typeof href!=='string'||!href.length||href.length>8192)return null;
   try {
     let target=new URL(href,base);
-    if(target.origin===SEARCH_ORIGIN&&target.pathname==='/url'){
+    if(new URL(base).origin===SEARCH_ORIGIN&&target.origin===SEARCH_ORIGIN&&target.pathname==='/url'){
       const values=[...target.searchParams].filter(([key])=>key==='q'||key==='url');
       if(values.length!==1)return null;
       target=new URL(values[0][1]);
     }
+    if(new URL(base).origin===HTML_SEARCH_ORIGIN&&target.protocol==='https:'&&!target.username&&!target.password&&!target.port&&
+      ['https://duckduckgo.com',HTML_SEARCH_ORIGIN].includes(target.origin)&&target.pathname==='/l/') {
+      const values=target.searchParams.getAll('uddg');
+      if(values.length!==1)return null;
+      target=new URL(values[0]);
+    }
     if(target.protocol!=='https:'||target.username||target.password||target.port||
-      target.hostname==='www.google.com'||target.href.length>2048||isIP(target.hostname.replace(/^\[|\]$/g,''))||
+      target.hostname==='www.google.com'||target.hostname==='duckduckgo.com'||target.hostname.endsWith('.duckduckgo.com')||target.href.length>2048||isIP(target.hostname.replace(/^\[|\]$/g,''))||
       !target.hostname.includes('.')||/(?:\.local|\.internal|\.localhost|\.home\.arpa)$/.test(target.hostname))return null;
     return target.href;
   }catch{return null;}
@@ -211,7 +220,7 @@ export class BrowserSession {
     }
     this.profileDirectory = profileDirectory; // host owns path and access control
     this.publicSearchOnly=basename(profileDirectory)==='lu-browser-public-search-profile';
-    if(this.publicSearchOnly&&(this.origins.size!==1||!this.origins.has(SEARCH_ORIGIN)))
+    if(this.publicSearchOnly&&(this.origins.size!==1||!SEARCH_PROVIDERS.has([...this.origins][0])))
       throw new BrowserGateError('PUBLIC_SEARCH_PROVIDER_NOT_GRANTED');
     this.chromiumProvider = chromiumProvider;
     this.softwareRendering = softwareRendering === true;
@@ -333,17 +342,17 @@ export class BrowserSession {
       // provider page. No response script, link, iframe or form is attached
       // to the live document; the entire isolated context is offline.
       const source=new TextDecoder('utf-8',{fatal:true}).decode(fetched.body);
-      const parsed=await page.evaluate(html=>{
+      const parsed=await page.evaluate(({html,provider})=>{
         const doc=new DOMParser().parseFromString(html,'text/html');
         // Count structure, not body text, for bounded failure diagnostics.
         const count=selector=>Math.min(1000,doc.querySelectorAll(selector).length);
         const structure={anchors:count('a[href]'),h3:count('h3'),roleHeadings:count('[role="heading"]'),
           legacyHeadings:count('.BNeawe.vvjwJb'),scripts:count('script')};
-        const servicePath=raw=>{try{const u=new URL(raw,'https://www.google.com');
-          return u.origin==='https://www.google.com'?u.pathname:'';}catch{return '';}};
+        const servicePath=raw=>{try{const u=new URL(raw,provider);
+          return u.origin===provider?u.pathname:'';}catch{return '';}};
         const serviceLinks=Array.from(doc.querySelectorAll('a[href]')).slice(0,1000).map(a=>servicePath(a.getAttribute('href')));
         const retryLink=serviceLinks.some(path=>['/httpservice/retry/enablejs','/httpservice/retry'].includes(path));
-        const captcha=serviceLinks.some(path=>path.startsWith('/sorry/'))||doc.querySelector('iframe[src*="/recaptcha/api2"],iframe[src*="hcaptcha.com"],iframe[src*="challenges.cloudflare.com"],[data-sitekey].h-captcha,form[action*="/sorry/"]');
+        const captcha=serviceLinks.some(path=>path.startsWith('/sorry/'))||doc.querySelector('iframe[src*="/recaptcha/api2"],iframe[src*="hcaptcha.com"],iframe[src*="challenges.cloudflare.com"],[data-sitekey].h-captcha,form[action*="/sorry/"],form[action*="anomaly.js"],#anomaly-modal,.anomaly-modal');
         const login=doc.querySelector('input[type="password"]');
         doc.querySelectorAll('script,style,template,noscript').forEach(el=>el.remove());
         const bodyText=(doc.body?.textContent||'').slice(0,120000);
@@ -357,6 +366,17 @@ export class BrowserSession {
         // Recognize semantic headings in either anchor nesting direction and
         // Google's legacy basic-HTML title markup. Arbitrary body links are
         // never promoted to search results merely because they are external.
+        if(provider==='https://html.duckduckgo.com'){
+          for(const a of Array.from(doc.querySelectorAll('.result .result__a[href]')).slice(0,100)){
+            const card=a.closest('.result');
+            if(!card||hidden(a)||hidden(card)||card.matches('.result--ad,.result--sponsored,[data-ad]')||card.querySelector('.result__badge,.result__ad'))continue;
+            const title=clean(a.textContent,240);
+            if(!title)continue;
+            const snippet=card.querySelector('.result__snippet');
+            candidates.push({href:(a.getAttribute('href')||'').slice(0,8193),title,snippet:snippet&&!hidden(snippet)?clean(snippet.textContent,320):''});
+          }
+          return {bodyText,gate,structure,candidates};
+        }
         const headings=doc.querySelectorAll('h3,[role="heading"][aria-level="3"],[role="heading"][aria-level="2"],.BNeawe.vvjwJb');
         for(const title of Array.from(headings).slice(0,100)){
           const a=title.closest('a[href]')||title.querySelector('a[href]');
@@ -374,7 +394,7 @@ export class BrowserSession {
           candidates.push({href,title:label,snippet:snippet&&!hidden(snippet)?clean(snippet.textContent,320):''});
         }
         return {bodyText,gate,structure,candidates};
-      },source);
+      },{html:source,provider:url.origin});
       diagnostic={schema:'lu-public-search-structure-v1',httpStatus:fetched.status,bodyBytes:fetched.body.length,
         bodySha256:fetched.bodySha256,...parsed.structure,candidates:parsed.candidates.length};
       const textGate=challengeKind(parsed.bodyText);

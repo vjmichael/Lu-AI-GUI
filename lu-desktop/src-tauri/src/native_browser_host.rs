@@ -270,7 +270,7 @@ impl DesktopBrowserHost {
         // The browser profile is in Lu app data, never inside installed
         // resources and never selected by a model response.
         let profile=self.app_data.join(if public_search{PUBLIC_SEARCH_PROFILE}else{GENERAL_PROFILE});
-        if public_search&&approved_origins!=vec![super::browser_model_desktop::PUBLIC_SEARCH_ORIGIN.to_owned()]{return Err("Public search profile requires the exact provider grant".into());}
+        if public_search&&(approved_origins.len()!=1||!super::browser_model_desktop::is_public_search_origin(&approved_origins[0])){return Err("Public search profile requires the exact provider grant".into());}
         std::fs::create_dir_all(&profile)
             .map_err(|e|format!("cannot initialize browser profile: {e}"))?;
         let metadata=std::fs::symlink_metadata(&profile)

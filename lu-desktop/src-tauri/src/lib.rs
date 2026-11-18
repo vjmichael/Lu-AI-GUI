@@ -3037,7 +3037,7 @@ async fn start_browser_for_exact_turn(
     owner.browser_runtime.require_launch_ready()?;
     let persisted=owner.chats.trusted_user_turn_text(&chat_id,&turn_id).ok_or("Browser turn is no longer authenticated")?;
     let search=browser_model_desktop::public_search_intent(&persisted)?;
-    if search.is_some()&&allowed!=vec![browser_model_desktop::PUBLIC_SEARCH_ORIGIN.to_owned()]{return Err("Public search provider differs from the original turn".into());}
+    if search.as_ref().is_some_and(|search|allowed!=vec![search.origin.to_owned()]){return Err("Public search provider differs from the original turn".into());}
     {
         let existing=owner.browser_grant.lock()
             .map_err(|_|"Browser grant unavailable")?;
@@ -3051,7 +3051,7 @@ async fn start_browser_for_exact_turn(
         allowed.join("\n")
     );
     let public_search=search.is_some();
-    let prompt=if let Some(search)=search{format!("Send this exact public search query to Google?\n\n{}\n\n{}\n\nNo chat history, local file, cookies or account credentials are included. Result links are not opened. If Google requires sign-in, consent or human verification, this search stops without claiming results.",allowed.join("\n"),search.query)}else{prompt};
+    let prompt=if let Some(search)=search{format!("Send this exact public search query to {}?\n\n{}\n\n{}\n\nNo chat history, local file, cookies or account credentials are included. Result links are not opened. If the provider requires sign-in, consent, scripts or human verification, this search stops without claiming results.",search.provider,allowed.join("\n"),search.query)}else{prompt};
     let approved=tauri::async_runtime::spawn_blocking(move||{
         app.dialog().message(prompt).title("Lu — Read-only Browser grant")
             .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom(
@@ -5389,8 +5389,8 @@ async fn lu_generate_impl(
     // for the exact origin; URLs in prompt text confer no authority.
     if !read_only_workspace.unwrap_or(false) && image_refs.is_empty()
         && max_new_tokens==512 {
-        if browser_model_desktop::public_search_intent(&prompt)?.is_some(){
-            return browser_model_desktop::lu_generate_browser(app,state,session_id,chat_id,prompt,browser_model_desktop::PUBLIC_SEARCH_ORIGIN.into(),512).await;
+        if let Some(search)=browser_model_desktop::public_search_intent(&prompt)?{
+            return browser_model_desktop::lu_generate_browser(app,state,session_id,chat_id,prompt,search.origin.into(),512).await;
         }
         if let Some(origin)=browser_model_desktop::explicit_browse_origin(&prompt){
             return browser_model_desktop::lu_generate_browser(

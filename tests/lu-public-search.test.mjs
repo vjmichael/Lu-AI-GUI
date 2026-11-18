@@ -11,6 +11,8 @@ import {BrowserSession, BrowserGateError, exactPublicSearchUrl, isPublicSearchIp
   resolvePublicSearchAddress, fetchPinnedPublicSearch, displayedSearchTarget} from '../src-tauri/lu-core/workers/lu_browser_worker.mjs';
 
 const url='https://www.google.com/search?q=Rust%20programming%20language';
+const ddgUrl='https://html.duckduckgo.com/html/?q=Rust%20programming%20language';
+const ddgOrigin='https://html.duckduckgo.com';
 const ip='142.250.80.4';
 const publicDns=async()=>[{address:ip,family:4}];
 const html='<html><body><div><a href="https://www.rust-lang.org/"><h3>Rust programming language</h3></a><p>Build reliable software.</p></div></body></html>';
@@ -68,7 +70,7 @@ test('displayed Google redirect links are unwrapped as data, never followed',()=
 // Opt-in real Chromium, with a controlled provider response. This is not
 // Google connectivity or installed OS worker-custody acceptance.
 const realModule=process.env.LU_CP04B_PLAYWRIGHT_MODULE;
-async function withRealSearchBrowser(fetcher,run){
+async function withRealSearchBrowser(fetcher,run,provider='https://www.google.com'){
   const {chromium}=await import(realModule);
   const profile=await mkdtemp(join(tmpdir(),'lu-cp04b-real-'));
   const searchProfile=join(profile,'lu-browser-public-search-profile');await mkdir(searchProfile);
@@ -83,12 +85,12 @@ async function withRealSearchBrowser(fetcher,run){
       if(!endpoint)await delay(50);
     }
     assert.ok(endpoint,'real local CDP startup');
-    session=new BrowserSession({origins:['https://www.google.com'],profileDirectory:searchProfile,chromiumProvider:chromium,
+    session=new BrowserSession({origins:[provider],profileDirectory:searchProfile,chromiumProvider:chromium,
       cdpEndpoint:endpoint,visibilityMode:'always-visible',...(fetcher?{publicSearchFetcher:fetcher}:{})});
     await session.start();await run(session);
   }finally{try{await session?.close();}finally{child.kill();await new Promise(resolve=>{if(child.exitCode!==null||child.signalCode!==null)resolve();else child.once('exit',resolve);});await rm(profile,{recursive:true,force:true,maxRetries:5,retryDelay:100});}}
 }
-const fixtureFetcher=html=>async value=>{assert.equal(value,url);const body=Buffer.from(html);return {body,status:200,bodySha256:createHash('sha256').update(body).digest('hex')};};
+const fixtureFetcher=(html,expected=url)=>async value=>{assert.equal(value,expected);const body=Buffer.from(html);return {body,status:200,bodySha256:createHash('sha256').update(body).digest('hex')};};
 test('public-search profile fails closed without CDP and exact provider',()=>{
   const profileDirectory=join(tmpdir(),'lu-browser-public-search-profile');
   assert.throws(()=>new BrowserSession({origins:['https://www.google.com'],profileDirectory}),e=>e.code==='PUBLIC_SEARCH_ISOLATION_UNAVAILABLE');
@@ -152,4 +154,46 @@ test('live Google provider must return genuine bounded results',{skip:!realModul
     const read=await session.execute({op:'read'});assert.equal(read.status,'READ');assert.deepEqual(read.publicSearch,nav.publicSearch);
     assert.ok(read.publicSearch.resultCount>0);assert.equal(read.publicSearch.observedSha256,createHash('sha256').update(read.text).digest('hex'));
   });
+});
+
+// Explicit, separately granted HTML provider; no fallback from Google.
+test('DuckDuckGo exact HTML provider and pinned TLS request are independently constrained',async()=>{
+  assert.equal(exactPublicSearchUrl(ddgUrl).href,ddgUrl);
+  for(const bad of [ddgUrl+'&q=changed',ddgUrl+'&extra=private',ddgUrl+'#secret',ddgUrl.replace('/html/','/'),ddgUrl.replace('html.duckduckgo.com','duckduckgo.com'),ddgUrl.replace('html.duckduckgo.com','html.duckduckgo.com.evil.test')])assert.throws(()=>exactPublicSearchUrl(bad),BrowserGateError);
+  const mock=transportMock();
+  await fetchPinnedPublicSearch(ddgUrl,{resolve:async(host,options)=>{assert.equal(host,'html.duckduckgo.com');assert.equal(options.family,4);return publicDns();},request:mock.request});
+  assert.equal(mock.calls.length,1);assert.equal(mock.calls[0].hostname,'html.duckduckgo.com');assert.equal(mock.calls[0].servername,'html.duckduckgo.com');assert.equal(mock.calls[0].path,'/html/?q=Rust%20programming%20language');assert.equal(mock.calls[0].rejectUnauthorized,true);
+  const redirected=transportMock({status:302,headers:{location:url}});await assert.rejects(fetchPinnedPublicSearch(ddgUrl,{resolve:publicDns,request:redirected.request}),e=>e.code==='PUBLIC_SEARCH_REDIRECT_BLOCKED');assert.equal(redirected.calls.length,1);
+  const privateMock=transportMock();await assert.rejects(fetchPinnedPublicSearch(ddgUrl,{resolve:async()=>[{address:'127.0.0.1',family:4}],request:privateMock.request}),e=>e.code==='PUBLIC_SEARCH_PRIVATE_ADDRESS');assert.equal(privateMock.calls.length,0);
+  await assert.rejects(resolvePublicSearchAddress(publicDns,'evil.example'),e=>e.code==='PUBLIC_SEARCH_PROVIDER_NOT_GRANTED');
+  assert.throws(()=>new BrowserSession({origins:[ddgOrigin,'https://www.google.com'],profileDirectory:join(tmpdir(),'lu-browser-public-search-profile'),cdpEndpoint:'http://127.0.0.1:9222'}),e=>e.code==='PUBLIC_SEARCH_PROVIDER_NOT_GRANTED');
+});
+test('DuckDuckGo redirect labels do not authorize or visit result links',()=>{
+  const wrapper='//duckduckgo.com/l/?uddg=https%3A%2F%2Fwww.rust-lang.org%2F';
+  assert.equal(displayedSearchTarget(wrapper,ddgUrl),'https://www.rust-lang.org/');assert.equal(displayedSearchTarget(wrapper,url),null);
+  for(const bad of [wrapper+'&uddg=https://example.org','//duckduckgo.com/l/?uddg=http%3A%2F%2F127.0.0.1','//duckduckgo.com/l/?uddg=https%3A%2F%2F127.0.0.1','//duckduckgo.com/l/?uddg=https%3A%2F%2Fhtml.duckduckgo.com%2F','//user@duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com','https://www.google.com/url?q=https%3A%2F%2Fexample.com'])assert.equal(displayedSearchTarget(bad,ddgUrl),null,bad);
+});
+const ddgHtml=`<html><body><div class="result"><a class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fwww.rust-lang.org%2F">Rust language</a><a class="result__snippet">Build reliable software.</a></div><div class="result result--ad"><a class="result__a" href="https://example.com/ad">Advert</a></div><div hidden class="result"><a class="result__a" href="https://example.com/hidden">Hidden</a></div><a href="https://example.com/unrelated">Unrelated</a><script>fetch('https://example.com/private')</script></body></html>`;
+test('real Chromium isolates DuckDuckGo organic results and rejects cross-provider dispatch', {skip:!realModule,timeout:30000},async()=>{
+  let count=0;
+  await withRealSearchBrowser(async value=>{count++;return fixtureFetcher(ddgHtml,ddgUrl)(value);},async session=>{
+    await assert.rejects(session.execute({op:'navigate',url}),e=>e.code==='ORIGIN_NOT_GRANTED');assert.equal(count,0);
+    const nav=await session.execute({op:'navigate',url:ddgUrl});assert.equal(nav.status,'SEARCH_OBSERVED',JSON.stringify(nav));assert.equal(nav.publicSearch.resultCount,1);
+    const read=await session.execute({op:'read'});assert.equal(read.url,ddgUrl);assert.deepEqual(read.publicSearch,nav.publicSearch);assert.match(read.text,/Rust language/);assert.match(read.text,/Build reliable software/);assert.doesNotMatch(read.text,/Advert|Hidden|Unrelated|private/);
+    assert.equal(read.publicSearch.observedSha256,createHash('sha256').update(read.text).digest('hex'));
+    await assert.rejects(session.execute({op:'navigate',url}),e=>e.code==='PUBLIC_SEARCH_SCOPE_EXHAUSTED');assert.equal(count,1);
+    assert.equal(await session.page.evaluate(async()=>{try{await fetch('https://html.duckduckgo.com/html/?q=private');return 'UNEXPECTED';}catch{return 'DENIED';}}),'DENIED');
+  },ddgOrigin);
+});
+test('real Chromium refuses an HTML provider challenge even if result-like links exist', {skip:!realModule,timeout:30000},async()=>{
+  const challenged=ddgHtml.replace('</body>','<form action="//duckduckgo.com/anomaly.js"><div class="anomaly-modal">Challenge</div></form></body>');
+  await withRealSearchBrowser(fixtureFetcher(challenged,ddgUrl),async session=>{
+    const nav=await session.execute({op:'navigate',url:ddgUrl});assert.equal(nav.status,'SEARCH_UNAVAILABLE');assert.equal(nav.reason,'PUBLIC_SEARCH_CAPTCHA_REQUIRED');await assert.rejects(session.execute({op:'read'}),e=>e.code==='PUBLIC_SEARCH_SCOPE_EXHAUSTED');
+  },ddgOrigin);
+});
+test('live DuckDuckGo HTML provider must return genuine bounded results',{skip:!realModule||process.env.LU_CP04B_LIVE_HTML_SEARCH!=='1',timeout:45000},async()=>{
+  await withRealSearchBrowser(undefined,async session=>{
+    const nav=await session.execute({op:'navigate',url:ddgUrl});assert.equal(nav.status,'SEARCH_OBSERVED',JSON.stringify(nav));
+    const read=await session.execute({op:'read'});assert.equal(read.status,'READ');assert.equal(read.url,ddgUrl);assert.deepEqual(read.publicSearch,nav.publicSearch);assert.ok(read.publicSearch.resultCount>0);assert.equal(read.publicSearch.observedSha256,createHash('sha256').update(read.text).digest('hex'));
+  },ddgOrigin);
 });
