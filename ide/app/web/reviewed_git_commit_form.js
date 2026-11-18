@@ -13,3 +13,12 @@ export function readReviewedCommitMetadata(form) {
   }
   return result;
 }
+
+// A renderer receipt cannot grant authority; it only reports the exact result.
+export function matchesReviewedCommitReceipt(stage, receipt) {
+  return !!stage && !!receipt && receipt.projectId===stage.projectId &&
+    receipt.relativePath===stage.relativePath && receipt.previousHead===stage.baseHead &&
+    receipt.sourceSha256===stage.sourceSha256 && /^[a-f0-9]{40}$/.test(receipt.commitSha) &&
+    receipt.commitSha!==stage.baseHead && receipt.gitHooksExecuted===false &&
+    receipt.remoteUpdated===false && receipt.releaseApproved===false;
+}

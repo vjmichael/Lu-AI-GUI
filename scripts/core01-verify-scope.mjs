@@ -13,6 +13,10 @@ const CORE_PARENT = 'cfb501751fd3f0509c8aeed802ad2890c37baa3d';
 // Only paths present in the reviewed IDE parent or the exact integrated
 // merge tree may enter the
 // integrated scope. The original Core-only policy is unchanged.
+export function reviewedAcceptanceFixture(path, blob) {
+  return path === 'ide/app/fixtures/test_dev01_native_confirmation_scope.py' &&
+    blob === 'acfcd77984123f0a53770826e2bc408258b74b83';
+}
 export function reviewedIdePath(path, parentPaths) {
   return parentPaths.has(path) && (/^ide\//.test(path) || /^\.github\/workflows\/ide-[^/]+\.yml$/.test(path))
     && !/(?:^|\/)(?:[^/]*koboldcpp[^/]*|p7l[-_][^/]*|[^/]*p7l1[^/]*)/i.test(path);
@@ -77,6 +81,9 @@ function main(integrated = false) {
     idePaths.add('ide/supervisor/examples/support/cancel_history.rs');
     for (const p of ['apply_clangd20_windows_startup.py', 'Build-PinnedClangdWindows.ps1', 'test_clangd20_windows_startup.py'])
       idePaths.add('ide/llvm18_owner/' + p);
+    for (const item of actual) {
+      if (reviewedAcceptanceFixture(item.path, item.blob)) idePaths.add(item.path);
+    }
     // A deleted originally reviewed IDE path is not authorized by merging.
     if ([...idePaths].some(path => !actual.some(x => x.path === path)))
       fail('reviewed IDE path missing');

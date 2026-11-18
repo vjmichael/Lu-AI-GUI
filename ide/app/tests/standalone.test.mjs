@@ -749,7 +749,10 @@ test('B5 large-project preview obeys native file bounds, retains Undo, windows U
   assert.match(ui,/aria-label="Later open source tabs"/);
   assert.match(ui,/aria-label="Jump to open file"/);
   assert.match(ui,/aria-label="Open project-relative file"/);
-  assert.match(ui,/verifiedRelativeSourcePath\(relativeOpenPath\)/);
+  assert.match(ui,/verifiedRelativeSourcePath\(submittedPath\)/);
+  assert.match(ui,/new FormData\(event\.currentTarget\)\.getAll\('relativeSourcePath'\)/);
+  assert.match(ui,/paths\.length!==1 \|\| typeof paths\[0\]!=='string'/);
+  assert.match(ui,/void openRelativeSourcePath\(paths\[0\]\)/);
   assert.match(ui,/await selectEntry\(\{kind:'file',relativePath:path/);
   assert.match(editor,/LARGE_SOURCE_LIGHTWEIGHT_THRESHOLD = 128 \* 1024/);
   assert.match(editor,/const syntax = lightweight \? null : languageExtension\(filename\)/);

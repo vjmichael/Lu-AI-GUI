@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { forbiddenPath, suspectSource, verifyInventory, reviewedIdePath } from './core01-verify-scope.mjs';
+import { forbiddenPath, suspectSource, verifyInventory, reviewedIdePath, reviewedAcceptanceFixture } from './core01-verify-scope.mjs';
 test('IDE source paths and build workflows cannot enter CORE-01', () => {
   for (const p of ['ide/worker.rs','src-tauri/lu-ide/src/lib.rs','lu-desktop/src-tauri/src/ide_worker.rs','.github/workflows/ide-native.yml','docs/LU_IDE_GATE.md']) assert.equal(forbiddenPath(p), true, p);
   assert.equal(forbiddenPath('src-tauri/lu-core/src/independent_outcome.rs'), false);
@@ -39,4 +39,13 @@ test('integrated scope accepts only known IDE-owned paths, never cross-imports o
   for (const path of ['ide/unreviewed.rs','src-tauri/lu-ide/src/lib.rs','ide/koboldcpp.rs','docs/LU_IDE_GATE.md']) assert.equal(reviewedIdePath(path, parent), false);
   assert.equal(forbiddenPath('ide/worker.rs'), true);
   assert.ok(suspectSource('lu-desktop/src-tauri/src/lib.rs', 'use lu_ide::worker;').length);
+});
+
+test('integrated 03H permits only the exact reviewed native confirmation test bytes', () => {
+  const path='ide/app/fixtures/test_dev01_native_confirmation_scope.py';
+  const blob='acfcd77984123f0a53770826e2bc408258b74b83';
+  assert.equal(reviewedAcceptanceFixture(path,blob),true);
+  assert.equal(reviewedAcceptanceFixture(path,'a'.repeat(40)),false);
+  assert.equal(reviewedAcceptanceFixture(path+'.bak',blob),false);
+  assert.equal(forbiddenPath(path),true);
 });

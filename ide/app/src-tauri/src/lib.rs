@@ -778,10 +778,13 @@ async fn ide_git_commit_reviewed(
     use tauri_plugin_dialog::MessageDialogButtons;
     let registry = Arc::clone(state.inner());
     tauri::async_runtime::spawn_blocking(move || {
+        let owner = app.get_webview_window("main")
+            .ok_or_else(|| "WO9_GIT_COMMIT_OWNER_UNAVAILABLE".to_owned())?;
         let allow = app.dialog().message(format!(
             "Create one local Git commit?\nFile: {}\nStaged SHA-256: {}\nMessage: {}\nNo Git hooks or push.",
             stage.relative_path, stage.source_sha256, message
         )).title("Lu IDE · Confirm local Git commit")
+          .parent(&owner)
           .buttons(MessageDialogButtons::OkCancelCustom(
               "Commit exact staged file".into(), "Cancel".into())).blocking_show();
         if !allow { return Err("WO9_GIT_COMMIT_NOT_AUTHORIZED".into()); }

@@ -29,7 +29,7 @@ import { admitOpenTabs, tabWindow, pageTabWindow, centerSelectedTab,
   TREE_ENTRY_PAGE, verifiedRelativeSourcePath, lateSourceOpenDecision,
   lateReloadCanCommit } from './editor_working_set.js';
 import { locateMatches, planReplacement } from './find_replace.js';
-import { readReviewedCommitMetadata } from './reviewed_git_commit_form.js';
+import { readReviewedCommitMetadata, matchesReviewedCommitReceipt } from './reviewed_git_commit_form.js';
 import {
   newBufferIdentity, advanceBufferIdentity, rebaseBufferAfterSave,
   captureBufferSpan, resolveBufferSpan, formatBufferReference,
@@ -135,6 +135,7 @@ function App() {
   const [gitStageReceipt, setGitStageReceipt] = useState(null);
   const [gitCommitReceipt, setGitCommitReceipt] = useState(null);
   const [gitWriteBusy, setGitWriteBusy] = useState(false);
+  const gitCommitInFlight = useRef(false);
   const [workflowProjectIds, setWorkflowProjectIds] = useState([]);
   const [workflowInspection, setWorkflowInspection] = useState(null);
   const [workflowRevalidated, setWorkflowRevalidated] = useState(false);
@@ -2545,23 +2546,36 @@ function App() {
 
   async function commitReviewedGitFile(event) {
     event.preventDefault();
-    if (!gitStageReceipt || gitWriteBusy || !activeProject ||
+    if (!gitStageReceipt || gitWriteBusy || gitCommitInFlight.current || !activeProject ||
         gitStageReceipt.projectId !== activeProject.projectId) return;
-    // Read the actual submitted inputs synchronously. A native accessibility
-    // provider can change the field value without delivering React onChange.
-    const metadata=readReviewedCommitMetadata(new FormData(event.currentTarget));
-    if (!metadata) { setProblem('Enter valid commit message and author details.'); return; }
-    setGitWriteBusy(true); setProblem('');
+    // Clicking the explicit action and submitting by keyboard share one gate.
+    // Snapshot actual DOM fields before awaiting or disabling any input.
+    const form=event.currentTarget.form ?? event.currentTarget;
+    const metadata=readReviewedCommitMetadata(new FormData(form));
+    if (!metadata || !form.reportValidity()) {
+      setProblem('Enter valid commit message and author details.'); return;
+    }
+    const stage=gitStageReceipt;
+    gitCommitInFlight.current=true;
+    setGitWriteBusy(true); setProblem(''); setHint('');
     try {
-      const done = await invoke('ide_git_commit_reviewed', {
-        stage: gitStageReceipt, ...metadata,
-      });
-      if (done.projectId === activeProject.projectId) {
-        setGitCommitReceipt(done); setGitStageReceipt(null);
+      const done = await invoke('ide_git_commit_reviewed', { stage, ...metadata });
+      if (!matchesReviewedCommitReceipt(stage, done))
+        throw Error('WO9_GIT_COMMIT_RECEIPT_UNVERIFIED');
+      setGitStageReceipt(null);
+      if (activeProjectIdRef.current === stage.projectId) {
+        setGitCommitReceipt(done);
         setHint('Local Git commit created. No hooks, push or release action occurred.');
+        void refreshGitStatus();
       }
-    } catch (error) { setProblem('Native Git commit denied: ' + String(error)); }
-    finally { setGitWriteBusy(false); void refreshGitStatus(); }
+    } catch (error) {
+      // Only a definite native refusal is retryable without reviewing Git again.
+      if (String(error) !== 'WO9_GIT_COMMIT_NOT_AUTHORIZED') setGitStageReceipt(null);
+      if (activeProjectIdRef.current === stage.projectId)
+        setProblem(String(error) === 'WO9_GIT_COMMIT_NOT_AUTHORIZED'
+          ? 'Native Git commit cancelled.'
+          : 'Native Git commit not verified; inspect source control before retrying: ' + String(error));
+    } finally { gitCommitInFlight.current=false; setGitWriteBusy(false); }
   }
 
   function addWorkflowStep() {
@@ -9892,7 +9906,8 @@ function App() {
                   <label htmlFor="wo9CommitEmail">Author email</label>
                   <input id="wo9CommitEmail" name="authorEmail" type="email" required
                     maxLength={96} disabled={gitWriteBusy} />
-                  <button type="submit" className="primaryBtn" disabled={gitWriteBusy}>
+                  <button type="button" className="primaryBtn" disabled={gitWriteBusy}
+                    onClick={commitReviewedGitFile}>
                     Confirm separate local commit (no push)
                   </button>
                 </form>

@@ -47,8 +47,8 @@
     },
     {
       "path": "ide/app/src-tauri/src/lib.rs",
-      "sha": "bb479355f9474d507fef6a14ec6573f7c504d8ec",
-      "scope": "03B explicit native read-only move/trash/restore dialog; project revision and valid path checked; existing mutation gate unchanged"
+      "sha": "7b1e326f2a8c9450c398e97fb7f2000697b52700",
+      "scope": "03G native dirty-layout confirmation and 03H parented WO9 commit dialog; exact mutation gate retained; installed acceptance open"
     },
     {
       "path": "ide/app/src-tauri/src/lsp_backend.rs",
@@ -79,6 +79,11 @@
       "path": "ide/host/src/git_reviewed_stash_save.rs",
       "sha": "f1d54aaee76acca98c53fa405d959eceb9ee1b0c",
       "scope": "FIN03 recovery source reviewed, native OS admission pending"
+    },
+    {
+      "path": "ide/host/src/github_remote_publication_intent.rs",
+      "sha": "936065d08944d79d39eab58903f2ca40301d0ff7",
+      "scope": "03G test-only consent age regression; production consent authority unchanged; source-only"
     },
     {
       "path": "ide/host/tests/fin03_stash_save.rs",
