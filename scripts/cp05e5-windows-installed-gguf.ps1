@@ -23,7 +23,7 @@ $oracle=Join-Path $PSScriptRoot 'cp05e5-installed-journal.py'
 $report=[ordered]@{
   schema='lu-cp05e5-installed-gguf-v1'; result='NOT_ACCEPTED'
   appSha256=$ExpectedSha256; engineSha256=$EngineSha256; modelSha256=$ModelSha256
-  activationMethods=@(); errors=@(); phases=[ordered]@{}
+  activationMethods=@(); errors=@(); phases=[ordered]@{}; currentPhase='preflight'
   genuineGgufInference='NOT_TESTED'; activeGpuOffload='NOT_TESTED'
   authorization='TEST_OPERATOR_FIXTURE_NOT_PHYSICAL_OWNER'
 }
@@ -258,8 +258,23 @@ function Start-Lu([string]$phase){
   } 60 'main window'
   $script:window=[System.Windows.Automation.AutomationElement]::FromHandle($script:process.MainWindowHandle)
   if($null -eq $script:window -or $script:window.Current.ProcessId -ne $script:process.Id){throw 'Wrong installed HWND identity'}
-  $script:window.SetFocus()
-  $null=Wait-Enabled 'Choose a model' 60
+  # A Win32 HWND and WRY pane can appear before the WebView2 document.
+  # The container window is not required to support keyboard focus. Use
+  # the same bounded descendant readiness condition as the passing UI smoke.
+  $report.currentPhase=$phase+'-wait-webview'
+  $ready=Wait-Enabled 'Choose a model' 60
+  if($script:window.Current.ProcessId -ne $script:process.Id -or
+     $script:window.Current.NativeWindowHandle -ne $script:process.MainWindowHandle.ToInt64() -or
+     $ready.Current.IsOffscreen -or -not $ready.Current.IsEnabled){
+    throw 'WebView readiness evidence lost original installed owner'
+  }
+  # Foreground activation is best-effort for UIA invocation, not a test
+  # success condition or bypass. Keyboard input is separately fenced.
+  try{$null=[LuCp05Window]::SetForegroundWindow($script:process.MainWindowHandle)}catch{}
+  $report.phases[$phase+'-webview']=[ordered]@{
+    appPid=$script:process.Id;windowHandle=$script:process.MainWindowHandle.ToInt64()
+    readyControl=$ready.Current.Name;webViewDescendantReady=$true
+  }
   $null=Save-Visible-Desktop ($phase+'-window.png')
 }
 function Engine-Probe {
@@ -287,6 +302,7 @@ function Slot-State([bool]$active){
   }catch{return $false}
 }
 function Load-Lu([string]$phase){
+  $report.currentPhase=$phase+'-load-model'
   $report.activationMethods+=@(Invoke-UIA (Wait-Enabled 'Choose a model') $script:window)
   $report.activationMethods+=@(Invoke-UIA (Wait-Enabled 'Load selected' 60) $script:window)
   $script:engine=Wait-Observation { Engine-Probe } 180 'actual installed inference process'
@@ -300,23 +316,50 @@ function Send-Fixture([string]$prompt){
   $input=Wait-Enabled 'Message Lu'
   if($script:window.Current.ProcessId -ne $script:process.Id){throw 'Composer owner mismatch'}
   $null=[LuCp05Window]::SetForegroundWindow($script:process.MainWindowHandle)
-  $input.SetFocus()
-  $pattern=$null
-  if($input.TryGetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern,[ref]$pattern)){
-    ([System.Windows.Automation.ValuePattern]$pattern).SetValue($prompt)
-  }else{
-    Add-Type -AssemblyName System.Windows.Forms
-    if([LuCp05Window]::GetForegroundWindow() -ne $script:process.MainWindowHandle){throw 'Composer is not foreground'}
-    [System.Windows.Forms.Clipboard]::SetText($prompt)
-    [System.Windows.Forms.SendKeys]::SendWait('^a')
-    [System.Windows.Forms.SendKeys]::SendWait('^v')
+  # WebView edit controls may not implement SetFocus even when reachable.
+  # Do not type into an unverified target or accept a guessed coordinate.
+  $runtimeId=($input.GetRuntimeId() -join ',')
+  try{$input.SetFocus()}catch{Write-Warning 'Composer UIA focus unavailable; checking genuine clickable control'}
+  function Test-ComposerFocus {
+    try{
+      $focused=[System.Windows.Automation.AutomationElement]::FocusedElement
+      return ($null -ne $focused -and
+        ($focused.GetRuntimeId() -join ',') -ceq $runtimeId -and
+        $focused.Current.Name -ceq 'Message Lu' -and
+        [LuCp05Window]::GetForegroundWindow() -eq $script:process.MainWindowHandle)
+    }catch{return $false}
   }
+  if(-not (Test-ComposerFocus)){
+    if([LuCp05Window]::GetForegroundWindow() -ne $script:process.MainWindowHandle){throw 'Composer is not foreground'}
+    $rect=$input.Current.BoundingRectangle;$owner=$script:window.Current.BoundingRectangle
+    $point=$input.GetClickablePoint()
+    if($input.Current.IsOffscreen -or $rect.Width -lt 3 -or $rect.Height -lt 3 -or
+       $point.X -lt $rect.Left -or $point.X -ge $rect.Right -or
+       $point.Y -lt $rect.Top -or $point.Y -ge $rect.Bottom -or
+       $point.X -lt $owner.Left -or $point.X -ge $owner.Right -or
+       $point.Y -lt $owner.Top -or $point.Y -ge $owner.Bottom){throw 'Composer point outside verified installed window'}
+    if(-not [LuP0Mouse]::SetCursorPos([int][Math]::Round($point.X),[int][Math]::Round($point.Y))){
+      throw 'Could not activate genuine composer'
+    }
+    [LuP0Mouse]::mouse_event(0x0002,0,0,0,[UIntPtr]::Zero)
+    [LuP0Mouse]::mouse_event(0x0004,0,0,0,[UIntPtr]::Zero)
+    $null=Wait-Observation { Test-ComposerFocus } 5 'verified actual composer focus'
+  }
+  Add-Type -AssemblyName System.Windows.Forms
+  if(-not (Test-ComposerFocus)){throw 'Composer focus lost before keyboard input'}
+  [System.Windows.Forms.Clipboard]::SetText($prompt)
+  [System.Windows.Forms.SendKeys]::SendWait('^a')
+  if(-not (Test-ComposerFocus)){throw 'Composer focus lost before paste'}
+  [System.Windows.Forms.SendKeys]::SendWait('^v')
+  $report.activationMethods+=@('UIA_EXACT_FOCUSED_COMPOSER_KEYBOARD_PASTE')
   $report.activationMethods+=@(Invoke-UIA (Wait-Enabled 'Send' 20) $script:window)
 }
 function Check-Journal([string]$phase,[int]$seconds=90){
   $raw=Wait-Observation {
     $result=& python $oracle $profile $phase 2>&1
     if($LASTEXITCODE -eq 0){return ($result -join [Environment]::NewLine)}
+    # Preserve only the synthetic oracle error, not a complete journal dump.
+    ($result -join [Environment]::NewLine)|Set-Content -LiteralPath (Join-Path $EvidenceDir ($phase+'-oracle-last-error.txt')) -Encoding utf8
   } $seconds ('native read-only journal '+$phase)
   $raw|Set-Content -LiteralPath (Join-Path $EvidenceDir ($phase+'-journal.json')) -Encoding utf8
 }
@@ -327,6 +370,7 @@ function Consent([string]$action,[string]$phase){
   $report.activationMethods+=@(Invoke-UIA (Wait-Element $dialog $action $true) $dialog)
 }
 function Start-Long([string]$marker,[string]$phase){
+  $report.currentPhase=$phase+'-active-generation'
   Send-Fixture ('No tools. Write an extremely long original fictional story with 100 detailed paragraphs about '+$marker+'.')
   $null=Wait-Observation { Slot-State $true } 60 'actual active inference slot'
   $null=Save-Visible-Desktop ($phase+'-active.png')
@@ -360,11 +404,13 @@ try{
   # selected Load are through the installed application; no Tauri test hook.
   Start-Lu 'initial'
   Load-Lu 'initial'
+  $report.currentPhase='approve'
   Send-Fixture 'Could you validate this JSON schema {"schema":{"type":"integer"},"data":17}'
   Consent 'Allow once' 'approve'
   Check-Journal 'approve' 180
   $report.genuineGgufInference='PASS_GENUINE_TOOL_AND_FINAL'
   $null=Save-Visible-Desktop 'approved-final.png'
+  $report.currentPhase='deny'
   Send-Fixture 'Could you validate this JSON schema {"schema":{"type":"integer"},"data":18}'
   Consent 'Cancel' 'deny'
   Check-Journal 'deny' 90
@@ -397,6 +443,7 @@ try{
   $null=Save-Visible-Desktop 'reopened-no-replay.png'
   if(-not $script:process.CloseMainWindow() -or -not $script:process.WaitForExit(30000)){throw 'Reopened app failed closing'}
   $report.phases.reopened=[ordered]@{noEngineReplay=$true;allFiveOriginalTasksVerified=$true}
+  $report.currentPhase='complete'
   $report.result='PASS_INSTALLED_GGUF_NATIVE_CONSENT_AND_LIFECYCLE'
 }catch{
   # Never print process command lines or the ephemeral bearer.

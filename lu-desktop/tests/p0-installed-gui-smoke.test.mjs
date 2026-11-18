@@ -50,3 +50,23 @@ test('unified tabs in a real Tauri window activate through supported UIA or veri
   assert.match(script,/PASS_ONE_INSTALLED_WINDOW/);
   assert.doesNotMatch(script,/PASS_NATIVE_WEBVIEW_DIALOG/);
 });
+
+test('CP-05 installed GGUF witness waits for ready WebView descendants rather than requiring focus of the first HWND',()=>{
+  const gguf=readFileSync(new URL('../../scripts/cp05e5-windows-installed-gguf.ps1',import.meta.url),'utf8');
+  const startup=gguf.split('function Start-Lu(')[1].split('function Engine-Probe')[0];
+  assert.match(startup,/Wait-Enabled 'Choose a model' 60/);
+  assert.match(startup,/MainWindowHandle\.ToInt64\(\)/);
+  assert.match(startup,/webViewDescendantReady=\$true/);
+  assert.doesNotMatch(startup,/\$script:window\.SetFocus\(\)/);
+  const composer=gguf.split('function Send-Fixture(')[1].split('function Check-Journal')[0];
+  assert.match(composer,/GetRuntimeId\(\)/);
+  assert.match(composer,/AutomationElement\]::FocusedElement/);
+  assert.match(composer,/GetForegroundWindow\(\)/);
+  assert.match(composer,/GetClickablePoint\(\)/);
+  assert.match(composer,/if\(-not \(Test-ComposerFocus\)\)\{throw 'Composer focus lost before paste'\}/);
+  assert.match(composer,/Wait-Enabled 'Send' 20/);
+  assert.match(gguf,/Check-Journal 'approve'/);
+  assert.match(gguf,/Check-Journal 'deny'/);
+  assert.match(gguf,/Slot-State \$true/);
+  assert.match(gguf,/Close-Exact \$true 'forced'/);
+});
