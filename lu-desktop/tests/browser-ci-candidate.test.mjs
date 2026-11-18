@@ -1,5 +1,5 @@
 import test from 'node:test';
-import {spawn} from 'node:child_process';
+import {spawn,execFileSync} from 'node:child_process';
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {createReadStream} from 'node:fs';
@@ -68,6 +68,13 @@ candidateTest('every candidate byte is covered by SHA256 and manifest has indepe
   }
   enumerate(out);
   assert.deepEqual(actual,expected,'Candidate contains untracked content');
+});
+
+candidateTest('assembled worker equals the canonical current Git source bytes',()=>{
+  const repo=resolve(import.meta.dirname,'../..');
+  const canonical=execFileSync('git',['-C',repo,'show',
+    'HEAD:src-tauri/lu-core/workers/lu_browser_worker.mjs'],{maxBuffer:1024*1024});
+  assert.deepEqual(readFileSync(join(out,'lu_browser_worker.mjs')),canonical);
 });
 
 // Native CI candidate must prove its OWN bundled Node binary stays alive

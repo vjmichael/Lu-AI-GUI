@@ -316,6 +316,11 @@ jobs:
           set -euo pipefail
           cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
             --test e1_reviewed_model_tools \
+            finite_gguf_mode_never_finalizes_before_host_schema_allows_it \
+            -- --exact --nocapture 2>&1 | tee c4-qwen-evidence/finite-host-schema.log
+          grep -Fq 'test result: ok. 1 passed; 0 failed;' c4-qwen-evidence/finite-host-schema.log
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --test e1_reviewed_model_tools \
             genuine_gguf_independently_selects_git_and_media_tools_and_survives_journal_restart \
             -- --ignored --exact --nocapture \
             2>&1 | tee c4-qwen-evidence/real-model-choice.log
@@ -562,6 +567,7 @@ jobs:
           }
           "Disposable GH Windows install/uninstall of exact NSIS: PASS; with actual installed WebView2 unified-tab smoke; loaded GGUF, consent and active shutdown still require installed model interaction." >> $env:GITHUB_STEP_SUMMARY
       - name: Upload ACTUAL Windows x64 NSIS test installer and byte-provenance (no GGUF)
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: Lu-AGENT01G-Physical-Windows-CPU-NSIS-${{ github.sha }}
@@ -569,7 +575,80 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  windows-headed-browser-candidate:
+    runs-on: windows-2025
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Refuse wrong source or unreviewed production browser package
+        shell: pwsh
+        env:
+          EXPECTED_SHA: ${{ github.sha }}
+        run: |
+          if((git rev-parse HEAD).Trim() -cne $env:EXPECTED_SHA){throw 'Wrong C6.2 source'}
+          node scripts/verify-source-tree.mjs
+          if($LASTEXITCODE -ne 0){throw 'C6.2 source lock mismatch'}
+          $stub=Get-Content 'lu-desktop/src-tauri/resources/lu-browser/manifest.json' -Raw|ConvertFrom-Json
+          if($stub.status -ne 'not-packaged'){throw 'Unreviewed browser already admitted into compiled Lu'}
+      - name: Provision exactly Playwright 1.64.1 and real headed Chromium
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          npm install --prefix src-tauri/lu-core/workers --no-save --no-package-lock --no-audit --no-fund playwright@1.64.1
+          if($LASTEXITCODE -ne 0){throw 'Pinned Playwright not installed'}
+          node src-tauri/lu-core/workers/node_modules/playwright/cli.js install --no-shell chromium
+          if($LASTEXITCODE -ne 0){throw 'Pinned headed Chromium not installed'}
+      - name: Assemble complete content-hashed Windows x64 browser candidate
+        shell: pwsh
+        run: |
+          node lu-desktop/scripts/assemble-browser-ci-candidate.mjs
+          if($LASTEXITCODE -ne 0){throw 'Browser candidate assembler failed'}
+      - name: Verify every Chromium/Node/Playwright byte and hostile worker protocol
+        shell: pwsh
+        env:
+          LU_BROWSER_REQUIRE_CANDIDATE: '1'
+        run: |
+          node --test lu-desktop/tests/browser-ci-candidate.test.mjs
+          if($LASTEXITCODE -ne 0){throw 'Browser manifest/worker negative tests failed'}
+          node --test lu-desktop/tests/browser-ci-executable.test.mjs
+          if($LASTEXITCODE -ne 0){throw 'Real bundled headed Chromium/human challenge test failed'}
+      - name: Publish separately reviewable exact candidate identity only
+        shell: pwsh
+        env:
+          EXPECTED_SHA: ${{ github.sha }}
+        run: |
+          $ErrorActionPreference='Stop'
+          $root='out/lu-browser-candidate'
+          $manifest=(Get-FileHash -LiteralPath "$root/manifest.json" -Algorithm SHA256).Hash.ToLowerInvariant()
+          $expected=(Get-Content -LiteralPath "$root/manifest.sha256" -Raw).Trim()
+          $report=Get-Content -LiteralPath "$root/candidate-summary.json" -Raw|ConvertFrom-Json
+          if($manifest -cne $expected -or $manifest -cne $report.manifestSha256 -or
+            $report.status -ne 'candidate' -or $report.platform -ne 'win32' -or
+            $report.arch -ne 'x64' -or $report.playwrightVersion -ne '1.64.1'){
+            throw 'Candidate identity or trust boundary mismatched'
+          }
+          "C62A_SOURCE_SHA=$env:EXPECTED_SHA" >> $env:GITHUB_STEP_SUMMARY
+          "C62A_WINDOWS_CANDIDATE_MANIFEST_SHA256=$manifest" >> $env:GITHUB_STEP_SUMMARY
+          "C62A_FILES=$($report.files)" >> $env:GITHUB_STEP_SUMMARY
+          'C62A_CANDIDATE_UNAPPROVED=1. Owner/source review plus independently pinned bytes required before packaging.' >> $env:GITHUB_STEP_SUMMARY
+      - name: Preserve the actual reviewable Chromium, Node, Playwright and worker bytes
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Lu-C62A-UNAPPROVED-Windows-Browser-${{ github.sha }}
+          path: out/lu-browser-candidate/
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+
   current-browser-byte-audit-not-approval:
+    needs: windows-headed-browser-candidate
     runs-on: ubuntu-24.04
     timeout-minutes: 40
     steps:
@@ -580,7 +659,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Verify transport source is identical to one reviewed commit
+      - name: Verify exact source inventory and preserved browser authority
         shell: bash
         env:
           EXPECTED_SHA: ${{ github.sha }}
@@ -588,33 +667,31 @@ jobs:
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
           node scripts/verify-source-tree.mjs
-      - name: Fetch exact current unapproved Windows candidate
+          node --test scripts/lu-c62-browser-bundle-source.test.mjs lu-desktop/tests/browser-staging.test.mjs lu-desktop/tests/browser-native-authorization.test.mjs lu-desktop/tests/p0-browser-bundle.test.mjs lu-desktop/tests/p0-browser-real-ci-gate.test.mjs
+          node --test tests/lu-browser-worker.test.mjs
+      - name: Fetch new canonical unapproved Windows candidate
         uses: actions/download-artifact@v4
         with:
-          name: Lu-C62A-UNAPPROVED-Windows-Browser-2ea78b23963830de90a2a9951d00c674dc13ef06
+          name: Lu-C62A-UNAPPROVED-Windows-Browser-${{ github.sha }}
           path: out/lu-browser-candidate
-          run-id: 44274413309
-          github-token: ${{ github.token }}
-      - name: Re-verify original exact candidate SHA and all 482 file identities
+      - name: Re-verify new candidate manifest and every file against canonical source
         shell: bash
-        env:
-          PINNED_CANDIDATE_SHA: 'f511bfa8a1b01530a41915f64ae018b28575f3dd8fd45eb660f584895383f97f'
         run: |
           set -euo pipefail
           python3 - <<'PY'
-          import hashlib,json,os,pathlib
+          import hashlib,json,os,pathlib,re,subprocess
           root=pathlib.Path("out/lu-browser-candidate").resolve()
           assert root.is_dir() and not root.is_symlink()
           raw=(root/"manifest.json").read_bytes()
           digest=hashlib.sha256(raw).hexdigest()
-          assert digest==os.environ["PINNED_CANDIDATE_SHA"],"original immutable SHA wrong"
           m=json.loads(raw)
           assert m["status"]=="candidate" and m["runtime"]=="lu-browser" and m["schema"]==1
           assert m["playwrightVersion"]=="1.64.1" and m["platform"]=="win32" and m["arch"]=="x64"
-          assert len(m["files"])==482
+          assert 100<=len(m["files"])<=2000
           expected=set()
           for f in m["files"]:
             name=f["path"]
+            assert re.fullmatch(r"[a-zA-Z0-9._ -]+(?:/[a-zA-Z0-9._ -]+)*",name)
             assert name not in expected and all(x not in ("",".","..") and x.strip()==x for x in name.split("/"))
             expected.add(name)
             p=root.joinpath(*name.split("/"))
@@ -631,13 +708,17 @@ jobs:
           assert (root/"manifest.sha256").read_text().strip()==digest
           summary=json.loads((root/"candidate-summary.json").read_text())
           assert summary["manifestSha256"]==digest and summary["status"]=="candidate"
+          assert summary["files"]==len(expected)
+          assert summary["platform"]=="win32" and summary["arch"]=="x64" and summary["playwrightVersion"]=="1.64.1"
           worker=root/"lu_browser_worker.mjs"
-          tracked=pathlib.Path("src-tauri/lu-core/workers/lu_browser_worker.mjs")
-          assert worker.read_bytes()==tracked.read_bytes(),"worker source mismatch"
-          assert hashlib.sha256(worker.read_bytes()).hexdigest()=="c9ea3d8a6a6fe5d9864b095e1276c4284c296dcaedf8692b57cc958ecbf63dd9"
+          tracked=subprocess.check_output(["git","show","HEAD:src-tauri/lu-core/workers/lu_browser_worker.mjs"])
+          assert worker.read_bytes()==tracked,"worker source mismatch"
+          worker_digest=hashlib.sha256(tracked).hexdigest()
+          assert next(f["sha256"] for f in m["files"] if f["path"]=="lu_browser_worker.mjs")==worker_digest
+          assert {"chrome.exe","node.exe","lu_browser_worker.mjs","node_modules/playwright/index.mjs","node_modules/playwright-core/index.mjs"}<=expected
           out=pathlib.Path("cp05-browser-audit");out.mkdir()
           (out/"manifest.json").write_bytes(raw)
-          (out/"receipt.json").write_text(json.dumps({"sourceSha":os.environ["GITHUB_SHA"],"candidateManifestSha256":digest,"files":len(expected),"workerMatchesSource":True,"status":"BYTE_AUDITED_UNAPPROVED","approved":False},indent=2)+"\n")
+          (out/"receipt.json").write_text(json.dumps({"sourceSha":os.environ["GITHUB_SHA"],"candidateManifestSha256":digest,"files":len(expected),"workerMatchesSource":True,"canonicalWorkerSha256":worker_digest,"status":"BYTE_AUDITED_UNAPPROVED","approved":False},indent=2)+"\n")
           print("CP05_BROWSER_BYTE_AUDIT_NOT_APPROVAL="+digest)
           PY
       - uses: actions/upload-artifact@v4
@@ -645,5 +726,5 @@ jobs:
         with:
           name: cp05-current-browser-byte-audit-${{ github.sha }}
           path: cp05-browser-audit/
-          if-no-files-found: warn
+          if-no-files-found: error
           retention-days: 14

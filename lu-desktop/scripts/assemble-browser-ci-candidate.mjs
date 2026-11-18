@@ -10,6 +10,7 @@
  * The emitted 'candidate' manifest is NOT an approved production digest.
  */
 import {createHash} from 'node:crypto';
+import {execFileSync} from 'node:child_process';
 import {createReadStream} from 'node:fs';
 import {
   copyFileSync,existsSync,lstatSync,mkdirSync,realpathSync,
@@ -23,6 +24,14 @@ const worker=join(repo,'src-tauri/lu-core/workers');
 const playwrightEntry=join(worker,'node_modules/playwright/index.mjs');
 const playwrightCore=join(worker,'node_modules/playwright-core');
 const browserWorker=join(worker,'lu_browser_worker.mjs');
+// A filtered CRLF checkout can pass Git's source lock but differ from
+// the canonical worker script byte-for-byte across operating systems.
+// Refuse a noncanonical executable script; never normalize a candidate.
+const canonicalWorker=execFileSync('git',[
+  '-C',repo,'show','HEAD:src-tauri/lu-core/workers/lu_browser_worker.mjs'
+],{maxBuffer:1024*1024});
+if(!readFileSync(browserWorker).equals(canonicalWorker))
+  throw Error('Browser worker checkout differs from canonical Git bytes');
 const expectedVersion='1.64.1';
 if(!existsSync(playwrightEntry)||!existsSync(playwrightCore)||!existsSync(browserWorker))
   throw Error('CI Playwright/worker files not provisioned');
@@ -94,6 +103,8 @@ copyTree(dirname(executable),'');
 copyTree(join(worker,'node_modules/playwright'),'node_modules/playwright');
 copyTree(playwrightCore,'node_modules/playwright-core');
 copyRegular(browserWorker,'lu_browser_worker.mjs',worker);
+if(!readFileSync(join(destination,'lu_browser_worker.mjs')).equals(canonicalWorker))
+  throw Error('Packaged browser worker differs from canonical Git bytes');
 copyRegular(process.execPath,process.platform==='win32'?'node.exe':'node',dirname(process.execPath));
 if(process.platform==='linux'){
   const xdotool=process.env.LU_BROWSER_XDOTOOL;

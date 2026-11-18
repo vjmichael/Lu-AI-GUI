@@ -845,13 +845,54 @@ struct GenuineGgufStep{
     // model-chosen typed argument objects. Host codecs enforce actual values.
     first_tool_mode:&'static str,
 }
+// Every opt-in case binds one finite observation. The actual live host
+// schema, not model text, decides when a final reply is admissible.
+fn finite_gguf_observation_mode(
+    schema:&serde_json::Value, first_mode:&'static str, has_raw_reply:bool
+)->Result<&'static str,NativeGenerationError>{
+    let branches=schema.get("anyOf").and_then(|v|v.as_array())
+        .map(|v|v.as_slice()).unwrap_or_else(||std::slice::from_ref(schema));
+    let kind=|branch:&serde_json::Value,expected:&str|
+        branch.pointer("/properties/kind/const").and_then(|v|v.as_str())==Some(expected);
+    let tools=branches.iter().filter(|b|kind(b,"tool")).count();
+    let finals=branches.iter().filter(|b|kind(b,"final")).count();
+    if tools!=1 || finals>1 || branches.len()!=tools+finals
+        || (finals==1 && !has_raw_reply)
+        || !matches!(first_mode,"required"|"required_args"){
+        return Err(NativeGenerationError::InvalidHostInput)
+    }
+    Ok(if finals==1{"final"}else{first_mode})
+}
+
+#[test]
+fn finite_gguf_mode_never_finalizes_before_host_schema_allows_it(){
+    let tool=serde_json::json!({"properties":{"kind":{"const":"tool"}}});
+    let final_reply=serde_json::json!({"properties":{"kind":{"const":"final"}}});
+    assert_eq!(finite_gguf_observation_mode(&tool,"required",false).unwrap(),"required");
+    assert_eq!(finite_gguf_observation_mode(&tool,"required",true).unwrap(),"required");
+    let after=serde_json::json!({"anyOf":[tool.clone(),final_reply]});
+    assert!(finite_gguf_observation_mode(&after,"required",false).is_err());
+    assert_eq!(finite_gguf_observation_mode(&after,"required",true).unwrap(),"final");
+    assert!(finite_gguf_observation_mode(
+        &serde_json::json!({"anyOf":[tool.clone(),tool]}),"required",true).is_err());
+}
+
 impl ModelStepGenerator for GenuineGgufStep{
     fn generate_step(
-        &mut self,prompt:&str,max_tokens:u32,cancel:&Cancellation
+        &mut self,_prompt:&str,_max_tokens:u32,_cancel:&Cancellation
+    )->Result<String,NativeGenerationError>{
+        // Refuse an unbound unconstrained witness.
+        Err(NativeGenerationError::InvalidHostInput)
+    }
+    fn generate_step_constrained(
+        &mut self,prompt:&str,max_tokens:u32,cancel:&Cancellation,
+        schema:&serde_json::Value
     )->Result<String,NativeGenerationError>{
         if cancel.is_cancelled(){return Err(NativeGenerationError::Cancelled)}
         let script=PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("../../benchmarks/e1/e1_p07_llama_completion.py");
+        let tool_mode=finite_gguf_observation_mode(
+            schema,self.first_tool_mode,!self.raw_replies.is_empty())?;
         let mut child=Command::new("python3").arg("-I").arg(&script)
             .env("LU_E1_P07_LLAMA_PORT",
                 std::env::var("LU_E1_P07_LLAMA_PORT")
@@ -859,11 +900,8 @@ impl ModelStepGenerator for GenuineGgufStep{
             .stdin(Stdio::piped()).stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn().map_err(|_|NativeGenerationError::InferenceFailed)?;
-        // AGENT-01G's human-reviewed task demands native observation.
-        // Constrain only the first envelope kind; the model still chooses
-        // the actual catalog tool name/arguments. Host grant and effect
-        // verification are unchanged; never substitute a scripted call.
-        let tool_mode=if self.raw_replies.is_empty(){self.first_tool_mode}else{"auto"};
+        // Host scope, execution, independent oracle and audit remain
+        // unchanged; neither tool name nor final text is filled by the test.
         let payload=serde_json::json!({
             "prompt":prompt,"max_tokens":max_tokens,"tool_mode":tool_mode
         }).to_string();
