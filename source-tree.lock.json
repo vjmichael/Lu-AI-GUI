@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "93fb1a673e5c9ef4e4e8d1bf6d8200b4ae317dda",
+  "sourceCommitBeforeLock": "851ed6b98602f0251dd3240d46edfb1dfaa14ed4",
   "trackedFileCount": 1956,
   "files": [
     {
@@ -1785,7 +1785,7 @@
     },
     {
       "path": "ide/app/fixtures/Test-Wo8NativeDesktopUI.ps1",
-      "blob": "fa179ddd6d0ebb8028d007aef29883ccf2b62c20"
+      "blob": "21eed080afa2302526c96171d3501383042e7510"
     },
     {
       "path": "ide/app/fixtures/b2_linux_installed_draft_atspi.py",
@@ -1801,7 +1801,7 @@
     },
     {
       "path": "ide/app/fixtures/dev01_modern_linux_installed_atspi.py",
-      "blob": "6a3340f97006d3a564506e82aaf3b60552032a24"
+      "blob": "7b9f4c5a21ba63183a95c2ef25c9f287b78186ef"
     },
     {
       "path": "ide/app/fixtures/dev02_linux_installed_lsp_atspi.py",
@@ -2025,7 +2025,7 @@
     },
     {
       "path": "ide/app/tests/dev01_integrated_license_bundle_source.test.mjs",
-      "blob": "b3691623e3f831f1f579266ee2a0bb6d2a871b2c"
+      "blob": "c288da7d7acf1fc13ae654a93c17a3083232816e"
     },
     {
       "path": "ide/app/tests/dev02_project_problems.test.mjs",
@@ -3613,7 +3613,7 @@
     },
     {
       "path": "ide/llvm18_owner/Build-PinnedClangdWindows.ps1",
-      "blob": "df1223d04bf8f9dfce4cd6ea1b0d813b3d1c29e6"
+      "blob": "3c6703a02395553758783533603b533176bfc2e8"
     },
     {
       "path": "ide/llvm18_owner/Build-PinnedOwnerWindows.ps1",
