@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "85fd0e1527f04b340891ad1d0ec1806249f5c678",
-  "trackedFileCount": 1121,
+  "sourceCommitBeforeLock": "25188222a300ade67bd4f1e14904cc425a7ff24a",
+  "trackedFileCount": 1122,
   "files": [
     {
       "path": ".github/pull_request_template.md",
@@ -110,6 +110,10 @@
     {
       "path": ".github/workflows/lu-cp04b3-native-provision.yml",
       "blob": "19d3476df99baa174a098c3c134746233fb0e6af"
+    },
+    {
+      "path": ".github/workflows/lu-cp05e-grouped-native.yml",
+      "blob": "3900592b731db531a33a91163691aad2fa8adef1"
     },
     {
       "path": ".github/workflows/lu-development-ledger.yml",
@@ -765,7 +769,7 @@
     },
     {
       "path": "docs/LU_DEVELOPMENT_LEDGER.md",
-      "blob": "fc12bb109ae8361b367b96fbab0b2afc7e70c516"
+      "blob": "3a8925e935a939731229dc207142aba98121b02a"
     },
     {
       "path": "docs/LU_E1_NATIVE_EVIDENCE_20261107.md",
