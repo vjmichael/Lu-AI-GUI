@@ -41,13 +41,146 @@ class AtspiSignatureContract(unittest.TestCase):
                         and isinstance(target.value, ast.Name)
                         and target.value.id == "ui" else None
                     )
-                    if name in {"activate", "accessible"}:
+                    if name in {"activate", "accessible", "native_workflow_review_control", "activate_native_workflow_review"}:
                         allowed = signatures[name]
                         unexpected = {arg.arg for arg in node.keywords
                                       if arg.arg is None or arg.arg not in allowed}
                         self.assertFalse(unexpected,
                                          f"{source.name}:{node.lineno} "
                                          f"{name} unexpected keyword {unexpected}")
+
+    def test_dev035_native_build_button_scoped_deep_disabled_and_fail_closed(self):
+        import sys
+        from types import SimpleNamespace, ModuleType
+        from unittest.mock import patch
+        tree = ast.parse((ROOT / "dev035_jobs_installed_atspi.py").read_text(encoding="utf-8"))
+        fn = next(node for node in tree.body if isinstance(node, ast.FunctionDef)
+                  and node.name == "native_protected_build_button")
+        class Node:
+            def __init__(self, name, role, children=(), enabled=False, visible=True, dialog=False):
+                self.name, self.role, self.children = name, role, list(children)
+                self.enabled, self.visible, self.dialog = enabled, visible, dialog
+            @property
+            def childCount(self): return len(self.children)
+            def getRoleName(self): return self.role
+            def getState(self):
+                return SimpleNamespace(contains=lambda state: self.visible if state == 1 else self.enabled)
+        class Clock:
+            now = 0
+            def monotonic(self): return self.now
+            def sleep(self, _): self.now += 1
+        btn = Node("Request protected Build/Test", "push button")
+        outside = Node(btn.name, btn.role, enabled=True)
+        composer = Node("Protected native build and test", "region", [btn])
+        deep = composer
+        for _ in range(16): deep = Node("", "panel", [deep])
+        workspace = Node("Execution intent review", "landmark", [deep])
+        api = ModuleType("wo8_linux_editor_atspi")
+        api.elements = lambda: [outside, workspace]
+        api._native_dialog_ancestor = lambda node: node.dialog
+        clock = Clock()
+        ns = {"pyatspi": SimpleNamespace(STATE_VISIBLE=1, STATE_ENABLED=2, STATE_SENSITIVE=3),
+              "children_of": lambda node: iter(node.children),
+              "deny": lambda reason: (_ for _ in ()).throw(RuntimeError(reason))}
+        exec(compile(ast.Module(body=[fn], type_ignores=[]), "dev035_scope", "exec"), ns)
+        lookup = ns["native_protected_build_button"]
+        with patch.dict(sys.modules, {"wo8_linux_editor_atspi": api, "time": clock}):
+            self.assertIs(lookup(seconds=2), btn)
+            btn.enabled = True
+            with self.assertRaisesRegex(RuntimeError, "admitted_protected_execution"):
+                lookup(seconds=2)
+            btn.enabled = False
+            for children in ([btn, Node(btn.name, btn.role)], [],
+                             [Node(btn.name, "label")], [Node(btn.name, btn.role, visible=False)],
+                             [Node(btn.name, btn.role, dialog=True)]):
+                composer.children = children
+                with self.assertRaisesRegex(RuntimeError, "disabled_build_control_not_verified"):
+                    lookup(seconds=2)
+            composer.children = [btn]
+            api.elements = lambda: [outside, workspace, Node(workspace.name, workspace.role)]
+            with self.assertRaisesRegex(RuntimeError, "disabled_build_control_not_verified"):
+                lookup(seconds=2)
+            api.elements = lambda: [outside, workspace]
+            workspace.children.append(Node(composer.name, composer.role, [btn]))
+            with self.assertRaisesRegex(RuntimeError, "disabled_build_control_not_verified"):
+                lookup(seconds=2)
+            workspace.children = [deep]
+            composer.children = [btn] + [Node("", "label") for _ in range(256)]
+            with self.assertRaisesRegex(RuntimeError, "disabled_build_control_not_verified"):
+                lookup(seconds=2)
+
+    def test_workflow_review_status_scoped_and_blocked_denied(self):
+        from types import SimpleNamespace
+        tree = ast.parse(SCRIPTS[0].read_text(encoding="utf-8"))
+        fn = next(node for node in tree.body if isinstance(node, ast.FunctionDef)
+                  and node.name == "native_workflow_review_control")
+        class Node:
+            def __init__(self, name, role, children=(), visible=True, dialog=False):
+                self.name, self.role, self.children = name, role, list(children)
+                self.visible, self.dialog = visible, dialog
+            @property
+            def childCount(self): return len(self.children)
+            def getChildAtIndex(self, i): return self.children[i]
+            def getRoleName(self): return self.role
+            def getState(self): return SimpleNamespace(contains=lambda flag: self.visible)
+        class Clock:
+            now = 0
+            def monotonic(self): return self.now
+            def sleep(self, _): self.now += 1
+        title="Eligible for human source review"
+        correct=Node(title,"status bar")
+        outside=Node(title,"status")
+        deep=correct
+        for _ in range(17): deep=Node("","panel",[deep])
+        region=Node("Multi-project native workflow evidence","region",[deep])
+        ns={"time":Clock(),"pyatspi":SimpleNamespace(STATE_VISIBLE=1),
+            "elements":lambda:[outside,region], "_native_dialog_ancestor":lambda node:node.dialog,
+            "deny":lambda reason: (_ for _ in ()).throw(RuntimeError(reason))}
+        exec(compile(ast.Module(body=[fn],type_ignores=[]),"review_scope","exec"),ns)
+        lookup=ns["native_workflow_review_control"]
+        self.assertIs(lookup(title,seconds=2),correct)
+        for children in ([], [Node(title,"label")], [correct,Node(title,"status")],
+                         [Node(title,"status",visible=False)], [Node(title,"status",dialog=True)],
+                         [correct]+[Node("","label") for _ in range(256)]):
+            region.children=children
+            with self.assertRaisesRegex(RuntimeError,"exact_control_not_verified"):
+                lookup(title,seconds=2)
+        region.children=[correct,Node("Blocked by native evidence","status")]
+        with self.assertRaisesRegex(RuntimeError,"blocked_by_native_evidence"):
+            lookup(title,seconds=2)
+        region.children=[correct]
+        ns["elements"]=lambda:[region,Node(region.name,region.role)]
+        with self.assertRaisesRegex(RuntimeError,"exact_control_not_verified"):
+            lookup(title,seconds=2)
+
+    def test_b5_undo_requires_fresh_nonempty_actual_source(self):
+        from types import SimpleNamespace
+        fixture=(ROOT / "b5_linux_installed_perf_atspi.py").read_text(encoding="utf-8")
+        tree=ast.parse(fixture)
+        fn=next(node for node in tree.body if isinstance(node,ast.FunctionDef) and node.name=="fresh_editor_copy")
+        class Clock:
+            now=0
+            def perf_counter(self): return self.now
+            def sleep(self,_): self.now+=1
+        events=[]
+        value=["B5_NO_FRESH_COPY"]
+        def input_run(*args,**kwargs):
+            value[0]=kwargs["input"]
+        def key(*keys):
+            events.append(keys)
+            if keys==("ctrl+c",): value[0]="// B5_SOURCE_main native source\n"
+        ns={"time":Clock(),"subprocess":SimpleNamespace(run=input_run,DEVNULL=-1),
+            "focus_editor":lambda leaf:events.append((leaf,)),"clipboard":lambda:value[0],"key":key,
+            "deny":lambda reason: (_ for _ in ()).throw(RuntimeError(reason))}
+        exec(compile(ast.Module(body=[fn],type_ignores=[]),"copy_witness","exec"),ns)
+        copy=ns["fresh_editor_copy"]
+        self.assertIn("B5_SOURCE_main",copy("main.rs",tail=True))
+        self.assertEqual(events[0],("main.rs",))
+        self.assertEqual(events[-1],("ctrl+c",))
+        ns["key"]=lambda *args:None
+        self.assertEqual(copy("main.rs"),"")
+        self.assertIn('if "B5_SOURCE_main" in observed and PERF_SENTINEL not in observed: break',fixture)
+        self.assertIn('"clipboardWitness":"bounded-fresh-head-or-tail-v2"',fixture)
 
     def test_portfolio_scope_requires_one_real_group_not_legend(self):
         from types import SimpleNamespace

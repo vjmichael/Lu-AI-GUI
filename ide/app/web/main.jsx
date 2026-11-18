@@ -2548,16 +2548,16 @@ function App() {
     event.preventDefault();
     if (!gitStageReceipt || gitWriteBusy || gitCommitInFlight.current || !activeProject ||
         gitStageReceipt.projectId !== activeProject.projectId) return;
-    // Clicking the explicit action and submitting by keyboard share one gate.
+    // Native form submission is the sole entry point for mouse and keyboard.
     // Snapshot actual DOM fields before awaiting or disabling any input.
-    const form=event.currentTarget.form ?? event.currentTarget;
+    const form=event.currentTarget;
     const metadata=readReviewedCommitMetadata(new FormData(form));
     if (!metadata || !form.reportValidity()) {
       setProblem('Enter valid commit message and author details.'); return;
     }
     const stage=gitStageReceipt;
     gitCommitInFlight.current=true;
-    setGitWriteBusy(true); setProblem(''); setHint('');
+    setGitWriteBusy(true); setProblem(''); setHint('Awaiting native confirmation for the exact staged Git file.');
     try {
       const done = await invoke('ide_git_commit_reviewed', { stage, ...metadata });
       if (!matchesReviewedCommitReceipt(stage, done))
@@ -2569,6 +2569,7 @@ function App() {
         void refreshGitStatus();
       }
     } catch (error) {
+      setHint('');
       // Only a definite native refusal is retryable without reviewing Git again.
       if (String(error) !== 'WO9_GIT_COMMIT_NOT_AUTHORIZED') setGitStageReceipt(null);
       if (activeProjectIdRef.current === stage.projectId)
@@ -7589,7 +7590,8 @@ function App() {
       {hint && <div className={'successMsg appMessage noticeBanner' +
         (hint.startsWith('Saved ') ? ' saveConfirmation' :
           hint.startsWith('Proposal staged') ? ' stageConfirmation' : '')}
-        role="status" aria-label={hint.startsWith('Recovered private checkpoint into unsaved editor only.') ? hint : undefined}>
+        role="status" aria-label={hint.startsWith('Recovered private checkpoint into unsaved editor only.') ||
+          hint==='Awaiting native confirmation for the exact staged Git file.' ? hint : undefined}>
         <span className="noticeContent">{hint}</span>
         <button type="button" className="noticeDismiss" aria-label="Dismiss notification"
           onClick={() => setHint('')}>×</button>
@@ -8007,7 +8009,7 @@ function App() {
                       scan; this does not prove that the project has no tests.</p>}
                 </>}
             </section>
-            <div className="continuityDocument jobIntentComposer" aria-label="Protected native build and test">
+            <section className="continuityDocument jobIntentComposer" aria-label="Protected native build and test">
               <h3>Protected Build / Test</h3>
               <p>Select a reviewed project profile above. Native execution uses
                 its exact saved manifest, a frozen whole-project copy, an offline
@@ -8321,7 +8323,7 @@ function App() {
                     </article>)}
                 </div>
               </section>}
-            </div>
+            </section>
             <section className="continuityDocument" aria-label="DEV-04.1 project debug provenance review">
               <div className="capabilityHeading">
                 <h3>DEV-04.1 · Project debugger target preparation</h3>
@@ -9310,10 +9312,11 @@ function App() {
               </button>
             </div>
             {workflowInspection && <div className="continuityDocument"
-              aria-label="Multi-project native workflow evidence">
+              role="region" aria-label="Multi-project native workflow evidence">
               <h3>Native workflow review</h3>
               <p>Plan digest: <code>{workflowInspection.fingerprint}</code></p>
-              <p>Local review: <strong>{workflowInspection.readyForReview ?
+              <p role="status" aria-label={workflowInspection.readyForReview ?
+                'Eligible for human source review' : 'Blocked by native evidence'}>Local review: <strong>{workflowInspection.readyForReview ?
                 'Eligible for human source review' : 'Blocked by native evidence'}</strong> ·
                 Remote: not queried · Execution: never started ·
                 Packaging: not performed · Release: not approved</p>
@@ -9325,7 +9328,7 @@ function App() {
                   <p>Worktree: {item.worktree} · Verified artifacts:
                     {item.artifacts.length}</p>
                   {item.blockers.length > 0 &&
-                    <p role="status">Blockers: {item.blockers.join(', ')}</p>}
+                    <p role="status" aria-label={'Blockers: '+item.blockers.join(', ')}>Blockers: {item.blockers.join(', ')}</p>}
                   {item.artifacts.map(artifact =>
                     <p key={artifact.relativePath}><code>{artifact.relativePath}</code>
                       {' · '}{artifact.byteLength.toLocaleString()} bytes
@@ -9336,7 +9339,7 @@ function App() {
                 onClick={() => revalidateMultiProjectWorkflow()}>
                 Verify frozen Git and artifact evidence again
               </button>
-              {workflowRevalidated && <p role="status">
+              {workflowRevalidated && <p role="status" aria-label="Exact evidence matched">
                 Exact evidence matched. This does not stage files, create an archive,
                 grant Git write rights, or satisfy native OS and signing gates.</p>}
               <button className="primaryBtn" type="button"
@@ -9897,7 +9900,7 @@ function App() {
                 <p>Git blob: <code>{gitStageReceipt.stagedBlobOid}</code></p>
                 <p>SHA-256: <code>{gitStageReceipt.sourceSha256}</code></p>
                 <form key={gitStageReceipt.stagedIndexFingerprint}
-                  onSubmit={commitReviewedGitFile} aria-label="Reviewed local commit details">
+                  onSubmit={commitReviewedGitFile} noValidate aria-label="Reviewed local commit details">
                   <label htmlFor="wo9CommitMessage">Local commit message</label>
                   <input id="wo9CommitMessage" name="message" type="text" required
                     maxLength={1200} disabled={gitWriteBusy} />
@@ -9907,8 +9910,7 @@ function App() {
                   <label htmlFor="wo9CommitEmail">Author email</label>
                   <input id="wo9CommitEmail" name="authorEmail" type="email" required
                     maxLength={96} disabled={gitWriteBusy} />
-                  <button type="button" className="primaryBtn" disabled={gitWriteBusy}
-                    onClick={commitReviewedGitFile}>
+                  <button type="submit" className="primaryBtn" disabled={gitWriteBusy}>
                     Confirm separate local commit (no push)
                   </button>
                 </form>

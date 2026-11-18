@@ -959,7 +959,22 @@ try {
       # Exactly one verified foreground pointer dispatch to the reviewed
       # button; the native modal and independent Git bytes remain mandatory.
       Click 'Confirm separate local commit (no push)'
-      Confirm-NativeOneUseDialog 'Confirm local Git commit' 'Commit exact staged file' 'WO9 installed reviewed Git source'
+      try {
+        Confirm-NativeOneUseDialog 'Confirm local Git commit' 'Commit exact staged file' 'WO9 installed reviewed Git source'
+      } catch {
+        # Fail closed, but distinguish UI validation/dispatch from a missing
+        # native popup; do not retry the commit or print submitted metadata.
+        foreach($category in @(@('Enter valid commit message and author details','validation_rejected'),
+          @('Awaiting native confirmation for the exact staged Git file','awaiting_native_confirmation'),
+          @('Native Git commit not verified','native_result_unverified'),
+          @('Native Git commit cancelled','native_refusal'))) {
+          try {
+            $observed=Find-Control $category[0] '' 2
+            if ($observed) { Write-Host ('WO9_NATIVE_COMMIT_STAGE='+$category[1]) }
+          } catch {}
+        }
+        throw
+      }
       Require 'Local commit'
       # Real Win UIA consent invokes asynchronously: the exact native Git
       # operation is the witness, not the OS dialog click or a UI label.
@@ -1378,7 +1393,8 @@ try {
       }
       $data=[ordered]@{
         schemaVersion=1; os='windows-2022';
-        method='installed-WebView2-UIAutomation-STA-clipboard-and-Win32_Process'
+        method='installed-WebView2-UIAutomation-STA-clipboard-and-Win32_Process';
+        clipboardWitness='bounded-fresh-head-or-tail-v2'
         sourceCommit=$env:B5_EXACT_CHECKOUT_SHA; installedExecutableSha256=$ExpectedSha256
         sourceBytes=(Get-Item -LiteralPath $main).Length
         fileCountToOpen=48; openRoundTripMs=@(); switchRoundTripMs=@()
@@ -1420,41 +1436,48 @@ try {
           scope='installed-pid-and-live-Win32_Process-descendants'
         }
       }
+      function B5-FreshEditorCopy([string]$leaf,[bool]$tail=$false) {
+        $expected='Source editor text · First editor: '+$leaf
+        Click 'Focus primary editor (Ctrl+1)'
+        # WebView2 can expose a contenteditable textbox as Edit or Document.
+        # Bind instead to the precise pane identity and actual keyboard focus.
+        $editor=Focus-ExactNativeControl $expected
+        $hwnd=$proc.MainWindowHandle
+        $actual=[System.Windows.Automation.AutomationElement]::FocusedElement
+        if ($hwnd -eq [IntPtr]::Zero -or
+            [P04NativeWebViewWindows]::GetForegroundWindow() -ne $hwnd -or
+            !$editor.Current.IsKeyboardFocusable -or
+            !($editor.Current.HasKeyboardFocus -or ($actual -and $actual.Equals($editor)))) {
+          Deny 'b5_native_editor_focus_not_verified'
+        }
+        # Reset and independently observe a fresh native OS clipboard copy.
+        # Navigation snapshots only the first line; append/Undo snapshots the
+        # last four lines. Whole-document transfer masks editor latency.
+        [System.Windows.Forms.Clipboard]::Clear()
+        if ([System.Windows.Forms.Clipboard]::ContainsText()) {Deny 'b5_native_clipboard_reset_failed'}
+        if ($tail) {
+          [System.Windows.Forms.SendKeys]::SendWait('^{END}+{UP}+{UP}+{UP}+{UP}+{HOME}')
+        } else {
+          [System.Windows.Forms.SendKeys]::SendWait('^{HOME}+{END}')
+        }
+        [System.Windows.Forms.SendKeys]::SendWait('^c')
+        $until=(Get-Date).AddSeconds(2)
+        do {
+          Start-Sleep -Milliseconds 100
+          if ([System.Windows.Forms.Clipboard]::ContainsText()) {
+            $value=[System.Windows.Forms.Clipboard]::GetText()
+            if ($value.Length -gt 0 -and $value.Length -le 8192) {return $value}
+          }
+        } while ((Get-Date) -lt $until)
+        return ''
+      }
       function B5-VisibleEditor([string]$marker) {
         $leaf=if ($marker -cmatch '^B5_SOURCE_(main|p[0-4][0-9])$') { $Matches[1]+'.rs' } else { 'main.rs' }
-        $expected='Source editor text · First editor: '+$leaf
+        $tail=$marker -ceq 'B5_EXPLICIT_SAVE_PERF_ONLY'
         $end=(Get-Date).AddSeconds(18)
         while((Get-Date) -lt $end) {
-          $editor=$null
-          try {
-            Click 'Focus primary editor (Ctrl+1)'
-            $editor=Focus-ExactNativeControl $expected 'Edit'
-          } catch {}
-          if ($null -ne $editor -and $editor.Current.IsKeyboardFocusable) {
-            $hwnd=$proc.MainWindowHandle
-            [void][P04NativeWebViewWindows]::SetForegroundWindow($hwnd)
-            if ($hwnd -eq [IntPtr]::Zero -or
-                [P04NativeWebViewWindows]::GetForegroundWindow() -ne $hwnd) {
-              Deny 'b5_native_editor_window_not_foreground'
-            }
-            $actual=[System.Windows.Automation.AutomationElement]::FocusedElement
-            if (($editor.Current.HasKeyboardFocus -or ($actual -and $actual.Equals($editor))) -and
-                [P04NativeWebViewWindows]::GetForegroundWindow() -eq $hwnd) {
-              # Stale clipboard content is NEVER counted as a successful tab
-              # switch or edit; verify a new OS copy from the exact active pane.
-              [System.Windows.Forms.Clipboard]::Clear()
-              [System.Windows.Forms.SendKeys]::SendWait('^a')
-              [System.Windows.Forms.SendKeys]::SendWait('^c')
-              $copyUntil=(Get-Date).AddMilliseconds(1500)
-              do {
-                Start-Sleep -Milliseconds 100
-                if([System.Windows.Forms.Clipboard]::ContainsText()) {
-                  $value=[System.Windows.Forms.Clipboard]::GetText()
-                  if($value.Contains($marker)) { return }
-                }
-              } while ((Get-Date) -lt $copyUntil)
-            }
-          }
+          $value=B5-FreshEditorCopy $leaf $tail
+          if ($value.Contains($marker) -and (!$tail -or $value.Contains('B5_SOURCE_main'))) {return}
           Start-Sleep -Milliseconds 190
         }
         Deny ('b5_native_installed_editor_not_visible_for_'+$marker)
@@ -1523,8 +1546,7 @@ try {
         $data.switchRoundTripMs+=,(B5-Switch 'last' 'B5_SOURCE_p46')
       }
       [void](B5-Switch 'first' 'B5_SOURCE_main')
-      $editor=Find-Control 'Source editor text' '' 10
-      $editor.SetFocus()
+      $editor=Focus-ExactNativeControl 'Source editor text · First editor: main.rs'
       [System.Windows.Forms.SendKeys]::SendWait('^{END}{ENTER}')
       $clock=[Diagnostics.Stopwatch]::StartNew()
       [System.Windows.Forms.SendKeys]::SendWait('// B5_EXPLICIT_SAVE_PERF_ONLY')
@@ -1533,31 +1555,22 @@ try {
       if((Get-FileHash -Algorithm SHA256 -LiteralPath $main).Hash -ne $hashes['main.rs']) {
         Deny 'b5_typing_implicitly_wrote_native_source'
       }
-      $editor=Find-Control 'Source editor text' '' 10
-      $editor.SetFocus()
+      $editor=Focus-ExactNativeControl 'Source editor text · First editor: main.rs'
       $clock=[Diagnostics.Stopwatch]::StartNew()
       [System.Windows.Forms.SendKeys]::SendWait('^z')
       $until=(Get-Date).AddSeconds(10)
       $removed=$false
       while((Get-Date) -lt $until) {
-        $editor.SetFocus()
-        if (!$editor.Current.HasKeyboardFocus -or
-            [P04NativeWebViewWindows]::GetForegroundWindow() -ne $proc.MainWindowHandle) {
-          Deny 'b5_native_undo_editor_focus_lost'
-        }
-        [System.Windows.Forms.Clipboard]::Clear()
-        [System.Windows.Forms.SendKeys]::SendWait('^a^c')
-        Start-Sleep -Milliseconds 150
-        if([System.Windows.Forms.Clipboard]::ContainsText() -and
-           ([System.Windows.Forms.Clipboard]::GetText()).Contains('B5_SOURCE_main') -and
-           !([System.Windows.Forms.Clipboard]::GetText()).Contains('B5_EXPLICIT_SAVE_PERF_ONLY')) {
+        $observed=B5-FreshEditorCopy 'main.rs' $true
+        if($observed.Contains('B5_SOURCE_main') -and
+           !$observed.Contains('B5_EXPLICIT_SAVE_PERF_ONLY')) {
           $removed=$true
           break
         }
       }
       if(!$removed) {Deny 'b5_native_undo_not_verified'}
       $data.undoRoundTripMs=[Math]::Round($clock.Elapsed.TotalMilliseconds,3)
-      $editor.SetFocus()
+      $editor=Focus-ExactNativeControl 'Source editor text · First editor: main.rs'
       [System.Windows.Forms.SendKeys]::SendWait('^{END}{ENTER}// B5_EXPLICIT_SAVE_PERF_ONLY')
       $clock=[Diagnostics.Stopwatch]::StartNew()
       Click 'Save · Ctrl+S'

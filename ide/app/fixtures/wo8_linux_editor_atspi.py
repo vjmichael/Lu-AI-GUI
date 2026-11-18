@@ -55,6 +55,97 @@ def elements():
             stack.extend((child, depth + 1) for child in children_of(node))
 
 
+def native_workflow_review_control(name, seconds=20):
+    """Require exactly one native status/button from the actual review region.
+
+    A blocked native result is a denial, not an alternative successful label.
+    Scan the complete bounded subtree; never accept a partial scan on overflow.
+    """
+    role = "status" if name in ("Eligible for human source review", "Exact evidence matched") else "push button"
+    deadline = time.monotonic() + seconds
+    last_counts = (0, 0, 0)
+    while time.monotonic() < deadline:
+        roots = []
+        for node in elements():
+            try:
+                if ((node.name or "").strip() == "Multi-project native workflow evidence"
+                        and (node.getRoleName() or "").casefold() in ("region", "landmark", "panel", "section", "grouping")
+                        and node.getState().contains(pyatspi.STATE_VISIBLE)
+                        and not _native_dialog_ancestor(node)):
+                    roots.append(node)
+            except Exception:
+                continue
+        matches, blocked = [], []
+        complete = len(roots) == 1
+        if complete:
+            stack = [(roots[0], 0)]
+            visited = 0
+            while stack:
+                node, depth = stack.pop()
+                visited += 1
+                try:
+                    if visited > 8000 or depth > 28 or node.childCount > 256:
+                        complete = False
+                        break
+                    title = (node.name or "").strip()
+                    kind = (node.getRoleName() or "").casefold()
+                    state = node.getState()
+                    if state.contains(pyatspi.STATE_VISIBLE) and not _native_dialog_ancestor(node):
+                        if kind in ("status", "status bar") and title == "Blocked by native evidence":
+                            blocked.append(node)
+                        if (kind == role or role == "status" and kind == "status bar") and title == name:
+                            matches.append(node)
+                    for i in range(node.childCount):
+                        child = node.getChildAtIndex(i)
+                        if child is None:
+                            complete = False
+                            break
+                        stack.append((child, depth+1))
+                    if not complete:
+                        break
+                except Exception:
+                    complete = False
+                    break
+        last_counts = (len(roots), len(matches), len(blocked))
+        if complete and blocked:
+            deny("workflow_review_blocked_by_native_evidence")
+        if complete and len(matches) == 1:
+            return matches[0]
+        time.sleep(.25)
+    print("WO9_NATIVE_REVIEW_ACCESSIBILITY=region:%d;match:%d;blocked:%d" % last_counts, flush=True)
+    deny("workflow_review_exact_control_not_verified_" + name.replace(" ", "_"))
+
+
+def activate_native_workflow_review(name, seconds=20):
+    node = native_workflow_review_control(name, seconds)
+    try:
+        state = node.getState()
+        if not state.contains(pyatspi.STATE_SHOWING):
+            component = node.queryComponent()
+            if not component.grabFocus():
+                deny("workflow_review_button_not_revealed")
+            node = native_workflow_review_control(name, seconds=3)
+        state = node.getState()
+        if not all(state.contains(flag) for flag in (pyatspi.STATE_SHOWING, pyatspi.STATE_ENABLED, pyatspi.STATE_SENSITIVE)):
+            deny("workflow_review_button_not_enabled_visible")
+        # Choose the route before dispatch. No second input if the actual
+        # AT-SPI invocation has an uncertain outcome.
+        if state.contains(pyatspi.STATE_FOCUSABLE) and node.queryComponent().grabFocus():
+            fresh = native_workflow_review_control(name, seconds=3)
+            if all(fresh.getState().contains(flag) for flag in (pyatspi.STATE_FOCUSED, pyatspi.STATE_SHOWING,
+                    pyatspi.STATE_ENABLED, pyatspi.STATE_SENSITIVE)):
+                key("Return")
+                return
+        action = node.queryAction()
+        choices = [i for i in range(action.nActions) if action.getName(i).casefold() in ("click", "press", "activate")]
+        if len(choices) != 1 or not action.doAction(choices[0]):
+            deny("workflow_review_button_native_dispatch_uncertain")
+    except RuntimeError:
+        raise
+    except Exception:
+        deny("workflow_review_button_native_dispatch_unavailable")
+
+
 def accessible(name, role=None, seconds=20):
     deadline = time.monotonic() + seconds
     while time.monotonic() < deadline:

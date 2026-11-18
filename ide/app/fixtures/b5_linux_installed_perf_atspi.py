@@ -19,7 +19,8 @@ import time
 import pyatspi
 
 from wo8_linux_editor_atspi import (
-    ROOT, SOURCE, accessible, activate, key, type_text, focus_editor,
+    ROOT, SOURCE, accessible, activate, key, type_text,
+    _native_source_editor_nodes, _native_dialog_ancestor,
     select_native_folder, editor_project, start, stop,
 )
 
@@ -83,17 +84,70 @@ def clipboard():
     except (OSError,subprocess.TimeoutExpired,subprocess.CalledProcessError):
         return ""
 
+def focus_editor(leaf="main.rs", seconds=8):
+    """Only the exact primary pane, independently re-observed after focus."""
+    expected = "Source editor text · First editor: " + leaf
+    deadline = time.monotonic() + seconds
+    def candidates():
+        matches = []
+        for node in _native_source_editor_nodes():
+            try:
+                state = node.getState()
+                if ((node.name or "").strip() == expected
+                        and not _native_dialog_ancestor(node)
+                        and all(state.contains(flag) for flag in (pyatspi.STATE_VISIBLE,
+                            pyatspi.STATE_SHOWING, pyatspi.STATE_FOCUSABLE, pyatspi.STATE_EDITABLE))):
+                    matches.append(node)
+            except Exception:
+                continue
+        return matches
+    while time.monotonic() < deadline:
+        matches = candidates()
+        if len(matches) == 1:
+            try:
+                matches[0].queryComponent().grabFocus()
+                fresh = candidates()
+                if len(fresh) == 1 and fresh[0].getState().contains(pyatspi.STATE_FOCUSED):
+                    return
+            except Exception:
+                pass
+        time.sleep(.15)
+    deny("exact_native_editor_focus_not_verified_"+leaf)
+
+
+def fresh_editor_copy(leaf, tail=False):
+    # Avoid WebKit/X11 INCR transfers of the entire >128 KiB source during
+    # a navigation latency measurement. The selected sentinel is real editor
+    # text, never injected into clipboard by the test. Copy the final four
+    # lines for append/Undo witnesses, including existing source text.
+    focus_editor(leaf)
+    empty = "B5_NO_FRESH_COPY"
+    subprocess.run(["xclip","-selection","clipboard","-in"],
+                   input=empty, text=True, check=True,
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5)
+    if clipboard() != empty:
+        deny("native_clipboard_reset_not_observed")
+    if tail:
+        key("ctrl+End", "shift+Up", "shift+Up", "shift+Up", "shift+Up", "shift+Home")
+    else:
+        key("ctrl+Home", "shift+End")
+    key("ctrl+c")
+    until=time.perf_counter()+2
+    while time.perf_counter()<until:
+        value=clipboard()
+        if value and value!=empty and len(value)<=8192:
+            return value
+        time.sleep(.10)
+    return ""
+
+
 def assert_current_editor(marker,timeout=15):
+    leaf = marker.removeprefix("B5_SOURCE_")+".rs" if marker.startswith("B5_SOURCE_") else "main.rs"
+    tail = marker == PERF_SENTINEL
     until=time.perf_counter()+timeout
     while time.perf_counter()<until:
-        focus_editor()
-        subprocess.run(["xclip","-selection","clipboard","-in"],
-                       input="B5_NO_FRESH_COPY", text=True, check=True,
-                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5)
-        key("ctrl+a")
-        key("ctrl+c")
-        time.sleep(.10)
-        if marker in clipboard(): return
+        value=fresh_editor_copy(leaf,tail=tail)
+        if marker in value and (not tail or "B5_SOURCE_main" in value): return
         time.sleep(.20)
     deny("installed_editor_content_not_verified_"+marker)
 
@@ -165,6 +219,7 @@ def main():
     if observed!=exact: deny("perf_receipt_source_sha_not_checked_out")
     metric={"schemaVersion":1,"sourceCommit":exact,
         "os":"ubuntu-24.04","method":"installed-GTK-WebKit-native-AT-SPI-X11-and-proc",
+        "clipboardWitness":"bounded-fresh-head-or-tail-v2",
         "sourceBytes":SOURCE.stat().st_size,
         "fileCountToOpen":48,
         "openRoundTripMs":[],"switchRoundTripMs":[],
@@ -212,11 +267,8 @@ def main():
         key("ctrl+z")
         until=time.perf_counter()+8
         while time.perf_counter()<until:
-            focus_editor()
-            key("ctrl+a")
-            key("ctrl+c")
-            time.sleep(.12)
-            if PERF_SENTINEL not in clipboard(): break
+            observed=fresh_editor_copy("main.rs",tail=True)
+            if "B5_SOURCE_main" in observed and PERF_SENTINEL not in observed: break
         else: deny("native_editor_undo_not_observed")
         metric["undoRoundTripMs"]=round((time.perf_counter_ns()-started)/1e6,3)
         focus_editor()

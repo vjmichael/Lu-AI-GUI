@@ -128,8 +128,10 @@ test('IDE-MERGE-02C same-head acceptance compiles offline vcpkg and retains orig
 });
 
 
-test('IDE-MERGE-04 shares compiler intermediates only within original non-installed native jobs', () => {
-  const workflow=source('../../../.github/workflows/ide-group6f-integrated-native.yml');
+function assertSharedCompilerBoundaries(rawWorkflow) {
+  // Git on Windows may materialize CRLF, while Linux uses LF. Normalize
+  // only line endings; preserve step names, boundaries and all assertions.
+  const workflow=rawWorkflow.replace(/\r\n/g,'\n');
   const shared='CARGO_TARGET_DIR: ${{ runner.temp }}/ide-native-check-target';
   const steps=[
     'Native original Git and remote recovery fixture groups',
@@ -138,7 +140,9 @@ test('IDE-MERGE-04 shares compiler intermediates only within original non-instal
   ];
   assert.equal(workflow.split(shared).length-1,steps.length);
   for(const name of steps) {
-    const step=workflow.split('      - name: '+name+'\n')[1].split('\n      - ')[0];
+    const sections=workflow.split('      - name: '+name+'\n');
+    assert.equal(sections.length,2,'expected exactly one step: '+name);
+    const step=sections[1].split('\n      - ')[0];
     assert.ok(step.includes(shared),name);
     assert.match(step,/CARGO_INCREMENTAL: 0/);
     assert.match(step,/cargo (?:check|test) --locked/);
@@ -148,4 +152,18 @@ test('IDE-MERGE-04 shares compiler intermediates only within original non-instal
   assert.ok(installed.startsWith('  dev01-modern-real-installed-linux:'));
   assert.doesNotMatch(installed,/CARGO_TARGET_DIR|actions\/cache/);
   assert.doesNotMatch(workflow,/actions\/cache|restore-keys|continue-on-error:\s*true/);
+}
+
+test('IDE-MERGE-04 shares compiler intermediates only within original non-installed native jobs', () => {
+  const workflow=source('../../../.github/workflows/ide-group6f-integrated-native.yml');
+  assertSharedCompilerBoundaries(workflow);
+});
+
+test('IDE-MERGE-04 compiler boundary guard accepts CRLF but rejects changed steps and installed reuse', () => {
+  const lf=source('../../../.github/workflows/ide-group6f-integrated-native.yml').replace(/\r\n/g,'\n');
+  assertSharedCompilerBoundaries(lf);
+  assertSharedCompilerBoundaries(lf.replace(/\n/g,'\r\n'));
+  assert.throws(()=>assertSharedCompilerBoundaries(lf.replace('Native original Git and remote recovery fixture groups','Changed step')));
+  assert.throws(()=>assertSharedCompilerBoundaries(lf.replace('  dev01-modern-real-installed-linux:',
+    '  dev01-modern-real-installed-linux:\n    env:\n      CARGO_TARGET_DIR: unreviewed-installed-target')));
 });

@@ -30,8 +30,11 @@ test('actual form retains project, stage and native commit consent requirements'
   assert.ok(action.indexOf('gitCommitInFlight.current=true')<action.indexOf("invoke('ide_git_commit_reviewed'"));
   assert.match(action,/gitCommitInFlight\.current \|\|/);
   assert.match(action,/matchesReviewedCommitReceipt\(stage, done\)/);
-  assert.match(ui,/onClick=\{commitReviewedGitFile\}/);
-  assert.match(ui,/onSubmit=\{commitReviewedGitFile\}/);
+  assert.doesNotMatch(ui,/onClick=\{commitReviewedGitFile\}/);
+  assert.match(ui,/<button type="submit" className="primaryBtn" disabled=\{gitWriteBusy\}>\s*Confirm separate local commit/);
+  assert.match(action,/const form=event.currentTarget;/);
+  assert.match(action,/Awaiting native confirmation for the exact staged Git file/);
+  assert.match(ui,/onSubmit=\{commitReviewedGitFile\} noValidate/);
   const command=host.split('async fn ide_git_commit_reviewed(')[1].split('/// WO9-A/B:')[0];
   assert.match(command,/\.parent\(&owner\)/);
   assert.ok(command.indexOf('if !allow')<command.indexOf('registry.commit_reviewed_git_file'));

@@ -160,6 +160,82 @@ def accessible_error_candidates():
             continue
 
 
+def native_protected_build_button(seconds=16):
+    """Read the exact, disabled native control inside the real Jobs composer.
+
+    The shared global desktop enumeration stops at depth 13. The Jobs
+    composer may be deeper on WebKitGTK; identify its named parent workspace
+    first, then scan only its bounded descendants. No activation, focus,
+    synthetic state or text-based fallback is permitted.
+    """
+    import time
+    from wo8_linux_editor_atspi import elements, _native_dialog_ancestor
+
+    def named_visible(node, name, roles):
+        try:
+            return ((node.name or "").strip() == name and
+                    (node.getRoleName() or "").casefold() in roles and
+                    node.getState().contains(pyatspi.STATE_VISIBLE) and
+                    not _native_dialog_ancestor(node))
+        except Exception:
+            return False
+
+    def descendants(root):
+        stack = [(root, 0)]
+        visited = 0
+        result = []
+        while stack and visited < 8000:
+            node, depth = stack.pop()
+            visited += 1
+            result.append(node)
+            try:
+                count = node.childCount
+                if count < 0 or count > 256:
+                    return None
+                children = list(children_of(node))
+                if len(children) != count:
+                    return None
+            except Exception:
+                return None
+            if depth >= 28 and children:
+                return None  # incomplete enumeration cannot prove uniqueness
+            stack.extend((child, depth + 1) for child in children)
+        return result if not stack else None
+
+    region_roles = ("region", "landmark", "panel", "section", "grouping", "group")
+    deadline = time.monotonic() + seconds
+    last = (0, 0, 0)
+    while time.monotonic() < deadline:
+        roots = [node for node in elements()
+                 if named_visible(node, "Execution intent review", region_roles)]
+        composers = []
+        buttons = []
+        if len(roots) == 1:
+            nodes = descendants(roots[0])
+            if nodes is not None:
+                composers = [node for node in nodes if named_visible(
+                    node, "Protected native build and test", region_roles)]
+            if len(composers) == 1:
+                nodes = descendants(composers[0])
+                if nodes is not None:
+                    buttons = [node for node in nodes if named_visible(
+                        node, "Request protected Build/Test", ("push button", "button"))]
+        last = (len(roots), len(composers), len(buttons))
+        if last == (1, 1, 1):
+            run = buttons[0]
+            state = run.getState()
+            if (state.contains(pyatspi.STATE_ENABLED) or
+                    state.contains(pyatspi.STATE_SENSITIVE)):
+                deny("dev035_unsigned_gtk_admitted_protected_execution")
+            print("DEV035_LINUX_NATIVE_BUILD_CONTROL=unique_scoped_disabled_button", flush=True)
+            return run
+        time.sleep(0.3)
+    # Bounded categories only, not raw accessibility names or source data.
+    print("DEV035_LINUX_NATIVE_BUILD_CONTROL_INVENTORY=workspace:" + str(min(last[0],32)) +
+          ";composer:" + str(min(last[1],32)) + ";button:" + str(min(last[2],32)), flush=True)
+    deny("dev035_installed_native_disabled_build_control_not_verified")
+
+
 def main():
     if os.environ.get("GITHUB_ACTIONS") != "true" or not os.environ.get("DISPLAY"):
         deny("dev035_disposable_native_gtk_required")
@@ -178,7 +254,7 @@ def main():
         native_empty_job_journal(seconds=16)
         activate("Discover test files")
         native_bounded_test_discovery_status(seconds=18)
-        run=accessible("Request protected Build/Test",role="push button",seconds=16)
+        run=native_protected_build_button(seconds=16)
         if run.getState().contains(pyatspi.STATE_ENABLED):
             deny("dev035_unsigned_gtk_admitted_protected_execution")
         if digest()!=old:
