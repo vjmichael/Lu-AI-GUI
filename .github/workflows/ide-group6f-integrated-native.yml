@@ -345,6 +345,7 @@ jobs:
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$INTEGRATION_SOURCE_SHA"
           python3 -m py_compile ide/app/fixtures/dev01_modern_linux_installed_atspi.py
+          python3 -m unittest discover -s ide/app/fixtures -p test_dev01_native_confirmation_scope.py -v
           bash -n ide/app/fixtures/Test-DEV01ModernInstalledDeb.sh
       - uses: dtolnay/rust-toolchain@stable
         with:
