@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "4c93db3383d4961ca69745b21b1792659ea29a30",
-  "trackedFileCount": 1108,
+  "sourceCommitBeforeLock": "32a327e5f1cb7248db5dd650b0ad2d1e49a2f8e6",
+  "trackedFileCount": 1111,
   "files": [
     {
       "path": ".github/pull_request_template.md",
@@ -752,6 +752,10 @@
       "blob": "6604201f9d29295bde1c98fdf01dde35a4892cb4"
     },
     {
+      "path": "docs/LU_CP04B4_PHYSICAL_ACCEPTANCE_20261118.md",
+      "blob": "679f91b43a45a70dfb38ce4a14c7bc942232dda8"
+    },
+    {
       "path": "docs/LU_CURRENT_PREVIEW_CPU_VULKAN_DUAL_ENGINE_20261109.md",
       "blob": "c1664658ded245a3df6041114e42587f49550200"
     },
@@ -761,7 +765,7 @@
     },
     {
       "path": "docs/LU_DEVELOPMENT_LEDGER.md",
-      "blob": "1c9b82d919061b5485150cbd0e4bdb0be55e6db4"
+      "blob": "1df8c7fea3ee98b196b475308d359f7cf22a0994"
     },
     {
       "path": "docs/LU_E1_NATIVE_EVIDENCE_20261107.md",
@@ -2582,6 +2586,14 @@
     {
       "path": "scripts/lu-cp04b3-run-reviewed-native.ps1",
       "blob": "4d9d5223de63051f84d47037a10c5a1ab6a08922"
+    },
+    {
+      "path": "scripts/lu-cp04b4-prepare-physical.py",
+      "blob": "8440e04ad0a6768bd0d69d5291e8287ec456df83"
+    },
+    {
+      "path": "scripts/lu-cp04b4-prepare-physical.test.py",
+      "blob": "9378c5a0ac062673a01dd79d42b614b2951b2cd1"
     },
     {
       "path": "scripts/lu-ledger.mjs",
