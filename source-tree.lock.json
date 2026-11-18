@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "00568f3e1199aaa78ab5052b96fd5ab7fc3d5500",
+  "sourceCommitBeforeLock": "93fb1a673e5c9ef4e4e8d1bf6d8200b4ae317dda",
   "trackedFileCount": 1956,
   "files": [
     {
@@ -253,7 +253,7 @@
     },
     {
       "path": ".github/workflows/ide-e2-supervised-lsp.yml",
-      "blob": "a29c605710c16b9fe8678f4072f79f12a4797d98"
+      "blob": "6fa935c7dedd6c2bb54eb74dfba15ae0a0a40408"
     },
     {
       "path": ".github/workflows/ide-e2-unsigned-installed-smoke.yml",
@@ -1177,7 +1177,7 @@
     },
     {
       "path": "docs/LU_DEVELOPMENT_LEDGER.md",
-      "blob": "f406b79b443a112fd54ef27c7784d94bb5eccbb2"
+      "blob": "40f0e286b96724bda428b67a3abacc11386d4bf6"
     },
     {
       "path": "docs/LU_E1_NATIVE_EVIDENCE_20261107.md",
@@ -1785,7 +1785,7 @@
     },
     {
       "path": "ide/app/fixtures/Test-Wo8NativeDesktopUI.ps1",
-      "blob": "5e1cc71d7a3922ebfb0e67866a2483523fe67aa9"
+      "blob": "fa179ddd6d0ebb8028d007aef29883ccf2b62c20"
     },
     {
       "path": "ide/app/fixtures/b2_linux_installed_draft_atspi.py",
@@ -1793,7 +1793,7 @@
     },
     {
       "path": "ide/app/fixtures/b4_linux_installed_split_atspi.py",
-      "blob": "bca2e96b3d55086f0e89fc34e22d049fe3250392"
+      "blob": "a9f4b6545a2cd80874222f848eb49c11a4a099b0"
     },
     {
       "path": "ide/app/fixtures/b5_linux_installed_perf_atspi.py",
@@ -1801,7 +1801,7 @@
     },
     {
       "path": "ide/app/fixtures/dev01_modern_linux_installed_atspi.py",
-      "blob": "4a1e19adfd7f1daad352dd9dbbc4c40a5c810638"
+      "blob": "6a3340f97006d3a564506e82aaf3b60552032a24"
     },
     {
       "path": "ide/app/fixtures/dev02_linux_installed_lsp_atspi.py",
@@ -1833,7 +1833,7 @@
     },
     {
       "path": "ide/app/fixtures/test_atspi_signature_contract.py",
-      "blob": "01a7834aeed0140a8fbf5a07482e07c7766cef4c"
+      "blob": "4c37e4a938671b3e819da535c35471ef0980b97d"
     },
     {
       "path": "ide/app/fixtures/test_dev035_jobs_accessibility_contract.py",
@@ -1857,7 +1857,7 @@
     },
     {
       "path": "ide/app/fixtures/wo8_linux_editor_atspi.py",
-      "blob": "a74514e3f7d54ac0f290ab915c98463c2f6c5211"
+      "blob": "f414aa4b6129017737d2829e497936ed662bfeac"
     },
     {
       "path": "ide/app/fixtures/wo8_linux_window_acceptance.sh",
@@ -2253,7 +2253,7 @@
     },
     {
       "path": "ide/app/tests/ide_initial_workspace_render.test.mjs",
-      "blob": "3e45cf405cbb07fdf7ff0e69b7c1d693575994bf"
+      "blob": "28efcddb44dcfbed676a46aac51aeaf23f2e78f5"
     },
     {
       "path": "ide/app/tests/ide_merge02_03_consolidation.test.mjs",
@@ -2497,7 +2497,7 @@
     },
     {
       "path": "ide/app/web/main.jsx",
-      "blob": "02b581e7338c87c4ed8aa224438bd4ee93ddff0e"
+      "blob": "9d5b5164dcc73c010e4ab5acd11e131dce6caa78"
     },
     {
       "path": "ide/app/web/native_build_output.js",
@@ -2537,7 +2537,7 @@
     },
     {
       "path": "ide/app/web/styles.css",
-      "blob": "2d0583f95e2e24cf2f318a139203c1610bc3e49f"
+      "blob": "3b81cf70236b9683dfb4a2758e0d401b6bec930d"
     },
     {
       "path": "ide/app/web/task_source_evidence.js",
@@ -2565,15 +2565,15 @@
     },
     {
       "path": "ide/audits/test_p05_owner_successor.py",
-      "blob": "1f531aa763625c3267c6617d268ecb739e665958"
+      "blob": "2869360c0b3271c674c67be00bb0b0d961e30b0e"
     },
     {
       "path": "ide/audits/verify_p05_owner_successor.py",
-      "blob": "1d96865050e578341d10c32375b0d6a508f6a4d0"
+      "blob": "850f345fc5a9befd067269b7b2473c1120dd8f7c"
     },
     {
       "path": "ide/ci/merge02-reviewed-native-boundaries.json",
-      "blob": "d994c2f230b1e1155ea4c5bbf7e2271d9f82f7f6"
+      "blob": "bc10e26186ba352df14667539f28b06d28d0a7b7"
     },
     {
       "path": "ide/ci/test_verify_reviewed_native_boundaries.py",
@@ -3613,7 +3613,7 @@
     },
     {
       "path": "ide/llvm18_owner/Build-PinnedClangdWindows.ps1",
-      "blob": "92023f4e465522e32402c33b9420813f4d739992"
+      "blob": "df1223d04bf8f9dfce4cd6ea1b0d813b3d1c29e6"
     },
     {
       "path": "ide/llvm18_owner/Build-PinnedOwnerWindows.ps1",
@@ -3645,7 +3645,7 @@
     },
     {
       "path": "ide/llvm18_owner/test_clangd20_windows_startup.py",
-      "blob": "3adc5f452e0821fb87d260cb34e9448110ab46bf"
+      "blob": "aa9be036d033aafdc1412fd608727df165064f6b"
     },
     {
       "path": "ide/llvm18_owner/test_pinned_chrono_overlay.py",
@@ -3677,7 +3677,7 @@
     },
     {
       "path": "ide/packaging/audit_p05_reviewed_workflow_successor.py",
-      "blob": "809eb5cbda88d494fb334c1643c83b55a8f6cc7b"
+      "blob": "4a9e7e7d5ca72b656551d2403272c0074cead627"
     },
     {
       "path": "ide/packaging/collect_original_lsp_notices.py",
@@ -4001,7 +4001,7 @@
     },
     {
       "path": "ide/packaging/test_verify_dev045d2_line_oracle.py",
-      "blob": "31931e3793a97ad341412736f7a2fcdc0ddd852c"
+      "blob": "81e0d32450a87c93326168365a2cfc1c6b589231"
     },
     {
       "path": "ide/packaging/test_verify_language_servers.py",
@@ -4441,7 +4441,7 @@
     },
     {
       "path": "ide/supervisor/examples/wo6_native_dap_acceptance.rs",
-      "blob": "421762228c0c02f40252ec1e0e9e7411e49f6b95"
+      "blob": "7108698d1d2e3c5f986ec65bf5b81929ba173137"
     },
     {
       "path": "ide/supervisor/fixtures/Install-ProtectedRecoveryService.ps1",
@@ -4553,11 +4553,11 @@
     },
     {
       "path": "ide/supervisor/src/dap_transport.rs",
-      "blob": "2e69f82b025c49338560bad623548ccc61f60461"
+      "blob": "805c30c4ac28a7c8c0e9eeee25cc861b0190159d"
     },
     {
       "path": "ide/supervisor/src/debug_action_receipts.rs",
-      "blob": "e3b33b739429d777ddbb150b28de374c8b34ca13"
+      "blob": "014328af56463fe65bf2e9ffb86fac292e4ff533"
     },
     {
       "path": "ide/supervisor/src/debug_binary_witness.rs",
@@ -4569,7 +4569,7 @@
     },
     {
       "path": "ide/supervisor/src/debug_control_dispatch.rs",
-      "blob": "825ff9df3d0e78592b96a7e39789e2dc6e07e75a"
+      "blob": "253d0d70febb1333c0161028e75abccf2b4c5604"
     },
     {
       "path": "ide/supervisor/src/debug_control_evidence.rs",
@@ -4609,7 +4609,7 @@
     },
     {
       "path": "ide/supervisor/src/lsp_transport.rs",
-      "blob": "8af1ccff86a1c89a5c3f6955ebaecf99e619eed9"
+      "blob": "3690783eead1374d29fee8303ab3a165f493eac8"
     },
     {
       "path": "ide/supervisor/src/native_kernel_pc.rs",
@@ -4645,7 +4645,7 @@
     },
     {
       "path": "ide/supervisor/src/windows_event_owner.rs",
-      "blob": "5efa27ba364f2f7f09b2b325fbd169991e26df3d"
+      "blob": "72c58fa2610a71156ab6bdba9f8fae3764d43ef0"
     },
     {
       "path": "ide/supervisor/src/windows_fin04w2_c2_host.rs",
@@ -4697,7 +4697,7 @@
     },
     {
       "path": "ide/supervisor/src/windows_lsp_worker.rs",
-      "blob": "411028a517f5fc50f9781b977c2fc2f1e4e6d47a"
+      "blob": "3a3ec763da193989e7f14a2ed509039cfb256351"
     },
     {
       "path": "ide/supervisor/src/windows_null_device.rs",
