@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "851ed6b98602f0251dd3240d46edfb1dfaa14ed4",
-  "trackedFileCount": 1956,
+  "sourceCommitBeforeLock": "cd5b8e7441b4288257ccbad028c68c0120c738a5",
+  "trackedFileCount": 1957,
   "files": [
     {
       "path": ".gitattributes",
@@ -321,7 +321,7 @@
     },
     {
       "path": ".github/workflows/ide-group6f-integrated-native.yml",
-      "blob": "86cbc5b5f994d855762a700ed3bb9bac4eb5162d"
+      "blob": "a884abd89833abbc40b83f355ef309f83517b8e4"
     },
     {
       "path": ".github/workflows/ide-linux-26-installed-diagnostic.yml",
@@ -1717,7 +1717,7 @@
     },
     {
       "path": "ide/app/fixtures/Test-B2InstalledDraftRecovery.ps1",
-      "blob": "32c500442d3796526549279bb7359c1373b7445b"
+      "blob": "bbc98d81048196a69fc108728261e89fd4558d37"
     },
     {
       "path": "ide/app/fixtures/Test-B4InstalledDeb.sh",
@@ -1785,11 +1785,11 @@
     },
     {
       "path": "ide/app/fixtures/Test-Wo8NativeDesktopUI.ps1",
-      "blob": "21eed080afa2302526c96171d3501383042e7510"
+      "blob": "0e2a1e1010bd65d92ce1244a171f046a55f55df4"
     },
     {
       "path": "ide/app/fixtures/b2_linux_installed_draft_atspi.py",
-      "blob": "f272db3f46a9f3a2ab4cd1e04e87b35c96c107c1"
+      "blob": "75835e7d0ce8c6d5a245b2735da32e76bf9838cf"
     },
     {
       "path": "ide/app/fixtures/b4_linux_installed_split_atspi.py",
@@ -1797,11 +1797,11 @@
     },
     {
       "path": "ide/app/fixtures/b5_linux_installed_perf_atspi.py",
-      "blob": "df1aaa08f6a70b73647987ff3efe1266b3dc7f8b"
+      "blob": "6963c1a27e8d5a5f81376b9bbe9aa840e33d1853"
     },
     {
       "path": "ide/app/fixtures/dev01_modern_linux_installed_atspi.py",
-      "blob": "7b9f4c5a21ba63183a95c2ef25c9f287b78186ef"
+      "blob": "9ce78e4c6ddbf1bd1ef3ed58a52dbf0db38d28bc"
     },
     {
       "path": "ide/app/fixtures/dev02_linux_installed_lsp_atspi.py",
@@ -1836,6 +1836,10 @@
       "blob": "4c37e4a938671b3e819da535c35471ef0980b97d"
     },
     {
+      "path": "ide/app/fixtures/test_dev01_native_confirmation_scope.py",
+      "blob": "acfcd77984123f0a53770826e2bc408258b74b83"
+    },
+    {
       "path": "ide/app/fixtures/test_dev035_jobs_accessibility_contract.py",
       "blob": "a46e2516b6b407056eb43ad5b89ae5cccc2cd3f0"
     },
@@ -1857,7 +1861,7 @@
     },
     {
       "path": "ide/app/fixtures/wo8_linux_editor_atspi.py",
-      "blob": "f414aa4b6129017737d2829e497936ed662bfeac"
+      "blob": "de02b25d03d354e3cf08e4d25c2bb81980908e2f"
     },
     {
       "path": "ide/app/fixtures/wo8_linux_window_acceptance.sh",
@@ -1933,7 +1937,7 @@
     },
     {
       "path": "ide/app/src-tauri/src/lib.rs",
-      "blob": "bb479355f9474d507fef6a14ec6573f7c504d8ec"
+      "blob": "67ad2a42712868c4c8935a39db7032f58a9ca106"
     },
     {
       "path": "ide/app/src-tauri/src/lsp_backend.rs",
@@ -2025,7 +2029,7 @@
     },
     {
       "path": "ide/app/tests/dev01_integrated_license_bundle_source.test.mjs",
-      "blob": "c288da7d7acf1fc13ae654a93c17a3083232816e"
+      "blob": "b766ff25e70d7eeae3540ba8d8c75fcbc40fffb9"
     },
     {
       "path": "ide/app/tests/dev02_project_problems.test.mjs",
@@ -2497,7 +2501,7 @@
     },
     {
       "path": "ide/app/web/main.jsx",
-      "blob": "9d5b5164dcc73c010e4ab5acd11e131dce6caa78"
+      "blob": "a784abcfb4eb96393a208162fa7676e822423c35"
     },
     {
       "path": "ide/app/web/native_build_output.js",
@@ -3409,7 +3413,7 @@
     },
     {
       "path": "ide/host/src/github_remote_publication_intent.rs",
-      "blob": "492b12fa3a9232adbbdb5ffda95fa6c9c6c4f41a"
+      "blob": "936065d08944d79d39eab58903f2ca40301d0ff7"
     },
     {
       "path": "ide/host/src/github_review_state.rs",
