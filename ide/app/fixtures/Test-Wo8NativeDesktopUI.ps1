@@ -269,6 +269,33 @@ function Reveal-NativeControl($element) {
   }
   Start-Sleep -Milliseconds 250
 }
+function Focus-ExactNativeControl([string]$label,[string]$kind='') {
+  $hwnd=$proc.MainWindowHandle
+  if ($hwnd -eq [IntPtr]::Zero) { Deny 'exact_native_focus_missing_window' }
+  for ($attempt=0; $attempt -lt 3; $attempt++) {
+    [void][P04NativeWebViewWindows]::SetForegroundWindow($hwnd)
+    $item=Find-Control $label $kind 4 -Exact
+    if (!$item.Current.IsEnabled -or !$item.Current.IsKeyboardFocusable) { continue }
+    try {
+      Reveal-NativeControl $item
+      $item=Find-Control $label $kind 4 -Exact
+      $item.SetFocus()
+    } catch {}
+    $until=(Get-Date).AddSeconds(3)
+    do {
+      $item=Find-Control $label $kind 2 -Exact
+      $actual=[System.Windows.Automation.AutomationElement]::FocusedElement
+      if ($item.Current.IsEnabled -and !$item.Current.IsOffscreen -and
+          $item.Current.Name -ceq $label -and
+          [P04NativeWebViewWindows]::GetForegroundWindow() -eq $hwnd -and
+          ($item.Current.HasKeyboardFocus -or ($actual -and $actual.Equals($item)))) {
+        return $item
+      }
+      Start-Sleep -Milliseconds 160
+    } while ((Get-Date) -lt $until)
+  }
+  Deny ('exact_native_focus_unverified_'+$label.Replace(' ','_'))
+}
 function Click([string]$label) {
   $reviewToolbar=$label -cin @('Move file','Trash file','Restore file','Toggle split editor','Confirm separate local commit (no push)')
   if ($reviewToolbar) {
@@ -932,7 +959,10 @@ try {
       # Use the same verified, exactly named and revealed native pointer
       # action as the review toolbar. This submits only the review; the
       # separate native one-use consent and independent Git checks follow.
-      Click 'Confirm separate local commit (no push)'
+      # Submit via the exact enabled button's genuine keyboard gesture.
+      # The real modal plus independent Git bytes remain the acceptance gate.
+      [void](Focus-ExactNativeControl 'Confirm separate local commit (no push)' 'Button')
+      [System.Windows.Forms.SendKeys]::SendWait(' ')
       Confirm-NativeOneUseDialog 'Confirm local Git commit' 'Commit exact staged file' 'WO9 installed reviewed Git source'
       Require 'Local commit'
       # Real Win UIA consent invokes asynchronously: the exact native Git
@@ -1400,7 +1430,10 @@ try {
         $end=(Get-Date).AddSeconds(18)
         while((Get-Date) -lt $end) {
           $editor=$null
-          try {$editor=Find-Control $expected 'Edit' 2} catch {}
+          try {
+            Click 'Focus primary editor (Ctrl+1)'
+            $editor=Focus-ExactNativeControl $expected 'Edit'
+          } catch {}
           if ($null -ne $editor -and $editor.Current.IsKeyboardFocusable) {
             $hwnd=$proc.MainWindowHandle
             [void][P04NativeWebViewWindows]::SetForegroundWindow($hwnd)
@@ -1408,8 +1441,8 @@ try {
                 [P04NativeWebViewWindows]::GetForegroundWindow() -ne $hwnd) {
               Deny 'b5_native_editor_window_not_foreground'
             }
-            $editor.SetFocus()
-            if ($editor.Current.HasKeyboardFocus -and
+            $actual=[System.Windows.Automation.AutomationElement]::FocusedElement
+            if (($editor.Current.HasKeyboardFocus -or ($actual -and $actual.Equals($editor))) -and
                 [P04NativeWebViewWindows]::GetForegroundWindow() -eq $hwnd) {
               # Stale clipboard content is NEVER counted as a successful tab
               # switch or edit; verify a new OS copy from the exact active pane.
@@ -1431,21 +1464,21 @@ try {
         Deny ('b5_native_installed_editor_not_visible_for_'+$marker)
       }
       function B5-OpenRelative([string]$leaf,[string]$marker) {
-        $input=Find-Control 'Open project-relative file' '' 12
-        if (!$input.Current.IsKeyboardFocusable) {Deny 'b5_native_relative_file_input_not_focusable'}
-        $input.SetFocus()
+        $input=Focus-ExactNativeControl 'Open project-relative file' 'Edit'
         $timer=[Diagnostics.Stopwatch]::StartNew()
         [System.Windows.Forms.SendKeys]::SendWait('^a')
         [System.Windows.Forms.SendKeys]::SendWait($leaf)
+        $input=Focus-ExactNativeControl 'Open project-relative file' 'Edit'
+        if ($input.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern).Current.Value -cne $leaf) {
+          Deny 'b5_native_relative_file_input_readback_mismatch'
+        }
         [System.Windows.Forms.SendKeys]::SendWait('{ENTER}')
         B5-VisibleEditor $marker
         $timer.Stop()
         return [Math]::Round($timer.Elapsed.TotalMilliseconds,3)
       }
       function B5-Switch([string]$which,[string]$marker) {
-        $picker=Find-Control 'Jump to open file' '' 12
-        if (!$picker.Current.IsKeyboardFocusable) {Deny 'b5_native_tab_picker_not_focusable'}
-        $picker.SetFocus()
+        $picker=Focus-ExactNativeControl 'Jump to open file'
         $timer=[Diagnostics.Stopwatch]::StartNew()
         if ($which -eq 'first') {
           [System.Windows.Forms.SendKeys]::SendWait('{HOME}{DOWN}{ENTER}')
@@ -1472,12 +1505,17 @@ try {
         }
       }
       # Explicitly attempt a 49th tab. No implicit eviction of unsaved history.
-      $input=Find-Control 'Open project-relative file' '' 12
-      $input.SetFocus()
+      Require '48 / 48 tabs in this project'
+      $input=Focus-ExactNativeControl 'Open project-relative file' 'Edit'
       [System.Windows.Forms.SendKeys]::SendWait('^a')
       [System.Windows.Forms.SendKeys]::SendWait('p47.rs')
+      $input=Focus-ExactNativeControl 'Open project-relative file' 'Edit'
+      if ($input.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern).Current.Value -cne 'p47.rs') {
+        Deny 'b5_native_49th_input_readback_mismatch'
+      }
       [System.Windows.Forms.SendKeys]::SendWait('{ENTER}')
       Require 'Open-file budget'
+      Require '48 / 48 tabs in this project'
       $data.bounded49thDenial=$true
       foreach($leaf in $hashes.Keys) {
         if((Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $fixed $leaf)).Hash -ne
@@ -1811,7 +1849,7 @@ try {
           $copy.Contains('DEV01_MODERN_UNSAVED_PRIVATE_AFTER_KILL')) {
         Deny 'dev01_durable_private_reference_missing_or_disclosing'
       }
-      Click 'Remember tabs'
+      Click 'Remember open tabs for restart'
       if ((Get-FileHash $source -Algorithm SHA256).Hash -ne $beforeDraft) {
         Deny 'dev01_remembered_layout_wrote_unsaved_source'
       }
@@ -1826,7 +1864,7 @@ try {
       }
       Require 'Recover preserved draft'
       Click 'Recover preserved draft'
-      Require 'Recovered private checkpoint to editor only'
+      Require 'Recovered private checkpoint into unsaved editor only'
       if ([IO.File]::ReadAllText($source).Contains('DEV01_MODERN_UNSAVED_PRIVATE_AFTER_KILL')) {
         Deny 'dev01_recovery_implicitly_saved'
       }

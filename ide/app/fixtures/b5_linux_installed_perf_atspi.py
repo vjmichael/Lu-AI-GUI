@@ -16,6 +16,8 @@ import subprocess
 import sys
 import time
 
+import pyatspi
+
 from wo8_linux_editor_atspi import (
     ROOT, SOURCE, accessible, activate, key, type_text, focus_editor,
     select_native_folder, editor_project, start, stop,
@@ -85,6 +87,9 @@ def assert_current_editor(marker,timeout=15):
     until=time.perf_counter()+timeout
     while time.perf_counter()<until:
         focus_editor()
+        subprocess.run(["xclip","-selection","clipboard","-in"],
+                       input="B5_NO_FRESH_COPY", text=True, check=True,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5)
         key("ctrl+a")
         key("ctrl+c")
         time.sleep(.10)
@@ -92,17 +97,29 @@ def assert_current_editor(marker,timeout=15):
         time.sleep(.20)
     deny("installed_editor_content_not_verified_"+marker)
 
-def navigate_relative(name,marker):
+def enter_relative_path(name):
     entry=accessible("Open project-relative file",seconds=10)
-    try:
-        if not entry.queryComponent().grabFocus():
-            deny("native_relative_open_input_not_focusable")
-    except Exception:
+    if not entry.queryComponent().grabFocus():
         deny("native_relative_open_input_not_focusable")
-    start_ns=time.perf_counter_ns()
     key("ctrl+a")
     type_text(name)
-    key("Return")
+    until=time.monotonic()+4
+    while time.monotonic()<until:
+        entry=accessible("Open project-relative file",seconds=2)
+        try:
+            text=entry.queryText()
+            if (entry.getState().contains(pyatspi.STATE_FOCUSED)
+                    and text.getText(0,text.characterCount)==name):
+                key("Return")
+                return
+        except Exception:
+            pass
+        time.sleep(.15)
+    deny("native_relative_open_value_or_focus_not_verified")
+
+def navigate_relative(name,marker):
+    start_ns=time.perf_counter_ns()
+    enter_relative_path(name)
     assert_current_editor(marker)
     return round((time.perf_counter_ns()-start_ns)/1e6,3)
 
@@ -169,13 +186,10 @@ def main():
                 metric["memorySamples"].append(sample_rss(proc.pid,
                     "opened_"+str(i+2)+"_distinct_files"))
         # A 49th source must be denied, never silently evict old Undo/draft.
-        entry=accessible("Open project-relative file",seconds=8)
-        if not entry.queryComponent().grabFocus():
-            deny("relative_file_input_lost_after_full_working_set")
-        key("ctrl+a")
-        type_text(EXTRA)
-        key("Return")
+        accessible("48 / 48 tabs in this project",seconds=10)
+        enter_relative_path(EXTRA)
         accessible("Open-file budget",seconds=10)
+        accessible("48 / 48 tabs in this project",seconds=10)
         metric["bounded49thDenial"]=True
         if any(sha(path)!=originals[path.name] for path in files):
             deny("unsaved_multi_tab_open_changed_source")

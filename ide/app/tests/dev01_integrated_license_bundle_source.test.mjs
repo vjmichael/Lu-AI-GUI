@@ -58,7 +58,9 @@ test('DEV01 and pinned clangd retain fail-closed native repair boundaries', () =
   assert.doesNotMatch(input, /\.SetValue\(/);
   const linux = text('../fixtures/dev01_modern_linux_installed_atspi.py');
   const confirm = linux.split('def owned_confirmation(')[1].split('def verify_fixture(')[0];
-  assert.match(confirm, /getApplication\(\)\.get_process_id\(\) == pid/);
+  assert.match(confirm, /_native_process_id\(node\) != pid/);
+  assert.match(confirm, /_same_window_geometry\(node, geometry\)/);
+  assert.match(confirm, /node\.parent\.getRoleName\(\)\.casefold\(\) != "application"/);
   assert.match(confirm, /message_seen and len\(buttons\) == 1/);
   assert.match(confirm, /_active_confirmation_window\(proc\) != \(active, pid, title\)/);
   assert.match(confirm, /action\.doAction\(indices\[0\]\)/);
@@ -67,4 +69,35 @@ test('DEV01 and pinned clangd retain fail-closed native repair boundaries', () =
   assert.match(clangd, /Get-Command ninja\.exe[^\n]+Select-Object -First 1/);
   assert.match(clangd, /Test-Path -LiteralPath \$ninja -PathType Leaf/);
   assert.match(clangd, /ninjaSha256=/);
+});
+
+// Real native receipts remain the gate; these source checks prevent restoring stale selectors or bypassing evidence.
+test('03G accessible status and native review selectors remain bound to actual UI state', () => {
+  const web=text('../web/main.jsx');
+  const win=text('../fixtures/Test-Wo8NativeDesktopUI.ps1');
+  const b2win=text('../fixtures/Test-B2InstalledDraftRecovery.ps1');
+  const linux=text('../fixtures/dev01_modern_linux_installed_atspi.py');
+  const b2linux=text('../fixtures/b2_linux_installed_draft_atspi.py');
+  const b5linux=text('../fixtures/b5_linux_installed_perf_atspi.py');
+  const atspi=text('../fixtures/wo8_linux_editor_atspi.py');
+  assert.match(web, /aria-label="Remember open tabs for restart"/);
+  for (const body of [win,linux]) assert.match(body,/Remember open tabs for restart/);
+  for (const body of [win,b2win,linux,b2linux]) {
+    assert.match(body,/Recovered private checkpoint into unsaved editor only/);
+    assert.doesNotMatch(body,/Recovered private checkpoint to editor only/);
+  }
+  assert.match(web,/problem\.startsWith\('Open-file budget'\) \? problem/);
+  assert.match(web,/aria-label=\{workingSetNotice\}/);
+  assert.match(web,/aria-label="No current project-owned native terminal stream"/);
+  assert.match(web,/role="region" aria-label="Projects in workflow"/);
+  assert.match(web,/getAll\('relativeSourcePath'\)/);
+  assert.match(web,/verifiedRelativeSourcePath\(submittedPath\)/);
+  assert.match(win,/Focus-ExactNativeControl 'Confirm separate local commit \(no push\)' 'Button'/);
+  assert.match(win,/Confirm-NativeOneUseDialog 'Confirm local Git commit'/);
+  assert.match(b2win,/FocusedElement/);
+  assert.match(b2win,/Native clipboard did not observe exact changed editor text/);
+  assert.equal((b5linux.match(/48 \/ 48 tabs in this project/g)||[]).length,2);
+  assert.match(b5linux,/text\.getText\(0,text\.characterCount\)==name/);
+  assert.match(atspi,/yield from descendants\(groups\[0\]\)/);
+  assert.match(atspi,/STATE_CHECKED/);
 });

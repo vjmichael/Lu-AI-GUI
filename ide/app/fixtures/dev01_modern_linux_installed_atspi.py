@@ -107,38 +107,98 @@ def _confirmation_nodes(root):
             stack.extend((child, depth + 1) for child in native.children_of(node))
 
 
+def _window_geometry(active):
+    output = subprocess.check_output(
+        ["xdotool", "getwindowgeometry", "--shell", active],
+        text=True, timeout=5
+    )
+    values = {}
+    for line in output.splitlines():
+        key, sep, value = line.partition("=")
+        if sep and key in ("X", "Y", "WIDTH", "HEIGHT"):
+            values[key] = int(value)
+    if len(values) != 4 or min(values["WIDTH"], values["HEIGHT"]) < 32:
+        deny("confirmation_native_geometry_missing")
+    return tuple(values[k] for k in ("X", "Y", "WIDTH", "HEIGHT"))
+
+
+def _native_process_id(node):
+    # Native GI/AT-SPI exposes process ID on the accessible or its application.
+    # If neither interface supplies it, fail closed rather than guess ownership.
+    for candidate in (node, node.getApplication()):
+        try:
+            ident = int(candidate.get_process_id())
+            if ident > 0:
+                return ident
+        except Exception:
+            continue
+    return None
+
+
+def _same_window_geometry(node, geometry):
+    rect = node.queryComponent().getExtents(pyatspi.DESKTOP_COORDS)
+    x, y, width, height = geometry
+    # GTK window decorations can shift screen coordinates by a few pixels.
+    return (abs(rect.x - x) <= 48 and abs(rect.y - y) <= 48
+            and abs(rect.width - width) <= 48
+            and abs(rect.height - height) <= 48
+            and rect.width >= 32 and rect.height >= 32)
+
+
+def _exact_accessible_text(node, expected):
+    name = " ".join((node.name or "").split())
+    if name == expected:
+        return True
+    try:
+        text = node.queryText()
+        if 0 < text.characterCount <= 1024:
+            return " ".join(text.getText(0, text.characterCount).split()) == expected
+    except Exception:
+        pass
+    return False
+
+
 def owned_confirmation(proc, message):
-    # GTK/rfd can expose a real native modal as a frame/window rather than
-    # an AT-SPI dialog role. Bind it to the active exact X11 title and owned
-    # PID, then inspect only that native accessible window's descendants.
-    # Never select a same-named global button, webview control, or keyboard
-    # fallback; confirmation is dispatched once from the scoped button.
+    # Independently verify active X11 title, PID lineage, geometry and the
+    # exact message and button in one unique top-level native accessible.
+    # GTK may expose GtkMessageDialog with the message as its accessible
+    # name, or the visible label only through Text, not the X11 title.
     native.accessible(message, seconds=18)
     active, pid, title = _active_confirmation_window(proc)
+    geometry = _window_geometry(active)
+    expected = " ".join(message.split())
     deadline = time.monotonic() + 12
+    counters = (0, 0, 0, 0, 0)
     while time.monotonic() < deadline:
         roots = []
+        top_level = owned = geometry_matches = 0
         for node in native.elements():
             try:
-                if ((node.name or "").strip() == title
-                        and node.getRoleName().casefold() in
+                if (node.getRoleName().casefold() not in
                         ("dialog", "frame", "window", "alert")
-                        and _showing(node)
-                        and node.getApplication().get_process_id() == pid):
-                    roots.append(node)
+                        or node.parent.getRoleName().casefold() != "application"
+                        or not _showing(node)):
+                    continue
+                top_level += 1
+                if _native_process_id(node) != pid:
+                    continue
+                owned += 1
+                if not _same_window_geometry(node, geometry):
+                    continue
+                geometry_matches += 1
+                roots.append(node)
             except Exception:
                 continue
+        message_seen = False
+        buttons = []
         if len(roots) == 1:
-            buttons = []
-            message_seen = False
             for node in _confirmation_nodes(roots[0]):
                 try:
                     if not _showing(node):
                         continue
-                    name = " ".join((node.name or "").split())
-                    if name == " ".join(message.split()):
+                    if _exact_accessible_text(node, expected):
                         message_seen = True
-                    if (name == "Apply file action"
+                    if ((node.name or "").strip() == "Apply file action"
                             and "button" in node.getRoleName().casefold()
                             and all(node.getState().contains(flag) for flag in
                                     (pyatspi.STATE_ENABLED, pyatspi.STATE_SENSITIVE))):
@@ -152,13 +212,17 @@ def owned_confirmation(proc, message):
                            ("click", "press", "activate")]
                 if len(indices) != 1:
                     deny("confirmation_native_action_ambiguous")
-                if _active_confirmation_window(proc) != (active, pid, title):
+                if (_active_confirmation_window(proc) != (active, pid, title)
+                        or not _same_window_geometry(roots[0], _window_geometry(active))):
                     deny("confirmation_native_window_changed")
                 if not action.doAction(indices[0]):
                     deny("confirmation_native_action_denied")
                 print("DEV01_MODERN_LINUX_NATIVE_OWNED_CONFIRMATION=OBSERVED", flush=True)
                 return
+        counters = (top_level, owned, geometry_matches, int(message_seen), len(buttons))
         time.sleep(0.25)
+    print("DEV01_NATIVE_CONFIRMATION_INVENTORY=top_level:%d;owned:%d;geometry:%d;message:%d;buttons:%d"
+          % counters, flush=True)
     deny("confirmation_exact_owned_modal_or_action_not_verified")
 
 
@@ -292,7 +356,7 @@ def modern_split_and_private_checkpoint():
             and "lifetime=persistent-private-app-data" in clipboard
             and "checkpoint=" in clipboard and DRAFT not in clipboard):
         deny("durable_private_non_disclosing_checkpoint_missing")
-    native.activate("Remember tabs")
+    native.activate("Remember open tabs for restart")
     if digest(SOURCE) != original:
         deny("private_checkpoint_or_tab_layout_wrote_original")
     print("DEV01_MODERN_LINUX_PRE_KILL_PRIVATE_CHECKPOINT=PASS", flush=True)
@@ -319,7 +383,7 @@ def main():
         native.activate_exact_source_file("main.rs")
         native.accessible("Recover preserved draft", seconds=25)
         native.activate("Recover preserved draft")
-        native.accessible("Recovered private checkpoint to editor only", seconds=20)
+        native.accessible("Recovered private checkpoint into unsaved editor only", seconds=20)
         if DRAFT in SOURCE.read_text(encoding="utf-8"):
             deny("restart_recovery_implicitly_wrote_source")
         native.activate("Save · Ctrl+S")

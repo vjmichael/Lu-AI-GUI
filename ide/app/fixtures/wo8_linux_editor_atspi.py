@@ -149,29 +149,44 @@ def activate(name, role=None, timeout=20):
 
 
 def _native_workflow_project_nodes():
-    # The portfolio lives deep inside the package/workflow panel. Do not
-    # accept similarly named checkboxes outside the actual portfolio group.
-    roots = []
+    # Scope to the uniquely named portfolio region, then require the
+    # actual included-project group within it. Its controls may exceed the
+    # global desktop depth bound, and WebKit may name the fieldset as a panel.
+    regions = []
     for node in elements():
+        try:
+            if ((node.name or "").strip() == "Projects in workflow"
+                    and (node.getRoleName() or "").casefold() in
+                    ("region", "landmark", "panel", "grouping", "group", "section")
+                    and not _native_dialog_ancestor(node)
+                    and node.getState().contains(pyatspi.STATE_VISIBLE)):
+                regions.append(node)
+        except Exception:
+            continue
+    if len(regions) != 1:
+        return
+    def descendants(root):
+        stack = [(root, 0)]
+        visited = 0
+        while stack and visited < 512:
+            node, depth = stack.pop()
+            visited += 1
+            yield node
+            if depth < 18:
+                stack.extend((child, depth + 1) for child in children_of(node))
+    groups = []
+    for node in descendants(regions[0]):
         try:
             if ((node.name or "").strip() == "Include registered, open projects"
                     and (node.getRoleName() or "").casefold() in
-                    ("panel", "grouping", "group", "section", "form")
-                    and not _native_dialog_ancestor(node)
+                    ("panel", "grouping", "group", "section", "form", "filler")
                     and node.getState().contains(pyatspi.STATE_VISIBLE)):
-                roots.append(node)
+                groups.append(node)
         except Exception:
             continue
-    if len(roots) != 1:
+    if len(groups) != 1:
         return
-    stack = [(roots[0], 0)]
-    inspected = 0
-    while stack and inspected < 256:
-        node, depth = stack.pop()
-        inspected += 1
-        yield node
-        if depth < 16:
-            stack.extend((child, depth + 1) for child in children_of(node))
+    yield from descendants(groups[0])
 
 
 def choose_open_workflow_project(display_name, seconds=20):
@@ -193,7 +208,7 @@ def choose_open_workflow_project(display_name, seconds=20):
                     node.getRoleName().casefold() == "check box" and
                     not _native_dialog_ancestor(node) and
                     all(state.contains(flag) for flag in (
-                        pyatspi.STATE_VISIBLE, pyatspi.STATE_SHOWING,
+                        pyatspi.STATE_VISIBLE,
                         pyatspi.STATE_ENABLED, pyatspi.STATE_SENSITIVE))):
                     matches.append(node)
             except Exception:
@@ -201,6 +216,14 @@ def choose_open_workflow_project(display_name, seconds=20):
         if len(matches) == 1:
             node = matches[0]
             matched_at_least_once = True
+            if not node.getState().contains(pyatspi.STATE_SHOWING):
+                try:
+                    node.queryComponent().scrollTo(pyatspi.SCROLL_ANYWHERE)
+                except Exception:
+                    if node.getState().contains(pyatspi.STATE_FOCUSABLE):
+                        node.queryComponent().grabFocus()
+                time.sleep(0.25)
+                continue
             if node.getState().contains(pyatspi.STATE_CHECKED):
                 return
             if not issued:

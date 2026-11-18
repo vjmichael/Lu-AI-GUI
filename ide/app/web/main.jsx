@@ -6567,8 +6567,8 @@ function App() {
     }
   }
 
-  async function openRelativeSourcePath() {
-    const path=verifiedRelativeSourcePath(relativeOpenPath);
+  async function openRelativeSourcePath(submittedPath=relativeOpenPath) {
+    const path=verifiedRelativeSourcePath(submittedPath);
     if (!activeProject || !path) {
       setProblem('Enter a valid project-relative source file path. '+
         'No absolute or parent-relative paths are allowed.');
@@ -7569,14 +7569,15 @@ function App() {
       </header>
       {problem && <div className="errorMsg appError" role="alert"
         aria-label={problem.startsWith('File changed on disk.')
-          ? 'File changed on disk. Unsaved edits preserved' : undefined}
+          ? 'File changed on disk. Unsaved edits preserved' :
+            problem.startsWith('Open-file budget') ? problem : undefined}
         aria-describedby="ide-visible-error-message">
         <span id="ide-visible-error-message">{problem}</span>
         <button type="button" onClick={() => setProblem('')}>Dismiss</button></div>}
       {hint && <div className={'successMsg appMessage noticeBanner' +
         (hint.startsWith('Saved ') ? ' saveConfirmation' :
           hint.startsWith('Proposal staged') ? ' stageConfirmation' : '')}
-        role="status">
+        role="status" aria-label={hint.startsWith('Recovered private checkpoint into unsaved editor only.') ? hint : undefined}>
         <span className="noticeContent">{hint}</span>
         <button type="button" className="noticeDismiss" aria-label="Dismiss notification"
           onClick={() => setHint('')}>×</button>
@@ -8059,7 +8060,7 @@ function App() {
                         </pre>
                       : <p>No output has been captured for this job.</p>}
                   </div>
-                  : <p role="status">No current project-owned native terminal
+                  : <p role="status" aria-label="No current project-owned native terminal stream">No current project-owned native terminal
                       stream. A journal after restart does not restore output.</p>}
                 {buildOutputHints.length>0 &&
                   <section aria-label="Advisory compiler and test output hints"
@@ -9273,9 +9274,9 @@ function App() {
             <p>Select up to eight projects that you registered using the operating-system
               folder picker. Lu IDE observes each exact Git HEAD, working tree and bounded
               artifact hashes. A review is never a signed release or permission to execute.</p>
-            <div className="continuityDocument">
+            <div className="continuityDocument" role="region" aria-label="Projects in workflow">
               <h3>Projects in workflow</h3>
-              <fieldset className="taskGateGrid" aria-label="Include registered, open projects" disabled={workflowBusy}>
+              <fieldset className="taskGateGrid" role="group" aria-label="Include registered, open projects" disabled={workflowBusy}>
                 <legend>Include registered, open projects</legend>
                 {projects.filter(project => project.available).map(project =>
                   <label className="taskGateChoice" key={project.projectId}>
@@ -11328,9 +11329,12 @@ function App() {
                   Unsaved editors and private draft checkpoints are preserved.</p>
               </form>}
             <form className="sourceGoToFile" onSubmit={event=>{
-              event.preventDefault(); void openRelativeSourcePath();
+              event.preventDefault();
+              const paths=new FormData(event.currentTarget).getAll('relativeSourcePath');
+              if (paths.length!==1 || typeof paths[0]!=='string') return;
+              void openRelativeSourcePath(paths[0]);
             }}>
-              <input aria-label="Open project-relative file" spellCheck={false}
+              <input name="relativeSourcePath" aria-label="Open project-relative file" spellCheck={false}
                 maxLength={1024} value={relativeOpenPath}
                 placeholder="Open src/path/file.rs"
                 onChange={event=>setRelativeOpenPath(event.target.value)}/>
@@ -11506,7 +11510,7 @@ function App() {
                 onClick={toggleSplitEditor}>
                 {splitEditorOpen ? 'Close split' : 'Split editor'}
               </button>
-              <span role="status" className="editorWorkingSetNotice">
+              <span role="status" aria-label={workingSetNotice} className="editorWorkingSetNotice">
                 {workingSetNotice}
               </span>
               <button type="button" className="ghostBtn"

@@ -601,10 +601,20 @@ mod tests {
             .registry
             .prepare_github_remote_publication_intent(&f.id, &initial_observation)
             .unwrap();
+        // Intent creation can cross a clock-second boundary. The native
+        // review contract requires an observation at or after generation.
+        // Re-read the fixture after preparation rather than relax freshness.
+        let recent = observed(&f);
         let review = f
             .registry
-            .review_exact_remote_publication_consent(&f.id, &i, &initial_observation)
+            .review_exact_remote_publication_consent(&f.id, &i, &recent)
             .unwrap();
+        let mut pre_intent = recent.clone();
+        pre_intent.checked_unix_seconds = i.generated_at_unix_seconds.saturating_sub(1);
+        assert!(f
+            .registry
+            .review_exact_remote_publication_consent(&f.id, &i, &pre_intent)
+            .is_err());
         assert_eq!(review.previous_remote_commit, f.old);
         assert_eq!(review.proposed_local_commit, f.new);
         assert!(review.original_native_os_dialog_required);

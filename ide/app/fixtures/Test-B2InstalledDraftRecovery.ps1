@@ -202,8 +202,27 @@ try {
   if([LuMouse]::GetForegroundWindow() -ne $mainHwnd -or $editable.Current.IsOffscreen) {
     throw 'Installed editor not foreground or visible'
   }
-  $editable.SetFocus()
-  if(!$editable.Current.HasKeyboardFocus -or [LuMouse]::GetForegroundWindow() -ne $mainHwnd) {
+  ClickItem 'Focus primary editor (Ctrl+1)'
+  $focused=$false
+  for($attempt=0;$attempt -lt 3 -and !$focused;$attempt++) {
+    $editable=FindItem 'Source editor text · First editor: acceptance.txt' 5
+    if(!$editable -or $editable.Current.IsOffscreen -or
+       !$editable.Current.IsEnabled -or !$editable.Current.IsKeyboardFocusable -or
+       $editable.Current.ControlType.ProgrammaticName -ne 'ControlType.Edit') {continue}
+    try {$editable.SetFocus()} catch {}
+    $deadline=[DateTime]::UtcNow.AddSeconds(3)
+    do {
+      $editable=FindItem 'Source editor text · First editor: acceptance.txt' 2
+      $actual=[System.Windows.Automation.AutomationElement]::FocusedElement
+      if($editable -and !$editable.Current.IsOffscreen -and $editable.Current.IsEnabled -and
+         [LuMouse]::GetForegroundWindow() -eq $mainHwnd -and
+         ($editable.Current.HasKeyboardFocus -or ($actual -and $actual.Equals($editable)))) {
+        $focused=$true;break
+      }
+      Start-Sleep -Milliseconds 150
+    } while([DateTime]::UtcNow -lt $deadline)
+  }
+  if(!$focused -or [LuMouse]::GetForegroundWindow() -ne $mainHwnd) {
     throw 'Exact installed source editor failed to acquire OS keyboard focus'
   }
   Keys '^{END}'
@@ -313,7 +332,7 @@ try {
     throw 'No native private recovery surfaced after installed app restart'
   }
   ClickItem 'Recover preserved draft'
-  if($null -eq (FindItem 'Recovered private checkpoint to editor only' 15)) {
+  if($null -eq (FindItem 'Recovered private checkpoint into unsaved editor only' 15)) {
     throw 'Private draft was not explicitly recovered into installed editor'
   }
   $report.recoveredAfterRestart=$true

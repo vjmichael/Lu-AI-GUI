@@ -77,7 +77,7 @@ def main():
         if not recover:
             deny("restarted_editor_did_not_offer_private_recovery")
         activate("Recover preserved draft")
-        accessible("Recovered private checkpoint to editor only",seconds=18)
+        accessible("Recovered private checkpoint into unsaved editor only",seconds=18)
         if hashlib.sha256(SOURCE.read_bytes()).hexdigest()!=source_before:
             deny("recovery_wrote_project_source_without_save")
         print("B2_LINUX_REAL_INSTALLED_RESTART_RECOVERY_NO_SOURCE_WRITE=PASS",flush=True)
