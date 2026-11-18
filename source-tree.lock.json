@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "212ee0e6df445f98da3e9c68ba9661bbd58805c8",
-  "trackedFileCount": 1123,
+  "sourceCommitBeforeLock": "99f7dd69ed4c0fcf719d6897358a6443b1750da2",
+  "trackedFileCount": 1127,
   "files": [
     {
       "path": ".gitattributes",
@@ -114,6 +114,10 @@
     {
       "path": ".github/workflows/lu-cp04b3-native-provision.yml",
       "blob": "19d3476df99baa174a098c3c134746233fb0e6af"
+    },
+    {
+      "path": ".github/workflows/lu-cp05e-closeout.yml",
+      "blob": "06507501d306933065f48468d03f6fbb3cf1350f"
     },
     {
       "path": ".github/workflows/lu-cp05e-grouped-native.yml",
@@ -773,7 +777,7 @@
     },
     {
       "path": "docs/LU_DEVELOPMENT_LEDGER.md",
-      "blob": "0303246de73ec6c90189c6c99c5ad7098046250f"
+      "blob": "91434a9aac2a536e937d1c5b733308c6d220b63f"
     },
     {
       "path": "docs/LU_E1_NATIVE_EVIDENCE_20261107.md",
@@ -2524,6 +2528,18 @@
       "blob": "b1249480fc5cff80f350e687ba417513c296ea28"
     },
     {
+      "path": "scripts/cp05e5-installed-journal.py",
+      "blob": "39e22af9a3ca993b9322c32b476a7f176e434fd5"
+    },
+    {
+      "path": "scripts/cp05e5-review-browser.py",
+      "blob": "468f1065e3a75147eec846296318e3e8948eeee0"
+    },
+    {
+      "path": "scripts/cp05e5-windows-installed-gguf.ps1",
+      "blob": "46408124abb4369bdfa8b3ddfe09ddfafd0025ad"
+    },
+    {
       "path": "scripts/install-lu-agent01l-native-fixture.sh",
       "blob": "e777592c9e2a2dc43d67c5d69a952ba883a85b54"
     },
@@ -2709,7 +2725,7 @@
     },
     {
       "path": "scripts/m3-windows-nsis-cycle.ps1",
-      "blob": "757073a9d86a5ca06871614712fe81688fe84c23"
+      "blob": "94073a4caa41437e4f65d19fdc82afc42d3094f1"
     },
     {
       "path": "scripts/m4-windows-installed-memory-acceptance.ps1",
