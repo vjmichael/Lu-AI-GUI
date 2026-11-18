@@ -21,6 +21,8 @@ use std::{
 
 pub const BROWSER_PACKAGE_SUBDIR:&str="lu-browser";
 pub const BROWSER_WORKER_NAME:&str="lu_browser_worker.mjs";
+const GENERAL_PROFILE:&str="lu-browser-profile";
+const PUBLIC_SEARCH_PROFILE:&str="lu-browser-public-search-profile";
 #[cfg(windows)]
 pub const CHROMIUM_NAME:&str="chrome.exe";
 #[cfg(windows)]
@@ -39,6 +41,14 @@ pub const NODE_NAME:&str="unsupported-node";
 // The checked-in manifest intentionally has status=not-packaged; staging a
 // reviewed package before building produces a separately pinned app binary.
 const EMBEDDED_BROWSER_MANIFEST:&str=include_str!("../resources/lu-browser/manifest.json");
+// The worker protocol is part of the compiled host's security contract. A
+// formerly reviewed package is not necessarily compatible with this host.
+const CANONICAL_BROWSER_WORKER:&[u8]=include_bytes!("../../../src-tauri/lu-core/workers/lu_browser_worker.mjs");
+fn current_worker_identity(entry:&BrowserManifestEntry)->bool{
+    use sha2::{Digest,Sha256};
+    entry.path==BROWSER_WORKER_NAME&&entry.bytes==CANONICAL_BROWSER_WORKER.len() as u64
+        &&entry.sha256==format!("{:x}",Sha256::digest(CANONICAL_BROWSER_WORKER))
+}
 #[derive(Debug,serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 struct BrowserManifest {
@@ -166,6 +176,7 @@ impl DesktopBrowserHost {
           ||manifest.files.len()<4||manifest.files.len()>10000{
             return false;
         }
+        if !manifest.files.iter().any(current_worker_identity){return false;}
         let dir=self.package_dir();
         if std::fs::read_to_string(dir.join("manifest.json")).ok().as_deref()
             !=Some(EMBEDDED_BROWSER_MANIFEST){return false;}
@@ -222,8 +233,8 @@ impl DesktopBrowserHost {
         let package_available=self.packaged_components_present();
         #[cfg(target_os="linux")]
         let recovery_ready=running||(session_absent
-            &&OwnedBrowserWorker::sec06c_reconcile_previous(
-                &self.app_data.join("lu-browser-profile")).is_ok());
+            &&[GENERAL_PROFILE,PUBLIC_SEARCH_PROFILE].iter().all(|name|OwnedBrowserWorker::sec06c_reconcile_previous(
+                &self.app_data.join(name)).is_ok()));
         #[cfg(not(target_os="linux"))]
         let recovery_ready=true;
         let launch_ready=self.package_verified()&&recovery_ready
@@ -249,7 +260,7 @@ impl DesktopBrowserHost {
     #[allow(dead_code)]
     pub(crate) fn launch_for_native_grant(
         &self, approved_origins:Vec<String>,preferences:&BrowserPreferences,
-        original_chat:&str,original_turn:&str,original_task:&str,
+        original_chat:&str,original_turn:&str,original_task:&str,public_search:bool,
     )->Result<(),String>{
         Self::require_browser_kernel_custody()?;
         self.require_launch_ready()?;
@@ -258,7 +269,8 @@ impl DesktopBrowserHost {
         if owned.is_some(){return Err("Research browser is already running".into());}
         // The browser profile is in Lu app data, never inside installed
         // resources and never selected by a model response.
-        let profile=self.app_data.join("lu-browser-profile");
+        let profile=self.app_data.join(if public_search{PUBLIC_SEARCH_PROFILE}else{GENERAL_PROFILE});
+        if public_search&&approved_origins!=vec![super::browser_model_desktop::PUBLIC_SEARCH_ORIGIN.to_owned()]{return Err("Public search profile requires the exact provider grant".into());}
         std::fs::create_dir_all(&profile)
             .map_err(|e|format!("cannot initialize browser profile: {e}"))?;
         let metadata=std::fs::symlink_metadata(&profile)
@@ -382,9 +394,10 @@ impl DesktopBrowserHost {
         }
         Self::require_browser_kernel_custody()?;
         #[cfg(target_os="linux")]
-        OwnedBrowserWorker::sec06c_reconcile_previous(
-            &self.app_data.join("lu-browser-profile"))
-            .map_err(|e|format!("SEC06C_BROWSER_PRIOR_KERNEL_CUSTODY_UNRECONCILED: {e:?}"))?;
+        for name in [GENERAL_PROFILE,PUBLIC_SEARCH_PROFILE]{
+            OwnedBrowserWorker::sec06c_reconcile_previous(&self.app_data.join(name))
+                .map_err(|e|format!("SEC06C_BROWSER_PRIOR_KERNEL_CUSTODY_UNRECONCILED: {e:?}"))?;
+        }
         Ok(())
     }
 }
@@ -431,6 +444,19 @@ mod tests {
         assert!(!host.packaged_components_present());
         assert!(!host.package_verified());
         assert!(host.require_launch_ready().is_err());
+    }
+    #[test]
+    fn cp04b2_stale_reviewed_worker_cannot_match_current_protocol(){
+        use sha2::{Digest,Sha256};
+        let mut entry=BrowserManifestEntry{path:BROWSER_WORKER_NAME.into(),
+            bytes:CANONICAL_BROWSER_WORKER.len() as u64,
+            sha256:format!("{:x}",Sha256::digest(CANONICAL_BROWSER_WORKER))};
+        assert!(current_worker_identity(&entry));
+        entry.sha256=format!("{:x}",Sha256::digest(b"formerly reviewed worker"));
+        assert!(!current_worker_identity(&entry));
+        entry.sha256=format!("{:x}",Sha256::digest(CANONICAL_BROWSER_WORKER));
+        entry.bytes-=1;
+        assert!(!current_worker_identity(&entry));
     }
     // C6.2 reviewed Windows package: positive OS byte comparison against the
     // exact manifest compiled into this Rust binary. Default full Cargo

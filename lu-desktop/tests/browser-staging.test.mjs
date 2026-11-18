@@ -25,6 +25,10 @@ function setup(){
     const file=join(packageDir,...path.split('/'));
     mkdirSync(dirname(file),{recursive:true});
     writeFileSync(file,data);
+    if(path==='lu_browser_worker.mjs'){
+      const canonical=join(root,'src-tauri','lu-core','workers',path);
+      mkdirSync(dirname(canonical),{recursive:true});writeFileSync(canonical,data);
+    }
     return {path,sha256:sha(data),bytes:data.length};
   });
   const manifest={schema:1,runtime:'lu-browser',status:'reviewed',
@@ -71,5 +75,17 @@ test('modifying a reviewed component fails staging without side effects',()=>{
     assert.notEqual(result.status,0);
     const target=join(data.root,'lu-desktop','src-tauri','resources','lu-browser');
     assert.equal(existsSync(target),false);
+  }finally{rmSync(data.root,{recursive:true,force:true});}
+});
+
+test('a reviewed manifest for an old worker protocol refuses to stage',()=>{
+  const data=setup();
+  try{
+    const canonical=join(data.root,'src-tauri','lu-core','workers','lu_browser_worker.mjs');
+    writeFileSync(canonical,'new canonical worker');
+    const result=stage(data,sha(data.text));
+    assert.notEqual(result.status,0);
+    assert.match(result.stderr,/worker differs from current canonical source/);
+    assert.equal(existsSync(join(data.root,'lu-desktop','src-tauri','resources','lu-browser')),false);
   }finally{rmSync(data.root,{recursive:true,force:true});}
 });

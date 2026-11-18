@@ -47,7 +47,7 @@ test('unaudited model output never streams or persists as completed Browser rese
   const audit=browser.indexOf('audit_browser_research_answer(&answer,&citation_sources)');
   const release=browser.indexOf('app.emit("lu-token",ChatEvent{',start);
   const completed=browser.indexOf('owner.chats.complete(&chat_id,&gid)?',start);
-  assert.ok(start>=0&&start<audit&&audit<release&&release<completed);
+  assert.ok(start>=0&&start<audit&&audit<completed&&completed<release);
   const between=browser.slice(start,audit);
   assert.doesNotMatch(between,/app\.emit\("lu-token"/);
   assert.doesNotMatch(between,/owner\.chats\.append_progress\(&chat_id,&gid,&answer\)/);

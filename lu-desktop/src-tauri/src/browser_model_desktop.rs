@@ -107,6 +107,9 @@ pub(crate) async fn lu_browser_model_read(
     };
     let persisted=owner.chats.trusted_user_turn_text(&chat_id,&user_turn_id)
         .ok_or("Browser grant is not bound to an authenticated user turn")?;
+    if public_search_intent(&persisted)?.is_some(){
+        return Err("Use normal Send for a public search; its query cannot be changed by a browser model probe".into());
+    }
     if owner.chats.latest_authenticated_user_turn_id(&chat_id).as_deref()
         !=Some(user_turn_id.as_str()){
         return Err("Browser grant belongs to a previous user turn; start a new task".into());
@@ -314,6 +317,99 @@ pub(crate) fn explicit_browse_origin(prompt:&str)->Option<String>{
     Some(origin)
 }
 
+/// Fixed provider, exact human query. No model or history-derived network input.
+pub(crate) const PUBLIC_SEARCH_ORIGIN:&str="https://www.google.com";
+#[derive(Debug,PartialEq,Eq)]
+pub(crate) struct PublicSearch{pub query:String,pub url:String}
+pub(crate) fn public_search_intent(prompt:&str)->Result<Option<PublicSearch>,String>{
+    let text=prompt.trim();let lower=text.to_ascii_lowercase();
+    let intent=["please ","could you ","can you ","would you "].iter().find_map(|p|lower.strip_prefix(p)).unwrap_or(&lower);
+    let prefixes=["search google for","search the internet for","search the web for","search online for","google search for","google"];
+    let Some(prefix)=prefixes.iter().find(|p|intent==**p||intent.strip_prefix(**p).is_some_and(|tail|tail.starts_with([' ',':'])))else{return Ok(None)};
+    let query=text[lower.len()-intent.len()+prefix.len()..].trim_start_matches([' ',':']).trim();
+    if query.is_empty()||query.len()>512||prompt.len()>640||prompt.chars().any(char::is_control)||lower.contains("[attached text file:")||query.contains(['`','\\','<','>']){return Err("Enter one public search query without attached content or local file paths".into());}
+    if query.split_whitespace().any(|word|word.starts_with('/')||word.to_ascii_lowercase().starts_with("file://")){
+        return Err("Local files are not part of a public search request".into());
+    }
+    let encoded:String=query.as_bytes().iter().map(|&b|if b.is_ascii_alphanumeric()||b"-._~".contains(&b){(b as char).to_string()}else{format!("%{b:02X}")}).collect();
+    Ok(Some(PublicSearch{query:query.into(),url:format!("{PUBLIC_SEARCH_ORIGIN}/search?q={encoded}")}))
+}
+fn search_result_matches(search:&PublicSearch,url:&str)->bool{
+    let Ok(url)=tauri::Url::parse(url)else{return false};
+    url.origin().ascii_serialization()==PUBLIC_SEARCH_ORIGIN&&url.path()=="/search"&&url.username().is_empty()&&url.password().is_none()&&url.fragment().is_none()&&url.query_pairs().map(|(k,v)|(k.into_owned(),v.into_owned())).eq(std::iter::once(("q".into(),search.query.clone())))
+}
+/// Require the same bounded provider receipt from navigation and immutable read.
+fn public_search_receipt(body:&serde_json::Value)->Result<serde_json::Value,String>{
+    let r=body.get("publicSearch").ok_or("Public search response lacks provider receipt")?;
+    let has_digest=|key:&str|r.get(key).and_then(|x|x.as_str()).is_some_and(|digest|digest.len()==64&&digest.bytes().all(|b|b.is_ascii_digit()||matches!(b,b'a'..=b'f')));
+    if r.get("transport").and_then(|x|x.as_str())!=Some("pinned-https-v1")||
+       r.get("httpStatus").and_then(|v|v.as_u64())!=Some(200)||
+       !r.get("resultCount").and_then(|v|v.as_u64()).is_some_and(|n|(1..=8).contains(&n))||
+       !has_digest("bodySha256")||!has_digest("observedSha256"){
+        return Err("Public search provider receipt is invalid".into());
+    }
+    Ok(r.clone())
+}
+fn public_search_text_matches(receipt:&serde_json::Value,text:&str)->bool{
+    use sha2::{Digest,Sha256};
+    !text.trim().is_empty()&&text.len()<=32*1024&&receipt.get("observedSha256").and_then(|v|v.as_str())==Some(format!("{:x}",Sha256::digest(text.as_bytes())).as_str())
+}
+// Both production dispatch and the opt-in real native acceptance gate use
+// the same provider response checks. A READ cannot mint a new receipt.
+fn accept_public_search_response(search:&PublicSearch,body:&serde_json::Value,
+    navigation:&mut Option<serde_json::Value>)->Result<(),String>{
+    let kind=body.get("status").and_then(|v|v.as_str()).unwrap_or("");
+    if kind=="SEARCH_UNAVAILABLE"{return Err(public_search_failure(body.get("reason").and_then(|v|v.as_str())).into())}
+    if !matches!(kind,"SEARCH_OBSERVED"|"READ")||!body.get("url").and_then(|x|x.as_str()).is_some_and(|url|search_result_matches(search,url)){
+        return Err("Public search did not return the approved query page".into());
+    }
+    let receipt=public_search_receipt(body)?;
+    if kind=="SEARCH_OBSERVED"{
+        if body.get("httpStatus").and_then(|v|v.as_u64())!=Some(200)||navigation.is_some(){
+            return Err("Public search provider did not return a unique successful response".into());
+        }
+        *navigation=Some(receipt);
+    }else{
+        if navigation.as_ref()!=Some(&receipt){return Err("Public search observation does not match the successful provider receipt".into())}
+        if body.get("truncated").and_then(|v|v.as_bool())!=Some(false)||!body.get("text").and_then(|v|v.as_str()).is_some_and(|text|public_search_text_matches(&receipt,text)){
+            return Err("Public search text does not match the provider observation receipt".into());
+        }
+    }
+    Ok(())
+}
+// The citation verifier must not allow quotes from an excerpt that the
+// model never received. Bound UTF-8 bytes, not merely Unicode scalars, so
+// international results cannot overflow the per-source prompt envelope.
+fn prompt_browser_source(saved:&super::research_desktop::ResearchBrowserEvidenceView,
+    text:&str,receipt:Option<&serde_json::Value>)->Result<(String,BrowserCitationSource),String>{
+    let mut record=format!("URL: {}\nObserved text SHA256: {}\nObservation status: BROWSER_OBSERVED_UNTRUSTED\nExcerpt: ",saved.source_url,saved.observed_sha256);
+    let suffix=receipt.map(|r|format!("\nPublic search provider receipt: {}",r)).unwrap_or_default();
+    let budget=3200usize.checked_sub(record.len().saturating_add(suffix.len())).ok_or("Browser source metadata exceeds prompt budget")?;
+    let mut end=saved.excerpt.len().min(budget).min(1200);
+    while !saved.excerpt.is_char_boundary(end){end-=1;}
+    let excerpt=saved.excerpt[..end].to_owned();
+    if excerpt.trim().is_empty()||!text.starts_with(&excerpt){return Err("Browser excerpt unavailable in bounded source window".into())}
+    record.push_str(&excerpt);record.push_str(&suffix);
+    Ok((record,BrowserCitationSource{url:saved.source_url.clone(),content_sha256:saved.observed_sha256.clone(),
+        truncated:saved.excerpt_truncated||excerpt.len()<text.len(),excerpt}))
+}
+fn public_search_failure(reason:Option<&str>)->&'static str{
+    match reason{
+        Some("PUBLIC_SEARCH_CAPTCHA_REQUIRED")=>"Google requires human verification. No search evidence was accepted. Retry manually in your browser.",
+        Some("PUBLIC_SEARCH_CONSENT_REQUIRED")=>"Google requires additional consent. Lu did not accept it on your behalf.",
+        Some("PUBLIC_SEARCH_LOGIN_REQUIRED")=>"Google requires sign-in. Lu did not submit credentials or accept search evidence.",
+        Some("PUBLIC_SEARCH_OFFLINE")=>"Public search is unavailable: the provider could not be reached securely.",
+        Some("PUBLIC_SEARCH_PRIVATE_ADDRESS")=>"Public search blocked an unsafe provider address.",
+        Some("PUBLIC_SEARCH_REDIRECT_BLOCKED")=>"Google redirected the request. Lu did not follow it; no search evidence was accepted.",
+        Some("PUBLIC_SEARCH_NO_RESULTS")=>"No recognizable search results were observed. No answer was synthesized.",
+        _=>"Public search did not return verifiable result evidence. No answer was synthesized.",
+    }
+}
+fn public_search_proposal(search:&PublicSearch,attempts:usize)->lu_core::browser_tool_stream::CompletedToolCall{
+    let args=if attempts==0{serde_json::json!({"operation":"navigate","url":search.url})}else{serde_json::json!({"operation":"read"})};
+    lu_core::browser_tool_stream::CompletedToolCall{call_id:format!("host-public-search-{attempts}"),tool_name:"lu_browser_read".into(),arguments_json:args.to_string()}
+}
+
 /// One bounded research turn never silently inherits Browser authority:
 /// it has an explicit opt-in on normal Send, persists its own USER event,
 /// then obtains a new native approval for the exact submitted turn.
@@ -335,7 +431,8 @@ pub(crate) async fn lu_generate_browser(
     let scope=BrowserOriginScope::from_host_grant(
         browser_origin_list(&origins)?
     ).map_err(|_|"Browser research requires exact public HTTPS origins")?;
-    let approved=scope.origins();
+    let search=public_search_intent(&prompt)?;
+    if search.is_some()&&scope.origins()!=vec![PUBLIC_SEARCH_ORIGIN.to_owned()]{return Err("Public search requires the host-selected provider".into());}
     let owner=Arc::clone(state.inner());
     owner.browser_runtime.require_launch_ready()?;
     if owner.browser_grant.lock().map_err(|_|"Browser grant unavailable")?.is_some(){
@@ -421,6 +518,7 @@ pub(crate) async fn lu_generate_browser(
             let mut evidence=BTreeMap::<String,(String,BrowserCitationSource)>::new();
             let mut calls_seen=HashSet::<String>::new();
             let mut attempts=0usize;
+            let mut search_navigation_receipt=None;
             loop{
                 if ticket.cancelled()||!grant_current(
                     &owner,&task_id,&chat_id,&gid
@@ -428,6 +526,11 @@ pub(crate) async fn lu_generate_browser(
                 if std::time::Instant::now()>=deadline{
                     return Err("Browser research deadline exceeded".into());
                 }
+                let generated=if let Some(search)=search.as_ref(){
+                    if !evidence.is_empty(){break;}
+                    if attempts>=4{return Err("Public search produced no readable results".into())}
+                    vec![public_search_proposal(search,attempts)]
+                }else{
                 let asked=browser_research_prompt(&prompt,&recent,false)?;
                 let request_id=next_id("req-browser-");
                 owner.supervisor.reserve_generation_with_history(
@@ -439,10 +542,11 @@ pub(crate) async fn lu_generate_browser(
                         &session_id,&gid,&next_id("req-")
                     );
                 }
-                let generated=owner.supervisor.run_reserved_browser_function_calls(
+                owner.supervisor.run_reserved_browser_function_calls(
                     &session_id,&gid,&request_id,asked,max_new_tokens,
                     if attempts==0{history.clone()}else{Vec::new()},&schemas
-                ).map_err(|e|format!("Structured Browser model failed: {e:?}"))?;
+                ).map_err(|e|format!("Structured Browser model failed: {e:?}"))?
+                };
                 if generated.is_empty(){
                     if evidence.is_empty(){
                         return Err("Browser model stopped before reading a source".into());
@@ -467,7 +571,7 @@ pub(crate) async fn lu_generate_browser(
                     ).map_err(|_|"Malformed Browser model tool arguments")?;
                     let fingerprint=format!("{}:{}",proposal.tool_name,
                         serde_json::Value::Object(canonical));
-                    if !calls_seen.insert(fingerprint){
+                    if !calls_seen.insert(fingerprint)&&search.is_none(){
                         return Err("Browser model repeated a call without progress".into());
                     }
                     let host_call=next_id("browser-call-");
@@ -488,7 +592,11 @@ pub(crate) async fn lu_generate_browser(
                         .ok_or("Missing native Browser response")?;
                     let kind=body.get("status").and_then(|v|v.as_str())
                         .ok_or("Missing native Browser response status")?;
+                    if search.is_some()&&kind=="SEARCH_UNAVAILABLE"{
+                        return Err(public_search_failure(body.get("reason").and_then(|v|v.as_str())).into());
+                    }
                     if kind=="NEEDS_HUMAN" {
+                        if search.is_some(){return Err("Public search requires human verification; no result evidence was accepted".into());}
                         owner.chats.append_browser_observation(
                             &chat_id,&gid,&host_call,&proposal.tool_name,
                             "Browser paused for human verification; no source read"
@@ -523,6 +631,9 @@ pub(crate) async fn lu_generate_browser(
                         continue;
                     }
                     let actual_url=body.get("url").and_then(|x|x.as_str());
+                    if let Some(search)=search.as_ref(){
+                        accept_public_search_response(search,body,&mut search_navigation_receipt)?;
+                    }
                     if matches!(kind,"READ"|"ACCESSIBILITY"){
                         let url=actual_url.ok_or("Browser read omitted its source URL")?;
                         if !scope.allows(url){
@@ -543,12 +654,8 @@ pub(crate) async fn lu_generate_browser(
                             &chat_id,&gid,&host_call,url,kind,text,worker_truncated
                         )?;
                         let identity=format!("{}#{}",saved.source_url,saved.observed_sha256);
-                        let snippet:String=text.chars().take(1200).collect();
                         if !evidence.contains_key(&identity){
-                            let record=format!(
-                                "URL: {}\nObserved text SHA256: {}\nObservation status: BROWSER_OBSERVED_UNTRUSTED\nExcerpt: {}",
-                                saved.source_url,saved.observed_sha256,snippet
-                            );
+                            let (record,citation_source)=prompt_browser_source(&saved,text,search_navigation_receipt.as_ref())?;
                             owner.chats.append_browser_observation(
                                 &chat_id,&gid,&host_call,&proposal.tool_name,&record
                             )?;
@@ -560,14 +667,7 @@ pub(crate) async fn lu_generate_browser(
                                 &chat_id,&gid,&saved.source_url,
                                 &saved.observed_sha256,text
                             )?;
-                            evidence.insert(identity,(
-                                record.clone(),BrowserCitationSource{
-                                    url:saved.source_url,
-                                    content_sha256:saved.observed_sha256,
-                                    excerpt:saved.excerpt,
-                                    truncated:saved.excerpt_truncated,
-                                }
-                            ));
+                            evidence.insert(identity,(record.clone(),citation_source));
                             recent.push(record);
                         }
                     }else {
@@ -603,8 +703,9 @@ pub(crate) async fn lu_generate_browser(
             if citation_sources.is_empty(){
                 return Err("No Browser observations fit the trusted citation budget".into());
             }
+            let final_user=if search.is_some(){public_search_final_user(&prompt)}else{prompt.clone()};
             let final_prompt=browser_research_prompt(
-                &prompt,&source_records,true
+                &final_user,&source_records,true
             )?;
             let request_id=next_id("req-browser-");
             owner.supervisor.reserve_generation_with_history(
@@ -643,21 +744,27 @@ pub(crate) async fn lu_generate_browser(
             audit_browser_research_answer(&answer,&citation_sources)
                 .map_err(|e|format!("Browser citation audit rejected unsupported answer: {e:?}"))?;
             let appendix=render_observed_source_appendix(&citation_sources);
-            if answer.len().saturating_add(appendix.len())>200*1024{
+            let scope_note=if search.is_some(){"\n\nSearch results page observed; linked pages were not opened or independently verified."}else{""};
+            if answer.len().saturating_add(appendix.len()).saturating_add(scope_note.len())>200*1024{
                 return Err("Audited Browser answer exceeds output budget".into());
             }
+            answer.push_str(scope_note);
             answer.push_str(&appendix);
             if ticket.cancelled()||!grant_current(
                 &owner,&task_id,&chat_id,&gid
             ){
                 return Err("Cancelled before audited Browser answer publication".into());
             }
-            owner.chats.append_progress(&chat_id,&gid,&answer)?;
-            app.emit("lu-token",ChatEvent{
+            ticket.commit_completed(&session_id,||{
+                if !grant_current(&owner,&task_id,&chat_id,&gid){return Err("Browser grant revoked before publication".into())}
+                owner.chats.append_progress(&chat_id,&gid,&answer)?;
+                owner.chats.complete(&chat_id,&gid)?;
+                Ok(())
+            })?;
+            let _=app.emit("lu-token",ChatEvent{
                 chat_id:chat_id.clone(),generation_id:gid.clone(),
                 text:answer.clone(),index:0,
-            }).map_err(|_|"Audited Browser output notification failed")?;
-            owner.chats.complete(&chat_id,&gid)?;
+            });
             Ok(answer)
         })();
         if result.is_err(){
@@ -687,6 +794,10 @@ pub(crate) async fn lu_generate_browser(
         });
         result
     }).await.map_err(|_|"Browser generation worker stopped")?
+}
+
+fn public_search_final_user(prompt:&str)->String{
+    format!("{}\n[Report only what the search results page shows; snippets are not independently verified sources. Do not imply any result link was opened.]",prompt)
 }
 
 /// Evidence windows remain small; full native source records are in the
@@ -737,6 +848,192 @@ fn browser_research_prompt(
 #[cfg(test)]
 mod tests{
     use super::*;
+    #[test]
+    fn cp04b2_receipt_chain_and_visible_excerpt_are_exact(){
+        use sha2::{Digest,Sha256};
+        let search=public_search_intent("google rust").unwrap().unwrap();
+        let text=format!("{}hidden tail outside model prompt", "界".repeat(800));
+        let digest=format!("{:x}",Sha256::digest(text.as_bytes()));
+        let receipt=serde_json::json!({"transport":"pinned-https-v1","httpStatus":200,"resultCount":1,
+            "bodySha256":"a".repeat(64),"observedSha256":digest});
+        let nav=serde_json::json!({"status":"SEARCH_OBSERVED","url":search.url,"httpStatus":200,"publicSearch":receipt});
+        let read=serde_json::json!({"status":"READ","url":search.url,"text":text,"truncated":false,"publicSearch":receipt});
+        let mut state=None;
+        assert!(accept_public_search_response(&search,&read,&mut state).is_err());
+        assert!(state.is_none());
+        accept_public_search_response(&search,&nav,&mut state).unwrap();
+        assert!(accept_public_search_response(&search,&nav,&mut state).is_err());
+        for (key,value) in [("text",serde_json::json!("changed")),("truncated",serde_json::json!(true)),("url",serde_json::json!("https://www.google.com/search?q=other")),("publicSearch",serde_json::json!({}))]{
+            let mut changed=read.clone();changed[key]=value;
+            assert!(accept_public_search_response(&search,&changed,&mut state).is_err(),"{key}");
+        }
+        accept_public_search_response(&search,&read,&mut state).unwrap();
+        let saved=super::super::research_desktop::ResearchBrowserEvidenceView{
+            generation_id:"g-test".into(),call_id:"browser-call-test".into(),source_url:search.url.clone(),observed_sha256:digest,
+            excerpt:text.clone(),excerpt_truncated:false,verification_status:"browser_observed_untrusted",citation_verified:false};
+        let (record,source)=prompt_browser_source(&saved,&text,state.as_ref()).unwrap();
+        assert!(record.len()<=3200);
+        assert!(record.contains(&source.excerpt));assert!(source.truncated);
+        assert!(!record.contains("hidden tail outside model prompt"));
+        assert!(browser_research_prompt(&public_search_final_user("google rust"),&[record],true).is_ok());
+        assert!(audit_browser_research_answer("The result says \"hidden tail outside model prompt\" [[B1]].",&[source]).is_err());
+    }
+    // This fixed public test query requires explicit operator consent. It
+    // exercises production runtime admission/custody, not the interactive
+    // Tauri dialog. No fixture provider or fake inference is accepted.
+    #[test]
+    #[ignore = "requires source-current reviewed browser, native OS custody, live Google and pinned genuine engine/model"]
+    fn cp04b2_live_protected_provider_and_genuine_gguf(){
+        use lu_core::{browser_preferences::BrowserPreferences,
+            browser_visibility_settings::BrowserVisibilityPreference,
+            conversation_authority::{ConversationAuthority,TaskAuthority,AuthorizedCapability},
+            inference_host::{InferenceHost,GenerationRequest,Cancellation,EngineError},
+            model_admission::ModelAdmissionManager,
+            persistent_llama_backend::{PersistentEngineConfig,PersistentLlamaBackend}};
+        use sha2::{Digest,Sha256};
+        use std::{fs,io::Read,path::PathBuf,num::NonZeroUsize,time::{Duration,SystemTime,UNIX_EPOCH}};
+        assert_eq!(std::env::var("LU_CP04B2_LIVE_ACCEPTANCE").as_deref(),Ok("1"),"explicit operator opt-in required");
+        let root=std::env::temp_dir().join(format!("lu-cp04b2-{}-{}",std::process::id(),SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos()));
+        fs::create_dir(&root).expect("fresh acceptance profile");
+        let resources=PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("resources");
+        let browser=Arc::new(super::super::native_browser_host::DesktopBrowserHost::new(resources.clone(),root.clone()));
+        let run=(||->Result<(),String>{
+            browser.require_launch_ready().map_err(|e|format!("RUNTIME_GATE: {e}"))?;
+            let prefs=BrowserPreferences::open(&root.join("preferences.sqlite")).map_err(|e|format!("{e:?}"))?;
+            prefs.set_visibility(BrowserVisibilityPreference::AlwaysVisible).map_err(|e|format!("{e:?}"))?;
+            let prompt="google Rust programming language";
+            let search=public_search_intent(prompt)?.ok_or("fixed public intent missing")?;
+            let chats=ChatStore::open(&root)?;
+            let chat_id=chats.create_chat()?.chat_id;
+            let gid=next_id("g-");
+            let task_id=next_id("browser-task-");
+            chats.append_user_with_turn_id(&chat_id,&gid,prompt)?;
+            let authority=ConversationAuthority::new();
+            authority.open_user_task(TaskAuthority{
+                conversation_id:chat_id.clone(),user_turn_id:gid.clone(),task_id:task_id.clone(),
+                execution_scope_id:next_id("scope-"),capabilities:vec![AuthorizedCapability{
+                    tool_id:BROWSER_READ_TOOL.into(),effect:ToolEffect::NetworkRead,
+                }],expires_at:Some(SystemTime::now()+Duration::from_secs(600)),
+            },&chats).map_err(|e|format!("AUTHORITY_GATE: {e:?}"))?;
+            browser.launch_for_native_grant(vec![PUBLIC_SEARCH_ORIGIN.to_owned()],&prefs,&chat_id,&gid,&task_id,true)
+                .map_err(|e|format!("PROTECTED_BROWSER_LAUNCH_GATE: {e}"))?;
+            let policy=Arc::new(BrowserReadOnlyPolicy);
+            let registry=NativeToolRegistry::new();
+            let mut catalog=ModelToolCatalog::new();
+            register_scoped_browser_tools(&registry,&mut catalog,ScopedBrowserTask{
+                authority:authority.clone(),origin:BoundCallOrigin{
+                    conversation_id:chat_id.clone(),user_turn_id:gid.clone(),task_id:task_id.clone(),
+                },scope:BrowserOriginScope::from_host_grant(vec![PUBLIC_SEARCH_ORIGIN.to_owned()]).map_err(|e|format!("{e:?}"))?,
+                policy:policy.clone(),runner:Arc::clone(&browser) as Arc<dyn lu_core::native_browser_tool::BrowserTaskRunner>,
+            }).map_err(|e|format!("REGISTRY_GATE: {e:?}"))?;
+            let allowed=BTreeSet::from([BROWSER_READ_TOOL.to_owned()]);
+            let dispatch=|attempt:usize|->Result<(String,serde_json::Value),String>{
+                let proposal=public_search_proposal(&search,attempt);
+                let host_call=next_id("browser-call-");
+                let invocation=catalog.encode_call(&allowed,&proposal.tool_name,&host_call,None,&proposal.arguments_json)
+                    .map_err(|e|format!("{e:?}"))?;
+                let dispatched=tauri::async_runtime::block_on(registry.dispatch(invocation,policy.as_ref()));
+                let response=catalog.decode_result(&allowed,&proposal.tool_name,&dispatched).map_err(|e|format!("{e:?}"))?;
+                if response["ok"]!=true{return Err("native Browser authority refused call".into())}
+                let body=response.pointer("/result/browser_result/result").ok_or("missing native Browser response")?.clone();
+                Ok((host_call,body))
+            };
+            let mut receipt=None;
+            let (_,nav)=dispatch(0)?;
+            accept_public_search_response(&search,&nav,&mut receipt).map_err(|e|format!("LIVE_PROVIDER_GATE: {e}"))?;
+            if nav["status"]!="SEARCH_OBSERVED"{return Err("live navigation did not observe provider".into())}
+            let (host_call,read)=dispatch(1)?;
+            accept_public_search_response(&search,&read,&mut receipt)?;
+            if read["status"]!="READ"{return Err("live result read missing".into())}
+            let text=read["text"].as_str().ok_or("result text missing")?;
+            let evidence=super::super::research_desktop::ResearchDesktop::new(resources,root.clone());
+            let saved=evidence.record_browser_read(&chat_id,&gid,&host_call,&search.url,"READ",text,false)?;
+            authority.revoke_task(&task_id).map_err(|e|format!("{e:?}"))?;
+            if Some(saved.observed_sha256.as_str())!=receipt.as_ref().and_then(|r|r["observedSha256"].as_str()){
+                return Err("durable receipt digest differs".into());
+            }
+            let (record,source)=prompt_browser_source(&saved,text,receipt.as_ref())?;
+            if !browser.stop()?{return Err("protected browser cleanup not verified".into())}
+            println!("CP04B2_LIVE_PROVIDER_PASS receipt={}",receipt.as_ref().unwrap());
+            let pinned=|name:&str,hash_name:&str|->Result<(PathBuf,[u8;32]),String>{
+                let path=PathBuf::from(std::env::var(name).map_err(|_|format!("missing {name}"))?);
+                let expected=std::env::var(hash_name).map_err(|_|format!("missing {hash_name}"))?;
+                if !path.is_absolute()||!fs::symlink_metadata(&path).map_err(|e|e.to_string())?.is_file()||expected.len()!=64{
+                    return Err(format!("invalid pinned input {name}"));
+                }
+                let mut f=fs::File::open(&path).map_err(|e|e.to_string())?;let mut h=Sha256::new();let mut buf=[0u8;65536];
+                loop{let n=f.read(&mut buf).map_err(|e|e.to_string())?;if n==0{break}h.update(&buf[..n]);}
+                let actual:[u8;32]=h.finalize().into();
+                if actual.iter().map(|b|format!("{b:02x}")).collect::<String>()!=expected.to_ascii_lowercase(){return Err(format!("checksum mismatch {name}"))}
+                Ok((path,actual))
+            };
+            let (exe,engine_sha)=pinned("LU_SERVER_EXE","LU_SERVER_SHA256")?;
+            let (model,model_sha)=pinned("LU_TEST_GGUF","LU_TEST_GGUF_SHA256")?;
+            let mut admission=ModelAdmissionManager::new();
+            admission.admit(model.parent().ok_or("model directory missing")?,model.file_name().and_then(|x|x.to_str()).ok_or("model name missing")?).map_err(|e|format!("{e:?}"))?;
+            let engine=PersistentLlamaBackend::new(PersistentEngineConfig{executable:exe,expected_sha256:engine_sha,
+                threads:NonZeroUsize::new(2).unwrap(),context_tokens:8192,startup_timeout:Duration::from_secs(120),request_timeout:Duration::from_secs(180),
+                api_key:std::env::var("LU_SERVER_API_KEY").map_err(|_|"missing temporary engine key")?,load_observer:None})?;
+            let mut host=InferenceHost::new(engine);
+            host.load(admission.current().ok_or("absent model admission")?).map_err(|e|format!("ENGINE_LOAD_GATE: {e:?}"))?;
+            let pid=host.process_id().ok_or("missing actual engine PID")?;
+            let final_prompt=browser_research_prompt(&public_search_final_user(prompt),&[record],true)?;
+            let mut answer=String::new();
+            let result=host.generate(GenerationRequest{prompt:final_prompt,max_new_tokens:384,history:Vec::new()},Cancellation::default(),|chunk|{
+                if answer.len().saturating_add(chunk.text.len())>200*1024{return Err(EngineError::InvalidRequest)}
+                answer.push_str(&chunk.text);Ok(())
+            });
+            let unload=host.unload();
+            result.map_err(|e|format!("GENUINE_GGUF_GATE: {e:?}"))?;
+            unload.map_err(|e|format!("ENGINE_UNLOAD_GATE: {e:?}"))?;
+            audit_browser_research_answer(&answer,&[source.clone()]).map_err(|e|format!("GENUINE_CITATION_GATE: {e:?}"))?;
+            if answer.split_whitespace().count()<6{return Err("non-substantive model response".into())}
+            println!("CP04B2_GENUINE_GGUF_CITATION_PASS pid={pid} engine_sha={} model_sha={} answer_sha={:x}",
+                engine_sha.iter().map(|b|format!("{b:02x}")).collect::<String>(),model_sha.iter().map(|b|format!("{b:02x}")).collect::<String>(),Sha256::digest(answer.as_bytes()));
+            println!("CP04B2_MODEL_ANSWER: {}{}",answer,render_observed_source_appendix(&[source]));
+            Ok(())
+        })();
+        // Failed live runs must still reconcile cleanup. Retain the profile
+        // for investigation when protected-process cleanup cannot be proven.
+        let cleanup=browser.stop();
+        if cleanup.is_ok(){let _=fs::remove_dir_all(&root);}
+        cleanup.expect("protected browser cleanup failed");
+        run.expect("CP04B2 live acceptance gate did not complete");
+    }
+    #[test]
+    fn cp04_public_search_literal_query(){
+        let a=public_search_intent("Please search the web for: 温度 & C++").unwrap().unwrap();
+        assert_eq!(a.url,"https://www.google.com/search?q=%E6%B8%A9%E5%BA%A6%20%26%20C%2B%2B");
+        assert!(search_result_matches(&a,&a.url));
+        assert!(!search_result_matches(&a,"https://www.google.com/search?q=secret"));
+        assert!(!search_result_matches(&a,&format!("{}&q=other",a.url)));
+        assert!(!search_result_matches(&a,&a.url.replace("www.google.com","example.com")));
+        assert_eq!(serde_json::from_str::<serde_json::Value>(&public_search_proposal(&a,0).arguments_json).unwrap()["url"],a.url);
+        assert_eq!(public_search_proposal(&a,1).arguments_json,r#"{"operation":"read"}"#);
+    }
+    #[test]
+    fn cp04b_requires_bounded_provider_receipt(){
+        let valid=serde_json::json!({"publicSearch":{"transport":"pinned-https-v1","httpStatus":200,"bodySha256":"a".repeat(64),"observedSha256":"b".repeat(64),"resultCount":2}});
+        assert!(public_search_receipt(&valid).is_ok());
+        use sha2::{Digest,Sha256};
+        let mut verified=public_search_receipt(&valid).unwrap();
+        verified["observedSha256"]=serde_json::json!(format!("{:x}",Sha256::digest(b"observed")));
+        assert!(public_search_text_matches(&verified,"observed"));
+        assert!(!public_search_text_matches(&verified,"changed"));
+        for (key,value) in [("transport",serde_json::json!("arbitrary")),("httpStatus",serde_json::json!(302)),("bodySha256",serde_json::json!("x".repeat(64))),("resultCount",serde_json::json!(0)),("resultCount",serde_json::json!(9))]{
+            let mut bad=valid.clone();bad["publicSearch"][key]=value;assert!(public_search_receipt(&bad).is_err());
+        }
+        assert!(public_search_receipt(&serde_json::json!({"status":"READ"})).is_err());
+        let a=public_search_intent("google rain").unwrap().unwrap();
+        assert!(!search_result_matches(&a,&format!("{}&other=private",a.url)));
+        assert!(!search_result_matches(&a,&format!("{}#private",a.url)));
+        assert!(public_search_failure(Some("PUBLIC_SEARCH_OFFLINE")).contains("unavailable"));
+    }
+    #[test]
+    fn cp04_public_search_rejects_other_intents_and_malformed_input(){
+        for t in ["search this folder for: budget","do not google rain","what is Google?","read https://example.com"]{assert!(public_search_intent(t).unwrap().is_none(),"{t}");}
+        for t in ["google","google \nsecret","search the internet for [Attached text file: private]","google C:\\secret","google <|user|>","google /home/user/private.txt","google file:///home/user/private.txt"]{assert!(public_search_intent(t).is_err(),"{t}");}
+    }
     #[test]
     fn bounded_observation_text_never_returns_unbounded_page_content(){
         let source="€".repeat(3000);

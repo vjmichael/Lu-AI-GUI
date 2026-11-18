@@ -3,6 +3,11 @@
 // The trusted Rust host must authenticate/authorize every incoming command.
 import { pathToFileURL } from 'node:url';
 import readline from 'node:readline';
+import { lookup } from 'node:dns/promises';
+import { request as httpsRequest } from 'node:https';
+import { isIPv4, isIP } from 'node:net';
+import { createHash } from 'node:crypto';
+import { basename } from 'node:path';
 
 export class BrowserGateError extends Error {
   constructor(code) { super(code); this.code = code; }
@@ -15,6 +20,105 @@ export function approvedUrl(value, origins) {
   }
   if (!origins.has(url.origin)) throw new BrowserGateError('ORIGIN_NOT_GRANTED');
   return url;
+}
+// CP-04B: public search is a deliberately narrower transport than general
+// browsing. Only the exact host-approved Google query goes on the wire. No
+// cookies, proxy, redirect follow, page-controlled networking or request body.
+const SEARCH_ORIGIN='https://www.google.com';
+const SEARCH_MAX_BYTES=2*1024*1024;
+export function exactPublicSearchUrl(value) {
+  const url=approvedUrl(value,new Set([SEARCH_ORIGIN]));
+  const pairs=[...url.searchParams];
+  if(url.pathname!=='/search'||url.hash||pairs.length!==1||pairs[0][0]!=='q'||
+     !pairs[0][1].trim()||Buffer.byteLength(pairs[0][1])>512||/[\x00-\x1f\x7f]/.test(pairs[0][1]))
+    throw new BrowserGateError('PUBLIC_SEARCH_INVALID_QUERY');
+  return url;
+}
+export function isPublicSearchIpv4(address) {
+  if(!isIPv4(address))return false;
+  const [a,b,c]=address.split('.').map(Number);
+  // IPv4-only, fail closed for special-use ranges (including CGNAT,
+  // benchmarking, documentation, multicast, link-local and loopback).
+  return a>0&&a<224&&a!==10&&a!==127&&!(a===100&&b>=64&&b<=127)&&
+    !(a===169&&b===254)&&!(a===172&&b>=16&&b<=31)&&
+    !(a===192&&(b===0||b===168||(b===88&&c===99)))&&
+    !(a===198&&(b===18||b===19||(b===51&&c===100)))&&
+    !(a===203&&b===0&&c===113);
+}
+export async function resolvePublicSearchAddress(resolve=lookup) {
+  let timer;
+  try {
+    const records=await Promise.race([
+      resolve('www.google.com',{family:4,all:true,verbatim:true}),
+      new Promise((_,reject)=>{timer=setTimeout(()=>reject(new BrowserGateError('PUBLIC_SEARCH_OFFLINE')),5000);})
+    ]);
+    if(!Array.isArray(records)||!records.length||records.length>64||
+      records.some(r=>r.family!==4||!isPublicSearchIpv4(r.address)))
+      throw new BrowserGateError('PUBLIC_SEARCH_PRIVATE_ADDRESS');
+    return records[0].address;
+  } catch(e) {
+    if(e instanceof BrowserGateError)throw e;
+    throw new BrowserGateError('PUBLIC_SEARCH_OFFLINE');
+  } finally {clearTimeout(timer);}
+}
+export async function fetchPinnedPublicSearch(value,{resolve=lookup,request=httpsRequest}={}) {
+  const url=exactPublicSearchUrl(value);
+  const address=await resolvePublicSearchAddress(resolve);
+  return await new Promise((resolveResult,reject)=>{
+    let req,timer,settled=false;
+    const finish=(error,result)=>{if(settled)return;settled=true;clearTimeout(timer);if(error){req?.destroy();reject(error);}else resolveResult(result);};
+    const fail=code=>finish(new BrowserGateError(code));
+    timer=setTimeout(()=>fail('PUBLIC_SEARCH_OFFLINE'),12000);
+    try {
+      // This lookup returns precisely the checked address, not a second DNS
+      // lookup. TLS authenticates the original www.google.com hostname/SNI.
+      req=request({protocol:'https:',hostname:url.hostname,servername:url.hostname,
+        port:443,path:url.pathname+url.search,method:'GET',agent:false,
+        family:4,autoSelectFamily:false,rejectUnauthorized:true,
+        lookup:(host,options,done)=>{
+          if(host!==url.hostname)return done(new Error('unapproved host'));
+          if(options?.all)return done(null,[{address,family:4}]);
+          done(null,address,4);
+        },headers:{'Accept':'text/html','Accept-Encoding':'identity',
+          'User-Agent':'Mozilla/5.0 Lu public search (read-only)'},maxHeaderSize:16384},res=>{
+          const status=res.statusCode;
+          if(status===429){res.destroy();return fail('PUBLIC_SEARCH_CAPTCHA_REQUIRED');}
+          if(status>=300&&status<400){res.destroy();return fail('PUBLIC_SEARCH_REDIRECT_BLOCKED');}
+          if(status!==200){res.destroy();return fail('PUBLIC_SEARCH_HTTP_ERROR');}
+          if(!/^text\/html(?:\s*;|$)/i.test(String(res.headers['content-type']||''))||
+             (res.headers['content-encoding']&&res.headers['content-encoding']!=='identity')||
+             Number(res.headers['content-length'])>SEARCH_MAX_BYTES){res.destroy();return fail('PUBLIC_SEARCH_INVALID_RESPONSE');}
+          const chunks=[];let bytes=0;
+          res.on('data',chunk=>{bytes+=chunk.length;if(bytes>SEARCH_MAX_BYTES){res.destroy();fail('PUBLIC_SEARCH_RESPONSE_TOO_LARGE');}else chunks.push(chunk);});
+          res.on('error',()=>fail('PUBLIC_SEARCH_OFFLINE'));
+          res.on('aborted',()=>fail('PUBLIC_SEARCH_OFFLINE'));
+          res.on('end',()=>{
+            if(!bytes||!res.complete)return fail('PUBLIC_SEARCH_INVALID_RESPONSE');
+            const body=Buffer.concat(chunks);
+            finish(null,{body,status,bodySha256:createHash('sha256').update(body).digest('hex')});
+          });
+        });
+      req.on('error',()=>fail('PUBLIC_SEARCH_OFFLINE'));
+      req.end();
+    }catch{fail('PUBLIC_SEARCH_OFFLINE');}
+  });
+}
+// Unwrap Google's displayed redirect links without visiting them. These are
+// untrusted result labels, never approved navigation or independent citations.
+export function displayedSearchTarget(href,base) {
+  if(typeof href!=='string'||!href.length||href.length>8192)return null;
+  try {
+    let target=new URL(href,base);
+    if(target.origin===SEARCH_ORIGIN&&target.pathname==='/url'){
+      const values=[...target.searchParams].filter(([key])=>key==='q'||key==='url');
+      if(values.length!==1)return null;
+      target=new URL(values[0][1]);
+    }
+    if(target.protocol!=='https:'||target.username||target.password||target.port||
+      target.hostname==='www.google.com'||target.href.length>2048||isIP(target.hostname.replace(/^\[|\]$/g,''))||
+      !target.hostname.includes('.')||/(?:\.local|\.internal|\.localhost|\.home\.arpa)$/.test(target.hostname))return null;
+    return target.href;
+  }catch{return null;}
 }
 export function challengeKind(text) {
   const snippet = String(text).slice(0, 120_000).toLowerCase();
@@ -93,7 +197,7 @@ export class HostVisibilityController {
 
 export class BrowserSession {
   constructor({origins, profileDirectory, chromiumProvider, softwareRendering = false,
-    visibilityMode = 'automatic', windowController = null, cdpEndpoint = null} = {}) {
+    visibilityMode = 'automatic', windowController = null, cdpEndpoint = null, publicSearchFetcher = fetchPinnedPublicSearch} = {}) {
     if (!Array.isArray(origins) || origins.length === 0 || origins.length > 32) {
       throw new BrowserGateError('INVALID_ORIGINS');
     }
@@ -106,6 +210,9 @@ export class BrowserSession {
       throw new BrowserGateError('PROFILE_NOT_SELECTED');
     }
     this.profileDirectory = profileDirectory; // host owns path and access control
+    this.publicSearchOnly=basename(profileDirectory)==='lu-browser-public-search-profile';
+    if(this.publicSearchOnly&&(this.origins.size!==1||!this.origins.has(SEARCH_ORIGIN)))
+      throw new BrowserGateError('PUBLIC_SEARCH_PROVIDER_NOT_GRANTED');
     this.chromiumProvider = chromiumProvider;
     this.softwareRendering = softwareRendering === true;
     if (!['automatic','always-visible'].includes(visibilityMode)) {
@@ -118,12 +225,17 @@ export class BrowserSession {
     if(cdpEndpoint !== null && !/^http:\/\/127\.0\.0\.1:[1-9][0-9]{0,4}$/.test(cdpEndpoint)) {
       throw new BrowserGateError('UNTRUSTED_CDP_ENDPOINT');
     }
+    if(this.publicSearchOnly&&cdpEndpoint===null)throw new BrowserGateError('PUBLIC_SEARCH_ISOLATION_UNAVAILABLE');
     this.cdpEndpoint=cdpEndpoint;
     this.connectedBrowser=null;
     this.windowVisibility = 'NOT_STARTED';
     this.context = null;
     this.page = null;
     this.paused = null;
+    this.publicSearchFetcher=publicSearchFetcher;
+    this.publicSearchAttempted=false;
+    this.publicSearchReceipt=null;
+    this.publicSearchContext=null;
   }
   async start() {
     const provider = this.chromiumProvider ?? (await import('playwright').catch(() => {
@@ -155,8 +267,10 @@ export class BrowserSession {
       await this.context.routeWebSocket('**/*',async socket=>{
         await socket.close({code:1008,reason:'Lu read-only browser'});
       });
+      if(this.publicSearchOnly)await this.context.setOffline(true);
       await this.context.route('**/*', async route => {
         try {
+          if(this.publicSearchOnly||this.publicSearchAttempted)throw new BrowserGateError('PUBLIC_SEARCH_NETWORK_BLOCKED');
           approvedUrl(route.request().url(), this.origins);
           await route.continue();
         } catch { await route.abort(); }
@@ -195,6 +309,65 @@ export class BrowserSession {
     return {status:'NEEDS_HUMAN',reason,url:this.page.url(),
       windowVisibility:this.windowVisibility};
   }
+  async #publicSearch(value) {
+    this.publicSearchAttempted=true;
+    try {
+      const url=exactPublicSearchUrl(value);
+      // Never reuse the persistent profile or its service worker/cookie store.
+      // Production always attaches to the already OS-owned Chromium process.
+      if(!this.connectedBrowser||typeof this.connectedBrowser.newContext!=='function')
+        throw new BrowserGateError('PUBLIC_SEARCH_ISOLATION_UNAVAILABLE');
+      const fetched=await this.publicSearchFetcher(url.href);
+      if(fetched.status!==200||!Buffer.isBuffer(fetched.body)||!fetched.body.length||fetched.body.length>SEARCH_MAX_BYTES||
+          createHash('sha256').update(fetched.body).digest('hex')!==fetched.bodySha256)
+        throw new BrowserGateError('PUBLIC_SEARCH_INVALID_RESPONSE');
+      const context=await this.connectedBrowser.newContext({javaScriptEnabled:false,
+        serviceWorkers:'block',acceptDownloads:false,offline:true,viewport:{width:1280,height:900}});
+      this.publicSearchContext=context;
+      await context.routeWebSocket('**/*',socket=>socket.close({code:1008,reason:'Offline search document'}));
+      await context.route('**/*',route=>route.abort());
+      const page=await context.newPage();
+      this.page=page;
+      // Parse in an inert detached document in real Chromium, not an active
+      // provider page. No response script, link, iframe or form is attached
+      // to the live document; the entire isolated context is offline.
+      const source=new TextDecoder('utf-8',{fatal:true}).decode(fetched.body);
+      const parsed=await page.evaluate(html=>{
+        const doc=new DOMParser().parseFromString(html,'text/html');
+        doc.querySelectorAll('script,style,template,noscript').forEach(el=>el.remove());
+        const gate=doc.querySelector('iframe[src*="/recaptcha/api2"],iframe[src*="hcaptcha.com"],iframe[src*="challenges.cloudflare.com"],[data-sitekey].h-captcha')?'CAPTCHA_REQUIRED':doc.querySelector('input[type="password"]')?'LOGIN_REQUIRED':null;
+        return {bodyText:(doc.body?.textContent||'').slice(0,120000),gate,
+          candidates:Array.from(doc.querySelectorAll('a:has(h3)')).slice(0,100).map(a=>({
+            href:(a.getAttribute('href')||'').slice(0,8193),title:(a.querySelector('h3')?.textContent||'').slice(0,240),
+            snippet:(a.parentElement?.parentElement?.textContent||'').slice(0,320)}))};
+      },source);
+      const gate=parsed.gate||challengeKind(parsed.bodyText)||(/before you continue to google|consent required/i.test(parsed.bodyText)?'CONSENT_REQUIRED':null);
+      if(gate)throw new BrowserGateError('PUBLIC_SEARCH_'+gate);
+      const candidates=parsed.candidates;
+      const results=[];const seen=new Set();
+      for(const candidate of candidates){
+        const target=displayedSearchTarget(candidate.href,url.href);
+        if(!target||!candidate.title.trim()||seen.has(target))continue;
+        seen.add(target);
+        results.push(`${candidate.title.trim().slice(0,240)}\nDisplayed link (not opened): ${target}\n${candidate.snippet.trim().slice(0,320)}`);
+        if(results.length===8)break;
+      }
+      if(!results.length)throw new BrowserGateError('PUBLIC_SEARCH_NO_RESULTS');
+      const text=results.join('\n\n');
+      await page.evaluate(text=>{document.body.textContent=text;},text);
+      this.publicSearchReceipt={url:url.href,text,transport:'pinned-https-v1',httpStatus:200,
+        bodySha256:fetched.bodySha256,observedSha256:createHash('sha256').update(text).digest('hex'),resultCount:results.length};
+      return {status:'SEARCH_OBSERVED',url:url.href,httpStatus:200,publicSearch:this.#searchEvidence()};
+    }catch(e){
+      this.publicSearchReceipt=null;
+      if(this.publicSearchContext){await this.publicSearchContext.close().catch(()=>{});this.publicSearchContext=null;}
+      return {status:'SEARCH_UNAVAILABLE',reason:e instanceof BrowserGateError?e.code:'PUBLIC_SEARCH_FAILED'};
+    }
+  }
+  #searchEvidence(){
+    const {transport,httpStatus,bodySha256,observedSha256,resultCount}=this.publicSearchReceipt;
+    return {transport,httpStatus,bodySha256,observedSha256,resultCount};
+  }
   async execute(command) {
     if (!this.page) throw new BrowserGateError('BROWSER_NOT_STARTED');
     if (!command || typeof command !== 'object' || Array.isArray(command)) {
@@ -203,8 +376,16 @@ export class BrowserSession {
     const op = command.op;
     if (op === 'status') {
       return {status:this.paused ? 'NEEDS_HUMAN' : 'READY',reason:this.paused ?? null,
-        url:this.page.url(),windowVisibility:this.windowVisibility,visibilityMode:this.visibilityMode};
+        url:this.publicSearchAttempted&&!this.publicSearchReceipt?null:this.page.url(),windowVisibility:this.windowVisibility,visibilityMode:this.visibilityMode};
     }
+    if(this.publicSearchAttempted){
+      if(op==='read'&&this.publicSearchReceipt&&this.page.url()==='about:blank'){
+        const {url,text}=this.publicSearchReceipt;
+        return {status:'READ',url,text,truncated:false,publicSearch:this.#searchEvidence()};
+      }
+      throw new BrowserGateError('PUBLIC_SEARCH_SCOPE_EXHAUSTED');
+    }
+    if(this.publicSearchOnly&&op!=='navigate')throw new BrowserGateError('PUBLIC_SEARCH_SCOPE_EXHAUSTED');
     if (op === 'human_resolved') {
       if (!this.paused) throw new BrowserGateError('NO_PENDING_CHALLENGE');
       // The user interacts with the existing visible browser. Re-check current
@@ -240,6 +421,7 @@ export class BrowserSession {
     }
     if (op === 'navigate') {
       const url = approvedUrl(boundedText(command.url,2048),this.origins);
+      if(this.publicSearchOnly)return this.#publicSearch(url.href);
       const response = await this.page.goto(url.href,{waitUntil:'domcontentloaded',timeout:20000});
       approvedUrl(this.page.url(),this.origins);
       const text = await this.page.locator('body').innerText({timeout:5000})
@@ -339,6 +521,7 @@ export class BrowserSession {
     throw new BrowserGateError('UNKNOWN_OPERATION');
   }
   async close() {
+    if(this.publicSearchContext){await this.publicSearchContext.close();this.publicSearchContext=null;}
     if (this.connectedBrowser) {
       // CDP detach is not a native process shutdown. Rust owns termination.
       await this.connectedBrowser.close();

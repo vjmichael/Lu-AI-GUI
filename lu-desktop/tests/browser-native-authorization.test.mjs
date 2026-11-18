@@ -127,6 +127,7 @@ test('citation gate cannot stream or complete unverified model prose',()=>{
   const progress=model.indexOf('owner.chats.append_progress(&chat_id,&gid,&answer)',start);
   const finish=model.indexOf('owner.chats.complete(&chat_id,&gid)?',start);
   assert.ok(start>=0&&start<audit&&audit<progress&&progress<finish);
+  assert.match(model.slice(audit),/ticket\.commit_completed\(&session_id/);
   assert.doesNotMatch(model.slice(start,audit),/app\.emit\("lu-token"/);
   assert.match(model,/render_observed_source_appendix\(&citation_sources\)/);
 });

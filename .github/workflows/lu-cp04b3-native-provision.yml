@@ -1,0 +1,113 @@
+name: Lu CP-04B3 protected search runtime provisioning
+on:
+  push:
+    branches: [lu/cp01-attachment-transaction-20261116]
+    paths: ['.github/workflows/lu-cp04b3-native-provision.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: lu-cp04b3-${{ github.sha }}
+  cancel-in-progress: false
+jobs:
+  browser-candidate:
+    runs-on: windows-2025
+    timeout-minutes: 65
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify frozen source and protected worker contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          node scripts/verify-source-tree.mjs
+          node --test lu-desktop/tests/browser-staging.test.mjs lu-desktop/tests/browser-native-authorization.test.mjs tests/lu-browser-worker.test.mjs tests/lu-public-search.test.mjs
+      - name: Provision pinned Playwright and genuine headed Chromium
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          npm install --prefix src-tauri/lu-core/workers --no-save --no-package-lock --no-audit --no-fund playwright@1.64.1
+          if($LASTEXITCODE -ne 0){throw 'Pinned Playwright unavailable'}
+          node src-tauri/lu-core/workers/node_modules/playwright/cli.js install --no-shell chromium
+          if($LASTEXITCODE -ne 0){throw 'Pinned Chromium unavailable'}
+          node lu-desktop/scripts/assemble-browser-ci-candidate.mjs
+          if($LASTEXITCODE -ne 0){throw 'Candidate assembly failed'}
+      - name: Verify exact browser candidate and execute unapproved native browser fixture
+        shell: pwsh
+        env:
+          LU_BROWSER_REQUIRE_CANDIDATE: '1'
+        run: |
+          $ErrorActionPreference='Stop'
+          node --test lu-desktop/tests/browser-ci-candidate.test.mjs lu-desktop/tests/browser-ci-executable.test.mjs
+          if($LASTEXITCODE -ne 0){throw 'Candidate fixture acceptance failed'}
+          $m=Get-Content 'out/lu-browser-candidate/manifest.json' -Raw|ConvertFrom-Json
+          $worker=Get-FileHash 'src-tauri/lu-core/workers/lu_browser_worker.mjs' -Algorithm SHA256
+          $entry=@($m.files|Where-Object path -ceq 'lu_browser_worker.mjs')
+          if($m.status -cne 'candidate' -or $m.playwrightVersion -cne '1.64.1' -or $entry.Count -ne 1 -or $entry[0].sha256 -cne $worker.Hash.ToLowerInvariant()){throw 'Candidate identity or review boundary mismatch'}
+          $manifest=(Get-FileHash 'out/lu-browser-candidate/manifest.json' -Algorithm SHA256).Hash.ToLowerInvariant()
+          if($manifest -cne (Get-Content 'out/lu-browser-candidate/manifest.sha256' -Raw).Trim()){throw 'Manifest digest mismatch'}
+          "CP04B3_CANDIDATE_UNAPPROVED manifest=$manifest worker=$($entry[0].sha256)" >> $env:GITHUB_STEP_SUMMARY
+      - name: Preserve original unapproved browser bytes for independent review
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Lu-C62A-UNAPPROVED-Windows-Browser-${{ github.sha }}
+          path: out/lu-browser-candidate/
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+      - name: Actual Google provider compatibility (not protected production custody)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          New-Item -ItemType Directory -Force cp04b3-provider-evidence|Out-Null
+          $env:LU_CP04B_PLAYWRIGHT_MODULE=([uri](Resolve-Path 'out/lu-browser-candidate/node_modules/playwright/index.mjs').Path).AbsoluteUri
+          $env:LU_CP04B_CHROMIUM=(Resolve-Path 'out/lu-browser-candidate/chrome.exe').Path
+          $env:LU_CP04B_LIVE_PUBLIC_SEARCH='1'
+          node --test tests/lu-public-search.test.mjs 2>&1 | Tee-Object -FilePath cp04b3-provider-evidence/live-provider.log
+          $result=$LASTEXITCODE
+          if($result -ne 0){throw 'Live provider or controlled browser gate failed, no live acceptance'}
+          if(-not(Select-String -Path cp04b3-provider-evidence/live-provider.log -Pattern '^ok [0-9]+ - live Google provider must return genuine bounded results$')){throw 'No non-skipped live provider pass'}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lu-cp04b3-provider-evidence-${{ github.sha }}
+          path: cp04b3-provider-evidence/
+          if-no-files-found: warn
+          retention-days: 14
+  engine-and-model:
+    runs-on: windows-2025
+    timeout-minutes: 100
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify exact source and provision genuine CPU engine and Qwen model
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          if((git rev-parse HEAD).Trim() -cne $env:GITHUB_SHA){throw 'Wrong source SHA'}
+          node scripts/verify-source-tree.mjs
+          if($LASTEXITCODE -ne 0){throw 'Source inventory mismatch'}
+          & scripts/lu-cp04b3-provision-llama.ps1 -OutputDir (Join-Path $PWD 'out/cp04b3-engine')
+          if(-not $?){throw 'Engine provisioning failed'}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lu-cp04b3-windows-llama-runtime-${{ github.sha }}
+          path: out/cp04b3-engine/
+          if-no-files-found: warn
+          retention-days: 14

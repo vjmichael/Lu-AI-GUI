@@ -129,7 +129,11 @@ pub fn launch_owned_headed_chromium(
     let port_file=dedicated_profile.join(PORT_FILE);
     #[cfg(windows)]
     let job=lu_win_worker_job::Job::new().map_err(BrowserLaunchError::Spawn)?;
-    let mut child=Command::new(browser_executable)
+    let mut command=Command::new(browser_executable);
+    if dedicated_profile.file_name().and_then(|n|n.to_str())==Some("lu-browser-public-search-profile"){
+        command.arg("--host-resolver-rules=MAP * ~NOTFOUND").arg("--disable-sync");
+    }
+    let mut child=command
         .arg("--remote-debugging-port=0")
         .arg("--remote-debugging-address=127.0.0.1")
         .arg("--no-first-run").arg("--no-default-browser-check")

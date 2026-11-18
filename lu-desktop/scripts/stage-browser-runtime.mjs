@@ -35,6 +35,13 @@ if(manifest.schema!==1||manifest.runtime!=='lu-browser'||
 const required=process.platform==='win32'
   ? ['chrome.exe','node.exe','lu_browser_worker.mjs','node_modules/playwright/index.mjs']
   : ['chrome','node','xdotool','lu_browser_worker.mjs','node_modules/playwright/index.mjs'];
+// A historical review does not approve a different worker protocol. The
+// production host embeds the same source identity independently.
+const canonicalWorker=readFileSync(resolve(base,'../src-tauri/lu-core/workers/lu_browser_worker.mjs'));
+const workerEntry=manifest.files.find(f=>f?.path==='lu_browser_worker.mjs');
+if(!workerEntry||workerEntry.bytes!==canonicalWorker.length||
+   workerEntry.sha256!==createHash('sha256').update(canonicalWorker).digest('hex'))
+  throw Error('Reviewed browser worker differs from current canonical source');
 const paths=new Set();
 for(const f of manifest.files){
   if(!f||typeof f.path!=='string'||typeof f.sha256!=='string'||

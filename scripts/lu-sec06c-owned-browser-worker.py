@@ -191,8 +191,10 @@ def run(a):
     # than a pipe's capacity. Read only a small sanitized prefix after a
     # proven pre-admission exit; do not weaken any sandbox flags.
     startup_log=tempfile.TemporaryFile(mode="w+b")
+    search_flags=(["--host-resolver-rules=MAP * ~NOTFOUND","--disable-sync"]
+                  if profile.name=="lu-browser-public-search-profile" else [])
     try:
-        chrome=subprocess.Popen([a.chromium,
+        chrome=subprocess.Popen([a.chromium,*search_flags,
              "--remote-debugging-port=0","--remote-debugging-address=127.0.0.1",
              "--no-first-run","--no-default-browser-check",
              "--disable-background-networking","--user-data-dir="+str(profile),
