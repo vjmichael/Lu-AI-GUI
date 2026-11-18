@@ -1,8 +1,12 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "25188222a300ade67bd4f1e14904cc425a7ff24a",
-  "trackedFileCount": 1122,
+  "sourceCommitBeforeLock": "212ee0e6df445f98da3e9c68ba9661bbd58805c8",
+  "trackedFileCount": 1123,
   "files": [
+    {
+      "path": ".gitattributes",
+      "blob": "e429fdb4fb4808524e8f876506a37fceaec70d39"
+    },
     {
       "path": ".github/pull_request_template.md",
       "blob": "ed863daf448d97af570c2b8272553115ddf821fa"
@@ -113,7 +117,7 @@
     },
     {
       "path": ".github/workflows/lu-cp05e-grouped-native.yml",
-      "blob": "3900592b731db531a33a91163691aad2fa8adef1"
+      "blob": "ad50a1870828176019bffee4afff49797c45a029"
     },
     {
       "path": ".github/workflows/lu-development-ledger.yml",
@@ -381,7 +385,7 @@
     },
     {
       "path": "benchmarks/e1/e1_p07_llama_completion.py",
-      "blob": "d3b0e168ad490368735dc0a32b73e2a45c954ec3"
+      "blob": "efa39d08db0b8798f02b8d969cfe0097f00fc96f"
     },
     {
       "path": "benchmarks/e1/e1_p08_linux_group_guard.py",
@@ -477,7 +481,7 @@
     },
     {
       "path": "benchmarks/e1/test_e1_p07_llama_completion.py",
-      "blob": "2448b45d9233a7a6ab3ee84bf6d3cf4a0fa31ad3"
+      "blob": "01cb54b8ad09e46d17ff635d5192bd649588deb5"
     },
     {
       "path": "benchmarks/e1/test_memory_loop02_qwen_feedback.py",
@@ -769,7 +773,7 @@
     },
     {
       "path": "docs/LU_DEVELOPMENT_LEDGER.md",
-      "blob": "3a8925e935a939731229dc207142aba98121b02a"
+      "blob": "0303246de73ec6c90189c6c99c5ad7098046250f"
     },
     {
       "path": "docs/LU_E1_NATIVE_EVIDENCE_20261107.md",
@@ -1337,7 +1341,7 @@
     },
     {
       "path": "lu-desktop/scripts/assemble-browser-ci-candidate.mjs",
-      "blob": "125a76e8ed4ca31e8d3945cd28d4b3b11fa502c9"
+      "blob": "469d7821bab2a22b1e5ec83a4b2eade594527e15"
     },
     {
       "path": "lu-desktop/scripts/build-r14-manifest-eval.sh",
@@ -1893,7 +1897,7 @@
     },
     {
       "path": "lu-desktop/tests/browser-ci-candidate.test.mjs",
-      "blob": "0f7ba31c239070c7343bbc73e126eb1324ab696c"
+      "blob": "08ff9e41eb0544da67ff980adb7551d23890d15f"
     },
     {
       "path": "lu-desktop/tests/browser-ci-executable.test.mjs",
@@ -2473,7 +2477,7 @@
     },
     {
       "path": "scripts/build-agent01g-physical-windows-nsis.ps1",
-      "blob": "98d2494978afa3939836b12ab84e5732e1cbd135"
+      "blob": "1c75055b14c60ad7eb3679ed4f1bc5a6daa57d67"
     },
     {
       "path": "scripts/build-current-windows-nsis.ps1",
@@ -4061,7 +4065,7 @@
     },
     {
       "path": "src-tauri/lu-core/tests/e1_reviewed_model_tools.rs",
-      "blob": "fdfc4535f446cb52b3add75815dcd015686cd078"
+      "blob": "c3ce33f15aea6c7b8c76f1e22b27318533914d12"
     },
     {
       "path": "src-tauri/lu-core/tests/edit_safety.rs",
