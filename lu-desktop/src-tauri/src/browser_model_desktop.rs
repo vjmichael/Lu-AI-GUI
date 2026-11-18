@@ -405,6 +405,11 @@ fn public_search_failure(reason:Option<&str>)->&'static str{
         Some("PUBLIC_SEARCH_PRIVATE_ADDRESS")=>"Public search blocked an unsafe provider address.",
         Some("PUBLIC_SEARCH_REDIRECT_BLOCKED")=>"The selected search provider redirected the request. Lu did not follow it; no search evidence was accepted.",
         Some("PUBLIC_SEARCH_PROVIDER_SCRIPT_REQUIRED")=>"The selected search provider requires an interactive browser. Lu did not execute provider scripts or accept search evidence. For Google, you can manually use your browser or submit a new DuckDuckGo search for separate approval.",
+        Some("PUBLIC_SEARCH_RATE_LIMITED")=>"The selected search provider is limiting requests. Try again later; no search evidence was accepted.",
+        Some("PUBLIC_SEARCH_ACCESS_DENIED")=>"The selected search provider refused access. No search evidence was accepted. You can try your regular browser.",
+        Some("PUBLIC_SEARCH_NOT_COMPLETED")=>"The selected search provider did not complete the search. No search evidence was accepted.",
+        Some("PUBLIC_SEARCH_PROVIDER_UNAVAILABLE")=>"The selected search provider is temporarily unavailable. No search evidence was accepted.",
+        Some("PUBLIC_SEARCH_HTTP_ERROR")=>"The selected search provider returned an unsuccessful response. No search evidence was accepted.",
         Some("PUBLIC_SEARCH_NO_RESULTS")=>"No recognizable search results were observed. No answer was synthesized.",
         _=>"Public search did not return verifiable result evidence. No answer was synthesized.",
     }
@@ -1039,6 +1044,9 @@ mod tests{
         assert!(!search_result_matches(&a,&format!("{}&other=private",a.url)));
         assert!(!search_result_matches(&a,&format!("{}#private",a.url)));
         assert!(public_search_failure(Some("PUBLIC_SEARCH_OFFLINE")).contains("unavailable"));
+        for (reason,expected) in [("PUBLIC_SEARCH_RATE_LIMITED","limiting requests"),("PUBLIC_SEARCH_ACCESS_DENIED","refused access"),("PUBLIC_SEARCH_NOT_COMPLETED","did not complete"),("PUBLIC_SEARCH_PROVIDER_UNAVAILABLE","temporarily unavailable"),("PUBLIC_SEARCH_HTTP_ERROR","unsuccessful response")] {
+            let msg=public_search_failure(Some(reason));assert!(msg.contains(expected));assert!(msg.contains("No search evidence was accepted")||msg.contains("no search evidence was accepted"));
+        }
     }
     #[test]
     fn cp04_public_search_rejects_other_intents_and_malformed_input(){

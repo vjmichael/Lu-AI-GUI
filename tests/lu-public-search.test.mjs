@@ -53,7 +53,7 @@ test('redirects, throttling, non-HTML, oversized and incomplete content produce 
   for(const [fixture,code] of [
     [{status:302,headers:{location:'https://169.254.169.254/private'}},'PUBLIC_SEARCH_REDIRECT_BLOCKED'],
     [{status:307,headers:{location:'https://www.google.com/search?q=changed'}},'PUBLIC_SEARCH_REDIRECT_BLOCKED'],
-    [{status:429},'PUBLIC_SEARCH_CAPTCHA_REQUIRED'],[{status:503},'PUBLIC_SEARCH_HTTP_ERROR'],
+    [{status:429},'PUBLIC_SEARCH_RATE_LIMITED'],[{status:503},'PUBLIC_SEARCH_PROVIDER_UNAVAILABLE'],
     [{headers:{'content-type':'application/octet-stream'}},'PUBLIC_SEARCH_INVALID_RESPONSE'],
     [{headers:{'content-type':'text/html','content-encoding':'gzip'}},'PUBLIC_SEARCH_INVALID_RESPONSE'],
     [{body:'a'.repeat(2*1024*1024+1)},'PUBLIC_SEARCH_RESPONSE_TOO_LARGE'],
@@ -61,6 +61,18 @@ test('redirects, throttling, non-HTML, oversized and incomplete content produce 
     const mock=transportMock(fixture);
     await assert.rejects(fetchPinnedPublicSearch(url,{resolve:publicDns,request:mock.request}),e=>e.code===code);
     assert.equal(mock.calls.length,1);
+  }
+});
+test('non-success provider statuses are exact bounded diagnostics, never evidence or retries',async()=>{
+  for(const target of [url,ddgUrl])for(const [status,code] of [
+    [202,'PUBLIC_SEARCH_NOT_COMPLETED'],[204,'PUBLIC_SEARCH_HTTP_ERROR'],[301,'PUBLIC_SEARCH_REDIRECT_BLOCKED'],
+    [401,'PUBLIC_SEARCH_LOGIN_REQUIRED'],[403,'PUBLIC_SEARCH_ACCESS_DENIED'],[404,'PUBLIC_SEARCH_HTTP_ERROR'],
+    [429,'PUBLIC_SEARCH_RATE_LIMITED'],[451,'PUBLIC_SEARCH_ACCESS_DENIED'],[500,'PUBLIC_SEARCH_PROVIDER_UNAVAILABLE'],[503,'PUBLIC_SEARCH_PROVIDER_UNAVAILABLE']]){
+    const mock=transportMock({status,body:html,headers:{'content-type':'text/html','set-cookie':'private cookie','location':'https://example.com/private?query=secret','retry-after':'900'}});
+    await assert.rejects(fetchPinnedPublicSearch(target,{resolve:publicDns,request:mock.request}),e=>{
+      assert.equal(e.code,code);assert.deepEqual(e.diagnostic,{schema:'lu-public-search-http-v1',httpStatus:status});
+      assert.doesNotMatch(JSON.stringify(e),/secret|cookie|example.com|900/);return true;
+    });assert.equal(mock.calls.length,1);
   }
 });
 test('displayed Google redirect links are unwrapped as data, never followed',()=>{
@@ -190,6 +202,18 @@ test('real Chromium refuses an HTML provider challenge even if result-like links
   await withRealSearchBrowser(fixtureFetcher(challenged,ddgUrl),async session=>{
     const nav=await session.execute({op:'navigate',url:ddgUrl});assert.equal(nav.status,'SEARCH_UNAVAILABLE');assert.equal(nav.reason,'PUBLIC_SEARCH_CAPTCHA_REQUIRED');await assert.rejects(session.execute({op:'read'}),e=>e.code==='PUBLIC_SEARCH_SCOPE_EXHAUSTED');
   },ddgOrigin);
+});
+test('real Chromium fails closed on non-200 HTML provider responses, without leaking body or retrying', {skip:!realModule,timeout:30000},async()=>{
+  for(const [status,reason] of [[202,'PUBLIC_SEARCH_NOT_COMPLETED'],[403,'PUBLIC_SEARCH_ACCESS_DENIED'],[429,'PUBLIC_SEARCH_RATE_LIMITED'],[503,'PUBLIC_SEARCH_PROVIDER_UNAVAILABLE']]){
+    const mock=transportMock({status,body:ddgHtml,headers:{'content-type':'text/html','set-cookie':'private','location':url}});
+    await withRealSearchBrowser(value=>fetchPinnedPublicSearch(value,{resolve:publicDns,request:mock.request}),async session=>{
+      const nav=await session.execute({op:'navigate',url:ddgUrl});
+      assert.deepEqual(nav,{status:'SEARCH_UNAVAILABLE',reason,diagnostic:{schema:'lu-public-search-http-v1',httpStatus:status}});
+      await assert.rejects(session.execute({op:'read'}),e=>e.code==='PUBLIC_SEARCH_SCOPE_EXHAUSTED');
+      await assert.rejects(session.execute({op:'navigate',url:ddgUrl}),e=>e.code==='PUBLIC_SEARCH_SCOPE_EXHAUSTED');
+      assert.equal(mock.calls.length,1);
+    },ddgOrigin);
+  }
 });
 test('live DuckDuckGo HTML provider must return genuine bounded results',{skip:!realModule||process.env.LU_CP04B_LIVE_HTML_SEARCH!=='1',timeout:45000},async()=>{
   await withRealSearchBrowser(undefined,async session=>{

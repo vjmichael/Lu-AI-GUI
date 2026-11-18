@@ -10,7 +10,7 @@ import { createHash } from 'node:crypto';
 import { basename } from 'node:path';
 
 export class BrowserGateError extends Error {
-  constructor(code) { super(code); this.code = code; }
+  constructor(code, diagnostic = null) { super(code); this.code = code; this.diagnostic = diagnostic; }
 }
 export function approvedUrl(value, origins) {
   let url;
@@ -70,7 +70,9 @@ export async function fetchPinnedPublicSearch(value,{resolve=lookup,request=http
   return await new Promise((resolveResult,reject)=>{
     let req,timer,settled=false;
     const finish=(error,result)=>{if(settled)return;settled=true;clearTimeout(timer);if(error){req?.destroy();reject(error);}else resolveResult(result);};
-    const fail=code=>finish(new BrowserGateError(code));
+    const fail=(code,httpStatus)=>finish(new BrowserGateError(code,
+      Number.isInteger(httpStatus)&&httpStatus>=100&&httpStatus<=599?
+        {schema:'lu-public-search-http-v1',httpStatus}:null));
     timer=setTimeout(()=>fail('PUBLIC_SEARCH_OFFLINE'),12000);
     try {
       // This lookup returns precisely the checked address, not a second DNS
@@ -85,9 +87,18 @@ export async function fetchPinnedPublicSearch(value,{resolve=lookup,request=http
         },headers:{'Accept':'text/html','Accept-Encoding':'identity',
           'User-Agent':'Mozilla/5.0 Lu public search (read-only)'},maxHeaderSize:16384},res=>{
           const status=res.statusCode;
-          if(status===429){res.destroy();return fail('PUBLIC_SEARCH_CAPTCHA_REQUIRED');}
-          if(status>=300&&status<400){res.destroy();return fail('PUBLIC_SEARCH_REDIRECT_BLOCKED');}
-          if(status!==200){res.destroy();return fail('PUBLIC_SEARCH_HTTP_ERROR');}
+          // A non-200 response is not evidence, even when its body looks like
+          // results. Retain only the numeric status; never the response body,
+          // redirect location, authentication headers, cookies or query.
+          if(status!==200){
+            const code=status===429?'PUBLIC_SEARCH_RATE_LIMITED':
+              status===401?'PUBLIC_SEARCH_LOGIN_REQUIRED':
+              status===403||status===451?'PUBLIC_SEARCH_ACCESS_DENIED':
+              status===202?'PUBLIC_SEARCH_NOT_COMPLETED':
+              status>=300&&status<400?'PUBLIC_SEARCH_REDIRECT_BLOCKED':
+              status>=500&&status<=599?'PUBLIC_SEARCH_PROVIDER_UNAVAILABLE':'PUBLIC_SEARCH_HTTP_ERROR';
+            res.destroy();return fail(code,status);
+          }
           if(!/^text\/html(?:\s*;|$)/i.test(String(res.headers['content-type']||''))||
              (res.headers['content-encoding']&&res.headers['content-encoding']!=='identity')||
              Number(res.headers['content-length'])>SEARCH_MAX_BYTES){res.destroy();return fail('PUBLIC_SEARCH_INVALID_RESPONSE');}
@@ -420,7 +431,13 @@ export class BrowserSession {
     }catch(e){
       this.publicSearchReceipt=null;
       if(this.publicSearchContext){await this.publicSearchContext.close().catch(()=>{});this.publicSearchContext=null;}
-      return {status:'SEARCH_UNAVAILABLE',reason:e instanceof BrowserGateError?e.code:'PUBLIC_SEARCH_FAILED',...(diagnostic?{diagnostic}:{})};
+      // Transport diagnostics are separately typed and bounded. Failed
+      // responses never create an observation receipt or enter the model.
+      const failureStatus=e instanceof BrowserGateError?e.diagnostic?.httpStatus:null;
+      const safeDiagnostic=diagnostic||(e instanceof BrowserGateError&&e.diagnostic?.schema==='lu-public-search-http-v1'&&
+        Number.isInteger(failureStatus)&&failureStatus>=100&&failureStatus<=599?
+        {schema:'lu-public-search-http-v1',httpStatus:failureStatus}:null);
+      return {status:'SEARCH_UNAVAILABLE',reason:e instanceof BrowserGateError?e.code:'PUBLIC_SEARCH_FAILED',...(safeDiagnostic?{diagnostic:safeDiagnostic}:{})};
     }
   }
   #searchEvidence(){

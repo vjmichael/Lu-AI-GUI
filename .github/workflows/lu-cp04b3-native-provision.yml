@@ -1,4 +1,4 @@
-name: Lu CP-04B3 HTML provider provisioning (Google gate separate)
+name: Lu CP-04B3R3 provider refusal classification and strict live gate
 on:
   push:
     branches: [lu/cp01-attachment-transaction-20261116]
@@ -81,7 +81,11 @@ jobs:
           $env:LU_CP04B_LIVE_HTML_SEARCH='1'
           node --test tests/lu-public-search.test.mjs 2>&1 | Tee-Object -FilePath cp04b3-provider-evidence/live-provider.log
           $result=$LASTEXITCODE
-          if($result -ne 0){throw 'Live provider or controlled browser gate failed, no live acceptance'}
+          if($result -ne 0){
+            # Preserve bounded status/structure diagnostics in the log. No automatic
+            # retry, alternate-provider submission or claim of live acceptance.
+            throw 'Live provider or controlled browser gate failed; inspect typed search refusal in evidence, no live acceptance'
+          }
           if(-not(Select-String -Path cp04b3-provider-evidence/live-provider.log -Pattern '^ok [0-9]+ - live DuckDuckGo HTML provider must return genuine bounded results$')){throw 'No non-skipped live provider pass'}
       - name: Strict Google compatibility probe (separate, opt-in; not cleared by HTML provider)
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.google_live }}
