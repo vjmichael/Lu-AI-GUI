@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "3229b2d3c06176782b31241c668bc9b859fc78a0",
-  "trackedFileCount": 1957,
+  "sourceCommitBeforeLock": "dde258e1bb89d252b56a739efbe6be8c85332444",
+  "trackedFileCount": 1959,
   "files": [
     {
       "path": ".gitattributes",
@@ -37,11 +37,11 @@
     },
     {
       "path": ".github/workflows/ide-b2-installed-editor-linux.yml",
-      "blob": "3fb057bcc6f647d020cd5e855d2b15a9a5178688"
+      "blob": "2a4e0273509361c215c9597259d9c017b44dfe46"
     },
     {
       "path": ".github/workflows/ide-b2-installed-editor-windows.yml",
-      "blob": "ae36275372a231ffe9247cb7f484bba367969a39"
+      "blob": "2a08836d51adf6a42b7222d60fcbb134deefeaf6"
     },
     {
       "path": ".github/workflows/ide-b3-current-stack-native.yml",
@@ -49,11 +49,11 @@
     },
     {
       "path": ".github/workflows/ide-b4-installed-editor-linux.yml",
-      "blob": "9b05c0fc6890e130ebea4f3672ad609dcbd281b5"
+      "blob": "0b3a458e391c3e8197876f1f885bc1f866aa4d79"
     },
     {
       "path": ".github/workflows/ide-b4-installed-editor-windows.yml",
-      "blob": "36a27a523ccc28f9313fff85dc7a38f0485352cb"
+      "blob": "29059a17860b10a141e6dee92943cf520435429a"
     },
     {
       "path": ".github/workflows/ide-b4-split-editor-native.yml",
@@ -321,7 +321,7 @@
     },
     {
       "path": ".github/workflows/ide-group6f-integrated-native.yml",
-      "blob": "a884abd89833abbc40b83f355ef309f83517b8e4"
+      "blob": "db0703b38c8644118a44df8a0c3323bfce6f0ac1"
     },
     {
       "path": ".github/workflows/ide-linux-26-installed-diagnostic.yml",
@@ -1717,7 +1717,7 @@
     },
     {
       "path": "ide/app/fixtures/Test-B2InstalledDraftRecovery.ps1",
-      "blob": "bbc98d81048196a69fc108728261e89fd4558d37"
+      "blob": "ef03b43d0da9b59beffa48cefea1a1eba904b1ec"
     },
     {
       "path": "ide/app/fixtures/Test-B4InstalledDeb.sh",
@@ -1785,7 +1785,7 @@
     },
     {
       "path": "ide/app/fixtures/Test-Wo8NativeDesktopUI.ps1",
-      "blob": "0e2a1e1010bd65d92ce1244a171f046a55f55df4"
+      "blob": "d22bcd527074892ffa772b506d857d6a119987ae"
     },
     {
       "path": "ide/app/fixtures/b2_linux_installed_draft_atspi.py",
@@ -1833,7 +1833,7 @@
     },
     {
       "path": "ide/app/fixtures/test_atspi_signature_contract.py",
-      "blob": "4c37e4a938671b3e819da535c35471ef0980b97d"
+      "blob": "1a53c2c98f3fd6b869fead674e63554e2c7e7c98"
     },
     {
       "path": "ide/app/fixtures/test_dev01_native_confirmation_scope.py",
@@ -1861,7 +1861,7 @@
     },
     {
       "path": "ide/app/fixtures/wo8_linux_editor_atspi.py",
-      "blob": "de02b25d03d354e3cf08e4d25c2bb81980908e2f"
+      "blob": "7679af39ffe97d3b1c1319669ba07be93d6e8eda"
     },
     {
       "path": "ide/app/fixtures/wo8_linux_window_acceptance.sh",
@@ -2029,7 +2029,7 @@
     },
     {
       "path": "ide/app/tests/dev01_integrated_license_bundle_source.test.mjs",
-      "blob": "b766ff25e70d7eeae3540ba8d8c75fcbc40fffb9"
+      "blob": "054691c285e7c0fe454dcc6a57ca34b14075e468"
     },
     {
       "path": "ide/app/tests/dev02_project_problems.test.mjs",
@@ -2257,11 +2257,11 @@
     },
     {
       "path": "ide/app/tests/ide_initial_workspace_render.test.mjs",
-      "blob": "28efcddb44dcfbed676a46aac51aeaf23f2e78f5"
+      "blob": "3dec999ebadbaedbaa62f2f1ffd45c5463984b89"
     },
     {
       "path": "ide/app/tests/ide_merge02_03_consolidation.test.mjs",
-      "blob": "084c5c0cb8eacdc6a69207ae8c4d866b926c352e"
+      "blob": "0548706b900e63704c01aa7863e9cad9c2081742"
     },
     {
       "path": "ide/app/tests/int01_live_editor_write.test.mjs",
@@ -2373,7 +2373,7 @@
     },
     {
       "path": "ide/app/web/code_editor.jsx",
-      "blob": "a2082dec9eb340eb6adc782a61a6e29c1e48d7d2"
+      "blob": "c39745cccd68e1ead8f1699c4c4c0666fbf92c1a"
     },
     {
       "path": "ide/app/web/conventional_tests.js",
@@ -2501,7 +2501,7 @@
     },
     {
       "path": "ide/app/web/main.jsx",
-      "blob": "3b18f611560e054b196cc06b26f0ba58c996aa73"
+      "blob": "88f49e6cddf28cdea74dab4491e2d97947622862"
     },
     {
       "path": "ide/app/web/native_build_output.js",
@@ -2577,7 +2577,7 @@
     },
     {
       "path": "ide/ci/merge02-reviewed-native-boundaries.json",
-      "blob": "c490d3d272455829b15f19cc2b91e45fd6d0819d"
+      "blob": "5e1e707fbfb9355ce3b17e4c807a0c84e04028aa"
     },
     {
       "path": "ide/ci/test_verify_reviewed_native_boundaries.py",
@@ -3684,6 +3684,10 @@
       "blob": "4a9e7e7d5ca72b656551d2403272c0074cead627"
     },
     {
+      "path": "ide/packaging/b2_b4_installer_handoff.py",
+      "blob": "568a7513560e4282b10fda79f7268c235ab36329"
+    },
+    {
       "path": "ide/packaging/collect_original_lsp_notices.py",
       "blob": "159f3d3eca93970a32da98c3c1bc72d3b1beabc8"
     },
@@ -3846,6 +3850,10 @@
     {
       "path": "ide/packaging/test_audit_native_lsp_dependency_smoke.py",
       "blob": "8c9c15b9fb1c35a8ed6c56e9316d66e8fd2a402b"
+    },
+    {
+      "path": "ide/packaging/test_b2_b4_installer_handoff.py",
+      "blob": "d6332db3e7d822911e05da28dd481272d155374b"
     },
     {
       "path": "ide/packaging/test_collect_original_lsp_notices.py",
@@ -5877,11 +5885,11 @@
     },
     {
       "path": "scripts/core01-verify-scope.mjs",
-      "blob": "7fc53f6ee0542fd8a0b74ca56bf9f8c775b21873"
+      "blob": "95ed2a0fc0525b0c07c11b810b68ac95e2c281ce"
     },
     {
       "path": "scripts/core01-verify-scope.test.mjs",
-      "blob": "cc24d89d8e3041d7b02b84e3c735de88a6bc03fc"
+      "blob": "9dd666c5f54f202d76c06c411cadd750d7e363e5"
     },
     {
       "path": "scripts/core01f-acceptance-reconcile.mjs",
