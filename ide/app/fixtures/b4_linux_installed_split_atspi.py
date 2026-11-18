@@ -12,7 +12,7 @@ import time
 import pyatspi
 from wo8_linux_editor_atspi import (
     ROOT,SOURCE,accessible,activate,key,type_text,start,stop,
-    select_native_folder,editor_project,elements,
+    select_native_folder,editor_project,_native_source_editor_nodes,
 )
 SECOND=ROOT/"second.rs"
 PRIMARY_SENTINEL="B4_LINUX_PRIMARY_ONLY"
@@ -28,9 +28,13 @@ def real_code_editors():
     verified={}
     expected=("Source editor text · First editor: second.rs",
               "Source editor text · Second editor: main.rs")
-    for obj in elements():
+    for obj in _native_source_editor_nodes():
         try:
             if (obj.name or "").strip() not in expected:
+                continue
+            state=obj.getState()
+            if not all(state.contains(flag) for flag in (
+                    pyatspi.STATE_VISIBLE, pyatspi.STATE_SHOWING, pyatspi.STATE_FOCUSABLE)):
                 continue
             rect=obj.queryComponent().getExtents(pyatspi.DESKTOP_COORDS)
             if rect.width<60 or rect.height<40:
@@ -51,7 +55,11 @@ def real_code_editors():
 def focus(node):
     try:
         if node.queryComponent().grabFocus():
-            return
+            deadline=time.monotonic()+3
+            while time.monotonic()<deadline:
+                if node.getState().contains(pyatspi.STATE_FOCUSED):
+                    return
+                time.sleep(.1)
     except Exception:
         pass
     deny("split_editor_native_focus_unavailable")

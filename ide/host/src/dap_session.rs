@@ -18,6 +18,13 @@ const MAX_BUFFER: usize = MAX_FRAME + MAX_HEADER + 4;
 const MAX_PENDING: usize = 8;
 const MAX_SEQ: u64 = 1_000_000;
 
+// Normalize only the lexical suffix, not the OS-owned native path.
+fn fixed_windows_fixture_suffix(program: &str) -> bool {
+    program
+        .replace('/', "\\")
+        .ends_with("\\debuggee\\wo6-selftest.exe")
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DapError {
     InvalidFrame,
@@ -242,10 +249,14 @@ impl DapSession {
         if self.phase != DapPhase::Ready {
             return Err(DapError::InvalidPhase);
         }
+        // The Windows native worker may supply mixed path separators from
+        // PathBuf::join. Match the exact sealed suffix after separator-only
+        // normalization; keep the native absolute-path and traversal checks.
         let valid = program == "/ls/debuggee/wo6-selftest"
-            || (program.len() <= 1024
+            || (cfg!(windows)
+                && program.len() <= 1024
                 && std::path::Path::new(program).is_absolute()
-                && program.ends_with("\\debuggee\\wo6-selftest.exe"));
+                && fixed_windows_fixture_suffix(program));
         if !valid || program.contains("..") || program.chars().any(char::is_control) {
             return Err(DapError::InvalidMessage);
         }
@@ -1792,6 +1803,90 @@ mod tests {
                 .is_err());
             assert_eq!(session.phase(), DapPhase::Quarantined);
             assert!(!session.configuration_needed());
+        }
+    }
+
+    #[test]
+    fn fixed_windows_fixture_suffix_accepts_only_exact_components() {
+        for path in [
+            r"C:\sealed\bundle\debuggee\wo6-selftest.exe",
+            r"C:\sealed\bundle\debuggee/wo6-selftest.exe",
+            "C:/sealed/bundle/debuggee/wo6-selftest.exe",
+        ] {
+            assert!(fixed_windows_fixture_suffix(path));
+        }
+        for path in [
+            r"C:\sealed\bundle\otherdebuggee/wo6-selftest.exe",
+            r"C:\sealed\bundle\debuggee/other.exe",
+            r"C:\sealed\bundle\debuggee/wo6-selftest.exe:stream",
+            r"C:\sealed\bundle\debuggee/wo6-selftest.exe\",
+        ] {
+            assert!(!fixed_windows_fixture_suffix(path));
+        }
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn nonwindows_fixed_fixture_rejects_windows_named_executable() {
+        let mut session = DapSession::new();
+        session.initialize().unwrap();
+        session
+            .receive(&framed(json!({
+                "seq":2,"type":"response","request_seq":1,
+                "command":"initialize","success":true
+            })))
+            .unwrap();
+        assert_eq!(
+            session.launch_fixed_fixture("/tmp/bundle/debuggee/wo6-selftest.exe"),
+            Err(DapError::InvalidMessage)
+        );
+        assert_eq!(session.phase(), DapPhase::Ready);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_fixed_fixture_accepts_native_mixed_separators_only() {
+        fn ready() -> DapSession {
+            let mut session = DapSession::new();
+            session.initialize().unwrap();
+            session
+                .receive(&framed(json!({
+                    "seq":2,"type":"response","request_seq":1,
+                    "command":"initialize","success":true
+                })))
+                .unwrap();
+            assert_eq!(session.phase(), DapPhase::Ready);
+            session
+        }
+        for path in [
+            r"C:\sealed\bundle\debuggee\wo6-selftest.exe",
+            r"C:\sealed\bundle\debuggee/wo6-selftest.exe",
+        ] {
+            let frame = ready().launch_fixed_fixture(path).unwrap();
+            let body = frame
+                .windows(4)
+                .position(|part| part == b"\r\n\r\n")
+                .unwrap()
+                + 4;
+            let message: Value = serde_json::from_slice(&frame[body..]).unwrap();
+            assert_eq!(message["arguments"]["program"], path);
+            assert_eq!(message["arguments"]["disableASLR"], false);
+            assert_eq!(message["arguments"]["disableSTDIO"], true);
+        }
+        for path in [
+            r"debuggee/wo6-selftest.exe",
+            r"C:debuggee/wo6-selftest.exe",
+            r"C:\sealed\bundle\..\debuggee/wo6-selftest.exe",
+            r"C:\sealed\bundle\otherdebuggee/wo6-selftest.exe",
+            r"C:\sealed\bundle\debuggee/other.exe",
+            r"C:\sealed\bundle\debuggee/wo6-selftest.exe:stream",
+        ] {
+            let mut session = ready();
+            assert_eq!(
+                session.launch_fixed_fixture(path),
+                Err(DapError::InvalidMessage)
+            );
+            assert_eq!(session.phase(), DapPhase::Ready);
         }
     }
 

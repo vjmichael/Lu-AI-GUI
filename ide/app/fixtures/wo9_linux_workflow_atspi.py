@@ -26,14 +26,7 @@ def main():
         ui.select_native_folder()
         ui.activate("Packages & workflows")
         ui.accessible("Multi-project release review", seconds=25)
-        checkbox = ui.accessible(root.name, role="check box", seconds=15)
-        try:
-            action = checkbox.queryAction()
-            if not any(action.doAction(i) for i in range(action.nActions)
-                       if action.getName(i).lower() in ("click", "press", "activate")):
-                deny("native_portfolio_checkbox_not_clickable")
-        except Exception as exc:
-            deny("native_portfolio_checkbox_unavailable_" + type(exc).__name__)
+        ui.choose_open_workflow_project(root.name, seconds=20)
         ui.activate("Inspect selected workflow")
         ui.accessible("Native workflow review", seconds=35)
         ui.accessible("Eligible for human source review", seconds=15)

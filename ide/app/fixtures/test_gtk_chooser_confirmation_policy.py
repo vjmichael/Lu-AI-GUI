@@ -9,6 +9,35 @@ from gtk_chooser_confirmation_policy import (
 
 
 class ChooserPolicyTests(unittest.TestCase):
+    def test_deep_editor_lookup_rejects_hidden_and_ambiguous_controls(self):
+        # Execute the actual fixture selector with simulated AT-SPI nodes;
+        # this tests the policy, not installed WebKitGTK acceptance.
+        import ast
+        from types import SimpleNamespace
+        tree = ast.parse(Path(__file__).with_name("wo8_linux_editor_atspi.py").read_text())
+        fn = next(node for node in tree.body if isinstance(node, ast.FunctionDef)
+                  and node.name == "accessible")
+        class Clock:
+            now = 0
+            def monotonic(self): return self.now
+            def sleep(self, _): self.now += 1
+        class Node:
+            def __init__(self, name, flags): self.name = name; self.flags = flags
+            def getState(self): return SimpleNamespace(contains=lambda flag: flag in self.flags)
+        valid = Node("Source editor text · First editor: main.rs", {1,2,3})
+        hidden = Node(valid.name, {1,3})
+        unrelated = Node("Unrelated Source editor text", {1,2,3})
+        ns = {"time": Clock(), "pyatspi": SimpleNamespace(STATE_VISIBLE=1,
+              STATE_SHOWING=2, STATE_FOCUSABLE=3),
+              "_native_source_editor_nodes": lambda: [hidden, unrelated, valid],
+              "elements": lambda: [],
+              "deny": lambda reason: (_ for _ in ()).throw(RuntimeError(reason))}
+        exec(compile(ast.Module(body=[fn], type_ignores=[]), "editor_policy", "exec"), ns)
+        self.assertIs(ns["accessible"]("Source editor text", seconds=1), valid)
+        ns["_native_source_editor_nodes"] = lambda: [valid, Node(valid.name,{1,2,3})]
+        with self.assertRaisesRegex(RuntimeError, "missing_native_accessible_control"):
+            ns["accessible"]("Source editor text", seconds=1)
+
     def test_explicit_native_folder_caption_is_preferred(self):
         self.assertEqual(
             candidate_captions(["Open", "Select Folder", "Choose Folder"], 0),

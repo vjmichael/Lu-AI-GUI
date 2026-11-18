@@ -1,6 +1,20 @@
 //! WO6 genuine OS acceptance for the fixed LLDB-DAP adapter plus self-test.
 //! The host-provisioned bundle is SELF-MEASURED for CI only, not a redistributable
 //! release signature. Never executes arbitrary caller-selected processes.
+#[cfg(any(
+    all(
+        windows,
+        feature = "dap-transport",
+        feature = "protected-recovery-service"
+    ),
+    all(
+        target_os = "linux",
+        feature = "dap-transport",
+        feature = "linux-worker"
+    )
+))]
+#[path = "support/cancel_history.rs"]
+mod cancel_history;
 #[cfg(not(any(
     all(
         windows,
@@ -897,10 +911,11 @@ mod protected {
             let history = supervisor
                 .receipt_history(&debug_job.job_id)
                 .map_err(|e| e.code())?;
-            if !history.windows(2).any(|pair| {
-                pair[0].body.phase == JobPhase::CancelRequested
-                    && pair[1].body.phase == JobPhase::Cancelled
-            }) {
+            if !crate::cancel_history::verified_gateway_cancel(
+                &history,
+                &debug_job.job_id,
+                &debug_job.plan_sha256,
+            ) {
                 return Err(
                     "DENIED: project LLDB cancel receipts not fsynced before tree kill".into(),
                 );
@@ -1338,8 +1353,26 @@ mod protected {
         } else {
             JobPhase::Completed
         };
-        if jobs.len() != 1 || jobs[0].phase != expected || jobs[0].requires_reconciliation {
+        if jobs.len() != 1
+            || jobs[0].job_id != prepared.job_id
+            || jobs[0].plan_sha256 != prepared.plan_sha256
+            || jobs[0].phase != expected
+            || jobs[0].requires_reconciliation
+        {
             return Err("DENIED: real native debugger cleanup or D3 restart receipt failed".into());
+        }
+        if cancel
+            && !crate::cancel_history::verified_gateway_cancel(
+                &replay
+                    .receipt_history(&prepared.job_id)
+                    .map_err(|e| e.code())?,
+                &prepared.job_id,
+                &prepared.plan_sha256,
+            )
+        {
+            return Err(
+                "DENIED: fixed debugger cancellation journal lost ordered release evidence".into(),
+            );
         }
         println!("PASS: native LLDB-DAP whole-tree OS cleanup and durable restart receipt");
         Ok(())

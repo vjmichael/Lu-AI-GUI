@@ -3,6 +3,8 @@ import copy
 import json
 from pathlib import Path
 import sys
+import subprocess
+import tempfile
 import unittest
 
 HERE=Path(__file__).resolve().parent
@@ -20,12 +22,30 @@ class Ide05SuccessorAcceptance(unittest.TestCase):
             with self.assertRaisesRegex(LockDenied,"candidate_cargo_lock_not_reviewed"):
                 check(ROOT,platform)
     def test_only_named_successor_admits_exact_bytes_without_release(self):
-        for platform in ("ubuntu-24.04","windows-2022"):
-            r=check(ROOT,platform,ide05_successor=SUCCESSOR)
-            self.assertTrue(r["ide05ScopedSuccessorAccepted"])
-            self.assertEqual(r["cargoLockSha256"],SUCCESSOR["newCargoSha256"])
-            self.assertFalse(r["releaseApproved"])
-            self.assertFalse(r["independentHumanApproval"])
+        # The original IDE05 review remains a positive test on its exact
+        # historical bytes, not an approval of the later desktop rand delta.
+        historical = subprocess.check_output(
+            ["git", "cat-file", "blob", SUCCESSOR["newCargoBlob"]], cwd=ROOT)
+        self.assertEqual(sha(historical), SUCCESSOR["newCargoSha256"])
+        self.assertNotEqual(CARGO, historical)
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            for rel, data in (
+                ("ide/app/src-tauri/Cargo.lock", historical),
+                ("ide/app/package-lock.json", (ROOT/"ide/app/package-lock.json").read_bytes()),
+                ("ide/supervisor/Cargo.toml", (ROOT/"ide/supervisor/Cargo.toml").read_bytes()),
+            ):
+                path = root / rel
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(data)
+            for platform in ("ubuntu-24.04","windows-2022"):
+                with self.assertRaisesRegex(LockDenied, "ide05_successor_lock_byte_delta_unreviewed"):
+                    check(ROOT,platform,ide05_successor=SUCCESSOR)
+                r=check(root,platform,review=REVIEW,ide05_successor=SUCCESSOR)
+                self.assertTrue(r["ide05ScopedSuccessorAccepted"])
+                self.assertEqual(r["cargoLockSha256"],SUCCESSOR["newCargoSha256"])
+                self.assertFalse(r["releaseApproved"])
+                self.assertFalse(r["independentHumanApproval"])
     def test_changing_successor_json_cannot_self_authorize(self):
         altered=copy.deepcopy(SUCCESSOR)
         altered["newCargoSha256"]=sha(b"malicious Cargo.lock")

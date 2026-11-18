@@ -19,6 +19,7 @@ from verify_p05_owner_successor import (
     SCOPED_SOURCE_ONLY, ORIGINAL,
     compare_38_with_separate_scoped_source_dispositions,
     verify_source_only_patch, project_checked_out_wo6_source,
+    CLANGD_PATH, project_checked_out_clangd_source,
 )
 
 HISTORICAL_INVENTORY_GIT_BLOB = "5299b1ca6981f341d2855f549e567b8c2747dc13"
@@ -185,6 +186,7 @@ def checkout(root):
     source_review = json.loads(scope_path.read_text(encoding="utf-8"))
     historical = {row["path"]: row["blobSha"] for row in inventory["requiredWorkflows"]}
     projected = project_checked_out_wo6_source(root, blobs)
+    projected, prior_clangd = project_checked_out_clangd_source(root, projected)
     compare_38_with_separate_scoped_source_dispositions(historical, projected, source_review)
     for path in SCOPED_SOURCE_ONLY:
         try:
@@ -195,8 +197,11 @@ def checkout(root):
             ).stdout
         except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
             raise Denied("source_only_historical_workflow_unavailable") from exc
-        verify_source_only_patch(path, original_text, (root / path).read_text(encoding="utf-8"))
+        current_text = prior_clangd if path == CLANGD_PATH else (root / path).read_text(encoding="utf-8")
+        verify_source_only_patch(path, original_text, current_text)
     result = classify(inventory, projected)
+    result["clangdCurrentSourceRepairVerified"] = True
+    result["clangdNativeAccepted"] = False
     result["wo6CurrentSourceRepairVerified"] = True
     result["wo6CurrentSourceRepairOwnerAuthorizationInferred"] = False
     return result

@@ -21,11 +21,7 @@ def main():
         ui.select_native_folder()
         ui.activate("Packages & workflows")
         wait("Multi-project release review", 30)
-        checkbox = ui.accessible(ui.ROOT.name, role="check box", seconds=20)
-        action = checkbox.queryAction()
-        if not any(action.doAction(i) for i in range(action.nActions)
-                   if action.getName(i).lower() in ("click", "press", "activate")):
-            deny("project_native_checkbox_inaccessible")
+        ui.choose_open_workflow_project(ui.ROOT.name, seconds=20)
         ui.activate("Inspect selected workflow")
         wait("Eligible for human source review")
         ui.activate("Verify frozen Git and artifact evidence again")

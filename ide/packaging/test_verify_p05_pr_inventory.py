@@ -3,6 +3,8 @@ import copy
 import json
 from pathlib import Path
 import unittest
+import subprocess
+import tempfile
 from verify_p05_pr_inventory import check_snapshot, check_checkout, Denied
 
 ROOT=Path(__file__).resolve().parents[2]
@@ -29,8 +31,23 @@ class CloseoutInventoryTests(unittest.TestCase):
         self.assertEqual(actual["workflowCount"],38)
         self.assertEqual(actual["approvedForClosure"],0)
         self.assertFalse(actual["releaseAccepted"])
-    def test_current_checkout_proves_original_ci_blobs_and_absent_wo10(self):
-        self.assertTrue(check_checkout(ROOT,self.prs,self.wfs))
+    def test_historical_checkout_proves_original_ci_blobs_and_absent_wo10(self):
+        # Keep the historical checker unchanged. Prove its positive case on
+        # the original immutable checkout, and separately deny the successor.
+        ref = "8c61d570c04a5384772705d123f860b0e3484073"
+        # The historical workflow inventory was re-pinned at this commit.
+        self.assertEqual(self.wfs["sourceCandidateSha"], "bc4fd78685c342675e4a80556970e934125a0e20")
+        with tempfile.TemporaryDirectory() as temporary:
+            checkout = Path(temporary) / "historical"
+            subprocess.run(["git", "worktree", "add", "--detach", str(checkout), ref],
+                           cwd=ROOT, check=True, capture_output=True, timeout=90)
+            try:
+                self.assertTrue(check_checkout(checkout,self.prs,self.wfs))
+            finally:
+                subprocess.run(["git", "worktree", "remove", str(checkout)],
+                               cwd=ROOT, check=True, capture_output=True, timeout=90)
+        with self.assertRaisesRegex(Denied, "reviewed_native_ci_workflow_changed"):
+            check_checkout(ROOT,self.prs,self.wfs)
     def test_cannot_claim_historical_pr_merged_or_closed(self):
         self.denied(lambda a,b:a["prEntries"][0].update(
             disposition="close_superseded",closureAuthorized=True),

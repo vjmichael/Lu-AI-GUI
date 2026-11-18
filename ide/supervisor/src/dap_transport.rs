@@ -299,10 +299,13 @@ impl DapGateway {
     /// The native OS worker provides a single immutable bundled self-test
     /// executable path. The WebView cannot choose or modify this target.
     pub(crate) fn launch_fixed_fixture(&mut self, target: &str) -> Result<(), SupervisorError> {
-        let frame = self
-            .session
-            .launch_fixed_fixture(target)
-            .map_err(protocol_denied)?;
+        let frame = self.session.launch_fixed_fixture(target).map_err(|error| {
+            // Fixed categorical protocol diagnosis only: no executable
+            // path, arguments or untrusted adapter data enter the log.
+            trace_dap(error.code());
+            protocol_denied(error)
+        })?;
+        trace_dap("fixed_launch_request_built");
         self.send(&frame)
     }
     pub(crate) fn launch_verified_project(&mut self, target: &str) -> Result<(), SupervisorError> {
@@ -744,6 +747,108 @@ mod tests {
         drop(supervisor);
         let _ = std::fs::remove_file(journal);
     }
+    #[test]
+    fn dropped_dap_persists_cancel_then_empty_tree_then_release_before_restart() {
+        // Read the actual disk journal at each mocked OS boundary. This is
+        // journal ordering regression evidence, not native kernel acceptance.
+        struct JournalWitness {
+            journal: std::path::PathBuf,
+            job: String,
+            plan: String,
+        }
+        impl JournalWitness {
+            fn check_disk(&self, phase: JobPhase, outcome: &str, evidence: &str) {
+                let disk = std::fs::read_to_string(&self.journal).unwrap();
+                let last: crate::Receipt =
+                    serde_json::from_str(disk.lines().last().unwrap()).unwrap();
+                assert_eq!(last.body.job_id, self.job);
+                assert_eq!(last.body.plan_sha256, self.plan);
+                assert_eq!(last.body.phase, phase);
+                assert_eq!(last.body.outcome_code, outcome);
+                assert_eq!(last.body.evidence_code, evidence);
+            }
+        }
+        impl RestrictedLspProcess for JournalWitness {
+            fn write_bounded(&mut self, _: &[u8]) -> io::Result<()> {
+                Ok(())
+            }
+            fn read_bounded(&mut self, _: usize, _: Duration) -> io::Result<Vec<u8>> {
+                Ok(Vec::new())
+            }
+            fn terminate_tree_and_verify(&mut self) -> Result<bool, SupervisorError> {
+                self.check_disk(
+                    JobPhase::CancelRequested,
+                    "cancel_requested_before_os_kill",
+                    "tree_termination_pending",
+                );
+                Ok(true)
+            }
+            fn release_after_verified_terminal(&mut self) -> Result<(), SupervisorError> {
+                self.check_disk(
+                    JobPhase::ReleasePending,
+                    "os_cancel_tree_reaped_service_release_pending",
+                    "native_supervisor_tree_kill_evidence",
+                );
+                Ok(())
+            }
+        }
+        let journal =
+            std::env::temp_dir().join(format!("wo6-dap-cancel-order-{}", rand::random::<u128>()));
+        let supervisor = Arc::new(Supervisor::open(journal.clone()).unwrap());
+        let plan = plan();
+        let job = supervisor.prepare(plan.clone()).unwrap();
+        supervisor
+            .record_human_approval(&job.job_id, &job.plan_sha256, &plan.source_head, true)
+            .unwrap();
+        supervisor
+            .consume_grant_after_attestation(&job.job_id, &plan, &proof())
+            .unwrap();
+        supervisor.native_mark_running(&job.job_id).unwrap();
+        let gateway = DapGateway::attach_native(
+            Arc::clone(&supervisor),
+            &job.job_id,
+            &job.plan_sha256,
+            &proof(),
+            Box::new(JournalWitness {
+                journal: journal.clone(),
+                job: job.job_id.clone(),
+                plan: job.plan_sha256.clone(),
+            }),
+        )
+        .unwrap();
+        drop(gateway);
+        drop(supervisor);
+        let replay = Supervisor::open(journal.clone()).unwrap();
+        let history = replay.receipt_history(&job.job_id).unwrap();
+        let [requested, released_pending, cancelled] = &history[history.len() - 3..] else {
+            panic!("missing cancellation history")
+        };
+        assert_eq!(requested.body.phase, JobPhase::CancelRequested);
+        assert_eq!(released_pending.body.phase, JobPhase::ReleasePending);
+        assert_eq!(cancelled.body.phase, JobPhase::Cancelled);
+        assert_eq!(
+            cancelled.body.outcome_code,
+            "native_cancel_service_release_verified"
+        );
+        assert_eq!(
+            cancelled.body.evidence_code,
+            "tree_empty_and_independent_service_ack"
+        );
+        assert_eq!(released_pending.prior_hash, requested.entry_hash);
+        assert_eq!(cancelled.prior_hash, released_pending.entry_hash);
+        assert_eq!(requested.body.sequence + 1, released_pending.body.sequence);
+        assert_eq!(released_pending.body.sequence + 1, cancelled.body.sequence);
+        let observed = replay.inspect().unwrap();
+        assert_eq!(observed.len(), 1);
+        assert_eq!(observed[0].phase, JobPhase::Cancelled);
+        assert!(!observed[0].requires_reconciliation);
+        assert!(replay
+            .record_human_approval(&job.job_id, &job.plan_sha256, &plan.source_head, true)
+            .is_err());
+        drop(replay);
+        std::fs::remove_file(journal).unwrap();
+    }
+
     #[test]
     fn dropped_dap_requires_original_scm_release_ack_or_recovery_quarantine() {
         let journal =

@@ -424,6 +424,12 @@ fn inspect_debug_stderr(handle: Option<&Handle>) {
     {
         eprintln!("PROTECTED_LSP_LLVM_STARTUP_PATH=fixed_executable_leaf_fallback");
     }
+    if output[..read as usize]
+        .windows(b"LU_LLVM20_FIXED_CLANGD_IMAGE_LEAF_USED\n".len())
+        .any(|bytes| bytes == b"LU_LLVM20_FIXED_CLANGD_IMAGE_LEAF_USED\n")
+    {
+        eprintln!("PROTECTED_LSP_CLANGD_STARTUP_PATH=fixed_executable_leaf_fallback");
+    }
     eprintln!(
         "PROTECTED_LSP_NATIVE_STDERR_CLASS={}",
         classify_debug_stderr(&output[..read as usize])
@@ -1670,7 +1676,8 @@ fn start_windows_dap_inner(
         #[cfg(all(debug_assertions, feature = "dev045d4c-ci-oracle"))]
         private_reviewed_bundle: bundle.clone(),
         fixed_debuggee: bundle
-            .join("debuggee/wo6-selftest.exe")
+            .join("debuggee")
+            .join("wo6-selftest.exe")
             .to_string_lossy()
             .into_owned(),
     })

@@ -41,7 +41,11 @@ jobs:
         if: hashFiles('scripts/core01-verify-scope.test.mjs') != ''
         run: |
           node --test scripts/core01-verify-scope.test.mjs
-          node scripts/core01-verify-scope.mjs
+          if git merge-base --is-ancestor ecd7a899d9f4bd63c13a3e8cd2e4c50e8cae68c5 HEAD; then
+            node scripts/core01-verify-scope.mjs --integrated
+          else
+            node scripts/core01-verify-scope.mjs
+          fi
       - name: CORE-01D normal-chat and ANSF status source contracts
         if: hashFiles('lu-desktop/tests/core01d-normal-chat-boundary.test.mjs') != ''
         run: node --test lu-desktop/tests/core01d-normal-chat-boundary.test.mjs

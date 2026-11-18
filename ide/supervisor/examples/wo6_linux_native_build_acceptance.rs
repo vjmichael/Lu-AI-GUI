@@ -1,6 +1,13 @@
 //! WO6 real Linux native Cargo check/test/cancellation under cgroup-v2 + bwrap.
 //! Fixed test-only source, no project-provided executable or shell. This
 //! acceptance fixture cannot satisfy installed-app/release approval.
+#[cfg(all(
+    target_os = "linux",
+    feature = "linux-worker",
+    feature = "dap-transport"
+))]
+#[path = "support/cancel_history.rs"]
+mod cancel_history;
 #[cfg(not(all(
     target_os = "linux",
     feature = "linux-worker",
@@ -486,10 +493,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let entries = supervisor
                     .receipt_history(&debug_job.job_id)
                     .map_err(|e| e.code())?;
-                if !entries.windows(2).any(|pair| {
-                    pair[0].body.phase == JobPhase::CancelRequested
-                        && pair[1].body.phase == JobPhase::Cancelled
-                }) {
+                if !cancel_history::verified_gateway_cancel(
+                    &entries,
+                    &debug_job.job_id,
+                    &debug_job.plan_sha256,
+                ) {
                     return Err(
                         "DENIED: real project LLDB cancellation not durable before kernel kill"
                             .into(),

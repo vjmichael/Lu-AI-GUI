@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - 'ide/supervisor/**'
+      - 'ide/llvm18_owner/**'
       - '.github/workflows/ide-e2-native-lsp.yml'
   push:
     branches: ['ide/wave-e2-supervised-lsp-editor-20261106']
@@ -44,7 +45,7 @@ jobs:
 
   protected-clangd-windows:
     runs-on: windows-2025
-    timeout-minutes: 50
+    timeout-minutes: 300
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -60,25 +61,19 @@ jobs:
           $ErrorActionPreference='Stop'
           cargo build --manifest-path ide/supervisor/Cargo.toml --features 'lsp-transport,protected-recovery-service' --bin windows_recovery_service --bin windows_null_service_bootstrap --example e2_native_lsp_acceptance
           if ($LASTEXITCODE -ne 0) { throw 'DENIED: native E2 compile failed' }
+      - name: Build exact source-pinned clangd with restricted startup repair
+        shell: pwsh
+        run: ./ide/llvm18_owner/Build-PinnedClangdWindows.ps1
       - name: Prepare self-measured clangd acceptance bundle
         shell: pwsh
         run: |
           $ErrorActionPreference='Stop'
-          $found=Get-Command clangd.exe -ErrorAction SilentlyContinue
-          $clangd=if ($found) { $found.Source } else { 'C:\Program Files\LLVM\bin\clangd.exe' }
-          if (!(Test-Path -LiteralPath $clangd)) { throw 'DENIED: no clangd binary to test' }
-          $bundle=Join-Path $env:RUNNER_TEMP 'e2-clangd-bundle'
-          New-Item -ItemType Directory -Path (Join-Path $bundle 'bin') | Out-Null
-          Copy-Item -LiteralPath $clangd -Destination (Join-Path $bundle 'bin\clangd.exe')
-          # The native clangd CI bundle must carry only the matching distro
-          # LLVM sibling runtime libraries, not DLLs from PATH or users'
-          # projects. Each byte participates in the existing sealed digest.
-          $origin=Split-Path $clangd -Parent
-          Get-ChildItem -LiteralPath $origin -Filter '*.dll' -File |
-            Copy-Item -Destination (Join-Path $bundle 'bin')
-          $readobj=Join-Path $origin 'llvm-readobj.exe'
+          $bundle=$env:LU_IDE_E2_PINNED_LSP_BUNDLE
+          $readobj=$env:LU_IDE_E2_PINNED_READOBJ
+          if (!(Test-Path -LiteralPath (Join-Path $bundle 'clangd-source-provenance.json') -PathType Leaf)) { throw 'DENIED: source-pinned clangd provenance missing' }
+          if ((Split-Path $readobj -Leaf) -cne 'llvm-readobj.exe') { throw 'DENIED: exact built import reader missing' }
           if (!(Test-Path -LiteralPath $readobj -PathType Leaf)) {
-            Write-Host 'P03_CLANGD_PE_IMPORT_AUDIT=reader_unavailable_not_a_pass'
+            throw 'DENIED: source-pinned PE import reader unavailable'
           } else {
             $raw=@(& $readobj --coff-imports (Join-Path $bundle 'bin\clangd.exe') 2>&1)
             if ($LASTEXITCODE -ne 0) { throw 'DENIED: fixed clangd PE import audit rejected binary' }
@@ -155,6 +150,12 @@ jobs:
             }
             $global:LASTEXITCODE=0
           }
+      - name: Retain source build provenance
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2-clangd20-source-provenance
+          path: ${{ runner.temp }}/e2-clangd-bundle/clangd-source-provenance.json
       - name: Label test provenance
         if: always()
         run: echo "Acceptance-only self-measured binaries; not signed installer/release evidence."

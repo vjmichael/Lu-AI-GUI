@@ -193,17 +193,56 @@ try {
   if($null -eq $editable -or !$editable.Current.IsKeyboardFocusable) {
     throw 'CodeMirror editable surface unavailable to UI Automation'
   }
-  $bounds=$editable.Current.BoundingRectangle
-  if($bounds.IsEmpty) {throw 'CodeMirror interactive bounds empty'}
-  [System.Windows.Forms.Cursor]::Position=[System.Drawing.Point]::new(
-    [int]($bounds.X+$bounds.Width/2),[int]($bounds.Y+$bounds.Height/2))
-  [LuMouse]::mouse_event(2,0,0,0,[UIntPtr]::Zero)
-  [LuMouse]::mouse_event(4,0,0,0,[UIntPtr]::Zero)
+  # Focus the exact editable UIA node, and independently observe the edit
+  # via a fresh native clipboard copy BEFORE claiming any editing evidence.
+  # A pointer landing on a gutter or an obscured editor is not a witness.
+  $app.Refresh()
+  $mainHwnd=$app.MainWindowHandle
+  FocusApp
+  if([LuMouse]::GetForegroundWindow() -ne $mainHwnd -or $editable.Current.IsOffscreen) {
+    throw 'Installed editor not foreground or visible'
+  }
+  $editable.SetFocus()
+  if(!$editable.Current.HasKeyboardFocus -or [LuMouse]::GetForegroundWindow() -ne $mainHwnd) {
+    throw 'Exact installed source editor failed to acquire OS keyboard focus'
+  }
   Keys '^{END}'
   Keys 'x'
-  $report.edited=$true
   [System.Windows.Forms.Clipboard]::Clear()
-  ClickItem 'Copy draft reference'
+  Keys '^a'
+  Keys '^c'
+  $expectedDraft='alpha line'+$crlf+'second text'+$crlf+'x'
+  $copied=$false
+  for($i=0;$i -lt 12;$i++) {
+    if([System.Windows.Forms.Clipboard]::ContainsText() -and
+       ([System.Windows.Forms.Clipboard]::GetText() -replace '\r?\n',"`n") -ceq
+       ($expectedDraft -replace '\r?\n',"`n")) {$copied=$true;break}
+    Start-Sleep -Milliseconds 200
+  }
+  if(!$copied) {throw 'Native clipboard did not observe exact changed editor text'}
+  if((Get-FileHash -LiteralPath $fixture -Algorithm SHA256).Hash -ne $original) {
+    throw 'Installed editor wrote source before explicit Save'
+  }
+  # Collapse the selection to one bounded span; native reference action is
+  # issued through the enabled button's real keyboard gesture, not a
+  # programmatic UIA Invoke that may not grant WebView clipboard activation.
+  Keys '^{END}'
+  $report.edited=$true
+  function Click-ClipboardAction([string]$caption) {
+    $button=FindItem $caption 15
+    if(!$button -or !$button.Current.IsEnabled -or !$button.Current.IsKeyboardFocusable -or
+       $button.Current.IsOffscreen -or $button.Current.Name -cne $caption -or
+       $button.Current.ControlType.ProgrammaticName -ne 'ControlType.Button') {
+      throw 'Exact installed clipboard action unavailable'
+    }
+    $button.SetFocus()
+    if(!$button.Current.HasKeyboardFocus -or [LuMouse]::GetForegroundWindow() -ne $mainHwnd) {
+      throw 'Native clipboard action lost foreground focus'
+    }
+    Keys ' '
+  }
+  [System.Windows.Forms.Clipboard]::Clear()
+  Click-ClipboardAction 'Copy draft reference'
   $clipboard=''
   for($i=0;$i -lt 30;$i++) {
     Start-Sleep -Milliseconds 400
@@ -223,11 +262,17 @@ try {
   if($clipboard.Contains('alpha line') -or $clipboard.Contains('second text')) {
     throw 'Copy Draft Reference disclosed source text instead of identity metadata'
   }
+  $exactDraftSha=[Convert]::ToHexString([Security.Cryptography.SHA256]::HashData(
+    [Text.Encoding]::UTF8.GetBytes($expectedDraft))).ToLowerInvariant()
+  if($clipboard -cnotmatch (' draftSha256='+$exactDraftSha+' ') -or
+     $clipboard -cnotmatch ' path="acceptance\.txt" ') {
+    throw 'Session reference does not identify exact edited draft bytes'
+  }
   $report.clipboardVerified=$true
   # The installed desktop must persist the exact unsaved bytes in its
   # private Tauri app-data vault, not merely create a volatile UUID.
   [System.Windows.Forms.Clipboard]::Clear()
-  ClickItem 'Preserve draft + copy durable reference'
+  Click-ClipboardAction 'Preserve draft + copy durable reference'
   $durable=''
   for($i=0;$i -lt 40;$i++) {
     Start-Sleep -Milliseconds 400
@@ -242,6 +287,10 @@ try {
      $durable -notmatch 'lifetime=persistent-private-app-data' -or
      $durable.Contains('alpha line') -or $durable.Contains('second text')) {
     throw 'Installed UI did not copy an immutable non-disclosing durable private draft'
+  }
+  if($durable -cnotmatch (' draftSha256='+$exactDraftSha+' ') -or
+     $durable -cnotmatch ' path="acceptance\.txt" ') {
+    throw 'Durable reference does not identify exact edited draft bytes'
   }
   $report.durableClipboardVerified=$true
   $report.noImplicitSave=(Get-FileHash -LiteralPath $fixture -Algorithm SHA256).Hash -eq $original
@@ -282,6 +331,9 @@ try {
     }
   }
   if(!$changed) {throw 'Native editor did not save recovered draft after explicit Save'}
+  if((Get-FileHash -LiteralPath $fixture -Algorithm SHA256).Hash.ToLowerInvariant() -cne $exactDraftSha) {
+    throw 'Explicit Save did not restore exact privately preserved draft bytes'
+  }
   $report.explicitSaveVerified=$true
   $report.completed=$true
   Screenshot 'draft-reference-success'

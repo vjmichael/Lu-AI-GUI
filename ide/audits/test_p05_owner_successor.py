@@ -9,6 +9,7 @@ from verify_p05_owner_successor import (
     compare_38_with_separate_scoped_source_dispositions,
     verify_source_only_patch, project_reviewed_wo6_current_source,
     WO6_PATH, WO6_PRIOR_OWNER_BLOB, WO6_CURRENT_SOURCE_BLOB,
+    CLANGD_PATH, CLANGD_PRIOR_BLOB, CLANGD_CURRENT_BLOB, project_checked_out_clangd_source,
 )
 
 class OriginalAndOwnerSuccessor(unittest.TestCase):
@@ -161,6 +162,18 @@ class ReviewedWo6CurrentSourceTests(unittest.TestCase):
             project_reviewed_wo6_current_source(
                 {WO6_PATH: "f" * 40}, prior, current
             )
+
+
+class ClangdCurrentSourceTests(unittest.TestCase):
+    def test_exact_successor_projection_without_native_approval(self):
+        root = Path(__file__).resolve().parents[2]
+        observed = {CLANGD_PATH: CLANGD_CURRENT_BLOB}
+        projected, previous = project_checked_out_clangd_source(root, observed)
+        self.assertEqual(projected[CLANGD_PATH], CLANGD_PRIOR_BLOB)
+        self.assertEqual(observed[CLANGD_PATH], CLANGD_CURRENT_BLOB)
+        self.assertIn("Get-Command clangd.exe", previous)
+        with self.assertRaisesRegex(Denied, "p05_clangd_current_source_blob_not_exact"):
+            project_checked_out_clangd_source(root, {CLANGD_PATH: "f" * 40})
 
 
 if __name__=="__main__":

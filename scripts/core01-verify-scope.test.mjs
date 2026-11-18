@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { forbiddenPath, suspectSource, verifyInventory } from './core01-verify-scope.mjs';
+import { forbiddenPath, suspectSource, verifyInventory, reviewedIdePath } from './core01-verify-scope.mjs';
 test('IDE source paths and build workflows cannot enter CORE-01', () => {
   for (const p of ['ide/worker.rs','src-tauri/lu-ide/src/lib.rs','lu-desktop/src-tauri/src/ide_worker.rs','.github/workflows/ide-native.yml','docs/LU_IDE_GATE.md']) assert.equal(forbiddenPath(p), true, p);
   assert.equal(forbiddenPath('src-tauri/lu-core/src/independent_outcome.rs'), false);
@@ -30,4 +30,13 @@ test('PERF-01 warm model source retains the pressure branch outside comments', (
   assert.ok(original.includes('if idle_for.is_some_and(|elapsed| elapsed >= Duration::from_secs(30))'));
   assert.ok(original.includes('return WarmDecision::EvictMeasuredPressure;'));
   assert.ok(!original.includes('\\n        if idle_for'), 'Literal escaped newlines must not swallow control flow');
+});
+
+test('integrated scope accepts only known IDE-owned paths, never cross-imports or excluded providers', () => {
+  const parent = new Set(['ide/worker.rs', '.github/workflows/ide-native.yml', 'src-tauri/lu-ide/src/lib.rs', 'ide/koboldcpp.rs', 'docs/LU_IDE_GATE.md']);
+  assert.equal(reviewedIdePath('ide/worker.rs', parent), true);
+  assert.equal(reviewedIdePath('.github/workflows/ide-native.yml', parent), true);
+  for (const path of ['ide/unreviewed.rs','src-tauri/lu-ide/src/lib.rs','ide/koboldcpp.rs','docs/LU_IDE_GATE.md']) assert.equal(reviewedIdePath(path, parent), false);
+  assert.equal(forbiddenPath('ide/worker.rs'), true);
+  assert.ok(suspectSource('lu-desktop/src-tauri/src/lib.rs', 'use lu_ide::worker;').length);
 });

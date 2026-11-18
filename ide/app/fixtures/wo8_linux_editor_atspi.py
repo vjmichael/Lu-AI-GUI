@@ -58,6 +58,25 @@ def elements():
 def accessible(name, role=None, seconds=20):
     deadline = time.monotonic() + seconds
     while time.monotonic() < deadline:
+        # CodeMirror is deeper than the global desktop depth bound. Use
+        # only the visible source workspace, and reject ambiguous matches.
+        if name == "Source editor text":
+            matches = []
+            for obj in _native_source_editor_nodes():
+                try:
+                    title = (obj.name or "").strip()
+                    state = obj.getState()
+                    if (title == name or title.startswith(name + " · ")) and (
+                            state.contains(pyatspi.STATE_VISIBLE) and
+                            state.contains(pyatspi.STATE_SHOWING) and
+                            state.contains(pyatspi.STATE_FOCUSABLE)):
+                        matches.append(obj)
+                except Exception:
+                    continue
+            if len(matches) == 1:
+                return matches[0]
+            time.sleep(0.3)
+            continue
         for obj in elements():
             try:
                 title = obj.name or ""
@@ -101,6 +120,48 @@ def activate(name, role=None, timeout=20):
     except Exception:
         pass
     deny("native_accessibility_action_unavailable_" + name.replace(" ", "_"))
+
+
+
+def choose_open_workflow_project(display_name, seconds=20):
+    """Select exactly one visible, enabled native portfolio checkbox.
+
+    AT-SPI may expose the operation as toggle rather than click. Never count
+    the action return as acceptance: independently read the checked state.
+    """
+    name = display_name + " (open)"
+    deadline = time.monotonic() + seconds
+    issued = False
+    while time.monotonic() < deadline:
+        matches = []
+        for node in elements():
+            try:
+                state = node.getState()
+                if ((node.name or "").strip() == name and
+                    node.getRoleName().casefold() == "check box" and
+                    not _native_dialog_ancestor(node) and
+                    all(state.contains(flag) for flag in (
+                        pyatspi.STATE_VISIBLE, pyatspi.STATE_SHOWING,
+                        pyatspi.STATE_ENABLED, pyatspi.STATE_SENSITIVE))):
+                    matches.append(node)
+            except Exception:
+                continue
+        if len(matches) == 1:
+            node = matches[0]
+            if node.getState().contains(pyatspi.STATE_CHECKED):
+                return
+            if not issued:
+                # Exactly one native action; never blindly re-toggle on
+                # delayed UI readback. No application API or state injection.
+                issued = True
+                action = node.queryAction()
+                indices = [i for i in range(action.nActions)
+                           if action.getName(i).casefold() in
+                           ("toggle", "click", "press", "activate")]
+                if not indices or not action.doAction(indices[0]):
+                    deny("workflow_checkbox_native_action_unavailable")
+        time.sleep(0.25)
+    deny("workflow_checkbox_exact_checked_state_not_observed")
 
 
 def key(*keys):

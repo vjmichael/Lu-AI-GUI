@@ -184,6 +184,15 @@ function Find-Control([string]$query,[string]$kind,[int]$seconds=18) {
           try {
             $name=$item.Current.Name
             $type=$item.Current.ControlType.ProgrammaticName
+            if ($query -eq 'Source editor text' -or $query.StartsWith('Source editor text · ')) {
+              # Only the real visible editable content surface, never the
+              # enclosing CodeMirror region or a stale offscreen renderer.
+              $matches=($name -ceq $query -or ($query -eq 'Source editor text' -and
+                $name -and $name.StartsWith('Source editor text · ',[StringComparison]::Ordinal)))
+              if ($matches -and $item.Current.IsEnabled -and !$item.Current.IsOffscreen -and
+                  $item.Current.IsKeyboardFocusable -and $type -eq 'ControlType.Edit') {return $item}
+              continue
+            }
             if ($name -and $name.IndexOf($query,[StringComparison]::OrdinalIgnoreCase) -ge 0 -and
                 (!$kind -or $type -eq ('ControlType.'+$kind))) {
               return $item
@@ -256,10 +265,10 @@ function Click([string]$label) {
   } catch {
     # An installed WebView2 UIA button can expose a live native element
     # while its Invoke provider rejects a transient post-navigation call.
-    # Only the demonstrated Move file control receives one real OS keyboard
-    # retry. No DOM/JS/backend injection, no synthetic outcome, and the
-    # original required move/review/file-byte assertions still run.
-    if ($label -cnotin @('Move file','Toggle split editor')) {
+    # Only demonstrated reviewed source-toolbar controls receive one real
+    # OS keyboard retry. Trash/Restore only open the review form: the
+    # separate OS consent and original disk/byte assertions still apply.
+    if ($label -cnotin @('Move file','Trash file','Restore file','Toggle split editor')) {
       Deny ('ui_invoke_failure_'+$label.Replace(' ','_'))
     }
     $denial='ui_invoke_failure_'+$label.Replace(' ','_')
@@ -275,11 +284,16 @@ function Click([string]$label) {
     }
     try {
       $fresh.SetFocus()
+      if (!$fresh.Current.HasKeyboardFocus -or $fresh.Current.IsOffscreen -or
+          $fresh.Current.Name -cne $label -or
+          [P04NativeWebViewWindows]::GetForegroundWindow() -ne $hwnd) {Deny $denial}
       [System.Windows.Forms.SendKeys]::SendWait(' ')
       if ($label -ceq 'Move file') {
         Write-Host 'WO8_MOVE_FILE_OS_UIA_FOCUSED_KEYBOARD_RETRY=attempted_not_acceptance'
-      } else {
+      } elseif ($label -ceq 'Toggle split editor') {
         Write-Host 'WO8_SPLIT_EDITOR_UIA_FOCUSED_KEYBOARD_RETRY=attempted_not_acceptance'
+      } else {
+        Write-Host 'WO8_SOURCE_REVIEW_UIA_FOCUSED_KEYBOARD_RETRY=attempted_not_acceptance'
       }
     } catch { Deny $denial }
   }
@@ -888,8 +902,24 @@ try {
         Start-Sleep -Milliseconds 200
       } while ((Get-Date) -lt $deadline)
       if (!$confirm.Current.IsEnabled) { Deny 'button_disabled_Confirm_separate_local_commit' }
-      Click 'Confirm separate local commit'
-      Confirm-NativeOneUseDialog 'Confirm local Git commit' 'Commit exact staged file'
+      # A UIA Invoke return previously produced no submit dialog. Activate
+      # the real, exact HTML submit control using native keyboard input once;
+      # never retry a possibly submitted approval or use backend IPC.
+      $mainWindow=$proc.MainWindowHandle
+      [void][P04NativeWebViewWindows]::SetForegroundWindow($mainWindow)
+      if ($mainWindow -eq [IntPtr]::Zero -or
+          [P04NativeWebViewWindows]::GetForegroundWindow() -ne $mainWindow -or
+          $confirm.Current.Name -cne 'Confirm separate local commit (no push)' -or
+          !$confirm.Current.IsKeyboardFocusable -or $confirm.Current.IsOffscreen) {
+        Deny 'wo9_native_commit_submit_not_focusable'
+      }
+      $confirm.SetFocus()
+      if (!$confirm.Current.HasKeyboardFocus -or
+          [P04NativeWebViewWindows]::GetForegroundWindow() -ne $mainWindow) {
+        Deny 'wo9_native_commit_submit_focus_lost'
+      }
+      [System.Windows.Forms.SendKeys]::SendWait(' ')
+      Confirm-NativeOneUseDialog 'Confirm local Git commit' 'Commit exact staged file' 'WO9 installed reviewed Git source'
       Require 'Local commit'
       # Real Win UIA consent invokes asynchronously: the exact native Git
       # operation is the witness, not the OS dialog click or a UI label.
@@ -1029,7 +1059,10 @@ try {
         Deny 'default_installer_unexpectedly_has_debugger_service'
       }
       Click 'Job requests'
-      Require 'Project debugger release feature and native adapter'
+      # Current installed UI exposes the release entitlement denial, followed
+      # by the actual disabled action. Do not accept a legacy prose label or
+      # substitute for the independently inspected disabled native control.
+      Require 'protected native release entitlement'
       $debug=Find-Control 'Debug last verified project build' 'Button' 20
       if ($debug.Current.IsEnabled) {
         Deny 'default_unsigned_installer_exposed_project_execution'
@@ -1348,18 +1381,35 @@ try {
         }
       }
       function B5-VisibleEditor([string]$marker) {
+        $leaf=if ($marker -cmatch '^B5_SOURCE_(main|p[0-4][0-9])$') { $Matches[1]+'.rs' } else { 'main.rs' }
+        $expected='Source editor text · First editor: '+$leaf
         $end=(Get-Date).AddSeconds(18)
         while((Get-Date) -lt $end) {
           $editor=$null
-          try {$editor=Find-Control 'Source editor text' '' 2} catch {}
+          try {$editor=Find-Control $expected 'Edit' 2} catch {}
           if ($null -ne $editor -and $editor.Current.IsKeyboardFocusable) {
+            $hwnd=$proc.MainWindowHandle
+            [void][P04NativeWebViewWindows]::SetForegroundWindow($hwnd)
+            if ($hwnd -eq [IntPtr]::Zero -or
+                [P04NativeWebViewWindows]::GetForegroundWindow() -ne $hwnd) {
+              Deny 'b5_native_editor_window_not_foreground'
+            }
             $editor.SetFocus()
-            [System.Windows.Forms.SendKeys]::SendWait('^a')
-            [System.Windows.Forms.SendKeys]::SendWait('^c')
-            Start-Sleep -Milliseconds 130
-            if([System.Windows.Forms.Clipboard]::ContainsText()) {
-              $value=[System.Windows.Forms.Clipboard]::GetText()
-              if($value.Contains($marker)) { return }
+            if ($editor.Current.HasKeyboardFocus -and
+                [P04NativeWebViewWindows]::GetForegroundWindow() -eq $hwnd) {
+              # Stale clipboard content is NEVER counted as a successful tab
+              # switch or edit; verify a new OS copy from the exact active pane.
+              [System.Windows.Forms.Clipboard]::Clear()
+              [System.Windows.Forms.SendKeys]::SendWait('^a')
+              [System.Windows.Forms.SendKeys]::SendWait('^c')
+              $copyUntil=(Get-Date).AddMilliseconds(1500)
+              do {
+                Start-Sleep -Milliseconds 100
+                if([System.Windows.Forms.Clipboard]::ContainsText()) {
+                  $value=[System.Windows.Forms.Clipboard]::GetText()
+                  if($value.Contains($marker)) { return }
+                }
+              } while ((Get-Date) -lt $copyUntil)
             }
           }
           Start-Sleep -Milliseconds 190
@@ -1443,9 +1493,15 @@ try {
       $removed=$false
       while((Get-Date) -lt $until) {
         $editor.SetFocus()
+        if (!$editor.Current.HasKeyboardFocus -or
+            [P04NativeWebViewWindows]::GetForegroundWindow() -ne $proc.MainWindowHandle) {
+          Deny 'b5_native_undo_editor_focus_lost'
+        }
+        [System.Windows.Forms.Clipboard]::Clear()
         [System.Windows.Forms.SendKeys]::SendWait('^a^c')
         Start-Sleep -Milliseconds 150
         if([System.Windows.Forms.Clipboard]::ContainsText() -and
+           ([System.Windows.Forms.Clipboard]::GetText()).Contains('B5_SOURCE_main') -and
            !([System.Windows.Forms.Clipboard]::GetText()).Contains('B5_EXPLICIT_SAVE_PERF_ONLY')) {
           $removed=$true
           break

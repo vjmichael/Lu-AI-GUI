@@ -241,6 +241,39 @@ def project_checked_out_wo6_source(root, blobs):
     )
 
 
+# 03D is a separate source-only repair of the existing clangd CI witness.
+# Never overwrite the historical five-source disposition or the owner's eight.
+CLANGD_PATH = ".github/workflows/ide-e2-native-lsp.yml"
+CLANGD_PRIOR_BLOB = "b0e8017157e9727f7c5a3fe474f7510db08b97fe"
+CLANGD_CURRENT_BLOB = "43933f3ba2a1434b7603b0a2809f2925021ee21b"
+
+
+def project_checked_out_clangd_source(root, blobs):
+    def read_blob(sha):
+        return subprocess.run(["git", "-C", str(root), "cat-file", "blob", sha],
+                              check=True, timeout=20, capture_output=True).stdout
+    if blobs.get(CLANGD_PATH) != CLANGD_CURRENT_BLOB:
+        raise Denied("p05_clangd_current_source_blob_not_exact")
+    prior = read_blob(CLANGD_PRIOR_BLOB)
+    current = read_blob(CLANGD_CURRENT_BLOB)
+    if (original_blob_sha(prior) != CLANGD_PRIOR_BLOB or
+            original_blob_sha(current) != CLANGD_CURRENT_BLOB):
+        raise Denied("p05_clangd_source_object_not_exact")
+    # All native execution and independent SCM cleanup commands remain
+    # byte-identical, as do the Linux job and source-compilation matrix.
+    start = b"      - name: Independently install SCM service and verify real AppContainer clangd\n"
+    end = b"      - name: Label test provenance\n"
+    retained = prior.split(start, 1)[1].split(end, 1)[0]
+    if (not current.split(start, 1)[1].startswith(retained) or
+            prior.split(b"  delegated-clangd-linux:\n", 1)[1] != current.split(b"  delegated-clangd-linux:\n", 1)[1] or
+            b"Build-PinnedClangdWindows.ps1" not in current or
+            b"Get-Command clangd.exe" in current):
+        raise Denied("p05_clangd_native_gate_drift")
+    projected = dict(blobs)
+    projected[CLANGD_PATH] = CLANGD_PRIOR_BLOB
+    return projected, prior.decode("utf-8")
+
+
 def compare_38_unchanged_and_replacements(baseline, current):
     if len(baseline) != 38 or set(baseline) != set(current):
         raise Denied("p05_expected_exact_38_original_workflows")
@@ -325,12 +358,15 @@ def verify(root: Path):
         raise Denied("p05_source_disposition_file_is_linked")
     scoped = json.loads(scoped_path.read_text(encoding="utf-8"))
     projected = project_checked_out_wo6_source(root, current)
+    projected, prior_clangd = project_checked_out_clangd_source(root, projected)
     result=compare_38_with_separate_scoped_source_dispositions(original,projected,scoped)
+    result["clangdCurrentSourceRepairVerified"] = True
+    result["clangdNativeAccepted"] = False
     result["wo6CurrentSourceRepairVerified"] = True
     result["wo6CurrentSourceRepairOwnerAuthorizationInferred"] = False
     for path in SCOPED_SOURCE_ONLY:
         historical=git("show",ORIGINAL+":"+path)
-        current_text=(root/path).read_text(encoding="utf-8")
+        current_text=prior_clangd if path == CLANGD_PATH else (root/path).read_text(encoding="utf-8")
         verify_source_only_patch(path,historical,current_text)
     listed={x.get("path"):(x.get("original"),x.get("replacement"))
             for x in ledger.get("workflows",[])}

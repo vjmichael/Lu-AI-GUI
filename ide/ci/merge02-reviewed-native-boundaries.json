@@ -16,6 +16,11 @@
   "mergeApproved": false,
   "files": [
     {
+      "path": "ide/app/src-tauri/Cargo.toml",
+      "sha": "daf6f325f22827fa843c0b5afb333321211b97a0",
+      "scope": "03B optimizes sha2 in debug for existing pinned runtime readback; unchanged grant duration and dependency graph"
+    },
+    {
       "path": "ide/app/src-tauri/build.rs",
       "sha": "3bb3802f067a0150e01d232cef35e962948fac74",
       "scope": "Prior formatter disposition; nonpunctuation lexical token counts unchanged; native acceptance pending; source-only, OS acceptance pending"
@@ -42,8 +47,8 @@
     },
     {
       "path": "ide/app/src-tauri/src/lib.rs",
-      "sha": "4555e1a80b6f7e700b88235646c313e9fc28c4b4",
-      "scope": "Formatter disposition; feature and physical-dialog-gated command routes retained; source-only, OS acceptance pending"
+      "sha": "bb479355f9474d507fef6a14ec6573f7c504d8ec",
+      "scope": "03B explicit native read-only move/trash/restore dialog; project revision and valid path checked; existing mutation gate unchanged"
     },
     {
       "path": "ide/app/src-tauri/src/lsp_backend.rs",
@@ -67,8 +72,8 @@
     },
     {
       "path": "ide/host/src/dap_session.rs",
-      "sha": "8396d524a0f6c135a28b6400ebd4a4a10ed8eb74",
-      "scope": "Fixed debug-only trap, topmost frame and thread checks; original production defaults retained; source-only, OS acceptance pending"
+      "sha": "bf8e447242da5bfa2fbdb78a498d2ae6e02be084",
+      "scope": "03D WO6 fixed Windows native suffix only; absolute path, traversal, control, no-debug-args guards preserved; regression tests; OS acceptance pending"
     },
     {
       "path": "ide/host/src/git_reviewed_stash_save.rs",
@@ -82,8 +87,8 @@
     },
     {
       "path": "ide/packaging/audit_p05_reviewed_workflow_successor.py",
-      "sha": "f42432bba301210c97907e61478263f68e425848",
-      "scope": "Exact historical P05 successor projection; not native acceptance; source-only, OS acceptance pending"
+      "sha": "809eb5cbda88d494fb334c1643c83b55a8f6cc7b",
+      "scope": "03D clangd exact source-only provenance and fixed diagnostics; no security or native acceptance promotion"
     },
     {
       "path": "ide/packaging/p05-merge02-pending-native-boundaries.json",
@@ -101,14 +106,19 @@
       "scope": "source or historical preservation test, not native acceptance"
     },
     {
+      "path": "ide/packaging/test_ide056_successor_lock.py",
+      "sha": "cbe5db6725f69cf8e0e3a146918fbc281b42cce4",
+      "scope": "03D tests exact historical lock in disposable checkout and explicitly denies later lock under original approval"
+    },
+    {
       "path": "ide/packaging/test_p05_merge02_pending_native_boundaries.py",
       "sha": "e004af8f1010c9e9d30809027946ffd1ccdbbe5e",
       "scope": "source or historical preservation test, not native acceptance"
     },
     {
       "path": "ide/packaging/test_p05_native_picker_repair.py",
-      "sha": "0eb22e9f58e71cf544d24bbd72cbb0bff3ed186a",
-      "scope": "source or historical preservation test, not native acceptance"
+      "sha": "d7e54df32fb0c92ec6389584fd23f20106e5e10a",
+      "scope": "03B verifies actual native parent-child selection route; no filesystem authority granted"
     },
     {
       "path": "ide/packaging/test_p05_reviewed_workflow_successor.py",
@@ -117,8 +127,8 @@
     },
     {
       "path": "ide/packaging/test_p05_semantic_reconciliation.py",
-      "sha": "368589dfbc5938e6fe823619fb206dab7c48e92f",
-      "scope": "source or historical preservation test, not native acceptance"
+      "sha": "fb2097b591b15982bb8efcf58291cdb740f6143a",
+      "scope": "03B hostile marker appended to preserve count guard and exercise semantic failure"
     },
     {
       "path": "ide/packaging/test_p06_checkout_lock.py",
@@ -134,6 +144,11 @@
       "path": "ide/packaging/test_verify_language_servers.py",
       "sha": "bc2b9660918a74a4912d5652bcbd09798f6937d4",
       "scope": "native redistribution manifest still blocked pending full closure"
+    },
+    {
+      "path": "ide/packaging/test_verify_p05_pr_inventory.py",
+      "sha": "cc69eb497a8c3fd3056b884181b6ed58372adcd3",
+      "scope": "03D proves original 38 workflow blobs in original re-pinned checkout; current strict historical denial retained"
     },
     {
       "path": "ide/packaging/verify_language_servers.py",
@@ -152,18 +167,23 @@
     },
     {
       "path": "ide/supervisor/Cargo.toml",
-      "sha": "c3e7033bcceec45b6314fb9152028fe8a59ea790",
-      "scope": "Protected debugger CI-only feature linkage; no default expansion; source-only, OS acceptance pending"
+      "sha": "d62a906c32402b18046e29a9adb8b058521d0ef7",
+      "scope": "03B optimizes sha2 in debug; same dependency graph and one-use custody checks"
+    },
+    {
+      "path": "ide/supervisor/examples/support/cancel_history.rs",
+      "sha": "fba5177882a3ff039b042b94fbf76e882299f5e5",
+      "scope": "03D WO6/D5 strict exact three-phase acceptance validator, negative wrong session/project/sequence checks; native tree evidence remains mandatory"
     },
     {
       "path": "ide/supervisor/examples/wo6_linux_native_build_acceptance.rs",
-      "sha": "206ba5fc51d175d5feea6a5e6d91975ec7aa8e15",
-      "scope": "Fixed Linux fixture checks stopped PC and mapped source line; timeout is not acceptance; source-only, OS acceptance pending"
+      "sha": "d55910ee5106980f779e568cb214d77a1924de37",
+      "scope": "03D acceptance-only strict three-phase cancellation receipt chain; real OS tree evidence still required; no runtime authority change"
     },
     {
       "path": "ide/supervisor/examples/wo6_native_dap_acceptance.rs",
-      "sha": "6c752702b79fdf19b15bb19598a531cf01c47c3e",
-      "scope": "Fixed Windows CI trap and receipt cloning; release route retained; source-only, OS acceptance pending"
+      "sha": "421762228c0c02f40252ec1e0e9e7411e49f6b95",
+      "scope": "03D WO6/D5 exact three-phase cancellation and fresh replay identity; fixed and project native witness requirements retained; OS acceptance pending"
     },
     {
       "path": "ide/supervisor/fixtures/debug/Probe-WindowsWo6FileDenial.ps1",
@@ -187,8 +207,8 @@
     },
     {
       "path": "ide/supervisor/src/dap_transport.rs",
-      "sha": "83dbec6e3adacfddfcae877cce3c0d9ae9bef1e4",
-      "scope": "Debug OS architecture feature gated fixture operations and timeout diagnostics; source-only, OS acceptance pending"
+      "sha": "2e69f82b025c49338560bad623548ccc61f60461",
+      "scope": "03D WO6 fixed categorical launch protocol diagnostics and disk-journal ordering regression; no containment or release condition altered"
     },
     {
       "path": "ide/supervisor/src/lib.rs",
@@ -197,8 +217,8 @@
     },
     {
       "path": "ide/supervisor/src/linux_lsp_worker.rs",
-      "sha": "f45421d10223e7f93d685084eb9ae86ab990aefc",
-      "scope": "Root-owned LLDB companion, fixed fixture, bounded diagnostic drain and independent kernel receipt; source-only, OS acceptance pending"
+      "sha": "3db4460d38c79e3e39034ca149468f1c45a68652",
+      "scope": "03B debugger-only one-CPU affinity before LLDB spawn; independent delegated cgroup and pids.max retained"
     },
     {
       "path": "ide/supervisor/src/native_kernel_pc.rs",
@@ -207,8 +227,8 @@
     },
     {
       "path": "ide/supervisor/src/windows_cap_tree.rs",
-      "sha": "23eab2ceac5872f7a083df49b2fa3f5f670c999c",
-      "scope": "Pinned directory membership and reparse denial; original hostile race assertion retained; source-only, OS acceptance pending"
+      "sha": "9092e4699e66abc5ad9c74394636eaa1a4b789ac",
+      "scope": "03B rustfmt import ordering and condition layout only; relative capability checks unchanged"
     },
     {
       "path": "ide/supervisor/src/windows_event_owner.rs",
@@ -216,14 +236,24 @@
       "scope": "Exact software breakpoint ownership, persisted receipt and disconnect distinction; source-only, OS acceptance pending"
     },
     {
+      "path": "ide/supervisor/src/windows_fin04w2_service.rs",
+      "sha": "70fcfdfcd02420385860b483215969a4797e2305",
+      "scope": "03B consumes target SCM verified sampled RIP for independent owner and PDB source-line checks; no DAP trust expansion"
+    },
+    {
+      "path": "ide/supervisor/src/windows_fin04w2_target_ipc.rs",
+      "sha": "f3d6be13c44348707353ec8539b4925b284b91d6",
+      "scope": "03B strictly parses authenticated target SCM stop receipt; denies invalid PC/thread/overflow; adds negative tests"
+    },
+    {
       "path": "ide/supervisor/src/windows_kernel_pc.rs",
-      "sha": "58e824c887ce64e7e97069e4865669dbe540f6d3",
-      "scope": "Liveness verification with synchronize and query-only rights; source-only, OS acceptance pending"
+      "sha": "cce3b75eeb29642b0c1fbccfef7d8888179fab4b",
+      "scope": "03B rustfmt multiline OpenProcess only; query and synchronize rights unchanged"
     },
     {
       "path": "ide/supervisor/src/windows_lsp_worker.rs",
-      "sha": "5271af00c1fb3c7c37c8e6bb65d7e52633f9f73a",
-      "scope": "Fixed CI oracle, independent owner/PDB witness and redundant pre-copy hash removal; original 60s grant and copy readback retained; source-only, OS acceptance pending"
+      "sha": "411028a517f5fc50f9781b977c2fc2f1e4e6d47a",
+      "scope": "03D clangd exact source-only provenance and fixed diagnostics; no security or native acceptance promotion"
     }
   ]
 }
