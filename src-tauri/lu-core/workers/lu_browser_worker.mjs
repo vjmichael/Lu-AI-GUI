@@ -311,6 +311,7 @@ export class BrowserSession {
   }
   async #publicSearch(value) {
     this.publicSearchAttempted=true;
+    let diagnostic=null;
     try {
       const url=exactPublicSearchUrl(value);
       // Never reuse the persistent profile or its service worker/cookie store.
@@ -334,14 +335,52 @@ export class BrowserSession {
       const source=new TextDecoder('utf-8',{fatal:true}).decode(fetched.body);
       const parsed=await page.evaluate(html=>{
         const doc=new DOMParser().parseFromString(html,'text/html');
+        // Count structure, not body text, for bounded failure diagnostics.
+        const count=selector=>Math.min(1000,doc.querySelectorAll(selector).length);
+        const structure={anchors:count('a[href]'),h3:count('h3'),roleHeadings:count('[role="heading"]'),
+          legacyHeadings:count('.BNeawe.vvjwJb'),scripts:count('script')};
+        const servicePath=raw=>{try{const u=new URL(raw,'https://www.google.com');
+          return u.origin==='https://www.google.com'?u.pathname:'';}catch{return '';}};
+        const serviceLinks=Array.from(doc.querySelectorAll('a[href]')).slice(0,1000).map(a=>servicePath(a.getAttribute('href')));
+        const retryLink=serviceLinks.some(path=>['/httpservice/retry/enablejs','/httpservice/retry'].includes(path));
+        const captcha=serviceLinks.some(path=>path.startsWith('/sorry/'))||doc.querySelector('iframe[src*="/recaptcha/api2"],iframe[src*="hcaptcha.com"],iframe[src*="challenges.cloudflare.com"],[data-sitekey].h-captcha,form[action*="/sorry/"]');
+        const login=doc.querySelector('input[type="password"]');
         doc.querySelectorAll('script,style,template,noscript').forEach(el=>el.remove());
-        const gate=doc.querySelector('iframe[src*="/recaptcha/api2"],iframe[src*="hcaptcha.com"],iframe[src*="challenges.cloudflare.com"],[data-sitekey].h-captcha')?'CAPTCHA_REQUIRED':doc.querySelector('input[type="password"]')?'LOGIN_REQUIRED':null;
-        return {bodyText:(doc.body?.textContent||'').slice(0,120000),gate,
-          candidates:Array.from(doc.querySelectorAll('a:has(h3)')).slice(0,100).map(a=>({
-            href:(a.getAttribute('href')||'').slice(0,8193),title:(a.querySelector('h3')?.textContent||'').slice(0,240),
-            snippet:(a.parentElement?.parentElement?.textContent||'').slice(0,320)}))};
+        const bodyText=(doc.body?.textContent||'').slice(0,120000);
+        // Do not execute provider scripts or try to bypass interstitials.
+        const gate=captcha?'CAPTCHA_REQUIRED':login?'LOGIN_REQUIRED':
+          (retryLink||/enable javascript to (?:continue|use|access) (?:google|search)|javascript is required to (?:continue|use) google/i.test(bodyText))?'PROVIDER_SCRIPT_REQUIRED':null;
+        const clean=(value,limit)=>String(value||'').replace(/[\x00-\x1f\x7f]/g,' ').replace(/\s+/g,' ').trim().slice(0,limit);
+        const hidden=el=>!!el.closest('[hidden],[aria-hidden="true"],nav,header,footer,aside,form,button')||
+          !!Array.from((function*(n){while(n&&n!==doc.body){yield n;n=n.parentElement;}})(el)).find(n=>/display\s*:\s*none|visibility\s*:\s*hidden/i.test(n.getAttribute('style')||''));
+        const candidates=[];
+        // Recognize semantic headings in either anchor nesting direction and
+        // Google's legacy basic-HTML title markup. Arbitrary body links are
+        // never promoted to search results merely because they are external.
+        const headings=doc.querySelectorAll('h3,[role="heading"][aria-level="3"],[role="heading"][aria-level="2"],.BNeawe.vvjwJb');
+        for(const title of Array.from(headings).slice(0,100)){
+          const a=title.closest('a[href]')||title.querySelector('a[href]');
+          if(!a||hidden(a)||hidden(title))continue;
+          const href=(a.getAttribute('href')||'').slice(0,8193);
+          const label=clean(title.textContent,240);
+          if(!label)continue;
+          const card=a.closest('div.g,div.Gx5Zad,div.MjjYud');
+          // Prefer known snippet elements; avoid including unrelated page
+          // text or concatenating subsequent result cards into the excerpt.
+          const frame=card||(title.contains(a)?title.parentElement:a.parentElement);
+          const snippet=frame&&frame!==doc.body&&!frame.matches('main,#search,#rso')&&
+            frame.querySelectorAll('h3,[role="heading"],.BNeawe.vvjwJb').length===1?
+            frame.querySelector('.VwiC3b,.BNeawe.s3v9rd,[data-sncf],p'):null;
+          candidates.push({href,title:label,snippet:snippet&&!hidden(snippet)?clean(snippet.textContent,320):''});
+        }
+        return {bodyText,gate,structure,candidates};
       },source);
-      const gate=parsed.gate||challengeKind(parsed.bodyText)||(/before you continue to google|consent required/i.test(parsed.bodyText)?'CONSENT_REQUIRED':null);
+      diagnostic={schema:'lu-public-search-structure-v1',httpStatus:fetched.status,bodyBytes:fetched.body.length,
+        bodySha256:fetched.bodySha256,...parsed.structure,candidates:parsed.candidates.length};
+      const textGate=challengeKind(parsed.bodyText);
+      const gate=parsed.gate==='CAPTCHA_REQUIRED'||textGate==='CAPTCHA_REQUIRED'?'CAPTCHA_REQUIRED':
+        parsed.gate==='LOGIN_REQUIRED'||textGate==='LOGIN_REQUIRED'?'LOGIN_REQUIRED':
+        /before you continue to google|consent required/i.test(parsed.bodyText)?'CONSENT_REQUIRED':parsed.gate;
       if(gate)throw new BrowserGateError('PUBLIC_SEARCH_'+gate);
       const candidates=parsed.candidates;
       const results=[];const seen=new Set();
@@ -361,7 +400,7 @@ export class BrowserSession {
     }catch(e){
       this.publicSearchReceipt=null;
       if(this.publicSearchContext){await this.publicSearchContext.close().catch(()=>{});this.publicSearchContext=null;}
-      return {status:'SEARCH_UNAVAILABLE',reason:e instanceof BrowserGateError?e.code:'PUBLIC_SEARCH_FAILED'};
+      return {status:'SEARCH_UNAVAILABLE',reason:e instanceof BrowserGateError?e.code:'PUBLIC_SEARCH_FAILED',...(diagnostic?{diagnostic}:{})};
     }
   }
   #searchEvidence(){

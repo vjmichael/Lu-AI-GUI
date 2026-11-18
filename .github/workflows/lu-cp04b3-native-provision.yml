@@ -1,4 +1,4 @@
-name: Lu CP-04B3 protected search runtime provisioning
+name: Lu CP-04B3 repaired protected search runtime provisioning
 on:
   push:
     branches: [lu/cp01-attachment-transaction-20261116]

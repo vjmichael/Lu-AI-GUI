@@ -112,17 +112,38 @@ test('real Chromium isolated rendering, network denial and immutable source rece
 });
 for(const [label,body,reason] of [
   ['CAPTCHA',html.replace('</body>','<iframe src="https://hcaptcha.com/challenge"></iframe></body>'),'PUBLIC_SEARCH_CAPTCHA_REQUIRED'],
+  ['Google challenge link',html.replace('</body>','<a href="/sorry/index?continue=opaque">Continue</a></body>'),'PUBLIC_SEARCH_CAPTCHA_REQUIRED'],
   ['login',html.replace('</body>','<input type="password"></body>'),'PUBLIC_SEARCH_LOGIN_REQUIRED'],
   ['consent',html.replace('</body>','Before you continue to Google</body>'),'PUBLIC_SEARCH_CONSENT_REQUIRED'],
+  ['JavaScript interstitial','<html><body><a href="/httpservice/retry/enablejs?sei=opaque">Click here</a><script>location.reload()</script></body></html>','PUBLIC_SEARCH_PROVIDER_SCRIPT_REQUIRED'],
   ['empty provider result','<html><body>Service available but no results.</body></html>','PUBLIC_SEARCH_NO_RESULTS']]){
   test(`real Chromium rejects ${label} without a usable search receipt`,{skip:!realModule,timeout:30000},async()=>{
     await withRealSearchBrowser(fixtureFetcher(body),async session=>{
-      const nav=await session.execute({op:'navigate',url});assert.deepEqual(nav,{status:'SEARCH_UNAVAILABLE',reason});
+      const nav=await session.execute({op:'navigate',url});assert.equal(nav.status,'SEARCH_UNAVAILABLE');assert.equal(nav.reason,reason);
+      assert.equal(nav.diagnostic.schema,'lu-public-search-structure-v1');
+      assert.equal(nav.diagnostic.bodySha256,createHash('sha256').update(body).digest('hex'));
+      assert.deepEqual(Object.keys(nav.diagnostic).sort(),['anchors','bodyBytes','bodySha256','candidates','h3','httpStatus','legacyHeadings','roleHeadings','schema','scripts'].sort());
       await assert.rejects(session.execute({op:'read'}),e=>e.code==='PUBLIC_SEARCH_SCOPE_EXHAUSTED');
       await assert.rejects(session.execute({op:'human_resolved'}),e=>e.code==='PUBLIC_SEARCH_SCOPE_EXHAUSTED');
     });
   });
 }
+test('real Chromium recognizes alternate organic heading layouts without accepting arbitrary links', {skip:!realModule,timeout:30000},async()=>{
+  const alternate=`<html><body><nav><a href="https://example.com/nav"><h3>Navigation only</h3></a></nav>
+    <div class="Gx5Zad"><a href="/url?q=https%3A%2F%2Fdoc.rust-lang.org%2F"><div class="BNeawe vvjwJb">Rust Book</div></a><div class="BNeawe s3v9rd">Learn Rust.</div></div>
+    <div><a href="https://www.rust-lang.org/"><div role="heading" aria-level="3">Rust language</div></a><p>Build reliable software.</p></div>
+    <div><h3><a href="https://crates.io/">Rust packages</a></h3><p>Package registry.</p></div>
+    <div hidden><a href="https://example.com/hidden"><h3>Hidden link</h3></a></div>
+    <a href="https://example.com/unrelated">Unrelated link</a></body></html>`;
+  await withRealSearchBrowser(fixtureFetcher(alternate),async session=>{
+    const nav=await session.execute({op:'navigate',url});assert.equal(nav.status,'SEARCH_OBSERVED',JSON.stringify(nav));
+    assert.equal(nav.publicSearch.resultCount,3);
+    const read=await session.execute({op:'read'});
+    for(const value of ['Rust Book','Learn Rust.','Rust language','Build reliable software.','Rust packages','Package registry.'])assert.ok(read.text.includes(value),value);
+    assert.doesNotMatch(read.text,/Navigation only|Hidden link|Unrelated link/);
+    assert.equal(read.publicSearch.observedSha256,createHash('sha256').update(read.text).digest('hex'));
+  });
+});
 // Opt-in non-fixture provider gate. A network failure or challenge is an
 // explicit failure, never a passing test pretending to verify live content.
 test('live Google provider must return genuine bounded results',{skip:!realModule||process.env.LU_CP04B_LIVE_PUBLIC_SEARCH!=='1',timeout:45000},async()=>{

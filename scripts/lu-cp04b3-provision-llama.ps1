@@ -19,8 +19,14 @@ try {
   $version=(& $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationVersion).Trim()
   if($LASTEXITCODE -ne 0 -or -not $version){throw 'No C++ toolchain'}
   $generator=switch([int]($version.Split('.')[0])){17 {'Visual Studio 17 2022'} 18 {'Visual Studio 18 2026'} default {throw 'Unsupported Visual Studio generator'}}
-  cmake -S $source -B $build -G $generator -A x64 -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded -DCMAKE_POLICY_DEFAULT_CMP0091=NEW -DBUILD_SHARED_LIBS=OFF -DGGML_NATIVE=OFF -DGGML_VULKAN=OFF -DLLAMA_CURL=OFF -DLLAMA_OPENSSL=OFF -DLLAMA_BUILD_APP=OFF -DLLAMA_BUILD_UI=OFF -DLLAMA_BUILD_TESTS=OFF -DLLAMA_BUILD_EXAMPLES=OFF -DLLAMA_BUILD_SERVER=ON
+  cmake -S $source -B $build -G $generator -A x64 -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded -DCMAKE_POLICY_DEFAULT_CMP0091=NEW -DBUILD_SHARED_LIBS=OFF -DGGML_NATIVE=OFF -DGGML_VULKAN=OFF -DLLAMA_CURL=OFF -DLLAMA_OPENSSL=OFF -DLLAMA_BUILD_APP=OFF -DLLAMA_BUILD_UI=OFF -DLLAMA_USE_PREBUILT_UI=OFF -DLLAMA_BUILD_NUMBER=12143 -DLLAMA_BUILD_COMMIT=$expectedSource -DLLAMA_BUILD_TESTS=OFF -DLLAMA_BUILD_EXAMPLES=OFF -DLLAMA_BUILD_SERVER=ON
   if($LASTEXITCODE -ne 0){throw 'llama.cpp configure failed'}
+  # The pinned source builds an empty UI asset table when both switches are off.
+  # Assert the CMake cache before building; do not allow a mutable HF UI fallback.
+  $cache=Get-Content -LiteralPath (Join-Path $build 'CMakeCache.txt')
+  foreach($option in @('LLAMA_BUILD_UI','LLAMA_USE_PREBUILT_UI')){
+    if(-not ($cache -cmatch ('^'+$option+':BOOL=OFF$'))){throw "Headless configuration mismatch: $option"}
+  }
   cmake --build $build --config Release --target llama-server --parallel 3
   if($LASTEXITCODE -ne 0){throw 'llama.cpp build failed'}
   $engines=@(Get-ChildItem -LiteralPath (Join-Path $build 'bin') -Recurse -File -Filter 'llama-server.exe')

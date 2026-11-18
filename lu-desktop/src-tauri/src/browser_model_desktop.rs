@@ -401,6 +401,7 @@ fn public_search_failure(reason:Option<&str>)->&'static str{
         Some("PUBLIC_SEARCH_OFFLINE")=>"Public search is unavailable: the provider could not be reached securely.",
         Some("PUBLIC_SEARCH_PRIVATE_ADDRESS")=>"Public search blocked an unsafe provider address.",
         Some("PUBLIC_SEARCH_REDIRECT_BLOCKED")=>"Google redirected the request. Lu did not follow it; no search evidence was accepted.",
+        Some("PUBLIC_SEARCH_PROVIDER_SCRIPT_REQUIRED")=>"Google requires an interactive browser. Lu did not execute provider scripts or accept search evidence.",
         Some("PUBLIC_SEARCH_NO_RESULTS")=>"No recognizable search results were observed. No answer was synthesized.",
         _=>"Public search did not return verifiable result evidence. No answer was synthesized.",
     }
