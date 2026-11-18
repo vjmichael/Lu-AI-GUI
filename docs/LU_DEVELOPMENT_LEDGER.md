@@ -1,5 +1,10 @@
 # Lu — Canonical development ledger
 
+### CP-05E5 — consolidated hosted native qualification (2026-11-18)
+
+Owner directed continuation after CP-05-PUB. One source-locked, existing Core-branch-only grouped cohort reuses original hosted SEC-06C/AGENT-01L Linux kernel/crash/Git/probe fixtures, genuine pinned GGUF Git/FFprobe and restart test, Windows Job/cross-chat/verified reviewed-worker corpus, disposable CPU-only exact-source NSIS plus installed unified-tabs smoke, and current unapproved browser artifact byte audit. No production Rust/React or runtime trust changes; no new branch/PR, release or main merge. The browser audit verifies artifact bytes and current worker identity but cannot approve or authorize browser execution. Windows installed GGUF consent/refusal/active-generation/death recovery still require a separate real installed model interaction witness. No job accepted before exact-head terminal logs and artifacts are reconciled; CP-05 and CP-06 remain open/pending respectively. The workflow is triggered only by its own path on the existing branch (or deliberate workflow dispatch), not ordinary source pushes.
+
+
 > **START HERE for Lu project status.** This file on **`main`** is the authoritative *development index*, not a guarantee that draft code is merged, installed, or accepted. See [CHANGELOG.md](../CHANGELOG.md) for accepted milestones and [v1.0 design](LU_V1_0_DESIGN_RECONCILIATION_20261103.md) for requirements. Historical branch-local task logs and conversations are evidence, **not competing current status boards**.
 
 ### CORE-POLISH — pre-next-build practical-capability integration gate (owner directive, November 16, 2026)
