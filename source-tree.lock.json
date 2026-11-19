@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "cf34bd11c2bb688d5a8f8a9d32a1abc8ffe58cb1",
+  "sourceCommitBeforeLock": "fa3f9dcd496aef55d44d7eec0075bfb3f86e0da7",
   "trackedFileCount": 1959,
   "files": [
     {
@@ -1785,7 +1785,7 @@
     },
     {
       "path": "ide/app/fixtures/Test-Wo8NativeDesktopUI.ps1",
-      "blob": "3ab1adae49bb03413db7c25330de80d515833c11"
+      "blob": "a85e08b4c41a48d4494b660d957b9ab1177129b6"
     },
     {
       "path": "ide/app/fixtures/b2_linux_installed_draft_atspi.py",
@@ -1797,7 +1797,7 @@
     },
     {
       "path": "ide/app/fixtures/b5_linux_installed_perf_atspi.py",
-      "blob": "0efb46f52cb1342ca352720020eee04931ceda6e"
+      "blob": "59cc5b8e7e3bd4ab95efcd274fcbc2b820db4057"
     },
     {
       "path": "ide/app/fixtures/dev01_modern_linux_installed_atspi.py",
@@ -1833,7 +1833,7 @@
     },
     {
       "path": "ide/app/fixtures/test_atspi_signature_contract.py",
-      "blob": "0f8023606d88c709c3e8ab88f71f85e738fca206"
+      "blob": "0536db9f954f37b611d47fc6b28e8bee30f3f507"
     },
     {
       "path": "ide/app/fixtures/test_dev01_native_confirmation_scope.py",
@@ -1861,7 +1861,7 @@
     },
     {
       "path": "ide/app/fixtures/wo8_linux_editor_atspi.py",
-      "blob": "7991a17031f649f2312d4f510c39bca7d5a2cb8e"
+      "blob": "c0eee5b2eb1d6429ccf9a876a1989fa1621795d1"
     },
     {
       "path": "ide/app/fixtures/wo8_linux_window_acceptance.sh",
@@ -2373,7 +2373,7 @@
     },
     {
       "path": "ide/app/web/code_editor.jsx",
-      "blob": "c39745cccd68e1ead8f1699c4c4c0666fbf92c1a"
+      "blob": "447108504ed067bb2f2108b03aa7a859fb426125"
     },
     {
       "path": "ide/app/web/conventional_tests.js",
@@ -2501,7 +2501,7 @@
     },
     {
       "path": "ide/app/web/main.jsx",
-      "blob": "76e1b399e67bfd2ff25cc9aa35a8dfc9c51864bd"
+      "blob": "77366f8d70f8b2f538ae17b4554a84304508ca45"
     },
     {
       "path": "ide/app/web/native_build_output.js",
