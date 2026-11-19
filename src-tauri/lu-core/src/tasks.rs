@@ -305,6 +305,17 @@ impl TaskStore {
              CREATE TRIGGER IF NOT EXISTS lu_task_os_custody_no_delete
                BEFORE DELETE ON lu_task_windows_job_custody
                BEGIN SELECT RAISE(ABORT,'Immutable Windows Job observation'); END;
+             CREATE TABLE IF NOT EXISTS lu_task_reviewed_scan_origin(
+               task_id TEXT PRIMARY KEY NOT NULL REFERENCES lu_tasks(task_id),
+               chat TEXT NOT NULL, turn TEXT NOT NULL,
+               recorded_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+             );
+             CREATE TRIGGER IF NOT EXISTS lu_task_reviewed_scan_origin_no_update
+               BEFORE UPDATE ON lu_task_reviewed_scan_origin
+               BEGIN SELECT RAISE(ABORT,'Immutable reviewed scan origin'); END;
+             CREATE TRIGGER IF NOT EXISTS lu_task_reviewed_scan_origin_no_delete
+               BEFORE DELETE ON lu_task_reviewed_scan_origin
+               BEGIN SELECT RAISE(ABORT,'Immutable reviewed scan origin'); END;
              CREATE TABLE IF NOT EXISTS lu_task_linux_os_owned_native_admission(
                task_id TEXT PRIMARY KEY NOT NULL REFERENCES lu_tasks(task_id),
                chat TEXT NOT NULL, turn TEXT NOT NULL,
@@ -420,6 +431,31 @@ impl TaskStore {
         Ok(())
     }
 
+
+    /// Background scheduler's volatile, separately reviewed start creates
+    /// one PENDING task and its original human provenance atomically.
+    /// This row cannot authorize restart or another OS launch.
+    #[cfg(target_os="linux")]
+    pub(crate) fn create_reviewed_scan(
+        &self,task_id:&str,chat:&str,turn:&str,
+    )->Result<(),TaskStoreError>{
+        let valid=|s:&str,prefix:&str|s.starts_with(prefix)&&s.len()==prefix.len()+32
+            &&s[prefix.len()..].bytes().all(|b|b.is_ascii_digit()||matches!(b,b'a'..=b'f'));
+        if !valid(chat,"c-")||!valid(turn,"g-")||!valid(task_id,"scan-"){
+            return Err(TaskStoreError::InvalidTaskId)
+        }
+        let mut db=self.connection.lock().map_err(|_|TaskStoreError::Poisoned)?;
+        let tx=db.transaction()?;
+        if tx.execute("INSERT OR IGNORE INTO lu_tasks
+            (task_id,workspace_id,state,progress,detail,output_folder,checkpoint)
+            VALUES(?1,?2,'PENDING',0,'',NULL,x'')",params![task_id,chat])?!=1{
+            return Err(TaskStoreError::DuplicateTaskId)
+        }
+        tx.execute("INSERT INTO lu_task_reviewed_scan_origin(task_id,chat,turn)
+            VALUES(?1,?2,?3)",params![task_id,chat,turn])?;
+        tx.commit()?;Ok(())
+    }
+
     /// E1-P15: durable singleton origin of a reviewed native tool turn.
     /// The caller MUST first verify the original persisted human chat turn.
     /// This records identity, never authorization or executable permission.
@@ -529,7 +565,14 @@ impl TaskStore {
                AND o.conversation_id=?3 AND o.user_turn_id=?2",
             params![task_id,turn,chat],|r|r.get(0)
         )?;
-        if count!=1{return Err(TaskStoreError::InvalidTransition)}
+        let scheduled_count:i64=if kind=="scan-file"{
+            tx.query_row(
+                "SELECT COUNT(*) FROM lu_tasks t
+                 JOIN lu_task_reviewed_scan_origin o ON o.task_id=t.task_id
+                 WHERE t.task_id=?1 AND t.workspace_id=?2 AND t.state='PENDING'
+                   AND o.chat=?2 AND o.turn=?3",params![task_id,chat,turn],|r|r.get(0))?
+        }else{0};
+        if count+scheduled_count!=1{return Err(TaskStoreError::InvalidTransition)}
         tx.execute(
             "INSERT INTO lu_task_linux_os_owned_native_admission(
                task_id,chat,turn,nonce,kind,binary_sha256,argv_sha256)
@@ -874,13 +917,15 @@ impl TaskStore {
              SELECT task_id,'INTERRUPTED',progress,detail FROM lu_tasks
              WHERE state='RUNNING' OR (state='PENDING' AND EXISTS(
                  SELECT 1 FROM lu_task_custody_uncertainty u
-                 WHERE u.task_id=lu_tasks.task_id))",[],
+                 WHERE u.task_id=lu_tasks.task_id) OR state='PENDING' AND EXISTS(
+                 SELECT 1 FROM lu_task_reviewed_scan_origin o WHERE o.task_id=lu_tasks.task_id))",[],
         )?;
         let changed=tx.execute(
             "UPDATE lu_tasks SET state='INTERRUPTED',updated_at=CURRENT_TIMESTAMP
              WHERE state='RUNNING' OR (state='PENDING' AND EXISTS(
                  SELECT 1 FROM lu_task_custody_uncertainty u
-                 WHERE u.task_id=lu_tasks.task_id))",[],
+                 WHERE u.task_id=lu_tasks.task_id) OR state='PENDING' AND EXISTS(
+                 SELECT 1 FROM lu_task_reviewed_scan_origin o WHERE o.task_id=lu_tasks.task_id))",[],
         )?;
         tx.commit()?;
         Ok(changed)
@@ -1919,4 +1964,25 @@ mod sec06c_os_owned_git_admission_tests{
         drop(conn);drop(store);
         std::fs::remove_dir_all(root).unwrap();
     }
+}
+
+#[cfg(all(test,target_os="linux"))]
+#[test]
+fn scheduled_scan_origin_keeps_each_chat_and_turn_distinct(){
+    let store=TaskStore::open(std::path::Path::new(":memory:")).unwrap();
+    let a=format!("c-{}","a".repeat(32));let b=format!("c-{}","b".repeat(32));
+    let t=format!("g-{}","1".repeat(32));let u=format!("g-{}","2".repeat(32));
+    let first=format!("scan-{}","3".repeat(32));let second=format!("scan-{}","4".repeat(32));
+    store.create_reviewed_scan(&first,&a,&t).unwrap();
+    store.create_reviewed_scan(&second,&b,&u).unwrap();
+    assert!(store.create_reviewed_scan(&first,&b,&u).is_err());
+    let nonce="5".repeat(32);let digest="6".repeat(64);
+    assert!(store.bind_linux_os_owned_native_admission(&first,&b,&u,&nonce,"scan-file",&digest,&digest).is_err());
+    assert!(store.bind_linux_os_owned_native_admission(&first,&a,&u,&nonce,"scan-file",&digest,&digest).is_err());
+    store.bind_linux_os_owned_native_admission(&first,&a,&t,&nonce,"scan-file",&digest,&digest).unwrap();
+    assert!(store.bind_linux_os_owned_native_admission(&second,&b,&u,&nonce,"scan-file",&digest,&digest).is_err());
+    assert!(store.bind_linux_os_owned_native_admission(&second,&b,&u,&"7".repeat(32),"archive-preview",&digest,&digest).is_err());
+    assert_eq!(store.reconcile_interrupted().unwrap(),2);
+    assert_eq!(store.get(&first).unwrap().unwrap().state.as_str(),"INTERRUPTED");
+    assert_eq!(store.get(&second).unwrap().unwrap().state.as_str(),"INTERRUPTED");
 }

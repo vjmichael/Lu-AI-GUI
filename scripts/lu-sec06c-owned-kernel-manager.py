@@ -254,7 +254,10 @@ def finite_native(kind,arguments):
     if kind=="archive-extract" and arguments and arguments[0]=="--lu-member-extract-worker":
         return len(arguments)==12 and absolute(arguments[1],True) and selected_archive(arguments[2]) and selected_member(arguments[3]) and absolute(arguments[4],True) and selected_name(arguments[5]) and HEX64.fullmatch(arguments[6]) and HEX64.fullmatch(arguments[7]) and HEX64.fullmatch(arguments[8]*2) and HEX64.fullmatch(arguments[9]*2) and re.fullmatch(r"[A-Za-z0-9_-]{16,128}",arguments[10]) and arguments[11].isdigit() and int(arguments[11])>1
     if kind=="scan-file":
-        return len(arguments)==2 and arguments[0]=="--lu-file-scan-worker" and absolute(arguments[1])
+        return (len(arguments) in (2,4) and arguments[0]=="--lu-file-scan-worker" and absolute(arguments[1])
+            and (len(arguments)==2 or (HEX64.fullmatch(arguments[2]) is not None
+                and re.fullmatch("[1-9][0-9]{0,9}",arguments[3]) is not None
+                and int(arguments[3])<=4*1024**3)))
     if kind=="archive-preview":
         return len(arguments)==6 and arguments[0]=="--lu-archive-preview-worker" and (
             absolute(arguments[1],True) and name(arguments[2])

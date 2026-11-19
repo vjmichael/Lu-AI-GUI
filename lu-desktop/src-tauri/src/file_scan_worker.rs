@@ -20,7 +20,7 @@ pub fn run_file_scan_worker()->i32{
     let mut output=std::io::stdout().lock();
     let result=match (identity,bytes){
         (None,None)=>scan_file(Path::new(&path),&mut output),
-        #[cfg(windows)]
+        #[cfg(any(windows,target_os="linux"))]
         (Some(identity),Some(bytes))=>{
             let Some(identity)=identity.to_str() else{return 2};
             let Some(bytes)=bytes.to_str().and_then(|s|s.parse::<u64>().ok()) else{return 2};
@@ -54,7 +54,27 @@ fn scan_reviewed_file(path:&Path,identity:&str,bytes:u64,output:&mut impl Write)
     }
     scan_open_file(file,output)
 }
-fn scan_open_file(mut file:File,output:&mut impl Write)->std::io::Result<()>{
+#[cfg(target_os="linux")]
+fn scan_reviewed_file(path:&Path,identity:&str,bytes:u64,output:&mut impl Write)->std::io::Result<()>{
+    use std::os::unix::fs::OpenOptionsExt;
+    if identity.len()!=64||!identity.bytes().all(|b|b.is_ascii_digit()||matches!(b,b'a'..=b'f'))
+        ||bytes==0||bytes>4*1024*1024*1024{
+        return Err(std::io::Error::other("invalid reviewed input"))
+    }
+    let file=std::fs::OpenOptions::new().read(true).custom_flags(0o400000|0o4000).open(path)?;
+    scan_open_file_checked(file,output,|f|{
+        if lu_core::native_background_scheduler::linux_scan_identity(f)?!=identity
+            ||f.metadata()?.len()!=bytes{
+            return Err(std::io::Error::other("reviewed input changed"))
+        }
+        Ok(())
+    })
+}
+fn scan_open_file(file:File,output:&mut impl Write)->std::io::Result<()>{
+    scan_open_file_checked(file,output,|_|Ok(()))
+}
+fn scan_open_file_checked(mut file:File,output:&mut impl Write,check:impl Fn(&File)->std::io::Result<()>)->std::io::Result<()>{
+    check(&file)?;
     let metadata=file.metadata()?;
     if !metadata.is_file()||metadata.len()==0{
         return Err(std::io::Error::other("not a non-empty regular file"));
@@ -85,6 +105,8 @@ fn scan_open_file(mut file:File,output:&mut impl Write)->std::io::Result<()>{
     if read!=total{
         return Err(std::io::Error::other("file changed during scan"));
     }
+    // A changed reviewed source must never publish a final digest.
+    check(&file)?;
     writeln!(output,"D\t{:x}",hasher.finalize())?;
     output.flush()
 }
@@ -119,4 +141,25 @@ fn reviewed_scan_rejects_substituted_id_before_progress(){
     scan_reviewed_file(&a,&id,8,&mut out).unwrap();
     assert!(String::from_utf8(out).unwrap().contains(&format!("D\t{:x}",Sha256::digest(b"original"))));
     std::fs::remove_dir_all(root).unwrap();
+}
+#[cfg(all(test,target_os="linux"))]
+#[test]
+fn linux_reviewed_scan_rejects_replacement_and_mutation(){
+    let root=std::env::temp_dir().join(format!("lu-linux-reviewed-scan-{}",std::process::id()));
+    std::fs::create_dir(&root).unwrap();
+    let a=root.join("a.bin");let b=root.join("b.bin");let alias=root.join("alias");
+    std::fs::write(&a,b"original").unwrap();std::fs::write(&b,b"replaced").unwrap();
+    let held=File::open(&a).unwrap();
+    let id=lu_core::native_background_scheduler::linux_scan_identity(&held).unwrap();
+    std::os::unix::fs::symlink(&a,&alias).unwrap();
+    let mut out=Vec::new();
+    for bad in [&alias,&b]{
+        assert!(scan_reviewed_file(bad,&id,8,&mut out).is_err());assert!(out.is_empty());
+    }
+    scan_reviewed_file(&a,&id,8,&mut out).unwrap();
+    assert!(String::from_utf8(std::mem::take(&mut out)).unwrap().contains(&format!("D\t{:x}",Sha256::digest(b"original"))));
+    std::thread::sleep(std::time::Duration::from_millis(5));
+    std::fs::write(&a,b"modified").unwrap();
+    assert!(scan_reviewed_file(&a,&id,8,&mut out).is_err());assert!(out.is_empty());
+    drop(held);std::fs::remove_dir_all(root).unwrap();
 }

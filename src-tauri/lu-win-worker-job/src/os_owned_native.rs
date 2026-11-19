@@ -58,6 +58,11 @@ pub fn finite_kind(args:&[OsString])->io::Result<&'static str>{
     let allowed=match words.as_slice(){
         ["--lu-file-scan-worker",path] if canonical_existing(path,false)=>
             Some("scan-file"),
+        ["--lu-file-scan-worker",path,identity,bytes] if canonical_existing(path,false)
+            &&hex(identity,64)&&!bytes.starts_with('0')&&bytes.len()<=10
+            &&bytes.bytes().all(|b|b.is_ascii_digit())
+            &&bytes.parse::<u64>().is_ok_and(|n|(1..=4*1024*1024*1024).contains(&n))=>
+            Some("scan-file"),
         ["--lu-archive-preview-worker",source,name,output,identity,parent]
             if canonical_existing(source,true)&&valid_name(name)
               &&canonical_output(output)&&hex(identity,32)&&pid(parent)=>
@@ -250,4 +255,27 @@ mod tests{
         }
     }
 
+}
+
+#[cfg(test)]
+#[test]
+fn reviewed_scan_finite_identity_and_size(){
+    let dir=std::env::temp_dir().join(format!("lu-broker-reviewed-scan-{}",std::process::id()));
+    std::fs::create_dir(&dir).unwrap();
+    let file=dir.join("selected.bin");std::fs::write(&file,b"abc").unwrap();
+    let file=file.canonicalize().unwrap();let path=file.to_str().unwrap();
+    let alias=dir.join("alias");std::os::unix::fs::symlink(&file,&alias).unwrap();
+    let hash="a".repeat(64);
+    let mode="--lu-file-scan-worker";
+    let input=|words:&[&str]|words.iter().map(OsString::from).collect::<Vec<_>>();
+    for positive in [vec![mode,path],vec![mode,path,&hash,"3"],vec![mode,path,&hash,"4294967296"]]{
+        assert_eq!(finite_kind(&input(&positive)).unwrap(),"scan-file");
+    }
+    for negative in [vec![mode,path,&hash,"0"],vec![mode,path,&hash,"01"],
+        vec![mode,path,&hash,"4294967297"],vec![mode,path,&hash,"-1"],
+        vec![mode,path,"bad","3"],vec![mode,path,&hash],vec![mode,path,&hash,"3","extra"],
+        vec![mode,alias.to_str().unwrap(),&hash,"3"],vec![mode,"https://invalid.example",&hash,"3"]]{
+        assert!(finite_kind(&input(&negative)).is_err(),"{negative:?}");
+    }
+    std::fs::remove_dir_all(dir).unwrap();
 }

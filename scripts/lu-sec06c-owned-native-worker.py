@@ -62,8 +62,11 @@ def finite(kind,args):
         return len(args)==7 and canonical(args[1],True) and selected_archive(args[2]) and selected_member(args[3]) and target_new(args[4]) and HEX64.fullmatch(args[5]*2) and args[6].isdigit() and int(args[6])>1
     if kind=="archive-extract" and args and args[0]=="--lu-member-extract-worker":
         return len(args)==12 and canonical(args[1],True) and selected_archive(args[2]) and selected_member(args[3]) and canonical(args[4],True) and selected_name(args[5]) and HEX64.fullmatch(args[6]) and HEX64.fullmatch(args[7]) and HEX64.fullmatch(args[8]*2) and HEX64.fullmatch(args[9]*2) and re.fullmatch(r"[A-Za-z0-9_-]{16,128}",args[10]) and args[11].isdigit() and int(args[11])>1
-    if kind=="scan-file":return (len(args)==2
-       and args[0]=="--lu-file-scan-worker" and canonical(args[1]))
+    if kind=="scan-file":return (len(args) in (2,4)
+       and args[0]=="--lu-file-scan-worker" and canonical(args[1])
+       and (len(args)==2 or (re.fullmatch("[a-f0-9]{64}",args[2]) is not None
+          and re.fullmatch("[1-9][0-9]{0,9}",args[3]) is not None
+          and int(args[3])<=4*1024**3)))
     if kind=="archive-preview":return (len(args)==6
        and args[0]=="--lu-archive-preview-worker"
        and canonical(args[1],True) and safe_name(args[2])

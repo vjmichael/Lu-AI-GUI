@@ -477,7 +477,7 @@ impl BackgroundProcessSupervisor {
         let observed=verified_media_input(input,reviewed_media_sha256)?;
         if observed==0{return Err(BackgroundProcessError::InvalidPlan)}
         self.start_host_approved_internal_with_probe_sha(
-            plan,Some((output_limit,false)),true,Some(reviewed_media_sha256)
+            plan,Some((output_limit,false)),true,Some(reviewed_media_sha256),None
         )
     }
     /// P0-TOOLS-04: finite, host-only PDFInfo and ExifTool read operations.
@@ -529,19 +529,41 @@ impl BackgroundProcessSupervisor {
         let length=verified_media_input(file,original_file_sha256)?;
         if length>32*1024*1024{return Err(BackgroundProcessError::InvalidPlan)}
         self.start_host_approved_internal_with_probe_sha(
-            plan,Some((limit,false)),true,Some(original_file_sha256)
+            plan,Some((limit,false)),true,Some(original_file_sha256),None
         )
+    }
+
+    /// The trusted queue alone supplies this original human turn from its
+    /// volatile reviewed plan. Persisted task metadata never grants replay.
+    /// The finite Linux root-owned broker is mandatory, including on hosts
+    /// whose shared supervisor normally permits old manual PGID workers.
+    #[cfg(target_os="linux")]
+    pub(crate) fn start_host_approved_reviewed_scan(
+        &self,plan:TrustedWorkerPlan,turn:&str,
+    )->Result<(),BackgroundProcessError>{
+        let identity=|value:&str,prefix:&str|value.starts_with(prefix)
+            &&value.len()==prefix.len()+32&&value[prefix.len()..].bytes().all(|b|
+                b.is_ascii_digit()||matches!(b,b'a'..=b'f'));
+        if !identity(&plan.workspace_id,"c-")||!identity(turn,"g-")
+            ||!identity(&plan.task_id,"scan-")||!plan.progress_protocol
+            ||plan.max_runtime_seconds!=Some(90)||plan.args.len()!=4
+            ||plan.args[0].to_str()!=Some("--lu-file-scan-worker")
+            ||lu_win_worker_job::os_owned_native::finite_kind(&plan.args).ok()!=Some("scan-file"){
+            return Err(BackgroundProcessError::InvalidPlan)
+        }
+        self.start_host_approved_internal_with_probe_sha(plan,None,false,None,Some(turn))
     }
     fn start_host_approved_internal(
         &self,plan:TrustedWorkerPlan,typed_capture:Option<(usize,bool)>,
         linux_media_probe:bool,
     )->Result<(),BackgroundProcessError>{
         self.start_host_approved_internal_with_probe_sha(
-            plan,typed_capture,linux_media_probe,None)
+            plan,typed_capture,linux_media_probe,None,None)
     }
     fn start_host_approved_internal_with_probe_sha(
         &self,plan:TrustedWorkerPlan,typed_capture:Option<(usize,bool)>,
         _linux_media_probe:bool,reviewed_probe_sha:Option<&str>,
+        _scheduled_reviewed_turn:Option<&str>,
     )->Result<(),BackgroundProcessError>{
         if !valid_id(&plan.task_id)||!valid_id(&plan.workspace_id)
           ||plan.max_runtime_seconds.is_some_and(|n|n==0||n>86_400)
@@ -597,14 +619,25 @@ impl BackgroundProcessSupervisor {
                     Some("import time;time.sleep(20);print('Python 3.13.0')"
                         |"print('Python '+('9'*8192))")));
         #[cfg(target_os="linux")]
-        let reviewed_origin=if let Some(profile)=self.profile.as_deref()
-            .filter(|_|typed_capture.is_some()||native_candidate){
+        let reviewed_origin=if let Some(turn)=_scheduled_reviewed_turn{
+            Some((plan.workspace_id.clone(),turn.to_owned()))
+        }else if self.profile.as_deref()
+            .filter(|_|typed_capture.is_some()||native_candidate).is_some(){
             let (chat,turn)=self.store.reviewed_human_origin()
                 .map_err(|_|BackgroundProcessError::StoreUnavailable)?
                 .ok_or(BackgroundProcessError::InvalidPlan)?;
             if turn!=plan.workspace_id{return Err(BackgroundProcessError::WrongWorkspace)}
-            Some((profile,chat,turn))
+            Some((chat,turn))
         }else{None};
+        #[cfg(target_os="linux")]
+        if let Some(turn)=_scheduled_reviewed_turn{
+            self.store.create_reviewed_scan(&plan.task_id,&plan.workspace_id,turn)
+                .map_err(|_|BackgroundProcessError::StoreUnavailable)?;
+        }else{
+            self.store.create(&plan.task_id,Some(&plan.workspace_id),None)
+                .map_err(|_|BackgroundProcessError::StoreUnavailable)?;
+        }
+        #[cfg(not(target_os="linux"))]
         self.store.create(&plan.task_id,Some(&plan.workspace_id),None)
             .map_err(|_|BackgroundProcessError::StoreUnavailable)?;
         // Genuine root-owned systemd operation services can launch exactly
@@ -617,7 +650,7 @@ impl BackgroundProcessSupervisor {
         let mut os_owned_git_spawn=if typed_capture.is_some()
             &&executable.file_name()==Some(std::ffi::OsStr::new("git"))
             &&plan.args.len()==8{
-            if let Some((_,chat,turn))=reviewed_origin.as_ref(){
+            if let Some((chat,turn))=reviewed_origin.as_ref(){
                 lu_win_worker_job::os_owned_git::LinuxOsOwnedReviewedGit::spawn_if_installed(
                     &executable,&plan.expected_sha256,&plan.args,
                     chat,turn,&plan.task_id
@@ -629,7 +662,7 @@ impl BackgroundProcessSupervisor {
         }else{None};
         #[cfg(target_os="linux")]
         if let Some((ref mut client,ref mut scope))=os_owned_git_spawn{
-            let (_,chat,turn)=reviewed_origin.as_ref()
+            let (chat,turn)=reviewed_origin.as_ref()
                 .ok_or(BackgroundProcessError::StoreUnavailable)?;
             if self.store.bind_linux_os_owned_git_admission(
                 &plan.task_id,chat,turn,scope.nonce(),scope.reviewed_git_digest()
@@ -649,7 +682,7 @@ impl BackgroundProcessSupervisor {
         // This route cannot execute a model-supplied program or arbitrary CLI.
         #[cfg(target_os="linux")]
         let mut os_owned_probe_spawn=if let Some(resource_sha)=reviewed_probe_sha{
-            if let Some((_,chat,turn))=reviewed_origin.as_ref(){
+            if let Some((chat,turn))=reviewed_origin.as_ref(){
                 lu_win_worker_job::os_owned_probe::LinuxOsOwnedReviewedProbe::spawn_if_installed(
                     &executable,&plan.expected_sha256,&plan.args,resource_sha,
                     chat,turn,&plan.task_id
@@ -661,7 +694,7 @@ impl BackgroundProcessSupervisor {
         }else{None};
         #[cfg(target_os="linux")]
         if let Some((ref mut client,ref mut proof))=os_owned_probe_spawn{
-            let (_,chat,turn)=reviewed_origin.as_ref()
+            let (chat,turn)=reviewed_origin.as_ref()
                 .ok_or(BackgroundProcessError::StoreUnavailable)?;
             if self.store.bind_linux_os_owned_probe_admission(
                 &plan.task_id,chat,turn,proof.nonce(),proof.kind(),
@@ -680,7 +713,7 @@ impl BackgroundProcessSupervisor {
         // original ANSF human turn and exact binary/argv SHA are immutable.
         #[cfg(target_os="linux")]
         let mut os_owned_native_spawn=if native_candidate{
-            if let Some((_,chat,turn))=reviewed_origin.as_ref(){
+            if let Some((chat,turn))=reviewed_origin.as_ref(){
                 use std::os::unix::ffi::OsStrExt;
                 let mut sha=Sha256::new();
                 sha.update(executable.as_os_str().as_bytes());
@@ -701,7 +734,7 @@ impl BackgroundProcessSupervisor {
         }else{None};
         #[cfg(target_os="linux")]
         if let Some((ref mut child,ref mut scope))=os_owned_native_spawn{
-            let (_,chat,turn)=reviewed_origin.as_ref()
+            let (chat,turn)=reviewed_origin.as_ref()
                 .ok_or(BackgroundProcessError::StoreUnavailable)?;
             if self.store.bind_linux_os_owned_native_admission(
                 &plan.task_id,chat,turn,scope.nonce(),scope.kind(),
@@ -720,7 +753,7 @@ impl BackgroundProcessSupervisor {
         // is an admission DENIAL, not permission to restart the old same-UID
         // cgroup custodian or an unverified process-group-only worker.
         #[cfg(target_os="linux")]
-        if self.profile.is_some()||typed_capture.is_some(){
+        if self.profile.is_some()||typed_capture.is_some()||_scheduled_reviewed_turn.is_some(){
             if os_owned_git_spawn.is_none()&&os_owned_probe_spawn.is_none()
                 &&os_owned_native_spawn.is_none(){
                 self.store.fail_pending(&plan.task_id)
@@ -1185,6 +1218,20 @@ impl BackgroundProcessSupervisor {
                 .workspace_id.clone()
         };
         self.cancel_owned(task_id,&workspace)
+    }
+    /// A live original kernel-backed worker, not just a recorded PID or
+    /// lower-assurance Linux process group. Immutable task IDs prevent
+    /// substitution between the selection and the actual owned stop.
+    pub fn can_cancel_protected(&self,task_id:&str,workspace:&str)->bool{
+        self.owned.lock().is_ok_and(|owned|owned.get(task_id).is_some_and(|w|{
+            if w.workspace_id!=workspace{return false}
+            #[cfg(windows)]
+            {w.job.is_some()}
+            #[cfg(target_os="linux")]
+            {w.os_owned_native.is_some()}
+            #[cfg(not(any(windows,target_os="linux")))]
+            {false}
+        }))
     }
     pub fn can_cancel(&self,task_id:&str)->bool{
         self.owned.lock().is_ok_and(|owned|owned.contains_key(task_id))

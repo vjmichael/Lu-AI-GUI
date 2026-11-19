@@ -237,10 +237,10 @@ pub struct GuardianSnapshot{
     pub queued:u32,pub running:u32,pub paused:u32,
 }
 
-/// Windows-only bounded host plan, prepared by the trusted native picker.
+/// Bounded host plan, prepared by the trusted native picker.
 /// Hold the exact input read-only with write and delete sharing denied, and
 /// verify the same file ID in the child BEFORE reading any content.
-#[cfg(windows)]
+#[cfg(any(windows,target_os="linux"))]
 pub struct ReviewedScan{
     plan:TrustedWorkerPlan,
     input:std::fs::File,
@@ -248,10 +248,12 @@ pub struct ReviewedScan{
     display:String,
     identity:String,
     bytes:u64,
+    turn:String,
 }
-#[cfg(windows)]
+#[cfg(any(windows,target_os="linux"))]
 impl ReviewedScan{
-    pub fn prepare(task_id:&str,workspace:&str,selected:&Path)->Result<Self,SchedulerError>{
+    #[cfg(windows)]
+    pub fn prepare(task_id:&str,workspace:&str,turn:&str,selected:&Path)->Result<Self,SchedulerError>{
         use std::{fs::{self,OpenOptions},io::Read,os::windows::fs::{OpenOptionsExt,MetadataExt},path::{Component,Prefix}};
         use sha2::{Digest,Sha256};
         if !valid_id(task_id)||!task_id.starts_with("scan-")||!valid_id(workspace)
@@ -290,7 +292,38 @@ impl ReviewedScan{
         let plan=TrustedWorkerPlan{task_id:task_id.into(),workspace_id:workspace.into(),executable,
             expected_sha256:format!("{:x}",hash.finalize()),progress_protocol:true,max_runtime_seconds:Some(3600),
             args:vec!["--lu-file-scan-worker".into(),selected.as_os_str().to_owned(),identity.clone().into(),bytes.to_string().into()]};
-        Ok(Self{plan,input,ancestors,display,identity,bytes})
+        Ok(Self{plan,input,ancestors,display,identity,bytes,turn:turn.into()})
+    }
+
+    #[cfg(target_os="linux")]
+    pub fn prepare(task_id:&str,workspace:&str,turn:&str,selected:&Path)->Result<Self,SchedulerError>{
+        use std::{fs::{self,OpenOptions},io::Read,os::unix::fs::OpenOptionsExt};
+        use sha2::{Digest,Sha256};
+        let id=|s:&str,p:&str|s.starts_with(p)&&s.len()==p.len()+32&&s[p.len()..].bytes().all(|b|
+            b.is_ascii_digit()||matches!(b,b'a'..=b'f'));
+        if !id(task_id,"scan-")||!id(workspace,"c-")||!id(turn,"g-")||
+            !selected.is_absolute()||selected.canonicalize().ok().as_deref()!=Some(selected){
+            return Err(SchedulerError::InvalidRequest)
+        }
+        let display=selected.to_str().filter(|s|s.len()<=2048&&!s.chars().any(|c|c.is_control()||
+            matches!(c,'\u{202a}'..='\u{202e}'|'\u{2066}'..='\u{2069}'|'\u{200e}'|'\u{200f}'|'\u{061c}')))
+            .ok_or(SchedulerError::InvalidRequest)?.to_owned();
+        // O_NOFOLLOW | O_NONBLOCK prevents symlink and substituted FIFO
+        // admission. Keep the opened inode alive to prevent ID reuse.
+        let input=OpenOptions::new().read(true).custom_flags(0o400000|0o4000)
+            .open(selected).map_err(|_|SchedulerError::InvalidRequest)?;
+        let identity=linux_scan_identity(&input).map_err(|_|SchedulerError::InvalidRequest)?;
+        let bytes=input.metadata().map_err(|_|SchedulerError::InvalidRequest)?.len();
+        let executable=std::env::current_exe().map_err(|_|SchedulerError::InvalidRequest)?
+            .canonicalize().map_err(|_|SchedulerError::InvalidRequest)?;
+        let mut file=fs::File::open(&executable).map_err(|_|SchedulerError::InvalidRequest)?;
+        let mut hash=Sha256::new();let mut buffer=[0u8;65536];
+        loop{let n=file.read(&mut buffer).map_err(|_|SchedulerError::InvalidRequest)?;
+            if n==0{break}hash.update(&buffer[..n]);}
+        let plan=TrustedWorkerPlan{task_id:task_id.into(),workspace_id:workspace.into(),executable,
+            expected_sha256:format!("{:x}",hash.finalize()),progress_protocol:true,max_runtime_seconds:Some(90),
+            args:vec!["--lu-file-scan-worker".into(),selected.as_os_str().to_owned(),identity.clone().into(),bytes.to_string().into()]};
+        Ok(Self{plan,input,ancestors:Vec::new(),display,identity,bytes,turn:turn.into()})
     }
     pub fn task_id(&self)->&str{&self.plan.task_id}
     pub fn workspace(&self)->&str{&self.plan.workspace_id}
@@ -298,6 +331,26 @@ impl ReviewedScan{
     pub fn identity(&self)->&str{&self.identity}
     pub fn bytes(&self)->u64{self.bytes}
     pub fn executable_sha256(&self)->&str{&self.plan.expected_sha256}
+}
+
+
+// Linux cannot deny writes like a Windows share-mode handle. Bind device,
+// inode, length and kernel change/write timestamps before reading, and
+// require the same fingerprint after reading before accepting a digest.
+#[cfg(target_os="linux")]
+pub fn linux_scan_identity(file:&std::fs::File)->std::io::Result<String>{
+    use std::os::unix::fs::MetadataExt;
+    use sha2::{Digest,Sha256};
+    let m=file.metadata()?;
+    if !m.is_file()||m.len()==0||m.len()>4*1024*1024*1024||m.nlink()!=1{
+        return Err(std::io::Error::other("unsupported reviewed scan input"))
+    }
+    let mut h=Sha256::new();
+    h.update(m.dev().to_le_bytes());h.update(m.ino().to_le_bytes());
+    h.update(m.len().to_le_bytes());h.update(m.ctime().to_le_bytes());
+    h.update(m.ctime_nsec().to_le_bytes());h.update(m.mtime().to_le_bytes());
+    h.update(m.mtime_nsec().to_le_bytes());
+    Ok(format!("{:x}",h.finalize()))
 }
 
 struct Active{
@@ -308,6 +361,7 @@ struct Active{
     retry_count:u8,
     // Keep the originally opened, write/delete-denied input alive until terminal custody.
     _reviewed_input:Option<(std::fs::File,Vec<std::fs::File>)>,
+    reviewed_turn:Option<String>,
 }
 struct Inner {
     db:Connection,
@@ -477,19 +531,22 @@ impl BackgroundScheduler{
         Self::insert(&mut g,&plan,&opts,&plan.task_id,0,0)?;
         g.plans.insert(plan.task_id.clone(),Active{
             series_id:plan.task_id.clone(),sequence_no:0,
-            retry_count:0,plan,opts,_reviewed_input:None,
+            retry_count:0,plan,opts,_reviewed_input:None,reviewed_turn:None,
         });
         Ok(())
     }
 
     /// Same resource-aware scheduler; no process start in this foreground
     /// turn and no replayable file/executable authority in persistent SQLite.
-    #[cfg(windows)]
+    #[cfg(any(windows,target_os="linux"))]
     pub fn enqueue_reviewed_scan(&self,reviewed:ReviewedScan)->Result<(),SchedulerError>{
-        let ReviewedScan{plan,input,ancestors,identity,bytes,..}=reviewed;
-        if crate::windows_file_guard::inspect_open_file(&input)
-            .map_err(|_|SchedulerError::InvalidRequest)?.token()!=identity
-            ||input.metadata().map_err(|_|SchedulerError::InvalidRequest)?.len()!=bytes{
+        let ReviewedScan{plan,input,ancestors,identity,bytes,turn,..}=reviewed;
+        #[cfg(windows)]
+        let actual=crate::windows_file_guard::inspect_open_file(&input)
+            .map_err(|_|SchedulerError::InvalidRequest)?.token();
+        #[cfg(target_os="linux")]
+        let actual=linux_scan_identity(&input).map_err(|_|SchedulerError::InvalidRequest)?;
+        if actual!=identity||input.metadata().map_err(|_|SchedulerError::InvalidRequest)?.len()!=bytes{
             return Err(SchedulerError::InvalidRequest)
         }
         let mut opts=ScheduleOptions::file_scan(now_unix(),None,Priority::Normal);
@@ -500,7 +557,7 @@ impl BackgroundScheduler{
         }
         Self::insert(&mut g,&plan,&opts,&plan.task_id,0,0)?;
         g.plans.insert(plan.task_id.clone(),Active{series_id:plan.task_id.clone(),
-            sequence_no:0,retry_count:0,plan,opts,_reviewed_input:Some((input,ancestors))});
+            sequence_no:0,retry_count:0,plan,opts,_reviewed_input:Some((input,ancestors)),reviewed_turn:Some(turn)});
         Ok(())
     }
     fn terminal_name(state:TaskState)->Option<&'static str>{
@@ -593,7 +650,7 @@ impl BackgroundScheduler{
                 g.plans.insert(next_id,Active{
                     plan:next_plan,opts:next_opts,
                     series_id:last.series_id,sequence_no:next_seq,
-                    retry_count:next_retry,_reviewed_input:None,
+                    retry_count:next_retry,_reviewed_input:None,reviewed_turn:None,
                 });
             }
         }
@@ -674,7 +731,13 @@ impl BackgroundScheduler{
             // not start another native OS child behind a pending first token.
             // Already-running workers are never killed or silently replayed.
             if foreground_probe(){break}
-            if self.process.start_host_approved(plan).is_err(){
+            #[cfg(target_os="linux")]
+            let started_worker=if let Some(turn)=job.reviewed_turn.as_deref(){
+                self.process.start_host_approved_reviewed_scan(plan,turn)
+            }else{self.process.start_host_approved(plan)};
+            #[cfg(not(target_os="linux"))]
+            let started_worker=self.process.start_host_approved(plan);
+            if started_worker.is_err(){
                 g.db.execute(
                   "UPDATE lu_schedule SET state='FAILED',
                    last_result='worker_admission_failed' WHERE task_id=?1",
@@ -940,7 +1003,7 @@ impl BackgroundScheduler{
             params![original_id,&new_plan.workspace_id]).map_err(db_error)?;
         g.plans.insert(new_plan.task_id.clone(),Active{
             series_id:new_plan.task_id.clone(),sequence_no:0,
-            retry_count:0,plan:new_plan,opts,_reviewed_input:None,
+            retry_count:0,plan:new_plan,opts,_reviewed_input:None,reviewed_turn:None,
         });
         Ok(())
     }
@@ -1274,7 +1337,7 @@ fn reviewed_scan_queue_holds_original_file_until_cancel(){
     let process=Arc::new(BackgroundProcessSupervisor::new(Arc::clone(&store)));
     let budget=ResourceBudget{workers:1,cpu:1,ram_mib:1024,gpu:0,vram_mib:0,disk:1,network:0};
     let scheduler=BackgroundScheduler::open(Path::new(":memory:"),store,process,budget).unwrap();
-    let plan=ReviewedScan::prepare("scan-reviewed","c-owner",&file).unwrap();
+    let plan=ReviewedScan::prepare("scan-reviewed","c-owner","g-turn",&file).unwrap();
     assert_eq!(plan.bytes(),14);
     scheduler.enqueue_reviewed_scan(plan).unwrap();
     assert_eq!(scheduler.state_for("scan-reviewed","c-owner").unwrap().as_deref(),Some("QUEUED"));

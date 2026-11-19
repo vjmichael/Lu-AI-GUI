@@ -106,7 +106,7 @@ fn background_cancel_target(original:&str)->Option<&str>{
     Some(target)
 }
 
-#[cfg(windows)]
+#[cfg(any(windows,target_os="linux"))]
 pub(crate) fn try_model_background_control(
     app:&tauri::AppHandle,state:&Arc<crate::DesktopState>,sid:&str,chat:&str,gid:&str,
     original:&str,ticket:&crate::generation_queue::Ticket,
@@ -171,7 +171,7 @@ pub(crate) fn try_model_background_control(
         let scheduled=state.background_scheduler.state_for(target,chat).map_err(|_|"Schedule unavailable")?;
         Ok(scheduled.as_deref()==Some("RUNNING")&&record.is_some_and(|r|
             r.workspace_id.as_deref()==Some(chat)&&r.state.as_str()=="RUNNING")
-            &&state.background_processes.can_cancel(target))
+            &&state.background_processes.can_cancel_protected(target,chat))
     };
     log(K::UserRequest,original)?;
     if !owned_running()?{
@@ -288,10 +288,14 @@ pub(crate) fn try_model_background_control(
         log(K::Rejected,"TASK_CONTROL_RECEIPT_CONFLICT")?;
         return complete("I could not verify cancellation. Check the background tasks view; cancellation was not retried.".into())
     }
-    let facts=json!({"tool":TOOL,"task_id":target,"state":"CANCELLED","worker_custody":"WINDOWS_JOB_EMPTY_AND_CHILD_REAPED"});
+    #[cfg(windows)]
+    let (custody,method)=("WINDOWS_JOB_EMPTY_AND_CHILD_REAPED","BACKGROUND_JOB_CANCEL_DIRECT_V1");
+    #[cfg(target_os="linux")]
+    let (custody,method)=("LINUX_ROOT_KERNEL_EMPTY_AND_CLIENT_REAPED","BACKGROUND_KERNEL_CANCEL_DIRECT_V1");
+    let facts=json!({"tool":TOOL,"task_id":target,"state":"CANCELLED","worker_custody":custody});
     let observed_sha=hash(facts.to_string().as_bytes());let receipt_sha=hash(bytes);
     state.effects.record_independent_outcome(&effect,bytes,IndependentOutcomeVerdict::Verified,
-        "BACKGROUND_JOB_CANCEL_DIRECT_V1",Some(&observed_sha)).map_err(|_|"Verified cancellation could not be journaled")?;
+        method,Some(&observed_sha)).map_err(|_|"Verified cancellation could not be journaled")?;
     if !state.effects.independent_verified_receipt(&effect,TOOL,&receipt_sha).map_err(|_|"Receipt unavailable")?{
         return Err("Cancellation receipt unavailable".into())
     }
@@ -316,7 +320,7 @@ pub(crate) fn try_model_background_control(
     complete(answer)
 }
 
-#[cfg(not(windows))]
+#[cfg(not(any(windows,target_os="linux")))]
 pub(crate) fn try_model_background_control(
     _app:&tauri::AppHandle,_state:&Arc<crate::DesktopState>,_sid:&str,_chat:&str,_gid:&str,
     original:&str,_ticket:&crate::generation_queue::Ticket,
@@ -352,7 +356,7 @@ fn background_start_requested(original:&str)->bool{
         "start a background file integrity scan"|"scan a file in the background"|
         "queue a background file scan")
 }
-#[cfg(windows)]
+#[cfg(any(windows,target_os="linux"))]
 pub(crate) fn try_model_background_start(
     app:&tauri::AppHandle,state:&Arc<crate::DesktopState>,sid:&str,chat:&str,gid:&str,
     original:&str,ticket:&crate::generation_queue::Ticket,
@@ -435,7 +439,7 @@ pub(crate) fn try_model_background_start(
         return complete("No file selected. No task was queued.".into())
     };
     let path=selected.into_path().map_err(|_|"Invalid selected file")?;
-    let plan=ReviewedScan::prepare(target,chat,&path).map_err(|_|"Cannot safely open the selected file for a background scan")?;
+    let plan=ReviewedScan::prepare(target,chat,gid,&path).map_err(|_|"Cannot safely open the selected file for a background scan")?;
     checkpoint()?;
     // Exact native picker result, original turn and model selection are
     // bound to the typed payload. The pathname never enters model output.
@@ -443,7 +447,7 @@ pub(crate) fn try_model_background_start(
     let resource=json!({"task_id":target,"owner":chat,"file":display,"file_id":plan.identity(),
         "bytes":plan.bytes(),"worker_sha256":plan.executable_sha256(),
         "original_request_sha256":hash(original.as_bytes()),"model_output_sha256":hash(raw.as_bytes()),
-        "kind":"file_scan","max_runtime_seconds":3600,"repeat":false});
+        "kind":"file_scan","max_runtime_seconds":if cfg!(windows){3600}else{90},"repeat":false});
     let binding=hash(resource.to_string().as_bytes());
     let registry=NativeToolRegistry::new();
     let catalog=register_reviewed_background_start(&registry,Arc::clone(&state.background_scheduler),
@@ -459,7 +463,9 @@ pub(crate) fn try_model_background_start(
     let review_sha=hash(review.to_string().as_bytes());
     log(K::HostRouteSelected,&json!({"phase":"native_preview","review":review,"review_sha256":review_sha,"approved":false}).to_string())?;
     checkpoint()?;
-    let details=format!("File: {display}\nSize: {} bytes\nTask: {target}\n\nOne read-only integrity scan. The selected file is held open against writes and deletion until the scan stops. Lu will wait for available resources.",resource["bytes"]);
+    let guard_notice=if cfg!(windows){"The selected file is held open against writes and deletion until the scan stops."}
+        else{"Lu checks the selected file identity and change timestamps before and after scanning; a changed file fails the scan."};
+    let details=format!("File: {display}\nSize: {} bytes\nTask: {target}\n\nOne read-only integrity scan. {guard_notice} Lu will wait for available resources.",resource["bytes"]);
     let pages=review_pages(&details);let count=pages.len();
     for (n,page) in pages.into_iter().enumerate(){
         checkpoint()?;
@@ -574,7 +580,7 @@ pub(crate) fn try_model_background_start(
 }
 
 
-#[cfg(not(windows))]
+#[cfg(not(any(windows,target_os="linux")))]
 pub(crate) fn try_model_background_start(
     _app:&tauri::AppHandle,_state:&Arc<crate::DesktopState>,_sid:&str,_chat:&str,_gid:&str,
     original:&str,_ticket:&crate::generation_queue::Ticket,

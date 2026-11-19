@@ -421,7 +421,7 @@ mod tests {
 // Production Windows start is a queue admission, never a direct process
 // start in a foreground model turn. A separate receipt schema distinguishes
 // an approved queued job from an already running or completed worker.
-#[cfg(windows)]
+#[cfg(any(windows,target_os="linux"))]
 mod queued_reviewed_start {
     use super::*;
     use crate::native_background_scheduler::{BackgroundScheduler,ReviewedScan};
@@ -508,5 +508,5 @@ mod queued_reviewed_start {
         Ok(catalog)
     }
 }
-#[cfg(windows)]
+#[cfg(any(windows,target_os="linux"))]
 pub use queued_reviewed_start::register_reviewed_background_start;
