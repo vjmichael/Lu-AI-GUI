@@ -622,3 +622,17 @@ mod tests{
         }
     }
 }
+
+impl PinnedArchiveReview{
+    /// The model-directed lane reuses the actual supervised preview's pinned
+    /// directory identities and full tree. It has no in-process decoder fallback.
+    pub(crate) fn into_model_publication(self,proposal:lu_core::model_publication_turn::Proposal,
+        effect_id:&str,cancel:ArchiveCancellation,processes:Arc<BackgroundProcessSupervisor>,tasks:Arc<TaskStore>,
+        journal:&lu_core::model_turn_journal::ModelTurnJournal)->Result<lu_core::model_publication_turn::Review,String>{
+        let plan=SupervisedArchivePlan{processes,tasks,executable:std::env::current_exe().map_err(|_|"Archive worker unavailable")?,
+            source_parent:self.source_parent.clone(),destination_parent:self.destination_parent.clone(),
+            source_parent_identity:self.source_identity.clone(),destination_parent_identity:self.destination_identity.clone(),
+            manifest:self.manifest.clone(),workspace_id:"native-wave2-archive".into(),task_id:format!("archive-worker-{effect_id}")};
+        proposal.review_archive(self.source_root,&self.source_name,&self.source_display,self.destination_root,&self.new_folder,&self.destination_display,plan,cancel,journal)
+    }
+}

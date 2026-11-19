@@ -71,7 +71,7 @@ fn valid_path(path:&str,kind:&str)->bool{
 fn checked_sha(sha:&str)->bool{
     sha.is_empty()||(sha.len()==64&&sha.bytes().all(|b|b.is_ascii_hexdigit()))
 }
-fn read_bounded(root:&Dir,path:&str)->Result<Vec<u8>,ToolFailure>{
+pub(crate) fn read_bounded(root:&Dir,path:&str)->Result<Vec<u8>,ToolFailure>{
     let mut prefix=String::new();
     let mut parts=path.split('/').peekable();
     while let Some(part)=parts.next(){

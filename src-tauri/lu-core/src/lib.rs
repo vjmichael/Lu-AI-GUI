@@ -247,6 +247,7 @@ mod evidence_synthesis;
 pub mod coverage_plan;
 pub mod model_transfer_turn;
 pub mod model_custody_turn;
+pub mod model_publication_turn;
 pub mod supervised_tool_generation;
 pub use policy::{CapabilityGrant, PolicyEngine, PolicyError};
 pub mod recovery;
