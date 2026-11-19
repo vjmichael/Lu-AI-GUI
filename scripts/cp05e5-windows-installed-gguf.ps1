@@ -223,6 +223,7 @@ public static class LuCp05Window {
   [DllImport("user32.dll")] public static extern bool IsWindowEnabled(IntPtr hwnd);
   [DllImport("user32.dll")] public static extern bool IsChild(IntPtr parent, IntPtr child);
   [DllImport("user32.dll")] public static extern int GetDlgCtrlID(IntPtr hwnd);
+  [DllImport("user32.dll")] public static extern IntPtr GetAncestor(IntPtr hwnd, uint flags);
   [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint pid);
   [StructLayout(LayoutKind.Sequential)] private struct POINT { public int X; public int Y; }
   [DllImport("user32.dll")] private static extern IntPtr WindowFromPoint(POINT point);
@@ -394,6 +395,14 @@ function Test-ConsentControlIdentity($current,[string]$action,[int]$ownerPid){
     [int64]$current.NativeWindowHandle -ne 0 -and
     $current.IsEnabled -and -not $current.IsOffscreen)
 }
+# Separate GUI provider identity from the Win32 hit proof. A UIA ID such as
+# CommandButton_1000 is NOT a documented assertion about GetDlgCtrlID.
+# Native IDs and provider HWND ancestry are retained as diagnostics.
+function Test-ConsentHitIdentity($proof){
+  return ($proof.ownerLive -and $proof.controlLive -and
+    $proof.sameModalForeground -and $proof.hitLive -and
+    $proof.hitInModal -and ($proof.nativeTargetMatch -or $proof.uiaTargetMatch))
+}
 function Consent([string]$action,[string]$phase){
   # Bind this native human-fixture interaction to the actual displayed
   # request text, not merely the first button with a matching display label.
@@ -431,49 +440,125 @@ function Consent([string]$action,[string]$phase){
   if($matches.Count -ne 1){throw 'Expected exactly one owned native consent command control'}
   $button=$matches[0]
   $child=[IntPtr][int64]$button.Current.NativeWindowHandle
-  function Test-NativeConsentTarget {
-    return ([LuCp05Window]::IsWindow($owner) -and
-      [LuCp05Window]::IsWindow($child) -and
-      [LuCp05Window]::OwnerPid($owner) -eq $script:process.Id -and
-      [LuCp05Window]::OwnerPid($child) -eq $script:process.Id -and
-      [LuCp05Window]::IsChild($owner,$child) -and
-      [LuCp05Window]::GetDlgCtrlID($child) -eq $controlId -and
-      [LuCp05Window]::IsWindowVisible($child) -and
-      [LuCp05Window]::IsWindowEnabled($child))
+  $controlRuntimeId=($button.GetRuntimeId() -join ',')
+  $dialogRuntimeId=($dialog.GetRuntimeId() -join ',')
+  function Get-ConsentTargetSnapshot {
+    # The exact source content and unique provider command were checked
+    # above. Revalidate the same live identities before input, including
+    # a fresh enumeration from the original native dialog.
+    $currentDialog=[System.Windows.Automation.AutomationElement]::FromHandle($owner)
+    $sameDialog=($null -ne $currentDialog -and
+      $currentDialog.Current.Name -ceq 'Allow this inspection?' -and
+      $currentDialog.Current.ProcessId -eq $script:process.Id -and
+      [int64]$currentDialog.Current.NativeWindowHandle -eq $owner.ToInt64())
+    $allFresh=$currentDialog.FindAll([System.Windows.Automation.TreeScope]::Descendants,
+      [System.Windows.Automation.Condition]::TrueCondition)
+    # Recheck the original request and scope on every pre-click snapshot.
+    $freshContent=@($allFresh|Where-Object{
+      try{$_.Current.AutomationId -ceq 'ContentText' -and
+         $_.Current.ProcessId -eq $script:process.Id -and
+         $_.Current.ControlType -eq [System.Windows.Automation.ControlType]::Text -and
+         -not $_.Current.IsOffscreen -and
+         ($_.Current.Name.Replace("`r`n","`n")) -ceq $expected}catch{$false}
+    })
+    $fresh=@($allFresh|Where-Object{
+      try{Test-ConsentControlIdentity $_.Current $action $script:process.Id}catch{$false}
+    })
+    $controlLive=($fresh.Count -eq 1 -and
+      ($fresh[0].GetRuntimeId() -join ',') -ceq $controlRuntimeId -and
+      [int64]$fresh[0].Current.NativeWindowHandle -eq $child.ToInt64())
+    $ownerPidNow=[LuCp05Window]::OwnerPid($owner)
+    $childPidNow=[LuCp05Window]::OwnerPid($child)
+    $ownerValid=[LuCp05Window]::IsWindow($owner)
+    $childValid=[LuCp05Window]::IsWindow($child)
+    $ownerVisible=[LuCp05Window]::IsWindowVisible($owner)
+    $childVisible=[LuCp05Window]::IsWindowVisible($child)
+    $childEnabled=[LuCp05Window]::IsWindowEnabled($child)
+    $childInDialog=[LuCp05Window]::IsChild($owner,$child)
+    $childRoot=[LuCp05Window]::GetAncestor($child,2)
+    return [ordered]@{
+      ownerLive=($sameDialog -and $freshContent.Count -eq 1 -and $ownerValid -and $ownerVisible -and $ownerPidNow -eq $script:process.Id)
+      controlLive=($controlLive -and $childValid -and $childVisible -and $childEnabled -and $childPidNow -eq $script:process.Id)
+      dialogHandle=$owner.ToInt64();commandHandle=$child.ToInt64()
+      ownerPid=$ownerPidNow;childPid=$childPidNow;ownerValid=$ownerValid;childValid=$childValid
+      ownerVisible=$ownerVisible;childVisible=$childVisible;childEnabled=$childEnabled
+      sameDialog=$sameDialog;exactRequestText=($freshContent.Count -eq 1)
+      uniqueLiveCommand=$controlLive;nativeChildOfDialog=$childInDialog
+      nativeChildRoot=$childRoot.ToInt64()
+      providerAutomationId=$button.Current.AutomationId
+      observedNativeControlId=[LuCp05Window]::GetDlgCtrlID($child)
+    }
   }
-  if(-not (Test-NativeConsentTarget)){throw 'Consent HWND child identity or command ID mismatch'}
+  function Save-ConsentSnapshot($snapshot,[string]$stage){
+    $snapshot|ConvertTo-Json -Depth 6|Set-Content -LiteralPath (Join-Path $EvidenceDir ($phase+'-consent-'+$stage+'.json')) -Encoding utf8
+  }
+  $before=Get-ConsentTargetSnapshot
+  Save-ConsentSnapshot $before 'identity'
+  if(-not $before.ownerLive -or -not $before.controlLive){
+    throw 'Exact dialog or live consent control identity rejected; see individual snapshot predicates'
+  }
   $null=[LuCp05Window]::SetForegroundWindow($owner)
   $null=Wait-Observation {[LuCp05Window]::GetForegroundWindow() -eq $owner} 5 'original native consent modal foreground'
   $rect=$button.Current.BoundingRectangle
   $bounds=$dialog.Current.BoundingRectangle
-  # For a genuine CCPushButton with no InvokePattern or clickable-point
-  # provider, use its current rectangle only after a Win32 native hit test.
   try{$point=$button.GetClickablePoint()}catch{
     $point=[System.Windows.Point]::new($rect.Left+$rect.Width/2,$rect.Top+$rect.Height/2)
   }
   $x=[int][Math]::Round($point.X);$y=[int][Math]::Round($point.Y)
   if($rect.Width -lt 3 -or $rect.Height -lt 3 -or
      $x -lt $rect.Left -or $x -ge $rect.Right -or $y -lt $rect.Top -or $y -ge $rect.Bottom -or
-     $x -lt $bounds.Left -or $x -ge $bounds.Right -or $y -lt $bounds.Top -or $y -ge $bounds.Bottom -or
-     -not (Test-NativeConsentTarget) -or
-     [LuCp05Window]::GetForegroundWindow() -ne $owner){
-    throw 'Native consent command is not currently reachable in original modal'
+     $x -lt $bounds.Left -or $x -ge $bounds.Right -or $y -lt $bounds.Top -or $y -ge $bounds.Bottom){
+    throw 'Native consent command point outside exact control or modal'
   }
-  $hit=[LuCp05Window]::HitWindow($x,$y)
-  if($hit -ne $child -and -not [LuCp05Window]::IsChild($child,$hit)){
-    throw 'Native hit test did not resolve to exact consent command HWND'
+  function Get-ConsentHitProof {
+    $proof=Get-ConsentTargetSnapshot
+    $hit=[LuCp05Window]::HitWindow($x,$y)
+    $hitRoot=[LuCp05Window]::GetAncestor($hit,2)
+    $proof.sameModalForeground=([LuCp05Window]::GetForegroundWindow() -eq $owner)
+    $proof.hitLive=([LuCp05Window]::IsWindow($hit) -and
+      [LuCp05Window]::OwnerPid($hit) -eq $script:process.Id -and
+      [LuCp05Window]::IsWindowVisible($hit) -and [LuCp05Window]::IsWindowEnabled($hit))
+    $proof.hitInModal=($hit -eq $owner -or $hitRoot -eq $owner -or [LuCp05Window]::IsChild($owner,$hit))
+    $proof.nativeTargetMatch=($hit -eq $child -or [LuCp05Window]::IsChild($child,$hit))
+    # TaskDialog may hit its painted parent rather than the provider child.
+    # Only accept that case if a fresh UIA point hit resolves to the SAME
+    # command runtime ID, exact label and provider identity in this modal.
+    $proof.uiaTargetMatch=$false
+    try{
+      $at=[System.Windows.Automation.AutomationElement]::FromPoint([System.Windows.Point]::new($x,$y))
+      for($i=0;$i -lt 8 -and $null -ne $at;$i++){
+        $atId=($at.GetRuntimeId() -join ',')
+        if($atId -ceq $dialogRuntimeId){break}
+        if($atId -ceq $controlRuntimeId){
+          $proof.uiaTargetMatch=(Test-ConsentControlIdentity $at.Current $action $script:process.Id)
+          break
+        }
+        # Do not climb through another command to manufacture a match.
+        if($at.Current.ClassName -ceq 'CCPushButton'){break}
+        $at=[System.Windows.Automation.TreeWalker]::RawViewWalker.GetParent($at)
+      }
+    }catch{}
+    $proof.hitHandle=$hit.ToInt64();$proof.hitRoot=$hitRoot.ToInt64()
+    $proof.x=$x;$proof.y=$y
+    $proof.accepted=Test-ConsentHitIdentity $proof
+    return $proof
   }
+  $hitProof=Get-ConsentHitProof
+  Save-ConsentSnapshot $hitProof 'hit-before'
+  if(-not $hitProof.accepted){throw 'Exact modal/control native hit proof rejected; see hit-before snapshot'}
   if(-not [LuP0Mouse]::SetCursorPos($x,$y)){throw 'Cannot position pointer at verified consent control'}
-  # Recheck immediately before the sole physical click. No generic Pane
-  # activation, Enter-key default, synthetic RPC or fallback second click.
-  $hit=[LuCp05Window]::HitWindow($x,$y)
-  if(-not (Test-NativeConsentTarget) -or [LuCp05Window]::GetForegroundWindow() -ne $owner -or
-     ($hit -ne $child -and -not [LuCp05Window]::IsChild($child,$hit))){
-    throw 'Consent target changed before physical click'
-  }
+  # Revalidate original modal, exact provider command and both native / UIA
+  # point identities immediately before one OS click. No default key, RPC,
+  # generic Pane click, or second click on timeout.
+  $hitProof=Get-ConsentHitProof
+  Save-ConsentSnapshot $hitProof 'hit-final'
+  if(-not $hitProof.accepted){throw 'Consent target changed before physical click; see hit-final snapshot'}
   $report.phases[$phase+'-dialog']=[ordered]@{
     appPid=$script:process.Id;dialogHandle=$owner.ToInt64()
-    commandHandle=$child.ToInt64();commandId=$controlId
+    commandHandle=$child.ToInt64();providerCommandId=$controlId
+    observedNativeControlId=$hitProof.observedNativeControlId
+    nativeChildOfDialog=$hitProof.nativeChildOfDialog;nativeTargetMatch=$hitProof.nativeTargetMatch
+    uiaTargetMatch=$hitProof.uiaTargetMatch
     className=$button.Current.ClassName;controlType=$button.Current.ControlType.ProgrammaticName
     action=$action;exactRequestText=$true;nativeOwnedHit=$true
   }

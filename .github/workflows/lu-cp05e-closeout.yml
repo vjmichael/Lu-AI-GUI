@@ -83,7 +83,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Verify exact harness source and native PowerShell/Python syntax
+      - name: Verify exact harness source, native identity and hit-proof fixtures
         shell: pwsh
         run: |
           $ErrorActionPreference='Stop'
@@ -96,7 +96,7 @@ jobs:
             if($errors.Count -ne 0){throw "Native PowerShell parser rejected $file : $errors"}
           }
           pwsh -NoProfile -File scripts/cp05e5-consent-contract.test.ps1
-          if($LASTEXITCODE -ne 0){throw 'Native consent identity fixture failed'}
+          if($LASTEXITCODE -ne 0){throw 'Native consent identity or hit-proof fixture failed'}
           python -m py_compile scripts/cp05e5-installed-journal.py
           if($LASTEXITCODE -ne 0){throw 'Installed journal oracle syntax error'}
           node --test lu-desktop/tests/p0-installed-gui-smoke.test.mjs

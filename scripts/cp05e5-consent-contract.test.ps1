@@ -47,3 +47,33 @@ Expect (Test-ConsentControlIdentity (New-Fixture -offscreen $true) 'Allow once' 
 Expect (Test-ConsentControlIdentity (New-Fixture) 'Approve' 8084) $false 'unrecognized action'
 if($script:passed -ne 13){throw 'Consent fixture inventory incomplete'}
 Write-Output 'CP05_NATIVE_CONSENT_IDENTITY_FIXTURES_PASS=13'
+
+$hitDefinitions=@($ast.FindAll({
+  param($n)
+  $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+    $n.Name -ceq 'Test-ConsentHitIdentity'
+},$true))
+if($hitDefinitions.Count -ne 1){throw 'Expected one pure hit identity predicate'}
+. ([scriptblock]::Create($hitDefinitions[0].Extent.Text))
+function New-HitProof {
+  param([bool]$native=$true,[bool]$uia=$false,[bool]$owner=$true,
+    [bool]$control=$true,[bool]$foreground=$true,[bool]$hitLive=$true,[bool]$inModal=$true,
+    [int]$observedNativeControlId=0)
+  return [ordered]@{ownerLive=$owner;controlLive=$control;sameModalForeground=$foreground;
+    hitLive=$hitLive;hitInModal=$inModal;nativeTargetMatch=$native;uiaTargetMatch=$uia;
+    observedNativeControlId=$observedNativeControlId}
+}
+$script:passed=0
+Expect (Test-ConsentHitIdentity (New-HitProof)) $true 'owned exact native hit with distinct Win32 ID'
+Expect (Test-ConsentHitIdentity (New-HitProof -observedNativeControlId 1001)) $true 'provider id not equated with Win32 ID'
+Expect (Test-ConsentHitIdentity (New-HitProof -native $false -uia $true)) $true 'exact live UIA hit inside owned modal'
+Expect (Test-ConsentHitIdentity (New-HitProof -native $false -uia $false)) $false 'no exact hit'
+Expect (Test-ConsentHitIdentity (New-HitProof -owner $false)) $false 'wrong dialog/content ownership'
+Expect (Test-ConsentHitIdentity (New-HitProof -control $false)) $false 'stale or disabled command'
+Expect (Test-ConsentHitIdentity (New-HitProof -foreground $false)) $false 'different foreground'
+Expect (Test-ConsentHitIdentity (New-HitProof -hitLive $false)) $false 'foreign or disabled native hit'
+Expect (Test-ConsentHitIdentity (New-HitProof -inModal $false)) $false 'outside original modal'
+Expect (Test-ConsentHitIdentity (New-HitProof -native $false -uia $true -inModal $false)) $false 'UIA match cannot bypass modal custody'
+if($script:passed -ne 10){throw 'Consent hit fixture inventory incomplete'}
+Write-Output 'CP05_NATIVE_CONSENT_HIT_FIXTURES_PASS=10'
+
