@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "156ec84d95a4917ab14b4effab8f7768a2cd4649",
+  "sourceCommitBeforeLock": "c54d1bca6206431d21de558ce9cbf07b78a6582e",
   "trackedFileCount": 1161,
   "files": [
     {
@@ -829,7 +829,7 @@
     },
     {
       "path": "docs/LU_DEVELOPMENT_LEDGER.md",
-      "blob": "eb988646d001c5d66efe9fc76b9e28576c99b55c"
+      "blob": "3e01d181e2295525a82b8f3c15d43cebec406b46"
     },
     {
       "path": "docs/LU_E1_NATIVE_EVIDENCE_20261107.md",
@@ -1621,7 +1621,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/file_scan_worker.rs",
-      "blob": "a013cc499b13179b74a196cd49ce8733a253d5e3"
+      "blob": "5321baa20a9c38dbfda9b000535d3b641777f756"
     },
     {
       "path": "lu-desktop/src-tauri/src/file_transfer_desktop.rs",
@@ -1653,7 +1653,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/lib.rs",
-      "blob": "03f02d0a04d0c67585b6c816a02e1407231dd63c"
+      "blob": "e5ef5c8c0e22f029d9cb81cfe1ef693887f20c3e"
     },
     {
       "path": "lu-desktop/src-tauri/src/linked_attachment_file.rs",
@@ -1701,7 +1701,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/model_publication_desktop.rs",
-      "blob": "b3f63e3657320502ebe46b661e27c2e4cc4d8731"
+      "blob": "9aeae8931dbddee1b909c9f268a49e00ea09b1c5"
     },
     {
       "path": "lu-desktop/src-tauri/src/model_transfer_desktop.rs",
@@ -3397,7 +3397,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/journal.rs",
-      "blob": "fe17a9675c362972d1414e3583c4b66927e88903"
+      "blob": "3bc0a01c69329eb7c8cd2ba33b3cb42d3674b0fd"
     },
     {
       "path": "src-tauri/lu-core/src/lib.rs",
@@ -3565,7 +3565,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/native_background_control.rs",
-      "blob": "b4b53a8112c3a9025702301b181771efdfe13e6d"
+      "blob": "6a5b53714c9e3108dc2d44f55f435303f9bf5995"
     },
     {
       "path": "src-tauri/lu-core/src/native_background_process.rs",
@@ -3577,7 +3577,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/native_background_scheduler.rs",
-      "blob": "80d9edd945d827170ac51fbb2b36de955e29ad8e"
+      "blob": "331e25a1fd8784e9bb8d603f3235cfb110f2ed11"
     },
     {
       "path": "src-tauri/lu-core/src/native_background_status.rs",
