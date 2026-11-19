@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "5f3f532b230f44e160a3fa809363c3a054d6a13b",
+  "sourceCommitBeforeLock": "85dc3c09a0da665f414e0cc0a81ab83a5285df32",
   "trackedFileCount": 1961,
   "files": [
     {
@@ -1785,7 +1785,7 @@
     },
     {
       "path": "ide/app/fixtures/Test-Wo8NativeDesktopUI.ps1",
-      "blob": "a4bd8f4d615215497c7544294b135378eacf6057"
+      "blob": "72dee268e0cb896866dd42435a1a281372cdfb96"
     },
     {
       "path": "ide/app/fixtures/b2_linux_installed_draft_atspi.py",
@@ -2585,7 +2585,7 @@
     },
     {
       "path": "ide/ci/merge02-reviewed-native-boundaries.json",
-      "blob": "5e1e707fbfb9355ce3b17e4c807a0c84e04028aa"
+      "blob": "eb49d5d2a4998268798c3924d83ee92710b684a8"
     },
     {
       "path": "ide/ci/test_verify_reviewed_native_boundaries.py",
@@ -3905,7 +3905,7 @@
     },
     {
       "path": "ide/packaging/test_p05_native_picker_repair.py",
-      "blob": "87679fa9114a64435f9f6e48798572c56b68be84"
+      "blob": "2f50cae81bf0ccf1b3d2d6b383124334ca5838b7"
     },
     {
       "path": "ide/packaging/test_p05_reviewed_workflow_successor.py",
