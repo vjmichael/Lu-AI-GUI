@@ -244,6 +244,7 @@ pub mod projector_identity;
 pub mod saved_chat_prompt;
 mod evidence_grounding;
 mod evidence_synthesis;
+pub mod coverage_plan;
 pub mod supervised_tool_generation;
 pub use policy::{CapabilityGrant, PolicyEngine, PolicyError};
 pub mod recovery;

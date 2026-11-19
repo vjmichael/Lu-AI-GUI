@@ -17,6 +17,7 @@ pub(crate) struct Synthesis {pub answer:String,pub receipt:String,pub fallback:b
 impl EvidenceBook {
     pub fn full(&self)->bool{self.attempts>=MAX_OBSERVATIONS}
     pub fn observable(&self)->bool{!self.entries.is_empty()}
+    pub fn count(&self)->usize{self.entries.len()}
     /// The caller invokes this only after a real model-directed native outcome
     /// was decoded, journaled, and checked for continuing authorization.
     pub fn observe(&mut self,feedback:&Value,request:&str){

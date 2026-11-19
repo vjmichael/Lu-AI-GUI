@@ -47,7 +47,7 @@ pub enum WorkspaceReadError{
 }
 /// Unlike a general permission, this policy is tied to exactly the host
 /// installed read-only descriptors and their Protobuf codecs.
-struct ReadOnlyPolicy { ids:BTreeSet<String>,fixed_input:Option<ProtoPayload> }
+struct ReadOnlyPolicy { ids:BTreeSet<String>,fixed_input:Option<ProtoPayload>,planned_inputs:Vec<ProtoPayload> }
 /// A native-host-only original-input read. No model path, literal, limits or
 /// tool choice is accepted after approval. The existing registry, codec and
 /// conversation authority still perform independent validation.
@@ -88,6 +88,7 @@ impl ToolAuthorizer for ReadOnlyPolicy{
         if self.fixed_input.as_ref().is_some_and(|expected|expected!=&call.input){
             return Err(AuthorizationError::new("Invocation differs from the original approved read input"));
         }
+        if !self.planned_inputs.is_empty()&&!self.planned_inputs.contains(&call.input){return Err(AuthorizationError::new("Invocation outside original planned read inputs"))}
         Ok(())
     }
 }
@@ -108,7 +109,7 @@ impl WorkspaceReadTurnSession{
         host_approved_root:&Path,
     )->Result<Self,WorkspaceReadError>{
         Self::new_with_capability(verifier,conversation_id,user_turn_id,task_id,
-            Some(host_approved_root),None,None,None,None)
+            Some(host_approved_root),None,None,None,None,None)
     }
     /// P0-TOOLS-03: the trusted native desktop observes only completed real
     /// Reader source identity, bound to the SAME original human-selected
@@ -120,7 +121,7 @@ impl WorkspaceReadTurnSession{
     )->Result<Self,WorkspaceReadError>{
         Self::new_with_capability(
             verifier,conversation_id,user_turn_id,task_id,
-            Some(host_approved_root),None,None,Some(observer),None
+            Some(host_approved_root),None,None,Some(observer),None,None
         )
     }
     /// Wave 4: read-only local Git from a HUMAN-picked repository directory
@@ -133,7 +134,7 @@ impl WorkspaceReadTurnSession{
         host_approved_repository:&Path,host_trusted_git:&Path,
     )->Result<Self,WorkspaceReadError>{
         Self::new_with_capability(verifier,conversation_id,user_turn_id,task_id,
-            Some(host_approved_repository),None,Some(host_trusted_git),None,None)
+            Some(host_approved_repository),None,Some(host_trusted_git),None,None,None)
     }
     /// Native host has already obtained and verified the directory identity.
     /// No pathname is accepted or reopened by the registered tools.
@@ -149,13 +150,13 @@ impl WorkspaceReadTurnSession{
             if meta.file_attributes()&0x400!=0{return Err(WorkspaceReadError::RootUnavailable)}
         }
         Self::new_with_capability(verifier,conversation_id,user_turn_id,task_id,
-            None,Some(Arc::new(Dir::from_std_file(directory))),None,observer,None)
+            None,Some(Arc::new(Dir::from_std_file(directory))),None,observer,None,None)
     }
     /// Host-only exact root listing after the user chose a folder. The
     /// original input is bound in the existing codec; no model path is accepted.
     pub fn new_root_listing(verifier:&dyn TrustedUserTurnVerifier,conversation_id:&str,
         user_turn_id:&str,task_id:&str,root:&Path)->Result<Self,WorkspaceReadError>{
-        Self::new_with_capability(verifier,conversation_id,user_turn_id,task_id,Some(root),None,None,None,Some(ExactWorkspaceRead::RootListing))
+        Self::new_with_capability(verifier,conversation_id,user_turn_id,task_id,Some(root),None,None,None,Some(ExactWorkspaceRead::RootListing),None)
     }
     pub fn new_root_listing_with_approved_directory(verifier:&dyn TrustedUserTurnVerifier,conversation_id:&str,
         user_turn_id:&str,task_id:&str,directory:std::fs::File)->Result<Self,WorkspaceReadError>{
@@ -165,14 +166,14 @@ impl WorkspaceReadTurnSession{
             use std::os::windows::fs::MetadataExt;
             if meta.file_attributes()&0x400!=0{return Err(WorkspaceReadError::RootUnavailable)}
         }
-        Self::new_with_capability(verifier,conversation_id,user_turn_id,task_id,None,Some(Arc::new(Dir::from_std_file(directory))),None,None,Some(ExactWorkspaceRead::RootListing))
+        Self::new_with_capability(verifier,conversation_id,user_turn_id,task_id,None,Some(Arc::new(Dir::from_std_file(directory))),None,None,Some(ExactWorkspaceRead::RootListing),None)
     }
     /// One model-selected exact observation within the separately approved
     /// resource. Git and ordinary file lanes cannot be interchanged.
     pub fn new_exact(verifier:&dyn TrustedUserTurnVerifier,conversation_id:&str,user_turn_id:&str,task_id:&str,
         root:&Path,git:Option<&Path>,operation:ExactWorkspaceRead)->Result<Self,WorkspaceReadError>{
         if operation.git()!=git.is_some(){return Err(WorkspaceReadError::InvalidScope)}
-        Self::new_with_capability(verifier,conversation_id,user_turn_id,task_id,Some(root),None,git,None,Some(operation))
+        Self::new_with_capability(verifier,conversation_id,user_turn_id,task_id,Some(root),None,git,None,Some(operation),None)
     }
     pub fn new_exact_with_approved_directory(verifier:&dyn TrustedUserTurnVerifier,conversation_id:&str,user_turn_id:&str,task_id:&str,
         directory:std::fs::File,operation:ExactWorkspaceRead)->Result<Self,WorkspaceReadError>{
@@ -183,7 +184,21 @@ impl WorkspaceReadTurnSession{
             use std::os::windows::fs::MetadataExt;
             if meta.file_attributes()&0x400!=0{return Err(WorkspaceReadError::RootUnavailable)}
         }
-        Self::new_with_capability(verifier,conversation_id,user_turn_id,task_id,None,Some(Arc::new(Dir::from_std_file(directory))),None,None,Some(operation))
+        Self::new_with_capability(verifier,conversation_id,user_turn_id,task_id,None,Some(Arc::new(Dir::from_std_file(directory))),None,None,Some(operation),None)
+    }
+    /// Only complete original request shapes are admitted; the human-selected root remains independent.
+    pub fn new_planned(verifier:&dyn TrustedUserTurnVerifier,conversation_id:&str,user_turn_id:&str,task_id:&str,
+        root:&Path,original:&str)->Result<Self,WorkspaceReadError>{
+        let plan=crate::coverage_plan::CoveragePlan::from_request(original).ok_or(WorkspaceReadError::InvalidScope)?;
+        Self::new_with_capability(verifier,conversation_id,user_turn_id,task_id,Some(root),None,None,None,None,Some(plan))
+    }
+    pub fn new_planned_with_approved_directory(verifier:&dyn TrustedUserTurnVerifier,conversation_id:&str,user_turn_id:&str,task_id:&str,
+        directory:std::fs::File,original:&str)->Result<Self,WorkspaceReadError>{
+        let plan=crate::coverage_plan::CoveragePlan::from_request(original).ok_or(WorkspaceReadError::InvalidScope)?;
+        let meta=directory.metadata().map_err(|_|WorkspaceReadError::RootUnavailable)?;
+        if !meta.is_dir(){return Err(WorkspaceReadError::RootUnavailable)}
+        #[cfg(windows)]{use std::os::windows::fs::MetadataExt;if meta.file_attributes()&0x400!=0{return Err(WorkspaceReadError::RootUnavailable)}}
+        Self::new_with_capability(verifier,conversation_id,user_turn_id,task_id,None,Some(Arc::new(Dir::from_std_file(directory))),None,None,None,Some(plan))
     }
     #[allow(clippy::too_many_arguments)]
     fn new_with_capability(
@@ -191,7 +206,7 @@ impl WorkspaceReadTurnSession{
         conversation_id:&str,user_turn_id:&str,task_id:&str,
         host_approved_root:Option<&Path>,pinned_root:Option<Arc<Dir>>,
         git_executable:Option<&Path>,
-        reader_observer:Option<ReaderSourceObserver>,exact:Option<ExactWorkspaceRead>,
+        reader_observer:Option<ReaderSourceObserver>,exact:Option<ExactWorkspaceRead>,plan:Option<crate::coverage_plan::CoveragePlan>,
     )->Result<Self,WorkspaceReadError>{
         if [conversation_id,user_turn_id,task_id].iter().any(|s|
              s.is_empty()||s.len()>128||
@@ -269,6 +284,17 @@ impl WorkspaceReadTurnSession{
         if descriptors.is_empty() || descriptors.iter().any(|d|d.effect!=ToolEffect::ReadWorkspace){
             return Err(WorkspaceReadError::RegistrationFailed);
         }
+        let mut planned_inputs=Vec::new();
+        if let Some(plan)=&plan{
+            if exact.is_some()||git_executable.is_some(){return Err(WorkspaceReadError::InvalidScope)}
+            descriptors.retain(|d|d.id==plan.native_id());
+            if descriptors.len()!=1{return Err(WorkspaceReadError::RegistrationFailed)}
+            let names=BTreeSet::from([plan.public_name().to_owned()]);
+            for path in plan.paths(){
+                let args=serde_json::json!({"path":path});
+                planned_inputs.push(catalog.encode_call(&names,plan.public_name(),"host-coverage-read",Some(task_id),&args.to_string()).map_err(|_|WorkspaceReadError::CatalogUnavailable)?.input);
+            }
+        }
         let fixed_input=if let Some(operation)=exact{
             let (id,name,args)=operation.contract();
             descriptors.retain(|d|d.id==id);
@@ -304,10 +330,10 @@ impl WorkspaceReadTurnSession{
         ).map_err(|_:ToolTurnError|WorkspaceReadError::CatalogUnavailable)?;
         // A dispatched error is not a successful observation. The host must
         // never publish a factual answer or seed source reuse from a failed read.
-        if fixed_input.is_some(){turn.require_single_observed_tool_result();}else{turn.require_observed_tool_result();}
+        if let Some(plan)=plan{turn.require_coverage_plan(plan).map_err(|_|WorkspaceReadError::InvalidScope)?;}else if fixed_input.is_some(){turn.require_single_observed_tool_result();}else{turn.require_observed_tool_result();}
         Ok(Self {
             registry,catalog,authority,turn,
-            policy:ReadOnlyPolicy{ids,fixed_input},task_id:task_id.into(),
+            policy:ReadOnlyPolicy{ids,fixed_input,planned_inputs},task_id:task_id.into(),
             origin,
         })
     }
@@ -374,6 +400,49 @@ mod integrated_reader_tests{
         let name=format!("lu-p0-reader-{}-{:?}",std::process::id(),
             std::thread::current().id());
         std::env::temp_dir().join(name)
+    }
+    #[tokio::test]
+    async fn cp06cr2_required_source_order_payload_and_final_coverage(){
+        use crate::model_turn_journal::ModelAuditKind as K;
+        let base=directory();let _=std::fs::remove_dir_all(&base);let root=base.join("approved");std::fs::create_dir_all(&root).unwrap();std::fs::write(root.join("A.txt"),b"123456789").unwrap();std::fs::write(root.join("B.txt"),b"123").unwrap();std::fs::write(root.join("other.txt"),b"wrong").unwrap();
+        let human="Compare the byte sizes of A.txt and B.txt in my folder";
+        let a=r#"{"kind":"tool","name":"lu_files_stat","arguments":{"path":"A.txt"}}"#;
+        let b=r#"{"kind":"tool","name":"lu_files_stat","arguments":{"path":"B.txt"}}"#;
+        let other=r#"{"kind":"tool","name":"lu_files_stat","arguments":{"path":"other.txt"}}"#;
+        let final_ok=r#"{"kind":"synthesis","claims":[{"type":"compare_bytes","left":"E1","right":"E2"}]}"#;
+        let final_bad=r#"{"kind":"synthesis","claims":[{"type":"report","source":"E1"}]}"#;
+        let mut lane=WorkspaceReadTurnSession::new_planned(&OriginalTurn,"c-source","g-human","direct",&root,human).unwrap();
+        let allowed=BTreeSet::from(["lu_files_stat".to_owned()]);assert_eq!(lane.capabilities().unwrap().len(),1);
+        let bad=lane.catalog.encode_call(&allowed,"lu_files_stat","call",Some("direct"),r#"{"path":"other.txt"}"#).unwrap();let d=lane.registry.tools().unwrap().into_iter().find(|d|d.id=="lu.inspect.stat").unwrap();assert!(lane.policy.authorize(&bad,&d).is_err());
+        assert!(lane.turn.handle_model_reply(b,&lane.catalog,&lane.registry,&lane.authority,&lane.policy).await.is_err());assert_eq!(lane.turn.step_count(),0);drop(lane);
+        for (task,request,replies,count,pass,fallback) in [
+            ("good",human,vec![a,b,final_ok],2,true,false),
+            ("wrong-first",human,vec![other],0,false,false),
+            ("wrong-order",human,vec![b],0,false,false),
+            ("duplicate",human,vec![a,a],1,false,false),
+            ("early-final",human,vec![a,final_ok],1,false,false),
+            ("partial-claim",human,vec![a,b,final_bad],2,true,true),
+            ("wrong-original","Different original request",vec![a],0,false,false),
+        ]{
+            let journal=ModelTurnJournal::open(&base.join("audit.sqlite")).unwrap();let mut lane=WorkspaceReadTurnSession::new_planned(&OriginalTurn,"c-source","g-human",task,&root,human).unwrap();
+            let mut model=Scripted{replies:replies.into_iter().map(str::to_owned).collect()};let outcome=lane.run_journaled(request,&mut model,&Cancellation::default(),&journal).await;
+            let rows=journal.events_for("c-source",task).unwrap();assert_eq!(rows.iter().filter(|e|e.kind==K::ToolFeedback).count(),count);assert_eq!(outcome.is_ok(),pass,"{task}: {outcome:?}");assert!(rows.iter().all(|e|e.kind!=K::FinalAnswer));
+            if let Ok(result)=outcome{let e=rows.iter().find(|e|e.kind==K::EvidencePresentation).unwrap();let p:serde_json::Value=serde_json::from_str(&e.payload).unwrap();assert_eq!(p["required_coverage"]["covered"],2);assert_eq!(p["required_coverage"]["task_synthesis_verified"],!fallback);assert_eq!(result.answer.contains("absolute difference: 6 bytes"),!fallback);}else{assert!(rows.iter().all(|e|e.kind!=K::EvidencePresentation));}
+        }
+        std::fs::remove_file(root.join("B.txt")).unwrap();let journal=ModelTurnJournal::open(&base.join("audit.sqlite")).unwrap();let mut lane=WorkspaceReadTurnSession::new_planned(&OriginalTurn,"c-source","g-human","missing",&root,human).unwrap();let mut model=Scripted{replies:VecDeque::from([a.into(),b.into(),final_ok.into()])};assert!(lane.run_journaled(human,&mut model,&Cancellation::default(),&journal).await.is_err());let events=journal.events_for("c-source","missing").unwrap();assert_eq!(events.iter().filter(|e|e.kind==K::ToolFeedback).count(),2);assert!(events.iter().all(|e|e.kind!=K::EvidencePresentation&&e.kind!=K::FinalAnswer));
+        drop(lane);drop(journal);std::fs::remove_dir_all(base).unwrap();
+    }
+    #[tokio::test]
+    async fn cp06cr2_three_text_sources_exact_coverage(){
+        let base=directory();let _=std::fs::remove_dir_all(&base);let root=base.join("approved");std::fs::create_dir_all(&root).unwrap();for (p,t) in [("A.txt","ALPHA"),("B.txt","BETA"),("C.txt","GAMMA")]{std::fs::write(root.join(p),t).unwrap();}
+        let human="Read the text in A.txt, B.txt and C.txt in my folder";
+        let journal=ModelTurnJournal::open(&base.join("audit.sqlite")).unwrap();let mut lane=WorkspaceReadTurnSession::new_planned(&OriginalTurn,"c-source","g-human","three-text",&root,human).unwrap();
+        let mut model=Scripted{replies:VecDeque::from([
+            r#"{"kind":"tool","name":"lu_files_read_text","arguments":{"path":"A.txt"}}"#.into(),
+            r#"{"kind":"tool","name":"lu_files_read_text","arguments":{"path":"B.txt"}}"#.into(),
+            r#"{"kind":"tool","name":"lu_files_read_text","arguments":{"path":"C.txt"}}"#.into(),
+            r#"{"kind":"synthesis","claims":[{"type":"report","source":"E1"},{"type":"report","source":"E2"},{"type":"report","source":"E3"}]}"#.into(),
+        ])};let report=lane.run_journaled(human,&mut model,&Cancellation::default(),&journal).await.unwrap();assert_eq!(report.tool_calls,3);assert!(report.answer.contains("ALPHA")&&report.answer.contains("BETA")&&report.answer.contains("GAMMA"));let rows=journal.events_for("c-source","three-text").unwrap();let receipt:serde_json::Value=serde_json::from_str(&rows.iter().find(|e|e.kind==crate::model_turn_journal::ModelAuditKind::EvidencePresentation).unwrap().payload).unwrap();assert_eq!(receipt["required_coverage"]["task_synthesis_verified"],true);drop(lane);drop(journal);std::fs::remove_dir_all(base).unwrap();
     }
     #[tokio::test]
     async fn cp06cr1_multistep_native_synthesis_and_cancellation(){

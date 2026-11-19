@@ -36,7 +36,7 @@ pub(crate) fn eligible(prompt:&str)->bool{
         ["<|","[attached ","do not ","don't ","never ","without ","how to ","how do i ","explain ","write ","delete ","remove ","rename ","move ","modify ","edit ","execute ","run ","install ","upload ","download ","push ","checkout ","reset "].iter().any(|s|low.contains(s)) {
         return false
     }
-    if scoped_read_intent::direct_read_id(p).is_some()||crate::core_utility_desktop::negotiable_core_utility_request(p).is_some()||
+    if lu_core::coverage_plan::CoveragePlan::from_request(p).is_some()||scoped_read_intent::direct_read_id(p).is_some()||crate::core_utility_desktop::negotiable_core_utility_request(p).is_some()||
         crate::browser_model_desktop::negotiated_browser_origin(p).is_some()||
         crate::reviewed_app_desktop::negotiable_specialist_mode(p).is_some(){return true}
     ["my ","our ","local ","folder","directory","repository","workspace","on this computer","on this system","files","documents","document","pdf","spreadsheet","project","locally","installed here","available here"].iter().any(|s|low.contains(s))
@@ -140,8 +140,20 @@ fn cp06br1_original_literals_and_refusals(){
     assert_eq!(exact_workspace_read("Read notes.txt in my workspace and delete it").unwrap(),None);
     assert!(exact_workspace_read("What is the SHA-256 digest of notes.bin in my workspace?").is_err());
 }
+pub(crate) fn coverage_plan(prompt:&str)->Option<lu_core::coverage_plan::CoveragePlan>{
+    if !eligible(prompt){return None}lu_core::coverage_plan::CoveragePlan::from_request(prompt)
+}
+#[test]
+fn cp06cr2_narrow_multi_source_offer_and_denial(){
+    let views=lu_core::native_capability_inventory::discover_ordinary_pending(&lu_core::native_capability_inventory::OrdinaryRuntimeEvidence{
+        workspace:lu_core::native_capability_inventory::RuntimeEvidence::Builtin,git:lu_core::native_capability_inventory::RuntimeEvidence::Missing,browser:lu_core::native_capability_inventory::RuntimeEvidence::Missing,media:lu_core::native_capability_inventory::RuntimeEvidence::Missing,pdf:lu_core::native_capability_inventory::RuntimeEvidence::Missing,image:lu_core::native_capability_inventory::RuntimeEvidence::Missing,program_specs:vec![],allow_tools:true
+    }).unwrap();
+    for (human,name) in [("Compare the byte sizes of A.txt and B.txt in my folder","lu_files_stat"),("Read the text in A.txt, B.txt and C.txt in my folder","lu_files_read_text")]{
+        let offered=eligible_candidates(&views,human);assert_eq!(offered.len(),1);assert_eq!(offered[0].0.public_name,name);assert!(required_read_observation(human));assert!(parse_selection(r#"{"selection":null}"#,&offered).unwrap().0.is_none());assert!(eligible_candidates(&views,&format!("{human} without tools")).is_empty());
+    }
+}
 fn required_read_observation(prompt:&str)->bool{
-    eligible(prompt)&&(direct_read_id(prompt).is_some()||
+    eligible(prompt)&&(direct_read_id(prompt).is_some()||coverage_plan(prompt).is_some()||
         crate::browser_model_desktop::negotiated_browser_origin(prompt).is_some()||
         crate::reviewed_app_desktop::negotiable_specialist_mode(prompt).and_then(crate::reviewed_app_desktop::reviewed_mode_id).is_some())
 }
@@ -153,7 +165,8 @@ fn eligible_candidates<'a>(views:&'a [PendingCapabilityView],prompt:&str)->Vec<(
     // Distinct scope/effect families may not be combined by model assertion.
     let exact:Vec<_>=[utility,browser,specialist].into_iter().flatten().collect();
     if exact.len()>1{return Vec::new()}
-    if let (Some(local),Some(typed))=(direct_read_id(prompt),exact.first()){
+    let plan=coverage_plan(prompt);
+    if let (Some(local),Some(typed))=(direct_read_id(prompt).or_else(||plan.as_ref().map(|p|p.native_id())),exact.first()){
         if local!=*typed{return Vec::new()}
     }
     if let Some(id)=exact.first(){
@@ -163,7 +176,7 @@ fn eligible_candidates<'a>(views:&'a [PendingCapabilityView],prompt:&str)->Vec<(
             .map(|v|(ReadCandidate::from_pending(v,false),v.description.as_str())).collect()
     }
     let mut offered=candidates(views);
-    if let Some(id)=direct_read_id(prompt){offered.retain(|(c,_)|c.native_tool_id==id);}
+    if let Some(id)=direct_read_id(prompt).or_else(||plan.as_ref().map(|p|p.native_id())){offered.retain(|(c,_)|c.native_tool_id==id);}
     offered
 }
 // An exact-input observation is not optional ordinary prose. The model may

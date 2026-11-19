@@ -156,6 +156,7 @@ pub struct NativeToolTurn {
     observed_tool_result: bool,
     single_observation: bool,
     evidence_synthesis: bool,
+    coverage_plan: Option<crate::coverage_plan::CoveragePlan>,
     // Host-only plan admission: a successful tool reply does not establish a
     // verified deliverable when the independent source oracle is UNSUPPORTED.
     requires_verified_independent_outcome: bool,
@@ -225,6 +226,7 @@ impl NativeToolTurn {
             observed_tool_result: false,
             single_observation: false,
             evidence_synthesis: false,
+            coverage_plan: None,
             requires_verified_independent_outcome: false,
             observed_verified_independent_outcome: false,
             previous_request_digest:None,
@@ -299,6 +301,11 @@ impl NativeToolTurn {
         self.evidence_synthesis=true;
         Ok(())
     }
+    pub(crate) fn require_coverage_plan(&mut self,plan:crate::coverage_plan::CoveragePlan)->Result<(),ToolTurnError>{
+        if self.advertised!=BTreeSet::from([plan.public_name().to_owned()])||self.coverage_plan.is_some(){return Err(ToolTurnError::ReadOnlyTurnViolation)}
+        self.require_evidence_synthesis()?;self.coverage_plan=Some(plan);Ok(())
+    }
+    pub(crate) fn coverage_plan(&self)->Option<&crate::coverage_plan::CoveragePlan>{self.coverage_plan.as_ref()}
     pub(crate) fn uses_evidence_synthesis(&self)->bool{self.evidence_synthesis}
     pub(crate) fn is_single_observation(&self)->bool{self.single_observation}
     pub(crate) fn tool_requests_allowed(&self)->bool{!self.single_observation||self.steps==0}
@@ -496,6 +503,9 @@ impl NativeToolTurn {
         self.ensure_continuation_authorized(authority)?;
         if raw.len() > MAX_MODEL_FRAME_BYTES {
             return Err(ToolTurnError::TooLarge);
+        }
+        if self.coverage_plan.as_ref().is_some_and(|p|!p.matches_tool(self.steps as usize,raw)){
+            return Err(ToolTurnError::ReadOnlyTurnViolation)
         }
         // Syntax repair proposes a candidate only. Protobuf codec validation,
         // conversation authority and host policy still decide execution.

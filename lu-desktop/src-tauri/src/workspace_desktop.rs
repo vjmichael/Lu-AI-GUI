@@ -755,7 +755,12 @@ fn execute_approved_read(event_app:AppHandle,host:Arc<DesktopState>,session_id:S
     if let (Some(op),Some(candidate))=(&exact,selected){
         if op.native_id()!=candidate.native_tool_id{return Err("Selected capability differs from original exact read".into())}
     }
-    let exact_bound=exact.is_some();
+    let coverage=crate::capability_negotiation::coverage_plan(&prompt);
+    if let Some(plan)=&coverage{
+        if git_mode||exact.is_some()||selected.is_some_and(|c|c.native_tool_id!=plan.native_id()){return Err("Selected capability differs from original planned read".into())}
+    }
+    let planned=coverage.is_some();
+    let exact_bound=exact.is_some()||planned;
             approved_workspace.verify()?;
             if ticket.cancelled()||cancellation.is_cancelled(){
                 return Err("Cancelled workspace generation".into())
@@ -768,7 +773,11 @@ fn execute_approved_read(event_app:AppHandle,host:Arc<DesktopState>,session_id:S
             let verifier=if selected.is_some(){PersistedHumanTurn::current_chat(&host.chats,&chat_id,&gid,&prompt)}
                 else{PersistedHumanTurn::queued_chat(&host.chats,&chat_id,&gid,&prompt)};
             if !verifier.verify_user_turn(&chat_id,&gid){return Err("Workspace original human request changed".into())}
-            let mut turn=if let Some(operation)=exact{
+            let mut turn=if planned{
+                if let Some(directory)=approved_workspace.pinned_directory()?{
+                    WorkspaceReadTurnSession::new_planned_with_approved_directory(&verifier,&chat_id,&gid,&gid,directory,&prompt)
+                }else{WorkspaceReadTurnSession::new_planned(&verifier,&chat_id,&gid,&gid,&root,&prompt)}
+            }else if let Some(operation)=exact{
                 if let Some(exe)=git_executable.as_ref(){
                     WorkspaceReadTurnSession::new_exact(&verifier,&chat_id,&gid,&gid,&root,Some(exe),operation)
                 }else if let Some(directory)=approved_workspace.pinned_directory()?{
@@ -862,7 +871,7 @@ fn execute_approved_read(event_app:AppHandle,host:Arc<DesktopState>,session_id:S
                 chat_id:chat_id.clone(),generation_id:gid.clone(),
                 phase:"running",position:0,
             });}
-            let user_prompt=workspace_model_prompt(git_mode,&prompt,&preferred);
+            let user_prompt=if planned{prompt.clone()}else{workspace_model_prompt(git_mode,&prompt,&preferred)};
             // Reuse the SAME M3 ANSF retrieval as ordinary Send only
             // after the real persisted user-turn verifier is satisfied.
             // Task matching and allowed tool names are determined above
@@ -877,7 +886,10 @@ fn execute_approved_read(event_app:AppHandle,host:Arc<DesktopState>,session_id:S
             let observe=progress.dispatch_observer();
             let result=tauri::async_runtime::block_on(turn.run_journaled_observed(
                 &user_prompt,&mut model,&cancellation,&journal,&observe,
-            )).map_err(|e|format!("Workspace tool turn: {e:?}"))?;
+            )).map_err(|e|if planned{
+                if cancellation.is_cancelled()||ticket.cancelled(){"Cancelled workspace generation".into()}
+                else{"The requested inspection or comparison could not be completed. I cannot confirm the result for every requested file.".into()}
+            }else{format!("Workspace tool turn: {e:?}")})?;
             if cancellation.is_cancelled()||ticket.cancelled(){
                 return Err("Cancelled workspace generation".into())
             }
