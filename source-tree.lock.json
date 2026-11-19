@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "0c19ba3db5711971090aa50706353fcf7b4e9935",
-  "trackedFileCount": 1136,
+  "sourceCommitBeforeLock": "6ab2393e335f8ec8112ea85486a1b7a681a0caa9",
+  "trackedFileCount": 1137,
   "files": [
     {
       "path": ".gitattributes",
@@ -776,6 +776,10 @@
       "blob": "3f7024bd21bd6f9327c007cc924295fc7688ac3a"
     },
     {
+      "path": "docs/LU_CP06BR1_NATIVE_EXECUTION_20261119.md",
+      "blob": "958192ef2b81a3dd1be02b2afe6817b25da779d6"
+    },
+    {
       "path": "docs/LU_CP06B_SCOPED_INTENT_20261119.md",
       "blob": "4f50913ab36a1a77a4d273226608526e84fc3d25"
     },
@@ -789,7 +793,7 @@
     },
     {
       "path": "docs/LU_DEVELOPMENT_LEDGER.md",
-      "blob": "9a235946667450cb6b71885db1811474559494f8"
+      "blob": "a3c41b9981d02bb50738cb73da8b888882347a38"
     },
     {
       "path": "docs/LU_E1_NATIVE_EVIDENCE_20261107.md",
@@ -1525,7 +1529,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/capability_negotiation.rs",
-      "blob": "5410ed448f79bd107afc08a5153856b8efdfd8c8"
+      "blob": "3a6defe261a389fc69ba9de98ce25dc1f74c0243"
     },
     {
       "path": "lu-desktop/src-tauri/src/causal_diagnostic.rs",
@@ -1549,7 +1553,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/cp06a_reachability_tests.rs",
-      "blob": "87353c7d14502fcf9ba2012bc48b79d8697f7eb9"
+      "blob": "27f82a573b6463e8792447c1ae36c432468959b1"
     },
     {
       "path": "lu-desktop/src-tauri/src/diagnostic_archive.rs",
@@ -1837,7 +1841,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/workspace_desktop.rs",
-      "blob": "a28ae21550a6835e52583371f572e39cd92b6c05"
+      "blob": "ac08b77cac9641b83dcbe5f5124cea2f7aec6e3b"
     },
     {
       "path": "lu-desktop/src-tauri/src/write_proposal.rs",
@@ -3737,7 +3741,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/native_workspace_read_turn.rs",
-      "blob": "69cdb6ae089196bf4e17ac601d8a3a2d1383f095"
+      "blob": "d64431a55a411b03ea445cad0392ec3636ba42f9"
     },
     {
       "path": "src-tauri/lu-core/src/native_zip_extract.rs",
