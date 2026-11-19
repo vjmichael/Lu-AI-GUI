@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "32aefd054b8770bed5616f4efa661c43150ff7c8",
+  "sourceCommitBeforeLock": "d06c3905b5bb4112eba9d51860b7504b22931a6a",
   "trackedFileCount": 1973,
   "files": [
     {
@@ -1181,7 +1181,7 @@
     },
     {
       "path": "docs/LU_DEVELOPMENT_LEDGER.md",
-      "blob": "b4db9e3448f4fa0e1b3ac7e83c631b827057cdc4"
+      "blob": "767ef04d952752c363f9388d3a3906d1712d6e7f"
     },
     {
       "path": "docs/LU_E1_NATIVE_EVIDENCE_20261107.md",
@@ -4669,7 +4669,7 @@
     },
     {
       "path": "ide/supervisor/src/linux_worker.rs",
-      "blob": "a50bfd1199eea8235851b59ce1a4576427302823"
+      "blob": "cbeba3f4739e677085a49718573aaed1105d3455"
     },
     {
       "path": "ide/supervisor/src/live_output.rs",
