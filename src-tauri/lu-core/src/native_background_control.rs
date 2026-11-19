@@ -82,7 +82,7 @@ impl NativeTool for StartTool{
 
 struct CancelTool{
     descriptor:ToolDescriptor,workspace:String,target:String,used:Mutex<bool>,
-    supervisor:Arc<BackgroundProcessSupervisor>,
+    store:Arc<TaskStore>,supervisor:Arc<BackgroundProcessSupervisor>,
 }
 impl NativeTool for CancelTool{
     fn descriptor(&self)->&ToolDescriptor{&self.descriptor}
@@ -105,6 +105,15 @@ impl NativeTool for CancelTool{
             tokio::task::spawn_blocking(move||manager.cancel_owned(&id,&workspace))
                 .await.map_err(|_|failure("BACKGROUND_CANCEL_UNCERTAIN"))?
                 .map_err(|_|failure("BACKGROUND_CANCEL_UNCERTAIN"))?;
+            // Native supervisor has verified termination. Independently read
+            // the exact durable owner and terminal state before model feedback.
+            let record=self.store.get(&request.id)
+                .map_err(|_|failure("BACKGROUND_CANCEL_UNCERTAIN"))?
+                .ok_or_else(||failure("BACKGROUND_CANCEL_UNCERTAIN"))?;
+            if record.workspace_id.as_deref()!=Some(self.workspace.as_str())
+                ||record.state.as_str()!="CANCELLED"||self.supervisor.can_cancel(&request.id){
+                return Err(failure("BACKGROUND_CANCEL_UNCERTAIN"))
+            }
             Ok(ToolOutput{payload:ProtoPayload{
                 type_url:CANCEL_OUT.into(),
                 bytes:CancelReply{id:request.id}.encode_to_vec(),
@@ -162,48 +171,70 @@ impl ModelToolCodec for CancelCodec{
     }
 }
 
-/// Host only: plan MUST be built from a reviewed worker registry and approved
-/// by a persisted real user turn. A fresh registry/plan is required each turn.
-/// No filesystem path or executable ever enters model arguments. ToolEffect
-/// ExecuteCode still needs independent per-turn PolicyEngine authorization.
-pub fn register_bound_background_controls(
+/// Register only a host-reviewed launch in a fresh per-turn registry.
+/// The caller still must obtain independent current-turn ExecuteCode authority.
+/// This intentionally offers no cancellation tool in the launch-only registry.
+pub fn register_bound_background_start(
     registry:&NativeToolRegistry,store:Arc<TaskStore>,
     supervisor:Arc<BackgroundProcessSupervisor>,job_kind:&str,
     plan:TrustedWorkerPlan,
 )->Result<ModelToolCatalog,String>{
+    validate_bound_plan(job_kind,&plan)?;
+    let mut catalog=register_model_background_observation(registry,store)?;
+    register_start(registry,&mut catalog,supervisor,job_kind,plan)?;
+    Ok(catalog)
+}
+
+/// Register cancellation of a task already owned by this host and workspace.
+/// No new plan, executable, process identifier or launch capability is accepted.
+/// The caller must independently verify original-turn ownership and obtain
+/// fresh human confirmation; dispatch checks authority and live custody again.
+pub fn register_bound_background_cancel(
+    registry:&NativeToolRegistry,store:Arc<TaskStore>,
+    supervisor:Arc<BackgroundProcessSupervisor>,workspace:&str,target:&str,
+)->Result<ModelToolCatalog,String>{
+    if !valid(workspace)||!valid(target){
+        return Err("invalid host-prepared cancellation".into())
+    }
+    let task=store.get(target).map_err(|_|"task store unavailable")?
+        .ok_or("task unavailable")?;
+    if task.workspace_id.as_deref()!=Some(workspace)
+        ||task.state.as_str()!="RUNNING"||!supervisor.can_cancel(target){
+        return Err("task not owned or not running".into())
+    }
+    let mut catalog=register_model_background_observation(registry,Arc::clone(&store))?;
+    register_cancel(registry,&mut catalog,store,supervisor,workspace,target)?;
+    Ok(catalog)
+}
+
+fn validate_bound_plan(job_kind:&str,plan:&TrustedWorkerPlan)->Result<(),String>{
     if !valid(job_kind)||!valid(&plan.task_id)||!valid(&plan.workspace_id)
         ||plan.expected_sha256.len()!=64
         ||!plan.expected_sha256.bytes().all(|b|b.is_ascii_hexdigit()){
         return Err("invalid host-prepared task".into())
     }
+    Ok(())
+}
+
+fn register_start(
+    registry:&NativeToolRegistry,catalog:&mut ModelToolCatalog,
+    supervisor:Arc<BackgroundProcessSupervisor>,job_kind:&str,
+    plan:TrustedWorkerPlan,
+)->Result<(),String>{
     let workspace=plan.workspace_id.clone();
-    let id=plan.task_id.clone();
-    let mut catalog=register_model_background_observation(registry,store)?;
     let start=ToolDescriptor{id:START.into(),
         display_name:"Start host-selected reviewed worker".into(),
         effect:ToolEffect::ExecuteCode,
         input_type_url:START_IN.into(),output_type_url:START_OUT.into()};
-    let cancel=ToolDescriptor{id:CANCEL.into(),
-        display_name:"Stop exact Lu-owned worker".into(),
-        effect:ToolEffect::ExecuteCode,
-        input_type_url:CANCEL_IN.into(),output_type_url:CANCEL_OUT.into()};
     registry.register(ModuleManifest{id:"lu.bgstart".into(),
         display_name:"Lu host-bound task launch".into(),kind:ModuleKind::Core,
         contract_version:CORE_CONTRACT_VERSION,tools:vec![start.clone()],
         panels:vec![],workflows:vec![]},
         vec![Arc::new(StartTool{descriptor:start,
-            workspace:workspace.clone(),kind:job_kind.into(),
-            pending:Mutex::new(Some(plan)),supervisor:Arc::clone(&supervisor)})
+            workspace,kind:job_kind.into(),
+            pending:Mutex::new(Some(plan)),supervisor})
             as Arc<dyn NativeTool>]
     ).map_err(|e|format!("start registration failed: {e:?}"))?;
-    registry.register(ModuleManifest{id:"lu.bgcancel".into(),
-        display_name:"Lu host-bound task cancellation".into(),kind:ModuleKind::Core,
-        contract_version:CORE_CONTRACT_VERSION,tools:vec![cancel.clone()],
-        panels:vec![],workflows:vec![]},
-        vec![Arc::new(CancelTool{descriptor:cancel,
-            workspace,target:id.clone(),used:Mutex::new(false),supervisor})
-            as Arc<dyn NativeTool>]
-    ).map_err(|e|format!("cancel registration failed: {e:?}"))?;
     catalog.insert(registry,ModelToolDefinition{
         name:"lu_background_start".into(),native_tool_id:START.into(),
         description:"Run only the user-approved Lu-host-prepared job; no command, file path or PID parameters.".into(),
@@ -212,14 +243,52 @@ pub fn register_bound_background_controls(
         },"required":["job_kind"],"additionalProperties":false}),
         codec:Arc::new(StartCodec{kind:job_kind.into()})
     }).map_err(|e|format!("start catalog failed: {e:?}"))?;
+    Ok(())
+}
+
+fn register_cancel(
+    registry:&NativeToolRegistry,catalog:&mut ModelToolCatalog,
+    store:Arc<TaskStore>,supervisor:Arc<BackgroundProcessSupervisor>,
+    workspace:&str,target:&str,
+)->Result<(),String>{
+    let cancel=ToolDescriptor{id:CANCEL.into(),
+        display_name:"Stop exact Lu-owned worker".into(),
+        effect:ToolEffect::ExecuteCode,
+        input_type_url:CANCEL_IN.into(),output_type_url:CANCEL_OUT.into()};
+    registry.register(ModuleManifest{id:"lu.bgcancel".into(),
+        display_name:"Lu host-bound task cancellation".into(),kind:ModuleKind::Core,
+        contract_version:CORE_CONTRACT_VERSION,tools:vec![cancel.clone()],
+        panels:vec![],workflows:vec![]},
+        vec![Arc::new(CancelTool{descriptor:cancel,
+            workspace:workspace.into(),target:target.into(),used:Mutex::new(false),
+            store,supervisor})
+            as Arc<dyn NativeTool>]
+    ).map_err(|e|format!("cancel registration failed: {e:?}"))?;
     catalog.insert(registry,ModelToolDefinition{
         name:"lu_background_cancel".into(),native_tool_id:CANCEL.into(),
         description:"Cancel only this exact authorized task; no process IDs.".into(),
         parameters:json!({"type":"object","properties":{
-            "task_id":{"type":"string","enum":[id]}
+            "task_id":{"type":"string","enum":[target]}
         },"required":["task_id"],"additionalProperties":false}),
-        codec:Arc::new(CancelCodec{target:id})
+        codec:Arc::new(CancelCodec{target:target.into()})
     }).map_err(|e|format!("cancel catalog failed: {e:?}"))?;
+    Ok(())
+}
+
+/// Compatibility entrypoint for a pre-reviewed plan and its own task ID.
+/// Production original-turn integration should use the separate entrypoints
+/// so cancellation never confers a launch grant (or vice versa).
+pub fn register_bound_background_controls(
+    registry:&NativeToolRegistry,store:Arc<TaskStore>,
+    supervisor:Arc<BackgroundProcessSupervisor>,job_kind:&str,
+    plan:TrustedWorkerPlan,
+)->Result<ModelToolCatalog,String>{
+    validate_bound_plan(job_kind,&plan)?;
+    let workspace=plan.workspace_id.clone();
+    let id=plan.task_id.clone();
+    let mut catalog=register_model_background_observation(registry,Arc::clone(&store))?;
+    register_start(registry,&mut catalog,Arc::clone(&supervisor),job_kind,plan)?;
+    register_cancel(registry,&mut catalog,store,supervisor,&workspace,&id)?;
     Ok(catalog)
 }
 
@@ -286,6 +355,47 @@ mod tests {
         assert!(registry.dispatch(cancel,&Allow).await.is_err());
         assert_eq!(store.get("worker-bound1").unwrap().unwrap().state.as_str(),
             "CANCELLED");
+    }
+    #[tokio::test]
+    async fn fresh_turn_cancel_registry_never_grants_launch_or_foreign_task(){
+        let store=Arc::new(TaskStore::open(Path::new(":memory:")).unwrap());
+        let supervisor=Arc::new(BackgroundProcessSupervisor::new(Arc::clone(&store)));
+        let launch_registry=NativeToolRegistry::new();
+        let launch=register_bound_background_start(&launch_registry,Arc::clone(&store),
+            Arc::clone(&supervisor),"verified_scan",plan()).unwrap();
+        let allowed=BTreeSet::from(["lu_background_start".into(),"lu_background_cancel".into()]);
+        assert!(launch.encode_call(&allowed,"lu_background_cancel","wrong-launch-turn",
+            Some("c-owner"),r#"{"task_id":"worker-bound1"}"#).is_err());
+        let start=launch.encode_call(&allowed,"lu_background_start","fresh-launch",
+            Some("c-owner"),r#"{"job_kind":"verified_scan"}"#).unwrap();
+        assert!(launch_registry.dispatch(start.clone(),&Deny).await.is_err());
+        assert!(store.get("worker-bound1").unwrap().is_none());
+        assert!(launch_registry.dispatch(start,&Allow).await.is_ok());
+
+        for (workspace,target) in [("another","worker-bound1"),("c-owner","absent")]{
+            let rejected=NativeToolRegistry::new();
+            assert!(register_bound_background_cancel(&rejected,Arc::clone(&store),
+                Arc::clone(&supervisor),workspace,target).is_err());
+        }
+        let stop_registry=NativeToolRegistry::new();
+        let stop=register_bound_background_cancel(&stop_registry,Arc::clone(&store),
+            Arc::clone(&supervisor),"c-owner","worker-bound1").unwrap();
+        assert!(stop.encode_call(&allowed,"lu_background_start","wrong-stop-turn",
+            Some("c-owner"),r#"{"job_kind":"verified_scan"}"#).is_err());
+        let foreign=stop.encode_call(&allowed,"lu_background_cancel","foreign-stop",
+            Some("another"),r#"{"task_id":"worker-bound1"}"#).unwrap();
+        assert!(stop_registry.dispatch(foreign,&Allow).await.is_err());
+        let cancel=stop.encode_call(&allowed,"lu_background_cancel","fresh-stop",
+            Some("c-owner"),r#"{"task_id":"worker-bound1"}"#).unwrap();
+        assert!(stop_registry.dispatch(cancel.clone(),&Deny).await.is_err());
+        assert!(supervisor.can_cancel("worker-bound1"));
+        assert!(stop_registry.dispatch(cancel.clone(),&Allow).await.is_ok());
+        assert!(stop_registry.dispatch(cancel,&Allow).await.is_err());
+        assert!(!supervisor.can_cancel("worker-bound1"));
+        assert_eq!(store.get("worker-bound1").unwrap().unwrap().state.as_str(),"CANCELLED");
+        let stale=NativeToolRegistry::new();
+        assert!(register_bound_background_cancel(&stale,store,supervisor,
+            "c-owner","worker-bound1").is_err());
     }
     #[test]
     fn no_model_supplied_shell_executable_or_args(){
