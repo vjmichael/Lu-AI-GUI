@@ -210,6 +210,30 @@ class P06NativeEvidenceTests(unittest.TestCase):
         job["id"] = jobs[0]["id"]
         self.assertEqual(assess(SHA,[run(gate[1])],lambda *_:jobs+[job])["observations"][0]["state"],"invalid_duplicate_job")
 
+    def test_only_explicit_reviewed_core_jobs_excluded_from_shared_workflow(self):
+        gate = next(g for g in GATES if g[0] == "lu-repo01-full-source")
+        row = GATE_RECORDS[gate[0]]
+        self.assertEqual(len(row["excludedJobNames"]), 47)
+        jobs = good_jobs(gate)
+        known = dict(jobs[0], name=row["excludedJobNames"][0], id=99998,
+                     conclusion="skipped")
+        unknown = dict(jobs[0], name="unreviewed future IDE job", id=99999)
+        def assess_shared(extra):
+            report = assess(SHA, [run(gate[1])], lambda *_: jobs + extra)
+            return next(r for r in report["observations"] if r["gate"] == gate[0])
+        known_only = assess_shared([known])
+        self.assertEqual(known_only["state"], "observed_success")
+        self.assertEqual(known_only["additionalJobs"][0]["disposition"], "non_ide_job_excluded")
+        mixed = assess_shared([known, unknown])
+        self.assertEqual(mixed["state"], "unreviewed_additional_jobs")
+        self.assertEqual(mixed["additionalJobs"][1]["disposition"], "unreviewed_job")
+        with patch.dict(row, {"excludedJobNames": ["verify-source"]}):
+            with self.assertRaisesRegex(EvidenceError, "invalid_excluded_job_catalog"):
+                assess_shared([])
+        with patch.dict(row, {"excludedJobNames": []}):
+            with self.assertRaisesRegex(EvidenceError, "invalid_excluded_job_catalog"):
+                assess_shared([])
+
     def test_runner_origin_is_pinned_to_exact_repo(self):
         gate = GATES[0]
         sample = run(gate[1])

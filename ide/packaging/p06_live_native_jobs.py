@@ -186,6 +186,15 @@ def assess(sha, runs, jobs_for_run):
         spec = GATE_RECORDS[gate_id]
         if not required_jobs or len(set(required_jobs)) != len(required_jobs):
             raise EvidenceError("invalid_required_jobs")
+        excluded = spec.get("excludedJobNames", [])
+        if (not isinstance(excluded, list)
+                or any(not isinstance(name, str) or not name for name in excluded)
+                or len(set(excluded)) != len(excluded)
+                or set(excluded).intersection(required_jobs)
+                or bool(excluded) != spec["nonIdeJobsExcluded"]
+                or (excluded and workflow != ".github/workflows/lu-repo01-full-source.yml")):
+            raise EvidenceError("invalid_excluded_job_catalog")
+        excluded = set(excluded)
         candidates = candidates_by_path.get(workflow, [])
         if not candidates:
             observations.append({"gate": gate_id, "kind": kind, "workflow": workflow,
@@ -221,7 +230,7 @@ def assess(sha, runs, jobs_for_run):
                 matched[name] = job
             else:
                 extras.append({"name": name, "status": job.get("status"), "conclusion": job.get("conclusion"),
-                               "disposition": "non_ide_job_excluded" if spec["nonIdeJobsExcluded"] else "unreviewed_job"})
+                               "disposition": "non_ide_job_excluded" if name in excluded else "unreviewed_job"})
         if invalid:
             state = invalid
         elif run.get("status") == "completed":
@@ -229,7 +238,7 @@ def assess(sha, runs, jobs_for_run):
                 state = "failed_or_cancelled"
             elif set(matched) != required:
                 state = "incomplete_jobs"
-            elif extras and not spec["nonIdeJobsExcluded"]:
+            elif any(row["disposition"] == "unreviewed_job" for row in extras):
                 state = "unreviewed_additional_jobs"
             elif all(j.get("status") == "completed" and j.get("conclusion") == "success" for j in matched.values()):
                 state = "observed_success"
