@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "df1bdaa0f9eda2556d29bbcf1070aa2bb726e8a3",
-  "trackedFileCount": 1128,
+  "sourceCommitBeforeLock": "539d67a249eb8cf13f5787c73a9692d5924b9558",
+  "trackedFileCount": 1129,
   "files": [
     {
       "path": ".gitattributes",
@@ -117,7 +117,7 @@
     },
     {
       "path": ".github/workflows/lu-cp05e-closeout.yml",
-      "blob": "1c8576dfcd1a11d365fedb6c4f682841b9d3d8ea"
+      "blob": "89b56067ab268b89fe57958a2e5f6c59c29449b1"
     },
     {
       "path": ".github/workflows/lu-cp05e-grouped-native.yml",
@@ -777,7 +777,7 @@
     },
     {
       "path": "docs/LU_DEVELOPMENT_LEDGER.md",
-      "blob": "ddcfd44c5df0d25840e517616bc35b93db0a9f21"
+      "blob": "16e1a8d21485c984d4c312b76d274f19abb427e2"
     },
     {
       "path": "docs/LU_E1_NATIVE_EVIDENCE_20261107.md",
@@ -2532,8 +2532,12 @@
       "blob": "7abd99999fe260f6572f126321534d121373886b"
     },
     {
+      "path": "scripts/cp05e5-installed-journal-diagnostics.test.py",
+      "blob": "21acd5bf40f1817608a26fea2249cb6596da0e7f"
+    },
+    {
       "path": "scripts/cp05e5-installed-journal.py",
-      "blob": "39e22af9a3ca993b9322c32b476a7f176e434fd5"
+      "blob": "cdc21bb1bf8070129180e85fb297859d43a6d8ac"
     },
     {
       "path": "scripts/cp05e5-review-browser.py",
