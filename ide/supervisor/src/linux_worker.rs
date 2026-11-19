@@ -122,6 +122,10 @@ const CGROUP_ROOT: &str = "/sys/fs/cgroup";
 const LOOP_DELAY: Duration = Duration::from_millis(40);
 const REAP_LIMIT: Duration = Duration::from_secs(5);
 const MAX_TOOL_BINARY: u64 = 32 * 1024 * 1024;
+// The reviewed Linux Cargo 1.99.1 distribution contains a 36,148,320-byte
+// executable. Only the fixed system Cargo path needs a larger hash budget.
+// Other executables, exact digests, and root-owned admission are unchanged.
+const MAX_CARGO_BINARY: u64 = 64 * 1024 * 1024;
 const TOTAL_LOG_BUFFER: usize = 64 * 1024;
 const MAX_OUTPUT_FILES: usize = 6_000;
 const MAX_ARTIFACT_BYTES: u64 = 256 * 1024 * 1024;
@@ -181,10 +185,21 @@ fn ensure_root_owned_tool(path: &Path) -> Result<(), SupervisorError> {
     Ok(())
 }
 
+fn tool_binary_limit(path: &Path) -> u64 {
+    if path.as_os_str() == CARGO {
+        MAX_CARGO_BINARY
+    } else {
+        MAX_TOOL_BINARY
+    }
+}
+
 fn hash_file(path: &Path) -> Result<String, SupervisorError> {
+    hash_file_with_limit(path, tool_binary_limit(path))
+}
+
+fn hash_file_with_limit(path: &Path, limit: u64) -> Result<String, SupervisorError> {
     let meta = fs::symlink_metadata(path).map_err(|_| denied())?;
-    if !meta.file_type().is_file() || meta.file_type().is_symlink() || meta.len() > MAX_TOOL_BINARY
-    {
+    if !meta.file_type().is_file() || meta.file_type().is_symlink() || meta.len() > limit {
         return Err(denied());
     }
     let mut source = File::open(path).map_err(|_| denied())?;
@@ -197,7 +212,7 @@ fn hash_file(path: &Path) -> Result<String, SupervisorError> {
             break;
         }
         length += n as u64;
-        if length > MAX_TOOL_BINARY {
+        if length > limit {
             return Err(denied());
         }
         hash.update(&buffer[..n]);
@@ -1445,6 +1460,44 @@ mod tests {
                 Err(SupervisorError::NoContainment)
             ) || installed_toolchain_digest().is_ok()
         );
+    }
+
+    #[test]
+    fn cargo_hash_budget_remains_limited_to_exact_fixed_path() {
+        assert_eq!(tool_binary_limit(Path::new(CARGO)), MAX_CARGO_BINARY);
+        for not_cargo in [BWRAP, RUSTC, "/tmp/cargo", "/usr/bin/cargo-other", "/usr/bin/./cargo"] {
+            assert_eq!(tool_binary_limit(Path::new(not_cargo)), MAX_TOOL_BINARY);
+        }
+        for linker in LINKER_CANDIDATES {
+            assert_eq!(tool_binary_limit(Path::new(linker)), MAX_TOOL_BINARY);
+        }
+        assert_eq!(MAX_TOOL_BINARY, 32 * 1024 * 1024);
+        assert_eq!(MAX_CARGO_BINARY, 64 * 1024 * 1024);
+    }
+
+    #[test]
+    fn cargo_hash_budget_hashes_all_bytes_and_denies_overflow_and_links() {
+        use std::os::unix::fs::symlink;
+        use std::io::{Seek, SeekFrom, Write};
+        let root = std::env::temp_dir().join(format!("ide-cargo-hash-budget-{}", std::process::id()));
+        fs::create_dir(&root).unwrap();
+        let file = root.join("cargo");
+        let mut handle = File::create(&file).unwrap();
+        handle.set_len(MAX_TOOL_BINARY + 1).unwrap();
+        assert!(hash_file(&file).is_err());
+        let first = hash_file_with_limit(&file, tool_binary_limit(Path::new(CARGO))).unwrap();
+        assert_eq!(first.len(), 64);
+        handle.seek(SeekFrom::End(-1)).unwrap();
+        handle.write_all(&[1]).unwrap();
+        handle.sync_all().unwrap();
+        let changed = hash_file_with_limit(&file, tool_binary_limit(Path::new(CARGO))).unwrap();
+        assert_ne!(first, changed);
+        handle.set_len(MAX_CARGO_BINARY + 1).unwrap();
+        assert!(hash_file_with_limit(&file, MAX_CARGO_BINARY).is_err());
+        symlink(&file, root.join("alias")).unwrap();
+        assert!(hash_file_with_limit(&root.join("alias"), MAX_CARGO_BINARY).is_err());
+        assert!(hash_file_with_limit(&root, MAX_CARGO_BINARY).is_err());
+        fs::remove_dir_all(&root).unwrap();
     }
 
     #[test]
