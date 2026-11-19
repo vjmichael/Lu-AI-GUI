@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "3f0db254c5c17b25a77d2ed393fefe2232752cdf",
-  "trackedFileCount": 1131,
+  "sourceCommitBeforeLock": "76e390dcdeb7684f85ab86901900971d7877d737",
+  "trackedFileCount": 1134,
   "files": [
     {
       "path": ".gitattributes",
@@ -772,6 +772,10 @@
       "blob": "679f91b43a45a70dfb38ce4a14c7bc942232dda8"
     },
     {
+      "path": "docs/LU_CP06A_TOOL_REACHABILITY_20261119.md",
+      "blob": "3f7024bd21bd6f9327c007cc924295fc7688ac3a"
+    },
+    {
       "path": "docs/LU_CURRENT_PREVIEW_CPU_VULKAN_DUAL_ENGINE_20261109.md",
       "blob": "c1664658ded245a3df6041114e42587f49550200"
     },
@@ -781,7 +785,7 @@
     },
     {
       "path": "docs/LU_DEVELOPMENT_LEDGER.md",
-      "blob": "c70f4a7898325d5c33eb63c32da2a8c0ea37915b"
+      "blob": "5fb912f4c19a752231e0cc5529ca3368af0b995a"
     },
     {
       "path": "docs/LU_E1_NATIVE_EVIDENCE_20261107.md",
@@ -1232,6 +1236,10 @@
       "blob": "3e57e652264dbf4d939dc9f7bf912775304fae5e"
     },
     {
+      "path": "docs/acceptance/LU_CP06A_TOOL_REACHABILITY_20261119.json",
+      "blob": "2b60b50a53def449a92c7f383a739c7c0142640a"
+    },
+    {
       "path": "docs/acceptance/LU_M3_WINDOWS_NATIVE_ACCEPTANCE_20261107.md",
       "blob": "ebedc54a3b544ffc3d3c635f09c3ec0426b85c95"
     },
@@ -1513,7 +1521,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/capability_negotiation.rs",
-      "blob": "15f6738c4e3eed42b628bbe31676bf439e83f01d"
+      "blob": "5ab72c6e1b9d17b66efb4cc680f254636061f36c"
     },
     {
       "path": "lu-desktop/src-tauri/src/causal_diagnostic.rs",
@@ -1534,6 +1542,10 @@
     {
       "path": "lu-desktop/src-tauri/src/core_utility_desktop.rs",
       "blob": "80ba7dd2e9316f1dfabc7c15891f058b1c0402ba"
+    },
+    {
+      "path": "lu-desktop/src-tauri/src/cp06a_reachability_tests.rs",
+      "blob": "87353c7d14502fcf9ba2012bc48b79d8697f7eb9"
     },
     {
       "path": "lu-desktop/src-tauri/src/diagnostic_archive.rs",
