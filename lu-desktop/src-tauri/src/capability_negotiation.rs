@@ -912,3 +912,7 @@ pub(crate) fn try_read_turn(app:&AppHandle,state:&Arc<DesktopState>,sid:&str,cha
     }
 
 }
+
+#[cfg(test)]
+#[path = "cp06a_reachability_tests.rs"]
+mod cp06a_reachability_tests;
