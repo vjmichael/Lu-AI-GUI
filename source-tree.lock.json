@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "a8285d76001e0376eebc25e1f255922699144a6b",
-  "trackedFileCount": 1143,
+  "sourceCommitBeforeLock": "732af137a2b972465b8c4ac8ee5a5d02ffe1757b",
+  "trackedFileCount": 1146,
   "files": [
     {
       "path": ".gitattributes",
@@ -796,6 +796,10 @@
       "blob": "0619ccfd2c5d39bc2d44abd6828b65277b366ef3"
     },
     {
+      "path": "docs/LU_CP06D_MODEL_CONFIRMED_TRANSFERS_20261119.md",
+      "blob": "ba08073502dfbb2e3c91cbda7fcf8c8d7e8d0064"
+    },
+    {
       "path": "docs/LU_CURRENT_PREVIEW_CPU_VULKAN_DUAL_ENGINE_20261109.md",
       "blob": "c1664658ded245a3df6041114e42587f49550200"
     },
@@ -805,7 +809,7 @@
     },
     {
       "path": "docs/LU_DEVELOPMENT_LEDGER.md",
-      "blob": "53e26d7200fdba618c5f434fcd9b90bd1d98a1d5"
+      "blob": "4f9279e59a47cda7a94b8d0cc39428f4958a7221"
     },
     {
       "path": "docs/LU_E1_NATIVE_EVIDENCE_20261107.md",
@@ -1593,7 +1597,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/file_transfer_desktop.rs",
-      "blob": "6d8e546be3da0863ae2f60c7f61809a9fa39effe"
+      "blob": "839f8ec76c220193a19e7fbfab1b323f4af11874"
     },
     {
       "path": "lu-desktop/src-tauri/src/file_trash_desktop.rs",
@@ -1621,7 +1625,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/lib.rs",
-      "blob": "42cb699fc74dd1cb36467744348106037237ad15"
+      "blob": "80a60ef475ce5ca0df3505c624649227a69b3f57"
     },
     {
       "path": "lu-desktop/src-tauri/src/linked_attachment_file.rs",
@@ -3361,11 +3365,11 @@
     },
     {
       "path": "src-tauri/lu-core/src/journal.rs",
-      "blob": "bbd8d8d3c86060c0e7e8a66c8ac36bd56643c4d6"
+      "blob": "476d2f996c5f25750c356f4443f49c60abd95e5c"
     },
     {
       "path": "src-tauri/lu-core/src/lib.rs",
-      "blob": "951c2567f740b584b549e8068d7b3bce274914e7"
+      "blob": "d147c24eb84b8efa1034535037d5aba7ee369150"
     },
     {
       "path": "src-tauri/lu-core/src/linux_device_hints.rs",
@@ -3410,6 +3414,10 @@
     {
       "path": "src-tauri/lu-core/src/model_provider_transport.rs",
       "blob": "d826cab5879548fff8d943492f7cd2e40ff324a6"
+    },
+    {
+      "path": "src-tauri/lu-core/src/model_transfer_turn.rs",
+      "blob": "4cd55d18ea5fc636c24f1624b418dc28dba5a6e6"
     },
     {
       "path": "src-tauri/lu-core/src/model_turn_journal.rs",
@@ -4202,6 +4210,10 @@
     {
       "path": "src-tauri/lu-core/tests/model_native_files.rs",
       "blob": "61ca216f0d93e3b4233f54862e97473170f88d5c"
+    },
+    {
+      "path": "src-tauri/lu-core/tests/model_transfer_turn.rs",
+      "blob": "44438d7110f127885acccf75d4ed4764242669ba"
     },
     {
       "path": "src-tauri/lu-core/tests/model_turn_journal.rs",
