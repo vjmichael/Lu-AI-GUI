@@ -20,6 +20,8 @@ pub enum ModelAuditKind {
     ToolFeedback,
     FinalAnswer,
     GenerationFailure,
+    /// Current native observation provenance; origin distinguishes model reproduction and host fallback.
+    EvidencePresentation,
 }
 
 impl ModelAuditKind {
@@ -33,6 +35,7 @@ impl ModelAuditKind {
             Self::ToolFeedback => "TOOL_FEEDBACK",
             Self::FinalAnswer => "FINAL_ANSWER",
             Self::GenerationFailure => "GENERATION_FAILURE",
+            Self::EvidencePresentation => "EVIDENCE_PRESENTATION",
         }
     }
 
@@ -46,6 +49,7 @@ impl ModelAuditKind {
             "TOOL_FEEDBACK" => Some(Self::ToolFeedback),
             "FINAL_ANSWER" => Some(Self::FinalAnswer),
             "GENERATION_FAILURE" => Some(Self::GenerationFailure),
+            "EVIDENCE_PRESENTATION" => Some(Self::EvidencePresentation),
             _ => None,
         }
     }
@@ -105,7 +109,7 @@ impl ModelTurnJournal {
                 task_id TEXT NOT NULL,
                 kind TEXT NOT NULL CHECK(kind IN (
                     'USER_REQUEST','MODEL_OUTPUT','PARSED_CANDIDATE','HOST_ROUTE_SELECTED',
-                    'REJECTED','TOOL_FEEDBACK','FINAL_ANSWER','GENERATION_FAILURE')),
+                    'REJECTED','TOOL_FEEDBACK','FINAL_ANSWER','GENERATION_FAILURE','EVIDENCE_PRESENTATION')),
                 payload TEXT NOT NULL,
                 repair TEXT,
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -121,7 +125,7 @@ impl ModelTurnJournal {
                 connection.execute_batch(CREATE_TABLE)?;
                 connection.execute_batch(CREATE_INDEX)?;
             }
-            Some(schema) if schema.contains("'HOST_ROUTE_SELECTED'") => {
+            Some(schema) if schema.contains("'HOST_ROUTE_SELECTED'") && schema.contains("'EVIDENCE_PRESENTATION'") => {
                 connection.execute_batch(CREATE_INDEX)?;
             }
             Some(_) => {
@@ -134,7 +138,7 @@ impl ModelTurnJournal {
                         task_id TEXT NOT NULL,
                         kind TEXT NOT NULL CHECK(kind IN (
                             'USER_REQUEST','MODEL_OUTPUT','PARSED_CANDIDATE','HOST_ROUTE_SELECTED',
-                            'REJECTED','TOOL_FEEDBACK','FINAL_ANSWER','GENERATION_FAILURE')),
+                            'REJECTED','TOOL_FEEDBACK','FINAL_ANSWER','GENERATION_FAILURE','EVIDENCE_PRESENTATION')),
                         payload TEXT NOT NULL,
                         repair TEXT,
                         created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -323,6 +327,22 @@ impl ModelTurnJournal {
 #[cfg(test)]
 mod wave3_summary_tests{
     use super::*;
+    #[test]
+    fn cp06c_migrate_existing_journal_and_preserve_fallback_attribution(){
+        let dir=std::env::temp_dir().join(format!("lu-cp06c-journal-{}",std::process::id()));
+        let _=std::fs::remove_dir_all(&dir);std::fs::create_dir_all(&dir).unwrap();let db=dir.join("audit.sqlite");
+        {
+            let connection=Connection::open(&db).unwrap();
+            connection.execute_batch("CREATE TABLE lu_model_boundary_audit (sequence INTEGER PRIMARY KEY AUTOINCREMENT,conversation_id TEXT NOT NULL,task_id TEXT NOT NULL,kind TEXT NOT NULL CHECK(kind IN ('USER_REQUEST','MODEL_OUTPUT','PARSED_CANDIDATE','HOST_ROUTE_SELECTED','REJECTED','TOOL_FEEDBACK','FINAL_ANSWER','GENERATION_FAILURE')),payload TEXT NOT NULL,repair TEXT,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP); INSERT INTO lu_model_boundary_audit(sequence,conversation_id,task_id,kind,payload) VALUES(44,'chat-a','old','FINAL_ANSWER','old answer'),(45,'chat-a','new','TOOL_FEEDBACK','observed');").unwrap();
+        }
+        let journal=ModelTurnJournal::open(&db).unwrap();
+        assert_eq!(journal.events_for("chat-a","old").unwrap()[0].sequence,44);
+        let seq=journal.append("chat-a","new",ModelAuditKind::EvidencePresentation,r#"{"origin":"host_evidence_fallback","answer":"reported facts"}"#,None).unwrap();assert!(seq>45);
+        let before=journal.events_for("chat-a","new").unwrap();assert_eq!(before.len(),2);
+        assert_eq!(journal.summaries_for_conversation("chat-a",8).unwrap().iter().find(|s|s.task_id=="new").unwrap().final_answers,0);
+        drop(journal);let journal=ModelTurnJournal::open(&db).unwrap();assert_eq!(before,journal.events_for("chat-a","new").unwrap());
+        drop(journal);std::fs::remove_dir_all(dir).unwrap();
+    }
     #[test]
     fn content_free_audit_survives_restart_and_never_leaks_other_chats(){
         let dir=std::env::temp_dir().join(format!(

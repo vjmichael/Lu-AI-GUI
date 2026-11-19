@@ -307,6 +307,9 @@ pub(crate) fn prior_utility_observation_for_human(
                 }
                 ModelAuditKind::Rejected|ModelAuditKind::GenerationFailure
                     |ModelAuditKind::HostRouteSelected=>suspicious=true,
+                ModelAuditKind::EvidencePresentation=>{
+                    if serde_json::from_str::<serde_json::Value>(&event.payload).ok().is_none_or(|v|v["origin"]!="model_exact_reproduction"){suspicious=true;}
+                },
                 _=>{}
             }
         }

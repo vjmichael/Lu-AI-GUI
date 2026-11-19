@@ -106,7 +106,7 @@ fn genuine_selection_and_native_reachability_matrix(){
     let exact=crate::core_utility_desktop::negotiable_core_utility_request(human).unwrap();let mut lane=CoreUtilityTurn::new(&verifier,&chat,&gid,&gid,exact).map_err(|e|format!("{e:?}"))?;assert!(matches_live(&choice,&lane.capabilities().unwrap()));
     tauri::async_runtime::block_on(lane.run_journaled_observed(&crate::core_utility_desktop::utility_model_prompt(name,human),&mut step,&cancel,&tool,&|_|{}))
    }else if name=="lu_reader_read"{
-    let mut lane=ReaderTurnSession::new(&verifier,&chat,&gid,&gid,"approved.txt",contents.as_bytes().to_vec()).unwrap();assert!(matches_live(&choice,&lane.capabilities().unwrap()));tauri::async_runtime::block_on(lane.run_journaled(&crate::reader_desktop::reader_model_prompt("approved.txt",false,human),&mut step,&cancel,&tool))
+    let mut lane=ReaderTurnSession::new(&verifier,&chat,&gid,&gid,"approved.txt",contents.as_bytes().to_vec()).unwrap();assert!(crate::reader_desktop::verified_excerpt_requested(human));lane.require_verified_excerpt().unwrap();assert!(matches_live(&choice,&lane.capabilities().unwrap()));tauri::async_runtime::block_on(lane.run_journaled(&crate::reader_desktop::verified_excerpt_prompt(human),&mut step,&cancel,&tool))
    }else{
     let op=exact_workspace_read(human)?.ok_or("Missing exact original workspace input")?;
     if op.native_id()!=choice.native_tool_id{return Err("Selected capability differs from exact input".into())}
@@ -137,11 +137,39 @@ fn genuine_selection_and_native_reachability_matrix(){
     "lu_check_env"=>{let expected=HostProgramInventory::new(evidence(true).program_specs).unwrap().check("git").unwrap();(v["program"]=="git"&&v["candidate_present"]==expected.candidate_present&&v["execution_verified"]==false,{let a=outcome.answer.to_ascii_lowercase();a.contains("git")&&a.contains("file")&&(a.contains("not proof of installation")||a.contains("does not prove installation")||a.contains("does not verify installation"))&&!a.contains("git is installed")&&!a.contains("git is available")})},
     _=>unreachable!()
    };
+   let provenance=events.iter().filter(|e|e.kind==ModelAuditKind::EvidencePresentation).collect::<Vec<_>>();
+   let final_events=events.iter().filter(|e|e.kind==ModelAuditKind::FinalAnswer).collect::<Vec<_>>();
+   let origin=if name=="lu_validate_schema"{
+    assert!(provenance.is_empty());assert_eq!(final_events.len(),1);"schema_model_verdict"
+   }else{
+    assert_eq!(provenance.len(),1,"missing or duplicate provenance");
+    assert_eq!(values.len(),1);assert_eq!(outcome.tool_calls,1);
+    let receipt:serde_json::Value=serde_json::from_str(&provenance[0].payload).unwrap();
+    assert_eq!(receipt["tool"],name);assert_eq!(receipt["call_id"],values[0]["call_id"]);
+    assert_eq!(receipt["feedback_sha256"],format!("{:x}",Sha256::digest(serde_json::to_vec(&values[0]).unwrap())));
+    assert_eq!(receipt["answer"],outcome.answer);
+    let mode=receipt["origin"].as_str().unwrap();
+    if mode=="model_exact_reproduction"{assert_eq!(final_events.len(),1);assert_eq!(final_events[0].payload,outcome.answer);assert!(events.iter().any(|e|e.kind==ModelAuditKind::ModelOutput&&serde_json::from_str::<serde_json::Value>(&e.payload).ok()==Some(serde_json::json!({"kind":"final","text":outcome.answer}))));"model_exact_reproduction"}
+    else{assert_eq!(mode,"host_evidence_fallback");assert!(final_events.is_empty());assert!(outcome.answer.starts_with("I couldn't verify my generated explanation."));assert!(events.iter().any(|e|e.kind==ModelAuditKind::Rejected&&e.payload=="FINAL_NOT_EXACTLY_GROUNDED_IN_CURRENT_NATIVE_EVIDENCE"));"host_evidence_fallback"}
+   };
+   // Stronger value and limitation checks, not just the old marker oracle.
+   match name{
+    "lu_files_list_directory"=>{for e in v["entries"].as_array().unwrap(){assert!(outcome.answer.contains(e["name"].as_str().unwrap()));}},
+    "lu_files_search_text"=>{for e in v["hits"].as_array().unwrap(){assert!(outcome.answer.contains(e["path"].as_str().unwrap()));}if v["truncated"]==true{assert!(outcome.answer.contains("incomplete or truncated"));}assert!(!outcome.answer.contains("No other files were found"));},
+    "lu_files_discover"=>assert!(outcome.answer.contains("sub/needle-audit.txt")&&outcome.answer.contains("does not verify file contents")),
+    "lu_archive_list"=>{for e in v["entries"].as_array().unwrap(){assert!(outcome.answer.contains(e["path"].as_str().unwrap()));}assert!(outcome.answer.contains("integrity was not verified"));},
+    "lu_artifact_inspect"=>assert!(outcome.answer.contains("factual accuracy were not verified")),
+    "lu_git_log"=>assert!(outcome.answer.contains("bounded history")),
+    "lu_git_diff"=>assert!(outcome.answer.contains("CP06A_OLD_8462")&&outcome.answer.contains("CP06A_NEW_8462")),
+    "lu_check_env"=>assert!(outcome.answer.contains("not proof of installation")&&outcome.answer.contains("does not prove runtime execution")),
+    _=>{},
+   }
+   println!("CP06C_PRESENTATION {name} origin={origin}");
    println!("CP06A_WITNESS {name} facts={facts} grounded={grounded} calls={} answer={:?}",outcome.tool_calls,outcome.answer);
    if !facts{return Err("feedback did not match independent fixture".into())}
    ticket.commit_completed(sid,||{chats.append_progress(&chat,&gid,&outcome.answer)?;chats.complete(&chat,&gid)})?;
    if !grounded{return Err("verified dispatch but final answer failed fixture grounding".into())}
-   Ok("NATIVE_FEEDBACK_AND_FINAL_PASS".into())
+   Ok(format!("NATIVE_FEEDBACK_AND_PRESENTATION_PASS {origin}"))
   })();
   for e in tool.events_for(&chat,&gid).unwrap(){println!("CP06A_TOOL {name} {:?} {}",e.kind,e.payload);}
   match result{Ok(status)=>println!("CP06A_CASE {name} {status}"),Err(e)=>{println!("CP06A_CASE {name} FAIL {e}");failures.push(format!("{name}: {e}"));if chats.require(&chat).unwrap().generation_terminal_kind(&chat,&gid).unwrap().is_none(){let _=chats.cancel(&chat,&gid);}}}

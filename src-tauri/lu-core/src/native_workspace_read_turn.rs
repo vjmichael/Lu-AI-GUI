@@ -423,14 +423,44 @@ mod integrated_reader_tests{
         let journal=ModelTurnJournal::open(&base.join("audit.sqlite")).unwrap();
         let mut model=Scripted{replies:VecDeque::from([
             r#"{"kind":"tool","name":"lu_files_stat","arguments":{"source":"current_request"}}"#.into(),
-            r#"{"kind":"final","text":"8 bytes"}"#.into(),
+            r#"{"kind":"final","text":"The file is 8000 bytes and other.txt was deleted."}"#.into(),
         ])};
         let result=lane.run_journaled("What is the byte size of Notes.TXT?",&mut model,&Cancellation::default(),&journal).await.unwrap();
         assert_eq!(result.tool_calls,1);
         let events=journal.events_for("c-source","task-stat").unwrap();
         let feedback=events.iter().filter(|e|e.kind==crate::model_turn_journal::ModelAuditKind::ToolFeedback).collect::<Vec<_>>();
         assert_eq!(feedback.len(),1);assert!(feedback[0].payload.contains("\"size_bytes\":8"));
-        drop(lane);drop(journal);std::fs::remove_dir_all(base).unwrap();
+        assert!(result.answer.starts_with(crate::evidence_grounding::FALLBACK_PREFIX));
+        assert!(result.answer.contains("8 bytes"));assert!(!result.answer.contains("8000")&&!result.answer.contains("deleted"));
+        assert!(events.iter().all(|e|e.kind!=crate::model_turn_journal::ModelAuditKind::FinalAnswer));
+        let receipt=events.iter().find(|e|e.kind==crate::model_turn_journal::ModelAuditKind::EvidencePresentation).unwrap();
+        let receipt:serde_json::Value=serde_json::from_str(&receipt.payload).unwrap();assert_eq!(receipt["origin"],"host_evidence_fallback");assert_eq!(receipt["answer"],result.answer);
+        let native:serde_json::Value=serde_json::from_str(&feedback[0].payload).unwrap();assert_eq!(receipt["call_id"],native["call_id"]);
+        use sha2::{Digest,Sha256};assert_eq!(receipt["feedback_sha256"],format!("{:x}",Sha256::digest(serde_json::to_vec(&native).unwrap())));
+        drop(lane);drop(journal);let reopened=ModelTurnJournal::open(&base.join("audit.sqlite")).unwrap();assert_eq!(events,reopened.events_for("c-source","task-stat").unwrap());drop(reopened);std::fs::remove_dir_all(base).unwrap();
+    }
+    #[tokio::test]
+    async fn cp06c_exact_model_reproduction_and_cancellation_are_distinct(){
+        struct StopOrCopy{step:usize,stop:bool}
+        impl ModelStepGenerator for StopOrCopy{
+            fn generate_step(&mut self,_prompt:&str,_max:u32,cancel:&Cancellation)->Result<String,NativeGenerationError>{
+                self.step+=1;
+                if self.step==1{return Ok(r#"{"kind":"tool","name":"lu_files_stat","arguments":{"source":"current_request"}}"#.into())}
+                if self.stop{cancel.cancel();}
+                Ok(serde_json::json!({"kind":"final","text":"Reported size: 8 bytes. Entry type: `\"file\"`."}).to_string())
+            }
+        }
+        let base=directory();let _=std::fs::remove_dir_all(&base);let root=base.join("approved");std::fs::create_dir_all(&root).unwrap();std::fs::write(root.join("Notes.TXT"),b"original").unwrap();
+        for stop in [false,true]{
+            let task=if stop{"task-stopped"}else{"task-copy"};
+            let mut lane=WorkspaceReadTurnSession::new_exact(&OriginalTurn,"c-source","g-human",task,&root,None,ExactWorkspaceRead::Stat("Notes.TXT".into())).unwrap();
+            let journal=ModelTurnJournal::open(&base.join("audit.sqlite")).unwrap();let mut model=StopOrCopy{step:0,stop};
+            let result=lane.run_journaled("What is the byte size of Notes.TXT?",&mut model,&Cancellation::default(),&journal).await;
+            let events=journal.events_for("c-source",task).unwrap();assert_eq!(events.iter().filter(|e|e.kind==crate::model_turn_journal::ModelAuditKind::ToolFeedback).count(),1);
+            if stop{assert!(result.is_err());assert!(events.iter().all(|e|!matches!(e.kind,crate::model_turn_journal::ModelAuditKind::EvidencePresentation|crate::model_turn_journal::ModelAuditKind::FinalAnswer)));}
+            else{let report=result.unwrap();assert_eq!(report.answer,"Reported size: 8 bytes. Entry type: `\"file\"`.");assert_eq!(events.iter().filter(|e|e.kind==crate::model_turn_journal::ModelAuditKind::FinalAnswer).count(),1);let receipt=events.iter().find(|e|e.kind==crate::model_turn_journal::ModelAuditKind::EvidencePresentation).unwrap();assert_eq!(serde_json::from_str::<serde_json::Value>(&receipt.payload).unwrap()["origin"],"model_exact_reproduction");}
+        }
+        std::fs::remove_dir_all(base).unwrap();
     }
     #[tokio::test]
     async fn one_original_turn_discovers_then_reads_document_through_real_codecs(){

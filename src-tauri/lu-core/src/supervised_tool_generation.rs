@@ -222,6 +222,8 @@ pub enum NativeTurnRecord {
     ModelOutput(String),
     ToolFeedback(Value),
     FinalAnswer(String),
+    /// Host-rendered evidence, never attributed to model-generated final text.
+    HostEvidenceFallback(String),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -1003,8 +1005,15 @@ async fn execute_supervised_native_turn(
             records.iter().rev().find_map(|r|match r{NativeTurnRecord::ToolFeedback(data)=>Some(data),_=>None})
                 .map(schema_observation_final).transpose()?.flatten()
         }else{None};
+        let evidence=if turn.is_single_observation()&&allow_final&&schema_observation.is_none(){
+            let mut observed=records.iter().filter_map(|r|match r{NativeTurnRecord::ToolFeedback(data)=>Some(data),_=>None});
+            match (observed.next(),observed.next()){
+                (Some(data),None)=>crate::evidence_grounding::from_feedback(data).map_err(|_|NativeGenerationError::InvalidInferenceEvent)?,
+                _=>return Err(NativeGenerationError::InvalidInferenceEvent),
+            }
+        }else{None};
         let output_schema = if schema_observation.is_some(){schema_final_reply_schema()}else{native_reply_schema(offered,allow_final)?};
-        let grounded_prompt=schema_observation.map(schema_final_prompt);
+        let grounded_prompt=schema_observation.map(schema_final_prompt).or_else(||evidence.as_ref().map(|e|sanitize_chatml(&e.prompt())));
         let model_prompt=grounded_prompt.as_deref().unwrap_or(&prompt);
         let reply = match model.generate_step_constrained(model_prompt, LU_TURN_GENERATION_TOKENS, cancel, &output_schema) {
             Ok(reply) => reply,
@@ -1045,6 +1054,27 @@ async fn execute_supervised_native_turn(
                 record_audit(journal,&conversation_id,&task_id,ModelAuditKind::Rejected,
                     "SCHEMA_FINAL_NOT_GROUNDED_IN_OBSERVED_RESULT",None)?;
                 turn.halt();return Err(NativeGenerationError::InvalidInferenceEvent)
+            }
+        }
+        if let Some(observation)=&evidence{
+            let expected=serde_json::json!({"kind":"final","text":observation.text});
+            let exact=serde_json::from_str::<Value>(&reply).ok().as_ref()==Some(&expected)&&
+                parsed_candidate.as_ref().is_some_and(|p|p.object.len()==2&&p.repair==JsonRepairStatus::Unchanged);
+            if !exact{
+                // No replay, no second native dispatch, and no claim that the
+                // rejected model answer was grounded. The host may present only
+                // the independently decoded result, with explicit attribution.
+                record_audit(journal,&conversation_id,&task_id,ModelAuditKind::Rejected,
+                    "FINAL_NOT_EXACTLY_GROUNDED_IN_CURRENT_NATIVE_EVIDENCE",None)?;
+                lifecycle.continue_authorized(turn,services,false)?;
+                let answer=format!("{}{}",crate::evidence_grounding::FALLBACK_PREFIX,observation.text);
+                record_audit(journal,&conversation_id,&task_id,ModelAuditKind::EvidencePresentation,
+                    &observation.receipt(false,&answer),None)?;
+                turn.halt();
+                records.push(NativeTurnRecord::ModelOutput(reply));
+                records.push(NativeTurnRecord::HostEvidenceFallback(answer.clone()));
+                return Ok(NativeTurnReport{answer,model_generations:generation,
+                    tool_calls:turn.step_count().saturating_sub(host_routed_calls),host_routed_calls,records});
             }
         }
         if let Some(candidate) = &parsed_candidate {
@@ -1237,6 +1267,10 @@ Rejected model tool envelope (not an executed call): {feedback}
                     .map_err(NativeGenerationError::ModelReply)?;
                 turn.live_schemas(catalog, registry)
                     .map_err(NativeGenerationError::ModelReply)?;
+                if let Some(observation)=&evidence{
+                    record_audit(journal,&conversation_id,&task_id,ModelAuditKind::EvidencePresentation,
+                        &observation.receipt(true,&answer),None)?;
+                }
                 record_audit(
                     journal,
                     &conversation_id,

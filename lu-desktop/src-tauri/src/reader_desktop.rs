@@ -291,6 +291,8 @@ fn execute_approved_reader(event_app:&AppHandle,host:&Arc<DesktopState>,session_
             let mut reader_turn=ReaderTurnSession::new(
                 &verifier,&chat_id,&gid,&gid,&virtual_filename,bytes,
             ).map_err(|e|format!("Reader turn admission: {e:?}"))?;
+            let exact_excerpt=negotiated&&verified_excerpt_requested(&prompt);
+            if exact_excerpt{reader_turn.require_verified_excerpt().map_err(|_|"Could not bind the approved document excerpt")?;}
             let available=reader_turn.capabilities().map_err(|_|"Reader live capability unavailable")?;
             if available.len()!=1||available[0].public_name!="lu_reader_read"||available[0].native_tool_id!="lu.reader.read"||available[0].effect!="read_workspace"{
                 return Err("Reader live capability no longer matches selection".into())
@@ -309,7 +311,7 @@ fn execute_approved_reader(event_app:&AppHandle,host:&Arc<DesktopState>,session_
                 chat_id:chat_id.clone(),generation_id:gid.clone(),
                 phase:"running",position:0,
             });}
-            let reader_prompt=reader_model_prompt(&virtual_filename,reuse,&prompt);
+            let reader_prompt=if exact_excerpt{verified_excerpt_prompt(&prompt)}else{reader_model_prompt(&virtual_filename,reuse,&prompt)};
             let observe=progress.dispatch_observer();
             let result=tauri::async_runtime::block_on(
                 reader_turn.run_journaled_observed(
@@ -429,6 +431,15 @@ mod tests{
 }
 
 /// Shared production/acceptance prompt; the original picker remains independent.
+/// Exact text requests are not arbitrary Reader Q&A or summary requests.
+/// Those retain their existing pagination and model reasoning path.
+pub(crate) fn verified_excerpt_requested(prompt:&str)->bool{
+    crate::capability_negotiation::direct_read_id(prompt)==Some("lu.reader.read")&&
+        !prompt.to_ascii_lowercase().contains("summarize ")
+}
+pub(crate) fn verified_excerpt_prompt(prompt:&str)->String{
+    format!("The human approved one document. Call lu_reader_read with source=current_request to read the approved document's first bounded text excerpt. Do not request different arguments or infer unread content. User request: {prompt}")
+}
 pub(crate) fn reader_model_prompt(virtual_filename:&str,reuse:bool,prompt:&str)->String{
     let source_note=if reuse{
                 " The human picked bytes matching a PREVIOUSLY inspected source

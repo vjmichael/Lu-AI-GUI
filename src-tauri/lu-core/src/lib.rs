@@ -242,6 +242,7 @@ pub mod desktop_owner;
 pub mod privilege_guard;
 pub mod projector_identity;
 pub mod saved_chat_prompt;
+mod evidence_grounding;
 pub mod supervised_tool_generation;
 pub use policy::{CapabilityGrant, PolicyEngine, PolicyError};
 pub mod recovery;

@@ -13,7 +13,7 @@ use std::{
 use prost::Message;
 use crate::{
     agent_tool_loop::{NativeToolTurn,ToolTurnError,ToolDispatchCheckpoint},
-    contracts::{AuthorizationError,ToolAuthorizer,ToolDescriptor,ToolEffect,ToolInvocation},
+    contracts::{AuthorizationError,ToolAuthorizer,ToolDescriptor,ToolEffect,ToolInvocation,ProtoPayload},
     conversation_authority::{
         AuthorizedCapability,BoundCallOrigin,ConversationAuthority,TaskAuthority,
         TrustedUserTurnVerifier,
@@ -41,6 +41,7 @@ pub enum ReaderTurnAdmissionError{
 }
 struct ReaderOnlyHostPolicy{
     filename:String,
+    fixed_input:Option<ProtoPayload>,
 }
 impl ToolAuthorizer for ReaderOnlyHostPolicy{
     fn authorize(&self,call:&ToolInvocation,descriptor:&ToolDescriptor)
@@ -55,6 +56,9 @@ impl ToolAuthorizer for ReaderOnlyHostPolicy{
         if request.path!=self.filename{
             return Err(AuthorizationError::new(
                 "Reader can access only the operator-selected document"));
+        }
+        if self.fixed_input.as_ref().is_some_and(|expected|expected!=&call.input){
+            return Err(AuthorizationError::new("Reader invocation differs from original excerpt input"));
         }
         Ok(())
     }
@@ -119,9 +123,25 @@ impl ReaderTurnSession{
         turn.require_observed_tool_result();
         Ok(Self{
             registry,catalog,authority,turn,
-            policy:ReaderOnlyHostPolicy{filename:filename.to_owned()},
+            policy:ReaderOnlyHostPolicy{filename:filename.to_owned(),fixed_input:None},
             task_id:task_id.into(),origin,
         })
+    }
+    /// For an explicit original request for a document's text (not general
+    /// Q&A or summarization), expose one bounded, literal first excerpt. The
+    /// host binds the approved file; the model cannot choose inspect-only,
+    /// offsets or selectors. Any unreturned text is reported as incomplete.
+    pub fn require_verified_excerpt(&mut self)->Result<(),ReaderTurnAdmissionError>{
+        if self.turn.step_count()!=0||self.policy.fixed_input.is_some(){return Err(ReaderTurnAdmissionError::InvalidUserScope)}
+        let allowed=BTreeSet::from([READER_MODEL_TOOL_NAME.to_owned()]);
+        let args=serde_json::json!({"path":self.policy.filename});
+        let original=self.catalog.encode_call(&allowed,READER_MODEL_TOOL_NAME,"host-exact-reader",Some(&self.task_id),&args.to_string())
+            .map_err(|_|ReaderTurnAdmissionError::ModelCatalog)?.input;
+        self.catalog.bind_current_input(&self.registry,READER_MODEL_TOOL_NAME,args.as_object().ok_or(ReaderTurnAdmissionError::ModelCatalog)?.clone())
+            .map_err(|_|ReaderTurnAdmissionError::ModelCatalog)?;
+        self.policy.fixed_input=Some(original);
+        self.turn.require_single_observed_tool_result();
+        Ok(())
     }
     /// Exact registered and granted Reader contract, not pre-grant inventory.
     pub fn capabilities(&self)->Result<Vec<crate::native_capability_inventory::NativeCapabilityView>,crate::native_capability_inventory::CapabilityInventoryError>{
@@ -181,6 +201,19 @@ mod tests{
         std::env::temp_dir().join(format!(
             "lu-reader-bound-turn-{}-{:?}.sqlite",
             std::process::id(),std::thread::current().id()))
+    }
+    #[tokio::test]
+    async fn cp06c_verified_excerpt_denies_offset_and_inspect_only_and_reports_source(){
+        let mut lane=ReaderTurnSession::new(&Verify(true),"chat-a","human-1","task-1","memo.md",b"ORIGINAL DOCUMENT TEXT".to_vec()).unwrap();
+        lane.require_verified_excerpt().unwrap();assert!(lane.require_verified_excerpt().is_err());
+        let allowed=BTreeSet::from([READER_MODEL_TOOL_NAME.to_owned()]);
+        let encode=|raw|lane.catalog.encode_call(&allowed,READER_MODEL_TOOL_NAME,"call",Some("task-1"),raw);
+        for raw in [r#"{"source":"current_request","offset_chars":2}"#,r#"{"source":"current_request","inspect_only":true}"#,r#"{"path":"memo.md","inspect_only":true}"#]{assert!(encode(raw).is_err());}
+        let call=encode(r#"{"source":"current_request"}"#).unwrap();let decoded=ReaderRequest::decode(call.input.bytes.as_slice()).unwrap();assert_eq!(decoded.path,"memo.md");assert!(!decoded.inspect_only);assert_eq!(decoded.offset_chars,Some(0));
+        let path=audit_path();let _=std::fs::remove_file(&path);let journal=ModelTurnJournal::open(&path).unwrap();
+        let mut model=Scripted{replies:VecDeque::from([r#"{"kind":"tool","name":"lu_reader_read","arguments":{"source":"current_request"}}"#.into(),r#"{"kind":"final","text":"The document contains fabricated facts."}"#.into()])};
+        let report=lane.run_journaled("Read the document",&mut model,&Cancellation::default(),&journal).await.unwrap();assert_eq!(report.tool_calls,1);assert!(report.answer.contains("ORIGINAL DOCUMENT TEXT"));assert!(!report.answer.contains("fabricated facts"));assert!(report.answer.starts_with(crate::evidence_grounding::FALLBACK_PREFIX));
+        drop(journal);let _=std::fs::remove_file(path);
     }
     #[test]
     fn cannot_invent_permission_or_arbitrary_document_path(){
