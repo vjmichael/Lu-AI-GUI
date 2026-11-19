@@ -53,7 +53,10 @@ def validate_original_user_xauthority(raw):
     return str(xauth)
 
 def require_go(nonce):
-    p=pathlib.Path("/run/lu-sec06c")/(nonce+".go")
+    p=pathlib.Path("/run")/("lu-sec06c-browser-"+nonce)/(nonce+".go")
+    directory=p.parent.lstat()
+    if not stat.S_ISDIR(directory.st_mode) or directory.st_uid!=0 or directory.st_mode&0o022:
+        reject("original browser service runtime directory mutable")
     until=time.monotonic()+20
     while time.monotonic()<until:
         try:st=p.lstat()

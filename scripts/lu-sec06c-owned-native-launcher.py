@@ -165,6 +165,8 @@ def run(opts):
         "--property=NotifyAccess=main","--property=WatchdogSec=20s",
         "--property=WatchdogSignal=SIGKILL","--property=TimeoutStartSec=90s",
         "--property=TimeoutStopSec=5s","--property=SendSIGKILL=yes",
+        f"--property=RuntimeDirectory=lu-sec06c-native-{opts.nonce}",
+        "--property=RuntimeDirectoryMode=0755","--property=RuntimeDirectoryPreserve=no",
         "--property=User=root","--property=Delegate=yes",
         "--property=KillMode=control-group","--property=PrivateNetwork=yes",
         "--property=NoNewPrivileges=yes",

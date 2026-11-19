@@ -80,6 +80,14 @@ def original_manager_loss(bundle,launcher):
             manager=find_exact_root_manager(unit,nonce)
             if not live(manager) or not live(chrome) or not live(node):
                 reject("original manager or browser exited before negative attack")
+            runtime=pathlib.Path('/run')/('lu-sec06c-browser-'+nonce)
+            marker=runtime/(nonce+'.go')
+            spent=receipt.with_suffix('.spent')
+            for record in (marker,spent):
+                meta=record.lstat()
+                if not stat.S_ISREG(meta.st_mode) or meta.st_uid!=0 or meta.st_nlink!=1 or meta.st_mode&0o022:
+                    reject("missing immutable original browser admission record")
+            original_spent=spent.read_bytes()
             fds=[os.pidfd_open(p) for p in (manager,chrome,node)]
             # CI-host root acts only on the specific already-created service
             # identity established by the original nonce and /proc. The
@@ -110,9 +118,16 @@ def original_manager_loss(bundle,launcher):
             try:client.wait(timeout=15)
             except subprocess.TimeoutExpired:
                 reject("orphan original service client survived manager SIGKILL")
+            deadline=time.monotonic()+10
+            while runtime.exists() and time.monotonic()<deadline:time.sleep(.05)
+            if runtime.exists() or spent.read_bytes()!=original_spent:
+                reject("same-boot runtime reclamation or durable denial record failed")
             replay=subprocess.run(cmd,input=b"",capture_output=True,timeout=20)
-            if replay.returncode==0:
-                reject("old original root-manager-loss nonce replayed successfully")
+            if replay.returncode==0 or b"persistent original browser nonce already consumed" not in replay.stderr:
+                reject("old original root-manager-loss nonce was not denied by durable admission record")
+            if receipt.exists() or runtime.exists() or spent.read_bytes()!=original_spent:
+                reject("denied replay changed original recovery evidence")
+            print("SEC06E_R1_BROWSER_SAME_BOOT_RECLAIM_AND_REPLAY_DENIED_PASS",flush=True)
             print("SEC06C_BROWSER_ORIGINAL_GUARDIAN_LOSS_FAIL_CLOSED_PASS=1 "
                 "original_root_manager_sigkill=1 distinct_chromium_node_pidfds=1 "
                 "systemd_control_group_reaped=1 false_receipt_denied=1 "

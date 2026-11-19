@@ -85,6 +85,24 @@ def directory(path):
         if (not stat.S_ISDIR(m.st_mode) or m.st_uid!=0
             or m.st_mode&0o022):
             deny("root-owned nonce or receipt directory/ancestor mutable")
+def consume_original_nonce(a,uid):
+    # Permanent denial-only record; a crashed manager cannot make its nonce
+    # reusable when systemd removes the volatile runtime directory.
+    path=RECEIPTS/(a.nonce+".spent")
+    body="\n".join(["LU_SEC06E_BROWSER_SPENT_V1","NONCE="+a.nonce,
+        "CHAT="+a.chat,"TURN="+a.turn,"CALL="+a.call,
+        "CHROMIUM_SHA256="+a.chromium_sha,"NODE_SHA256="+a.node_sha,
+        "SCRIPT_SHA256="+a.script_sha,"POLICY_SHA256="+a.policy_sha,
+        "ORIGINAL_UID="+str(uid),""])
+    try:fd=os.open(path,os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o644)
+    except FileExistsError:deny("persistent original browser nonce already consumed")
+    with os.fdopen(fd,"w",encoding="ascii") as f:
+        f.write(body);f.flush();os.fsync(f.fileno())
+    for item in (RECEIPTS,RECEIPTS.parent,RECEIPTS.parent.parent):
+        fd=os.open(item,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW)
+        try:os.fsync(fd)
+        finally:os.close(fd)
+
 def run(a):
     if os.geteuid()!=0 or "SUDO_UID" not in os.environ:
         deny("requires exact fixed sudo policy")
@@ -122,11 +140,14 @@ def run(a):
     directory(RUN);directory(RECEIPTS)
     if (RUN/(a.nonce+".go")).exists() or (RECEIPTS/(a.nonce+".receipt")).exists():
         deny("one-use browser nonce already consumed")
+    consume_original_nonce(a,uid)
     unit="lu-sec06c-browser-"+a.nonce+".service"
     cmd=[str(SYSTEMD),"--system","--quiet","--wait","--pipe",
         "--no-ask-password","--service-type=exec","--unit="+unit,
         "--property=User=root","--property=Delegate=yes",
         "--property=KillMode=control-group","--property=NoNewPrivileges=yes",
+        "--property=RuntimeDirectory=lu-sec06c-browser-"+a.nonce,
+        "--property=RuntimeDirectoryMode=0755","--property=RuntimeDirectoryPreserve=no",
         "--property=RestrictSUIDSGID=yes",
         "--property=CapabilityBoundingSet=CAP_SYS_ADMIN CAP_SETUID CAP_SETGID CAP_KILL",
         "--property=AmbientCapabilities=CAP_SETUID",

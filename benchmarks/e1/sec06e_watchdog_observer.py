@@ -79,6 +79,25 @@ def main():
                 assert pid > 1
                 fds.append(os.pidfd_open(pid))
             assert not any(dead(fd) for fd in fds)
+            runtime=pathlib.Path('/run')/('lu-sec06c-native-'+nonce)
+            marker=runtime/(nonce+'.go')
+            spent=pathlib.Path('/var/lib/lu-sec06c/native-receipts')/(nonce+'.spent')
+            assert marker.is_file() and marker.stat().st_uid==0 and runtime.stat().st_uid==0
+            original_spent=spent.read_bytes()
+            # Recover only the exact finite scanner invocation from the
+            # already-attested service, never a new user or arbitrary command.
+            fields=pathlib.Path(f'/proc/{mainpid}/cmdline').read_bytes().decode().rstrip('\0').split('\0')
+            def original(flag):return fields[fields.index(flag)+1]
+            assert original('--nonce')==nonce and original('--op')=='scan-file'
+            assert original('--binary')==SCAN and original('--uid')==str(uid)
+            replay_cmd=['runuser','-u','luprobe','--','sudo','-n','/usr/libexec/lu/lu-sec06c-launch-native']
+            for field in ('nonce','chat','turn','call','binary','binary-sha','args-sha'):
+                replay_cmd+=['--'+field,original('--'+field)]
+            replay_cmd+=['--kind','scan-file']+[v for v in fields if v.startswith('--arg=')]
+            assert len([v for v in replay_cmd if v.startswith('--arg=')])==4
+            def replay_denied():
+                attempt=subprocess.run(replay_cmd,stdin=subprocess.DEVNULL,capture_output=True,timeout=10)
+                assert attempt.returncode!=0 and b'persistent original native nonce already consumed' in attempt.stderr
             # Freeze only the pinned scanner to prevent a natural-finish race;
             # thus the observed failure is actually in a running worker tree.
             workerfd = fds[1+members.index(worker)]
@@ -96,6 +115,8 @@ def main():
             assert not any(dead(fd) for fd in fds)
             latest=int(subprocess.check_output(['systemctl','show',unit,'-p','WatchdogTimestampMonotonic','--value'],text=True).strip())
             assert latest>int(stamps[0])
+            replay_denied()
+            assert marker.is_file() and spent.read_bytes()==original_spent
             print('SEC06E_HEALTHY_GUARDIAN_OVER_DEADLINE_PASS',flush=True)
             signal.pidfd_send_signal(fds[0], signal.SIGSTOP)
             wait_for(lambda: state(mainpid) in ('T','t'), 3)
@@ -107,7 +128,14 @@ def main():
             assert 0<elapsed<=30
             print('Original service watchdog terminated stalled guardian', flush=True)
             wait_for(lambda: all(dead(fd) for fd in fds), 25)
-            wait_for(lambda: not group.exists() or (group/'cgroup.events').read_text().splitlines()[0] == 'populated 0', 20)
+            def original_group_empty():
+                try:return (group/'cgroup.events').read_text().splitlines()[0]=='populated 0'
+                except OSError as exc:
+                    # The kernel can remove the cgroup between open and read.
+                    # Only absence or a subsequent real populated-zero passes.
+                    if exc.errno in (2,19):return not group.exists()
+                    raise
+            wait_for(original_group_empty,20)
             # PID1 journal corroborates the watchdog cause, not simply death.
             def watchdog_failure():
                 log=subprocess.check_output(['journalctl','-u',unit,'--no-pager','-o','cat'],text=True)
@@ -117,6 +145,11 @@ def main():
             assert proc.wait(timeout=80) == 0
             receipt = pathlib.Path('/var/lib/lu-sec06c/native-receipts')/(nonce+'.receipt')
             assert not receipt.exists(), 'dead manager forged a completion receipt'
+            wait_for(lambda: not runtime.exists(),10)
+            assert spent.read_bytes()==original_spent
+            replay_denied()
+            assert not runtime.exists() and not receipt.exists() and spent.read_bytes()==original_spent
+            print('SEC06E_R1_SAME_BOOT_NATIVE_RUNTIME_RECLAIMED_PASS',flush=True)
             with sqlite3.connect(profile/'tasks.sqlite') as conn:
                 assert conn.execute('SELECT state FROM lu_tasks WHERE task_id=?',(TASK,)).fetchone() == ('INTERRUPTED',)
                 assert conn.execute('SELECT reason FROM lu_task_custody_uncertainty WHERE task_id=?',(TASK,)).fetchone() == ('OS_CUSTODY_UNVERIFIED',)

@@ -173,7 +173,7 @@ def main_run(a):
     parent,unit=k["first_party_unit"](a.nonce,"browser")
     owned_dir(APPROVAL);owned_dir(RECEIPTS)
     receipt=RECEIPTS/(a.nonce+".receipt")
-    go=APPROVAL/(a.nonce+".go")
+    go=k["service_runtime_dir"](a.nonce,"browser")/(a.nonce+".go")
     if receipt.exists() or go.exists():refuse("original browser nonce replay")
     leaf=parent/("lu-sec06c-leaf-"+a.nonce)
     leaf.mkdir(mode=0o755)

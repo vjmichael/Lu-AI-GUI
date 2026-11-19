@@ -100,7 +100,7 @@ def attested_binary(exe,expected):
         for block in iter(lambda:f.read(65536),b""):h.update(block)
     if h.hexdigest()!=expected:reject("reviewed executable digest changed")
 def root_go(nonce):
-    root=pathlib.Path("/run/lu-sec06c")
+    root=pathlib.Path("/run")/("lu-sec06c-native-"+nonce)
     st=root.lstat()
     if not stat.S_ISDIR(st.st_mode) or st.st_uid!=0 or st.st_mode&0o022:
         reject("root-owned one-use GO dir unsafe")

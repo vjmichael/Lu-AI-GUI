@@ -86,6 +86,18 @@ def checked_root_dir(path):
     if not stat.S_ISDIR(info.st_mode) or info.st_uid!=0 or info.st_mode&0o022:
         refuse("root approval or receipt directory mutable")
 
+def service_runtime_dir(nonce,domain):
+    # PID1 creates/removes this fixed unit-specific directory. Never recreate
+    # a missing directory or reuse the old shared GO path after a crash.
+    if domain not in ("native","browser") or not re.fullmatch(r"[a-f0-9]{32}",nonce):
+        refuse("invalid original service runtime identity")
+    path=pathlib.Path("/run")/f"lu-sec06c-{domain}-{nonce}"
+    for item in (path.parent,path):
+        info=item.lstat()
+        if not stat.S_ISDIR(info.st_mode) or info.st_uid!=0 or info.st_mode&0o022:
+            refuse("original systemd runtime directory mutable")
+    return path
+
 def first_party_unit(nonce,domain):
     if os.geteuid()!=0:refuse("only trusted systemd service may supervise kernel")
     own=pathlib.Path("/proc/self/cgroup").read_text(encoding="ascii").splitlines()
@@ -449,7 +461,7 @@ def run(args):
         PROBE_RECEIPTS if args.domain=="probe" else NATIVE_RECEIPTS)
     checked_root_dir(receipts)
     receipt=receipts/(args.nonce+".receipt")
-    go=APPROVAL/(args.nonce+".go")
+    go=(service_runtime_dir(args.nonce,"native") if args.domain=="native" else APPROVAL)/(args.nonce+".go")
     if receipt.exists() or go.exists():
         refuse("one-use reviewed nonce replay")
     leaf=parent/("lu-sec06c-leaf-"+args.nonce)

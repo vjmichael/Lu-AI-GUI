@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Disposable VM administrator: verify real live scanner and retained receipt."""
 import pathlib,sqlite3,os,pwd,hashlib,sys,time,signal,subprocess,json,stat
-p=pathlib.Path('/home/luprobe/sec06dr1'); r=pathlib.Path('/var/lib/lu-sec06c/native-receipts'); run=pathlib.Path('/run/lu-sec06c'); exe='/usr/libexec/lu/lu-file-scan-worker-acceptance'
+p=pathlib.Path('/home/luprobe/sec06dr1'); r=pathlib.Path('/var/lib/lu-sec06c/native-receipts'); run=pathlib.Path('/run'); exe='/usr/libexec/lu/lu-file-scan-worker-acceptance'
 def rows():
     with sqlite3.connect(p/'tasks.sqlite') as c:
         return c.execute('SELECT t.task_id,t.state,a.nonce,u.original_uid,a.chat,a.turn,a.kind,a.binary_sha256,a.argv_sha256 FROM lu_tasks t JOIN lu_task_linux_os_owned_native_admission a ON a.task_id=t.task_id JOIN lu_task_native_prelaunch_uid u ON u.task_id=t.task_id ORDER BY t.task_id').fetchall()
@@ -30,7 +30,7 @@ if sys.argv[1]=='prepare':
     receipt=r/(stopped[2]+'.receipt');rootfile(receipt);assert receipt.read_text().endswith('KERNEL_EMPTY=1\nEFFECT=INTERRUPTED\n')
     assert not (r/(live[2]+'.receipt')).exists()
     for row in (stopped,live):rootfile(r/(row[2]+'.spent'))
-    marker=run/(live[2]+'.go');rootfile(marker)
+    marker=run/('lu-sec06c-native-'+live[2])/(live[2]+'.go');rootfile(marker)
     leaf=pathlib.Path('/sys/fs/cgroup/system.slice')/f'lu-sec06c-native-{live[2]}.service'/f'lu-sec06c-leaf-{live[2]}'
     members=[int(x) for x in (leaf/'cgroup.procs').read_text().split()];assert len(members)==2 and leaf.stat().st_uid==0
     worker=next(x for x in members if os.readlink(f'/proc/{x}/exe')==exe)
@@ -49,7 +49,7 @@ else:
     assert digest(r/(stopped[2]+'.receipt'))==prior['receipt']
     assert not (r/(live[2]+'.receipt')).exists()
     assert [digest(r/(x[2]+'.spent')) for x in (stopped,live)]==prior['spent']
-    assert not (run/(live[2]+'.go')).exists()
+    assert not (run/('lu-sec06c-native-'+live[2])).exists()
     assert not list(pathlib.Path('/sys/fs/cgroup/system.slice').glob('lu-sec06c-native-*.service'))
     # Try exact old input under the original UID, no new grant. The durable
     # denial-only tombstone must block the historical nonce before systemd.
