@@ -132,7 +132,7 @@ impl ReaderTurnSession{
     /// host binds the approved file; the model cannot choose inspect-only,
     /// offsets or selectors. Any unreturned text is reported as incomplete.
     pub fn require_verified_excerpt(&mut self)->Result<(),ReaderTurnAdmissionError>{
-        if self.turn.step_count()!=0||self.policy.fixed_input.is_some(){return Err(ReaderTurnAdmissionError::InvalidUserScope)}
+        if self.turn.step_count()!=0||self.policy.fixed_input.is_some()||self.turn.uses_evidence_synthesis(){return Err(ReaderTurnAdmissionError::InvalidUserScope)}
         let allowed=BTreeSet::from([READER_MODEL_TOOL_NAME.to_owned()]);
         let args=serde_json::json!({"path":self.policy.filename});
         let original=self.catalog.encode_call(&allowed,READER_MODEL_TOOL_NAME,"host-exact-reader",Some(&self.task_id),&args.to_string())
@@ -151,6 +151,8 @@ impl ReaderTurnSession{
     /// The caller owns the current model session and cancellation resource.
     /// Only the final, verified answer may be appended to chat history.
     /// This method does not silently send output to any conversation.
+    /// Trusted desktop opt-in; unchanged legacy/exact and effect paths.
+    pub fn require_grounded_synthesis(&mut self)->Result<(),ToolTurnError>{self.turn.require_evidence_synthesis()}
     pub async fn run_journaled(
         &mut self,user_text:&str,model:&mut dyn ModelStepGenerator,
         cancel:&Cancellation,journal:&ModelTurnJournal,
@@ -201,6 +203,19 @@ mod tests{
         std::env::temp_dir().join(format!(
             "lu-reader-bound-turn-{}-{:?}.sqlite",
             std::process::id(),std::thread::current().id()))
+    }
+    #[tokio::test]
+    async fn cp06cr1_reader_two_excerpts_and_unverified_interpretation(){
+        let path=audit_path();let _=std::fs::remove_file(&path);let journal=ModelTurnJournal::open(&path).unwrap();
+        let text=b"Approved by panel A. Denied by panel B.";
+        let mut lane=ReaderTurnSession::new(&Verify(true),"chat-a","human-1","task-1","memo.md",text.to_vec()).unwrap();lane.require_grounded_synthesis().unwrap();assert!(lane.require_verified_excerpt().is_err());
+        let mut model=Scripted{replies:VecDeque::from([
+            r#"{"kind":"tool","name":"lu_reader_read","arguments":{"path":"memo.md","max_chars":20}}"#.into(),
+            r#"{"kind":"tool","name":"lu_reader_read","arguments":{"path":"memo.md","offset_chars":20,"max_chars":20}}"#.into(),
+            r#"{"kind":"synthesis","claims":[{"type":"quote","source":"E1","quote":"Approved by panel A."},{"type":"quote","source":"E2","quote":"Denied by panel B."},{"type":"interpretation","sources":["E1","E2"],"text":"The panels appear to disagree."}]}"#.into(),
+        ])};
+        let answer=lane.run_journaled("Compare the two panels",&mut model,&Cancellation::default(),&journal).await.unwrap();assert_eq!(answer.tool_calls,2);assert!(answer.answer.contains("not independently verified")&&answer.answer.contains("Approved by panel A.")&&answer.answer.contains("Denied by panel B."));
+        let events=journal.events_for("chat-a","task-1").unwrap();assert!(events.iter().all(|e|e.kind!=crate::model_turn_journal::ModelAuditKind::FinalAnswer));let p=events.iter().find(|e|e.kind==crate::model_turn_journal::ModelAuditKind::EvidencePresentation).unwrap();let p:serde_json::Value=serde_json::from_str(&p.payload).unwrap();assert_eq!(p["origin"],"model_selected_claims_host_rendered");assert_eq!(p["claims"][2]["verified"],false);drop(journal);let _=std::fs::remove_file(path);
     }
     #[tokio::test]
     async fn cp06c_verified_excerpt_denies_offset_and_inspect_only_and_reports_source(){

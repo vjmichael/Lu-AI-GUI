@@ -9,9 +9,9 @@ const MAX_PRESENTATION_BYTES: usize = 12 * 1024;
 pub(crate) const FALLBACK_PREFIX: &str = "I couldn't verify my generated explanation. Here is the verified inspection result:\n\n";
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct EvidencePresentation {
-    call_id: String,
-    tool: String,
-    feedback_sha256: String,
+    pub(crate) call_id: String,
+    pub(crate) tool: String,
+    pub(crate) feedback_sha256: String,
     pub(crate) text: String,
 }
 impl EvidencePresentation {
@@ -38,12 +38,12 @@ fn visible(s:&str)->String{
         c.escape_default().collect::<Vec<_>>()
     }else{vec![c]}).collect()
 }
-fn literal(s:&str)->String{
+pub(crate) fn literal(s:&str)->String{
     let s=serde_json::to_string(&visible(s)).unwrap_or_default();
     let n=s.split(|c|c!='`').map(str::len).max().unwrap_or(0)+1;
     let fence="`".repeat(n);format!("{fence}{s}{fence}")
 }
-fn block(s:&str)->String{
+pub(crate) fn block(s:&str)->String{
     let s=visible(s);let n=s.split(|c|c!='`').map(str::len).max().unwrap_or(0).saturating_add(1).max(3);
     let fence="`".repeat(n);format!("{fence}text\n{s}\n{fence}")
 }

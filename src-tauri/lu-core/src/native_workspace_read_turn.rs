@@ -323,6 +323,8 @@ impl WorkspaceReadTurnSession{
     }
     /// The host owns actual GGUF model step generation and cancellation.
     /// Every completed/failing turn revokes its ephemeral authorization.
+    /// Trusted desktop opt-in; unchanged legacy/exact and effect paths.
+    pub fn require_grounded_synthesis(&mut self)->Result<(),ToolTurnError>{self.turn.require_evidence_synthesis()}
     pub async fn run_journaled(
         &mut self,prompt:&str,model:&mut dyn ModelStepGenerator,
         cancel:&Cancellation,journal:&ModelTurnJournal,
@@ -372,6 +374,32 @@ mod integrated_reader_tests{
         let name=format!("lu-p0-reader-{}-{:?}",std::process::id(),
             std::thread::current().id());
         std::env::temp_dir().join(name)
+    }
+    #[tokio::test]
+    async fn cp06cr1_multistep_native_synthesis_and_cancellation(){
+        use crate::model_turn_journal::ModelAuditKind as K;
+        use crate::supervised_tool_generation::NativeTurnRecord as R;
+        struct Steps{n:usize,stop:bool,invalid:bool}
+        impl ModelStepGenerator for Steps{
+            fn generate_step(&mut self,prompt:&str,_:u32,cancel:&Cancellation)->Result<String,NativeGenerationError>{
+                self.n+=1;
+                Ok(match self.n{
+                    1=>r#"{"kind":"tool","name":"lu_files_stat","arguments":{"path":"A.txt"}}"#.into(),
+                    2=>{assert!(prompt.contains("E1"));r#"{"kind":"tool","name":"lu_files_stat","arguments":{"path":"B.txt"}}"#.into()},
+                    3=>{assert!(prompt.contains("E2"));if self.stop{cancel.cancel();}if self.invalid{r#"{"kind":"synthesis","claims":[{"type":"compare_bytes","left":"E1","right":"E999"}]}"#.into()}else{r#"{"kind":"synthesis","claims":[{"type":"compare_bytes","left":"E1","right":"E2"}]}"#.into()}},_=>panic!("unexpected extra model generation"),
+                })
+            }
+        }
+        let base=directory();let _=std::fs::remove_dir_all(&base);let root=base.join("approved");std::fs::create_dir_all(&root).unwrap();std::fs::write(root.join("A.txt"),b"123456789").unwrap();std::fs::write(root.join("B.txt"),b"123").unwrap();
+        for (task,stop,invalid) in [("synthesis-good",false,false),("synthesis-fallback",false,true),("synthesis-stop",true,false)]{
+            let journal=ModelTurnJournal::open(&base.join("audit.sqlite")).unwrap();let mut lane=WorkspaceReadTurnSession::new(&OriginalTurn,"c-source","g-human",task,&root).unwrap();lane.require_grounded_synthesis().unwrap();
+            let mut model=Steps{n:0,stop,invalid};let outcome=lane.run_journaled("Compare A.txt and B.txt in my folder",&mut model,&Cancellation::default(),&journal).await;
+            let rows=journal.events_for("c-source",task).unwrap();assert_eq!(rows.iter().filter(|r|r.kind==K::ToolFeedback).count(),2);assert!(rows.iter().all(|r|r.kind!=K::FinalAnswer));
+            if stop{assert!(outcome.is_err());assert!(rows.iter().all(|r|r.kind!=K::EvidencePresentation));}else{let report=outcome.unwrap();assert_eq!(report.tool_calls,2);let r=rows.iter().find(|r|r.kind==K::EvidencePresentation).unwrap();let receipt:serde_json::Value=serde_json::from_str(&r.payload).unwrap();assert_eq!(receipt["answer"],report.answer);assert_eq!(receipt["sources"].as_array().unwrap().len(),2);
+                if invalid{assert!(matches!(report.records.last(),Some(R::HostEvidenceFallback(_))));assert_eq!(receipt["origin"],"host_synthesis_fallback");}else{assert!(matches!(report.records.last(),Some(R::VerifiedSynthesis(_))));assert!(report.answer.contains("absolute difference: 6 bytes"));assert_eq!(receipt["origin"],"model_selected_claims_host_rendered");}
+            }
+            drop(lane);drop(journal);let reopened=ModelTurnJournal::open(&base.join("audit.sqlite")).unwrap();assert_eq!(rows,reopened.events_for("c-source",task).unwrap());
+        }std::fs::remove_dir_all(base).unwrap();
     }
     #[tokio::test]
     async fn cp_dev_01d_root_listing_only_binds_approved_root(){

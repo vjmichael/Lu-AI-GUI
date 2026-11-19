@@ -155,6 +155,7 @@ pub struct NativeToolTurn {
     requires_observed_tool_result: bool,
     observed_tool_result: bool,
     single_observation: bool,
+    evidence_synthesis: bool,
     // Host-only plan admission: a successful tool reply does not establish a
     // verified deliverable when the independent source oracle is UNSUPPORTED.
     requires_verified_independent_outcome: bool,
@@ -223,6 +224,7 @@ impl NativeToolTurn {
             requires_observed_tool_result: false,
             observed_tool_result: false,
             single_observation: false,
+            evidence_synthesis: false,
             requires_verified_independent_outcome: false,
             observed_verified_independent_outcome: false,
             previous_request_digest:None,
@@ -291,6 +293,13 @@ impl NativeToolTurn {
         self.requires_observed_tool_result=true;
         self.single_observation=true;
     }
+    pub(crate) fn require_evidence_synthesis(&mut self)->Result<(),ToolTurnError>{
+        if !self.read_only||self.single_observation||self.steps!=0||self.done{return Err(ToolTurnError::ReadOnlyTurnViolation)}
+        self.requires_observed_tool_result=true;
+        self.evidence_synthesis=true;
+        Ok(())
+    }
+    pub(crate) fn uses_evidence_synthesis(&self)->bool{self.evidence_synthesis}
     pub(crate) fn is_single_observation(&self)->bool{self.single_observation}
     pub(crate) fn tool_requests_allowed(&self)->bool{!self.single_observation||self.steps==0}
 

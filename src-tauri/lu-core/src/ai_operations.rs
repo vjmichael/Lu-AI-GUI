@@ -48,6 +48,7 @@ pub fn recommended_read_tools(
     let wants_document=document.iter().any(|w|lower.contains(w))
         &&document_work.iter().any(|w|lower.contains(w));
     let mut preferred=Vec::new();
+    if ["byte size","file size","size in bytes"].iter().any(|w|lower.contains(w)){preferred.push("lu_files_stat");}
     if file_find.iter().any(|w|lower.contains(w))||wants_document{
         preferred.push("lu_files_discover");
     }
@@ -261,6 +262,12 @@ mod tests{
             input_type_url:"type.test/input".into(),output_type_url:"type.test/out".into(),
             meta_class:None,availability_claim:"fixture_only".into(),
             external_dependencies_verified:false,task_outcome_verified:false}
+    }
+    #[test] fn cp06cr1_metadata_preference_remains_inert(){
+        let list=vec![view("lu_files_stat","read_workspace"),view("lu_files_list_directory","read_workspace"),view("lu_reader_read","read_workspace")];
+        assert_eq!(recommended_read_tools("Compare the byte sizes of A.txt and B.txt in my folder",&list).first().map(String::as_str),Some("lu_files_stat"));
+        assert!(recommended_read_tools("Compare file sizes without tools",&list).is_empty());
+        assert!(!recommended_read_tools("Compare file sizes",&[view("lu_files_stat","write_workspace")]).contains(&"lu_files_stat".to_owned()));
     }
     #[test] fn finder_uses_only_per_turn_read_grants(){
         let list=vec![view("lu_files_discover","read_workspace"),

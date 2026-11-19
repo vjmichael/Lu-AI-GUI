@@ -293,6 +293,7 @@ fn execute_approved_reader(event_app:&AppHandle,host:&Arc<DesktopState>,session_
             ).map_err(|e|format!("Reader turn admission: {e:?}"))?;
             let exact_excerpt=negotiated&&verified_excerpt_requested(&prompt);
             if exact_excerpt{reader_turn.require_verified_excerpt().map_err(|_|"Could not bind the approved document excerpt")?;}
+            else{reader_turn.require_grounded_synthesis().map_err(|_|"Could not admit grounded document synthesis")?;}
             let available=reader_turn.capabilities().map_err(|_|"Reader live capability unavailable")?;
             if available.len()!=1||available[0].public_name!="lu_reader_read"||available[0].native_tool_id!="lu.reader.read"||available[0].effect!="read_workspace"{
                 return Err("Reader live capability no longer matches selection".into())

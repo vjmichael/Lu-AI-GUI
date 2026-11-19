@@ -179,3 +179,41 @@ fn genuine_selection_and_native_reachability_matrix(){
  if supervisor.status().unwrap().session_id.as_deref()==Some(sid){supervisor.unload(sid,"cp06a-unload").unwrap();}
  println!("CP06A_RECEIPTS {}",base.display());assert!(failures.is_empty(),"CP06A genuine probe failures: {failures:?}");
 }
+
+#[test]
+#[ignore="requires pinned real local llama-server/GGUF and fixture-host workspace approval"]
+fn cp06cr1_genuine_multistep_synthesis(){
+ use lu_core::{inference_supervisor::TrustedInferenceSupervisor,model_admission::ModelAdmissionManager,
+  native_workspace_read_turn::WorkspaceReadTurnSession,
+  persistent_llama_backend::{PersistentEngineConfig,PersistentLlamaBackend}};
+ use sha2::{Digest,Sha256};
+ use std::{io::Read,num::NonZeroUsize,path::PathBuf,time::Duration};
+ fn hash(p:&Path)->String{let mut h=Sha256::new();let mut f=std::fs::File::open(p).unwrap();let mut b=[0;65536];loop{let n=f.read(&mut b).unwrap();if n==0{break}h.update(&b[..n]);}format!("{:x}",h.finalize())}
+ fn from_hex(s:&str)->Vec<u8>{(0..s.len()).step_by(2).map(|i|u8::from_str_radix(&s[i..i+2],16).unwrap()).collect()}
+ let exe=PathBuf::from(std::env::var("LU_CP05E_SERVER").unwrap());let model=PathBuf::from(std::env::var("LU_CP05E_GGUF").unwrap());
+ let esha=std::env::var("LU_CP05E_SERVER_SHA256").unwrap();let msha=std::env::var("LU_CP05E_GGUF_SHA256").unwrap();
+ assert_eq!(hash(&exe),esha);assert_eq!(hash(&model),msha);let pin:[u8;32]=from_hex(&esha).try_into().unwrap();
+ let auth=std::env::var("LU_CP05E_API_KEY").unwrap();let mut manager=ModelAdmissionManager::new();let admitted=manager.admit(model.parent().unwrap(),model.file_name().unwrap().to_str().unwrap()).unwrap().clone();
+ let supervisor=TrustedInferenceSupervisor::new("llama-cpu".into(),8192,vec![("model-1".into(),admitted)],move||PersistentLlamaBackend::new(PersistentEngineConfig{executable:exe.clone(),expected_sha256:pin,threads:NonZeroUsize::new(3).unwrap(),context_tokens:8192,startup_timeout:Duration::from_secs(120),request_timeout:Duration::from_secs(120),api_key:auth.clone(),load_observer:None})).unwrap();
+ let sid="cp06cr1-synthesis";supervisor.load("model-1",sid.into(),"cp06cr1-load").unwrap();assert!(supervisor.status().unwrap().pid.is_some());
+ let base=std::env::temp_dir().join(next_id("cp06cr1-native-"));std::fs::create_dir(&base).unwrap();let root=base.join("approved");std::fs::create_dir(&root).unwrap();
+ std::fs::write(root.join("A.txt"),b"123456789").unwrap();std::fs::write(root.join("B.txt"),b"123").unwrap();
+ let chats=ChatStore::open(&base.join("chats")).unwrap();let queue=Arc::new(generation_queue::GenerationQueue::default());
+ let human="Compare the byte sizes of A.txt and B.txt in my approved folder. Use lu_files_stat on A.txt, then lu_files_stat on B.txt, and compare their observed sizes using compare_bytes with both evidence sources.";
+ let chat=chats.create_chat().unwrap().chat_id;let gid=next_id("g-");let verifier=PersistedHumanTurn::current_chat(&chats,&chat,&gid,human);
+ let (ticket,_)=queue.enqueue_with_class_committing(sid,&chat,&gid,TurnClass::Foreground,||chats.append_user_with_turn_id(&chat,&gid,human)).unwrap();ticket.wait_for_slot().unwrap();ticket.verify_active_foreground(sid,&chat,&gid).unwrap();
+ let journal=ModelTurnJournal::open(&base.join("tool.sqlite")).unwrap();let mut lane=WorkspaceReadTurnSession::new(&verifier,&chat,&gid,&gid,&root).unwrap();lane.require_grounded_synthesis().unwrap();
+ let preferred=lu_core::ai_operations::recommended_read_tools(human,&lane.capabilities().unwrap());assert_eq!(preferred.first().map(String::as_str),Some("lu_files_stat"));let prompt=crate::workspace_desktop::workspace_model_prompt(false,human,&preferred);
+ let mut model=SupervisorModelStep::new(&supervisor,sid.into(),next_id("cp06cr1" )).unwrap();let outcome=tauri::async_runtime::block_on(lane.run_journaled(&prompt,&mut model,&Cancellation::default(),&journal));
+ let rows=journal.events_for(&chat,&gid).unwrap();for e in &rows{println!("CP06CR1 {:?} {}",e.kind,e.payload);}
+ println!("CP06CR1_RECEIPTS {}",base.display());
+ let mut passed=false;if let Ok(ref result)=outcome{
+  ticket.commit_completed(sid,||{chats.append_progress(&chat,&gid,&result.answer)?;chats.complete(&chat,&gid)}).unwrap();
+  let p=rows.iter().find(|e|e.kind==ModelAuditKind::EvidencePresentation).map(|e|serde_json::from_str::<serde_json::Value>(&e.payload).unwrap());
+  if let Some(p)=p{let stats=rows.iter().filter(|e|e.kind==ModelAuditKind::ToolFeedback).filter_map(|e|serde_json::from_str::<serde_json::Value>(&e.payload).ok()).filter(|e|e["name"]=="lu_files_stat"&&e["response"]["ok"]==true).collect::<Vec<_>>();
+   passed=stats.len()==2&&stats.iter().any(|v|v["response"]["result"]["size_bytes"]==9)&&stats.iter().any(|v|v["response"]["result"]["size_bytes"]==3)&&p["origin"]=="model_selected_claims_host_rendered"&&result.answer.contains("absolute difference: 6 bytes")&&result.answer.contains("A.txt")&&result.answer.contains("B.txt");
+  }
+ }else{let _=chats.cancel(&chat,&gid);}
+ drop(ticket);drop(journal);drop(lane);if supervisor.status().unwrap().session_id.as_deref()==Some(sid){supervisor.unload(sid,"cp06cr1-unload").unwrap();}
+ println!("CP06CR1_RESULT {passed} {outcome:?}");assert!(passed,"genuine native synthesis did not complete the two-source comparison");
+}
