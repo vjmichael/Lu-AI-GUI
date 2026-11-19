@@ -112,6 +112,7 @@ impl LinuxOsOwnedReviewedNative{
     pub fn spawn_if_installed(
         executable:&Path,binary_sha:&str,args:&[OsString],args_sha:&str,
         chat:&str,turn:&str,call:&str,
+        persist_admission:impl FnOnce(&str,&str,u32)->io::Result<()>,
     )->io::Result<Option<(Child,Self)>>{
         if !id(chat)||!id(turn)||!id(call)
             ||!hex(binary_sha,64)||!hex(args_sha,64){
@@ -144,6 +145,9 @@ impl LinuxOsOwnedReviewedNative{
                 &&std::env::var_os("LU_SEC06C_BROKER_DEBUG").is_some(){
                 Stdio::inherit()
             }else{Stdio::null()});
+        // Commit the exact one-use identity before the OS can observe a launch.
+        // A failed durable write cannot produce an unjournaled service.
+        persist_admission(&nonce,kind,uid)?;
         let mut child=cmd.spawn()?;
         let lifetime=child.stdin.take()
             .ok_or_else(||io::Error::other("SEC06C native lifetime pipe absent"))?;
@@ -186,6 +190,20 @@ impl LinuxOsOwnedReviewedNative{
         }
         self.interrupted=raw.strip_prefix(&expected)==Some("EFFECT=INTERRUPTED\n");
         self.verified=true;Ok(())
+    }
+    /// Historical proof only: reconstruct the exact original receipt binding.
+    /// The caller must supply a previously persisted admission, never a new grant.
+    pub fn recover_original_kernel_receipt(nonce:&str,chat:&str,turn:&str,call:&str,
+        kind:&str,binary_sha:&str,args_sha:&str,uid:u32)->io::Result<bool>{
+        unsafe extern "C"{fn geteuid()->u32;}
+        if uid==0||unsafe{geteuid()}!=uid||!hex(nonce,32)||!id(chat)||!id(turn)||!id(call)
+            ||!hex(binary_sha,64)||!hex(args_sha,64)
+            ||!matches!(kind,"scan-file"|"archive-preview"|"archive-extract"|"fixed-version"|"fixed-artifact"|"app-version"|"p06-acceptance-version"){
+            return Err(io::Error::other("SEC06D original admission identity invalid"))
+        }
+        let mut historical=Self{lifetime:None,nonce:nonce.into(),chat:chat.into(),turn:turn.into(),call:call.into(),kind:kind.into(),binary_sha:binary_sha.into(),args_sha:args_sha.into(),uid,verified:false,interrupted:false};
+        historical.verify_original_kernel_receipt()?;
+        Ok(historical.interrupted)
     }
     pub fn verified_interrupted(&self)->bool{self.verified&&self.interrupted}
     pub fn stop_and_verify(&mut self,child:&mut Child)->io::Result<()>{

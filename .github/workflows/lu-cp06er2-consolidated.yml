@@ -98,6 +98,10 @@ jobs:
           test "$(id -u)" -ne 0
           python3 -m py_compile scripts/lu-sec06c-owned-native-launcher.py scripts/lu-sec06c-owned-native-worker.py scripts/lu-sec06c-owned-kernel-manager.py
           python3 scripts/test-sec06c-reviewed-scan-progress.py 2>&1 | tee cp06er2-native-evidence/reviewed-scan-progress.log
+          # The two-boot SEC06D fixture requires a persistent isolated VM; never claim a hosted CI syntax check as cold-boot acceptance.
+          bash -n benchmarks/e1/sec06d_cold_recovery_guest.sh
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib sec06d_vm_cold_recovery -- --list 2>&1 | tee cp06er2-native-evidence/cold-recovery-discovery.log
+          grep -Fq 'sec06d_vm_cold_recovery: test' cp06er2-native-evidence/cold-recovery-discovery.log
           cargo build --locked --manifest-path lu-desktop/tests/native-file-scan/Cargo.toml --release
           sudo install -d -o root -g root -m 0755 /usr/libexec/lu
           sudo install -o root -g root -m 0755 scripts/lu-sec06c-owned-native-launcher.py /usr/libexec/lu/lu-sec06c-launch-native

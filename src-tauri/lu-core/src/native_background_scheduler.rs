@@ -1516,6 +1516,68 @@ mod tests{
         println!("SEC06C_VM_REVIEWED_SCAN_GUARDIAN_DEATH_FAIL_CLOSED_PASS");
     }
 
+    /// Two independent boots of the same disposable guest.
+    #[cfg(target_os="linux")]
+    #[test]
+    #[ignore="requires two real guest boots and immutable root-owned scanner"]
+    fn sec06d_vm_cold_recovery(){
+        use std::{fs,time::{Duration,Instant},os::unix::ffi::OsStrExt};
+        use sha2::{Digest,Sha256};
+        let root=std::path::PathBuf::from(std::env::var_os("LU_SEC06D_PROFILE").unwrap());
+        let phase=std::env::var("LU_SEC06D_PHASE").unwrap();
+        let chat=format!("c-{}","5".repeat(32));let turn=format!("g-{}","6".repeat(32));
+        let pending=format!("scan-{}","7".repeat(32));let done=format!("scan-{}","8".repeat(32));
+        let db=root.join("tasks.sqlite");
+        let store=Arc::new(TaskStore::open(&db).unwrap());
+        let budget=ResourceBudget{workers:1,cpu:1,ram_mib:1024,gpu:0,vram_mib:0,disk:1,network:0};
+        if phase=="prepare"{
+            let input=root.join("small.bin");fs::write(&input,b"cold boot original reviewed input").unwrap();
+            let exe=Path::new("/usr/libexec/lu/lu-file-scan-worker-acceptance");
+            let plan=ReviewedScan::prepare_linux_with_executable(&pending,&chat,&turn,&input,exe).unwrap().plan;
+            store.create_reviewed_scan(&pending,&chat,&turn).unwrap();
+            let mut hash=Sha256::new();hash.update(exe.as_os_str().as_bytes());hash.update([0]);
+            for arg in &plan.args{hash.update(arg.as_bytes());hash.update([0]);}
+            let args_sha=format!("{:x}",hash.finalize());
+            // Inject interruption after the real durable commit, before launch.
+            let refused=lu_win_worker_job::os_owned_native::LinuxOsOwnedReviewedNative::spawn_if_installed(
+                exe,&plan.expected_sha256,&plan.args,&args_sha,&chat,&turn,&pending,|nonce,kind,uid|{
+                    store.bind_linux_os_owned_native_admission_before_launch(&pending,&chat,&turn,nonce,kind,&plan.expected_sha256,&args_sha,uid).unwrap();
+                    Err(std::io::Error::other("injected pre-spawn interruption"))
+                });
+            assert!(refused.is_err());
+            assert_eq!(store.get(&pending).unwrap().unwrap().state,TaskState::Pending);
+            let process=Arc::new(BackgroundProcessSupervisor::new(Arc::clone(&store)));
+            let queue=BackgroundScheduler::open(&root.join("schedule.sqlite"),Arc::clone(&store),Arc::clone(&process),budget).unwrap();
+            queue.enqueue_reviewed_scan(ReviewedScan::prepare_linux_with_executable(&done,&chat,&turn,&input,exe).unwrap()).unwrap();
+            assert_eq!(queue.tick().unwrap(),1);
+            let nonce:String=rusqlite::Connection::open(&db).unwrap().query_row("SELECT nonce FROM lu_task_linux_os_owned_native_admission WHERE task_id=?1",[&done],|r|r.get(0)).unwrap();
+            let receipt=std::path::PathBuf::from(format!("/var/lib/lu-sec06c/native-receipts/{nonce}.receipt"));
+            let deadline=Instant::now()+Duration::from_secs(60);
+            while !receipt.is_file(){assert!(Instant::now()<deadline);std::thread::sleep(Duration::from_millis(20));}
+            assert_eq!(store.get(&done).unwrap().unwrap().state,TaskState::Running);
+            assert!(store.verified_result(&done,&chat).unwrap().is_none());
+            println!("SEC06D_PREBOOT_REAL_RECEIPT_AND_PRELAUNCH_ADMISSION_PASS");
+            // No supervisor Drop or poll: host disappears before result commit.
+            std::process::exit(0);
+        }
+        assert_eq!(phase,"recover");
+        assert_eq!(store.reconcile_interrupted().unwrap(),2);
+        assert_eq!(store.recovered_native_kernel_effect(&done).unwrap().as_deref(),Some("COMPLETED"));
+        assert!(store.recovered_native_kernel_effect(&pending).unwrap().is_none());
+        assert_eq!(store.process_uncertainty(&pending).unwrap().as_deref(),Some("OS_CUSTODY_UNVERIFIED"));
+        assert!(store.process_uncertainty(&done).unwrap().is_none());
+        for task in [&pending,&done]{
+            assert_eq!(store.get(task).unwrap().unwrap().state,TaskState::Interrupted);
+            assert!(store.resume(task).is_err());assert!(store.verified_result(task,&chat).unwrap().is_none());
+        }
+        assert_eq!(store.reconcile_interrupted().unwrap(),0);
+        let process=Arc::new(BackgroundProcessSupervisor::new(Arc::clone(&store)));
+        let queue=BackgroundScheduler::open(&root.join("schedule.sqlite"),Arc::clone(&store),process,budget).unwrap();
+        assert_eq!(queue.state_for(&done,&chat).unwrap().as_deref(),Some("NEEDS_REVIEW"));
+        assert_eq!(queue.tick().unwrap(),0);
+        println!("SEC06D_COLD_RECOVERY_PASS_NO_REPLAY_NO_SYNTHETIC_RESULT");
+    }
+
 }
 
 #[cfg(all(test,windows))]

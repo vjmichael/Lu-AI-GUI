@@ -713,7 +713,7 @@ impl BackgroundProcessSupervisor {
         // scanner/archive/utility mode may request this separate OS manager;
         // original ANSF human turn and exact binary/argv SHA are immutable.
         #[cfg(target_os="linux")]
-        let mut os_owned_native_spawn=if native_candidate{
+        let os_owned_native_spawn=if native_candidate{
             if let Some((chat,turn))=reviewed_origin.as_ref(){
                 use std::os::unix::ffi::OsStrExt;
                 let mut sha=Sha256::new();
@@ -726,28 +726,19 @@ impl BackgroundProcessSupervisor {
                 let args_sha=format!("{:x}",sha.finalize());
                 lu_win_worker_job::os_owned_native::LinuxOsOwnedReviewedNative::spawn_if_installed(
                     &executable,&plan.expected_sha256,&plan.args,&args_sha,
-                    chat,turn,&plan.task_id
+                    chat,turn,&plan.task_id,|nonce,kind,uid|{
+                        self.store.bind_linux_os_owned_native_admission_before_launch(
+                            &plan.task_id,chat,turn,nonce,kind,&plan.expected_sha256,&args_sha,uid)
+                            .map_err(|_|std::io::Error::other("SEC06D durable admission denied"))
+                    }
                 ).map_err(|_|{
-                    let _=self.store.fail_pending(&plan.task_id);
+                    // A committed admission with no verified receipt is ambiguous.
+                    // Preserve it for fail-closed recovery rather than publishing failure.
+                    let _=self.store.record_process_uncertain(&plan.task_id,"OS_CUSTODY_UNVERIFIED");
                     BackgroundProcessError::SpawnFailed
                 })?
             }else{None}
         }else{None};
-        #[cfg(target_os="linux")]
-        if let Some((ref mut child,ref mut scope))=os_owned_native_spawn{
-            let (chat,turn)=reviewed_origin.as_ref()
-                .ok_or(BackgroundProcessError::StoreUnavailable)?;
-            if self.store.bind_linux_os_owned_native_admission(
-                &plan.task_id,chat,turn,scope.nonce(),scope.kind(),
-                scope.binary_sha(),scope.args_sha(),
-            ).is_err(){
-                let _=scope.stop_and_verify(child);
-                let _=self.store.record_process_uncertain(
-                    &plan.task_id,"OS_CUSTODY_UNVERIFIED");
-                let _=self.store.fail_pending(&plan.task_id);
-                return Err(BackgroundProcessError::StoreUnavailable)
-            }
-        }
         // SEC-06C is the sole kernel authority for EVERY production Linux
         // reviewed-host operation, not just the old typed Git/probe path.
         // A missing fixed, root-owned broker

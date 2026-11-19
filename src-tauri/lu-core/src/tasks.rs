@@ -334,6 +334,23 @@ impl TaskStore {
              CREATE TRIGGER IF NOT EXISTS lu_task_native_admission_no_delete
                BEFORE DELETE ON lu_task_linux_os_owned_native_admission
                BEGIN SELECT RAISE(ABORT,'Immutable Linux OS-owned native admission'); END;
+             CREATE TABLE IF NOT EXISTS lu_task_native_prelaunch_uid(
+               task_id TEXT PRIMARY KEY REFERENCES lu_task_linux_os_owned_native_admission(task_id),
+               original_uid INTEGER NOT NULL CHECK(original_uid>0)
+             );
+             CREATE TRIGGER IF NOT EXISTS lu_task_native_uid_no_update BEFORE UPDATE ON lu_task_native_prelaunch_uid
+               BEGIN SELECT RAISE(ABORT,'Immutable native admission UID'); END;
+             CREATE TRIGGER IF NOT EXISTS lu_task_native_uid_no_delete BEFORE DELETE ON lu_task_native_prelaunch_uid
+               BEGIN SELECT RAISE(ABORT,'Immutable native admission UID'); END;
+             CREATE TABLE IF NOT EXISTS lu_task_native_recovered_kernel(
+               task_id TEXT PRIMARY KEY REFERENCES lu_task_native_prelaunch_uid(task_id),
+               effect TEXT NOT NULL CHECK(effect IN ('COMPLETED','INTERRUPTED')),
+               recorded_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+             );
+             CREATE TRIGGER IF NOT EXISTS lu_task_native_recovery_no_update BEFORE UPDATE ON lu_task_native_recovered_kernel
+               BEGIN SELECT RAISE(ABORT,'Immutable historical kernel observation'); END;
+             CREATE TRIGGER IF NOT EXISTS lu_task_native_recovery_no_delete BEFORE DELETE ON lu_task_native_recovered_kernel
+               BEGIN SELECT RAISE(ABORT,'Immutable historical kernel observation'); END;
              CREATE TABLE IF NOT EXISTS lu_task_linux_os_owned_probe_admission(
                task_id TEXT PRIMARY KEY NOT NULL REFERENCES lu_tasks(task_id),
                chat TEXT NOT NULL, turn TEXT NOT NULL,
@@ -535,6 +552,17 @@ impl TaskStore {
         &self,task_id:&str,chat:&str,turn:&str,nonce:&str,
         kind:&str,binary_sha:&str,argv_sha:&str,
     )->Result<(),TaskStoreError>{
+        self.bind_native_admission(task_id,chat,turn,nonce,kind,binary_sha,argv_sha,None)
+    }
+    #[cfg(target_os="linux")]
+    pub fn bind_linux_os_owned_native_admission_before_launch(
+        &self,task_id:&str,chat:&str,turn:&str,nonce:&str,kind:&str,binary_sha:&str,argv_sha:&str,uid:u32,
+    )->Result<(),TaskStoreError>{
+        if uid==0{return Err(TaskStoreError::InvalidTransition)}
+        self.bind_native_admission(task_id,chat,turn,nonce,kind,binary_sha,argv_sha,Some(uid))
+    }
+    #[cfg(target_os="linux")]
+    fn bind_native_admission(&self,task_id:&str,chat:&str,turn:&str,nonce:&str,kind:&str,binary_sha:&str,argv_sha:&str,uid:Option<u32>)->Result<(),TaskStoreError>{
         let hex=|v:&str,n:usize|v.len()==n&&v.bytes().all(|b|
             b.is_ascii_digit()||(b'a'..=b'f').contains(&b));
         let identity=|v:&str,p:&str|v.len()==p.len()+32&&v.starts_with(p)
@@ -579,6 +607,9 @@ impl TaskStore {
              VALUES(?1,?2,?3,?4,?5,?6,?7)",
             params![task_id,chat,turn,nonce,kind,binary_sha,argv_sha]
         )?;
+        if let Some(uid)=uid{
+            tx.execute("INSERT INTO lu_task_native_prelaunch_uid(task_id,original_uid) VALUES(?1,?2)",params![task_id,uid])?;
+        }
         tx.commit()?;Ok(())
     }
     /// SEC-06C distinct finite metadata/media root-owned operation:
@@ -906,23 +937,54 @@ impl TaskStore {
         Ok(())
     }
 
+    /// Historical root receipt observation, not worker output or permission.
+    pub fn recovered_native_kernel_effect(&self,task_id:&str)->Result<Option<String>,TaskStoreError>{
+        let conn=self.connection.lock().map_err(|_|TaskStoreError::Poisoned)?;
+        conn.query_row("SELECT effect FROM lu_task_native_recovered_kernel WHERE task_id=?1",params![task_id],|r|r.get(0)).optional().map_err(Into::into)
+    }
+
     /// Requires exclusive ownership of the database/process at restart.
     pub fn reconcile_interrupted(&self) -> Result<usize, TaskStoreError> {
         let mut connection=self.connection.lock().map_err(|_|TaskStoreError::Poisoned)?;
         let tx=connection.transaction()?;
+        // Only the original root-issued, exact admission receipt can establish
+        // historical kernel emptiness. Never synthesize a tool result, promote
+        // interrupted state, or remove prior uncertainty. Missing legacy UID,
+        // missing/mismatched receipt, or failed launch remain uncertain.
+        #[cfg(target_os="linux")]
+        {
+            let admissions={
+                let mut stmt=tx.prepare("SELECT a.task_id,a.chat,a.turn,a.nonce,a.kind,a.binary_sha256,a.argv_sha256,u.original_uid
+                    FROM lu_task_linux_os_owned_native_admission a JOIN lu_tasks t ON t.task_id=a.task_id
+                    LEFT JOIN lu_task_native_prelaunch_uid u ON u.task_id=a.task_id
+                    WHERE t.state IN ('PENDING','RUNNING','PAUSED')")?;
+                let rows=stmt.query_map([],|r|Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?,r.get::<_,String>(3)?,r.get::<_,String>(4)?,r.get::<_,String>(5)?,r.get::<_,String>(6)?,r.get::<_,Option<u32>>(7)?)))?;
+                rows.collect::<Result<Vec<_>,_>>()?
+            };
+            for (task,chat,turn,nonce,kind,binary,args,uid) in admissions{
+                let proof=uid.and_then(|uid|lu_win_worker_job::os_owned_native::LinuxOsOwnedReviewedNative::recover_original_kernel_receipt(&nonce,&chat,&turn,&task,&kind,&binary,&args,uid).ok());
+                if let Some(interrupted)=proof{
+                    tx.execute("INSERT OR IGNORE INTO lu_task_native_recovered_kernel(task_id,effect) VALUES(?1,?2)",params![task,if interrupted{"INTERRUPTED"}else{"COMPLETED"}])?;
+                }else if tx.execute("INSERT OR IGNORE INTO lu_task_custody_uncertainty(task_id,reason) VALUES(?1,'OS_CUSTODY_UNVERIFIED')",params![task])?==1{
+                    tx.execute("INSERT INTO lu_task_events(task_id,event,progress,detail) SELECT task_id,'PROCESS_UNCERTAIN',progress,detail FROM lu_tasks WHERE task_id=?1",params![task])?;
+                }
+            }
+        }
         // Insert events for precisely the RUNNING set while holding a
         // transaction, so after a crash every interrupted job is discoverable.
         tx.execute(
             "INSERT INTO lu_task_events(task_id,event,progress,detail)
              SELECT task_id,'INTERRUPTED',progress,detail FROM lu_tasks
-             WHERE state='RUNNING' OR (state='PENDING' AND EXISTS(
+             WHERE state='RUNNING' OR (state IN ('PENDING','PAUSED') AND EXISTS(
+                 SELECT 1 FROM lu_task_linux_os_owned_native_admission a WHERE a.task_id=lu_tasks.task_id)) OR (state='PENDING' AND EXISTS(
                  SELECT 1 FROM lu_task_custody_uncertainty u
                  WHERE u.task_id=lu_tasks.task_id) OR state='PENDING' AND EXISTS(
                  SELECT 1 FROM lu_task_reviewed_scan_origin o WHERE o.task_id=lu_tasks.task_id))",[],
         )?;
         let changed=tx.execute(
             "UPDATE lu_tasks SET state='INTERRUPTED',updated_at=CURRENT_TIMESTAMP
-             WHERE state='RUNNING' OR (state='PENDING' AND EXISTS(
+             WHERE state='RUNNING' OR (state IN ('PENDING','PAUSED') AND EXISTS(
+                 SELECT 1 FROM lu_task_linux_os_owned_native_admission a WHERE a.task_id=lu_tasks.task_id)) OR (state='PENDING' AND EXISTS(
                  SELECT 1 FROM lu_task_custody_uncertainty u
                  WHERE u.task_id=lu_tasks.task_id) OR state='PENDING' AND EXISTS(
                  SELECT 1 FROM lu_task_reviewed_scan_origin o WHERE o.task_id=lu_tasks.task_id))",[],
