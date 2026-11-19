@@ -582,7 +582,7 @@ impl BackgroundProcessSupervisor {
         #[cfg(target_os="linux")]
         let native_candidate=matches!(plan.args.first().and_then(|arg|arg.to_str()),
             Some("--lu-file-scan-worker"|"--lu-archive-preview-worker"
-                |"--lu-archive-extract-worker"|"--lu-e1-version-one-shot"
+                |"--lu-archive-extract-worker"|"--lu-member-preview-worker"|"--lu-member-extract-worker"|"--lu-e1-version-one-shot"
                 |"--lu-e1-artifact-one-shot"))
             ||(typed_capture.is_some()&&matches!(
                 plan.args.first().and_then(|arg|arg.to_str()),
@@ -775,7 +775,7 @@ impl BackgroundProcessSupervisor {
         #[cfg(windows)]
         if plan.args.first().and_then(|s|s.to_str())
             .is_some_and(|mode|matches!(mode,
-                "--lu-archive-extract-worker"|"--lu-archive-preview-worker"))
+                "--lu-archive-extract-worker"|"--lu-archive-preview-worker"|"--lu-member-preview-worker"|"--lu-member-extract-worker"))
             &&job.set_memory_limit(1024*1024*1024).is_err(){
             let _=self.store.fail_pending(&plan.task_id);
             return Err(BackgroundProcessError::SpawnFailed)

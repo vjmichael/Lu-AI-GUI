@@ -237,8 +237,12 @@ fn stream_member(
 pub fn iso_member_digest(
     source_root:&Dir,source:&str,member:&str
 )->Result<String,IsoError>{
+    iso_member_preview(source_root,source,member).map(|(_,h)|h)
+}
+pub(crate) fn iso_member_preview(source_root:&Dir,source:&str,member:&str)->Result<(u64,String),IsoError>{
     let (mut file,entry)=find_member(source_root,source,member)?;
-    stream_member(&mut file,&entry,|_|Ok(()))
+    let size=entry.bytes as u64;
+    stream_member(&mut file,&entry,|_|Ok(())).map(|h|(size,h))
 }
 fn safe_output_name(s:&str)->bool{
     !s.is_empty() && s.len()<=240 && s!="." && s!=".."

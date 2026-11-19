@@ -248,6 +248,7 @@ pub mod coverage_plan;
 pub mod model_transfer_turn;
 pub mod model_custody_turn;
 pub mod model_publication_turn;
+pub mod native_selected_archive_process;
 pub mod model_background_observation;
 pub mod supervised_tool_generation;
 pub use policy::{CapabilityGrant, PolicyEngine, PolicyError};

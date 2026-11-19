@@ -13,7 +13,7 @@ use lu_core::{
         ArchiveBatchManifest,verify_archive_batch_plan,observe_archive_batch_completion,
     },
     native_docx_tool,native_pptx_tool,native_spreadsheet_tool,native_office_revision_tool,native_office_batch_tool,
-    native_file_transfer_tool,native_linux_archive_tool,
+    native_file_transfer_tool,native_linux_archive_tool,native_zip_extract_tool,native_iso_extract_tool,
     wire::{self,proto},
 };
 use prost::Message;
@@ -39,7 +39,8 @@ fn known_tool(s:&str)->bool{
         native_docx_tool::TOOL_ID|
         native_pptx_tool::TOOL_ID|
         native_spreadsheet_tool::TOOL_ID|
-        native_linux_archive_tool::CREATE_ID|
+        native_linux_archive_tool::CREATE_ID|native_linux_archive_tool::EXTRACT_ID|
+        native_zip_extract_tool::TOOL_ID|native_iso_extract_tool::TOOL_ID|
         native_office_revision_tool::TOOL_ID|
         native_office_batch_tool::TOOL_ID|
         native_file_transfer_tool::COPY_ID|
@@ -54,7 +55,9 @@ fn expected_output(s:&str)->Option<&'static str>{
         native_docx_tool::TOOL_ID=>Some(native_docx_tool::OUTPUT),
         native_pptx_tool::TOOL_ID=>Some(native_pptx_tool::OUTPUT),
         native_spreadsheet_tool::TOOL_ID=>Some(native_spreadsheet_tool::OUTPUT),
-        native_linux_archive_tool::CREATE_ID=>Some(native_linux_archive_tool::OUTPUT),
+        native_linux_archive_tool::CREATE_ID|native_linux_archive_tool::EXTRACT_ID=>Some(native_linux_archive_tool::OUTPUT),
+        native_zip_extract_tool::TOOL_ID=>Some(native_zip_extract_tool::OUTPUT),
+        native_iso_extract_tool::TOOL_ID=>Some(native_iso_extract_tool::OUTPUT),
         native_office_revision_tool::TOOL_ID=>Some(native_office_revision_tool::OUTPUT),
         native_office_batch_tool::TOOL_ID=>Some(native_office_batch_tool::OUTPUT),
         native_file_transfer_tool::COPY_ID|native_file_transfer_tool::MOVE_ID=>
@@ -244,6 +247,18 @@ impl Wave2OperationLedger{
                 let Ok(r)=proto::PptxCreateResult::decode(data.as_slice())
                     else{return false};
                 r.file_name==rec.target_name&&r.sha256==rec.approved_sha256
+            },
+            native_zip_extract_tool::TOOL_ID=>{
+                let Ok(r)=proto::ZipExtractResult::decode(data.as_slice()) else{return false};
+                r.target_name==rec.target_name&&r.sha256==rec.approved_sha256
+            },
+            native_iso_extract_tool::TOOL_ID=>{
+                let Ok(r)=proto::IsoExtractResult::decode(data.as_slice()) else{return false};
+                r.target_name==rec.target_name&&r.sha256==rec.approved_sha256
+            },
+            native_linux_archive_tool::EXTRACT_ID=>{
+                let Ok(r)=proto::LinuxArchiveWriteResult::decode(data.as_slice()) else{return false};
+                r.target_name==rec.target_name&&r.sha256==rec.approved_sha256&&r.member_count==1
             },
             native_linux_archive_tool::CREATE_ID=>{
                 let Ok(r)=proto::LinuxArchiveWriteResult::decode(data.as_slice()) else{return false};

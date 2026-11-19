@@ -83,7 +83,9 @@ fn execute_preview(args:&[OsString])->Result<(),()>{
 }
 pub fn run_archive_process_worker()->i32{
     let args=std::env::args_os().skip(1).collect::<Vec<_>>();
-    if args.first().is_some_and(|s|s==OsStr::new("--lu-archive-preview-worker")){
+    if args.first().is_some_and(|s|s==OsStr::new("--lu-member-preview-worker")||s==OsStr::new("--lu-member-extract-worker")){
+        if lu_core::native_selected_archive_process::worker(&args,check_parent).is_ok(){0}else{3}
+    }else if args.first().is_some_and(|s|s==OsStr::new("--lu-archive-preview-worker")){
         if execute_preview(&args).is_ok(){0}else{3}
     }else if execute(&args).is_ok(){0}else{3}
 }

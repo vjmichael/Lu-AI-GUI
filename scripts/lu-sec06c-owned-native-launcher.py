@@ -66,7 +66,14 @@ def canonical(path,directory=False):
 def preview_output(path):
     p=pathlib.Path(path)
     return p.is_absolute() and canonical(str(p.parent),True) and safe_name(p.name) and not p.exists()
+def selected_name(s):return safe_name(s) and not s.startswith("-") and not s.endswith(".")
+def selected_archive(s):return selected_name(s) and s.lower().endswith((".zip",".iso",".tar",".gz",".tgz"))
+def selected_member(s):return 0<len(s)<=512 and all(selected_name(p) for p in s.split("/"))
 def finite(kind,args):
+    if kind=="archive-preview" and args and args[0]=="--lu-member-preview-worker":
+        return len(args)==7 and canonical(args[1],True) and selected_archive(args[2]) and selected_member(args[3]) and preview_output(args[4]) and HEX64.fullmatch(args[5]*2) and args[6].isdigit() and int(args[6])>1
+    if kind=="archive-extract" and args and args[0]=="--lu-member-extract-worker":
+        return len(args)==12 and canonical(args[1],True) and selected_archive(args[2]) and selected_member(args[3]) and canonical(args[4],True) and selected_name(args[5]) and HEX64.fullmatch(args[6]) and HEX64.fullmatch(args[7]) and HEX64.fullmatch(args[8]*2) and HEX64.fullmatch(args[9]*2) and re.fullmatch(r"[A-Za-z0-9_-]{16,128}",args[10]) and args[11].isdigit() and int(args[11])>1
     if kind=="scan-file":
         return len(args)==2 and args[0]=="--lu-file-scan-worker" and canonical(args[1])
     if kind=="archive-preview":

@@ -119,9 +119,12 @@ fn cleanup(root:&Dir,name:&str,original:ZipExtractError)->ZipExtractError{
     }else{original}
 }
 /// Compute an exact content preview without creating any file.
-pub fn zip_member_sha256(
+pub fn zip_member_sha256(source:&Dir,archive_name:&str,member:&str)->Result<String,ZipExtractError>{
+    zip_member_preview(source,archive_name,member).map(|(_,h)|h)
+}
+pub(crate) fn zip_member_preview(
     source:&Dir,archive_name:&str,member:&str
-)->Result<String,ZipExtractError>{
+)->Result<(u64,String),ZipExtractError>{
     let mut zip=source_zip(source,archive_name)?;
     let index=chosen_member(&mut zip,member)?;
     let mut f=zip.by_index(index).map_err(|_|ZipExtractError::InvalidZip)?;
@@ -142,7 +145,7 @@ pub fn zip_member_sha256(
     if size!=f.size()||crc.finalize()!=f.crc32(){
         return Err(ZipExtractError::InvalidZip)
     }
-    Ok(format!("{:x}",hasher.finalize()))
+    Ok((size,format!("{:x}",hasher.finalize())))
 }
 /// Publish exactly one explicitly selected ZIP member to a new flat filename.
 /// A mismatched approved digest never publishes; existing targets are untouched.

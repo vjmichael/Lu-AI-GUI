@@ -246,6 +246,13 @@ def finite_native(kind,arguments):
     def new_target(raw):
         p=pathlib.Path(raw)
         return p.is_absolute() and absolute(str(p.parent),True) and name(p.name) and not p.exists()
+    def selected_name(x):return name(x) and not x.startswith("-") and not x.endswith(".")
+    def selected_archive(x):return selected_name(x) and x.lower().endswith((".zip",".iso",".tar",".gz",".tgz"))
+    def selected_member(x):return 0<len(x)<=512 and all(selected_name(p) for p in x.split("/"))
+    if kind=="archive-preview" and arguments and arguments[0]=="--lu-member-preview-worker":
+        return len(arguments)==7 and absolute(arguments[1],True) and selected_archive(arguments[2]) and selected_member(arguments[3]) and new_target(arguments[4]) and HEX64.fullmatch(arguments[5]*2) and arguments[6].isdigit() and int(arguments[6])>1
+    if kind=="archive-extract" and arguments and arguments[0]=="--lu-member-extract-worker":
+        return len(arguments)==12 and absolute(arguments[1],True) and selected_archive(arguments[2]) and selected_member(arguments[3]) and absolute(arguments[4],True) and selected_name(arguments[5]) and HEX64.fullmatch(arguments[6]) and HEX64.fullmatch(arguments[7]) and HEX64.fullmatch(arguments[8]*2) and HEX64.fullmatch(arguments[9]*2) and re.fullmatch(r"[A-Za-z0-9_-]{16,128}",arguments[10]) and arguments[11].isdigit() and int(arguments[11])>1
     if kind=="scan-file":
         return len(arguments)==2 and arguments[0]=="--lu-file-scan-worker" and absolute(arguments[1])
     if kind=="archive-preview":

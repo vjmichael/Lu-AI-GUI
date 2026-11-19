@@ -495,12 +495,15 @@ pub fn linux_archive_tree_members(
 pub fn linux_archive_member_digest(
     source_root:&Dir,archive_name:&str,member:&str,
 )->Result<String,LinuxArchiveError>{
+    linux_archive_member_preview(source_root,archive_name,member).map(|(_,h)|h)
+}
+pub(crate) fn linux_archive_member_preview(source_root:&Dir,archive_name:&str,member:&str)->Result<(u64,String),LinuxArchiveError>{
     let (format,raw,_)=decoded(source_root,archive_name)?;
     if format.is_tar(){
         let selected=tar_entries(&raw)?.into_iter().find(|e|e.path==member)
             .ok_or(LinuxArchiveError::NotFound)?;
         if selected.is_directory{return Err(LinuxArchiveError::UnsupportedEntry)}
-        Ok(sha(&raw[selected.data_start..selected.data_end]))
+        Ok(((selected.data_end-selected.data_start) as u64,sha(&raw[selected.data_start..selected.data_end])))
     }else{
         let suffix=match format{
             LinuxArchiveFormat::Gzip=>".gz",LinuxArchiveFormat::Xz=>".xz",
@@ -510,7 +513,7 @@ pub fn linux_archive_member_digest(
         if member!=&archive_name[..archive_name.len()-suffix.len()]{
             return Err(LinuxArchiveError::NotFound)
         }
-        Ok(sha(&raw))
+        Ok((raw.len() as u64,sha(&raw)))
     }
 }
 /// Extract a selected member; the host must pin the exact source/member hash,

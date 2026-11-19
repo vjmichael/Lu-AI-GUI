@@ -185,7 +185,7 @@ impl NativeTool for Creator{
         })
     }
 }
-struct ExtractCodec;
+pub(crate) struct ExtractCodec;
 impl ModelToolCodec for ExtractCodec{
     fn input_type_url(&self)->&'static str{EXTRACT_INPUT}
     fn output_type_url(&self)->&'static str{OUTPUT}

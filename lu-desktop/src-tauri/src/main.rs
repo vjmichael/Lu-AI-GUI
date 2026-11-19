@@ -8,7 +8,8 @@ fn main() {
     }
     if matches!(std::env::args_os().nth(1).as_deref(),
         Some(s) if s==std::ffi::OsStr::new("--lu-archive-extract-worker")||
-            s==std::ffi::OsStr::new("--lu-archive-preview-worker"))
+            s==std::ffi::OsStr::new("--lu-archive-preview-worker")||
+            s==std::ffi::OsStr::new("--lu-member-preview-worker")||s==std::ffi::OsStr::new("--lu-member-extract-worker"))
     {
         std::process::exit(lu_desktop::run_archive_process_worker());
     }

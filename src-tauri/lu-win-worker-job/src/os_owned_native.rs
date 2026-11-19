@@ -31,6 +31,9 @@ fn valid_name(s:&str)->bool{
         &&!s.contains("..")&&s.bytes().all(|c|
             c.is_ascii_alphanumeric()||matches!(c,b'.'|b'_'|b'-'))
 }
+fn selected_name(s:&str)->bool{valid_name(s)&&!s.starts_with('-')&&!s.ends_with('.')}
+fn selected_archive(s:&str)->bool{selected_name(s)&&[".zip",".iso",".tar",".gz",".tgz"].iter().any(|ext|s.to_ascii_lowercase().ends_with(ext))}
+fn selected_member(s:&str)->bool{!s.is_empty()&&s.len()<=512&&s.split('/').all(selected_name)}
 fn canonical_existing(raw:&str,dir:bool)->bool{
     let p=Path::new(raw);
     p.is_absolute()&&!p.components().any(|x|matches!(x,
@@ -64,6 +67,13 @@ pub fn finite_kind(args:&[OsString])->io::Result<&'static str>{
               &&canonical_existing(dest,true)&&valid_name(target)
               &&hex(digest,64)&&hex(sid,32)&&hex(did,32)&&pid(parent)=>
             Some("archive-extract"),
+        ["--lu-member-preview-worker",source,name,member,output,identity,parent]
+            if canonical_existing(source,true)&&selected_archive(name)&&selected_member(member)
+              &&canonical_output(output)&&hex(identity,32)&&pid(parent)=>Some("archive-preview"),
+        ["--lu-member-extract-worker",source,name,member,dest,target,source_sha,member_sha,sid,did,stage,parent]
+            if canonical_existing(source,true)&&selected_archive(name)&&selected_member(member)
+              &&canonical_existing(dest,true)&&selected_name(target)&&hex(source_sha,64)&&hex(member_sha,64)
+              &&hex(sid,32)&&hex(did,32)&&id(stage)&&stage.len()>=16&&pid(parent)=>Some("archive-extract"),
         ["--lu-e1-version-one-shot"]=>Some("fixed-version"),
         ["--lu-e1-artifact-one-shot",("docx"|"xlsx")]=>Some("fixed-artifact"),
         [("--version"|"-version")]=>Some("app-version"),
@@ -189,6 +199,17 @@ mod tests{
     use super::*;
     fn v(args:&[&str])->Vec<OsString>{
         args.iter().map(|x|OsString::from(*x)).collect()
+    }
+    #[test]
+    fn selected_member_modes_are_exact_and_not_an_exec_bridge(){
+        let folder=std::env::temp_dir().join(format!("lu-selected-finite-{}",std::process::id()));
+        let _=fs::remove_dir_all(&folder);fs::create_dir(&folder).unwrap();let parent=folder.canonicalize().unwrap();let dir=parent.to_str().unwrap();let out=parent.join("preview.json");let out=out.to_str().unwrap();let identity="a".repeat(32);let digest="b".repeat(64);let stage="approved-stage-0001";
+        let preview=["--lu-member-preview-worker",dir,"a.zip","nested/b.txt",out,&identity,"123"];
+        assert_eq!(finite_kind(&v(&preview)).unwrap(),"archive-preview");
+        let extract=["--lu-member-extract-worker",dir,"disc.iso","README.TXT",dir,"new.txt",&digest,&digest,&identity,&identity,stage,"123"];
+        assert_eq!(finite_kind(&v(&extract)).unwrap(),"archive-extract");
+        for (idx,invalid) in [(2,"a.tar.xz"),(3,"../b.txt"),(3,"nested//b.txt"),(3,"-b.txt"),(5,"../out"),(6,"bad-hash"),(8,"bad-dir"),(10,"short"),(11,"1")]{let mut a=extract;a[idx]=invalid;assert!(finite_kind(&v(&a)).is_err(),"{idx}: {invalid}");}
+        assert!(finite_kind(&v(&extract[..11])).is_err());fs::remove_dir_all(folder).unwrap();
     }
     #[test]
     fn reject_arbitrary_exec_and_archive_escape(){
