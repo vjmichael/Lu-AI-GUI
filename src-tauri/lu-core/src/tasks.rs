@@ -957,7 +957,8 @@ impl TaskStore {
                 let mut stmt=tx.prepare("SELECT a.task_id,a.chat,a.turn,a.nonce,a.kind,a.binary_sha256,a.argv_sha256,u.original_uid
                     FROM lu_task_linux_os_owned_native_admission a JOIN lu_tasks t ON t.task_id=a.task_id
                     LEFT JOIN lu_task_native_prelaunch_uid u ON u.task_id=a.task_id
-                    WHERE t.state IN ('PENDING','RUNNING','PAUSED')")?;
+                    WHERE (t.state IN ('PENDING','RUNNING','PAUSED','INTERRUPTED'))
+                      AND NOT EXISTS(SELECT 1 FROM lu_task_native_recovered_kernel k WHERE k.task_id=t.task_id)")?;
                 let rows=stmt.query_map([],|r|Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?,r.get::<_,String>(3)?,r.get::<_,String>(4)?,r.get::<_,String>(5)?,r.get::<_,String>(6)?,r.get::<_,Option<u32>>(7)?)))?;
                 rows.collect::<Result<Vec<_>,_>>()?
             };

@@ -54,6 +54,27 @@ def root_dir(path):
     st=path.lstat()
     if not stat.S_ISDIR(st.st_mode) or st.st_uid!=0 or st.st_mode&0o022:
         deny("root admission/receipt dir changed")
+def consume_original_nonce(opts,uid):
+    # Persistent denial-only tombstone. /run GO is volatile and a missing
+    # terminal receipt after power loss must never make a nonce usable again.
+    # Reserve atomically before systemd-run; failure consumes, never grants.
+    for directory in (RECEIPTS.parent.parent,RECEIPTS.parent,RECEIPTS):
+        root_dir(directory)
+    path=RECEIPTS/(opts.nonce+".spent")
+    body="\n".join(["LU_SEC06D_NATIVE_SPENT_V1","NONCE="+opts.nonce,
+        "CHAT="+opts.chat,"TURN="+opts.turn,"CALL="+opts.call,
+        "KIND="+opts.kind,"BINARY_SHA256="+opts.binary_sha,
+        "ARGV_SHA256="+opts.args_sha,"ORIGINAL_UID="+str(uid),""])
+    try:fd=os.open(path,os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o644)
+    except FileExistsError:deny("persistent original native nonce already consumed")
+    with os.fdopen(fd,"w",encoding="ascii") as f:
+        f.write(body);f.flush();os.fsync(f.fileno())
+    # Sync directory entries, including first-install creation of the tree.
+    for directory in (RECEIPTS,RECEIPTS.parent,RECEIPTS.parent.parent):
+        fd=os.open(directory,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW)
+        try:os.fsync(fd)
+        finally:os.close(fd)
+
 def digest(exe,args):
     return hashlib.sha256(("\0".join([exe]+args)+"\0").encode("utf-8")).hexdigest()
 def safe_name(s):
@@ -136,6 +157,7 @@ def run(opts):
     receipt=RECEIPTS/(opts.nonce+".receipt")
     if receipt.exists() or (RUN_DIR/(opts.nonce+".go")).exists():
         deny("original one-use native nonce replay")
+    consume_original_nonce(opts,uid)
     unit=f"lu-sec06c-native-{opts.nonce}.service"
     argv=[
         str(SYSTEMD),"--system","--quiet","--wait","--pipe",

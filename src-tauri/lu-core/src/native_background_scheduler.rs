@@ -1578,6 +1578,71 @@ mod tests{
         println!("SEC06D_COLD_RECOVERY_PASS_NO_REPLAY_NO_SYNTHETIC_RESULT");
     }
 
+    /// Original interrupted receipt and independently observed active-worker power cut.
+    #[cfg(target_os="linux")]
+    #[test]
+    #[ignore="requires isolated guest and abrupt host-side QEMU termination"]
+    fn sec06d_r1_vm_power_cut(){
+        use std::{fs,io::{BufRead,BufReader},time::{Duration,Instant},os::unix::ffi::OsStrExt};
+        use sha2::{Digest,Sha256};
+        let root=std::path::PathBuf::from(std::env::var_os("LU_SEC06D_PROFILE").unwrap());
+        let phase=std::env::var("LU_SEC06D_PHASE").unwrap();
+        let chat=format!("c-{}","9".repeat(32));let turn=format!("g-{}","a".repeat(32));
+        let stopped=format!("scan-{}","b".repeat(32));let live=format!("scan-{}","c".repeat(32));
+        let db=root.join("tasks.sqlite");let store=Arc::new(TaskStore::open(&db).unwrap());
+        let budget=ResourceBudget{workers:1,cpu:1,ram_mib:1024,gpu:0,vram_mib:0,disk:1,network:0};
+        if phase=="prepare"{
+            let input=root.join("large.bin");fs::File::create(&input).unwrap().set_len(4*1024*1024*1024).unwrap();
+            let exe=Path::new("/usr/libexec/lu/lu-file-scan-worker-acceptance");
+            let plan=ReviewedScan::prepare_linux_with_executable(&stopped,&chat,&turn,&input,exe).unwrap().plan;
+            store.create_reviewed_scan(&stopped,&chat,&turn).unwrap();
+            let mut hash=Sha256::new();hash.update(exe.as_os_str().as_bytes());hash.update([0]);
+            for a in &plan.args{hash.update(a.as_bytes());hash.update([0]);}
+            let args_sha=format!("{:x}",hash.finalize());
+            let (mut child,mut proof)=lu_win_worker_job::os_owned_native::LinuxOsOwnedReviewedNative::spawn_if_installed(
+                exe,&plan.expected_sha256,&plan.args,&args_sha,&chat,&turn,&stopped,|nonce,kind,uid|{
+                    store.bind_linux_os_owned_native_admission_before_launch(&stopped,&chat,&turn,nonce,kind,&plan.expected_sha256,&args_sha,uid).unwrap();Ok(())
+                }).unwrap().unwrap();
+            store.start(&stopped).unwrap();
+            let mut reader=BufReader::new(child.stdout.take().unwrap());let mut line=String::new();
+            reader.read_line(&mut line).unwrap();assert!(line.starts_with("P\t"));
+            proof.stop_and_verify(&mut child).unwrap();assert!(proof.verified_interrupted());
+            assert_eq!(store.get(&stopped).unwrap().unwrap().state,TaskState::Running);
+            assert!(store.verified_result(&stopped,&chat).unwrap().is_none());
+            let process=Arc::new(BackgroundProcessSupervisor::new(Arc::clone(&store)));
+            let queue=BackgroundScheduler::open(&root.join("schedule.sqlite"),Arc::clone(&store),Arc::clone(&process),budget).unwrap();
+            let plan=ReviewedScan::prepare_linux_with_executable(&live,&chat,&turn,&input,exe).unwrap();
+            fs::write(root.join("live-argv.json"),serde_json::to_vec(&plan.plan.args.iter().map(|a|a.to_str().unwrap()).collect::<Vec<_>>()).unwrap()).unwrap();
+            queue.enqueue_reviewed_scan(plan).unwrap();assert_eq!(queue.tick().unwrap(),1);
+            let deadline=Instant::now()+Duration::from_secs(60);
+            loop{let row=store.get(&live).unwrap().unwrap();assert_eq!(row.state,TaskState::Running);if row.progress>0{break}assert!(Instant::now()<deadline);std::thread::sleep(Duration::from_millis(2));}
+            fs::write(root.join("power-ready"),b"ready\n").unwrap();
+            loop{std::thread::sleep(Duration::from_secs(1));}
+        }
+        if matches!(phase.as_str(),"missing"|"late"){
+            assert_eq!(store.reconcile_interrupted().unwrap(),if phase=="missing"{2}else{0});
+            assert_eq!(store.recovered_native_kernel_effect(&stopped).unwrap().as_deref(),if phase=="late"{Some("INTERRUPTED")}else{None});
+            assert!(store.recovered_native_kernel_effect(&live).unwrap().is_none());
+            for task in [&stopped,&live]{
+                assert_eq!(store.get(task).unwrap().unwrap().state,TaskState::Interrupted);
+                assert_eq!(store.process_uncertainty(task).unwrap().as_deref(),Some("OS_CUSTODY_UNVERIFIED"));
+                assert!(store.resume(task).is_err());assert!(store.verified_result(task,&chat).unwrap().is_none());
+            }
+            assert_eq!(store.reconcile_interrupted().unwrap(),0);
+            println!("SEC06D_R1_DELAYED_RECEIPT_PHASE_PASS {phase}");return
+        }
+        assert_eq!(phase,"recover");assert_eq!(store.reconcile_interrupted().unwrap(),2);
+        assert_eq!(store.recovered_native_kernel_effect(&stopped).unwrap().as_deref(),Some("INTERRUPTED"));
+        assert!(store.recovered_native_kernel_effect(&live).unwrap().is_none());
+        assert_eq!(store.process_uncertainty(&live).unwrap().as_deref(),Some("OS_CUSTODY_UNVERIFIED"));
+        for task in [&stopped,&live]{assert_eq!(store.get(task).unwrap().unwrap().state,TaskState::Interrupted);assert!(store.resume(task).is_err());assert!(store.verified_result(task,&chat).unwrap().is_none());}
+        assert_eq!(store.reconcile_interrupted().unwrap(),0);
+        let process=Arc::new(BackgroundProcessSupervisor::new(Arc::clone(&store)));
+        let queue=BackgroundScheduler::open(&root.join("schedule.sqlite"),Arc::clone(&store),process,budget).unwrap();
+        assert_eq!(queue.state_for(&live,&chat).unwrap().as_deref(),Some("NEEDS_REVIEW"));assert_eq!(queue.tick().unwrap(),0);
+        println!("SEC06D_R1_ABRUPT_RECOVERY_PASS");
+    }
+
 }
 
 #[cfg(all(test,windows))]
