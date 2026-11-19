@@ -143,11 +143,13 @@ def linux_cargo() -> str:
     if linker is None:
         raise Denied("FIN02_ROOT_LINKER_MISSING")
     h=hashlib.sha256()
-    for name in ("/usr/bin/bwrap", "/usr/bin/cargo", "/usr/bin/rustc", linker):
+    for name in ("/usr/bin/bwrap", "/usr/bin/cargo", "/usr/bin/rustc", "/usr/bin/rustdoc", linker):
         path=Path(name)
         info=path.lstat()
+        # Only the fixed Cargo path may exceed the original 32 MiB bound.
+        limit=(64 if name == "/usr/bin/cargo" else 32)*1024*1024
         if (info.st_uid != 0 or info.st_mode & 0o6022 or
-            not stat.S_ISREG(info.st_mode) or info.st_size > 32*1024*1024):
+            not stat.S_ISREG(info.st_mode) or info.st_size > limit):
             raise Denied("FIN02_ROOT_SYSTEM_TOOL_INVALID")
         h.update(name.encode()+b"\x00"+sha_file(path).encode()+b"\x00")
     return h.hexdigest()

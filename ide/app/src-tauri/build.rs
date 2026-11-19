@@ -418,9 +418,17 @@ fn fin02_linux_cargo_hash() -> Result<String, String> {
         })
         .ok_or("FIN02_ROOT_LINKER_MISSING")?;
     let mut h = Sha256::new();
-    for p in ["/usr/bin/bwrap", "/usr/bin/cargo", "/usr/bin/rustc", gcc] {
+    for p in [
+        "/usr/bin/bwrap",
+        "/usr/bin/cargo",
+        "/usr/bin/rustc",
+        "/usr/bin/rustdoc",
+        gcc,
+    ] {
         let meta = fs::symlink_metadata(p).map_err(|_| "FIN02_SYSTEM_TOOL_MISSING")?;
-        if !meta.is_file() || meta.file_type().is_symlink() || meta.len() > 32 * 1024 * 1024 {
+        // Match the runtime's exact-path-only Cargo limit and Rustdoc identity.
+        let limit = if p == "/usr/bin/cargo" { 64 } else { 32 } * 1024 * 1024;
+        if !meta.is_file() || meta.file_type().is_symlink() || meta.len() > limit {
             return Err("FIN02_SYSTEM_TOOL_UNTRUSTED".into());
         }
         #[cfg(unix)]

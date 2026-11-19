@@ -94,6 +94,7 @@ pub fn installed_multilang_toolchain_digest(recipe_id: &str) -> Result<String, S
 
 const CARGO: &str = "/usr/bin/cargo";
 const RUSTC: &str = "/usr/bin/rustc";
+const RUSTDOC: &str = "/usr/bin/rustdoc";
 // The fixed compiler path must be a regular root-owned file, never the
 // /usr/bin/cc -> /etc/alternatives/cc symlink (which isn't mounted in bwrap).
 // Explicit allowlisted package versions retain reproducible toolchain SHA
@@ -221,7 +222,7 @@ fn hash_file_with_limit(path: &Path, limit: u64) -> Result<String, SupervisorErr
 }
 
 /// The trusted native host can record this digest in JobPlan. It covers
-/// the two executable files, NOT their dynamic libraries or external crates.
+/// the fixed executable files, NOT their dynamic libraries or external crates.
 fn trusted_gnu_linker() -> Result<&'static str, SupervisorError> {
     LINKER_CANDIDATES
         .iter()
@@ -234,9 +235,10 @@ pub fn installed_toolchain_digest() -> Result<String, SupervisorError> {
     ensure_root_owned_tool(Path::new(BWRAP))?;
     ensure_root_owned_tool(Path::new(CARGO))?;
     ensure_root_owned_tool(Path::new(RUSTC))?;
+    ensure_root_owned_tool(Path::new(RUSTDOC))?;
     let linker = trusted_gnu_linker()?;
     let mut digest = Sha256::new();
-    for path in [BWRAP, CARGO, RUSTC, linker] {
+    for path in [BWRAP, CARGO, RUSTC, RUSTDOC, linker] {
         let sha = hash_file(Path::new(path))?;
         digest.update(path.as_bytes());
         digest.update([0]);
@@ -727,6 +729,15 @@ fn command_for(
         // changing any production worker's admission/resource policy.
         cmd.arg("--setenv").arg("UV_CONCURRENT_INSTALLS").arg("1");
     }
+    // Cargo recipes select the fixed, digest-bound compiler and doc tool.
+    if runtime.is_none() {
+        cmd.arg("--setenv")
+            .arg("RUSTC")
+            .arg(RUSTC)
+            .arg("--setenv")
+            .arg("RUSTDOC")
+            .arg(RUSTDOC);
+    }
     cmd.arg("--");
     match plan.recipe_id.as_str() {
         "rust_check" | "rust_build" | "rust_tests" | "lu_ide_host_tests" if runtime.is_none() => {
@@ -1093,6 +1104,9 @@ pub fn execute_linux_worker_with_output(
     for tool in [BWRAP, CARGO, RUSTC, trusted_gnu_linker()?] {
         ensure_root_owned_tool(Path::new(tool))?;
     }
+    if runtime.is_none() {
+        ensure_root_owned_tool(Path::new(RUSTDOC))?;
+    }
     let group = make_cgroup(job_id, plan)?;
     let output = make_output_root(output_parent, job_id)?;
     let (mut command, proc_file) = command_for(plan, input, &output, &group, runtime.as_ref())?;
@@ -1454,6 +1468,7 @@ mod tests {
         assert_eq!(BWRAP, "/usr/bin/bwrap");
         assert_eq!(CARGO, "/usr/bin/cargo");
         assert_eq!(RUSTC, "/usr/bin/rustc");
+        assert_eq!(RUSTDOC, "/usr/bin/rustdoc");
         assert!(
             matches!(
                 installed_toolchain_digest(),
@@ -1465,7 +1480,14 @@ mod tests {
     #[test]
     fn cargo_hash_budget_remains_limited_to_exact_fixed_path() {
         assert_eq!(tool_binary_limit(Path::new(CARGO)), MAX_CARGO_BINARY);
-        for not_cargo in [BWRAP, RUSTC, "/tmp/cargo", "/usr/bin/cargo-other", "/usr/bin/./cargo"] {
+        for not_cargo in [
+            BWRAP,
+            RUSTC,
+            RUSTDOC,
+            "/tmp/cargo",
+            "/usr/bin/cargo-other",
+            "/usr/bin/./cargo",
+        ] {
             assert_eq!(tool_binary_limit(Path::new(not_cargo)), MAX_TOOL_BINARY);
         }
         for linker in LINKER_CANDIDATES {
@@ -1477,9 +1499,10 @@ mod tests {
 
     #[test]
     fn cargo_hash_budget_hashes_all_bytes_and_denies_overflow_and_links() {
-        use std::os::unix::fs::symlink;
         use std::io::{Seek, SeekFrom, Write};
-        let root = std::env::temp_dir().join(format!("ide-cargo-hash-budget-{}", std::process::id()));
+        use std::os::unix::fs::symlink;
+        let root =
+            std::env::temp_dir().join(format!("ide-cargo-hash-budget-{}", std::process::id()));
         fs::create_dir(&root).unwrap();
         let file = root.join("cargo");
         let mut handle = File::create(&file).unwrap();

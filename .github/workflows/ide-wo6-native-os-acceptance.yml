@@ -407,7 +407,7 @@ jobs:
           test "$(sysctl -n kernel.apparmor_restrict_unprivileged_userns)" = 1
           /usr/bin/bwrap --unshare-all --ro-bind /usr /usr --ro-bind-try /bin /bin --ro-bind-try /lib /lib --ro-bind-try /lib64 /lib64 --proc /proc --dev /dev -- /usr/bin/true ||
             { echo 'DENIED: real unprivileged bwrap namespace creation denied; global restrictions unchanged'; exit 1; }
-          for file in /usr/bin/bwrap /usr/bin/cargo /usr/bin/rustc; do
+          for file in /usr/bin/bwrap /usr/bin/cargo /usr/bin/rustc /usr/bin/rustdoc; do
             test -f "$file"
             test "$(stat -c %u "$file")" = 0
           done

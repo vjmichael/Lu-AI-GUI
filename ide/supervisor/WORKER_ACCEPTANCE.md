@@ -12,7 +12,7 @@ The user selects a registered project through the native picker; the host must c
 
 `linux-worker` Cargo feature (off by default) adds fixed offline Cargo check/test recipes. All of these must pass before execution:
 
-- `/usr/bin/bwrap`, `/usr/bin/cargo`, `/usr/bin/rustc` must be present, root-owned, non-symlink and non-writable by group/others, and their actual bytes must match the plan's toolchain hash; no PATH lookup or shell.
+- `/usr/bin/bwrap`, `/usr/bin/cargo`, `/usr/bin/rustc`, `/usr/bin/rustdoc` and the fixed GNU compiler/linker must be present, root-owned, non-symlink and non-writable by group/others, and their actual bytes must match the plan's toolchain hash; no PATH lookup or shell.
 - Current Linux unified cgroup parent must be a canonical delegated subtree with cpu/memory/pids controllers. An exclusive per-job child must accept enforced CPU 50%, plan memory and PID limits, with cgroup.kill available.
 - `Command::pre_exec` makes a raw syscall write of the child PID to cgroup.procs and sets no_new_privs. Failure prevents the Bubblewrap image from executing; no unrestricted retry.
 - Bubblewrap uses `--unshare-all` (network/user/PID/mount namespaces), empty inherited environment, explicit read-only /workspace, restricted writable /output, private tmp/proc/dev, fixed cargo recipes `--offline --locked`. The app's credentials, HOME and private journal are not mounted.

@@ -19,3 +19,9 @@ those materials, the stage refuses and the final integrated native build
 remains blocked. A stage manifest is not code signing, license
 verification, successful AppContainer/SCM/cgroup-v2 isolation or installed
 acceptance. No binaries were fetched or installed in this change.
+
+Linux Rust build/test pins include the exact root-owned system Cargo, Rustc,
+Rustdoc, Bubblewrap and allowlisted GNU linker; only the fixed Cargo path
+may use the 64 MiB admission bound. Earlier four-file pins are stale and
+require a new independent review of the actual five-file identity. The
+digest does not certify shared-library or upstream-package provenance.
