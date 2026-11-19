@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "76e390dcdeb7684f85ab86901900971d7877d737",
-  "trackedFileCount": 1134,
+  "sourceCommitBeforeLock": "0c19ba3db5711971090aa50706353fcf7b4e9935",
+  "trackedFileCount": 1136,
   "files": [
     {
       "path": ".gitattributes",
@@ -776,6 +776,10 @@
       "blob": "3f7024bd21bd6f9327c007cc924295fc7688ac3a"
     },
     {
+      "path": "docs/LU_CP06B_SCOPED_INTENT_20261119.md",
+      "blob": "4f50913ab36a1a77a4d273226608526e84fc3d25"
+    },
+    {
       "path": "docs/LU_CURRENT_PREVIEW_CPU_VULKAN_DUAL_ENGINE_20261109.md",
       "blob": "c1664658ded245a3df6041114e42587f49550200"
     },
@@ -785,7 +789,7 @@
     },
     {
       "path": "docs/LU_DEVELOPMENT_LEDGER.md",
-      "blob": "5fb912f4c19a752231e0cc5529ca3368af0b995a"
+      "blob": "9a235946667450cb6b71885db1811474559494f8"
     },
     {
       "path": "docs/LU_E1_NATIVE_EVIDENCE_20261107.md",
@@ -1521,7 +1525,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/capability_negotiation.rs",
-      "blob": "5ab72c6e1b9d17b66efb4cc680f254636061f36c"
+      "blob": "5410ed448f79bd107afc08a5153856b8efdfd8c8"
     },
     {
       "path": "lu-desktop/src-tauri/src/causal_diagnostic.rs",
@@ -1806,6 +1810,10 @@
     {
       "path": "lu-desktop/src-tauri/src/rollback_review.rs",
       "blob": "5936bebd94754c80b029cf2b6cad95628c659740"
+    },
+    {
+      "path": "lu-desktop/src-tauri/src/scoped_read_intent.rs",
+      "blob": "d5348369400c8f27c4a1d46fe9fb0454d94965f8"
     },
     {
       "path": "lu-desktop/src-tauri/src/stream_delivery.rs",
