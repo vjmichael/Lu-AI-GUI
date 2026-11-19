@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "fa3f9dcd496aef55d44d7eec0075bfb3f86e0da7",
+  "sourceCommitBeforeLock": "597b1e562ec836575b495bcd7cef5efaabed0c8f",
   "trackedFileCount": 1959,
   "files": [
     {
@@ -1785,7 +1785,7 @@
     },
     {
       "path": "ide/app/fixtures/Test-Wo8NativeDesktopUI.ps1",
-      "blob": "a85e08b4c41a48d4494b660d957b9ab1177129b6"
+      "blob": "9f2fdd5c2165b1a6d0558c0095fbe46b4c61385b"
     },
     {
       "path": "ide/app/fixtures/b2_linux_installed_draft_atspi.py",
@@ -1833,7 +1833,7 @@
     },
     {
       "path": "ide/app/fixtures/test_atspi_signature_contract.py",
-      "blob": "0536db9f954f37b611d47fc6b28e8bee30f3f507"
+      "blob": "a7d6e6e71a552ba38adfea74dabb94cda22baebe"
     },
     {
       "path": "ide/app/fixtures/test_dev01_native_confirmation_scope.py",
@@ -2373,7 +2373,7 @@
     },
     {
       "path": "ide/app/web/code_editor.jsx",
-      "blob": "447108504ed067bb2f2108b03aa7a859fb426125"
+      "blob": "c39745cccd68e1ead8f1699c4c4c0666fbf92c1a"
     },
     {
       "path": "ide/app/web/conventional_tests.js",
