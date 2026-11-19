@@ -9335,6 +9335,7 @@ function App() {
                       {' · '}{artifact.sha256}</p>)}
                 </article>)}
               <button className="ghostBtn" type="button"
+                aria-label="Verify frozen Git and artifact evidence again"
                 disabled={workflowBusy || !workflowInspection.readyForReview}
                 onClick={() => revalidateMultiProjectWorkflow()}>
                 Verify frozen Git and artifact evidence again
@@ -9348,6 +9349,7 @@ function App() {
                 Export reviewed manifest to OS-selected folder
               </button>
               <button className="ghostBtn" type="button"
+                aria-label="Export verified artifacts as ZIP (no code execution)"
                 disabled={workflowBusy || !workflowRevalidated}
                 onClick={() => exportMultiProjectBundle()}>
                 Export verified artifacts as ZIP (no code execution)

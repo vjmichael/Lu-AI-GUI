@@ -151,6 +151,12 @@ export function CodeEditor({ editorState, tabIdentity, findRequest, replaceReque
       parent: container.current,
     });
     viewRef.current = view;
+    // The initial content-attribute calculation can precede host attachment.
+    // Initialize the same bounded name on the mounted content; the facet
+    // remains responsible for later CodeMirror attribute reconciliation.
+    if (label && label.length <= 1100) {
+      view.contentDOM.setAttribute('aria-label', 'Source editor text · '+label);
+    }
     const reportFocus=()=>onFocusedRef.current?.(pane,tabIdentity);
     view.dom.addEventListener('focusin',reportFocus);
     const reportLine = () => {

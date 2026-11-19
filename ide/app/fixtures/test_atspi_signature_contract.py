@@ -353,5 +353,49 @@ class AtspiSignatureContract(unittest.TestCase):
         self.assertIn("pyatspi.STATE_FOCUSED", linux)
         self.assertIn("expected_two_distinct_native_atspi_editor_surfaces_", linux)
 
+    def test_b5_native_surface_requires_exact_pane_and_editability(self):
+        from types import SimpleNamespace
+        tree=ast.parse((ROOT / "b5_linux_installed_perf_atspi.py").read_text(encoding="utf-8"))
+        fn=next(node for node in tree.body if isinstance(node, ast.FunctionDef)
+                and node.name=="exact_primary_editor_surface")
+        flags=SimpleNamespace(STATE_VISIBLE=1, STATE_SHOWING=2,
+                              STATE_FOCUSABLE=3, STATE_EDITABLE=4)
+        class Node:
+            def __init__(self,name,role,parent=None,states=(1,2,3,4)):
+                self.name,self.role,self.parent,self.states=name,role,parent,states
+            def getRoleName(self): return self.role
+            def getState(self): return SimpleNamespace(contains=lambda flag:flag in self.states)
+        ns={"pyatspi":flags,"_native_dialog_ancestor":lambda node:False}
+        exec(compile(ast.Module(body=[fn],type_ignores=[]),"exact_editor_scope","exec"),ns)
+        check=ns["exact_primary_editor_surface"]
+        pane=Node("First editor, main.rs","region")
+        exact="Source editor text · First editor: main.rs"
+        self.assertTrue(check(Node(exact,"text",pane),"main.rs"))
+        self.assertTrue(check(Node("Source editor text","document text",pane),"main.rs"))
+        for node in (Node(exact,"text"),
+                     Node(exact,"text",Node("Second editor, main.rs","region")),
+                     Node(exact,"text",Node("First editor, other.rs","region")),
+                     Node("Source editor text · First editor: other.rs","text",pane),
+                     Node(exact,"panel",pane),
+                     Node(exact,"text",pane,(1,2,3)),
+                     Node(exact,"text",pane,(1,3,4)),
+                     Node(exact,"text",Node("","dialog",pane))):
+            self.assertFalse(check(node,"main.rs"))
+        ns["_native_dialog_ancestor"]=lambda node:True
+        self.assertFalse(check(Node(exact,"text",pane),"main.rs"))
+
+    def test_04g_scoped_native_commit_and_workflow_labels(self):
+        script=(ROOT / "Test-Wo8NativeDesktopUI.ps1").read_text(encoding="utf-8")
+        self.assertIn("Find-Control 'Reviewed local commit details' 'Group' 2 -Exact",script)
+        self.assertIn("$fields.Count -eq 1",script)
+        self.assertIn("$edit=Find-Wo9CommitField $pair[0] 20",script)
+        self.assertIn("$field=Find-Wo9CommitField $pair[0] 5",script)
+        self.assertIn("wo9_commit_scoped_input_focus_not_verified",script)
+        self.assertIn("Test-EditableNativeEditor $item",script)
+        self.assertIn("ControlType.Document",script)
+        ui=(ROOT.parent / "web" / "main.jsx").read_text(encoding="utf-8")
+        self.assertIn('aria-label="Verify frozen Git and artifact evidence again"',ui)
+        self.assertIn('aria-label="Export verified artifacts as ZIP (no code execution)"',ui)
+
 if __name__ == "__main__":
     unittest.main()

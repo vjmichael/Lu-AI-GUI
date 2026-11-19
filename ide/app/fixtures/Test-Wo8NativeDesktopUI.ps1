@@ -159,6 +159,30 @@ function Warm-InstalledWebViewAccessibility {
   Deny 'installed_webview_accessibility_not_ready_after_native_focus'
 }
 
+function Test-EditableNativeEditor($item) {
+  try {
+    $type=$item.Current.ControlType.ProgrammaticName
+    if ($type -ceq 'ControlType.Edit') {
+      $value=$null
+      if ($item.TryGetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern,[ref]$value)) {
+        return !$value.Current.IsReadOnly
+      }
+      return $true
+    }
+    if ($type -ceq 'ControlType.Document') {
+      $value=$null
+      if ($item.TryGetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern,[ref]$value)) {
+        return !$value.Current.IsReadOnly
+      }
+      $tp=$null
+      if ($item.TryGetCurrentPattern([System.Windows.Automation.TextPattern]::Pattern,[ref]$tp)) {
+        $ro=$tp.DocumentRange.GetAttributeValue([System.Windows.Automation.TextPattern]::IsReadOnlyAttribute)
+        return ($ro -is [bool] -and !$ro)
+      }
+    }
+  } catch {}
+  return $false
+}
 function Find-Control([string]$query,[string]$kind,[int]$seconds=18,[switch]$Exact) {
   $start=Get-Date
   $end=$start.AddSeconds($seconds)
@@ -190,7 +214,7 @@ function Find-Control([string]$query,[string]$kind,[int]$seconds=18,[switch]$Exa
               $matches=($name -ceq $query -or ($query -eq 'Source editor text' -and
                 $name -and $name.StartsWith('Source editor text · ',[StringComparison]::Ordinal)))
               if ($matches -and $item.Current.IsEnabled -and !$item.Current.IsOffscreen -and
-                  $item.Current.IsKeyboardFocusable -and $type -eq 'ControlType.Edit') {return $item}
+                  $item.Current.IsKeyboardFocusable -and (Test-EditableNativeEditor $item)) {return $item}
               continue
             }
             if ($name -and (($Exact -and $name -ceq $query) -or
@@ -256,6 +280,26 @@ function Find-Control([string]$query,[string]$kind,[int]$seconds=18,[switch]$Exa
     Write-Host ('P02_NATIVE_UIA_SNAPSHOT_ERROR='+$_.Exception.GetType().Name)
   }
   Deny ('ui_element_not_exposed_'+$query.Replace(' ','_'))
+}
+function Find-Wo9CommitField([string]$label,[int]$seconds=10) {
+  $until=(Get-Date).AddSeconds($seconds)
+  do {
+    $form=Find-Control 'Reviewed local commit details' 'Group' 2 -Exact
+    $fields=@()
+    try {
+      foreach($candidate in $form.FindAll([System.Windows.Automation.TreeScope]::Descendants,
+          [System.Windows.Automation.Condition]::TrueCondition)) {
+        if ($candidate.Current.Name -ceq $label -and
+            $candidate.Current.ControlType.ProgrammaticName -ceq 'ControlType.Edit' -and
+            $candidate.Current.IsEnabled -and $candidate.Current.IsKeyboardFocusable) {
+          $fields+=,$candidate
+        }
+      }
+    } catch {$fields=@()}
+    if ($fields.Count -eq 1) {return $fields[0]}
+    Start-Sleep -Milliseconds 150
+  } while((Get-Date) -lt $until)
+  Deny ('wo9_exact_commit_form_field_not_verified_'+$label.Replace(' ','_'))
 }
 function Reveal-NativeControl($element) {
   if (!$element.Current.IsOffscreen) {return}
@@ -914,7 +958,7 @@ try {
         # WebView2 UIA SetValue may change the provider's displayed value
         # without dispatching the physical input events React needs. Use
         # actual foreground keyboard input and verify the native value.
-        $edit=Find-Control $pair[0] 'Edit' 20
+        $edit=Find-Wo9CommitField $pair[0] 20
         if (!$edit.Current.IsEnabled -or !$edit.Current.IsKeyboardFocusable) {
           Deny 'wo9_commit_input_unavailable'
         }
@@ -924,14 +968,23 @@ try {
         if ([P04NativeWebViewWindows]::GetForegroundWindow() -ne $hwnd) {
           Deny 'wo9_commit_window_not_foreground'
         }
+        Reveal-NativeControl $edit
+        $edit=Find-Wo9CommitField $pair[0] 5
         $edit.SetFocus()
+        Start-Sleep -Milliseconds 150
+        $actual=[System.Windows.Automation.AutomationElement]::FocusedElement
+        if ($edit.Current.IsOffscreen -or
+            [P04NativeWebViewWindows]::GetForegroundWindow() -ne $hwnd -or
+            !($edit.Current.HasKeyboardFocus -or ($actual -and $actual.Equals($edit)))) {
+          Deny 'wo9_commit_scoped_input_focus_not_verified'
+        }
         [System.Windows.Forms.SendKeys]::SendWait('^a')
         [System.Windows.Forms.Clipboard]::SetText($pair[1])
         [System.Windows.Forms.SendKeys]::SendWait('^v')
         $deadline=(Get-Date).AddSeconds(8)
         $verified=$false
         do {
-          $fresh=Find-Control $pair[0] 'Edit' 2
+          $fresh=Find-Wo9CommitField $pair[0] 2
           $value=$fresh.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern).Current.Value
           if ($value -ceq $pair[1]) { $verified=$true; break }
           Start-Sleep -Milliseconds 200
@@ -942,7 +995,7 @@ try {
           @('Local commit message','WO9 installed reviewed Git source'),
           @('Author name','WO9 Native Acceptance'),
           @('Author email','wo9@localhost.invalid'))) {
-        $field=Find-Control $pair[0] 'Edit' 5
+        $field=Find-Wo9CommitField $pair[0] 5
         if ($field.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern).Current.Value -cne $pair[1]) {
           Deny 'wo9_commit_all_fields_readback_mismatch'
         }

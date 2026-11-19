@@ -64,6 +64,8 @@ def native_workflow_review_control(name, seconds=20):
     role = "status" if name in ("Eligible for human source review", "Exact evidence matched") else "push button"
     deadline = time.monotonic() + seconds
     last_counts = (0, 0, 0)
+    last_named = 0
+    last_complete = False
     while time.monotonic() < deadline:
         roots = []
         for node in elements():
@@ -76,6 +78,7 @@ def native_workflow_review_control(name, seconds=20):
             except Exception:
                 continue
         matches, blocked = [], []
+        named = 0
         complete = len(roots) == 1
         if complete:
             stack = [(roots[0], 0)]
@@ -90,6 +93,8 @@ def native_workflow_review_control(name, seconds=20):
                     title = (node.name or "").strip()
                     kind = (node.getRoleName() or "").casefold()
                     state = node.getState()
+                    if title == name:
+                        named += 1
                     if state.contains(pyatspi.STATE_VISIBLE) and not _native_dialog_ancestor(node):
                         if kind in ("status", "status bar") and title == "Blocked by native evidence":
                             blocked.append(node)
@@ -107,12 +112,15 @@ def native_workflow_review_control(name, seconds=20):
                     complete = False
                     break
         last_counts = (len(roots), len(matches), len(blocked))
+        last_named, last_complete = named, complete
         if complete and blocked:
             deny("workflow_review_blocked_by_native_evidence")
         if complete and len(matches) == 1:
             return matches[0]
         time.sleep(.25)
     print("WO9_NATIVE_REVIEW_ACCESSIBILITY=region:%d;match:%d;blocked:%d" % last_counts, flush=True)
+    print("WO9_NATIVE_REVIEW_EXACT_NAME_COUNT=%d;complete:%s" %
+          (last_named, last_complete), flush=True)
     deny("workflow_review_exact_control_not_verified_" + name.replace(" ", "_"))
 
 

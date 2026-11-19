@@ -84,34 +84,62 @@ def clipboard():
     except (OSError,subprocess.TimeoutExpired,subprocess.CalledProcessError):
         return ""
 
+def exact_primary_editor_surface(node, leaf):
+    """Require an editable native surface under the exact source pane."""
+    expected = "Source editor text · First editor: " + leaf
+    try:
+        state = node.getState()
+        if ((node.name or "").strip() not in (expected, "Source editor text")
+                or (node.getRoleName() or "").casefold() not in
+                    ("text", "entry", "paragraph", "document text")
+                or _native_dialog_ancestor(node)
+                or not all(state.contains(flag) for flag in (pyatspi.STATE_VISIBLE,
+                    pyatspi.STATE_SHOWING, pyatspi.STATE_FOCUSABLE, pyatspi.STATE_EDITABLE))):
+            return False
+        current = node
+        for _ in range(24):
+            current = current.parent
+            if current is None:
+                return False
+            role = (current.getRoleName() or "").casefold()
+            if role in ("dialog", "file chooser", "frame", "window"):
+                return False
+            if ((current.name or "").strip() == "First editor, " + leaf
+                    and role in ("region", "landmark", "panel", "section", "grouping")
+                    and current.getState().contains(pyatspi.STATE_VISIBLE)
+                    and current.getState().contains(pyatspi.STATE_SHOWING)):
+                return True
+    except Exception:
+        return False
+    return False
+
+
 def focus_editor(leaf="main.rs", seconds=8):
     """Only the exact primary pane, independently re-observed after focus."""
-    expected = "Source editor text · First editor: " + leaf
     deadline = time.monotonic() + seconds
     def candidates():
-        matches = []
-        for node in _native_source_editor_nodes():
-            try:
-                state = node.getState()
-                if ((node.name or "").strip() == expected
-                        and not _native_dialog_ancestor(node)
-                        and all(state.contains(flag) for flag in (pyatspi.STATE_VISIBLE,
-                            pyatspi.STATE_SHOWING, pyatspi.STATE_FOCUSABLE, pyatspi.STATE_EDITABLE))):
-                    matches.append(node)
-            except Exception:
-                continue
-        return matches
+        return [node for node in _native_source_editor_nodes()
+                if exact_primary_editor_surface(node, leaf)]
+    focus_requested = False
     while time.monotonic() < deadline:
         matches = candidates()
         if len(matches) == 1:
             try:
+                if matches[0].getState().contains(pyatspi.STATE_FOCUSED):
+                    return
                 matches[0].queryComponent().grabFocus()
                 fresh = candidates()
                 if len(fresh) == 1 and fresh[0].getState().contains(pyatspi.STATE_FOCUSED):
                     return
             except Exception:
                 pass
+        if not focus_requested and len(matches) <= 1:
+            # Actual native primary-editor focus action, not synthetic focus.
+            # Still require the exact editable pane and independent OS focus.
+            focus_requested = True
+            activate("Focus primary editor (Ctrl+1)")
         time.sleep(.15)
+    print("B5_NATIVE_EDITOR_SCOPE_MATCH_COUNT="+str(len(matches)), flush=True)
     deny("exact_native_editor_focus_not_verified_"+leaf)
 
 
