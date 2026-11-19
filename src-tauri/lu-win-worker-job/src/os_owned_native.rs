@@ -106,7 +106,7 @@ fn is_root_file(path:&Path)->io::Result<bool>{
 pub struct LinuxOsOwnedReviewedNative{
     lifetime:Option<ChildStdin>,
     nonce:String,chat:String,turn:String,call:String,kind:String,
-    binary_sha:String,args_sha:String,uid:u32,verified:bool,
+    binary_sha:String,args_sha:String,uid:u32,verified:bool,interrupted:bool,
 }
 impl LinuxOsOwnedReviewedNative{
     pub fn spawn_if_installed(
@@ -150,7 +150,7 @@ impl LinuxOsOwnedReviewedNative{
         Ok(Some((child,Self{
             lifetime:Some(lifetime),nonce,chat:chat.into(),turn:turn.into(),
             call:call.into(),kind:kind.into(),binary_sha:binary_sha.into(),
-            args_sha:args_sha.into(),uid,verified:false
+            args_sha:args_sha.into(),uid,verified:false,interrupted:false
         })))
     }
     pub fn nonce(&self)->&str{&self.nonce}
@@ -184,8 +184,10 @@ impl LinuxOsOwnedReviewedNative{
                 Some("EFFECT=COMPLETED\n"|"EFFECT=INTERRUPTED\n")){
             return Err(io::Error::other("SEC06C root-owned native receipt mismatch"))
         }
+        self.interrupted=raw.strip_prefix(&expected)==Some("EFFECT=INTERRUPTED\n");
         self.verified=true;Ok(())
     }
+    pub fn verified_interrupted(&self)->bool{self.verified&&self.interrupted}
     pub fn stop_and_verify(&mut self,child:&mut Child)->io::Result<()>{
         if self.verified{return Ok(())}
         drop(self.lifetime.take());

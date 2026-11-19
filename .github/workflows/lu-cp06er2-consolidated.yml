@@ -1,0 +1,180 @@
+name: Lu CP-06E-R2-B3-R1 grouped exact source native and dual GGUF
+on:
+  push:
+    branches: [lu/cp01-attachment-transaction-20261116]
+    paths: ['.github/workflows/lu-cp06er2-consolidated.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: lu-cp06er2-consolidated
+  cancel-in-progress: false
+jobs:
+  exact-source:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.16.0'
+      - name: Export original verified Git source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          node scripts/verify-source-tree.mjs
+          mkdir -p "$RUNNER_TEMP/source"
+          git bundle create "$RUNNER_TEMP/source/LuCore-$GITHUB_SHA.bundle" HEAD
+          git bundle verify "$RUNNER_TEMP/source/LuCore-$GITHUB_SHA.bundle"
+          git rev-parse HEAD > "$RUNNER_TEMP/source/COMMIT"
+          git rev-parse HEAD^{tree} > "$RUNNER_TEMP/source/TREE"
+          (cd "$RUNNER_TEMP/source" && sha256sum LuCore-*.bundle > SHA256SUMS)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lu-cp06er2-exact-source-${{ github.sha }}
+          path: ${{ runner.temp }}/source/
+          if-no-files-found: error
+          retention-days: 14
+  native:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.16.0'
+      - name: Verified exact source and locked native suites
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p cp06er2-native-evidence
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          node scripts/verify-source-tree.mjs
+          git rev-parse HEAD > cp06er2-native-evidence/source.txt
+          cargo test --locked --manifest-path src-tauri/lu-win-worker-job/Cargo.toml --lib -- --nocapture 2>&1 | tee cp06er2-native-evidence/worker-job.log
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib -- --nocapture 2>&1 | tee cp06er2-native-evidence/core.log
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test model_background_control_turn --no-run 2>&1 | tee cp06er2-native-evidence/model-control-build.log
+          cargo test --locked --manifest-path lu-desktop/tests/native-file-scan/Cargo.toml -- --nocapture 2>&1 | tee cp06er2-native-evidence/scanner.log
+          cargo build --locked --manifest-path lu-desktop/tests/native-file-scan/Cargo.toml
+          node --test lu-desktop/tests/background-scheduler.test.mjs lu-desktop/tests/background-pane.test.mjs lu-desktop/tests/background-worker-e2e.test.mjs 2>&1 | tee cp06er2-native-evidence/frontend-background.log
+      - name: Linux desktop compile prerequisites
+        if: matrix.os == 'ubuntu-24.04'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libgtk-3-dev libssl-dev patchelf libxdo-dev pkg-config
+      - name: Unpackaged desktop native tests (not installed acceptance)
+        shell: bash
+        run: |
+          set -euo pipefail
+          (cd lu-desktop && npm ci --ignore-scripts --no-audit --no-fund && npm run build)
+          node -e 'const fs=require("fs");const p="lu-desktop/src-tauri/tauri.conf.json";const c=JSON.parse(fs.readFileSync(p));c.bundle.resources={};fs.writeFileSync(p,JSON.stringify(c))'
+          trap 'git restore -- lu-desktop/src-tauri/tauri.conf.json' EXIT
+          cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib -- --nocapture 2>&1 | tee cp06er2-native-evidence/desktop.log
+      - name: Real protected Linux scheduler completion and stop
+        if: matrix.os == 'ubuntu-24.04'
+        shell: bash
+        env:
+          LU_SEC06C_BROKER_DEBUG: '1'
+        run: |
+          set -euo pipefail
+          test "$(cat /proc/1/comm)" = systemd
+          findmnt -n -o OPTIONS /sys/fs/cgroup | grep -Eq '(^|,)rw(,|$)'
+          test "$(id -u)" -ne 0
+          python3 -m py_compile scripts/lu-sec06c-owned-native-launcher.py scripts/lu-sec06c-owned-native-worker.py scripts/lu-sec06c-owned-kernel-manager.py
+          cargo build --locked --manifest-path lu-desktop/tests/native-file-scan/Cargo.toml --release
+          sudo install -d -o root -g root -m 0755 /usr/libexec/lu
+          sudo install -o root -g root -m 0755 scripts/lu-sec06c-owned-native-launcher.py /usr/libexec/lu/lu-sec06c-launch-native
+          sudo install -o root -g root -m 0755 scripts/lu-sec06c-owned-native-worker.py /usr/libexec/lu/lu-sec06c-owned-native-worker
+          sudo install -o root -g root -m 0755 scripts/lu-sec06c-owned-kernel-manager.py /usr/libexec/lu/lu-sec06c-owned-kernel-manager
+          sudo install -o root -g root -m 0755 lu-desktop/tests/native-file-scan/target/release/lu-file-scan-worker-acceptance /usr/libexec/lu/lu-file-scan-worker-acceptance
+          printf '%s ALL=(root) NOPASSWD: /usr/libexec/lu/lu-sec06c-launch-native *\n' "$USER" | sudo tee /etc/sudoers.d/lu-cp06er2-native >/dev/null
+          sudo chmod 0440 /etc/sudoers.d/lu-cp06er2-native
+          sudo visudo -cf /etc/sudoers.d/lu-cp06er2-native
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib cp06er2_root_owned_scheduler_complete_and_stop -- --ignored --nocapture 2>&1 | tee cp06er2-native-evidence/protected-scheduler.log
+          grep -Fq CP06ER2_ROOT_OWNED_SCHEDULER_PASS cp06er2-native-evidence/protected-scheduler.log
+      - name: Reverify original tracked source
+        if: always()
+        shell: bash
+        run: |
+          git restore -- lu-desktop/src-tauri/tauri.conf.json
+          node scripts/verify-source-tree.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lu-cp06er2-native-${{ matrix.os }}-${{ github.sha }}
+          path: cp06er2-native-evidence/
+          retention-days: 14
+          if-no-files-found: warn
+  dual-gguf:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.16.0'
+      - name: Exact source and pinned original genuine CPU engine
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          node scripts/verify-source-tree.mjs
+          mkdir -p cp06er2-model-evidence
+          git clone --depth 1 --branch b12143 https://github.com/ggml-org/llama.cpp.git "$RUNNER_TEMP/llama-source"
+          test "$(git -C "$RUNNER_TEMP/llama-source" rev-parse HEAD)" = 2bc46baa9207d098d03741ac394e7faaf1a955b6
+          cmake -S "$RUNNER_TEMP/llama-source" -B "$RUNNER_TEMP/llama-build" -DCMAKE_BUILD_TYPE=Release -DGGML_NATIVE=OFF -DGGML_VULKAN=OFF -DLLAMA_CURL=OFF -DLLAMA_BUILD_UI=OFF -DLLAMA_USE_PREBUILT_UI=OFF -DLLAMA_BUILD_SERVER=ON -DLLAMA_BUILD_TESTS=OFF
+          cmake --build "$RUNNER_TEMP/llama-build" --target llama-server --parallel 3
+          sha256sum "$RUNNER_TEMP/llama-build/bin/llama-server" > cp06er2-model-evidence/engine.sha256
+      - name: Two pinned models and genuine native queue/cancel effects
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/qwen3" "$RUNNER_TEMP/qwen25"
+          export LU_CP06D_SERVER="$RUNNER_TEMP/llama-build/bin/llama-server"
+          export LU_CP06D_SERVER_SHA256="$(sha256sum "$LU_CP06D_SERVER" | cut -d' ' -f1)"
+          for name in qwen3 qwen25; do
+            if [ "$name" = qwen3 ]; then
+              url='https://huggingface.co/QuantFactory/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B.Q4_K_M.gguf'
+              hash='7af3fdf842f87b24672f8a7f1dd50404043f0bfb71093ff91c31d2b49df4631d'
+              filename='Qwen3-0.6B.Q4_K_M.gguf'
+            else
+              url='https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/62a8d092b0a1047016f3edbd0fde387598727aa5/qwen2.5-1.5b-instruct-q4_k_m.gguf'
+              hash='6a1a2eb6d15622bf3c96857206351ba97e1af16c30d7a74ee38970e434e9407e'
+              filename='qwen2.5-1.5b-instruct-q4_k_m.gguf'
+            fi
+            export LU_CP06D_GGUF="$RUNNER_TEMP/$name/$filename"
+            export LU_CP06D_GGUF_SHA256="$hash"
+            export LU_CP06D_EVIDENCE="$GITHUB_WORKSPACE/cp06er2-model-evidence/$name"
+            curl -fL --proto '=https' --proto-redir '=https' --retry 4 --connect-timeout 30 --max-time 600 --max-filesize 1500000000 "$url" -o "$LU_CP06D_GGUF"
+            printf '%s  %s\n' "$hash" "$LU_CP06D_GGUF" | sha256sum -c -
+            cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test model_background_control_turn cp06er2_genuine_queue_control -- --ignored --nocapture 2>&1 | tee "cp06er2-model-evidence/$name.log"
+            grep -Fq "CP06ER2_GENUINE_QUEUE_CONTROL_PASS $hash" "cp06er2-model-evidence/$name.log"
+          done
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lu-cp06er2-dual-gguf-${{ github.sha }}
+          path: cp06er2-model-evidence/
+          retention-days: 14
+          if-no-files-found: warn

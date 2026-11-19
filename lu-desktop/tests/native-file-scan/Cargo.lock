@@ -66,8 +66,13 @@ checksum = "68ab91017fe16c622486840e4c83c9a37afeff978bd239b5293d61ece587de66"
 name = "lu-file-scan-worker-acceptance"
 version = "0.1.0"
 dependencies = [
+ "lu-win-worker-job",
  "sha2",
 ]
+
+[[package]]
+name = "lu-win-worker-job"
+version = "0.1.0"
 
 [[package]]
 name = "sha2"

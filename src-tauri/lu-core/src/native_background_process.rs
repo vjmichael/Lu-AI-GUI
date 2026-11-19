@@ -34,6 +34,7 @@ struct OwnedWorker {
     progress_reader:Option<std::thread::JoinHandle<Option<ScanProof>>>,
     version_reader:Option<std::thread::JoinHandle<Option<CapturedVersionOutput>>>,
     deadline:Option<Instant>,
+    cancel_pending:bool,
     #[cfg(windows)]
     job:Option<lu_win_worker_job::Job>,
     #[cfg(windows)]
@@ -893,6 +894,7 @@ impl BackgroundProcessSupervisor {
             progress_reader:None,
             version_reader:None,
             deadline:plan.max_runtime_seconds.map(|n|Instant::now()+Duration::from_secs(n)),
+            cancel_pending:false,
             #[cfg(windows)]
             job:Some(job),
             #[cfg(windows)]
@@ -937,6 +939,12 @@ impl BackgroundProcessSupervisor {
     pub fn poll(&self)->Result<usize,BackgroundProcessError>{
         let mut workers=self.owned.lock().map_err(|_|BackgroundProcessError::Poisoned)?;
         let mut finished=Vec::new();
+        let cancelled=workers.iter().filter(|(_,w)|w.cancel_pending)
+            .map(|(id,_)|id.clone()).collect::<Vec<_>>();
+        for id in &cancelled{
+            self.store.cancelled(id).map_err(|_|BackgroundProcessError::StoreUnavailable)?;
+            workers.remove(id);
+        }
         for (id,worker) in workers.iter_mut(){
             match worker.child.try_wait(){
                 Ok(Some(status))=>{
@@ -1002,7 +1010,7 @@ impl BackgroundProcessSupervisor {
                 Err(_)=>return Err(BackgroundProcessError::ProcessUncertain),
             }
         }
-        let count=finished.len();
+        let count=finished.len()+cancelled.len();
         for (id,outcome) in finished{
             let mut owner=workers.remove(&id).expect("owned worker still registered");
             #[cfg(windows)]
@@ -1163,6 +1171,46 @@ impl BackgroundProcessSupervisor {
         self.store.cancelled(task_id)
             .map_err(|_|BackgroundProcessError::StoreUnavailable)
     }
+
+    /// Serialize protected stop with poll; an already completed child is
+    /// not a successful cancellation. Keep verified stop pending on DB error.
+    pub fn cancel_owned_protected(&self,task_id:&str,workspace_id:&str)
+        ->Result<(),BackgroundProcessError>{
+        let mut workers=self.owned.lock().map_err(|_|BackgroundProcessError::Poisoned)?;
+        let worker=workers.get_mut(task_id).ok_or(BackgroundProcessError::NotOwned)?;
+        if worker.workspace_id!=workspace_id{return Err(BackgroundProcessError::WrongWorkspace)}
+        #[cfg(windows)]
+        let protected=worker.job.is_some();
+        #[cfg(target_os="linux")]
+        let protected=worker.os_owned_native.is_some();
+        #[cfg(not(any(windows,target_os="linux")))]
+        let protected=false;
+        let record=self.store.get(task_id).map_err(|_|BackgroundProcessError::StoreUnavailable)?
+            .ok_or(BackgroundProcessError::NotOwned)?;
+        if !protected||worker.cancel_pending||record.workspace_id.as_deref()!=Some(workspace_id)
+            ||record.state!=TaskState::Running
+            ||worker.child.try_wait().map_err(|_|BackgroundProcessError::ProcessUncertain)?.is_some(){
+            return Err(BackgroundProcessError::NotOwned)
+        }
+        if terminate_owned(worker).is_err(){
+            self.store.record_process_uncertain(task_id,"OS_CUSTODY_UNVERIFIED")
+                .map_err(|_|BackgroundProcessError::StoreUnavailable)?;
+            return Err(BackgroundProcessError::ProcessUncertain)
+        }
+        #[cfg(target_os="linux")]
+        let completed=worker.os_owned_native.as_ref().is_none_or(|p|!p.verified_interrupted());
+        #[cfg(not(target_os="linux"))]
+        let completed=worker.child.try_wait().map_err(|_|BackgroundProcessError::ProcessUncertain)?
+            .is_some_and(|status|status.success());
+        if completed{return Err(BackgroundProcessError::NotOwned)}
+        if let Some(reader)=worker.progress_reader.take(){let _=reader.join();}
+        if let Some(reader)=worker.version_reader.take(){let _=reader.join();}
+        worker.cancel_pending=true;
+        self.store.cancelled(task_id).map_err(|_|BackgroundProcessError::StoreUnavailable)?;
+        workers.remove(task_id);
+        Ok(())
+    }
+
     /// SEC-03: stop every currently owned OS worker for ONE exact
     /// authenticated host workspace under the SAME mutex that serializes
     /// task admission and poll. No stale dashboard snapshot, UI PID, or
@@ -1269,11 +1317,10 @@ fn terminate_owned(worker:&mut OwnedWorker)->Result<(),BackgroundProcessError>{
     {
         // A cancelled Job must also be empty before claiming that the OS
         // stop completed. Cancellation does NOT create a reusable witness.
-        worker.job.as_ref()
+        worker.job_empty=Some(worker.job.as_ref()
             .ok_or(BackgroundProcessError::ProcessUncertain)?
             .terminate_and_verify_empty()
-            .map_err(|_|BackgroundProcessError::ProcessUncertain)?;
-        drop(worker.job.take());
+            .map_err(|_|BackgroundProcessError::ProcessUncertain)?);
     }
     worker.child.wait().map_err(|_|BackgroundProcessError::ProcessUncertain)?;
     Ok(())

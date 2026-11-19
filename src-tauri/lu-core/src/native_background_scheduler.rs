@@ -338,20 +338,10 @@ impl ReviewedScan{
 // inode, length and kernel change/write timestamps before reading, and
 // require the same fingerprint after reading before accepting a digest.
 #[cfg(target_os="linux")]
-pub fn linux_scan_identity(file:&std::fs::File)->std::io::Result<String>{
-    use std::os::unix::fs::MetadataExt;
-    use sha2::{Digest,Sha256};
-    let m=file.metadata()?;
-    if !m.is_file()||m.len()==0||m.len()>4*1024*1024*1024||m.nlink()!=1{
-        return Err(std::io::Error::other("unsupported reviewed scan input"))
-    }
-    let mut h=Sha256::new();
-    h.update(m.dev().to_le_bytes());h.update(m.ino().to_le_bytes());
-    h.update(m.len().to_le_bytes());h.update(m.ctime().to_le_bytes());
-    h.update(m.ctime_nsec().to_le_bytes());h.update(m.mtime().to_le_bytes());
-    h.update(m.mtime_nsec().to_le_bytes());
-    Ok(format!("{:x}",h.finalize()))
-}
+#[path="reviewed_scan_identity.rs"]
+mod scan_identity;
+#[cfg(target_os="linux")]
+pub use scan_identity::linux_scan_identity;
 
 struct Active{
     plan:TrustedWorkerPlan,
@@ -615,15 +605,21 @@ impl BackgroundScheduler{
                 continue
             };
             let Some(terminal)=Self::terminal_name(record.state)else{continue};
-            g.db.execute(
+            let owner=g.plans.get(&id).ok_or(SchedulerError::Database)?.plan.workspace_id.clone();
+            if record.workspace_id.as_deref()!=Some(owner.as_str())||self.process.can_cancel(&id)||self.store.process_uncertainty(&id).map_err(|_|SchedulerError::TaskStore)?.is_some(){
+                continue
+            }
+            let tx=g.db.transaction().map_err(db_error)?;
+            if tx.execute(
               "UPDATE lu_schedule SET state=?2,last_result=?2
-               WHERE task_id=?1 AND state IN ('RUNNING','QUEUED')",
-               params![&id,terminal]).map_err(db_error)?;
-            g.db.execute(
+               WHERE task_id=?1 AND workspace_id=?3 AND state IN ('RUNNING','QUEUED')",
+               params![&id,terminal,&owner]).map_err(db_error)?!=1{
+                return Err(SchedulerError::Database)
+            }
+            tx.execute(
               "INSERT INTO lu_schedule_events(task_id,workspace_id,event)
-               VALUES(?1,?2,?3)",
-               params![&id,&record.workspace_id.as_deref().unwrap_or(""),terminal])
-                .map_err(db_error)?;
+               VALUES(?1,?2,?3)",params![&id,&owner,terminal]).map_err(db_error)?;
+            tx.commit().map_err(db_error)?;
             g.running.remove(&id);
             let Some(last)=g.plans.remove(&id)else{continue};
             // A cancelled or interrupted task never automatically replays.
@@ -738,6 +734,15 @@ impl BackgroundScheduler{
             #[cfg(not(target_os="linux"))]
             let started_worker=self.process.start_host_approved(plan);
             if started_worker.is_err(){
+                // A broker/admission failure after possible process creation
+                // cannot release the pinned input or authorize another spawn.
+                if self.process.can_cancel(&id)||self.store.process_uncertainty(&id)
+                    .map_err(|_|SchedulerError::TaskStore)?.is_some(){
+                    g.running.insert(id.clone(),claim);
+                    g.db.execute("UPDATE lu_schedule SET last_result='worker_admission_uncertain'
+                        WHERE task_id=?1",[&id]).map_err(db_error)?;
+                    return Err(SchedulerError::WorkerControl)
+                }
                 g.db.execute(
                   "UPDATE lu_schedule SET state='FAILED',
                    last_result='worker_admission_failed' WHERE task_id=?1",
@@ -905,6 +910,51 @@ impl BackgroundScheduler{
              VALUES(?1,?2,?3)",params![id,workspace,to]).map_err(db_error)?;
         tx.commit().map_err(db_error)?;
         if to=="CANCELLED"{g.plans.remove(id);}
+        Ok(())
+    }
+
+    /// Only a volatile, originally reviewed, never-dispatched one-shot scan
+    /// qualifies. A stale QUEUED row after a failed RUNNING publication is
+    /// not authority to cancel the worker or release its input lease.
+    pub fn reviewed_unstarted_state(&self,id:&str,workspace:&str)
+        ->Result<Option<String>,SchedulerError>{
+        if !valid_id(id)||!valid_id(workspace){return Err(SchedulerError::InvalidRequest)}
+        let g=self.inner.lock().map_err(|_|SchedulerError::Poisoned)?;
+        if g.running.contains_key(id)||g.plans.get(id).is_none_or(|p|
+            p.reviewed_turn.is_none()||p.plan.workspace_id!=workspace||
+            p.opts.kind!="reviewed_file_scan")||self.process.can_cancel(id)
+            ||self.store.get(id).map_err(|_|SchedulerError::TaskStore)?.is_some(){
+            return Ok(None)
+        }
+        g.db.query_row("SELECT state FROM lu_schedule WHERE task_id=?1 AND workspace_id=?2
+            AND kind='reviewed_file_scan' AND state IN ('QUEUED','PAUSED')",
+            params![id,workspace],|r|r.get(0)).optional().map_err(db_error)
+    }
+    /// Cancellation of an exact reviewed unstarted plan is serialized with
+    /// watchdog admission. No conversion to RUNNING cancellation if the
+    /// state changed while a human reviewed it. No child/kill receipt.
+    pub fn cancel_reviewed_unstarted(&self,id:&str,workspace:&str,expected:&str)
+        ->Result<(),SchedulerError>{
+        if !matches!(expected,"QUEUED"|"PAUSED")||!valid_id(id)||!valid_id(workspace){
+            return Err(SchedulerError::InvalidRequest)
+        }
+        let mut g=self.inner.lock().map_err(|_|SchedulerError::Poisoned)?;
+        if g.running.contains_key(id)||g.plans.get(id).is_none_or(|p|
+            p.reviewed_turn.is_none()||p.plan.workspace_id!=workspace||
+            p.opts.kind!="reviewed_file_scan")||self.process.can_cancel(id)
+            ||self.store.get(id).map_err(|_|SchedulerError::TaskStore)?.is_some(){
+            return Err(SchedulerError::NotQueued)
+        }
+        let tx=g.db.transaction().map_err(db_error)?;
+        if tx.execute("UPDATE lu_schedule SET state='CANCELLED',last_result='cancelled_before_start'
+            WHERE task_id=?1 AND workspace_id=?2 AND state=?3 AND kind='reviewed_file_scan'",
+            params![id,workspace,expected]).map_err(db_error)?!=1{
+            return Err(SchedulerError::NotQueued)
+        }
+        tx.execute("INSERT INTO lu_schedule_events(task_id,workspace_id,event)
+            VALUES(?1,?2,'CANCELLED_BEFORE_START')",params![id,workspace]).map_err(db_error)?;
+        tx.commit().map_err(db_error)?;
+        g.plans.remove(id);
         Ok(())
     }
     pub fn pause_queued(&self,id:&str,workspace:&str)
@@ -1325,6 +1375,77 @@ mod tests{
         assert_eq!(queue.enqueue_host_plan(plan("scan-third"),bad),
             Err(SchedulerError::WrongOwner));
     }
+
+    /// Real compiled scanner, installed finite root broker, original
+    /// per-task conversation binding, scheduler start and natural
+    /// completion, plus interruption from a running scan. No mocks.
+    #[cfg(target_os="linux")]
+    #[test]
+    #[ignore="requires disposable nonroot systemd host and installed reviewed scanner"]
+    fn cp06er2_root_owned_scheduler_complete_and_stop(){
+        use sha2::{Digest,Sha256};
+        let nonce=format!("{}-{}",std::process::id(),now_unix());
+        let root=std::env::temp_dir().join(format!("lu-reviewed-native-{nonce}"));
+        std::fs::create_dir(&root).unwrap();
+        let root=root.canonicalize().unwrap();
+        let exe=std::path::PathBuf::from("/usr/libexec/lu/lu-file-scan-worker-acceptance");
+        let engine_sha=format!("{:x}",Sha256::digest(std::fs::read(&exe).unwrap()));
+        let small=root.join("small.bin");std::fs::write(&small,b"actual reviewed native bytes").unwrap();
+        let large=root.join("large.bin");let large_handle=std::fs::File::create(&large).unwrap();
+        large_handle.set_len(4*1024*1024*1024).unwrap();drop(large_handle);
+        let store=Arc::new(TaskStore::open(&root.join("tasks.sqlite")).unwrap());
+        let process=Arc::new(BackgroundProcessSupervisor::new(Arc::clone(&store)));
+        let budget=ResourceBudget{workers:1,cpu:1,ram_mib:1024,gpu:0,vram_mib:0,disk:1,network:0};
+        let db=root.join("schedule.sqlite");
+        let q=BackgroundScheduler::open(&db,Arc::clone(&store),Arc::clone(&process),budget).unwrap();
+        let chat=format!("c-{}","a".repeat(32));let turn=format!("g-{}","b".repeat(32));
+        let done=format!("scan-{}","c".repeat(32));let stop=format!("scan-{}","d".repeat(32));
+        for (id,input) in [(&done,&small),(&stop,&large)]{
+            let mut reviewed=ReviewedScan::prepare(id,&chat,&turn,input).unwrap();
+            // Test-only first-party scanner executable is separately built
+            // from the production source and installed root-owned.
+            reviewed.plan.executable=exe.clone();reviewed.plan.expected_sha256=engine_sha.clone();
+            q.enqueue_reviewed_scan(reviewed).unwrap();
+            assert_eq!(q.tick_foreground_guarded(true).unwrap(),0);
+            assert!(store.get(id).unwrap().is_none());
+            assert_eq!(q.tick().unwrap(),1);
+            assert!(process.can_cancel_protected(id,&chat));
+            let deadline=std::time::Instant::now()+std::time::Duration::from_secs(80);
+            if id==&done{
+                loop{
+                    q.tick().unwrap();
+                    if q.state_for(id,&chat).unwrap().as_deref()==Some("COMPLETED"){break}
+                    assert!(std::time::Instant::now()<deadline,"completion not witnessed");
+                    std::thread::sleep(std::time::Duration::from_millis(20));
+                }
+                let result=store.verified_result(id,&chat).unwrap().unwrap();
+                assert_eq!(result.sha256,format!("{:x}",Sha256::digest(b"actual reviewed native bytes")));
+                assert!(process.cancel_owned_protected(id,&chat).is_err());
+            }else{
+                // Wait for real progress (not only a client's spawned PID).
+                loop{
+                    let row=store.get(id).unwrap().unwrap();
+                    if row.progress>0&&row.state==TaskState::Running{break}
+                    assert!(row.state==TaskState::Running&&std::time::Instant::now()<deadline,"real scanner progress not witnessed");
+                    std::thread::sleep(std::time::Duration::from_millis(2));
+                }
+                assert!(process.cancel_owned_protected(id,"c-other").is_err());
+                process.cancel_owned_protected(id,&chat).unwrap();
+                q.tick().unwrap();
+                assert_eq!(q.state_for(id,&chat).unwrap().as_deref(),Some("CANCELLED"));
+                assert!(store.verified_result(id,&chat).unwrap().is_none());
+            }
+            assert!(!process.can_cancel(id));assert!(store.process_uncertainty(id).unwrap().is_none());
+        }
+        drop(q);
+        let reopened=BackgroundScheduler::open(&db,Arc::clone(&store),Arc::clone(&process),budget).unwrap();
+        assert_eq!(reopened.state_for(&done,&chat).unwrap().as_deref(),Some("COMPLETED"));
+        assert_eq!(reopened.state_for(&stop,&chat).unwrap().as_deref(),Some("CANCELLED"));
+        assert_eq!(reopened.tick().unwrap(),0);
+        println!("CP06ER2_ROOT_OWNED_SCHEDULER_PASS");
+        drop(reopened);drop(process);drop(store);std::fs::remove_dir_all(root).unwrap();
+    }
+
 }
 
 #[cfg(all(test,windows))]
@@ -1348,4 +1469,41 @@ fn reviewed_scan_queue_holds_original_file_until_cancel(){
     assert_eq!(scheduler.state_for("scan-reviewed","c-owner").unwrap().as_deref(),Some("CANCELLED"));
     std::fs::write(&file,b"after cancellation").unwrap();
     drop(scheduler);std::fs::remove_dir_all(root).unwrap();
+}
+
+#[cfg(all(test,any(windows,target_os="linux")))]
+#[test]
+fn reviewed_unstarted_cancel_is_owner_state_and_restart_bound(){
+    let root=std::env::temp_dir().join(format!("lu-reviewed-unstarted-{}-{}",std::process::id(),now_unix()));
+    std::fs::create_dir(&root).unwrap();
+    let file=root.join("reviewed.bin");std::fs::write(&file,b"approved bytes").unwrap();
+    let file=file.canonicalize().unwrap();
+    let store=Arc::new(TaskStore::open(&root.join("tasks.sqlite")).unwrap());
+    let process=Arc::new(BackgroundProcessSupervisor::new(Arc::clone(&store)));
+    let budget=ResourceBudget{workers:1,cpu:1,ram_mib:1024,gpu:0,vram_mib:0,disk:1,network:0};
+    let db=root.join("schedule.sqlite");
+    let chat=format!("c-{}","a".repeat(32));let turn=format!("g-{}","b".repeat(32));
+    let id=format!("scan-{}","c".repeat(32));let id2=format!("scan-{}","d".repeat(32));
+    let q=BackgroundScheduler::open(&db,Arc::clone(&store),Arc::clone(&process),budget).unwrap();
+    q.enqueue_reviewed_scan(ReviewedScan::prepare(&id,&chat,&turn,&file).unwrap()).unwrap();
+    assert_eq!(q.reviewed_unstarted_state(&id,&chat).unwrap().as_deref(),Some("QUEUED"));
+    assert!(q.cancel_reviewed_unstarted(&id,"c-other","QUEUED").is_err());
+    q.pause_queued(&id,&chat).unwrap();
+    assert!(q.cancel_reviewed_unstarted(&id,&chat,"QUEUED").is_err());
+    assert_eq!(q.reviewed_unstarted_state(&id,&chat).unwrap().as_deref(),Some("PAUSED"));
+    q.cancel_reviewed_unstarted(&id,&chat,"PAUSED").unwrap();
+    assert!(q.cancel_reviewed_unstarted(&id,&chat,"PAUSED").is_err());
+    assert_eq!(q.state_for(&id,&chat).unwrap().as_deref(),Some("CANCELLED"));
+    assert!(store.get(&id).unwrap().is_none());
+    assert!(!process.can_cancel(&id));
+    assert_eq!(q.tick().unwrap(),0);
+    q.enqueue_reviewed_scan(ReviewedScan::prepare(&id2,&chat,&turn,&file).unwrap()).unwrap();
+    drop(q);
+    let reopened=BackgroundScheduler::open(&db,Arc::clone(&store),Arc::clone(&process),budget).unwrap();
+    assert_eq!(reopened.state_for(&id2,&chat).unwrap().as_deref(),Some("NEEDS_REVIEW"));
+    assert!(reopened.reviewed_unstarted_state(&id2,&chat).unwrap().is_none());
+    assert!(reopened.cancel_reviewed_unstarted(&id2,&chat,"QUEUED").is_err());
+    assert_eq!(reopened.tick().unwrap(),0);
+    assert!(store.get(&id2).unwrap().is_none());
+    drop(reopened);drop(process);drop(store);std::fs::remove_dir_all(root).unwrap();
 }

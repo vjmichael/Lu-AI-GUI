@@ -7,3 +7,4 @@ publish = false
 # requiring its separate, still-unpublished llama-server installation bundle.
 [dependencies]
 sha2 = "0.10"
+lu-win-worker-job = { path = "../../../src-tauri/lu-win-worker-job" }

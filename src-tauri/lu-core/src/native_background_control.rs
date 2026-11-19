@@ -22,15 +22,17 @@ const START_IN:&str="type.googleapis.com/lu.v1.BoundJobStart";
 const START_OUT:&str="type.googleapis.com/lu.v1.BoundJobStarted";
 const CANCEL_IN:&str="type.googleapis.com/lu.v1.BoundJobCancel";
 const CANCEL_OUT:&str="type.googleapis.com/lu.v1.BoundJobCancelled";
+const QUEUED_CANCEL_OUT:&str="type.googleapis.com/lu.v1.ReviewedScanQueueCancelled";
+const QUEUED_CANCEL_IN:&str="type.googleapis.com/lu.v1.ReviewedScanQueueCancel";
 
 #[derive(Clone,PartialEq,Message)]
 struct StartRequest {#[prost(string,tag="1")] kind:String}
 #[derive(Clone,PartialEq,Message)]
 struct StartReply {#[prost(string,tag="1")] id:String}
 #[derive(Clone,PartialEq,Message)]
-struct CancelRequest {#[prost(string,tag="1")] id:String}
+struct CancelRequest {#[prost(string,tag="1")] id:String,#[prost(string,tag="2")] expected:String}
 #[derive(Clone,PartialEq,Message)]
-struct CancelReply {#[prost(string,tag="1")] id:String}
+struct CancelReply {#[prost(string,tag="1")] id:String,#[prost(string,tag="2")] previous:String}
 fn failure(code:&str)->ToolFailure{ToolFailure::new(code,code,false)}
 fn valid(s:&str)->bool{
     !s.is_empty()&&s.len()<=128
@@ -83,14 +85,16 @@ impl NativeTool for StartTool{
 struct CancelTool{
     descriptor:ToolDescriptor,workspace:String,target:String,used:Mutex<bool>,
     store:Arc<TaskStore>,supervisor:Arc<BackgroundProcessSupervisor>,
+    protected:bool,
+    queued:Option<(Arc<crate::native_background_scheduler::BackgroundScheduler>,String)>,
 }
 impl NativeTool for CancelTool{
     fn descriptor(&self)->&ToolDescriptor{&self.descriptor}
     fn invoke(&self,call:ToolInvocation)->ToolFuture<'_>{
         Box::pin(async move{
-            let request:CancelRequest=typed_request(&call,CANCEL,CANCEL_IN)?;
+            let request:CancelRequest=typed_request(&call,CANCEL,&self.descriptor.input_type_url)?;
             if call.workspace_id.as_deref()!=Some(self.workspace.as_str())
-                ||request.id!=self.target{
+                ||request.id!=self.target||request.expected!=self.queued.as_ref().map_or("",|(_,v)|v.as_str()){
                 return Err(failure("BACKGROUND_CANCEL_NOT_AUTHORIZED"))
             }
             {
@@ -99,10 +103,25 @@ impl NativeTool for CancelTool{
                 if *used{return Err(failure("BACKGROUND_CANCEL_ALREADY_USED"))}
                 *used=true;
             }
+            if let Some((scheduler,expected))=&self.queued{
+                let scheduler=Arc::clone(scheduler);let expected=expected.clone();
+                let id=self.target.clone();let workspace=self.workspace.clone();
+                tokio::task::spawn_blocking(move||scheduler.cancel_reviewed_unstarted(&id,&workspace,&expected))
+                    .await.map_err(|_|failure("BACKGROUND_CANCEL_UNCERTAIN"))?
+                    .map_err(|_|failure("BACKGROUND_CANCEL_UNCERTAIN"))?;
+                if self.store.get(&request.id).map_err(|_|failure("BACKGROUND_CANCEL_UNCERTAIN"))?.is_some()
+                    ||self.supervisor.can_cancel(&request.id){
+                    return Err(failure("BACKGROUND_CANCEL_UNCERTAIN"))
+                }
+                return Ok(ToolOutput{payload:ProtoPayload{type_url:QUEUED_CANCEL_OUT.into(),
+                    bytes:CancelReply{id:request.id,previous:request.expected}.encode_to_vec()}})
+            }
             let manager=Arc::clone(&self.supervisor);
             let id=self.target.clone();
             let workspace=self.workspace.clone();
-            tokio::task::spawn_blocking(move||manager.cancel_owned(&id,&workspace))
+            let protected=self.protected;
+            tokio::task::spawn_blocking(move||if protected{manager.cancel_owned_protected(&id,&workspace)}
+                else{manager.cancel_owned(&id,&workspace)})
                 .await.map_err(|_|failure("BACKGROUND_CANCEL_UNCERTAIN"))?
                 .map_err(|_|failure("BACKGROUND_CANCEL_UNCERTAIN"))?;
             // Native supervisor has verified termination. Independently read
@@ -116,7 +135,7 @@ impl NativeTool for CancelTool{
             }
             Ok(ToolOutput{payload:ProtoPayload{
                 type_url:CANCEL_OUT.into(),
-                bytes:CancelReply{id:request.id}.encode_to_vec(),
+                bytes:CancelReply{id:request.id,previous:String::new()}.encode_to_vec(),
             }})
         })
     }
@@ -150,22 +169,25 @@ impl ModelToolCodec for StartCodec{
             "notice":"Lu supervises the task and sends completion; do not poll."}))
     }
 }
-struct CancelCodec {target:String}
+struct CancelCodec {target:String,queued_state:Option<String>}
 impl ModelToolCodec for CancelCodec{
-    fn input_type_url(&self)->&'static str{CANCEL_IN}
-    fn output_type_url(&self)->&'static str{CANCEL_OUT}
+    fn input_type_url(&self)->&'static str{if self.queued_state.is_some(){QUEUED_CANCEL_IN}else{CANCEL_IN}}
+    fn output_type_url(&self)->&'static str{if self.queued_state.is_some(){QUEUED_CANCEL_OUT}else{CANCEL_OUT}}
     fn encode(&self,args:&Map<String,Value>)->Result<ProtoPayload,ModelToolError>{
         let id=strict(args,"task_id",&self.target)?;
-        Ok(ProtoPayload{type_url:CANCEL_IN.into(),
-            bytes:CancelRequest{id}.encode_to_vec()})
+        Ok(ProtoPayload{type_url:self.input_type_url().into(),
+            bytes:CancelRequest{id,expected:self.queued_state.clone().unwrap_or_default()}.encode_to_vec()})
     }
     fn decode(&self,reply:&ProtoPayload)->Result<Value,ModelToolError>{
-        if reply.type_url!=CANCEL_OUT{return Err(ModelToolError::InvalidResult(
+        if reply.type_url!=self.output_type_url(){return Err(ModelToolError::InvalidResult(
             "wrong bound cancel response".into()))}
         let v=CancelReply::decode(reply.bytes.as_slice())
             .map_err(|_|ModelToolError::InvalidResult("bad cancel response".into()))?;
-        if v.id!=self.target{return Err(ModelToolError::InvalidResult(
+        if v.id!=self.target||v.previous!=self.queued_state.as_deref().unwrap_or("")||v.encode_to_vec()!=reply.bytes{return Err(ModelToolError::InvalidResult(
             "wrong cancelled task".into()))}
+        if let Some(previous)=&self.queued_state{
+            return Ok(json!({"task_id":v.id,"state":"CANCELLED","previous_state":previous,"started":false}))
+        }
         Ok(json!({"task_id":v.id,"state":"CANCELLED",
             "verified_by":"Lu-owned worker supervisor"}))
     }
@@ -203,7 +225,36 @@ pub fn register_bound_background_cancel(
         return Err("task not owned or not running".into())
     }
     let mut catalog=register_model_background_observation(registry,Arc::clone(&store))?;
-    register_cancel(registry,&mut catalog,store,supervisor,workspace,target)?;
+    register_cancel(registry,&mut catalog,store,supervisor,workspace,target,false,None)?;
+    Ok(catalog)
+}
+
+
+/// Production cancellation admits only the exact reviewed queue state or
+/// a live kernel-owned worker. Neither grants a launch capability.
+pub fn register_reviewed_background_cancel(
+    registry:&NativeToolRegistry,store:Arc<TaskStore>,
+    supervisor:Arc<BackgroundProcessSupervisor>,
+    scheduler:Arc<crate::native_background_scheduler::BackgroundScheduler>,
+    workspace:&str,target:&str,expected:&str,
+)->Result<ModelToolCatalog,String>{
+    let queued=match expected{
+        "QUEUED"|"PAUSED"=>{
+            if scheduler.reviewed_unstarted_state(target,workspace).map_err(|_|"Queue unavailable")?
+                .as_deref()!=Some(expected){return Err("Review target unavailable".into())}
+            Some((scheduler,expected.to_owned()))
+        },
+        "RUNNING"=>{
+            let row=store.get(target).map_err(|_|"Task store unavailable")?.ok_or("Task unavailable")?;
+            if row.workspace_id.as_deref()!=Some(workspace)||row.state.as_str()!="RUNNING"||
+                scheduler.state_for(target,workspace).map_err(|_|"Schedule unavailable")?.as_deref()!=Some("RUNNING")||
+                !supervisor.can_cancel_protected(target,workspace){return Err("Protected task unavailable".into())}
+            None
+        },
+        _=>return Err("Invalid reviewed cancellation state".into()),
+    };
+    let mut catalog=ModelToolCatalog::new();
+    register_cancel(registry,&mut catalog,store,supervisor,workspace,target,true,queued)?;
     Ok(catalog)
 }
 
@@ -249,19 +300,22 @@ fn register_start(
 fn register_cancel(
     registry:&NativeToolRegistry,catalog:&mut ModelToolCatalog,
     store:Arc<TaskStore>,supervisor:Arc<BackgroundProcessSupervisor>,
-    workspace:&str,target:&str,
+    workspace:&str,target:&str,protected:bool,
+    queued:Option<(Arc<crate::native_background_scheduler::BackgroundScheduler>,String)>,
 )->Result<(),String>{
+    let queued_state=queued.as_ref().map(|(_,s)|s.clone());
     let cancel=ToolDescriptor{id:CANCEL.into(),
         display_name:"Stop exact Lu-owned worker".into(),
         effect:ToolEffect::ExecuteCode,
-        input_type_url:CANCEL_IN.into(),output_type_url:CANCEL_OUT.into()};
+        input_type_url:if queued_state.is_some(){QUEUED_CANCEL_IN}else{CANCEL_IN}.into(),
+        output_type_url:if queued_state.is_some(){QUEUED_CANCEL_OUT}else{CANCEL_OUT}.into()};
     registry.register(ModuleManifest{id:"lu.bgcancel".into(),
         display_name:"Lu host-bound task cancellation".into(),kind:ModuleKind::Core,
         contract_version:CORE_CONTRACT_VERSION,tools:vec![cancel.clone()],
         panels:vec![],workflows:vec![]},
         vec![Arc::new(CancelTool{descriptor:cancel,
             workspace:workspace.into(),target:target.into(),used:Mutex::new(false),
-            store,supervisor})
+            store,supervisor,protected,queued})
             as Arc<dyn NativeTool>]
     ).map_err(|e|format!("cancel registration failed: {e:?}"))?;
     catalog.insert(registry,ModelToolDefinition{
@@ -270,7 +324,7 @@ fn register_cancel(
         parameters:json!({"type":"object","properties":{
             "task_id":{"type":"string","enum":[target]}
         },"required":["task_id"],"additionalProperties":false}),
-        codec:Arc::new(CancelCodec{target:target.into()})
+        codec:Arc::new(CancelCodec{target:target.into(),queued_state})
     }).map_err(|e|format!("cancel catalog failed: {e:?}"))?;
     Ok(())
 }
@@ -288,7 +342,7 @@ pub fn register_bound_background_controls(
     let id=plan.task_id.clone();
     let mut catalog=register_model_background_observation(registry,Arc::clone(&store))?;
     register_start(registry,&mut catalog,Arc::clone(&supervisor),job_kind,plan)?;
-    register_cancel(registry,&mut catalog,store,supervisor,&workspace,&id)?;
+    register_cancel(registry,&mut catalog,store,supervisor,&workspace,&id,false,None)?;
     Ok(catalog)
 }
 
