@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "c6fed4986faccb3e07f164915ec7481e6be14e33",
+  "sourceCommitBeforeLock": "33c7eddfb30fde5874493d325a098f2dfe46b4ef",
   "trackedFileCount": 1962,
   "files": [
     {
@@ -3789,7 +3789,7 @@
     },
     {
       "path": "ide/packaging/p06-observer-cohort.json",
-      "blob": "95b286eba80949696cb29fb03ce9c7889e97160c"
+      "blob": "a11faff282ad98d435adfb13f55ec74f8d2544cc"
     },
     {
       "path": "ide/packaging/p06-reviewed-lock-graphs.json",
@@ -3801,7 +3801,7 @@
     },
     {
       "path": "ide/packaging/p06_live_native_jobs.py",
-      "blob": "e142afabf9139b4bf42a44287edf6d90709d417c"
+      "blob": "88062d3408f51a661c65b02d3cddc9911a7d3ab0"
     },
     {
       "path": "ide/packaging/p06_shipping_content.py",
@@ -3953,7 +3953,7 @@
     },
     {
       "path": "ide/packaging/test_p06_live_native_jobs.py",
-      "blob": "3148c189502e4841da28583c2baba4cead6f1a1e"
+      "blob": "d91acdd39dcad647a59f9461a616fae26f41f158"
     },
     {
       "path": "ide/packaging/test_p06_r_efi_authors.py",
