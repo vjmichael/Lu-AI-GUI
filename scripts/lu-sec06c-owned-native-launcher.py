@@ -161,7 +161,10 @@ def run(opts):
     unit=f"lu-sec06c-native-{opts.nonce}.service"
     argv=[
         str(SYSTEMD),"--system","--quiet","--wait","--pipe",
-        "--no-ask-password","--service-type=exec",f"--unit={unit}",
+        "--no-ask-password","--service-type=notify",f"--unit={unit}",
+        "--property=NotifyAccess=main","--property=WatchdogSec=20s",
+        "--property=WatchdogSignal=SIGKILL","--property=TimeoutStartSec=90s",
+        "--property=TimeoutStopSec=5s","--property=SendSIGKILL=yes",
         "--property=User=root","--property=Delegate=yes",
         "--property=KillMode=control-group","--property=PrivateNetwork=yes",
         "--property=NoNewPrivileges=yes",

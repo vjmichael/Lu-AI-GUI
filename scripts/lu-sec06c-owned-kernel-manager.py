@@ -18,6 +18,7 @@ import pathlib
 import pwd
 import re
 import select
+import socket
 import stat
 import subprocess
 import sys
@@ -391,6 +392,32 @@ def negative_original_ancestor_probe(nonce):
         child.kill()
         child.wait(timeout=5)
 
+class NativeGuardianWatchdog:
+    """PID1 owns the deadline. Only the root manager's actual loop notifies.
+
+    No timer thread can mask a stuck control loop. No child gets the notify
+    environment. A missing or failed notification cannot grant custody.
+    """
+    def __init__(self):
+        endpoint=os.environ.get("NOTIFY_SOCKET", "")
+        if (not endpoint.startswith(("/", "@")) or len(endpoint)>107
+            or os.environ.get("WATCHDOG_USEC")!="20000000"
+            or os.environ.get("WATCHDOG_PID",str(os.getpid()))!=str(os.getpid())):
+            refuse("native independent systemd watchdog unavailable")
+        self.endpoint="\0"+endpoint[1:] if endpoint.startswith("@") else endpoint
+        self.last=None
+    def notify(self,message):
+        with socket.socket(socket.AF_UNIX,socket.SOCK_DGRAM) as channel:
+            # A blocked notification must not stall indefinitely or claim success.
+            channel.settimeout(1)
+            channel.sendto(message,self.endpoint)
+        self.last=time.monotonic()
+    def ready(self):
+        self.notify(b"READY=1\nWATCHDOG=1")
+    def tick(self):
+        if self.last is None:refuse("native guardian watchdog not ready")
+        if time.monotonic()-self.last>=2:self.notify(b"WATCHDOG=1")
+
 def run(args):
     if not HEX32.fullmatch(args.nonce) or args.domain not in OPS:
         refuse("invalid one-use OS domain/nonce")
@@ -414,6 +441,7 @@ def run(args):
         GIT_WORKER if args.domain=="git" else
         PROBE_WORKER if args.domain=="probe" else NATIVE_WORKER)
     parent,unit=first_party_unit(args.nonce,args.domain)
+    watchdog=NativeGuardianWatchdog() if args.domain=="native" else None
     argv=one_use_worker_args(args)
     checked_root_dir(APPROVAL)
     receipts=(
@@ -438,7 +466,7 @@ def run(args):
         str(PYTHON),str(pathlib.Path(__file__).resolve()),
         "--attack-leaf","--nonce",args.nonce
     ],stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,
-       stderr=None,
+       stderr=None,env={"PATH":"/usr/bin:/bin","LC_ALL":"C","HOME":user.pw_dir},
        preexec_fn=lambda:preexec_leaf(leaf,args.uid,user.pw_gid,readonly=False))
     if attacker.wait(timeout=10)!=0 or not wait_kernel_zero(events,5):
         try:(leaf/"cgroup.kill").write_text("1",encoding="ascii")
@@ -474,8 +502,10 @@ def run(args):
         original_pidfd=os.pidfd_open(child.pid)
         try:
             original_root_file(go,"LU_SEC06C_GO_V1\n"+args.nonce+"\n")
+            if watchdog:watchdog.ready()
             deadline=time.monotonic()+(620 if args.domain=="native" else 70)
             while time.monotonic()<deadline:
+                if watchdog:watchdog.tick()
                 readable,_,_=select.select([sys.stdin.buffer],[],[],0)
                 if readable and not sys.stdin.buffer.read(1):
                     exit_status=93
