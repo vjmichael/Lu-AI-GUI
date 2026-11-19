@@ -417,3 +417,96 @@ mod tests {
             "call-test",Some("c-owner"),r#"{"task_id":"worker-bound1"}"#).is_err());
     }
 }
+
+// Production Windows start is a queue admission, never a direct process
+// start in a foreground model turn. A separate receipt schema distinguishes
+// an approved queued job from an already running or completed worker.
+#[cfg(windows)]
+mod queued_reviewed_start {
+    use super::*;
+    use crate::native_background_scheduler::{BackgroundScheduler,ReviewedScan};
+    const IN:&str="type.googleapis.com/lu.v1.ReviewedScanQueue";
+    const OUT:&str="type.googleapis.com/lu.v1.ReviewedScanQueued";
+    const KIND:&str="file_scan";
+    #[derive(Clone,PartialEq,Message)]
+    struct Request{
+        #[prost(string,tag="1")] kind:String,
+        #[prost(string,tag="2")] id:String,
+        #[prost(string,tag="3")] binding:String,
+    }
+    #[derive(Clone,PartialEq,Message)]
+    struct Reply{
+        #[prost(string,tag="1")] id:String,
+        #[prost(string,tag="2")] binding:String,
+    }
+    struct QueueTool{
+        descriptor:ToolDescriptor,workspace:String,id:String,binding:String,
+        pending:Mutex<Option<ReviewedScan>>,scheduler:Arc<BackgroundScheduler>,
+    }
+    impl NativeTool for QueueTool{
+        fn descriptor(&self)->&ToolDescriptor{&self.descriptor}
+        fn invoke(&self,call:ToolInvocation)->ToolFuture<'_>{
+            Box::pin(async move{
+                let r:Request=typed_request(&call,START,IN)?;
+                if call.workspace_id.as_deref()!=Some(self.workspace.as_str())
+                    ||r.kind!=KIND||r.id!=self.id||r.binding!=self.binding{
+                    return Err(failure("BACKGROUND_QUEUE_NOT_AUTHORIZED"))
+                }
+                let plan=self.pending.lock().map_err(|_|failure("BACKGROUND_QUEUE_UNCERTAIN"))?
+                    .take().ok_or_else(||failure("BACKGROUND_QUEUE_ALREADY_USED"))?;
+                let scheduler=Arc::clone(&self.scheduler);
+                tokio::task::spawn_blocking(move||scheduler.enqueue_reviewed_scan(plan))
+                    .await.map_err(|_|failure("BACKGROUND_QUEUE_UNCERTAIN"))?
+                    .map_err(|_|failure("BACKGROUND_QUEUE_REJECTED"))?;
+                // Confirm the owned durable queue row, not an execution claim.
+                if self.scheduler.state_for(&self.id,&self.workspace).ok().flatten().as_deref()!=Some("QUEUED"){
+                    return Err(failure("BACKGROUND_QUEUE_UNCERTAIN"))
+                }
+                Ok(ToolOutput{payload:ProtoPayload{type_url:OUT.into(),
+                    bytes:Reply{id:self.id.clone(),binding:self.binding.clone()}.encode_to_vec()}})
+            })
+        }
+    }
+    struct Codec{id:String,binding:String}
+    impl ModelToolCodec for Codec{
+        fn input_type_url(&self)->&'static str{IN}
+        fn output_type_url(&self)->&'static str{OUT}
+        fn encode(&self,args:&Map<String,Value>)->Result<ProtoPayload,ModelToolError>{
+            let kind=strict(args,"job_kind",KIND)?;
+            Ok(ProtoPayload{type_url:IN.into(),bytes:Request{kind,id:self.id.clone(),binding:self.binding.clone()}.encode_to_vec()})
+        }
+        fn decode(&self,reply:&ProtoPayload)->Result<Value,ModelToolError>{
+            let invalid=||ModelToolError::InvalidResult("invalid reviewed queue receipt".into());
+            if reply.type_url!=OUT{return Err(invalid())}
+            let r=Reply::decode(reply.bytes.as_slice()).map_err(|_|invalid())?;
+            if r.encode_to_vec()!=reply.bytes||r.id!=self.id||r.binding!=self.binding{return Err(invalid())}
+            Ok(json!({"task_id":r.id,"state":"QUEUED","started":false,"review_binding":r.binding}))
+        }
+    }
+    pub fn register_reviewed_background_start(
+        registry:&NativeToolRegistry,scheduler:Arc<BackgroundScheduler>,
+        reviewed:ReviewedScan,binding:&str,
+    )->Result<ModelToolCatalog,String>{
+        if binding.len()!=64||!binding.bytes().all(|b|b.is_ascii_digit()||matches!(b,b'a'..=b'f'))
+            ||!valid(reviewed.task_id())||!valid(reviewed.workspace()){
+            return Err("invalid reviewed queue binding".into())
+        }
+        let workspace=reviewed.workspace().to_owned();let id=reviewed.task_id().to_owned();
+        let descriptor=ToolDescriptor{id:START.into(),display_name:"Queue one approved file scan".into(),
+            effect:ToolEffect::ExecuteCode,input_type_url:IN.into(),output_type_url:OUT.into()};
+        registry.register(ModuleManifest{id:"lu.bgstart".into(),display_name:"Reviewed file scan queue".into(),
+            kind:ModuleKind::Core,contract_version:CORE_CONTRACT_VERSION,tools:vec![descriptor.clone()],
+            panels:vec![],workflows:vec![]},vec![Arc::new(QueueTool{descriptor,workspace,id:id.clone(),
+                binding:binding.into(),pending:Mutex::new(Some(reviewed)),scheduler}) as Arc<dyn NativeTool>])
+            .map_err(|e|format!("reviewed queue registration failed: {e:?}"))?;
+        let mut catalog=ModelToolCatalog::new();
+        catalog.insert(registry,ModelToolDefinition{name:"lu_background_start".into(),native_tool_id:START.into(),
+            description:"Queue only the exact native-reviewed one-shot file scan. No paths, commands or scheduling parameters.".into(),
+            parameters:json!({"type":"object","properties":{"job_kind":{"type":"string","enum":[KIND]}},
+                "required":["job_kind"],"additionalProperties":false}),
+            codec:Arc::new(Codec{id,binding:binding.into()})}).map_err(|e|format!("reviewed queue codec failed: {e:?}"))?;
+        Ok(catalog)
+    }
+}
+#[cfg(windows)]
+pub use queued_reviewed_start::register_reviewed_background_start;

@@ -14,17 +14,47 @@ pub fn run_file_scan_worker()->i32{
         return 2;
     }
     let Some(path)=args.next() else{return 2;};
+    let identity=args.next();
+    let bytes=args.next();
     if args.next().is_some(){return 2;}
-    match scan_file(Path::new(&path),&mut std::io::stdout().lock()){
-        Ok(())=>0,
-        Err(_)=>3, // Don't log filenames or private host paths.
-    }
+    let mut output=std::io::stdout().lock();
+    let result=match (identity,bytes){
+        (None,None)=>scan_file(Path::new(&path),&mut output),
+        #[cfg(windows)]
+        (Some(identity),Some(bytes))=>{
+            let Some(identity)=identity.to_str() else{return 2};
+            let Some(bytes)=bytes.to_str().and_then(|s|s.parse::<u64>().ok()) else{return 2};
+            scan_reviewed_file(Path::new(&path),identity,bytes,&mut output)
+        },
+        _=>return 2,
+    };
+    match result{Ok(())=>0,Err(_)=>3}
 }
 
 /// Bounded 1 MiB reads. Data and hash are never sent through the progress
 /// stream; only the total byte count, current position and final SHA-256.
 pub fn scan_file(path:&Path,output:&mut impl Write)->std::io::Result<()>{
-    let mut file=File::open(path)?;
+    scan_open_file(File::open(path)?,output)
+}
+/// The original scheduler holds an opened share-read-only lease until
+/// terminal reconciliation. Verify the opened child handle, not the path,
+/// before reading any byte or emitting any progress/digest.
+#[cfg(windows)]
+fn scan_reviewed_file(path:&Path,identity:&str,bytes:u64,output:&mut impl Write)->std::io::Result<()>{
+    use std::os::windows::fs::OpenOptionsExt;
+    if identity.len()!=48||!identity.bytes().all(|b|b.is_ascii_hexdigit())
+        ||bytes==0||bytes>64*1024*1024*1024{
+        return Err(std::io::Error::other("invalid reviewed input"))
+    }
+    let file=std::fs::OpenOptions::new().read(true).share_mode(1)
+        .custom_flags(0x0020_0000).open(path)?;
+    if lu_core::windows_file_guard::inspect_open_file(&file)?.token()!=identity
+        ||file.metadata()?.len()!=bytes{
+        return Err(std::io::Error::other("reviewed input changed"))
+    }
+    scan_open_file(file,output)
+}
+fn scan_open_file(mut file:File,output:&mut impl Write)->std::io::Result<()>{
     let metadata=file.metadata()?;
     if !metadata.is_file()||metadata.len()==0{
         return Err(std::io::Error::other("not a non-empty regular file"));
@@ -74,4 +104,19 @@ mod tests{
         let expected=format!("{:x}",Sha256::digest(b"real media bytes from disk"));
         assert!(transcript.ends_with(&format!("D\t{expected}\n")));
     }
+}
+#[cfg(all(test,windows))]
+#[test]
+fn reviewed_scan_rejects_substituted_id_before_progress(){
+    let root=std::env::temp_dir().join(format!("lu-reviewed-scan-worker-{}",std::process::id()));
+    std::fs::create_dir(&root).unwrap();
+    let a=root.join("a.bin");let b=root.join("b.bin");
+    std::fs::write(&a,b"original").unwrap();std::fs::write(&b,b"replaced").unwrap();
+    let id=lu_core::windows_file_guard::inspect_open_file(&File::open(&a).unwrap()).unwrap().token();
+    let mut out=Vec::new();
+    assert!(scan_reviewed_file(&b,&id,8,&mut out).is_err());assert!(out.is_empty());
+    assert!(scan_reviewed_file(&a,&id,9,&mut out).is_err());assert!(out.is_empty());
+    scan_reviewed_file(&a,&id,8,&mut out).unwrap();
+    assert!(String::from_utf8(out).unwrap().contains(&format!("D\t{:x}",Sha256::digest(b"original"))));
+    std::fs::remove_dir_all(root).unwrap();
 }

@@ -5699,6 +5699,7 @@ async fn generate_internal(
             // any separately approved negotiated native read/utility lane.
             let no_negotiated_selection=if origin==GenerationOrigin::Human&&!plan_only&&images.is_empty()&&linked.is_empty()&&manifest.is_empty()&&
                 !contains_document_context(&prompt){
+                if let Some(answer)=model_publication_desktop::try_model_background_start(&app,&state,&sid,&chat_id,&gid,&prompt,&ticket)?{return Ok(answer)}
                 if let Some(answer)=model_publication_desktop::try_model_background_control(&app,&state,&sid,&chat_id,&gid,&prompt,&ticket)?{return Ok(answer)}
                 if let Some(answer)=model_publication_desktop::try_model_background(&app,&state,&sid,&chat_id,&gid,&prompt,&ticket)?{return Ok(answer)}
                 if let Some(answer)=model_publication_desktop::try_model_publication(&app,&state,&sid,&chat_id,&gid,&prompt,&ticket)?{return Ok(answer)}

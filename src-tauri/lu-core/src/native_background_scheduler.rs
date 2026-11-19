@@ -236,12 +236,78 @@ pub struct GuardianSnapshot{
     pub capacity:ResourceBudget,pub used:ResourceClaim,
     pub queued:u32,pub running:u32,pub paused:u32,
 }
+
+/// Windows-only bounded host plan, prepared by the trusted native picker.
+/// Hold the exact input read-only with write and delete sharing denied, and
+/// verify the same file ID in the child BEFORE reading any content.
+#[cfg(windows)]
+pub struct ReviewedScan{
+    plan:TrustedWorkerPlan,
+    input:std::fs::File,
+    ancestors:Vec<std::fs::File>,
+    display:String,
+    identity:String,
+    bytes:u64,
+}
+#[cfg(windows)]
+impl ReviewedScan{
+    pub fn prepare(task_id:&str,workspace:&str,selected:&Path)->Result<Self,SchedulerError>{
+        use std::{fs::{self,OpenOptions},io::Read,os::windows::fs::{OpenOptionsExt,MetadataExt},path::{Component,Prefix}};
+        use sha2::{Digest,Sha256};
+        if !valid_id(task_id)||!task_id.starts_with("scan-")||!valid_id(workspace)
+            ||!matches!(selected.components().next(),Some(Component::Prefix(p)) if matches!(p.kind(),Prefix::Disk(_)|Prefix::VerbatimDisk(_)))
+            ||!selected.is_absolute()||selected.components().any(|p|matches!(p,Component::ParentDir|Component::CurDir)){
+            return Err(SchedulerError::InvalidRequest)
+        }
+        // Lock the local directory chain root-to-leaf against rename or
+        // reparse alteration until the selected worker is reaped.
+        let mut ancestors=Vec::new();
+        let chain=selected.ancestors().skip(1).filter(|p|p.has_root()).collect::<Vec<_>>();
+        if chain.is_empty()||chain.len()>64{return Err(SchedulerError::InvalidRequest)}
+        for ancestor in chain.into_iter().rev(){
+            let dir=OpenOptions::new().access_mode(0x80).share_mode(1)
+                .custom_flags(0x0220_0000).open(ancestor).map_err(|_|SchedulerError::InvalidRequest)?;
+            crate::windows_file_guard::opened_directory_identity(&dir)
+                .map_err(|_|SchedulerError::InvalidRequest)?;
+            ancestors.push(dir);
+        }
+        let meta=fs::symlink_metadata(selected).map_err(|_|SchedulerError::InvalidRequest)?;
+        if meta.file_attributes()&0x400!=0{return Err(SchedulerError::InvalidRequest)}
+        let input=OpenOptions::new().read(true).share_mode(1)
+            .custom_flags(0x0020_0000).open(selected).map_err(|_|SchedulerError::InvalidRequest)?;
+        let identity=crate::windows_file_guard::inspect_open_file(&input)
+            .map_err(|_|SchedulerError::InvalidRequest)?.token();
+        let bytes=input.metadata().map_err(|_|SchedulerError::InvalidRequest)?.len();
+        if bytes==0||bytes>64*1024*1024*1024{return Err(SchedulerError::InvalidRequest)}
+        let display=selected.to_str().filter(|s|s.len()<=2048&&!s.chars().any(|c|
+            c.is_control()||matches!(c,'\u{202a}'..='\u{202e}'|'\u{2066}'..='\u{2069}'|'\u{200e}'|'\u{200f}'|'\u{061c}')))
+            .ok_or(SchedulerError::InvalidRequest)?.to_owned();
+        let executable=std::env::current_exe().map_err(|_|SchedulerError::InvalidRequest)?;
+        let mut image=fs::File::open(&executable).map_err(|_|SchedulerError::InvalidRequest)?;
+        let mut hash=Sha256::new();let mut buffer=[0u8;65536];
+        loop{let n=image.read(&mut buffer).map_err(|_|SchedulerError::InvalidRequest)?;
+            if n==0{break}hash.update(&buffer[..n]);}
+        let plan=TrustedWorkerPlan{task_id:task_id.into(),workspace_id:workspace.into(),executable,
+            expected_sha256:format!("{:x}",hash.finalize()),progress_protocol:true,max_runtime_seconds:Some(3600),
+            args:vec!["--lu-file-scan-worker".into(),selected.as_os_str().to_owned(),identity.clone().into(),bytes.to_string().into()]};
+        Ok(Self{plan,input,ancestors,display,identity,bytes})
+    }
+    pub fn task_id(&self)->&str{&self.plan.task_id}
+    pub fn workspace(&self)->&str{&self.plan.workspace_id}
+    pub fn display(&self)->&str{&self.display}
+    pub fn identity(&self)->&str{&self.identity}
+    pub fn bytes(&self)->u64{self.bytes}
+    pub fn executable_sha256(&self)->&str{&self.plan.expected_sha256}
+}
+
 struct Active{
     plan:TrustedWorkerPlan,
     opts:ScheduleOptions,
     series_id:String,
     sequence_no:u32,
     retry_count:u8,
+    // Keep the originally opened, write/delete-denied input alive until terminal custody.
+    _reviewed_input:Option<(std::fs::File,Vec<std::fs::File>)>,
 }
 struct Inner {
     db:Connection,
@@ -354,7 +420,8 @@ impl BackgroundScheduler{
              ('QUEUED','RUNNING','PAUSED')",[],|r|r.get(0))
             .map_err(db_error)?;
         if count>=MAX_QUEUE as i64{return Err(SchedulerError::QueueFull)}
-        inner.db.execute(
+        let tx=inner.db.transaction().map_err(db_error)?;
+        tx.execute(
           "INSERT INTO lu_schedule
            (task_id,workspace_id,kind,state,priority,due_unix,repeat_seconds,
             dependency,workers,cpu,ram_mib,gpu,vram_mib,disk,network,
@@ -372,10 +439,11 @@ impl BackgroundScheduler{
             i64::from(retry_count),series,i64::from(sequence_no)]
         ).map_err(|e|if e.to_string().contains("UNIQUE"){
             SchedulerError::Duplicate}else{SchedulerError::Database})?;
-        inner.db.execute(
+        tx.execute(
             "INSERT INTO lu_schedule_events(task_id,workspace_id,event)
              VALUES(?1,?2,'QUEUED')",
             params![id,&plan.workspace_id]).map_err(db_error)?;
+        tx.commit().map_err(db_error)?;
         Ok(())
     }
     /// The host must already have a reviewed plan from a real operator
@@ -409,8 +477,30 @@ impl BackgroundScheduler{
         Self::insert(&mut g,&plan,&opts,&plan.task_id,0,0)?;
         g.plans.insert(plan.task_id.clone(),Active{
             series_id:plan.task_id.clone(),sequence_no:0,
-            retry_count:0,plan,opts,
+            retry_count:0,plan,opts,_reviewed_input:None,
         });
+        Ok(())
+    }
+
+    /// Same resource-aware scheduler; no process start in this foreground
+    /// turn and no replayable file/executable authority in persistent SQLite.
+    #[cfg(windows)]
+    pub fn enqueue_reviewed_scan(&self,reviewed:ReviewedScan)->Result<(),SchedulerError>{
+        let ReviewedScan{plan,input,ancestors,identity,bytes,..}=reviewed;
+        if crate::windows_file_guard::inspect_open_file(&input)
+            .map_err(|_|SchedulerError::InvalidRequest)?.token()!=identity
+            ||input.metadata().map_err(|_|SchedulerError::InvalidRequest)?.len()!=bytes{
+            return Err(SchedulerError::InvalidRequest)
+        }
+        let mut opts=ScheduleOptions::file_scan(now_unix(),None,Priority::Normal);
+        opts.kind="reviewed_file_scan".into();
+        let mut g=self.inner.lock().map_err(|_|SchedulerError::Poisoned)?;
+        if !g.capacity.supports(ResourceClaim::default(),opts.claim){
+            return Err(SchedulerError::ResourceRejected)
+        }
+        Self::insert(&mut g,&plan,&opts,&plan.task_id,0,0)?;
+        g.plans.insert(plan.task_id.clone(),Active{series_id:plan.task_id.clone(),
+            sequence_no:0,retry_count:0,plan,opts,_reviewed_input:Some((input,ancestors))});
         Ok(())
     }
     fn terminal_name(state:TaskState)->Option<&'static str>{
@@ -470,7 +560,7 @@ impl BackgroundScheduler{
             let Some(terminal)=Self::terminal_name(record.state)else{continue};
             g.db.execute(
               "UPDATE lu_schedule SET state=?2,last_result=?2
-               WHERE task_id=?1 AND state='RUNNING'",
+               WHERE task_id=?1 AND state IN ('RUNNING','QUEUED')",
                params![&id,terminal]).map_err(db_error)?;
             g.db.execute(
               "INSERT INTO lu_schedule_events(task_id,workspace_id,event)
@@ -503,7 +593,7 @@ impl BackgroundScheduler{
                 g.plans.insert(next_id,Active{
                     plan:next_plan,opts:next_opts,
                     series_id:last.series_id,sequence_no:next_seq,
-                    retry_count:next_retry,
+                    retry_count:next_retry,_reviewed_input:None,
                 });
             }
         }
@@ -534,6 +624,9 @@ impl BackgroundScheduler{
         });
         let mut started=0;
         for (id,_,_,_) in queued{
+            // An accepted worker whose RUNNING publication failed retains
+            // reservation and custody until terminal reconciliation.
+            if g.running.contains_key(&id){continue}
             let Some(job)=g.plans.get(&id)else{
                 // A historical queued job without volatile host approval is
                 // never executable. Startup reconciliation marks it review.
@@ -589,21 +682,29 @@ impl BackgroundScheduler{
                 g.plans.remove(&id);
                 continue
             }
-            // The host has launched an owned process. If state persistence
-            // fails, terminate that exact process, then report uncertainty.
-            if g.db.execute(
-                "UPDATE lu_schedule SET state='RUNNING' WHERE task_id=?1
-                 AND state='QUEUED'",[&id]).map_err(db_error)?!=1{
-                let workspace=g.plans.get(&id)
-                    .map(|v|v.plan.workspace_id.clone()).unwrap_or_default();
-                let _=self.process.cancel_owned(&id,&workspace);
-                return Err(SchedulerError::Database)
-            }
+            // Reserve the worker immediately after successful OS admission.
+            // Even a SQLite error must not permit another spawn or release
+            // the reviewed input while termination is uncertain.
             g.running.insert(id.clone(),claim);
-            g.db.execute(
-              "INSERT INTO lu_schedule_events(task_id,workspace_id,event)
-               VALUES(?1,?2,'RUNNING')",
-              params![&id,&g.plans[&id].plan.workspace_id]).map_err(db_error)?;
+            let workspace=g.plans.get(&id)
+                .map(|v|v.plan.workspace_id.clone()).ok_or(SchedulerError::Database)?;
+            let persist=(||->Result<(),SchedulerError>{
+                let tx=g.db.transaction().map_err(db_error)?;
+                if tx.execute("UPDATE lu_schedule SET state='RUNNING' WHERE task_id=?1
+                    AND state='QUEUED'",[&id]).map_err(db_error)?!=1{
+                    return Err(SchedulerError::Database)
+                }
+                tx.execute("INSERT INTO lu_schedule_events(task_id,workspace_id,event)
+                    VALUES(?1,?2,'RUNNING')",params![&id,&workspace]).map_err(db_error)?;
+                tx.commit().map_err(db_error)?;
+                Ok(())
+            })();
+            if let Err(e)=persist{
+                let _=self.process.cancel_owned(&id,&workspace);
+                // Keep the in-memory fence and file leases. A later tick
+                // can publish terminal state only from the TaskStore.
+                return Err(e)
+            }
             started+=1;
         }
         Ok(started)
@@ -727,15 +828,20 @@ impl BackgroundScheduler{
             return Err(SchedulerError::InvalidRequest)
         }
         let mut g=self.inner.lock().map_err(|_|SchedulerError::Poisoned)?;
-        let affected=g.db.execute(
+        // A failed RUNNING publication may leave a durable QUEUED row with
+        // a live reservation. Never discard its original input or custody.
+        if g.running.contains_key(id){return Err(SchedulerError::NotQueued)}
+        let tx=g.db.transaction().map_err(db_error)?;
+        let affected=tx.execute(
             "UPDATE lu_schedule SET state=?4 WHERE task_id=?1
              AND workspace_id=?2 AND state=?3",
             params![id,workspace,expected,to]).map_err(db_error)?;
         if affected!=1{return Err(SchedulerError::NotQueued)}
-        if to=="CANCELLED"{g.plans.remove(id);}
-        g.db.execute(
+        tx.execute(
             "INSERT INTO lu_schedule_events(task_id,workspace_id,event)
              VALUES(?1,?2,?3)",params![id,workspace,to]).map_err(db_error)?;
+        tx.commit().map_err(db_error)?;
+        if to=="CANCELLED"{g.plans.remove(id);}
         Ok(())
     }
     pub fn pause_queued(&self,id:&str,workspace:&str)
@@ -834,7 +940,7 @@ impl BackgroundScheduler{
             params![original_id,&new_plan.workspace_id]).map_err(db_error)?;
         g.plans.insert(new_plan.task_id.clone(),Active{
             series_id:new_plan.task_id.clone(),sequence_no:0,
-            retry_count:0,plan:new_plan,opts,
+            retry_count:0,plan:new_plan,opts,_reviewed_input:None,
         });
         Ok(())
     }
@@ -1156,4 +1262,27 @@ mod tests{
         assert_eq!(queue.enqueue_host_plan(plan("scan-third"),bad),
             Err(SchedulerError::WrongOwner));
     }
+}
+
+#[cfg(all(test,windows))]
+#[test]
+fn reviewed_scan_queue_holds_original_file_until_cancel(){
+    let root=std::env::temp_dir().join(format!("lu-reviewed-scan-{}-{}",std::process::id(),now_unix()));
+    std::fs::create_dir(&root).unwrap();
+    let file=root.join("reviewed.bin");std::fs::write(&file,b"approved bytes").unwrap();
+    let store=Arc::new(TaskStore::open(Path::new(":memory:")).unwrap());
+    let process=Arc::new(BackgroundProcessSupervisor::new(Arc::clone(&store)));
+    let budget=ResourceBudget{workers:1,cpu:1,ram_mib:1024,gpu:0,vram_mib:0,disk:1,network:0};
+    let scheduler=BackgroundScheduler::open(Path::new(":memory:"),store,process,budget).unwrap();
+    let plan=ReviewedScan::prepare("scan-reviewed","c-owner",&file).unwrap();
+    assert_eq!(plan.bytes(),14);
+    scheduler.enqueue_reviewed_scan(plan).unwrap();
+    assert_eq!(scheduler.state_for("scan-reviewed","c-owner").unwrap().as_deref(),Some("QUEUED"));
+    assert_eq!(scheduler.state_for("scan-reviewed","c-other").unwrap(),None);
+    assert!(std::fs::write(&file,b"substitution").is_err());
+    assert!(scheduler.cancel_owned("scan-reviewed","c-other").is_err());
+    scheduler.cancel_owned("scan-reviewed","c-owner").unwrap();
+    assert_eq!(scheduler.state_for("scan-reviewed","c-owner").unwrap().as_deref(),Some("CANCELLED"));
+    std::fs::write(&file,b"after cancellation").unwrap();
+    drop(scheduler);std::fs::remove_dir_all(root).unwrap();
 }
