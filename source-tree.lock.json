@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "12367810d649c78ef58871497ef4d66221b9f32d",
+  "sourceCommitBeforeLock": "86ed311546b3344c4201c649deced643cf339ed1",
   "trackedFileCount": 1161,
   "files": [
     {
@@ -829,7 +829,7 @@
     },
     {
       "path": "docs/LU_DEVELOPMENT_LEDGER.md",
-      "blob": "3c7f044ce371c9740cb02de3c22ff26518c0a0ba"
+      "blob": "bc75b2e7c0ba0b59b5d420d8808bcd8727dfc69c"
     },
     {
       "path": "docs/LU_E1_NATIVE_EVIDENCE_20261107.md",
@@ -3565,7 +3565,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/native_background_control.rs",
-      "blob": "a54cdc195385962fb8f50d46ea0d73d3f43d6bfe"
+      "blob": "b4b53a8112c3a9025702301b181771efdfe13e6d"
     },
     {
       "path": "src-tauri/lu-core/src/native_background_process.rs",
