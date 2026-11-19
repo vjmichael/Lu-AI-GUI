@@ -112,7 +112,7 @@ def verify_resources(reference, observed, manifest, notices, platform, *, root_o
                 p = root / path
                 require(plain(p, root_owned=owned).st_size == meta['bytes'] and sha256(p) == meta['sha256'], 'resource bytes differ: '+path)
                 if relative == binary and owned:
-                    require(bool(p.stat().st_mode & 0o111), 'installed Linux provider not executable')
+                    require((p.stat().st_mode & 0o005) == 0o005, 'installed Linux provider not readable/executable to ordinary user')
     # Full closed inventory, not just the three executables or notice counts.
     require(reference_files == expected and observed_files == expected, 'unexpected/missing resource file')
     require((observed / RECEIPT).read_bytes() == (reference / RECEIPT).read_bytes(), 'installed receipt differs from original staging')

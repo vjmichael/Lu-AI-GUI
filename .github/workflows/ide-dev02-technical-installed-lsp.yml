@@ -1,7 +1,17 @@
 name: IDE DEV-02.5 genuine technical-only installed native LSP resources
-# Separate manual acceptance lane: no overlapping CI, no signing/redistribution,
+# Separate technical acceptance lane: existing PR #236 or reviewed manual run.
+# No push trigger, signing/redistribution,
 # no native-lsp runtime feature in this installer, no provider execution.
 on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/ide-dev02-technical-installed-lsp.yml'
+      - 'ide/app/fixtures/*DEV02Technical*'
+      - 'ide/app/fixtures/dev02_technical_installed_linux.py'
+      - 'ide/app/src-tauri/tauri.dev02.technical-only.conf.json'
+      - 'ide/packaging/verify_technical_lsp_install.py'
+      - 'ide/packaging/test_verify_technical_lsp_install.py'
   workflow_dispatch:
     inputs:
       expected_source_sha:
@@ -15,6 +25,9 @@ concurrency:
   cancel-in-progress: false
 jobs:
   technical-installed:
+    if: >-
+      (github.event_name == 'pull_request' && github.event.pull_request.number == 236 && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'ide/integration-git-6c6d6e6f-to-main-20261113') ||
+      (github.event_name == 'workflow_dispatch' && github.ref_name == 'ide/integration-git-6c6d6e6f-to-main-20261113')
     name: technical-installed / ${{ matrix.os }} / ${{ matrix.platform }} / ${{ matrix.bundle }}
     strategy:
       fail-fast: false
@@ -29,12 +42,12 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 135
     env:
-      SOURCE_SHA: ${{ inputs.expected_source_sha }}
+      SOURCE_SHA: ${{ github.event.pull_request.head.sha || inputs.expected_source_sha }}
       CARGO_INCREMENTAL: '0'
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
       - uses: actions/setup-python@v5
         with:
@@ -78,6 +91,11 @@ jobs:
           dest=Path('ide/app/src-tauri/test-lsp-resources')
           if dest.exists() or dest.is_symlink(): raise SystemExit('DENIED: reused technical staging')
           shutil.copytree(root,dest)
+          if os.name != 'nt':
+              for entry in dest.rglob('*'):
+                  executable=entry.parent.name=='bin' and entry.name in {'clangd','rust-analyzer','ruff'}
+                  entry.chmod(0o755 if entry.is_dir() or executable else 0o644)
+              dest.chmod(0o755)
           PY
       - name: Build real default-deny desktop and technical-only package with original notices
         shell: bash

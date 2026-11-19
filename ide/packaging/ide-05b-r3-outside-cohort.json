@@ -965,16 +965,17 @@
     },
     {
       "workflow": ".github/workflows/ide-dev02-technical-installed-lsp.yml",
-      "gitBlob": "0b55e5f43dae8ba2544003d5eed5ee142e88e6ec",
+      "gitBlob": "b950f54a4c60fdb3b22c58d61d7fee23b21cb130",
       "workflowName": "IDE DEV-02.5 genuine technical-only installed native LSP resources",
       "triggerKinds": [
+        "pull_request",
         "workflow_dispatch"
       ],
       "jobKeys": [
         "technical-installed"
       ],
-      "disposition": "new_required_manual_technical_install",
-      "contractToRetain": "Historical #137 actual NSIS/Debian with original pinned resources, independent byte readback, real OS registration and uninstall. Worker-disabled desktop; separately gated protected execution.",
+      "disposition": "new_required_existing_pr_or_manual_technical_install",
+      "contractToRetain": "Historical #137 actual NSIS/Debian with original pinned resources, independent byte readback, real OS registration and uninstall. Worker-disabled desktop; separately gated protected execution. Narrow PR #236 event permits first acceptance before default-branch merge; no push dispatch.",
       "relatedObservedCohortPaths": [
         ".github/workflows/ide-dev02-disposable-native-test-payload.yml",
         ".github/workflows/ide-dev02-full-native-resource-candidate.yml"

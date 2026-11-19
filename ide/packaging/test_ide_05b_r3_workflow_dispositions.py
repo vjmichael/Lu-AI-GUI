@@ -18,11 +18,13 @@ class DispositionTests(unittest.TestCase):
             self.assertTrue(set(r['relatedObservedCohortPaths'])<=automatic)
             blob=subprocess.check_output(['git','hash-object','--',r['workflow']],cwd=ROOT,text=True).strip()
             self.assertEqual(blob,r['gitBlob'])
-    def test_technical_lane_manual_and_nonexecuting(self):
+    def test_technical_lane_existing_pr_or_manual_and_nonexecuting(self):
         source=(ROOT/TECHNICAL_WORKFLOW).read_text()
         trigger=source.split('\non:\n',1)[1].split('\npermissions:',1)[0]
         self.assertIn('workflow_dispatch:',trigger)
-        self.assertNotIn('pull_request:',trigger)
+        self.assertIn('pull_request:',trigger)
+        self.assertIn('github.event.pull_request.number == 236',source)
+        self.assertIn('github.event.pull_request.head.ref',source)
         self.assertNotIn('push:',trigger)
         self.assertIn('name: technical-installed / ${{ matrix.os }} / ${{ matrix.platform }} / ${{ matrix.bundle }}',source)
         self.assertEqual(len(TECHNICAL_GATE[2]),2)

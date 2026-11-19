@@ -42,6 +42,20 @@ TECHNICAL_GATE = ("DEV02_technical_installed", TECHNICAL_WORKFLOW,
                   tuple(j["name"] for j in TECHNICAL_RECORD["jobs"]), "hosted_technical_lsp_install")
 
 
+TECHNICAL_BRANCH = "ide/integration-git-6c6d6e6f-to-main-20261113"
+
+
+def _technical_event(run):
+    if run.get("head_branch") != TECHNICAL_BRANCH:
+        return False
+    if run.get("event") == "workflow_dispatch":
+        return True
+    if run.get("event") != "pull_request":
+        return False
+    prs = run.get("pull_requests")
+    return isinstance(prs, list) and any(isinstance(pr, dict) and pr.get("number") == 236 for pr in prs)
+
+
 class EvidenceError(ValueError):
     pass
 
@@ -276,14 +290,14 @@ def assess(sha, runs, jobs_for_run):
         candidates_by_path.setdefault(path, []).append(run)
     observations = _observe_gates(sha, candidates_by_path, jobs_for_run, GATES, GATE_RECORDS)
     technical_candidates = {TECHNICAL_WORKFLOW: [r for r in candidates_by_path.get(TECHNICAL_WORKFLOW, [])
-                                                if r.get("event") == "workflow_dispatch"]}
+                                                if _technical_event(r)]}
     technical = _observe_gates(sha, technical_candidates, jobs_for_run, (TECHNICAL_GATE,),
                                {TECHNICAL_GATE[0]: TECHNICAL_RECORD})[0]
     unreviewed = []
     for path, candidates in sorted(candidates_by_path.items()):
         if path in {g[1] for g in GATES}:
             continue
-        if path == TECHNICAL_WORKFLOW and all(r.get("event") == "workflow_dispatch" for r in candidates):
+        if path == TECHNICAL_WORKFLOW and all(_technical_event(r) for r in candidates):
             continue
         r = max(candidates, key=_rank)
         unreviewed.append({"workflow": path, "runId": r["id"], "runAttempt": r["run_attempt"],

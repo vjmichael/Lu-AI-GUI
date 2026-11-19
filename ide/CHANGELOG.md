@@ -2,7 +2,7 @@
 
 ## 2026-11-19 — IDE-MERGE-05B-R3 (unpublished source candidate)
 
-- Restored test-only real NSIS/Debian LSP resource-install lane, pinned archive reconstruction and exact two-job manual observation, without provider execution rights. Recorded 44 outside-cohort workflow dispositions. Native installed and final-SHA acceptance remain open.
+- Restored test-only real NSIS/Debian LSP resource-install lane, pinned archive reconstruction and exact two-job technical observation, without provider execution rights. Recorded 44 outside-cohort workflow dispositions. Native installed and final-SHA acceptance remain open.
 
 ## 2026-11-16 — Grouped original-native-coverage and source-security repair (unpublished)
 
