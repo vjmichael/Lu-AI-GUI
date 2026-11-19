@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "292b13e4439b8fb6497d9b5f246735a3bc158eb0",
+  "sourceCommitBeforeLock": "5f3f532b230f44e160a3fa809363c3a054d6a13b",
   "trackedFileCount": 1961,
   "files": [
     {
@@ -1709,7 +1709,7 @@
     },
     {
       "path": "ide/app/fixtures/Run-DEV01ModernGtkSession.sh",
-      "blob": "0d6b894b68e7f26b3bdd3cf02b2252842b18ce5c"
+      "blob": "0d406f4992bcad8950bc59ce1578d29ed7a026df"
     },
     {
       "path": "ide/app/fixtures/Test-B2InstalledDeb.sh",
@@ -1785,7 +1785,7 @@
     },
     {
       "path": "ide/app/fixtures/Test-Wo8NativeDesktopUI.ps1",
-      "blob": "f4bcea3fb0ab404b61b38e62b063dfc6f48be85b"
+      "blob": "a4bd8f4d615215497c7544294b135378eacf6057"
     },
     {
       "path": "ide/app/fixtures/b2_linux_installed_draft_atspi.py",
@@ -1857,7 +1857,7 @@
     },
     {
       "path": "ide/app/fixtures/test_wo9_review_control_policy.py",
-      "blob": "28b2d6494ccf0069fa7dd9b72ca904cf90912841"
+      "blob": "99d92eb7f1ba4803322c41cf6f9cfa4a292a2224"
     },
     {
       "path": "ide/app/fixtures/verify_reviewed_ide_icons.py",
@@ -1865,11 +1865,11 @@
     },
     {
       "path": "ide/app/fixtures/wo8_linux_editor_atspi.py",
-      "blob": "9d200e23e9bd4672fb91b14e0cf99a0e971add87"
+      "blob": "2491ec10efc4d69cdae311ba6c3a8f3cdcbdc96d"
     },
     {
       "path": "ide/app/fixtures/wo8_linux_window_acceptance.sh",
-      "blob": "b8d21620fa8185a39ccd9d6e805312a7ff7492f2"
+      "blob": "dec9f2f0ff308507c6f2a60b2356c4493a061270"
     },
     {
       "path": "ide/app/fixtures/wo9_linux_protected_graph_atspi.py",
@@ -1877,11 +1877,11 @@
     },
     {
       "path": "ide/app/fixtures/wo9_linux_workflow_atspi.py",
-      "blob": "63345d82727c9c32fa2fb4328b9e5a2015760869"
+      "blob": "bf48e426dc5f749af270f7a327f2a62bcfd2e8f4"
     },
     {
       "path": "ide/app/fixtures/x11_openbox_readiness.sh",
-      "blob": "e94379614e558c242f5009211afb64d6dadc1f11"
+      "blob": "a6015822363cf0c47bd9a04368456ba963569f17"
     },
     {
       "path": "ide/app/package-lock.json",
@@ -1945,7 +1945,7 @@
     },
     {
       "path": "ide/app/src-tauri/src/lib.rs",
-      "blob": "7b1e326f2a8c9450c398e97fb7f2000697b52700"
+      "blob": "f72ddbcdb407085a6e1b8d92473857650fb75db2"
     },
     {
       "path": "ide/app/src-tauri/src/lsp_backend.rs",
@@ -2037,7 +2037,7 @@
     },
     {
       "path": "ide/app/tests/dev01_integrated_license_bundle_source.test.mjs",
-      "blob": "054691c285e7c0fe454dcc6a57ca34b14075e468"
+      "blob": "fdc9f5e863a3862ec69a050c600ffb2f904fd823"
     },
     {
       "path": "ide/app/tests/dev02_project_problems.test.mjs",
@@ -2509,7 +2509,7 @@
     },
     {
       "path": "ide/app/web/main.jsx",
-      "blob": "cad728b60bd55588aaf7888d1478ede0e15e623f"
+      "blob": "6d4cf84711e437ecf040829b86aad91dec6660c5"
     },
     {
       "path": "ide/app/web/native_build_output.js",
@@ -2577,11 +2577,11 @@
     },
     {
       "path": "ide/audits/test_p05_owner_successor.py",
-      "blob": "2869360c0b3271c674c67be00bb0b0d961e30b0e"
+      "blob": "a2924cb9a8af40a5195cc1041604a193fc7c5eef"
     },
     {
       "path": "ide/audits/verify_p05_owner_successor.py",
-      "blob": "850f345fc5a9befd067269b7b2473c1120dd8f7c"
+      "blob": "23b990a1f25bd0d4beab94c6ad48023c018dccb3"
     },
     {
       "path": "ide/ci/merge02-reviewed-native-boundaries.json",
@@ -3493,7 +3493,7 @@
     },
     {
       "path": "ide/host/src/reviewed_git.rs",
-      "blob": "c771ba64a93faca558e44eebe0f447ab36878c4a"
+      "blob": "b0ae749153893e0fca1026e1a5949563429420ac"
     },
     {
       "path": "ide/host/src/source_create.rs",
@@ -3689,7 +3689,7 @@
     },
     {
       "path": "ide/packaging/audit_p05_reviewed_workflow_successor.py",
-      "blob": "4a9e7e7d5ca72b656551d2403272c0074cead627"
+      "blob": "4045a2f9605717cc482d0e0e06da53f558b3b285"
     },
     {
       "path": "ide/packaging/b2_b4_installer_handoff.py",
@@ -3905,7 +3905,7 @@
     },
     {
       "path": "ide/packaging/test_p05_native_picker_repair.py",
-      "blob": "d7e54df32fb0c92ec6389584fd23f20106e5e10a"
+      "blob": "87679fa9114a64435f9f6e48798572c56b68be84"
     },
     {
       "path": "ide/packaging/test_p05_reviewed_workflow_successor.py",
@@ -5893,11 +5893,11 @@
     },
     {
       "path": "scripts/core01-verify-scope.mjs",
-      "blob": "95ed2a0fc0525b0c07c11b810b68ac95e2c281ce"
+      "blob": "1b8a5b92e4b29851335023d2dc448095f1397c1f"
     },
     {
       "path": "scripts/core01-verify-scope.test.mjs",
-      "blob": "9dd666c5f54f202d76c06c411cadd750d7e363e5"
+      "blob": "637ffdcbdaa3a7e3722ed0954c38af66558ec966"
     },
     {
       "path": "scripts/core01f-acceptance-reconcile.mjs",
