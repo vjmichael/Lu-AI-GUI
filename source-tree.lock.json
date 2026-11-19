@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "632a472998e38e15c3c3dc190fab0010ce0ffb73",
-  "trackedFileCount": 1973,
+  "sourceCommitBeforeLock": "05f4ff5290861c991ca55967b3a311ee099d4f95",
+  "trackedFileCount": 1975,
   "files": [
     {
       "path": ".gitattributes",
@@ -285,7 +285,7 @@
     },
     {
       "path": ".github/workflows/ide-group04-native.yml",
-      "blob": "e36b1eded9d68031d26e305f34e3e28903a99045"
+      "blob": "881b7b4f4e35eb9874b261270c27a5d993184dbc"
     },
     {
       "path": ".github/workflows/ide-group04d-source.yml",
@@ -405,7 +405,7 @@
     },
     {
       "path": ".github/workflows/ide-wo6-native-os-acceptance.yml",
-      "blob": "0c617c002bc86ccf702319d4515ebbb86bfe9262"
+      "blob": "7a5cf9f9fdf2c206639c442ac2cdd5a35a0f6067"
     },
     {
       "path": ".github/workflows/ide-wo7-installed-acceptance.yml",
@@ -1933,7 +1933,7 @@
     },
     {
       "path": "ide/app/src-tauri/build.rs",
-      "blob": "3bb3802f067a0150e01d232cef35e962948fac74"
+      "blob": "ceaf9de911cddf87e6a93887fdbbcce68c723da0"
     },
     {
       "path": "ide/app/src-tauri/capabilities/default.json",
@@ -2925,7 +2925,7 @@
     },
     {
       "path": "ide/docs/IDE_FIN02C_RUNTIME_INPUT_PREPARATION.md",
-      "blob": "9955d9bd2620dd3332d2570c95ca1f5a917c74ea"
+      "blob": "9500d255446dd5cf4dfe9a3234a81378d0809dd1"
     },
     {
       "path": "ide/docs/IDE_FIN02D_EXACT_TAURI_RUNTIME_LAYOUT.md",
@@ -3841,7 +3841,7 @@
     },
     {
       "path": "ide/packaging/prepare_fin02_runtime_pins.py",
-      "blob": "ebe7b3e211af07ac0136a91ab299c7aabc486113"
+      "blob": "e1d5b42043d9fe387bab5027de096385f51a4d84"
     },
     {
       "path": "ide/packaging/prepare_int02f_lsp_resources.py",
@@ -4013,7 +4013,7 @@
     },
     {
       "path": "ide/packaging/test_prepare_fin02_runtime_pins.py",
-      "blob": "3501110046e0fda23e8761fdd443e3a61475fa4c"
+      "blob": "960245e22ecf255b88e2779a9ba5768d17bc6924"
     },
     {
       "path": "ide/packaging/test_prepare_lsp_candidate_review.py",
@@ -4469,7 +4469,7 @@
     },
     {
       "path": "ide/supervisor/WORKER_ACCEPTANCE.md",
-      "blob": "f0032dae92fbd4bc1f47f106c02b332dbdd29ca4"
+      "blob": "e55be4b20345d72de3759148339d1ae7605fc106"
     },
     {
       "path": "ide/supervisor/examples/d7_windows_acceptance.rs",
@@ -4504,8 +4504,16 @@
       "blob": "fba5177882a3ff039b042b94fbf76e882299f5e5"
     },
     {
+      "path": "ide/supervisor/examples/wo6_linux_interrupted_recovery.rs",
+      "blob": "08a615bb342377786af23e6f98dfd2d48f6da9e8"
+    },
+    {
       "path": "ide/supervisor/examples/wo6_linux_native_build_acceptance.rs",
       "blob": "d55910ee5106980f779e568cb214d77a1924de37"
+    },
+    {
+      "path": "ide/supervisor/examples/wo6_linux_rustdoc_admission.rs",
+      "blob": "0a0f42afe6a639058858de1beb38071845e1eb69"
     },
     {
       "path": "ide/supervisor/examples/wo6_native_dap_acceptance.rs",
@@ -4669,7 +4677,7 @@
     },
     {
       "path": "ide/supervisor/src/linux_worker.rs",
-      "blob": "cbeba3f4739e677085a49718573aaed1105d3455"
+      "blob": "7ce34f94713a19660e7666c2cfe60bc601d84d62"
     },
     {
       "path": "ide/supervisor/src/live_output.rs",
