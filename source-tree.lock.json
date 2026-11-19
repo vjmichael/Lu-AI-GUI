@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "2faf560f1e744b171aae04464c7d928b57afbb5e",
-  "trackedFileCount": 1167,
+  "sourceCommitBeforeLock": "7a52b86391dc39ce1133e3d35e248c025069ed42",
+  "trackedFileCount": 1169,
   "files": [
     {
       "path": ".gitattributes",
@@ -125,7 +125,7 @@
     },
     {
       "path": ".github/workflows/lu-cp06er2-consolidated.yml",
-      "blob": "4b7f7e6d156c2eacd8da9ce4d9ce3a19bde0bc5e"
+      "blob": "817a40e660acd645016b536242b11007b8a63f2d"
     },
     {
       "path": ".github/workflows/lu-dev-offline-cache.yml",
@@ -482,6 +482,14 @@
     {
       "path": "benchmarks/e1/sec06d_cold_recovery_guest.sh",
       "blob": "c159fa8cfc0c01d17264e988eff896e7d3a7429c"
+    },
+    {
+      "path": "benchmarks/e1/sec06dr1_power_cut_guest.sh",
+      "blob": "034801298a972836e04f57b74166924c7ef17a57"
+    },
+    {
+      "path": "benchmarks/e1/sec06dr1_power_cut_observer.py",
+      "blob": "ea8f9d3c8ccc9c3580e090ead14553b5cb478b38"
     },
     {
       "path": "benchmarks/e1/test_agent01g_qwen_plan_probe.py",
@@ -841,7 +849,7 @@
     },
     {
       "path": "docs/LU_DEVELOPMENT_LEDGER.md",
-      "blob": "7473d4c72e684e0572c146cfdd6f1fccc68aa439"
+      "blob": "83aa2ededf3890864543773d0a764999e4e90012"
     },
     {
       "path": "docs/LU_E1_NATIVE_EVIDENCE_20261107.md",
@@ -2805,7 +2813,7 @@
     },
     {
       "path": "scripts/lu-sec06c-owned-native-launcher.py",
-      "blob": "5334ab638223ff2eb6512a7c1155ca787fe52eab"
+      "blob": "842c3a123b3987ca73699e6b9c68a5a65b0e73d7"
     },
     {
       "path": "scripts/lu-sec06c-owned-native-worker.py",
@@ -3593,7 +3601,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/native_background_scheduler.rs",
-      "blob": "6058caca9d08f633a04aabfc2fa9de85c68c407a"
+      "blob": "b2fd03222c1bda6bca3e6d022dc42e48d83abe2a"
     },
     {
       "path": "src-tauri/lu-core/src/native_background_status.rs",
@@ -3965,7 +3973,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/tasks.rs",
-      "blob": "ec4e54e9f3c765cef6ce1ab64e95c9884fa6b05b"
+      "blob": "dcffdf221e515b168efeb6b49668df552439eba0"
     },
     {
       "path": "src-tauri/lu-core/src/tools09_search_adversarial_tests.rs",
