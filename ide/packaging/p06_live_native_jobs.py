@@ -22,15 +22,14 @@ MAX_PAGES = 5
 PAGE_SIZE = 100
 
 # Each row is an independent *observation*, never release authorization.
-# Workflow path/jobs are pinned to the consolidated IDE 6D/6E/6F matrix.\n# This is source/native observation only: all real physical release gates stay open.
-GATES = (
-    ("IDE_merged_native", ".github/workflows/ide-group6f-integrated-native.yml",
-     ("original 6D/6E/6F native Git security and restart / windows-2022",
-      "original 6D/6E/6F native Git security and restart / ubuntu-24.04",
-      "integrated real Tauri compile and OS vault link / windows-2022",
-      "integrated real Tauri compile and OS vault link / ubuntu-24.04"),
-     "native_source"),
-)
+# Frozen 63-workflow parent cohort with exact workflow/job identities, including
+# both DEV-01 installed jobs and the independently failing B4/B5/WO9 gates.
+# The catalog is review-controlled source, not inferred from whatever is green.
+CATALOG = json.loads(Path(__file__).with_name("p06-observer-cohort.json").read_text(encoding="utf-8"))
+GATE_RECORDS = {row["gate"]: row for row in CATALOG["workflows"]}
+GATES = tuple((row["gate"], row["workflow"], tuple(job["name"] for job in row["jobs"]),
+               row["jobs"][0]["scope"] if len({job["scope"] for job in row["jobs"]}) == 1 else "mixed_hosted")
+              for row in CATALOG["workflows"])
 
 
 class EvidenceError(ValueError):
@@ -126,10 +125,10 @@ def get_runs(sha):
                       "workflow_runs")
 
 
-def get_jobs(run_id):
-    if isinstance(run_id, bool) or not isinstance(run_id, int) or run_id <= 0:
-        raise EvidenceError("invalid_run_id")
-    return _all_pages(f"/repos/{REPO}/actions/runs/{run_id}/jobs", "jobs")
+def get_jobs(run_id, attempt):
+    if any(isinstance(v, bool) or not isinstance(v, int) or v <= 0 for v in (run_id, attempt)):
+        raise EvidenceError("invalid_run_or_attempt_id")
+    return _all_pages(f"/repos/{REPO}/actions/runs/{run_id}/attempts/{attempt}/jobs", "jobs")
 
 
 def _eligible(run, sha, workflow):
@@ -149,92 +148,139 @@ def _eligible(run, sha, workflow):
 def _rank(run):
     attempt = run.get("run_attempt", 0)
     number = run.get("run_number", 0)
-    if not all(isinstance(x, int) and not isinstance(x, bool) and x >= 0
+    if not all(isinstance(x, int) and not isinstance(x, bool) and x > 0
                for x in (attempt, number)):
         raise EvidenceError("invalid_actions_run_attempt")
-    return (run.get("created_at", ""), number, attempt, run["id"])
+    created = run.get("created_at")
+    ident = run.get("id")
+    if not isinstance(created, str) or not re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", created):
+        raise EvidenceError("invalid_actions_run_timestamp")
+    if type(ident) is not int or ident <= 0:
+        raise EvidenceError("invalid_actions_run_id")
+    return (created, number, attempt, ident)
 
 
 def assess(sha, runs, jobs_for_run):
-    """Pure, testable classifier. jobs_for_run(id) is live API in production."""
+    """Pure classifier; exact run and attempt, exact jobs, no promotion authority."""
     sha_check(sha)
     if not isinstance(runs, list):
         raise EvidenceError("invalid_run_list")
-    if len({g[0] for g in GATES}) != len(GATES):
-        raise EvidenceError("duplicate_gate")
+    if (len(GATES) != 63 or len(GATE_RECORDS) != len(GATES)
+            or len({g[1] for g in GATES}) != len(GATES)):
+        raise EvidenceError("invalid_gate_catalog")
+    candidates_by_path = {}
+    seen_runs = set()
+    for run in runs:
+        if not isinstance(run, dict):
+            raise EvidenceError("invalid_run")
+        path = run.get("path")
+        if not isinstance(path, str) or not _eligible(run, sha, path):
+            continue
+        _rank(run)
+        if run["id"] in seen_runs:
+            raise EvidenceError("duplicate_run_id")
+        seen_runs.add(run["id"])
+        candidates_by_path.setdefault(path, []).append(run)
     observations = []
     for gate_id, workflow, required_jobs, kind in GATES:
-        candidates = [r for r in runs if isinstance(r, dict)
-                      and _eligible(r, sha, workflow)]
+        spec = GATE_RECORDS[gate_id]
+        if not required_jobs or len(set(required_jobs)) != len(required_jobs):
+            raise EvidenceError("invalid_required_jobs")
+        candidates = candidates_by_path.get(workflow, [])
         if not candidates:
-            observations.append({
-                "gate": gate_id, "kind": kind,
-                "workflow": workflow, "state": "missing",
-                "runId": None, "jobsObserved": 0,
-                "requiredJobs": list(required_jobs),
-            })
+            observations.append({"gate": gate_id, "kind": kind, "workflow": workflow,
+                                 "state": "missing", "runId": None, "runAttempt": None,
+                                 "jobsObserved": 0, "requiredJobs": list(required_jobs),
+                                 "jobObservations": [{"name": j["name"], "scope": j["scope"], "state": "missing"} for j in spec["jobs"]],
+                                 "additionalJobs": []})
             continue
         run = max(candidates, key=_rank)
-        if not isinstance(run["id"], int) or isinstance(run["id"], bool):
-            raise EvidenceError("invalid_actions_run_id")
         state = "pending"
-        names_seen = set()
-        jobs = jobs_for_run(run["id"])
+        jobs = jobs_for_run(run["id"], run["run_attempt"])
         if not isinstance(jobs, list):
             raise EvidenceError("invalid_job_list")
         required = set(required_jobs)
         matched = {}
+        names_seen, ids_seen = set(), set()
+        extras = []
+        invalid = None
         for job in jobs:
             if not isinstance(job, dict):
                 raise EvidenceError("invalid_job")
-            name = job.get("name")
+            name, ident = job.get("name"), job.get("id")
+            if not isinstance(name, str) or not name or type(ident) is not int or ident <= 0:
+                invalid = "invalid_job_identity"; break
+            if ident in ids_seen or name in names_seen:
+                invalid = "invalid_duplicate_job"; break
+            names_seen.add(name); ids_seen.add(ident)
+            if job.get("head_sha") != sha:
+                invalid = "invalid_job_sha"; break
+            if job.get("run_id") != run["id"] or type(job.get("run_attempt")) is not int or job.get("run_attempt") != run["run_attempt"]:
+                invalid = "invalid_job_attempt"; break
             if name in required:
-                if name in names_seen:
-                    state = "invalid_duplicate_job"
-                    break
-                names_seen.add(name)
-                if job.get("head_sha") not in (None, sha):
-                    state = "invalid_job_sha"
-                    break
                 matched[name] = job
-        else:
-            if run.get("status") == "completed":
-                if run.get("conclusion") != "success":
-                    state = "failed_or_cancelled"
-                elif set(matched) != required:
-                    state = "incomplete_jobs"
-                elif all(j.get("status") == "completed" and
-                         j.get("conclusion") == "success"
-                         for j in matched.values()):
-                    state = "observed_success"
-                else:
-                    state = "failed_or_incomplete_jobs"
-            elif run.get("status") in ("queued", "in_progress", "requested",
-                                       "waiting", "pending"):
-                state = "pending"
             else:
-                state = "invalid_run_state"
-        observations.append({
-            "gate": gate_id, "kind": kind, "workflow": workflow,
-            "state": state, "runId": run["id"],
-            "jobsObserved": len(matched),
-            "requiredJobs": list(required_jobs),
-        })
-    # Explicitly never issue permissions or imply signed installed release.
-    return {
-        "schema": SCHEMA, "repository": REPO, "sourceSha": sha,
-        "source": "github_actions_read_only_public_api",
-        "observations": observations,
-        "allObservedGatesSuccessful": all(
-            item["state"] == "observed_success" for item in observations
-        ),
-        "releaseApproved": False,
-        "signingIdentityReviewed": False,
-        "licenseLegalReviewApproved": False,
-        "protectedExecutionAccepted": False,
-        "nativeInstalledReleaseAccepted": False,
-        "gatePromotionAuthority": "none_read_only_snapshot",
-    }
+                extras.append({"name": name, "status": job.get("status"), "conclusion": job.get("conclusion"),
+                               "disposition": "non_ide_job_excluded" if spec["nonIdeJobsExcluded"] else "unreviewed_job"})
+        if invalid:
+            state = invalid
+        elif run.get("status") == "completed":
+            if run.get("conclusion") != "success":
+                state = "failed_or_cancelled"
+            elif set(matched) != required:
+                state = "incomplete_jobs"
+            elif extras and not spec["nonIdeJobsExcluded"]:
+                state = "unreviewed_additional_jobs"
+            elif all(j.get("status") == "completed" and j.get("conclusion") == "success" for j in matched.values()):
+                state = "observed_success"
+            else:
+                state = "failed_or_incomplete_jobs"
+        elif run.get("status") not in ("queued", "in_progress", "requested", "waiting", "pending"):
+            state = "invalid_run_state"
+        detail = []
+        for spec_job in spec["jobs"]:
+            j = matched.get(spec_job["name"])
+            job_state = ("missing" if j is None else "invalid_run_evidence" if invalid else
+                         "observed_success" if j.get("status") == "completed" and j.get("conclusion") == "success" else
+                         "pending" if j.get("status") in ("queued", "in_progress", "waiting", "pending", "requested") else
+                         "failed_or_incomplete")
+            detail.append({"name": spec_job["name"], "scope": spec_job["scope"], "state": job_state,
+                           "jobId": j.get("id") if j else None, "status": j.get("status") if j else None,
+                           "conclusion": j.get("conclusion") if j else None})
+        observations.append({"gate": gate_id, "kind": kind, "workflow": workflow,
+                             "state": state, "runId": run["id"], "runAttempt": run["run_attempt"],
+                             "jobsObserved": len(matched), "requiredJobs": list(required_jobs),
+                             "jobObservations": detail, "additionalJobs": extras})
+    unreviewed = []
+    for path, candidates in sorted(candidates_by_path.items()):
+        if path in {g[1] for g in GATES}:
+            continue
+        r = max(candidates, key=_rank)
+        unreviewed.append({"workflow": path, "runId": r["id"], "runAttempt": r["run_attempt"],
+                           "status": r.get("status"), "conclusion": r.get("conclusion"),
+                           "ideCandidate": path.startswith(".github/workflows/ide-")})
+    scope_summary = {}
+    for row in observations:
+        for j in row["jobObservations"]:
+            counts = scope_summary.setdefault(j["scope"], {"required": 0, "observedSuccess": 0, "notSuccessful": 0})
+            counts["required"] += 1
+            # A successful job within an invalid/missing/failed run is recorded individually but cannot promote an entire gate.
+            counts["observedSuccess" if j["state"] == "observed_success" else "notSuccessful"] += 1
+    return {"schema": SCHEMA, "repository": REPO, "sourceSha": sha,
+            "source": "github_actions_read_only_public_api", "catalogReferenceHead": CATALOG["referenceHead"],
+            "observations": observations, "unreviewedWorkflows": unreviewed,
+            "scopeSummary": scope_summary,
+            "allObservedGatesSuccessful": all(row["state"] == "observed_success" for row in observations)
+                                          and not any(r["ideCandidate"] for r in unreviewed),
+            "releaseApproved": False, "signingIdentityReviewed": False,
+            "licenseLegalReviewApproved": False, "protectedExecutionAccepted": False,
+            "nativeInstalledReleaseAccepted": False, "gatePromotionAuthority": "none_read_only_snapshot"}
+
+
+def run_snapshot_identity(runs):
+    # Require a stable latest-run/attempt/status snapshot before publishing.
+    return sorted((r.get("id"), r.get("run_attempt"), r.get("path"), r.get("status"), r.get("conclusion"))
+                  for r in runs)
 
 
 def main():
@@ -244,7 +290,10 @@ def main():
     args = parser.parse_args()
     try:
         sha = sha_check(args.sha)
-        report = assess(sha, get_runs(sha), get_jobs)
+        runs = get_runs(sha)
+        report = assess(sha, runs, get_jobs)
+        if run_snapshot_identity(runs) != run_snapshot_identity(get_runs(sha)):
+            raise EvidenceError("github_api_changed_during_snapshot")
         # GitHub observation is external data, not acceptance or a credential.
         args.output.parent.mkdir(parents=True, exist_ok=True)
         temp = args.output.with_name(args.output.name + ".tmp")

@@ -22,7 +22,7 @@ class SourceRevisionTests(unittest.TestCase):
         folder=self.root/"ide/packaging/upstream-licenses"
         folder.mkdir(parents=True)
         for name in UPSTREAM:
-            (folder/name).write_text(name+"\n"+"X"*220)
+            (folder/name).write_bytes((Path(__file__).parent/"upstream-licenses"/name).read_bytes())
         data=verify_sources(self.root,SHA,lambda url:(folder/next(name for name,(_,src) in SOURCES.items() if src==url)).read_bytes())
         self.receipt=self.root/"reviewed-receipt.json"
         self.receipt.write_text(json.dumps(data))

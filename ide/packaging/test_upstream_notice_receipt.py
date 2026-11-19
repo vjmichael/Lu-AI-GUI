@@ -14,7 +14,7 @@ class UpstreamNoticeTests(unittest.TestCase):
         self.folder.mkdir(parents=True)
         self.data = {}
         for name, (_, url) in SOURCES.items():
-            content = (name + " canonical upstream full license notice\n" + "A"*200).encode()
+            content = (Path(__file__).parent/"upstream-licenses"/name).read_bytes()
             (self.folder / name).write_bytes(content)
             self.data[url] = content
     def fetch(self, url):
@@ -102,9 +102,23 @@ class UpstreamNoticeTests(unittest.TestCase):
     def test_invalid_sha_refused(self):
         with self.assertRaisesRegex(NoticeDenied, "missing_exact_source_sha"):
             verify_sources(self.root, "main", self.fetch)
-    def test_windows_crlf_conversion_is_not_tampering(self):
+    def test_remote_crlf_conversion_is_denied(self):
         first = next(iter(self.data))
         self.data[first] = self.data[first].replace(b"\n", b"\r\n")
-        self.assertTrue(verify_sources(self.root, "a"*40, self.fetch)["allSourcesRetrieved"])
+        with self.assertRaisesRegex(NoticeDenied, "source_notice_differs_from_upstream"):
+            verify_sources(self.root, "a"*40, self.fetch)
+    def test_checkout_crlf_projection_is_denied_even_when_fetch_is_exact(self):
+        local = self.folder / next(iter(SOURCES))
+        local.write_bytes(local.read_bytes().replace(b"\n", b"\r\n"))
+        with self.assertRaisesRegex(NoticeDenied, "source_notice_differs_from_upstream"):
+            verify_sources(self.root, "a"*40, self.fetch)
+    def test_matching_forged_local_and_remote_bytes_are_denied(self):
+        name = next(iter(SOURCES))
+        url = SOURCES[name][1]
+        forged = b"fake canonical notice" * 100
+        (self.folder/name).write_bytes(forged)
+        self.data[url] = forged
+        with self.assertRaisesRegex(NoticeDenied, "source_notice_differs_from_upstream"):
+            verify_sources(self.root, "a"*40, self.fetch)
 if __name__ == "__main__":
     unittest.main()

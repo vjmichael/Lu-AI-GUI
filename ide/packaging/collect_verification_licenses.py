@@ -18,7 +18,8 @@ import shutil
 import subprocess
 import sys
 import tempfile
-from upstream_notice_receipt import SOURCES
+from upstream_notice_receipt import (SOURCES, NoticeDenied, exact_notice_digest,
+                                     read_receipt_json, validate_receipt)
 
 LICENSE_RE = re.compile(r"^(?:license|licence|copying|copyright|notice)(?:[._ -].*)?$", re.I)
 MAX_TEXT = 2_000_000
@@ -307,39 +308,25 @@ def bundle(repo_root:Path, output:Path, source_sha:str, require_complete=False, 
             target=stage/"upstream"/name
             target.parent.mkdir(parents=True,exist_ok=True)
             shutil.copyfile(path,target,follow_symlinks=False)
+            try:
+                exact_digest = exact_notice_digest(name, target.read_bytes())
+            except NoticeDenied as exc:
+                raise Denied(str(exc)) from exc
             copied.append({"path":target.relative_to(stage).as_posix(),
-                           "sha256":digest(target),"sourceRevision":source})
+                           "sha256":exact_digest,"sourceRevision":source})
         retrieval = None
         if upstream_receipt is not None:
             receipt_path = Path(upstream_receipt)
             if receipt_path.is_symlink() or not receipt_path.is_file() or receipt_path.stat().st_size > 50000:
                 raise Denied("invalid_upstream_fetch_receipt")
-            fetched = json.loads(receipt_path.read_text(encoding="utf-8"))
-            sources = fetched.get("sources", []) if isinstance(fetched, dict) else []
-            if (fetched.get("schema") != "lu.ide.upstream-notice-fetch.v1"
-                    or fetched.get("sourceSha") != source_sha
-                    or fetched.get("allSourcesRetrieved") is not True
-                    or fetched.get("releaseApproved") is not False
-                    or fetched.get("licenseLegalReviewApproved") is not False
-                    or not isinstance(sources, list)
-                    or len(sources) != len(UPSTREAM)
-                    or {row.get("name") for row in sources} != set(UPSTREAM)):
-                raise Denied("unverified_upstream_license_receipt")
-            verified = {row["name"]: row for row in sources}
-            for row in copied:
-                name = Path(row["path"]).name
-                item = verified[name]
-                source_rev, source_url = SOURCES[name]
-                if (item.get("sourceRevision") != source_rev
-                        or row.get("sourceRevision") != source_rev
-                        or item.get("sourceUrl") != source_url
-                        or item.get("matchesUpstream") is not True
-                        or item.get("bundledSourceSha256") != row["sha256"]
-                        or not isinstance(item.get("sourceSha256"), str)
-                        or len(item["sourceSha256"]) != 64):
-                    raise Denied("unverified_upstream_notice_source:" + name)
+            try:
+                fetched = read_receipt_json(receipt_path)
+                validate_receipt(fetched, source_sha,
+                                 {Path(row["path"]).name: row["sha256"] for row in copied})
+            except NoticeDenied as exc:
+                raise Denied(str(exc)) from exc
             target = stage / "upstream-fetch.json"
-            shutil.copyfile(receipt_path, target, follow_symlinks=False)
+            target.write_text(json.dumps(fetched, indent=2, sort_keys=True) + "\n", encoding="utf-8", newline="\n")
             retrieval = {"path": "upstream-fetch.json", "sha256": digest(target),
                          "sourceCount": len(UPSTREAM), "allSourcesRetrieved": True}
         results=[]

@@ -33,7 +33,7 @@ class UpstreamBundlingTests(unittest.TestCase):
         lic = self.root / "ide/packaging/upstream-licenses"
         lic.mkdir(parents=True)
         for name in UPSTREAM:
-            (lic / name).write_text("Original " + name + "\n" + "U"*230, encoding="utf-8")
+            (lic / name).write_bytes((Path(__file__).parent/"upstream-licenses"/name).read_bytes())
         self.proof = self.root / "upstream-source-receipt.json"
         def fetch(url):
             name = next(name for name, (_, pinned) in SOURCES.items() if pinned == url)

@@ -1,10 +1,12 @@
 """P04 complete source notice inventory rehash and exact native binary binding."""
 import json
+import hashlib
 from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import patch
-from collect_verification_licenses import bundle, UPSTREAM
+from collect_verification_licenses import bundle, UPSTREAM, Denied as CollectDenied
+from upstream_notice_receipt import SOURCES, verify_sources
 from verify_p04_license_bundle import audit, Denied
 
 HEAD="a"*40
@@ -24,7 +26,7 @@ class VerifyPackageNoticesTests(unittest.TestCase):
         lic=self.root/"ide/packaging/upstream-licenses"
         lic.mkdir(parents=True)
         for name in UPSTREAM:
-            (lic/name).write_text("License text\n"+"x"*300,encoding="utf-8")
+            (lic/name).write_bytes((Path(__file__).parent/"upstream-licenses"/name).read_bytes())
         (self.root/"ide/app/package-lock.json").write_text('{"lockfileVersion":3}'+" "*120,encoding="utf-8")
         (self.root/"ide/app/src-tauri/Cargo.lock").write_text("# auto-generated Cargo.lock\n"+"a"*120,encoding="utf-8")
         self.out=self.root/"notices"
@@ -54,5 +56,65 @@ class VerifyPackageNoticesTests(unittest.TestCase):
         path.write_text(json.dumps(data),encoding="utf-8")
         with self.assertRaisesRegex(Denied,"untrusted_notice_inventory"):
             audit(self.out,HEAD)
+    def strict_bundle(self, transform=None):
+        lic=self.root/"ide/packaging/upstream-licenses"
+        by_url={url:(lic/name).read_bytes() for name,(_,url) in SOURCES.items()}
+        receipt=verify_sources(self.root,HEAD,lambda url:by_url[url])
+        if transform: transform(receipt)
+        proof=self.root/"strict-proof.json"
+        proof.write_text(json.dumps(receipt),encoding="utf-8")
+        target=self.root/"strict-notices"
+        with patch("collect_verification_licenses.cargo_packages",return_value=([],[])):
+            bundle(self.root,target,HEAD,upstream_receipt=proof)
+        return target
+
+    def test_forged_remote_source_sha_denied_at_collect_and_bundle_audit(self):
+        for key,value in [("sourceSha256","0"*64),("sourceSha256","z"*64),
+                          ("bundledSourceSha256","0"*64),("matchesUpstream",False),
+                          ("sourceRevision","main"),("sourceUrl","https://example.invalid/notice")]:
+            with self.subTest(key=key,value=value):
+                with self.assertRaises(CollectDenied):
+                    self.strict_bundle(lambda proof:proof["sources"][0].update({key:value}))
+        target=self.strict_bundle()
+        original=(target/"upstream-fetch.json").read_bytes()
+        inventory=target/"inventory.json"
+        original_inventory=inventory.read_bytes()
+        for key,value in [("sourceSha256","0"*64),("sourceSha256","z"*64),
+                          ("bundledSourceSha256","0"*64),("matchesUpstream",False),
+                          ("sourceRevision","main"),("sourceUrl","https://example.invalid/notice")]:
+            with self.subTest(auditKey=key,value=value):
+                proof=json.loads(original);proof["sources"][0][key]=value
+                raw=json.dumps(proof).encode();(target/"upstream-fetch.json").write_bytes(raw)
+                manifest=json.loads(original_inventory);manifest["upstreamRetrieval"]["sha256"]=hashlib.sha256(raw).hexdigest()
+                inventory.write_text(json.dumps(manifest),encoding="utf-8")
+                with self.assertRaises(Denied): audit(target,HEAD,require_upstream=True)
+        for field in ("releaseApproved","licenseLegalReviewApproved"):
+            proof=json.loads(original);proof[field]=True
+            raw=json.dumps(proof).encode();(target/"upstream-fetch.json").write_bytes(raw)
+            manifest=json.loads(original_inventory);manifest["upstreamRetrieval"]["sha256"]=hashlib.sha256(raw).hexdigest()
+            inventory.write_text(json.dumps(manifest),encoding="utf-8")
+            with self.assertRaises(Denied): audit(target,HEAD,require_upstream=True)
+
+    def test_rehashed_bundle_full_content_substitution_is_denied(self):
+        target=self.strict_bundle(); proof_file=target/"upstream-fetch.json"; inventory=target/"inventory.json"
+        proof=json.loads(proof_file.read_text());manifest=json.loads(inventory.read_text())
+        row=manifest["upstreamLicenses"][0];name=Path(row["path"]).name
+        fake=b"forged content"*100;digest=hashlib.sha256(fake).hexdigest()
+        (target/row["path"]).write_bytes(fake); row["sha256"]=digest
+        for record in proof["sources"]:
+            if record["name"]==name: record.update(sourceSha256=digest,bundledSourceSha256=digest)
+        raw=json.dumps(proof).encode();proof_file.write_bytes(raw)
+        manifest["upstreamRetrieval"]["sha256"]=hashlib.sha256(raw).hexdigest()
+        inventory.write_text(json.dumps(manifest),encoding="utf-8")
+        with self.assertRaisesRegex(Denied,"source_notice_differs_from_upstream"):audit(target,HEAD,require_upstream=True)
+
+    def test_duplicate_rows_and_duplicate_json_keys_denied(self):
+        with self.assertRaises(CollectDenied):
+            self.strict_bundle(lambda p:p["sources"].__setitem__(1,p["sources"][0]))
+        target=self.strict_bundle();proof_file=target/"upstream-fetch.json";inventory=target/"inventory.json"
+        raw=proof_file.read_bytes().replace(b'{',b'{"releaseApproved":true,',1)
+        proof_file.write_bytes(raw);manifest=json.loads(inventory.read_text())
+        manifest["upstreamRetrieval"]["sha256"]=hashlib.sha256(raw).hexdigest();inventory.write_text(json.dumps(manifest),encoding="utf-8")
+        with self.assertRaisesRegex(Denied,"invalid_receipt_json"):audit(target,HEAD,require_upstream=True)
 if __name__=="__main__":
     unittest.main()

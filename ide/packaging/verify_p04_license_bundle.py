@@ -10,7 +10,8 @@ import hashlib
 import json
 import os
 from pathlib import Path
-from upstream_notice_receipt import SOURCES
+from upstream_notice_receipt import (SOURCES, NoticeDenied, exact_notice_digest,
+                                     read_receipt_json, validate_receipt)
 import re
 import sys
 
@@ -73,22 +74,10 @@ def audit(root:Path,source_sha:str,require_complete=False,require_upstream=False
         receipt_path=safe_file(root, "upstream-fetch.json")
         if sha(receipt_path)!=fetched.get("sha256"):
             raise Denied("upstream_fetch_receipt_digest_drift")
-        proof=json.loads(receipt_path.read_text(encoding="utf-8"))
-        records=proof.get("sources", []) if isinstance(proof, dict) else []
-        if (proof.get("schema") != "lu.ide.upstream-notice-fetch.v1"
-                or proof.get("sourceSha") != source_sha
-                or proof.get("allSourcesRetrieved") is not True
-                or proof.get("releaseApproved") is not False
-                or not isinstance(records, list) or len(records) != 6):
-            raise Denied("untrusted_upstream_fetch_receipt")
-        compared={r.get("name"):r for r in records if isinstance(r, dict)}
-        if len(compared)!=6 or any(
-                (compared.get(Path(row["path"]).name, {}).get("bundledSourceSha256") != row["sha256"]
-                    or compared.get(Path(row["path"]).name, {}).get("sourceRevision") != row["sourceRevision"]
-                    or row.get("sourceRevision") != SOURCES[Path(row["path"]).name][0]
-                    or compared.get(Path(row["path"]).name, {}).get("sourceUrl") != SOURCES[Path(row["path"]).name][1])
-                for row in upstream):
-            raise Denied("upstream_fetch_notice_mismatch")
+        try:
+            proof=read_receipt_json(receipt_path)
+        except NoticeDenied as exc:
+            raise Denied(str(exc)) from exc
         expected.add("upstream-fetch.json")
     def validate_mark(item,source):
         rel,digest=item.get("path"),item.get("sha256")
@@ -99,10 +88,28 @@ def audit(root:Path,source_sha:str,require_complete=False,require_upstream=False
         if sha(safe_file(root,rel))!=digest.lower():
             raise Denied("license_file_digest_drift")
         expected.add(rel)
+    actual_digests={}
     for item in upstream:
         if not isinstance(item,dict) or not isinstance(item.get("sourceRevision"),str):
             raise Denied("upstream_notice_provenance_missing")
+        rel=item.get("path")
+        name=Path(rel).name if isinstance(rel,str) else None
+        if name not in SOURCES or rel != "upstream/"+name or name in actual_digests or item["sourceRevision"] != SOURCES[name][0]:
+            raise Denied("upstream_fetch_notice_mismatch")
         validate_mark(item,"upstream/")
+        try:
+            actual_digests[name]=exact_notice_digest(name,safe_file(root,rel).read_bytes())
+        except NoticeDenied as exc:
+            raise Denied(str(exc)) from exc
+        if item["sha256"] != actual_digests[name]:
+            raise Denied("upstream_fetch_notice_mismatch")
+    if set(actual_digests) != set(SOURCES):
+        raise Denied("upstream_fetch_notice_mismatch")
+    if fetched is not None:
+        try:
+            validate_receipt(proof,source_sha,actual_digests)
+        except NoticeDenied as exc:
+            raise Denied(str(exc)) from exc
     if not isinstance(locks,list) or len(locks)>2:
         raise Denied("invalid_resolved_dependency_lock_inventory")
     seen_managers=set()

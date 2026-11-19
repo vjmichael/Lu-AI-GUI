@@ -1,0 +1,1143 @@
+{
+  "schema": "lu.ide.p06.observer-cohort.v1",
+  "referenceHead": "e066faf9cf866163c65bc43d7a7efa3093cde810",
+  "scope": "63 workflow paths identified via paginated exact-parent Actions snapshot; required job names derived from frozen workflow source. Hosted observation only. Core-only jobs in shared source-identity workflow are not IDE acceptance.",
+  "workflows": [
+    {
+      "gate": "IDE_merged_native",
+      "workflow": ".github/workflows/ide-group6f-integrated-native.yml",
+      "jobs": [
+        {
+          "name": "original 6D/6E/6F native Git security and restart / ubuntu-24.04",
+          "workflowJobKey": "original-native-git-matrix",
+          "scope": "native_source"
+        },
+        {
+          "name": "original 6D/6E/6F native Git security and restart / windows-2022",
+          "workflowJobKey": "original-native-git-matrix",
+          "scope": "native_source"
+        },
+        {
+          "name": "integrated real Tauri compile and OS vault link / ubuntu-24.04",
+          "workflowJobKey": "desktop-link-and-native-vault",
+          "scope": "native_source"
+        },
+        {
+          "name": "integrated real Tauri compile and OS vault link / windows-2022",
+          "workflowJobKey": "desktop-link-and-native-vault",
+          "scope": "native_source"
+        },
+        {
+          "name": "DEV-01 actual Debian GTK AT-SPI 867-file four-feature regression (not release)",
+          "workflowJobKey": "dev01-modern-real-installed-linux",
+          "scope": "hosted_installed"
+        },
+        {
+          "name": "DEV-01 actual NSIS WebView2 UIA 867-file four-feature regression (not release)",
+          "workflowJobKey": "dev01-modern-real-installed-windows",
+          "scope": "hosted_installed"
+        }
+      ],
+      "nonIdeJobsExcluded": false
+    },
+    {
+      "gate": "ide-appcontainer-windows",
+      "workflow": ".github/workflows/ide-appcontainer-windows.yml",
+      "jobs": [
+        {
+          "name": "appcontainer",
+          "workflowJobKey": "appcontainer",
+          "scope": "protected_native_checks"
+        }
+      ],
+      "nonIdeJobsExcluded": false
+    },
+    {
+      "gate": "ide-b2-durable-drafts-native",
+      "workflow": ".github/workflows/ide-b2-durable-drafts-native.yml",
+      "jobs": [
+        {
+          "name": "exact-source-native-draft-recovery (windows-2022)",
+          "workflowJobKey": "exact-source-native-draft-recovery",
+          "scope": "native_source"
+        },
+        {
+          "name": "exact-source-native-draft-recovery (ubuntu-24.04)",
+          "workflowJobKey": "exact-source-native-draft-recovery",
+          "scope": "native_source"
+        }
+      ],
+      "nonIdeJobsExcluded": false
+    },
+    {
+      "gate": "ide-b2-installed-editor-linux",
+      "workflow": ".github/workflows/ide-b2-installed-editor-linux.yml",
+      "jobs": [
+        {
+          "name": "linux-installed-deb",
+          "workflowJobKey": "linux-installed-deb",
+          "scope": "hosted_installed"
+        }
+      ],
+      "nonIdeJobsExcluded": false
+    },
+    {
+      "gate": "ide-b2-installed-editor-windows",
+      "workflow": ".github/workflows/ide-b2-installed-editor-windows.yml",
+      "jobs": [
+        {
+          "name": "installed-unsigned-native-ui",
+          "workflowJobKey": "installed-unsigned-native-ui",
+          "scope": "hosted_installed"
+        }
+      ],
+      "nonIdeJobsExcluded": false
+    },
+    {
+      "gate": "ide-b3-current-stack-native",
+      "workflow": ".github/workflows/ide-b3-current-stack-native.yml",
+      "jobs": [
+        {
+          "name": "real-native-host-tauri-ui-b3 (windows-2022)",
+          "workflowJobKey": "real-native-host-tauri-ui-b3",
+          "scope": "native_source"
+        },
+        {
+          "name": "real-native-host-tauri-ui-b3 (ubuntu-24.04)",
+          "workflowJobKey": "real-native-host-tauri-ui-b3",
+          "scope": "native_source"
+        }
+      ],
+      "nonIdeJobsExcluded": false
+    },
+    {
+      "gate": "ide-b4-installed-editor-linux",
+      "workflow": ".github/workflows/ide-b4-installed-editor-linux.yml",
+      "jobs": [
+        {
+          "name": "linux-installed-deb",
+          "workflowJobKey": "linux-installed-deb",
+          "scope": "hosted_installed"
+        }
+      ],
+      "nonIdeJobsExcluded": false
+    },
+    {
+      "gate": "ide-b4-installed-editor-windows",
+      "workflow": ".github/workflows/ide-b4-installed-editor-windows.yml",
+      "jobs": [
+        {
+          "name": "installed-unsigned-native-ui",
+          "workflowJobKey": "installed-unsigned-native-ui",
+          "scope": "hosted_installed"
+        }
+      ],
+      "nonIdeJobsExcluded": false
+    },
+    {
+      "gate": "ide-b4-split-editor-native",
+      "workflow": ".github/workflows/ide-b4-split-editor-native.yml",
+      "jobs": [
+        {
+          "name": "actual-native-frontend-and-tauri (windows-2022)",
+          "workflowJobKey": "actual-native-frontend-and-tauri",
+          "scope": "native_source"
+        },
+        {
+          "name": "actual-native-frontend-and-tauri (ubuntu-24.04)",
+          "workflowJobKey": "actual-native-frontend-and-tauri",
+          "scope": "native_source"
+        }
+      ],
+      "nonIdeJobsExcluded": false
+    },
+    {
+      "gate": "ide-b5-large-project-native",
+      "workflow": ".github/workflows/ide-b5-large-project-native.yml",
+      "jobs": [
+        {
+          "name": "real-native-editor-bounded-workingset (windows-2022)",
+          "workflowJobKey": "real-native-editor-bounded-workingset",
+          "scope": "native_source"
+        },
+        {
+          "name": "real-native-editor-bounded-workingset (ubuntu-24.04)",
+          "workflowJobKey": "real-native-editor-bounded-workingset",
+          "scope": "native_source"
+        }
+      ],
+      "nonIdeJobsExcluded": false
+    },
+    {
+      "gate": "ide-continuity",
+      "workflow": ".github/workflows/ide-continuity.yml",
+      "jobs": [
+        {
+          "name": "continuity",
+          "workflowJobKey": "continuity",
+          "scope": "native_source"
+        }
+      ],
+      "nonIdeJobsExcluded": false
+    },
+    {
+      "gate": "ide-d7-windows-worker",
+      "workflow": ".github/workflows/ide-d7-windows-worker.yml",
+      "jobs": [
+        {
+          "name": "windows-worker",
+          "workflowJobKey": "windows-worker",
+          "scope": "native_source"
+        }
+      ],
+      "nonIdeJobsExcluded": false
+    },
+    {
+      "gate": "ide-d7b-native-acceptance",
+      "workflow": ".github/workflows/ide-d7b-native-acceptance.yml",
+      "jobs": [
+        {
+          "name": "hostile-native",
+          "workflowJobKey": "hostile-native",
+          "scope": "protected_native_checks"
+        },
+        {
+          "name": "pinned-offline-cargo",
+          "workflowJobKey": "pinned-offline-cargo",
+          "scope": "protected_native_checks"
+        }
+      ],
+      "nonIdeJobsExcluded": false
+    },
+    {
+      "gate": "ide-d7c-windows-capability",
+      "workflow": ".github/workflows/ide-d7c-windows-capability.yml",
+      "jobs": [
+        {
+          "name": "capability-worker-windows",
+          "workflowJobKey": "capability-worker-windows",
+          "scope": "protected_native_checks"
+        }
+      ],
+      "nonIdeJobsExcluded": false
+    },
+    {
+      "gate": "ide-d7d-protected-service",
+      "workflow": ".github/workflows/ide-d7d-protected-service.yml",
+      "jobs": [
+        {
+          "name": "native-windows-service",
+          "workflowJobKey": "native-windows-service",
+          "scope": "protected_native_checks"
+        },
+        {
+          "name": "crash-recovery-windows",
+          "workflowJobKey": "crash-recovery-windows",
+          "scope": "protected_native_checks"
+        },
+        {
+          "name": "pinned-offline-protected-cargo",
+          "workflowJobKey": "pinned-offline-protected-cargo",
+          "scope": "protected_native_checks"
+        },
+        {
+          "name": "service-loss-windows",
+          "workflowJobKey": "service-loss-windows",
+          "scope": "protected_native_checks"
+        }
+      ],
+      "nonIdeJobsExcluded": false
+    },
+    {
+      "gate": "ide-dev02-disposable-native-test-payload",
+      "workflow": ".github/workflows/ide-dev02-disposable-native-test-payload.yml",
+      "jobs": [
+        {
+          "name": "pinned-candidate-temporary-install (windows-2022, windows-x86_64)",
+          "workflowJobKey": "pinned-candidate-temporary-install",
+          "scope": "disposable_payload"
+        },
+        {
+          "name": "pinned-candidate-temporary-install (ubuntu-24.04, linux-x86_64)",
+          "workflowJobKey": "pinned-candidate-temporary-install",
+          "scope": "disposable_payload"
+        }
+      ],
+      "nonIdeJobsExcluded": false
+    },
+    {
+      "gate": "ide-dev02-full-native-resource-candidate",
+      "workflow": ".github/workflows/ide-dev02-full-native-resource-candidate.yml",
+      "jobs": [
+        {
+          "name": "whole-original-upstream-release-candidate (windows-2022, windows-x86_64)",
+          "workflowJobKey": "whole-original-upstream-release-candidate",
+          "scope": "candidate_resource"
+        },
+        {
+          "name": "whole-original-upstream-release-candidate (ubuntu-24.04, linux-x86_64)",
+          "workflowJobKey": "whole-original-upstream-release-candidate",
+          "scope": "candidate_resource"
+        },
+        {
+          "name": "compile-real-protected-os-api-not-execution (windows-2022, lsp-transport,protected-recovery-service)",
+          "workflowJobKey": "compile-real-protected-os-api-not-execution",
+          "scope": "native_source"
+        },
+        {
+          "name": "compile-real-protected-os-api-not-execution (ubuntu-24.04, lsp-transport,linux-worker)",
+          "workflowJobKey": "compile-real-protected-os-api-not-execution",
+          "scope": "native_source"
+        }
+      ],
+      "nonIdeJobsExcluded": false
+    },
+    {
+      "gate": "ide-dev02-native-closure-smoke",
+      "workflow": ".github/workflows/ide-dev02-native-closure-smoke.yml",
+      "jobs": [
+        {
+          "name": "original-native-provider-static-dependency-and-version (windows-2022, windows-x86_64)",
+          "workflowJobKey": "original-native-provider-static-dependency-and-version",
+          "scope": "candidate_resource"
+        },
+        {
+          "name": "original-native-provider-static-dependency-and-version (ubuntu-24.04, linux-x86_64)",
+          "workflowJobKey": "original-native-provider-static-dependency-and-version",
+          "scope": "candidate_resource"
+        }
+      ],
+      "nonIdeJobsExcluded": false
+    },
+    {
+      "gate": "ide-dev02-offline-lsp-review",
+      "workflow": ".github/workflows/ide-dev02-offline-lsp-review.yml",
+      "jobs": [
+        {
+          "name": "offline-review (windows-2022)",
+          "workflowJobKey": "offline-review",
+          "scope": "native_source"
+        },
+        {
+          "name": "offline-review (ubuntu-24.04)",
+          "workflowJobKey": "offline-review",
+          "scope": "native_source"
+        }
+      ],
+      "nonIdeJobsExcluded": false
+    },
+    {
+      "gate": "ide-dev02-project-problems-native-ci",
+      "workflow": ".github/workflows/ide-dev02-project-problems-native-ci.yml",
+      "jobs": [
+        {
+          "name": "exact-head-source (windows-2022)",
+          "workflowJobKey": "exact-head-source",
+          "scope": "native_source"
+        },
+        {
+          "name": "exact-head-source (ubuntu-24.04)",
+          "workflowJobKey": "exact-head-source",
+          "scope": "native_source"
+        }
+      ],
+      "nonIdeJobsExcluded": false
+    },
+    {
+      "gate": "ide-dev02-protected-multilang-native-ci",
+      "workflow": ".github/workflows/ide-dev02-protected-multilang-native-ci.yml",
+      "jobs": [
+        {
+          "name": "exact-head-frontend-native-host (windows-2022)",
+          "workflowJobKey": "exact-head-frontend-native-host",
+          "scope": "native_source"
+        },
+        {
+          "name": "exact-head-frontend-native-host (ubuntu-24.04)",
+          "workflowJobKey": "exact-head-frontend-native-host",
+          "scope": "native_source"
+        }
+      ],
+      "nonIdeJobsExcluded": false
+    },
+    {
+      "gate": "ide-dev02-python-semantic-candidate-ci",
+      "workflow": ".github/workflows/ide-dev02-python-semantic-candidate-ci.yml",
+      "jobs": [
+        {
+          "name": "genuine-standalone-provider-research (windows-2022)",
+          "workflowJobKey": "genuine-standalone-provider-research",
+          "scope": "provider_research"
+        },
+        {
+          "name": "genuine-standalone-provider-research (ubuntu-24.04)",
+          "workflowJobKey": "genuine-standalone-provider-research",
+          "scope": "provider_research"
+        }
+      ],
+      "nonIdeJobsExcluded": false
+    },
+    {
+      "gate": "ide-dev02-upstream-native-asset-intake",
+      "workflow": ".github/workflows/ide-dev02-upstream-native-asset-intake.yml",
+      "jobs": [
+        {
+          "name": "offline-archive-security (windows-2022)",
+          "workflowJobKey": "offline-archive-security",
+          "scope": "native_source"
+        },
+        {
+          "name": "offline-archive-security (ubuntu-24.04)",
+          "workflowJobKey": "offline-archive-security",
+          "scope": "native_source"
+        },
+        {
+          "name": "original-upstream-license-notices",
+          "workflowJobKey": "original-upstream-license-notices",
+          "scope": "dependency_provenance"
+        },
+        {
+          "name": "real-official-release-sha",
+          "workflowJobKey": "real-official-release-sha",
+          "scope": "native_source"
+        }
+      ],
+      "nonIdeJobsExcluded": false
+    },
+    {
+      "gate": "ide-dev03-5-job-lifecycle-native",
+      "workflow": ".github/workflows/ide-dev03-5-job-lifecycle-native.yml",
+      "jobs": [
+        {
+          "name": "native-lifecycle-contract (ubuntu-24.04)",
+          "workflowJobKey": "native-lifecycle-contract",
+          "scope": "native_source"
+        },
+        {
+          "name": "native-lifecycle-contract (windows-2022)",
+          "workflowJobKey": "native-lifecycle-contract",
+          "scope": "native_source"
+        }
+      ],
+      "nonIdeJobsExcluded": false
+    },
+    {
+      "gate": "ide-dev04-1-debug-target-review-native",
+      "workflow": ".github/workflows/ide-dev04-1-debug-target-review-native.yml",
+      "jobs": [
+        {
+          "name": "native-review (ubuntu-24.04)",
+          "workflowJobKey": "native-review",
+          "scope": "native_source"
+        },
+        {
+          "name": "native-review (windows-2022)",
+          "workflowJobKey": "native-review",
+          "scope": "native_source"
+        }
+      ],
+      "nonIdeJobsExcluded": false
+    },
+    {
+      "gate": "ide-dev04-2-build-binary-native",
+      "workflow": ".github/workflows/ide-dev04-2-build-binary-native.yml",
+      "jobs": [
+        {
+          "name": "native-receipt-binary (ubuntu-24.04)",
+          "workflowJobKey": "native-receipt-binary",
+          "scope": "native_source"
+        },
+        {
+          "name": "native-receipt-binary (windows-2022)",
+          "workflowJobKey": "native-receipt-binary",
+          "scope": "native_source"
+        }
+      ],
+      "nonIdeJobsExcluded": false
+    },
+    {
+      "gate": "ide-dev04-3-debug-symbol-native",
+      "workflow": ".github/workflows/ide-dev04-3-debug-symbol-native.yml",
+      "jobs": [
+        {
+          "name": "native-symbol-contract (ubuntu-24.04)",
+          "workflowJobKey": "native-symbol-contract",
+          "scope": "native_source"
+        },
+        {
+          "name": "native-symbol-contract (windows-2022)",
+          "workflowJobKey": "native-symbol-contract",
+          "scope": "native_source"
+        }
+      ],
+      "nonIdeJobsExcluded": false
+    },
+    {
+      "gate": "ide-dev04-4-native-project-dap",
+      "workflow": ".github/workflows/ide-dev04-4-native-project-dap.yml",
+      "jobs": [
+        {
+          "name": "exact-head-project-debug (ubuntu-24.04)",
+          "workflowJobKey": "exact-head-project-debug",
+          "scope": "native_source"
+        },
+        {
+          "name": "exact-head-project-debug (windows-2022)",
+          "workflowJobKey": "exact-head-project-debug",
+          "scope": "native_source"
+        }
+      ],
+      "nonIdeJobsExcluded": false
+    },
+    {
+      "gate": "ide-dev04-5c-installed-project-debug",
+      "workflow": ".github/workflows/ide-dev04-5c-installed-project-debug.yml",
+      "jobs": [
+        {
+          "name": "candidate-native-package-safety (ubuntu-24.04)",
+          "workflowJobKey": "candidate-native-package-safety",
+          "scope": "native_source"
+        },
+        {
+          "name": "candidate-native-package-safety (windows-2022)",
+          "workflowJobKey": "candidate-native-package-safety",
+          "scope": "native_source"
+        },
+        {
+          "name": "windows-installed-ui-contract",
+          "workflowJobKey": "windows-installed-ui-contract",
+          "scope": "native_ui_contract"
+        }
+      ],
+      "nonIdeJobsExcluded": false
+    },
+    {
+      "gate": "ide-dev04-5d-source-line",
+      "workflow": ".github/workflows/ide-dev04-5d-source-line.yml",
+      "jobs": [
+        {
+          "name": "bounded-source-coordinate-contract (ubuntu-24.04)",
+          "workflowJobKey": "bounded-source-coordinate-contract",
+          "scope": "native_source"
+        },
+        {
+          "name": "bounded-source-coordinate-contract (windows-2022)",
+          "workflowJobKey": "bounded-source-coordinate-contract",
+          "scope": "native_source"
+        }
+      ],
+      "nonIdeJobsExcluded": false
+    },
+    {
+      "gate": "ide-dev04-5d2-source-symbol-oracle",
+      "workflow": ".github/workflows/ide-dev04-5d2-source-symbol-oracle.yml",
+      "jobs": [
+        {
+          "name": "independent-real-debug-info (ubuntu-24.04)",
+          "workflowJobKey": "independent-real-debug-info",
+          "scope": "native_source"
+        },
+        {
+          "name": "independent-real-debug-info (windows-2022)",
+          "workflowJobKey": "independent-real-debug-info",
+          "scope": "native_source"
+        },
+        {
+          "name": "native-source-and-worker-compile (ubuntu-24.04)",
+          "workflowJobKey": "native-source-and-worker-compile",
+          "scope": "native_source"
+        },
+        {
+          "name": "native-source-and-worker-compile (windows-2022)",
+          "workflowJobKey": "native-source-and-worker-compile",
+          "scope": "native_source"
+        }
+      ],
+      "nonIdeJobsExcluded": false
+    },
+    {
+      "gate": "ide-dev04-5d3-kernel-line",
+      "workflow": ".github/workflows/ide-dev04-5d3-kernel-line.yml",
+      "jobs": [
+        {
+          "name": "linux-native-compiler",
+          "workflowJobKey": "linux-native-compiler",
+          "scope": "native_source"
+        },
+        {
+          "name": "windows-default-deny",
+          "workflowJobKey": "windows-default-deny",
+          "scope": "native_source"
+        },
+        {
+          "name": "source-authority-regression",
+          "workflowJobKey": "source-authority-regression",
+          "scope": "native_source"
+        }
+      ],
+      "nonIdeJobsExcluded": false
+    },
+    {
+      "gate": "ide-dev04-5d4-job-module",
+      "workflow": ".github/workflows/ide-dev04-5d4-job-module.yml",
+      "jobs": [
+        {
+          "name": "native-windows-pe-job-read-only",
+          "workflowJobKey": "native-windows-pe-job-read-only",
+          "scope": "native_source"
+        },
+        {
+          "name": "linux-regression",
+          "workflowJobKey": "linux-regression",
+          "scope": "native_source"
+        }
+      ],
+      "nonIdeJobsExcluded": false
+    },
+    {
+      "gate": "ide-dev04-5d4b-win-event-pdb",
+      "workflow": ".github/workflows/ide-dev04-5d4b-win-event-pdb.yml",
+      "jobs": [
+        {
+          "name": "windows-real-debug-event-pdb",
+          "workflowJobKey": "windows-real-debug-event-pdb",
+          "scope": "protected_native_checks"
+        },
+        {
+          "name": "windows-owned-job-thread-compiler",
+          "workflowJobKey": "windows-owned-job-thread-compiler",
+          "scope": "native_source"
+        },
+        {
+          "name": "linux-regression",
+          "workflowJobKey": "linux-regression",
+          "scope": "native_source"
+        }
+      ],
+      "nonIdeJobsExcluded": false
+    },
+    {
+      "gate": "ide-dev04-5d4c-real-lldb-line",
+      "workflow": ".github/workflows/ide-dev04-5d4c-real-lldb-line.yml",
+      "jobs": [
+        {
+          "name": "windows-code-contract-and-native-compile",
+          "workflowJobKey": "windows-code-contract-and-native-compile",
+          "scope": "native_source"
+        },
+        {
+          "name": "linux-does-not-inherit-windows-oracle",
+          "workflowJobKey": "linux-does-not-inherit-windows-oracle",
+          "scope": "native_source"
+        }
+      ],
+      "nonIdeJobsExcluded": false
+    },
+    {
+      "gate": "ide-dev04-5d4d-debug-port-owner-preflight",
+      "workflow": ".github/workflows/ide-dev04-5d4d-debug-port-owner-preflight.yml",
+      "jobs": [
+        {
+          "name": "windows-native-kernel-debug-port-parent",
+          "workflowJobKey": "windows-native-kernel-debug-port-parent",
+          "scope": "protected_native_checks"
+        },
+        {
+          "name": "linux-cgroup-build-not-affected",
+          "workflowJobKey": "linux-cgroup-build-not-affected",
+          "scope": "native_source"
+        }
+      ],
+      "nonIdeJobsExcluded": false
+    },
+    {
+      "gate": "ide-dev04-5d5-owner-event-native",
+      "workflow": ".github/workflows/ide-dev04-5d5-owner-event-native.yml",
+      "jobs": [
+        {
+          "name": "windows-pinned-llvm18-native",
+          "workflowJobKey": "windows-pinned-llvm18-native",
+          "scope": "protected_native_checks"
+        },
+        {
+          "name": "linux-default-regression",
+          "workflowJobKey": "linux-default-regression",
+          "scope": "native_source"
+        }
+      ],
+      "nonIdeJobsExcluded": false
+    },
+    {
+      "gate": "ide-e1-lsp-foundation",
+      "workflow": ".github/workflows/ide-e1-lsp-foundation.yml",
+      "jobs": [
+        {
+          "name": "e1-host (ubuntu-latest)",
+          "workflowJobKey": "e1-host",
+          "scope": "native_source"
+        },
+        {
+          "name": "e1-host (windows-latest)",
+          "workflowJobKey": "e1-host",
+          "scope": "native_source"
+        }
+      ],
+      "nonIdeJobsExcluded": false
+    },
+    {
+      "gate": "ide-e2-native-lsp",
+      "workflow": ".github/workflows/ide-e2-native-lsp.yml",
+      "jobs": [
+        {
+          "name": "native-source-compilation (windows-2025, lsp-transport,protected-recovery-service)",
+          "workflowJobKey": "native-source-compilation",
+          "scope": "native_source"
+        },
+        {
+          "name": "native-source-compilation (ubuntu-latest, lsp-transport,linux-worker)",
+          "workflowJobKey": "native-source-compilation",
+          "scope": "native_source"
+        },
+        {
+          "name": "protected-clangd-windows",
+          "workflowJobKey": "protected-clangd-windows",
+          "scope": "protected_native_checks"
+        },
+        {
+          "name": "delegated-clangd-linux",
+          "workflowJobKey": "delegated-clangd-linux",
+          "scope": "protected_native_checks"
+        }
+      ],
+      "nonIdeJobsExcluded": false
+    },
+    {
+      "gate": "ide-e2-supervised-lsp",
+      "workflow": ".github/workflows/ide-e2-supervised-lsp.yml",
+      "jobs": [
+        {
+          "name": "protocol-and-editor (ubuntu-latest)",
+          "workflowJobKey": "protocol-and-editor",
+          "scope": "native_source"
+        },
+        {
+          "name": "protocol-and-editor (windows-latest)",
+          "workflowJobKey": "protocol-and-editor",
+          "scope": "native_source"
+        },
+        {
+          "name": "windows-tauri-host",
+          "workflowJobKey": "windows-tauri-host",
+          "scope": "native_source"
+        },
+        {
+          "name": "unsigned-installed-desktop-smoke",
+          "workflowJobKey": "unsigned-installed-desktop-smoke",
+          "scope": "hosted_installed"
+        }
+      ],
+      "nonIdeJobsExcluded": false
+    },
+    {
+      "gate": "ide-e2-unsigned-installed-smoke",
+      "workflow": ".github/workflows/ide-e2-unsigned-installed-smoke.yml",
+      "jobs": [
+        {
+          "name": "installed-default-alpha",
+          "workflowJobKey": "installed-default-alpha",
+          "scope": "hosted_installed"
+        }
+      ],
+      "nonIdeJobsExcluded": false
+    },
+    {
+      "gate": "ide-fin03-6e05-native",
+      "workflow": ".github/workflows/ide-fin03-6e05-native.yml",
+      "jobs": [
+        {
+          "name": "exact source and native host (ubuntu-24.04)",
+          "workflowJobKey": "native-registered-origin",
+          "scope": "native_source"
+        },
+        {
+          "name": "exact source and native host (windows-2022)",
+          "workflowJobKey": "native-registered-origin",
+          "scope": "native_source"
+        }
+      ],
+      "nonIdeJobsExcluded": false
+    },
+    {
+      "gate": "ide-group06d01-native",
+      "workflow": ".github/workflows/ide-group06d01-native.yml",
+      "jobs": [
+        {
+          "name": "G06D native review, resolution, replay and restart / windows-2022",
+          "workflowJobKey": "exact-native",
+          "scope": "native_source"
+        },
+        {
+          "name": "G06D native review, resolution, replay and restart / ubuntu-24.04",
+          "workflowJobKey": "exact-native",
+          "scope": "native_source"
+        },
+        {
+          "name": "G06D exact-head Debian install, process restart, uninstall (not physical consent)",
+          "workflowJobKey": "installed-g06c04-debian-smoke",
+          "scope": "hosted_installed"
+        },
+        {
+          "name": "G06D exact-head NSIS install, process restart, uninstall (not physical consent)",
+          "workflowJobKey": "installed-g06c04-windows-smoke",
+          "scope": "hosted_installed"
+        }
+      ],
+      "nonIdeJobsExcluded": false
+    },
+    {
+      "gate": "ide-linux-26-installed-diagnostic",
+      "workflow": ".github/workflows/ide-linux-26-installed-diagnostic.yml",
+      "jobs": [
+        {
+          "name": "installed-linux-26-gtk-editor-rollback-and-zip",
+          "workflowJobKey": "installed-linux-26-gtk-editor-rollback-and-zip",
+          "scope": "supplemental_diagnostic"
+        }
+      ],
+      "nonIdeJobsExcluded": false
+    },
+    {
+      "gate": "ide-p02-native-checks",
+      "workflow": ".github/workflows/ide-p02-native-checks.yml",
+      "jobs": [
+        {
+          "name": "exact-head-native (ubuntu-24.04)",
+          "workflowJobKey": "exact-head-native",
+          "scope": "native_source"
+        },
+        {
+          "name": "exact-head-native (windows-2022)",
+          "workflowJobKey": "exact-head-native",
+          "scope": "native_source"
+        }
+      ],
+      "nonIdeJobsExcluded": false
+    },
+    {
+      "gate": "ide-p03-native-security-checks",
+      "workflow": ".github/workflows/ide-p03-native-security-checks.yml",
+      "jobs": [
+        {
+          "name": "native-security-source (ubuntu-24.04, lsp-transport,dap-transport,linux-worker)",
+          "workflowJobKey": "native-security-source",
+          "scope": "native_source"
+        },
+        {
+          "name": "native-security-source (windows-2025, lsp-transport,dap-transport,protected-recovery-service)",
+          "workflowJobKey": "native-security-source",
+          "scope": "native_source"
+        },
+        {
+          "name": "linux-delegation-rejection",
+          "workflowJobKey": "linux-delegation-rejection",
+          "scope": "protected_native_checks"
+        },
+        {
+          "name": "wo4-independent-kernel-witness",
+          "workflowJobKey": "wo4-independent-kernel-witness",
+          "scope": "protected_native_checks"
+        },
+        {
+          "name": "linux-hostile-bwrap",
+          "workflowJobKey": "linux-hostile-bwrap",
+          "scope": "protected_native_checks"
+        }
+      ],
+      "nonIdeJobsExcluded": false
+    },
+    {
+      "gate": "ide-p04-source-acceptance",
+      "workflow": ".github/workflows/ide-p04-source-acceptance.yml",
+      "jobs": [
+        {
+          "name": "source-and-hostile-evidence (ubuntu-24.04)",
+          "workflowJobKey": "source-and-hostile-evidence",
+          "scope": "native_source"
+        },
+        {
+          "name": "source-and-hostile-evidence (windows-2022)",
+          "workflowJobKey": "source-and-hostile-evidence",
+          "scope": "native_source"
+        }
+      ],
+      "nonIdeJobsExcluded": false
+    },
+    {
+      "gate": "ide-p05-consolidation-audit",
+      "workflow": ".github/workflows/ide-p05-consolidation-audit.yml",
+      "jobs": [
+        {
+          "name": "historical-source-and-critical-ci (ubuntu-24.04)",
+          "workflowJobKey": "historical-source-and-critical-ci",
+          "scope": "native_source"
+        },
+        {
+          "name": "historical-source-and-critical-ci (windows-2022)",
+          "workflowJobKey": "historical-source-and-critical-ci",
+          "scope": "native_source"
+        }
+      ],
+      "nonIdeJobsExcluded": false
+    },
+    {
+      "gate": "ide-p06-dependency-evidence",
+      "workflow": ".github/workflows/ide-p06-dependency-evidence.yml",
+      "jobs": [
+        {
+          "name": "resolved-dependency-and-notice-evidence (ubuntu-24.04)",
+          "workflowJobKey": "resolved-dependency-and-notice-evidence",
+          "scope": "dependency_provenance"
+        },
+        {
+          "name": "resolved-dependency-and-notice-evidence (windows-2022)",
+          "workflowJobKey": "resolved-dependency-and-notice-evidence",
+          "scope": "dependency_provenance"
+        }
+      ],
+      "nonIdeJobsExcluded": false
+    },
+    {
+      "gate": "ide-sandbox-windows",
+      "workflow": ".github/workflows/ide-sandbox-windows.yml",
+      "jobs": [
+        {
+          "name": "windows-job-containment",
+          "workflowJobKey": "windows-job-containment",
+          "scope": "protected_native_checks"
+        }
+      ],
+      "nonIdeJobsExcluded": false
+    },
+    {
+      "gate": "ide-supervisor-core",
+      "workflow": ".github/workflows/ide-supervisor-core.yml",
+      "jobs": [
+        {
+          "name": "core (ubuntu-latest)",
+          "workflowJobKey": "core",
+          "scope": "native_source"
+        },
+        {
+          "name": "core (windows-latest)",
+          "workflowJobKey": "core",
+          "scope": "native_source"
+        }
+      ],
+      "nonIdeJobsExcluded": false
+    },
+    {
+      "gate": "ide-supervisor-os-rights",
+      "workflow": ".github/workflows/ide-supervisor-os-rights.yml",
+      "jobs": [
+        {
+          "name": "windows-restricted-token",
+          "workflowJobKey": "windows-restricted-token",
+          "scope": "protected_native_checks"
+        },
+        {
+          "name": "linux-cgroup-delegation",
+          "workflowJobKey": "linux-cgroup-delegation",
+          "scope": "protected_native_checks"
+        }
+      ],
+      "nonIdeJobsExcluded": false
+    },
+    {
+      "gate": "ide-wo4-linux-source",
+      "workflow": ".github/workflows/ide-wo4-linux-source.yml",
+      "jobs": [
+        {
+          "name": "linux-source-only",
+          "workflowJobKey": "linux-source-only",
+          "scope": "native_source"
+        }
+      ],
+      "nonIdeJobsExcluded": false
+    },
+    {
+      "gate": "ide-wo6-build-test-dap",
+      "workflow": ".github/workflows/ide-wo6-build-test-dap.yml",
+      "jobs": [
+        {
+          "name": "dap-protocol-and-build-test-control (ubuntu-latest)",
+          "workflowJobKey": "dap-protocol-and-build-test-control",
+          "scope": "native_source"
+        },
+        {
+          "name": "dap-protocol-and-build-test-control (windows-2025)",
+          "workflowJobKey": "dap-protocol-and-build-test-control",
+          "scope": "native_source"
+        }
+      ],
+      "nonIdeJobsExcluded": false
+    },
+    {
+      "gate": "ide-wo6-native-desktop",
+      "workflow": ".github/workflows/ide-wo6-native-desktop.yml",
+      "jobs": [
+        {
+          "name": "windows-native-build-dispatch",
+          "workflowJobKey": "windows-native-build-dispatch",
+          "scope": "native_source"
+        },
+        {
+          "name": "linux-native-build-dispatch",
+          "workflowJobKey": "linux-native-build-dispatch",
+          "scope": "native_source"
+        }
+      ],
+      "nonIdeJobsExcluded": false
+    },
+    {
+      "gate": "ide-wo6-native-os-acceptance",
+      "workflow": ".github/workflows/ide-wo6-native-os-acceptance.yml",
+      "jobs": [
+        {
+          "name": "native-windows-fixed-debugger",
+          "workflowJobKey": "native-windows-fixed-debugger",
+          "scope": "protected_native_checks"
+        },
+        {
+          "name": "native-linux-delegated-fixed-debugger",
+          "workflowJobKey": "native-linux-delegated-fixed-debugger",
+          "scope": "protected_native_checks"
+        },
+        {
+          "name": "native-linux-protected-cargo",
+          "workflowJobKey": "native-linux-protected-cargo",
+          "scope": "protected_native_checks"
+        }
+      ],
+      "nonIdeJobsExcluded": false
+    },
+    {
+      "gate": "ide-wo7-signed-release-preflight",
+      "workflow": ".github/workflows/ide-wo7-signed-release-preflight.yml",
+      "jobs": [
+        {
+          "name": "signed-release-source-negative (ubuntu-24.04)",
+          "workflowJobKey": "signed-release-source-negative",
+          "scope": "native_source"
+        },
+        {
+          "name": "signed-release-source-negative (windows-2022)",
+          "workflowJobKey": "signed-release-source-negative",
+          "scope": "native_source"
+        }
+      ],
+      "nonIdeJobsExcluded": false
+    },
+    {
+      "gate": "ide-wo8-installed-linux",
+      "workflow": ".github/workflows/ide-wo8-installed-linux.yml",
+      "jobs": [
+        {
+          "name": "linux-installed-deb",
+          "workflowJobKey": "linux-installed-deb",
+          "scope": "hosted_installed"
+        }
+      ],
+      "nonIdeJobsExcluded": false
+    },
+    {
+      "gate": "ide-wo8-installed-windows",
+      "workflow": ".github/workflows/ide-wo8-installed-windows.yml",
+      "jobs": [
+        {
+          "name": "installed-unsigned-native-ui",
+          "workflowJobKey": "installed-unsigned-native-ui",
+          "scope": "hosted_installed"
+        }
+      ],
+      "nonIdeJobsExcluded": false
+    },
+    {
+      "gate": "ide-wo8-source-safety",
+      "workflow": ".github/workflows/ide-wo8-source-safety.yml",
+      "jobs": [
+        {
+          "name": "linux-static-native-test-harness",
+          "workflowJobKey": "linux-static-native-test-harness",
+          "scope": "native_source"
+        },
+        {
+          "name": "windows-parse-real-native-gui-test",
+          "workflowJobKey": "windows-parse-real-native-gui-test",
+          "scope": "native_source"
+        }
+      ],
+      "nonIdeJobsExcluded": false
+    },
+    {
+      "gate": "ide-wo9-advanced-workflows",
+      "workflow": ".github/workflows/ide-wo9-advanced-workflows.yml",
+      "jobs": [
+        {
+          "name": "native-workflow-revision-guard (ubuntu-24.04)",
+          "workflowJobKey": "native-workflow-revision-guard",
+          "scope": "native_source"
+        },
+        {
+          "name": "native-workflow-revision-guard (windows-2022)",
+          "workflowJobKey": "native-workflow-revision-guard",
+          "scope": "native_source"
+        },
+        {
+          "name": "protected-workflow-native-feature-compile (ubuntu-24.04)",
+          "workflowJobKey": "protected-workflow-native-feature-compile",
+          "scope": "native_source"
+        },
+        {
+          "name": "protected-workflow-native-feature-compile (windows-2022)",
+          "workflowJobKey": "protected-workflow-native-feature-compile",
+          "scope": "native_source"
+        },
+        {
+          "name": "desktop-workflow-ui",
+          "workflowJobKey": "desktop-workflow-ui",
+          "scope": "native_source"
+        }
+      ],
+      "nonIdeJobsExcluded": false
+    },
+    {
+      "gate": "ide-wo9-installed-native",
+      "workflow": ".github/workflows/ide-wo9-installed-native.yml",
+      "jobs": [
+        {
+          "name": "installed-windows-git-portfolio",
+          "workflowJobKey": "installed-windows-git-portfolio",
+          "scope": "hosted_installed"
+        },
+        {
+          "name": "installed-linux-gtk-zip",
+          "workflowJobKey": "installed-linux-gtk-zip",
+          "scope": "hosted_installed"
+        }
+      ],
+      "nonIdeJobsExcluded": false
+    },
+    {
+      "gate": "lu-repo01-full-source",
+      "workflow": ".github/workflows/lu-repo01-full-source.yml",
+      "jobs": [
+        {
+          "name": "verify-source",
+          "workflowJobKey": "verify-source",
+          "scope": "source_identity"
+        }
+      ],
+      "nonIdeJobsExcluded": true
+    }
+  ]
+}
