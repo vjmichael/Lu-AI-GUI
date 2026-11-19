@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "7a52b86391dc39ce1133e3d35e248c025069ed42",
-  "trackedFileCount": 1169,
+  "sourceCommitBeforeLock": "d637876fe0f98b8dbef5c2bdb2cfc91ce037f31c",
+  "trackedFileCount": 1172,
   "files": [
     {
       "path": ".gitattributes",
@@ -125,7 +125,7 @@
     },
     {
       "path": ".github/workflows/lu-cp06er2-consolidated.yml",
-      "blob": "817a40e660acd645016b536242b11007b8a63f2d"
+      "blob": "372cf9fe18f0d915e4dec20abac946a7229821f4"
     },
     {
       "path": ".github/workflows/lu-dev-offline-cache.yml",
@@ -492,6 +492,14 @@
       "blob": "ea8f9d3c8ccc9c3580e090ead14553b5cb478b38"
     },
     {
+      "path": "benchmarks/e1/sec06e_watchdog_guest.sh",
+      "blob": "dfe61040354434c8081d26986d04c830ed4f74af"
+    },
+    {
+      "path": "benchmarks/e1/sec06e_watchdog_observer.py",
+      "blob": "acf286799d5ec9a100a72a36ba37c91aa404fe39"
+    },
+    {
       "path": "benchmarks/e1/test_agent01g_qwen_plan_probe.py",
       "blob": "83d07a6930624a375f8ded7a1c826a2d454813c6"
     },
@@ -849,7 +857,7 @@
     },
     {
       "path": "docs/LU_DEVELOPMENT_LEDGER.md",
-      "blob": "83aa2ededf3890864543773d0a764999e4e90012"
+      "blob": "af899d917615dd05d9927df39229b15ff5892ca6"
     },
     {
       "path": "docs/LU_E1_NATIVE_EVIDENCE_20261107.md",
@@ -2809,11 +2817,11 @@
     },
     {
       "path": "scripts/lu-sec06c-owned-kernel-manager.py",
-      "blob": "6539570885c911c5f7056745dd01a2526b65d37b"
+      "blob": "82f3eca00c0672be49db9d3e511717560df86f1d"
     },
     {
       "path": "scripts/lu-sec06c-owned-native-launcher.py",
-      "blob": "842c3a123b3987ca73699e6b9c68a5a65b0e73d7"
+      "blob": "f921314f382682073bf5a1550aa44a320e4f3e49"
     },
     {
       "path": "scripts/lu-sec06c-owned-native-worker.py",
@@ -2962,6 +2970,10 @@
     {
       "path": "scripts/test-sec06c-reviewed-scan-progress.py",
       "blob": "c006d75c6ecd93b14a116261c029789ea43e8812"
+    },
+    {
+      "path": "scripts/test-sec06e-native-watchdog.py",
+      "blob": "b3281640ec1317a64f23b7761bc1fb52b01a0441"
     },
     {
       "path": "scripts/verify-agent01g-local-evidence.mjs",
