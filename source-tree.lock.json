@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "60a3ef5bf5a0bdb2e0772505c070895bd36b22e4",
+  "sourceCommitBeforeLock": "34db25f73598ec13f1d539459874095c81a42171",
   "trackedFileCount": 1973,
   "files": [
     {
@@ -133,7 +133,7 @@
     },
     {
       "path": ".github/workflows/ide-dev02-technical-installed-lsp.yml",
-      "blob": "0b55e5f43dae8ba2544003d5eed5ee142e88e6ec"
+      "blob": "b950f54a4c60fdb3b22c58d61d7fee23b21cb130"
     },
     {
       "path": ".github/workflows/ide-dev02-upstream-native-asset-intake.yml",
@@ -1689,7 +1689,7 @@
     },
     {
       "path": "ide/CHANGELOG.md",
-      "blob": "b43f3f9fc2832a4fcddd0bd4e7dde2d4a0da158c"
+      "blob": "bbd48edf7d64c008e37a869f2b0b44985dbf03a7"
     },
     {
       "path": "ide/CONTINUITY_PROTOCOL.md",
@@ -1701,7 +1701,7 @@
     },
     {
       "path": "ide/PROJECT_STATE.md",
-      "blob": "de4e4391435b9c1b04a82a2402a613d3c429fdb7"
+      "blob": "e0e79378b9646b53fd058cf966ff85aeb94d917e"
     },
     {
       "path": "ide/README.md",
@@ -2609,7 +2609,7 @@
     },
     {
       "path": "ide/ci/merge02-reviewed-native-boundaries.json",
-      "blob": "edaffd598085a29bc95e73f0c6c1c9d630c23b05"
+      "blob": "e2be6b8f1964c42a134cd25a0e7630f874778be2"
     },
     {
       "path": "ide/ci/test_verify_reviewed_native_boundaries.py",
@@ -3733,7 +3733,7 @@
     },
     {
       "path": "ide/packaging/ide-05b-r3-outside-cohort.json",
-      "blob": "8f2fa3bb2c71ae5f17929613820e589be42bc657"
+      "blob": "69f54b4c4b263c29c74c975316d25b6799ed8fb3"
     },
     {
       "path": "ide/packaging/ide-merge02-reviewed-lock-successor.json",
@@ -3829,7 +3829,7 @@
     },
     {
       "path": "ide/packaging/p06_live_native_jobs.py",
-      "blob": "f8e92884eb413680cadc349f22c8ae877c013315"
+      "blob": "ae40c83f9e195cc62e6ebda6dbf2bd56aac380e5"
     },
     {
       "path": "ide/packaging/p06_shipping_content.py",
@@ -3921,7 +3921,7 @@
     },
     {
       "path": "ide/packaging/test_ide_05b_r3_workflow_dispositions.py",
-      "blob": "a1b886e82efc3bc7f9d00f9b45d78bd700261a15"
+      "blob": "e700075b3d847b00c50b38afbf885e3353c2b9dc"
     },
     {
       "path": "ide/packaging/test_ide_merge02c_native_locks.py",
@@ -4005,7 +4005,7 @@
     },
     {
       "path": "ide/packaging/test_p06_technical_observation.py",
-      "blob": "aa7d77fe353625d9395446387489f4274e218e4a"
+      "blob": "42fce53129ec7a7fd6fa6cfc822a5d2f0408e27b"
     },
     {
       "path": "ide/packaging/test_p06_wo8_lock_wiring.py",
@@ -4297,7 +4297,7 @@
     },
     {
       "path": "ide/packaging/verify_technical_lsp_install.py",
-      "blob": "8961a523a8d5542fe9c2c90569e4af55ee22ed48"
+      "blob": "e8cc254cfa1841f82b6fca1e4c1c6e7b342fe3b8"
     },
     {
       "path": "ide/packaging/verify_wo7_candidate.py",
