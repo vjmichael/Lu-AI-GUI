@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "0bec955abaefa4e9c996019120eed2e77c231503",
-  "trackedFileCount": 1165,
+  "sourceCommitBeforeLock": "ab0537d4106df866075d24cae6ed78bf2f84842b",
+  "trackedFileCount": 1166,
   "files": [
     {
       "path": ".gitattributes",
@@ -472,6 +472,10 @@
       "blob": "86502856b2e3ea4099425eb8886e118dbf51eadb"
     },
     {
+      "path": "benchmarks/e1/sec06c_reviewed_scan_guardian_death.py",
+      "blob": "aa6ab46651a6fa8dc63de0ba3093ac8a411cb3b4"
+    },
+    {
       "path": "benchmarks/e1/sec06c_root_owned_systemd_boundary.py",
       "blob": "9f3f84cc7ffa0c0bbfbc0d0a3ee3c9735413b8e9"
     },
@@ -833,7 +837,7 @@
     },
     {
       "path": "docs/LU_DEVELOPMENT_LEDGER.md",
-      "blob": "f31ab84919197f5ad4e1b523d6a65a8e7397abfb"
+      "blob": "cc1883b2a76f697d9a749b971ee1d442095bfe83"
     },
     {
       "path": "docs/LU_E1_NATIVE_EVIDENCE_20261107.md",
@@ -2793,7 +2797,7 @@
     },
     {
       "path": "scripts/lu-sec06c-owned-kernel-manager.py",
-      "blob": "33805d123ce231a7fba8910dba2ef2204fec5bcd"
+      "blob": "6539570885c911c5f7056745dd01a2526b65d37b"
     },
     {
       "path": "scripts/lu-sec06c-owned-native-launcher.py",
@@ -3585,7 +3589,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/native_background_scheduler.rs",
-      "blob": "66fe2e057b2cad4bd2ea98fa7f6b228079b06144"
+      "blob": "40f618a99bb98237d6edec8e730939cc490fb0a6"
     },
     {
       "path": "src-tauri/lu-core/src/native_background_status.rs",
