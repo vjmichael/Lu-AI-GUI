@@ -47,8 +47,8 @@
     },
     {
       "path": "ide/app/src-tauri/src/lib.rs",
-      "sha": "7b1e326f2a8c9450c398e97fb7f2000697b52700",
-      "scope": "03G native dirty-layout confirmation and 03H parented WO9 commit dialog; exact mutation gate retained; installed acceptance open"
+      "sha": "f72ddbcdb407085a6e1b8d92473857650fb75db2",
+      "scope": "04K stage dialog explicitly parented to installed main window; existing one-use confirmation retained"
     },
     {
       "path": "ide/app/src-tauri/src/lsp_backend.rs",
@@ -86,14 +86,19 @@
       "scope": "03G test-only consent age regression; production consent authority unchanged; source-only"
     },
     {
+      "path": "ide/host/src/reviewed_git.rs",
+      "sha": "b0ae749153893e0fca1026e1a5949563429420ac",
+      "scope": "04K independently reopens exact index and commit parent/tree; existing resource and confirmation bounds retained; native acceptance pending"
+    },
+    {
       "path": "ide/host/tests/fin03_stash_save.rs",
       "sha": "90df81f8f5df31c7db1bbdaf52643f8e67efe323",
       "scope": "source or historical preservation test, not native acceptance"
     },
     {
       "path": "ide/packaging/audit_p05_reviewed_workflow_successor.py",
-      "sha": "4a9e7e7d5ca72b656551d2403272c0074cead627",
-      "scope": "03E exact E2 smoke lock-argument successor projection; original historical source and gates unchanged; not OS acceptance"
+      "sha": "4045a2f9605717cc482d0e0e06da53f558b3b285",
+      "scope": "04K exact prior two workflow projections; historical fingerprints and original tests retained"
     },
     {
       "path": "ide/packaging/b2_b4_installer_handoff.py",
@@ -132,8 +137,8 @@
     },
     {
       "path": "ide/packaging/test_p05_native_picker_repair.py",
-      "sha": "d7e54df32fb0c92ec6389584fd23f20106e5e10a",
-      "scope": "03B verifies actual native parent-child selection route; no filesystem authority granted"
+      "sha": "2f50cae81bf0ccf1b3d2d6b383124334ca5838b7",
+      "scope": "04K native staging/commit and split-editor regressions plus 04L actual PowerShell memory/message helper tests; no OS acceptance claim"
     },
     {
       "path": "ide/packaging/test_p05_reviewed_workflow_successor.py",

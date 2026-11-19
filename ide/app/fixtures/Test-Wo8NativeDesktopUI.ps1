@@ -89,6 +89,35 @@ public static class P04NativeWebViewWindows {
   public static extern IntPtr GetWindow(IntPtr hwnd, uint command);
   [DllImport("user32.dll")]
   public static extern void mouse_event(uint flags, uint dx, uint dy, uint data, UIntPtr extra);
+  // Read only visible text from native child HWNDs of the already-verified
+  // consent popup. WM_GETTEXT is bounded and cannot activate any control.
+  [DllImport("user32.dll")]
+  private static extern bool IsChild(IntPtr parent, IntPtr child);
+  [DllImport("user32.dll", CharSet=CharSet.Unicode, SetLastError=true)]
+  private static extern IntPtr SendMessageTimeout(IntPtr hwnd, uint msg,
+    UIntPtr wParam, [Out] StringBuilder text, uint flags, uint timeout, out UIntPtr result);
+  public static string[] OwnedConsentChildText(IntPtr hwnd, IntPtr owner, uint expectedPid) {
+    if (!IsOwnedConsentWindow(hwnd, owner, expectedPid)) return new string[0];
+    var children = new List<IntPtr>();
+    Enumeration callback = (child, data) => {
+      children.Add(child); return children.Count <= 64;
+    };
+    EnumChildWindows(hwnd, callback, IntPtr.Zero);
+    if (children.Count > 64) return new string[0];
+    var result = new List<string>();
+    foreach (var child in children) {
+      uint pid;
+      if (!IsOwnedConsentWindow(hwnd, owner, expectedPid)) return new string[0];
+      if (!IsChild(hwnd, child) || !IsWindowVisible(child) ||
+          GetWindowThreadProcessId(child, out pid) == 0 || pid != expectedPid) continue;
+      var buf = new StringBuilder(4096);
+      UIntPtr copied;
+      // SMTO_BLOCK | SMTO_ABORTIFHUNG; read-only native message.
+      if (SendMessageTimeout(child, 0x000D, new UIntPtr(4096), buf, 3, 80, out copied) != IntPtr.Zero &&
+          copied.ToUInt64() > 0 && copied.ToUInt64() < 4095) result.Add(buf.ToString());
+    }
+    return IsOwnedConsentWindow(hwnd, owner, expectedPid) ? result.ToArray() : new string[0];
+  }
   public static IntPtr[] RendererHandles(IntPtr top) {
     var results = new List<IntPtr>();
     Enumeration callback = (hwnd, data) => {
@@ -604,6 +633,63 @@ function Ensure-Wo9DependentsBlocked {
     Deny 'wo9_interrupted_or_cancelled_step_unlocked_dependents'
   }
 }
+# Validate the actual ordered-dictionary samples, not projected properties.
+function Get-B5MemoryPeaks($samples) {
+  if ($null -eq $samples -or @($samples).Count -lt 6) {Deny 'b5_missing_memory_samples'}
+  $rss=[long]0; $private=[long]0
+  $seen=[System.Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+  $stages=@('opened_large_main','opened_12_files','opened_24_files','opened_36_files','opened_48_files','after_explicit_save')
+  foreach ($sample in $samples) {
+    if ($sample -isnot [System.Collections.IDictionary] -or
+        !$sample.Contains('stage') -or !$sample.Contains('rssBytes') -or
+        !$sample.Contains('privateBytes') -or !$sample.Contains('observedProcessCount') -or
+        !$sample.Contains('scope') -or $sample['scope'] -cne 'installed-pid-and-live-Win32_Process-descendants' -or
+        $sample['stage'] -cnotin $stages -or !$seen.Add([string]$sample['stage'])) {Deny 'b5_invalid_memory_sample'}
+    foreach ($field in @('rssBytes','privateBytes','observedProcessCount')) {
+      $value=$sample[$field]
+      if (($value -isnot [int] -and $value -isnot [long]) -or $value -le 0) {Deny 'b5_invalid_memory_sample_value'}
+    }
+    if ($sample['observedProcessCount'] -gt 128) {Deny 'b5_unbounded_descendant_process_count'}
+    $rss=[Math]::Max($rss,[long]$sample['rssBytes'])
+    $private=[Math]::Max($private,[long]$sample['privateBytes'])
+  }
+  if ($seen.Count -ne $stages.Count) {Deny 'b5_incomplete_memory_stage_set'}
+  return [ordered]@{rssPeakObservedBytes=$rss;privatePeakObservedBytes=$private}
+}
+# A SHA witness must be a complete token; never reconstruct fragments.
+function Test-NativeConsentMessage([string[]]$texts,[string]$expected) {
+  if ([string]::IsNullOrWhiteSpace($expected)) {return $false}
+  $normalized=($expected -replace '\s+',' ').Trim()
+  foreach ($text in $texts) {
+    if ([string]::IsNullOrWhiteSpace($text) -or $text.Length -gt 16384) {continue}
+    $observed=($text -replace '\s+',' ').Trim()
+    if ($normalized -cmatch '^[0-9a-f]{64}$') {
+      if ($observed -cmatch ('(?<![0-9A-Fa-f])'+[regex]::Escape($normalized)+'(?![0-9A-Fa-f])')) {return $true}
+    } elseif ($observed.IndexOf($normalized,[StringComparison]::Ordinal) -ge 0) {return $true}
+  }
+  return $false
+}
+function Get-NativeConsentText($win,$desc) {
+  $texts=[System.Collections.Generic.List[string]]::new()
+  foreach ($item in @($win)+@($desc)) {
+    try {
+      if ($item.Current.IsOffscreen) {continue}
+      $name=[string]$item.Current.Name
+      if ($name.Length -le 16384) {$texts.Add($name)}
+      $pattern=$null
+      if ($item.TryGetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern,[ref]$pattern)) {
+        $value=[string]$pattern.Current.Value
+        if ($value.Length -le 16384) {$texts.Add($value)}
+      }
+      $pattern=$null
+      if ($item.TryGetCurrentPattern([System.Windows.Automation.TextPattern]::Pattern,[ref]$pattern)) {
+        $value=[string]$pattern.DocumentRange.GetText(16385)
+        if ($value.Length -le 16384) {$texts.Add($value)}
+      }
+    } catch {}
+  }
+  return $texts.ToArray()
+}
 function Confirm-NativeOneUseDialog([string]$titleFragment,[string]$approvalCaption,[string]$expectedMessage='', [IntPtr]$expectedOwnerHwnd=[IntPtr]::Zero) {
   # Real WO9 Windows TaskDialog: exact caption exposes UIA Text/Pane, not Button.
   # Only interact with a separate OS popup owned by this installed process.
@@ -611,7 +697,7 @@ function Confirm-NativeOneUseDialog([string]$titleFragment,[string]$approvalCapt
   $desktop=[System.Windows.Automation.AutomationElement]::RootElement
   $ownedRoots=0; $titleMatches=0; $buttonMatches=0
   $matchedTextPane=0; $unusableNativePopup=0; $unusableBounds=0
-  $unavailableNativeAction=0
+  $unavailableNativeAction=0; $messageMatches=0; $messageMissing=0; $nativeMessageMatches=0; $ambiguousControls=0
   while ((Get-Date) -lt $deadline) {
     if ($expectedOwnerHwnd -ne [IntPtr]::Zero) {
       # WO9: the installed popup was visible as a nested UIA Window, but
@@ -626,6 +712,10 @@ function Confirm-NativeOneUseDialog([string]$titleFragment,[string]$approvalCapt
           if ($nativeRoot) {$roots+=,$nativeRoot}
         } catch {}
       }
+      $roots=@($roots | Where-Object {
+        try {$_.Current.Name -ceq ('Lu IDE · '+$titleFragment)} catch {$false}
+      })
+      if ($roots.Count -ne 1) {Start-Sleep -Milliseconds 350; continue}
     } else {
       $roots=$desktop.FindAll([System.Windows.Automation.TreeScope]::Children,
         [System.Windows.Automation.Condition]::TrueCondition)
@@ -655,9 +745,35 @@ function Confirm-NativeOneUseDialog([string]$titleFragment,[string]$approvalCapt
         }
         $desc=$win.FindAll([System.Windows.Automation.TreeScope]::Descendants,
           [System.Windows.Automation.Condition]::TrueCondition)
+        if ($desc.Count -gt 512) {continue}
         if ($expectedMessage) {
-          $visibleText=@($desc | Where-Object { !$_.Current.IsOffscreen } | ForEach-Object { [string]$_.Current.Name }) -join ' '
-          if (($visibleText -replace '\s+',' ').IndexOf($expectedMessage,[StringComparison]::Ordinal) -lt 0) { continue }
+          $texts=@(Get-NativeConsentText $win $desc)
+          $matched=Test-NativeConsentMessage $texts $expectedMessage
+          if (!$matched -and $expectedOwnerHwnd -ne [IntPtr]::Zero) {
+            $nativeTexts=@([P04NativeWebViewWindows]::OwnedConsentChildText($hwnd,$expectedOwnerHwnd,[uint32]$proc.Id))
+            $matched=Test-NativeConsentMessage $nativeTexts $expectedMessage
+            if ($matched) {$nativeMessageMatches++}
+          }
+          # Non-hash prose can be split over UIA nodes in legacy dialogs;
+          # preserve the original visible-text path without joining a SHA.
+          if (!$matched -and $expectedOwnerHwnd -eq [IntPtr]::Zero -and
+              $expectedMessage -cnotmatch '^[0-9a-f]{64}$') {
+            $visibleNames=@($desc | Where-Object { !$_.Current.IsOffscreen } | ForEach-Object { [string]$_.Current.Name }) -join ' '
+            $matched=Test-NativeConsentMessage @($visibleNames) $expectedMessage
+          }
+          if (!$matched) {$messageMissing++; continue}
+          $messageMatches++
+        }
+        if ($expectedOwnerHwnd -ne [IntPtr]::Zero) {
+          $matches=@($desc | Where-Object {
+            try {
+              $_.Current.Name -ceq $approvalCaption -and $_.Current.IsEnabled -and !$_.Current.IsOffscreen -and
+                $_.Current.ControlType -in @([System.Windows.Automation.ControlType]::Button,
+                  [System.Windows.Automation.ControlType]::Text,[System.Windows.Automation.ControlType]::Pane)
+            } catch {$false}
+          })
+          # No choosing among indistinguishable native approval controls.
+          if ($matches.Count -ne 1) {$ambiguousControls++;continue}
         }
         foreach($child in $desc) {
           try {
@@ -725,7 +841,9 @@ function Confirm-NativeOneUseDialog([string]$titleFragment,[string]$approvalCapt
     ';button_candidates_'+$buttonMatches+';text_pane_candidates_'+$matchedTextPane+
     ';native_popup_unusable_'+$unusableNativePopup+
     ';unusable_bounds_'+$unusableBounds+
-    ';native_action_unavailable_'+$unavailableNativeAction)
+    ';native_action_unavailable_'+$unavailableNativeAction+
+    ';message_matches_'+$messageMatches+';message_missing_'+$messageMissing+
+    ';native_message_matches_'+$nativeMessageMatches+';ambiguous_controls_'+$ambiguousControls)
   Deny 'real_native_consent_dialog_not_observed'
 }
 try {
@@ -1789,8 +1907,9 @@ try {
          $data.memorySamples.Count -lt 6) {Deny 'b5_incomplete_installed_ui_metrics'}
       $data['openP95Ms']=B5-P95 $data.openRoundTripMs
       $data['switchP95Ms']=B5-P95 $data.switchRoundTripMs
-      $data['rssPeakObservedBytes']=($data.memorySamples | Measure-Object -Property rssBytes -Maximum).Maximum
-      $data['privatePeakObservedBytes']=($data.memorySamples | Measure-Object -Property privateBytes -Maximum).Maximum
+      $peaks=Get-B5MemoryPeaks $data.memorySamples
+      $data['rssPeakObservedBytes']=$peaks['rssPeakObservedBytes']
+      $data['privatePeakObservedBytes']=$peaks['privatePeakObservedBytes']
       $data | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $dest -Encoding UTF8
       if(!(Test-Path -LiteralPath $dest) -or (Get-Item -LiteralPath $dest).Length -lt 500) {
         Deny 'b5_actual_os_evidence_not_recorded'

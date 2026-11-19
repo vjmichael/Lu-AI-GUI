@@ -183,5 +183,72 @@ class NativePickerSourceTests(unittest.TestCase):
             self.assertNotIn("invoke_tauri",s.lower())
             self.assertNotIn("window.__TAURI_INTERNALS__",s)
             self.assertNotIn("localhost:3000",s)
+    def test_actual_windows_fixture_memory_and_consent_policy_in_powershell(self):
+        # Execute original helper ASTs; no Windows UI acceptance claimed.
+        import shutil, subprocess, tempfile
+        pwsh=shutil.which("pwsh")
+        if not pwsh:
+            self.skipTest("PowerShell runtime unavailable for helper execution")
+        ps = r'''
+param([Parameter(Mandatory=$true)][string]$Fixture)
+Set-StrictMode -Version Latest
+$ErrorActionPreference='Stop'
+$tokens=$null;$errors=$null
+$ast=[System.Management.Automation.Language.Parser]::ParseFile($Fixture,[ref]$tokens,[ref]$errors)
+if($errors.Count){throw 'fixture syntax invalid'}
+foreach($name in @('Deny','Get-B5MemoryPeaks','Test-NativeConsentMessage')) {
+  $func=@($ast.FindAll({param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst]},$true) | Where-Object Name -CEQ $name)
+  if($func.Count -ne 1){throw "missing or ambiguous helper $name"}
+  . ([scriptblock]::Create($func[0].Extent.Text))
+}
+# Compile the actual embedded C# P/Invoke declarations without invoking Win32.
+$src=[IO.File]::ReadAllText($Fixture)
+$marker="Add-Type -TypeDefinition @'"
+$start=$src.IndexOf($marker)+$marker.Length
+$end=$src.IndexOf("`n'@",$start)
+if($start -lt $marker.Length -or $end -lt $start){throw 'C# source not found'}
+Add-Type -TypeDefinition $src.Substring($start,$end-$start)
+$stages=@('opened_large_main','opened_12_files','opened_24_files','opened_36_files','opened_48_files','after_explicit_save')
+function Samples {
+  $a=@();for($i=0;$i -lt $stages.Count;$i++){
+    $a+=,[ordered]@{stage=$stages[$i];rssBytes=[long](3000000000+$i);privateBytes=[long](4000000000+5-$i);observedProcessCount=3;scope='installed-pid-and-live-Win32_Process-descendants'}
+  };return ,$a
+}
+function Assert($condition,[string]$label){if(!$condition){throw "failed: $label"};Write-Output "PASS $label"}
+function MustDeny([scriptblock]$f,[string]$label){$caught=$false;try {&$f | Out-Null}catch{if($_.Exception.Message -like 'WO8_NATIVE_UI_DENIED:*'){$caught=$true}else{throw}};Assert $caught $label}
+$a=Samples
+$originalDenied=$false
+try {$a | Measure-Object -Property rssBytes -Maximum -ErrorAction Stop | Out-Null}catch{$originalDenied=$true}
+Assert $originalDenied 'original ordered-dictionary Measure-Object failure reproduced'
+$p=Get-B5MemoryPeaks $a
+Assert (($p['rssPeakObservedBytes'] -eq 3000000005) -and ($p['privatePeakObservedBytes'] -eq 4000000005)) 'exact int64 peak aggregation'
+MustDeny {Get-B5MemoryPeaks @()} 'empty receipt refused'
+$b=Samples;$b[0].Remove('rssBytes');MustDeny {Get-B5MemoryPeaks $b} 'missing field refused'
+$b=Samples;$b[0]['rssBytes']='42';MustDeny {Get-B5MemoryPeaks $b} 'noninteger refused'
+$b=Samples;$b[0]['privateBytes']=[long]0;MustDeny {Get-B5MemoryPeaks $b} 'zero private bytes refused'
+$b=Samples;$b[0]['observedProcessCount']=129;MustDeny {Get-B5MemoryPeaks $b} 'unbounded process count refused'
+$b=Samples;$b[0]['stage']=$b[1]['stage'];MustDeny {Get-B5MemoryPeaks $b} 'duplicate stage refused'
+$b=Samples;$b[0]['scope']='entire machine';MustDeny {Get-B5MemoryPeaks $b} 'foreign measurement scope refused'
+$d='a'*64
+Assert (Test-NativeConsentMessage @("SHA-256 $d") $d) 'exact SHA token'
+Assert (!(Test-NativeConsentMessage @("SHA-256 b$d") $d)) 'prefixed SHA rejected'
+Assert (!(Test-NativeConsentMessage @("SHA-256 ${d}f") $d)) 'suffixed SHA rejected'
+Assert (!(Test-NativeConsentMessage @($d.Substring(0,32),$d.Substring(32)) $d)) 'fragmented SHA rejected'
+Assert (!(Test-NativeConsentMessage @('a'*16385) $d)) 'oversized text rejected'
+Assert (!(Test-NativeConsentMessage @('different consent') $d)) 'absent SHA rejected'
+Assert (Test-NativeConsentMessage @("Message: WO9 installed`nreviewed Git source") 'WO9 installed reviewed Git source') 'normalized exact prose'
+Assert (!(Test-NativeConsentMessage @('WO9 installed reviewed git source') 'WO9 installed reviewed Git source')) 'case-altered message rejected'
+Write-Output 'C# declaration compile PASS; Windows UIA and Win32 execution NOT tested'
+'''
+        with tempfile.TemporaryDirectory() as temp:
+            f=Path(temp)/"native-policy.ps1"
+            f.write_text(ps,encoding="utf-8")
+            observed=subprocess.run([pwsh,"-NoProfile","-NonInteractive","-File",str(f),
+                "-Fixture",str(ROOT/"ide/app/fixtures/Test-Wo8NativeDesktopUI.ps1")],
+                capture_output=True,text=True,timeout=60)
+            self.assertEqual(observed.returncode,0,observed.stdout+observed.stderr)
+            self.assertEqual(sum(line.startswith("PASS ") for line in observed.stdout.splitlines()),17)
+            self.assertIn("Windows UIA and Win32 execution NOT tested",observed.stdout)
+
 if __name__=="__main__":
     unittest.main()
