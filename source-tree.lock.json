@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "efcc27af780f8de6f15c577ed80c3dececd24942",
-  "trackedFileCount": 1164,
+  "sourceCommitBeforeLock": "0bec955abaefa4e9c996019120eed2e77c231503",
+  "trackedFileCount": 1165,
   "files": [
     {
       "path": ".gitattributes",
@@ -125,7 +125,7 @@
     },
     {
       "path": ".github/workflows/lu-cp06er2-consolidated.yml",
-      "blob": "20b126f1e045b4955736a062514382bf85ab2203"
+      "blob": "ad0339a6552f3e392512c5deae7014d87622d8c4"
     },
     {
       "path": ".github/workflows/lu-dev-offline-cache.yml",
@@ -833,7 +833,7 @@
     },
     {
       "path": "docs/LU_DEVELOPMENT_LEDGER.md",
-      "blob": "4cb4d9fee994f38ba25e5990d62d5a1f65cf47f7"
+      "blob": "f31ab84919197f5ad4e1b523d6a65a8e7397abfb"
     },
     {
       "path": "docs/LU_E1_NATIVE_EVIDENCE_20261107.md",
@@ -2793,7 +2793,7 @@
     },
     {
       "path": "scripts/lu-sec06c-owned-kernel-manager.py",
-      "blob": "993391ff87b0482d1777394db147b91b3809e95e"
+      "blob": "33805d123ce231a7fba8910dba2ef2204fec5bcd"
     },
     {
       "path": "scripts/lu-sec06c-owned-native-launcher.py",
@@ -2942,6 +2942,10 @@
     {
       "path": "scripts/stage-research-windows.ps1",
       "blob": "d207eba4ea560a02718753d91f20f1ffa805988c"
+    },
+    {
+      "path": "scripts/test-sec06c-reviewed-scan-progress.py",
+      "blob": "c006d75c6ecd93b14a116261c029789ea43e8812"
     },
     {
       "path": "scripts/verify-agent01g-local-evidence.mjs",
@@ -3581,7 +3585,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/native_background_scheduler.rs",
-      "blob": "dce309abc10a0b0a01efdbeaba6b2f60a30dcbe1"
+      "blob": "66fe2e057b2cad4bd2ea98fa7f6b228079b06144"
     },
     {
       "path": "src-tauri/lu-core/src/native_background_status.rs",
