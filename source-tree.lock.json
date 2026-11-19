@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "ab0537d4106df866075d24cae6ed78bf2f84842b",
-  "trackedFileCount": 1166,
+  "sourceCommitBeforeLock": "2faf560f1e744b171aae04464c7d928b57afbb5e",
+  "trackedFileCount": 1167,
   "files": [
     {
       "path": ".gitattributes",
@@ -125,7 +125,7 @@
     },
     {
       "path": ".github/workflows/lu-cp06er2-consolidated.yml",
-      "blob": "ad0339a6552f3e392512c5deae7014d87622d8c4"
+      "blob": "4b7f7e6d156c2eacd8da9ce4d9ce3a19bde0bc5e"
     },
     {
       "path": ".github/workflows/lu-dev-offline-cache.yml",
@@ -478,6 +478,10 @@
     {
       "path": "benchmarks/e1/sec06c_root_owned_systemd_boundary.py",
       "blob": "9f3f84cc7ffa0c0bbfbc0d0a3ee3c9735413b8e9"
+    },
+    {
+      "path": "benchmarks/e1/sec06d_cold_recovery_guest.sh",
+      "blob": "c159fa8cfc0c01d17264e988eff896e7d3a7429c"
     },
     {
       "path": "benchmarks/e1/test_agent01g_qwen_plan_probe.py",
@@ -837,7 +841,7 @@
     },
     {
       "path": "docs/LU_DEVELOPMENT_LEDGER.md",
-      "blob": "cc1883b2a76f697d9a749b971ee1d442095bfe83"
+      "blob": "7473d4c72e684e0572c146cfdd6f1fccc68aa439"
     },
     {
       "path": "docs/LU_E1_NATIVE_EVIDENCE_20261107.md",
@@ -3581,7 +3585,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/native_background_process.rs",
-      "blob": "6aea526dd1c1610180a636ff39dd0ceba7d5740e"
+      "blob": "2011cc3af82d47b0375995ab84c024f3a10a1c99"
     },
     {
       "path": "src-tauri/lu-core/src/native_background_result.rs",
@@ -3589,7 +3593,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/native_background_scheduler.rs",
-      "blob": "40f618a99bb98237d6edec8e730939cc490fb0a6"
+      "blob": "6058caca9d08f633a04aabfc2fa9de85c68c407a"
     },
     {
       "path": "src-tauri/lu-core/src/native_background_status.rs",
@@ -3961,7 +3965,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/tasks.rs",
-      "blob": "63a5fa2bdda9c0b0e86500b18d1933319817c84d"
+      "blob": "ec4e54e9f3c765cef6ce1ab64e95c9884fa6b05b"
     },
     {
       "path": "src-tauri/lu-core/src/tools09_search_adversarial_tests.rs",
@@ -4633,7 +4637,7 @@
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/os_owned_native.rs",
-      "blob": "46ade9a79520663fd9e7edbec2222b1182b04ed4"
+      "blob": "5125839aa475a03ad1054f273ec1cb9ad891f139"
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/os_owned_probe.rs",
