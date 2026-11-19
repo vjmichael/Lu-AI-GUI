@@ -151,7 +151,10 @@ def run(a):
         "--property=RestrictSUIDSGID=yes",
         "--property=CapabilityBoundingSet=CAP_SYS_ADMIN CAP_SETUID CAP_SETGID CAP_KILL",
         "--property=AmbientCapabilities=CAP_SETUID",
-        "--property=TasksMax=128","--property=MemoryMax=4294967296",
+        # TasksMax counts threads, not just processes. Chromium 1248's real
+        # sandboxed renderer startup exhausted the earlier 128-task limit.
+        # Keep a fixed browser-only ceiling; no unbounded PID delegation.
+        "--property=TasksMax=512","--property=MemoryMax=4294967296",
         "--property=RuntimeMaxSec=3900",
         # Unlike fixed offline scanners, this reviewed NetworkRead browser
         # requires networking; origins remain confined by the Playwright gate.

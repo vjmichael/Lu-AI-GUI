@@ -40,10 +40,17 @@ def original_command(bundle,launcher,nonce,profile,mode):
               str(pathlib.Path(os.environ["XAUTHORITY"]).resolve(strict=True))]
     return cmd,hashes,policy
 def write_durable(file,record):
-    fd=os.open(file,os.O_CREAT|os.O_EXCL|os.O_WRONLY|os.O_NOFOLLOW,0o600)
-    with os.fdopen(fd,"w",encoding="ascii") as out:
-        json.dump(record,out,sort_keys=True)
-        out.write("\n");out.flush();os.fsync(out.fileno())
+    # Publish only after the complete durable fixture record exists. An
+    # independent observer must never mistake an empty creation for readiness.
+    staging=file.with_name(file.name+".staging")
+    fd=os.open(staging,os.O_CREAT|os.O_EXCL|os.O_WRONLY|os.O_NOFOLLOW,0o600)
+    try:
+        with os.fdopen(fd,"w",encoding="ascii") as out:
+            json.dump(record,out,sort_keys=True)
+            out.write("\n");out.flush();os.fsync(out.fileno())
+        os.link(staging,file,follow_symlinks=False) # atomic, no replacement
+    finally:
+        staging.unlink()
     folder=os.open(file.parent,os.O_RDONLY|os.O_DIRECTORY)
     try:os.fsync(folder)
     finally:os.close(folder)

@@ -597,7 +597,8 @@ mod tests {
             "original Chromium, Node and root-owned leaf must still exist");
         let initial=worker.execute(BrowserOperation::Status,json!({}))
             .expect("genuine nonroot browser initial human-hide handshake");
-        assert_eq!(initial["ok"],true);
+        assert_eq!(initial["ok"],true,"original browser startup code: {}",
+            initial["error"]["code"].as_str().filter(|code|code.len()<=64&&code.bytes().all(|b|b.is_ascii_uppercase()||b==b'_')).unwrap_or("UNCLASSIFIED"));
         assert_eq!(initial["result"]["windowVisibility"],"HIDDEN");
         let shown=worker.execute(BrowserOperation::Show,json!({}))
             .expect("original Chromium human-visible request");

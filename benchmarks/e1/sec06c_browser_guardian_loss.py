@@ -28,6 +28,25 @@ def until_signalled(pid,fd,deadline):
         if signalled(fd) or not live(pid):return
         time.sleep(.03)
     reject("systemd-owned browser original PID survived root-manager loss")
+def wait_original_group_empty(unit_dir,deadline):
+    """Leader exit is not proof of recursive cleanup; wait for PID1's drain."""
+    while time.monotonic()<deadline:
+        try:
+            meta=unit_dir.lstat()
+            if not stat.S_ISDIR(meta.st_mode) or meta.st_uid!=0 or meta.st_mode&0o022:
+                reject("original browser service custody changed during cleanup")
+            records=(unit_dir/"cgroup.events").read_text().splitlines()
+            population=[s for s in records if s.startswith("populated ")]
+            if population==["populated 0"]:return
+            if population!=["populated 1"]:reject("invalid original kernel population observation")
+        except OSError as exc:
+            if exc.errno not in (2,19):raise
+            # ENOENT/ENODEV can be a concurrent kernel cgroup removal.
+            # Never treat a disappearing events file alone as a positive.
+            if not unit_dir.exists():return
+        time.sleep(.05)
+    reject("systemd kept original root-owned browser descendants")
+
 def find_exact_root_manager(unit_dir,nonce):
     expected="lu-sec06c-browser-"+nonce+".service"
     if unit_dir.name!=expected or unit_dir.is_symlink():
@@ -59,7 +78,7 @@ def original_manager_loss(bundle,launcher):
         if receipt.exists():reject("old browser nonce receipt already present")
         client=subprocess.Popen(cmd,stdin=subprocess.PIPE,stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,close_fds=True)
-        control=subprocess.Popen(["/bin/sleep","70"],stdin=subprocess.DEVNULL,
+        control=subprocess.Popen(["/bin/sleep","150"],stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
         fds=[]
         try:
@@ -107,10 +126,9 @@ def original_manager_loss(bundle,launcher):
                 reject("DEAD ROOT SUPERVISOR MINTED FALSE KERNEL_EMPTY=1 RECEIPT")
             if control.poll() is not None:
                 reject("unrelated process was killed by exact service cleanup")
-            if unit.exists() and (unit/"cgroup.events").is_file():
-                records=(unit/"cgroup.events").read_text().splitlines()
-                if "populated 1" in records:
-                    reject("systemd kept original root-owned browser descendants")
+            wait_original_group_empty(unit,time.monotonic()+25)
+            if receipt.exists():
+                reject("DEAD ROOT SUPERVISOR MINTED FALSE KERNEL_EMPTY=1 RECEIPT")
             # The interrupted first-party session may never grant a positive
             # custody witness or permit replay with the old nonce.
             try:client.stdin.close()
@@ -127,6 +145,8 @@ def original_manager_loss(bundle,launcher):
                 reject("old original root-manager-loss nonce was not denied by durable admission record")
             if receipt.exists() or runtime.exists() or spent.read_bytes()!=original_spent:
                 reject("denied replay changed original recovery evidence")
+            if control.poll() is not None:
+                reject("unrelated process was not preserved through completed cleanup")
             print("SEC06E_R1_BROWSER_SAME_BOOT_RECLAIM_AND_REPLAY_DENIED_PASS",flush=True)
             print("SEC06C_BROWSER_ORIGINAL_GUARDIAN_LOSS_FAIL_CLOSED_PASS=1 "
                 "original_root_manager_sigkill=1 distinct_chromium_node_pidfds=1 "

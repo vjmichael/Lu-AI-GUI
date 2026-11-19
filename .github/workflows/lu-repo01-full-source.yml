@@ -3144,7 +3144,8 @@ jobs:
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
           node scripts/verify-source-tree.mjs
-          python3 -m py_compile scripts/lu-sec06c-owned-browser-launcher.py scripts/lu-sec06c-owned-browser-manager.py scripts/lu-sec06c-owned-browser-worker.py benchmarks/e1/sec06c_browser_real_native.py benchmarks/e1/sec06c_browser_host_crash.py benchmarks/e1/sec06c_browser_guardian_loss.py
+          python3 -m py_compile scripts/lu-sec06c-owned-browser-launcher.py scripts/lu-sec06c-owned-browser-manager.py scripts/lu-sec06c-owned-browser-worker.py benchmarks/e1/sec06c_browser_real_native.py benchmarks/e1/sec06c_browser_host_crash.py benchmarks/e1/sec06c_browser_guardian_loss.py benchmarks/e1/sec06er1_browser_renderer_observer.py
+          bash -n benchmarks/e1/sec06er1_browser_guest.sh
           python3 benchmarks/e1/sec06c_browser_xauthority_contract.py
           cargo test --locked --manifest-path src-tauri/lu-win-worker-job/Cargo.toml --lib os_owned_browser -- --nocapture
           cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib browser_worker_supervisor -- --nocapture
@@ -3171,8 +3172,9 @@ jobs:
           sudo install -o root -g root -m 0755 scripts/lu-sec06c-owned-browser-launcher.py /usr/libexec/lu/lu-sec06c-launch-browser
           sudo install -o root -g root -m 0755 scripts/lu-sec06c-owned-browser-manager.py /usr/libexec/lu/lu-sec06c-owned-browser-manager
           sudo install -o root -g root -m 0755 scripts/lu-sec06c-owned-browser-worker.py /usr/libexec/lu/lu-sec06c-owned-browser-worker
+          sudo install -o root -g root -m 0755 benchmarks/e1/sec06er1_browser_renderer_observer.py /usr/libexec/lu/lu-sec06er1-browser-renderer-observer
           sudo install -o root -g root -m 0755 scripts/lu-sec06c-owned-kernel-manager.py /usr/libexec/lu/lu-sec06c-owned-kernel-manager
-          printf '%s ALL=(root) NOPASSWD: /usr/libexec/lu/lu-sec06c-launch-browser *\n' "$USER" | sudo tee /etc/sudoers.d/lu-sec06c-browser-ci >/dev/null
+          printf '%s ALL=(root) NOPASSWD: /usr/libexec/lu/lu-sec06c-launch-browser *, /usr/libexec/lu/lu-sec06er1-browser-renderer-observer *\n' "$USER" | sudo tee /etc/sudoers.d/lu-sec06c-browser-ci >/dev/null
           sudo chmod 0440 /etc/sudoers.d/lu-sec06c-browser-ci
           sudo visudo -cf /etc/sudoers.d/lu-sec06c-browser-ci
           # Ubuntu 24.04 blocks Chromium's user-namespace sandbox unless
@@ -3200,6 +3202,9 @@ jobs:
               --launcher /usr/libexec/lu/lu-sec06c-launch-browser \
               2>&1 | tee sec06c-browser-evidence/original-browser-kernel.log
           grep -Fq 'SEC06C_GENUINE_BROWSER_KERNEL_PASS=1' sec06c-browser-evidence/original-browser-kernel.log
+          grep -Fq 'SEC06C_CHROMIUM_REAL_USERNS_SECCOMP_PASS=1' sec06c-browser-evidence/original-browser-kernel.log
+          grep -Fq 'SEC06ER1_R1_ORIGINAL_BLANK_DOM_PASS' sec06c-browser-evidence/original-browser-kernel.log
+          grep -Fq 'SEC06ER1_R1_BROWSER_TASK_BUDGET_PASS limit=512' sec06c-browser-evidence/original-browser-kernel.log
           echo 'Actual OS-owned browser candidate; NO production package approval or release grant.' >> "$GITHUB_STEP_SUMMARY"
       - name: Execute compiled Rust browser adapter, host grants, human X11 handoff and journal restart
         shell: bash

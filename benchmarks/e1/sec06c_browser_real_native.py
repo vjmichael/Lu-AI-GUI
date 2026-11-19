@@ -106,47 +106,54 @@ def browser_call(proc,chrome_pid,operation):
             reject("original browser process denied "+operation+": "+str(frame.get("error")))
         return frame.get("result",{})
     reject("original browser operation did not answer")
-def genuine_renderer_userns_sandbox(chrome_pid,group,leaf):
-    """Independent kernel audit of a real Chromium renderer.
+def observe_fixture_renderer(bundle,port):
+    """Independent read-only DOM observation, only on the attested blank tab.
 
-    The original headed Chrome must NOT merely run without --no-sandbox.
-    A live renderer must be in Chrome's original root-owned cgroup while
-    owning a DIFFERENT user namespace and active seccomp-BPF (mode 2).
-    This never accepts a Playwright configuration field or self-reported
-    browser flag as security evidence.
+    An idle about:blank tab can be renderer-lazy. This fixed acceptance-only
+    probe attaches to the existing browser and evaluates a constant property;
+    it cannot spawn another Chromium, navigate, or accept model code.
     """
-    chrome_userns=pathlib.Path(f"/proc/{chrome_pid}/ns/user").readlink()
-    deadline=time.monotonic()+8
-    while time.monotonic()<deadline:
-        try:
-            candidates=(leaf/"cgroup.procs").read_text().split()
-        except OSError:
-            reject("kernel browser group vanished during sandbox observation")
-        for raw in candidates:
-            if not raw.isdecimal():continue
-            pid=int(raw)
-            if pid==chrome_pid or pid<=1:continue
-            try:
-                cmd=pathlib.Path(f"/proc/{pid}/cmdline").read_bytes()
-                if b"--type=renderer" not in cmd.split(b"\0"):continue
-                if b"--no-sandbox" in cmd or b"--disable-setuid-sandbox" in cmd:
-                    reject("renderer disabled original Chromium sandbox")
-                status=pathlib.Path(f"/proc/{pid}/status").read_text()
-                status_lines=dict(line.split(":",1) for line in status.splitlines()
-                                  if ":" in line)
-                mode=status_lines.get("Seccomp","").strip()
-                new_userns=pathlib.Path(f"/proc/{pid}/ns/user").readlink()
-                if membership(pid)!=group:reject("renderer escaped SEC06C root kernel leaf")
-                if mode!="2" or chrome_userns==new_userns:
-                    reject("genuine Chromium user namespace/seccomp not observed")
-                print("SEC06C_CHROMIUM_REAL_USERNS_SECCOMP_PASS=1 "
-                      "renderer_in_original_kernel_leaf=1 "
-                      "renderer_userns_distinct=1 seccomp_bpf=1",flush=True)
-                return
-            except (FileNotFoundError,ProcessLookupError):
-                continue
-        time.sleep(.05)
-    reject("no genuinely sandboxed Chromium renderer in original SEC06C leaf")
+    script=r"""
+import {pathToFileURL} from 'node:url';
+const provider=(await import(pathToFileURL(process.argv[1]).href)).chromium;
+const browser=await provider.connectOverCDP('http://127.0.0.1:'+process.argv[2],{timeout:10000});
+const pages=browser.contexts().flatMap(c=>c.pages()).filter(p=>p.url()==='about:blank');
+if(pages.length!==1)process.exit(2);
+if(await pages[0].evaluate(()=>document.documentElement.tagName)!=='HTML')process.exit(3);
+console.log('SEC06ER1_R1_ORIGINAL_BLANK_DOM_PASS');process.exit(0);
+"""
+    probe=subprocess.run([str(bundle/"node"),"--input-type=module","-e",script,
+        str(bundle/"node_modules/playwright/index.mjs"),str(port)],
+        stdin=subprocess.DEVNULL,capture_output=True,text=True,timeout=20)
+    if probe.returncode!=0 or probe.stdout.strip()!="SEC06ER1_R1_ORIGINAL_BLANK_DOM_PASS":
+        reject("original blank-tab DOM renderer observation failed")
+    print(probe.stdout.strip(),flush=True)
+
+def verify_browser_task_budget(unit):
+    """Read only the original service's genuine hierarchical PID controller."""
+    limit=(unit/"pids.max").read_text().strip()
+    current=int((unit/"pids.current").read_text().strip())
+    events=dict(line.split() for line in (unit/"pids.events").read_text().splitlines())
+    if limit!="512" or not 0<current<=512 or events.get("max")!="0":
+        reject("original browser task budget exhausted or not finitely enforced")
+    peakfile=unit/"pids.peak"
+    peak=int(peakfile.read_text().strip()) if peakfile.is_file() else current
+    if not current<=peak<=512:reject("original browser task high-water invalid")
+    print(f"SEC06ER1_R1_BROWSER_TASK_BUDGET_PASS limit={limit} current={current} peak={peak} limit_hits=0",flush=True)
+
+def genuine_renderer_userns_sandbox(chrome_pid,node_pid,nonce,group,leaf):
+    # The independent admin verifier is installed only in the disposable
+    # acceptance environment. It reads kernel identity not accessible to the
+    # ordinary original UID; opacity must never be called a positive witness.
+    if membership(chrome_pid)!=group or membership(node_pid)!=group or not leaf.is_dir():
+        reject("original admitted browser pair changed before renderer observation")
+    result=subprocess.run(["sudo","-n","/usr/libexec/lu/lu-sec06er1-browser-renderer-observer",
+        nonce,str(chrome_pid),str(node_pid)],stdin=subprocess.DEVNULL,
+        capture_output=True,text=True,timeout=15)
+    expected="SEC06C_CHROMIUM_REAL_USERNS_SECCOMP_PASS=1 renderer_in_original_kernel_leaf=1 renderer_userns_distinct=1 seccomp_bpf=1 exact_chromium_image=1"
+    if result.returncode!=0 or result.stdout.strip()!=expected:
+        reject("original renderer kernel witness absent: "+result.stderr[:200])
+    print(expected,flush=True)
 
 def main():
     if sys.platform!="linux" or UID==0:reject("requires actual unprivileged Linux host")
@@ -204,15 +211,18 @@ def main():
             pidfds=[os.pidfd_open(pid) for pid in browser_pids]
             try:
                 report=browser_call(proc,chrome_pid,"status")
-                genuine_renderer_userns_sandbox(chrome_pid,group,leaf)
                 if report.get("windowVisibility")!="HIDDEN":
                     reject("automatic-hide original Chromium not verified")
                 result=browser_call(proc,chrome_pid,"show_browser")
                 if result.get("windowVisibility")!="VISIBLE":
                     reject("human-show original Chromium not verified")
+                observe_fixture_renderer(bundle,port)
+                genuine_renderer_userns_sandbox(chrome_pid,node_pid,nonce,group,leaf)
+                verify_browser_task_budget(leaf.parent)
                 result=browser_call(proc,chrome_pid,"hide_browser")
                 if result.get("windowVisibility")!="HIDDEN":
                     reject("human-hide original Chromium not verified")
+                verify_browser_task_budget(leaf.parent)
                 proc.stdin.close() # Exact original Lu host lifetime EOF.
                 if proc.wait(timeout=50)!=0:
                     reject("root browser supervisor did not stop cleanly: "+

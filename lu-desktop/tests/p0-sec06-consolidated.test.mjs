@@ -570,7 +570,7 @@ test('SEC06C browser puts Chrome, Node and setsid descendants under one root-own
   }
   for(const value of ['--property=User=root','--property=Delegate=yes',
       '--property=KillMode=control-group','--property=NoNewPrivileges=yes',
-      '--property=AmbientCapabilities=CAP_SETUID','--property=TasksMax=128',
+      '--property=AmbientCapabilities=CAP_SETUID','--property=TasksMax=512',
       '--property=MemoryMax=4294967296']){
     assert.ok(launcher.includes(value),'missing fixed browser systemd property '+value);
   }
@@ -714,15 +714,18 @@ test('SEC06C Chromium userns is granted to a single root-owned installed path, n
 
 test('SEC06C genuine headed Chrome checks a live renderer user namespace AND seccomp',()=>{
   const native=readFileSync(join(root,'benchmarks/e1/sec06c_browser_real_native.py'),'utf8');
-  assert.match(native,/def genuine_renderer_userns_sandbox\(chrome_pid,group,leaf\)/);
-  assert.match(native,/\(leaf\/"cgroup\.procs"\)\.read_text\(\)/);
-  assert.match(native,/b"--type=renderer"/);
-  assert.match(native,/status_lines\.get\("Seccomp",""\)/);
-  assert.match(native,/chrome_userns==new_userns/);
-  assert.match(native,/membership\(pid\)!=group/);
-  assert.match(native,/SEC06C_CHROMIUM_REAL_USERNS_SECCOMP_PASS=1/);
-  assert.match(native,/genuine_renderer_userns_sandbox\(chrome_pid,group,leaf\)/);
-  assert.match(native,/if b"--no-sandbox" in cmd or b"--disable-setuid-sandbox" in cmd/);
+  const observer=readFileSync(join(root,'benchmarks/e1/sec06er1_browser_renderer_observer.py'),'utf8');
+  assert.match(native,/observe_fixture_renderer\(bundle,port\)/);
+  assert.match(native,/genuine_renderer_userns_sandbox\(chrome_pid,node_pid,nonce,group,leaf\)/);
+  assert.match(native,/\/usr\/libexec\/lu\/lu-sec06er1-browser-renderer-observer/);
+  assert.match(observer,/\(leaf\/"cgroup\.procs"\)\.read_text\(\)/);
+  assert.match(observer,/b"--type=renderer"/);
+  assert.match(observer,/status_lines\.get\("Seccomp",""\)/);
+  assert.match(observer,/chrome_userns!=new_userns/);
+  assert.match(observer,/membership\(pid\)==group/);
+  assert.match(observer,/same_image\(pid,BUNDLE\/'chrome'\)/);
+  assert.match(observer,/SEC06C_CHROMIUM_REAL_USERNS_SECCOMP_PASS=1/);
+  assert.match(observer,/b"--no-sandbox" not in tokens and b"--disable-setuid-sandbox" not in tokens/);
 });
 
 test('SEC06C OS-owned original PIDFD stall scenarios require genuine systemd subtree cleanup',()=>{
