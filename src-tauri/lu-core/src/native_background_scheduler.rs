@@ -1394,7 +1394,8 @@ mod tests{
         use sha2::{Digest,Sha256};
         let nonce=format!("{}-{}",std::process::id(),now_unix());
         let root=std::env::temp_dir().join(format!("lu-reviewed-native-{nonce}"));
-        std::fs::create_dir(&root).unwrap();
+        use std::os::unix::fs::DirBuilderExt;
+        std::fs::DirBuilder::new().mode(0o700).create(&root).unwrap();
         let root=root.canonicalize().unwrap();
         let exe=std::path::PathBuf::from("/usr/libexec/lu/lu-file-scan-worker-acceptance");
         let engine_sha=format!("{:x}",Sha256::digest(std::fs::read(&exe).unwrap()));
@@ -1453,6 +1454,66 @@ mod tests{
         assert_eq!(reopened.tick().unwrap(),0);
         println!("CP06ER2_ROOT_OWNED_SCHEDULER_PASS");
         drop(reopened);drop(process);drop(store);std::fs::remove_dir_all(root).unwrap();
+    }
+
+
+    /// Administrator-side fixture observes and SIGKILLs the exact live root
+    /// manager. This test never grants root operations to the Lu process.
+    #[cfg(target_os="linux")]
+    #[test]
+    #[ignore="requires isolated systemd guest and independent privileged observer"]
+    fn sec06c_vm_reviewed_scan_guardian_death(){
+        use crate::native_background_process::BackgroundProcessError;
+        use std::{fs,time::{Duration,Instant}};
+        let root=std::path::PathBuf::from(std::env::var_os("LU_SEC06C_VM_PROFILE").expect("private fixture directory"));
+        assert!(root.is_dir()&&root.join("tasks.sqlite").exists()==false);
+        let root=root.canonicalize().unwrap();
+        let exe=Path::new("/usr/libexec/lu/lu-file-scan-worker-acceptance");
+        let input=root.join("large.bin");fs::File::create(&input).unwrap().set_len(4*1024*1024*1024).unwrap();
+        let journal=root.join("tasks.sqlite");let db=root.join("schedule.sqlite");
+        let store=Arc::new(TaskStore::open(&journal).unwrap());
+        let process=Arc::new(BackgroundProcessSupervisor::new(Arc::clone(&store)));
+        let budget=ResourceBudget{workers:1,cpu:1,ram_mib:1024,gpu:0,vram_mib:0,disk:1,network:0};
+        let q=BackgroundScheduler::open(&db,Arc::clone(&store),Arc::clone(&process),budget).unwrap();
+        let chat=format!("c-{}","1".repeat(32));let turn=format!("g-{}","2".repeat(32));let id=format!("scan-{}","e".repeat(32));
+        q.enqueue_reviewed_scan(ReviewedScan::prepare_linux_with_executable(&id,&chat,&turn,&input,exe).unwrap()).unwrap();
+        assert_eq!(q.tick().unwrap(),1);
+        let deadline=Instant::now()+Duration::from_secs(80);
+        loop{
+            let row=store.get(&id).unwrap().unwrap();
+            assert_eq!(row.state,TaskState::Running);
+            if row.progress>0{break}
+            assert!(Instant::now()<deadline,"no genuine scan progress");std::thread::sleep(Duration::from_millis(2));
+        }
+        let nonce:String=rusqlite::Connection::open(&journal).unwrap().query_row("SELECT nonce FROM lu_task_linux_os_owned_native_admission WHERE task_id=?1",[&id],|r|r.get(0)).unwrap();
+        assert_eq!(nonce.len(),32);
+        fs::write(root.join("ready"),format!("{nonce}\n")).unwrap();
+        // Remain the original live host until the administrator kills the
+        // manager; only the production poll path can record uncertainty.
+        loop{
+            match process.poll(){
+                Err(BackgroundProcessError::ProcessUncertain)=>break,
+                Ok(_)=>{},other=>panic!("unexpected custody outcome: {other:?}"),
+            }
+            assert_eq!(store.get(&id).unwrap().unwrap().state,TaskState::Running);
+            assert!(Instant::now()<deadline,"no observed guardian loss");std::thread::sleep(Duration::from_millis(20));
+        }
+        assert_eq!(store.process_uncertainty(&id).unwrap().as_deref(),Some("OS_CUSTODY_UNVERIFIED"));
+        assert_eq!(q.tick(),Err(SchedulerError::WorkerControl));
+        assert_eq!(q.state_for(&id,&chat).unwrap().as_deref(),Some("RUNNING"));
+        assert!(process.cancel_owned_protected(&id,&chat).is_err());
+        assert!(store.verified_result(&id,&chat).unwrap().is_none());
+        drop(q);drop(process);drop(store);
+        let reopened=Arc::new(TaskStore::open(&journal).unwrap());
+        assert_eq!(reopened.reconcile_interrupted().unwrap(),1);
+        assert_eq!(reopened.get(&id).unwrap().unwrap().state,TaskState::Interrupted);
+        assert_eq!(reopened.process_uncertainty(&id).unwrap().as_deref(),Some("OS_CUSTODY_UNVERIFIED"));
+        assert!(reopened.resume(&id).is_err());assert!(reopened.verified_result(&id,&chat).unwrap().is_none());
+        let process=Arc::new(BackgroundProcessSupervisor::new(Arc::clone(&reopened)));
+        let q=BackgroundScheduler::open(&db,Arc::clone(&reopened),process,budget).unwrap();
+        assert_eq!(q.state_for(&id,&chat).unwrap().as_deref(),Some("NEEDS_REVIEW"));
+        assert_eq!(q.tick().unwrap(),0);
+        println!("SEC06C_VM_REVIEWED_SCAN_GUARDIAN_DEATH_FAIL_CLOSED_PASS");
     }
 
 }

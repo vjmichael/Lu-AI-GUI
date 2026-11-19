@@ -279,6 +279,31 @@ def finite_native(kind,arguments):
         return tuple(arguments) in P06_FIXED_PYTHON and p06_marker_valid()
     return False
 
+def reviewed_scan_path_as_origin(uid,arguments):
+    """Validate only scan metadata using the worker's FS credentials.
+
+    No file content, root directory mutation, capability extension or worker
+    launch occurs under the temporary filesystem identity. Restore and check
+    root FSUID/FSGID before kernel admission or any receipt operation.
+    """
+    if os.geteuid()!=0 or uid<=0:refuse("invalid original scan filesystem identity")
+    gid=pwd.getpwuid(uid).pw_gid
+    libc=ctypes.CDLL(None,use_errno=True)
+    for op in (libc.setfsuid,libc.setfsgid):
+        op.argtypes=[ctypes.c_int];op.restype=ctypes.c_int
+    if libc.setfsuid(-1)!=0 or libc.setfsgid(-1)!=0:
+        refuse("original root filesystem identity not intact")
+    try:
+        libc.setfsgid(gid)
+        if libc.setfsgid(-1)!=gid:refuse("original scan FSGID transition denied")
+        libc.setfsuid(uid)
+        if libc.setfsuid(-1)!=uid:refuse("original scan FSUID transition denied")
+        return finite_native("scan-file",arguments)
+    finally:
+        libc.setfsuid(0);libc.setfsgid(0)
+        if libc.setfsuid(-1)!=0 or libc.setfsgid(-1)!=0:
+            refuse("root filesystem identity not restored before kernel admission")
+
 def one_use_worker_args(args):
     if args.domain=="native":
         if (args.op not in OPS["native"] or not args.binary or not args.binary_sha
@@ -293,8 +318,11 @@ def one_use_worker_args(args):
                 refuse("protected acceptance-only Python source is not root-owned system Python")
         digest=hashlib.sha256(("\0".join([str(reviewed)]+args.arg)+"\0")
                               .encode("utf-8")).hexdigest()
-        if digest!=args.args_sha or not finite_native(args.op,args.arg):
+        if digest!=args.args_sha:
             refuse("native reviewed argument digest or finite kind changed")
+        valid=(reviewed_scan_path_as_origin(args.uid,args.arg) if args.op=="scan-file"
+               else finite_native(args.op,args.arg))
+        if not valid:refuse("native reviewed argument digest or finite kind changed")
         return [str(PYTHON),str(NATIVE_WORKER),"--nonce",args.nonce,
                 "--kind",args.op,"--binary",str(reviewed),
                 "--binary-sha",args.binary_sha,"--args-sha",args.args_sha,
