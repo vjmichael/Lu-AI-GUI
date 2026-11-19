@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "d637876fe0f98b8dbef5c2bdb2cfc91ce037f31c",
-  "trackedFileCount": 1172,
+  "sourceCommitBeforeLock": "760b39d1a06ce426705b1041f62a26f3ed664c6b",
+  "trackedFileCount": 1173,
   "files": [
     {
       "path": ".gitattributes",
@@ -125,7 +125,7 @@
     },
     {
       "path": ".github/workflows/lu-cp06er2-consolidated.yml",
-      "blob": "372cf9fe18f0d915e4dec20abac946a7229821f4"
+      "blob": "9072c21a5682d3fef6f876b20ece5697552d8913"
     },
     {
       "path": ".github/workflows/lu-dev-offline-cache.yml",
@@ -453,7 +453,7 @@
     },
     {
       "path": "benchmarks/e1/sec06c_browser_guardian_loss.py",
-      "blob": "714e090cf70330c74ac7c9f8c8b5ae3ee21efc0b"
+      "blob": "30283a04695b1dc635efe724980f2dd8b86be078"
     },
     {
       "path": "benchmarks/e1/sec06c_browser_host_crash.py",
@@ -489,7 +489,7 @@
     },
     {
       "path": "benchmarks/e1/sec06dr1_power_cut_observer.py",
-      "blob": "ea8f9d3c8ccc9c3580e090ead14553b5cb478b38"
+      "blob": "ed5e6da045582e8a342ad4b9f62c53a479ec056e"
     },
     {
       "path": "benchmarks/e1/sec06e_watchdog_guest.sh",
@@ -497,7 +497,7 @@
     },
     {
       "path": "benchmarks/e1/sec06e_watchdog_observer.py",
-      "blob": "acf286799d5ec9a100a72a36ba37c91aa404fe39"
+      "blob": "153374b4629005f908720d58aa154e2544ff9c72"
     },
     {
       "path": "benchmarks/e1/test_agent01g_qwen_plan_probe.py",
@@ -857,7 +857,7 @@
     },
     {
       "path": "docs/LU_DEVELOPMENT_LEDGER.md",
-      "blob": "af899d917615dd05d9927df39229b15ff5892ca6"
+      "blob": "645f5cc3554822f419c3746db1117d75519493d2"
     },
     {
       "path": "docs/LU_E1_NATIVE_EVIDENCE_20261107.md",
@@ -2797,15 +2797,15 @@
     },
     {
       "path": "scripts/lu-sec06c-owned-browser-launcher.py",
-      "blob": "b65f5a3fb142f9c4fa8995769015829556d4b1a3"
+      "blob": "41ba550cf495e10c6c6659d0830b47125cbf0d49"
     },
     {
       "path": "scripts/lu-sec06c-owned-browser-manager.py",
-      "blob": "0fc3faf3af6396442fd87299be11cee248dcd786"
+      "blob": "938aa4adcbf3fa5d0bd895bc5fde260fddf5020f"
     },
     {
       "path": "scripts/lu-sec06c-owned-browser-worker.py",
-      "blob": "beb63c501a40a0dd54918f1dd4363d673c776025"
+      "blob": "6f814a2a874a98181a630c868b6af56bc75601f1"
     },
     {
       "path": "scripts/lu-sec06c-owned-git-launcher.py",
@@ -2817,15 +2817,15 @@
     },
     {
       "path": "scripts/lu-sec06c-owned-kernel-manager.py",
-      "blob": "82f3eca00c0672be49db9d3e511717560df86f1d"
+      "blob": "c106aec8821c6c8bc40acd71ddc346d93b6e473d"
     },
     {
       "path": "scripts/lu-sec06c-owned-native-launcher.py",
-      "blob": "f921314f382682073bf5a1550aa44a320e4f3e49"
+      "blob": "f249c422c8c7ae0fee3b64134306f6a7556be0c0"
     },
     {
       "path": "scripts/lu-sec06c-owned-native-worker.py",
-      "blob": "4eef0f3e69a4758a32c853b62fa0e896293d49c3"
+      "blob": "e98e7de5b8ee136868e51ff59c12afd9def2dd9e"
     },
     {
       "path": "scripts/lu-sec06c-owned-probe-launcher.py",
@@ -2970,6 +2970,10 @@
     {
       "path": "scripts/test-sec06c-reviewed-scan-progress.py",
       "blob": "c006d75c6ecd93b14a116261c029789ea43e8812"
+    },
+    {
+      "path": "scripts/test-sec06e-browser-admission.py",
+      "blob": "923af503e0fb7d1b89b7e61e89c0cbb7d0a56706"
     },
     {
       "path": "scripts/test-sec06e-native-watchdog.py",
