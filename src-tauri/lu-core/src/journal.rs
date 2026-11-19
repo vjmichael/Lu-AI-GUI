@@ -247,7 +247,7 @@ impl EffectJournal {
                 "WAV_PCM_DIRECT_V1"|"GIT_STATUS_UNSUPPORTED_V1"|
                 "GIT_HISTORY_UNSUPPORTED_V1"|"GIT_HISTORY_LOOSE_DAG_V1"|
             "GIT_HISTORY_OBJECT_DAG_V2"|"GIT_STATUS_INDEX_TREE_V1"|
-            "MP4_BOXES_DIRECT_V1"|"MP4_UNSUPPORTED_V1"|"FILE_TRANSFER_DIRECT_V1"|"FILE_CUSTODY_DIRECT_V1"|"ARCHIVE_TREE_DIRECT_V1"|"OFFICE_CREATE_DIRECT_V1"|"OFFICE_REVISION_DIRECT_V1"|"TAR_CREATE_DIRECT_V1"|"ARCHIVE_MEMBER_DIRECT_V1"){
+            "MP4_BOXES_DIRECT_V1"|"MP4_UNSUPPORTED_V1"|"FILE_TRANSFER_DIRECT_V1"|"FILE_CUSTODY_DIRECT_V1"|"ARCHIVE_TREE_DIRECT_V1"|"OFFICE_CREATE_DIRECT_V1"|"OFFICE_REVISION_DIRECT_V1"|"TAR_CREATE_DIRECT_V1"|"ARCHIVE_MEMBER_DIRECT_V1"|"BACKGROUND_JOB_CANCEL_DIRECT_V1"){
             return Err(JournalError::InvalidTransition)
         }
         let valid_sha=|s:&str|s.len()==64&&s.bytes().all(|b|
@@ -278,6 +278,7 @@ impl EffectJournal {
             (method=="ARCHIVE_TREE_DIRECT_V1"&&tool_id!="lu.archive.tree.extract")||
             (method=="TAR_CREATE_DIRECT_V1"&&tool_id!="lu.archive.linux.create")||
             (method=="ARCHIVE_MEMBER_DIRECT_V1"&&!matches!(tool_id.as_str(),"lu.archive.zip.extract"|"lu.archive.iso.extract"|"lu.archive.linux.extract"))||
+            (method=="BACKGROUND_JOB_CANCEL_DIRECT_V1"&&tool_id!="lu.bgcancel.run")||
             (method=="OFFICE_CREATE_DIRECT_V1"&&!matches!(tool_id.as_str(),"lu.docx.create"|"lu.pptx.create"|"lu.spreadsheet.create"))||
             (method=="OFFICE_REVISION_DIRECT_V1"&&!matches!(tool_id.as_str(),"lu.office.revisions.create"|"lu.office.batch.revision.create")){
             return Err(JournalError::InvalidTransition)

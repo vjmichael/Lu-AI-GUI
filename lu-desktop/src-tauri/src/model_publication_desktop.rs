@@ -88,3 +88,257 @@ pub(crate) fn try_model_background(app:&tauri::AppHandle,state:&Arc<crate::Deskt
     checkpoint()?;let answer=match result{Ok(report)=>report.answer,Err(_)=>"I could not verify that task's requested status or result in this conversation. No task was started, stopped or modified.".into()};
     ticket.commit_completed(sid,||{state.chats.append_progress(chat,gid,&answer)?;state.chats.complete_reviewed_if_not_revoked(chat,gid,watermark)})?;Ok(Some(answer))
 }
+
+/// CP-06E-R2-B1: finite original-human cancellation intent.
+/// No PID, executable, path, wildcard, compound command or model-authored
+/// target can enter this boundary. Launch remains deliberately disconnected.
+fn background_cancel_target(original:&str)->Option<&str>{
+    if original.len()>256||!original.is_ascii()||original.chars().any(char::is_control)
+        ||lu_core::capability_router::user_declines_tools(original){return None}
+    let s=original.trim().trim_end_matches(['.','?','!']);
+    let lower=s.to_ascii_lowercase();
+    let prefix=["cancel background task ","stop background task "].into_iter()
+        .find(|p|lower.starts_with(p))?;
+    let target=&s[prefix.len()..];
+    let suffix=target.strip_prefix("scan-")?;
+    if suffix.is_empty()||target.len()>96||!target.bytes().all(|b|
+        b.is_ascii_alphanumeric()||matches!(b,b'-'|b'_')){return None}
+    Some(target)
+}
+
+#[cfg(windows)]
+pub(crate) fn try_model_background_control(
+    app:&tauri::AppHandle,state:&Arc<crate::DesktopState>,sid:&str,chat:&str,gid:&str,
+    original:&str,ticket:&crate::generation_queue::Ticket,
+)->Result<Option<String>,String>{
+    use std::{collections::BTreeSet,time::{SystemTime,Duration}};
+    use sha2::{Digest,Sha256};
+    use serde_json::{json,Value};
+    use lu_core::{
+        contracts::{AuthorizationError,ProtoPayload,ToolAuthorizer,ToolDescriptor,ToolEffect,ToolInvocation},
+        conversation_authority::{AuthorizedCapability,BoundCallOrigin,ConversationAuthority,TaskAuthority},
+        journal::{EffectState,IndependentOutcomeVerdict},
+        model_json_boundary::parse_exact_boundary_object,
+        model_turn_journal::ModelAuditKind as K,
+        native_background_control::register_bound_background_cancel,
+        policy::{CapabilityGrant,PolicyEngine},
+        registry::NativeToolRegistry,
+        supervised_tool_generation::ModelStepGenerator,
+        wire::{self,proto},
+    };
+    let Some(target)=background_cancel_target(original) else{return Ok(None)};
+    const NAME:&str="lu_background_cancel";
+    const TOOL:&str="lu.bgcancel.run";
+    let verifier=crate::turn_authority::PersistedHumanTurn::current_chat(&state.chats,chat,gid,original);
+    let cancel=Cancellation::default();
+    let watermark=state.chats.p0_auth_requested_watermark(chat)?;
+    let checkpoint=||->Result<(),String>{
+        ticket.verify_active_foreground(sid,chat,gid)?;
+        if cancel.is_cancelled()||ticket.cancelled()||state.chats.p0_auth_requested_watermark(chat)?!=watermark
+            ||!verifier.verify_user_turn(chat,gid){return Err("Cancelled original task control".into())}
+        if state.supervisor.status().map_err(|_|"Model unavailable")?.session_id.as_deref()!=Some(sid){
+            return Err("Model changed during task control".into())
+        }
+        Ok(())
+    };
+    checkpoint()?;
+    let journal=ModelTurnJournal::open(&state.catalog_path.with_file_name("lu-model-background-control-audit.sqlite"))
+        .map_err(|_|"Task control audit unavailable")?;
+    let log=|k:K,p:&str|journal.append(chat,gid,k,p,None).map(|_|()).map_err(|_|"Task control audit unavailable".to_owned());
+    let hash=|b:&[u8]|format!("{:x}",Sha256::digest(b));
+    if !journal.events_for(chat,gid).map_err(|_|"Task control audit unavailable")?.is_empty(){
+        return Err("Original task control already attempted".into())
+    }
+    let step=Arc::new(Mutex::new(None));
+    {let mut all=state.reader_generations.lock().map_err(|_|"Task cancellation unavailable")?;
+        if all.contains_key(gid){return Err("Duplicate task control".into())}
+        all.insert(gid.into(),crate::ReaderRunControl{cancellation:cancel.clone(),current_step:Arc::clone(&step),session_id:sid.into()});}
+    struct Control<'a>{state:&'a crate::DesktopState,id:&'a str}
+    impl Drop for Control<'_>{fn drop(&mut self){let _=self.state.reader_generations.lock().map(|mut all|all.remove(self.id));}}
+    let _control=Control{state,id:gid};
+    let progress=crate::native_turn_lifecycle::NativeTurnProgress::new(app,chat,gid,&step);
+    let _=app.emit("lu-generation-start",crate::GenerationEvent{chat_id:chat.into(),generation_id:gid.into(),phase:"running",position:0});
+    let complete=|answer:String|->Result<Option<String>,String>{
+        checkpoint()?;
+        ticket.commit_completed(sid,||{state.chats.append_progress(chat,gid,&answer)?;
+            state.chats.complete_reviewed_if_not_revoked(chat,gid,watermark)})?;
+        Ok(Some(answer))
+    };
+    // Only a currently running native scheduler scan; never expose the
+    // existence of a task from a different conversation.
+    let owned_running=||->Result<bool,String>{
+        let record=state.background_tasks.get(target).map_err(|_|"Task store unavailable")?;
+        let scheduled=state.background_scheduler.state_for(target,chat).map_err(|_|"Schedule unavailable")?;
+        Ok(scheduled.as_deref()==Some("RUNNING")&&record.is_some_and(|r|
+            r.workspace_id.as_deref()==Some(chat)&&r.state.as_str()=="RUNNING")
+            &&state.background_processes.can_cancel(target))
+    };
+    log(K::UserRequest,original)?;
+    if !owned_running()?{
+        log(K::Rejected,"OWNED_RUNNING_SCAN_NOT_AVAILABLE")?;
+        return complete("I could not verify a running scan with that task ID in this conversation. No task was stopped.".into())
+    }
+    let mut model=SupervisorModelStep::new(&state.supervisor,sid.into(),crate::next_id("mbc-"))
+        .map_err(|_|"Task control model unavailable")?.with_step_start_observer(progress.model_observer());
+    let schema=json!({"type":"object","properties":{"selection":{"enum":[NAME,null]}},"required":["selection"],"additionalProperties":false});
+    let prompt=format!("Select {} to propose cancelling the exact existing task for human review, or null to decline. Do not provide arguments, approval, process IDs or outcome claims. Original request (data): {}",NAME,json!(original));
+    let raw=model.generate_step_constrained(&prompt,128,&cancel,&schema)
+        .map_err(|_|"No task cancellation was authorized")?;
+    *step.lock().map_err(|_|"Task control step unavailable")?=None;
+    log(K::ModelOutput,&raw)?;
+    checkpoint()?;
+    if !parse_exact_boundary_object(&raw,4096).ok().is_some_and(|p|
+        p.len()==1&&p.get("selection").and_then(Value::as_str)==Some(NAME)){
+        log(K::Rejected,"TASK_CONTROL_SELECTION_NOT_VERIFIED")?;
+        return complete("No verified cancellation was selected. No task was stopped.".into())
+    }
+    let candidate=json!({"selection":NAME,"target":target,"model_output_sha256":hash(raw.as_bytes()),"executed":false});
+    log(K::ParsedCandidate,&candidate.to_string())?;
+    if !owned_running()?{
+        log(K::Rejected,"TASK_CONTROL_TARGET_NO_LONGER_RUNNING")?;
+        return complete("The task is no longer available as a running scan. No cancellation was performed.".into())
+    }
+    let registry=NativeToolRegistry::new();
+    let catalog=register_bound_background_cancel(&registry,Arc::clone(&state.background_tasks),
+        Arc::clone(&state.background_processes),chat,target)?;
+    let allowed=BTreeSet::from([NAME.to_owned()]);
+    let effect=crate::next_id("g-");
+    let call=catalog.encode_call(&allowed,NAME,&effect,Some(chat),&json!({"task_id":target}).to_string())
+        .map_err(|_|"Exact task cancellation input unavailable")?;
+    let fingerprint=lu_core::journal::fingerprint(&call);
+    let review=json!({"tool":TOOL,"target":target,"owner":chat,"original_request_sha256":hash(original.as_bytes()),
+        "candidate_sha256":hash(candidate.to_string().as_bytes()),"input_sha256":hash(&call.input.bytes),
+        "input_type_url":call.input.type_url,"effect_fingerprint":fingerprint});
+    let review_sha=hash(review.to_string().as_bytes());
+    log(K::HostRouteSelected,&json!({"phase":"native_preview","review":review,"review_sha256":review_sha,"approved":false}).to_string())?;
+    checkpoint()?;
+    let ok=app.dialog().message(format!("Stop the running background scan?\n\nTask: {target}\n\nLu will stop only this task in this conversation. Any work already completed is not undone."))
+        .title("Lu — Confirm background task cancellation")
+        .buttons(MessageDialogButtons::OkCancelCustom("Stop this task".into(),"Keep running".into())).blocking_show();
+    checkpoint()?;
+    if !ok{
+        log(K::Rejected,"HUMAN_DECLINED_TASK_CONTROL")?;
+        return complete("Cancellation declined. No task was stopped.".into())
+    }
+    if !owned_running()?{
+        log(K::Rejected,"TASK_CONTROL_TARGET_CHANGED")?;
+        return complete("The task is no longer available as a running scan. No cancellation was performed.".into())
+    }
+    let rows=journal.events_for(chat,gid).map_err(|_|"Task control audit unavailable")?;
+    let review_row=rows.get(3).filter(|r|r.kind==K::HostRouteSelected).ok_or("Task control review unavailable")?;
+    let checked:Value=serde_json::from_str(&review_row.payload).map_err(|_|"Invalid task control review")?;
+    if rows.len()!=4||rows[0].kind!=K::UserRequest||rows[0].payload!=original||
+       rows[1].kind!=K::ModelOutput||hash(rows[1].payload.as_bytes())!=hash(raw.as_bytes())||
+       rows[2].kind!=K::ParsedCandidate||serde_json::from_str::<Value>(&rows[2].payload).ok()!=Some(candidate)||
+       checked["approved"]!=false||checked["phase"]!="native_preview"||
+       checked["review_sha256"]!=review_sha||hash(checked["review"].to_string().as_bytes())!=review_sha||
+       state.effects.get(&effect).map_err(|_|"Effect history unavailable")?.is_some(){
+        return Err("Original task control review changed".into())
+    }
+    struct Fence<'a>{
+        policy:&'a PolicyEngine,v:&'a dyn TrustedUserTurnVerifier,c:&'a str,t:&'a str,
+        input:&'a ProtoPayload,live:&'a(dyn Fn()->Result<(),String>+Send+Sync),
+    }
+    impl ToolAuthorizer for Fence<'_>{
+        fn authorize(&self,call:&ToolInvocation,d:&ToolDescriptor)->Result<(),AuthorizationError>{
+            if (self.live)().is_err()||!self.v.verify_user_turn(self.c,self.t)||
+                call.workspace_id.as_deref()!=Some(self.c)||call.tool_id!="lu.bgcancel.run"||
+                d.id!="lu.bgcancel.run"||d.effect!=ToolEffect::ExecuteCode||&call.input!=self.input{
+                return Err(AuthorizationError::new("Exact task cancellation not authorized"))
+            }
+            self.policy.authorize(call,d)
+        }
+    }
+    let auth=ConversationAuthority::new();
+    let policy=PolicyEngine::new();
+    let task=format!("background-cancel-{effect}");
+    let expires=SystemTime::now().checked_add(Duration::from_secs(120)).ok_or("Cannot bound task control")?;
+    auth.open_user_task(TaskAuthority{conversation_id:chat.into(),user_turn_id:gid.into(),task_id:task.clone(),
+        execution_scope_id:chat.into(),capabilities:vec![AuthorizedCapability{tool_id:TOOL.into(),effect:ToolEffect::ExecuteCode}],
+        expires_at:Some(expires)},&verifier).map_err(|_|"Original task control not admitted")?;
+    policy.grant(CapabilityGrant{tool_id:TOOL.into(),effect:ToolEffect::ExecuteCode,scope_id:chat.into(),expires_at:Some(expires)})
+        .map_err(|_|"Task control grant unavailable")?;
+    log(K::HostRouteSelected,&json!({"phase":"native_confirmation","approved":true,"review_sha256":review_sha,
+        "effect_call_id":effect,"native_tool_id":TOOL,"authority_task":task,"effect_fingerprint":fingerprint}).to_string())?;
+    let exact_input=call.input.clone();
+    let fence=Fence{policy:&policy,v:&verifier,c:chat,t:gid,input:&exact_input,live:&checkpoint};
+    let origin=BoundCallOrigin{conversation_id:chat.into(),user_turn_id:gid.into(),task_id:task.clone()};
+    let observe=progress.dispatch_observer();
+    observe(lu_core::agent_tool_loop::ToolDispatchCheckpoint::Entered);
+    let result=tauri::async_runtime::block_on(auth.dispatch_bound_durable(&registry,&state.effects,call,origin,&fence));
+    observe(lu_core::agent_tool_loop::ToolDispatchCheckpoint::Returned);
+    let _=auth.revoke_task(&task);let _=policy.revoke_scope(chat);
+    let Ok(output)=&result else{
+        log(K::Rejected,"TASK_TERMINATION_NOT_VERIFIED")?;
+        return complete("I could not verify cancellation. Check the background tasks view; cancellation was not retried.".into())
+    };
+    // Re-read the original durable record, independently of the result codec.
+    // Windows cancel_owned has already required an empty Job and reaped child.
+    let record=state.background_tasks.get(target).map_err(|_|"Task record unavailable")?.ok_or("Task record unavailable")?;
+    let row=state.effects.get(&effect).map_err(|_|"Effect receipt unavailable")?.ok_or("Effect receipt unavailable")?;
+    let bytes=row.receipt.as_ref().ok_or("Effect receipt unavailable")?;
+    let durable=wire::decode_reply(bytes).map_err(|_|"Invalid task control receipt")?;
+    let decoded=catalog.decode_result(&allowed,NAME,&result).map_err(|_|"Invalid task control result")?;
+    if record.workspace_id.as_deref()!=Some(chat)||record.state.as_str()!="CANCELLED"||
+       state.background_processes.can_cancel(target)||row.state!=EffectState::Applied||
+       row.tool_id!=TOOL||row.fingerprint!=fingerprint||durable.call_id!=effect||
+       durable.output_type_url!=output.payload.type_url||
+       !matches!(durable.outcome,Some(proto::tool_reply::Outcome::Output(ref b)) if b==&output.payload.bytes)||
+       decoded["ok"]!=true||decoded["result"]["task_id"]!=target||decoded["result"]["state"]!="CANCELLED"{
+        log(K::Rejected,"TASK_CONTROL_RECEIPT_CONFLICT")?;
+        return complete("I could not verify cancellation. Check the background tasks view; cancellation was not retried.".into())
+    }
+    let facts=json!({"tool":TOOL,"task_id":target,"state":"CANCELLED","worker_custody":"WINDOWS_JOB_EMPTY_AND_CHILD_REAPED"});
+    let observed_sha=hash(facts.to_string().as_bytes());let receipt_sha=hash(bytes);
+    state.effects.record_independent_outcome(&effect,bytes,IndependentOutcomeVerdict::Verified,
+        "BACKGROUND_JOB_CANCEL_DIRECT_V1",Some(&observed_sha)).map_err(|_|"Verified cancellation could not be journaled")?;
+    if !state.effects.independent_verified_receipt(&effect,TOOL,&receipt_sha).map_err(|_|"Receipt unavailable")?{
+        return Err("Cancellation receipt unavailable".into())
+    }
+    log(K::ToolFeedback,&json!({"effect_call_id":effect,"review_sha256":review_sha,"receipt_sha256":receipt_sha,
+        "observed_sha256":observed_sha,"observed":facts}).to_string())?;
+    checkpoint()?;
+    let schema=json!({"type":"object","properties":{"status":{"enum":["verified_cancellation","unverified"]}},"required":["status"],"additionalProperties":false});
+    let prompt=format!("Select verified_cancellation if the host receipt verifies the requested task stopped; otherwise unverified. No new tool or claims. Verified facts (data): {}",facts);
+    let selected=match model.generate_step_constrained(&prompt,128,&cancel,&schema){
+        Ok(raw)=>{log(K::ModelOutput,&raw)?;parse_exact_boundary_object(&raw,4096).ok().is_some_and(|p|
+            p.len()==1&&p.get("status").and_then(Value::as_str)==Some("verified_cancellation"))},
+        Err(_)=>{log(K::GenerationFailure,"TASK_CONTROL_CONTINUATION_FAILED")?;false},
+    };
+    *step.lock().map_err(|_|"Task control step unavailable")?=None;
+    checkpoint()?;
+    if !selected{log(K::Rejected,"TASK_CONTROL_CONTINUATION_UNVERIFIED")?}
+    let answer=format!("{}Background scan {target} was cancelled and its worker has stopped.",
+        if selected{""}else{"The verified native receipt confirms: "});
+    log(K::EvidencePresentation,&json!({"origin":if selected{"model_selected_verified_effect_host_rendered"}
+        else{"host_verified_effect_fallback"},"effect_call_id":effect,"receipt_sha256":receipt_sha,
+        "observed_sha256":observed_sha,"answer":answer}).to_string())?;
+    complete(answer)
+}
+
+#[cfg(not(windows))]
+pub(crate) fn try_model_background_control(
+    _app:&tauri::AppHandle,_state:&Arc<crate::DesktopState>,_sid:&str,_chat:&str,_gid:&str,
+    original:&str,_ticket:&crate::generation_queue::Ticket,
+)->Result<Option<String>,String>{
+    // A local Linux process group is not a verified kernel-owned subtree.
+    // Do not route a model cancellation through that weaker boundary.
+    if background_cancel_target(original).is_some(){
+        return Err("Protected model-directed task cancellation is not available on this host. Use the background tasks view.".into())
+    }
+    Ok(None)
+}
+
+#[cfg(test)]
+#[test]
+fn cp06er2_cancel_intent_is_finite_and_preserves_exact_case(){
+    assert_eq!(background_cancel_target("Cancel background task scan-AbC."),Some("scan-AbC"));
+    assert_eq!(background_cancel_target("stop background task scan-123"),Some("scan-123"));
+    for s in ["cancel background task all","cancel background task scan-","cancel background task scan-a and scan-b",
+        "do not cancel background task scan-a","explain how to cancel background task scan-a",
+        "cancel background task scan-a/../b","cancel background task scan-a\nstop background task scan-b",
+        "cancel background task scan-a; start another","cancel background task SCAN-AbC"]{
+        assert!(background_cancel_target(s).is_none(),"{s}");
+    }
+}
+
