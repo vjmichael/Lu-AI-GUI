@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "42f8e1cd0d58b626a58f35e053dfbfd1847f2d83",
+  "sourceCommitBeforeLock": "efcc27af780f8de6f15c577ed80c3dececd24942",
   "trackedFileCount": 1164,
   "files": [
     {
@@ -125,7 +125,7 @@
     },
     {
       "path": ".github/workflows/lu-cp06er2-consolidated.yml",
-      "blob": "59be72e8608f358502cafcc87b0cd5ebedcfbf93"
+      "blob": "20b126f1e045b4955736a062514382bf85ab2203"
     },
     {
       "path": ".github/workflows/lu-dev-offline-cache.yml",
@@ -833,7 +833,7 @@
     },
     {
       "path": "docs/LU_DEVELOPMENT_LEDGER.md",
-      "blob": "712ec9e3258bf447df372b7915c99387e99eea00"
+      "blob": "4cb4d9fee994f38ba25e5990d62d5a1f65cf47f7"
     },
     {
       "path": "docs/LU_E1_NATIVE_EVIDENCE_20261107.md",
@@ -3401,7 +3401,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/journal.rs",
-      "blob": "63657fd7451964ab612ea95256913bd96ed9f859"
+      "blob": "9ae06968378c3353a1aac46c0015ce454ce51234"
     },
     {
       "path": "src-tauri/lu-core/src/lib.rs",
@@ -4265,7 +4265,7 @@
     },
     {
       "path": "src-tauri/lu-core/tests/model_background_control_turn.rs",
-      "blob": "69a6db5d5da0b0f9246cd3ee3d0737c6ecc09046"
+      "blob": "515f07b298de35720a037058a85c4a786a6a0462"
     },
     {
       "path": "src-tauri/lu-core/tests/model_custody_turn.rs",
