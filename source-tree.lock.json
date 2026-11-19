@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "b8e7b90bd8ac1dfdce8df13a60330ce0182d89c6",
+  "sourceCommitBeforeLock": "97570b1db946e9cab9785fc4eb2faab6ab93cfad",
   "trackedFileCount": 1129,
   "files": [
     {
@@ -117,7 +117,7 @@
     },
     {
       "path": ".github/workflows/lu-cp05e-closeout.yml",
-      "blob": "ce47c466753dd14689fbdf2f857b6a26fdac44ea"
+      "blob": "e21bc896f23f64fac0066f492a05a1f9ac679575"
     },
     {
       "path": ".github/workflows/lu-cp05e-grouped-native.yml",
@@ -777,7 +777,7 @@
     },
     {
       "path": "docs/LU_DEVELOPMENT_LEDGER.md",
-      "blob": "51ed58bc20dd72a49a6564f376ef741e3975577d"
+      "blob": "cfb5aa9e3ddaa74299fd45ab179cd762eb9da722"
     },
     {
       "path": "docs/LU_E1_NATIVE_EVIDENCE_20261107.md",
@@ -1465,7 +1465,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/ansf_chat_store.rs",
-      "blob": "d613ae35330b9f1de9bf4d2d3e4b1641b48b11fa"
+      "blob": "619573f37d1e4433773dc7b91b5d9c822e0079b8"
     },
     {
       "path": "lu-desktop/src-tauri/src/ansf_migration.rs",
@@ -1565,7 +1565,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/generation_queue.rs",
-      "blob": "9157cc82aaa89bcd475f93df0e3d9456db276cc9"
+      "blob": "1a5ebe6937bdbe12871b9017cfa085104554116b"
     },
     {
       "path": "lu-desktop/src-tauri/src/host_clock.rs",
@@ -1585,7 +1585,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/lib.rs",
-      "blob": "4f71b12986b91e407d69ffdc753974b35c3818b1"
+      "blob": "42cb699fc74dd1cb36467744348106037237ad15"
     },
     {
       "path": "lu-desktop/src-tauri/src/linked_attachment_file.rs",
@@ -2149,7 +2149,7 @@
     },
     {
       "path": "lu-desktop/tests/p0-installed-gui-smoke.test.mjs",
-      "blob": "a4049ce3c196f944e1faafed40360abe9733b934"
+      "blob": "26f525cacbe71a546cc10d611de928d44ec510d8"
     },
     {
       "path": "lu-desktop/tests/p0-memory-telemetry.test.mjs",
@@ -2481,7 +2481,7 @@
     },
     {
       "path": "scripts/build-agent01g-physical-windows-nsis.ps1",
-      "blob": "d25e3683334bf881476c168227e96ac6f26dbdb4"
+      "blob": "4c1d7c195568469276f5c23c4362407ce024e61c"
     },
     {
       "path": "scripts/build-current-windows-nsis.ps1",
@@ -3061,7 +3061,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/ansf_live_chat.rs",
-      "blob": "8bfb7c24d755adeaf26feeed665f54382a5b66a2"
+      "blob": "2823277c0dd7fd69691c37d9429d8df88a3d6183"
     },
     {
       "path": "src-tauri/lu-core/src/ansf_revisions.rs",
