@@ -45,7 +45,8 @@ def compare(review: dict, observed: dict[str, str]) -> int:
         path, sha, reason = entry["path"], entry["sha"], entry["scope"]
         if (not isinstance(path, str)
                 or not any(path.startswith(prefix + "/") for prefix in SCOPE)
-                or not path.endswith((".rs", ".py", ".json", ".toml", ".ps1"))
+                or (not path.endswith((".rs", ".py", ".json", ".toml", ".ps1"))
+                    and path != "ide/packaging/upstream-licenses/README.md")
                 or any(part in ("", ".", "..") for part in path.split("/"))
                 or not isinstance(sha, str) or HEX.fullmatch(sha) is None
                 or not isinstance(reason, str) or not 8 <= len(reason) <= 200

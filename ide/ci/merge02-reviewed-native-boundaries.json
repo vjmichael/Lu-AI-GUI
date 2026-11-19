@@ -66,6 +66,11 @@
       "scope": "Formatter disposition; test evidence source bindings retained; source-only, OS acceptance pending"
     },
     {
+      "path": "ide/app/src-tauri/tauri.dev02.technical-only.conf.json",
+      "sha": "31010228b7fac0cd8d0dbf08df074c8aafb94124",
+      "scope": "R3 isolated test-only bundle resources and visible restriction; unchanged disabled runtime features"
+    },
+    {
       "path": "ide/host/Cargo.toml",
       "sha": "ee529f038409f31e2dd6ca01aa03d095fd58fb69",
       "scope": "Explicit debug CI oracle features only; no default expansion; source-only, OS acceptance pending"
@@ -106,6 +111,16 @@
       "scope": "04B read-only exact-head unsigned installer artifact handoff; host CI transport only; no release or installed grant"
     },
     {
+      "path": "ide/packaging/collect_verification_licenses.py",
+      "sha": "e1eb5701e7448c59cc5a1c659573d6beb6807b49",
+      "scope": "R1 exact original upstream SHA256 and pinned Git blob collector; no approval"
+    },
+    {
+      "path": "ide/packaging/ide-05b-r3-outside-cohort.json",
+      "sha": "8f2fa3bb2c71ae5f17929613820e589be42bc657",
+      "scope": "R3 review-only exact workflow inventory, no dispatch or retirement authorization"
+    },
+    {
       "path": "ide/packaging/p05-merge02-pending-native-boundaries.json",
       "sha": "510293d0df6b18150739cee0fbdcd58dc24cb392",
       "scope": "source or historical preservation test, not native acceptance"
@@ -114,6 +129,16 @@
       "path": "ide/packaging/p05-semantic-reconciliation.json",
       "sha": "05191345a4033c75954d902c00e4f869921bfe2c",
       "scope": "source or historical preservation test, not native acceptance"
+    },
+    {
+      "path": "ide/packaging/p06-observer-cohort.json",
+      "sha": "a11faff282ad98d435adfb13f55ec74f8d2544cc",
+      "scope": "R1 exact automatic workflow and required job identity catalog"
+    },
+    {
+      "path": "ide/packaging/p06_live_native_jobs.py",
+      "sha": "f8e92884eb413680cadc349f22c8ae877c013315",
+      "scope": "R1-R3 read-only exact-attempt observation, explicit test-only two-job lane; no execution or release authority"
     },
     {
       "path": "ide/packaging/python_semantic_native_benchmark.py",
@@ -126,9 +151,19 @@
       "scope": "04B hostile transport, exact-source, scheduling, receipt and independent installed workflow contract tests; source-only"
     },
     {
+      "path": "ide/packaging/test_collect_verification_licenses.py",
+      "sha": "e309d2ea35da9a3f4920d0bf66825c6472291c57",
+      "scope": "R1 adversarial provenance collector regression"
+    },
+    {
       "path": "ide/packaging/test_ide056_successor_lock.py",
       "sha": "cbe5db6725f69cf8e0e3a146918fbc281b42cce4",
       "scope": "03D tests exact historical lock in disposable checkout and explicitly denies later lock under original approval"
+    },
+    {
+      "path": "ide/packaging/test_ide_05b_r3_workflow_dispositions.py",
+      "sha": "a1b886e82efc3bc7f9d00f9b45d78bd700261a15",
+      "scope": "R3 exact workflow inventory and default-deny source tests"
     },
     {
       "path": "ide/packaging/test_p05_merge02_pending_native_boundaries.py",
@@ -151,14 +186,39 @@
       "scope": "03B hostile marker appended to preserve count guard and exercise semantic failure"
     },
     {
+      "path": "ide/packaging/test_p05_upstream_bundle_integration.py",
+      "sha": "f9602c9f3c59948644612bac5b0126204e66402a",
+      "scope": "R1 exact prior license bundle contract regression"
+    },
+    {
       "path": "ide/packaging/test_p06_checkout_lock.py",
       "sha": "7058bb489bde7b92efbc07e8af3e92a149b958a1",
       "scope": "source or historical preservation test, not native acceptance"
     },
     {
+      "path": "ide/packaging/test_p06_license_provenance.py",
+      "sha": "9f69db7b849705c38af3a24df6fd00b16dbd8276",
+      "scope": "R1 exact pinned provenance receipt integrity tests"
+    },
+    {
+      "path": "ide/packaging/test_p06_live_native_jobs.py",
+      "sha": "d91acdd39dcad647a59f9461a616fae26f41f158",
+      "scope": "R1-R2 hostile exact attempt and exclusion regression"
+    },
+    {
+      "path": "ide/packaging/test_p06_technical_observation.py",
+      "sha": "aa7d77fe353625d9395446387489f4274e218e4a",
+      "scope": "R3 manual technical observation exact attempt, SHA and negative regression"
+    },
+    {
       "path": "ide/packaging/test_python_semantic_native_benchmark.py",
       "sha": "28809796c39f8302bed7a4f1703b72a8ed77f5ed",
       "scope": "source or historical preservation test, not native acceptance"
+    },
+    {
+      "path": "ide/packaging/test_upstream_notice_receipt.py",
+      "sha": "b82ba6bc1d24d89dc98072776aaff4703d2ad786",
+      "scope": "R1 exact upstream bytes and hostile normalization regressions"
     },
     {
       "path": "ide/packaging/test_verify_dev045d2_line_oracle.py",
@@ -171,14 +231,39 @@
       "scope": "native redistribution manifest still blocked pending full closure"
     },
     {
+      "path": "ide/packaging/test_verify_p04_license_bundle.py",
+      "sha": "a05b21b5aa02ed67b0e614a0902178bdbf660aa1",
+      "scope": "R1 independently verified receipt and forged digest regressions"
+    },
+    {
       "path": "ide/packaging/test_verify_p05_pr_inventory.py",
       "sha": "cc69eb497a8c3fd3056b884181b6ed58372adcd3",
       "scope": "03D proves original 38 workflow blobs in original re-pinned checkout; current strict historical denial retained"
     },
     {
+      "path": "ide/packaging/test_verify_technical_lsp_install.py",
+      "sha": "a308a188e0ce1ed7cb99bedb14e038d48ddd1143",
+      "scope": "R3 hostile installed resource byte and independent archive reconstruction tests"
+    },
+    {
+      "path": "ide/packaging/upstream-licenses/README.md",
+      "sha": "c2a543bb3fd75014f9d3b98ab58962266c3d27d1",
+      "scope": "R1 provenance documentation only: exact canonical bytes and current pinned upstream version"
+    },
+    {
+      "path": "ide/packaging/upstream_notice_receipt.py",
+      "sha": "b5aaec85c854522bc1dd5bcfe190c63c9000269a",
+      "scope": "R1 exact canonical upstream Git blob/SHA256 verification; no authority expansion"
+    },
+    {
       "path": "ide/packaging/verify_language_servers.py",
       "sha": "62fc38065834ddd0ceb0cc49764711c828833716",
       "scope": "native redistribution manifest still blocked pending full closure"
+    },
+    {
+      "path": "ide/packaging/verify_p04_license_bundle.py",
+      "sha": "58c4b084c87d3d55ec14389318b1348fd3fa3bd4",
+      "scope": "R1 independent digest, flags and receipt integrity audit; no legal approval"
     },
     {
       "path": "ide/packaging/verify_p05_merge02_pending_native_boundaries.py",
@@ -189,6 +274,11 @@
       "path": "ide/packaging/verify_p06_checkout_lock.py",
       "sha": "9645f844d78e64c27ff482aed0f9404ceb4805f8",
       "scope": "source or historical preservation test, not native acceptance"
+    },
+    {
+      "path": "ide/packaging/verify_technical_lsp_install.py",
+      "sha": "8961a523a8d5542fe9c2c90569e4af55ee22ed48",
+      "scope": "R3 read-only staged and installed resource verification from pinned archives; no provider execution"
     },
     {
       "path": "ide/supervisor/Cargo.toml",

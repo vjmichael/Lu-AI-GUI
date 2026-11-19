@@ -32,6 +32,16 @@ GATES = tuple((row["gate"], row["workflow"], tuple(job["name"] for job in row["j
               for row in CATALOG["workflows"])
 
 
+TECHNICAL_WORKFLOW = ".github/workflows/ide-dev02-technical-installed-lsp.yml"
+TECHNICAL_RECORD = {"nonIdeJobsExcluded": False,
+    "jobs": [{"name": "technical-installed / "+osname+" / "+platform+" / "+bundle,
+              "scope": "hosted_technical_lsp_install", "workflowJobKey": "technical-installed"}
+             for osname, platform, bundle in (("ubuntu-24.04", "linux-x86_64", "deb"),
+                                             ("windows-2022", "windows-x86_64", "nsis"))]}
+TECHNICAL_GATE = ("DEV02_technical_installed", TECHNICAL_WORKFLOW,
+                  tuple(j["name"] for j in TECHNICAL_RECORD["jobs"]), "hosted_technical_lsp_install")
+
+
 class EvidenceError(ValueError):
     pass
 
@@ -160,30 +170,10 @@ def _rank(run):
     return (created, number, attempt, ident)
 
 
-def assess(sha, runs, jobs_for_run):
-    """Pure classifier; exact run and attempt, exact jobs, no promotion authority."""
-    sha_check(sha)
-    if not isinstance(runs, list):
-        raise EvidenceError("invalid_run_list")
-    if (len(GATES) != 63 or len(GATE_RECORDS) != len(GATES)
-            or len({g[1] for g in GATES}) != len(GATES)):
-        raise EvidenceError("invalid_gate_catalog")
-    candidates_by_path = {}
-    seen_runs = set()
-    for run in runs:
-        if not isinstance(run, dict):
-            raise EvidenceError("invalid_run")
-        path = run.get("path")
-        if not isinstance(path, str) or not _eligible(run, sha, path):
-            continue
-        _rank(run)
-        if run["id"] in seen_runs:
-            raise EvidenceError("duplicate_run_id")
-        seen_runs.add(run["id"])
-        candidates_by_path.setdefault(path, []).append(run)
+def _observe_gates(sha, candidates_by_path, jobs_for_run, gates, records):
     observations = []
-    for gate_id, workflow, required_jobs, kind in GATES:
-        spec = GATE_RECORDS[gate_id]
+    for gate_id, workflow, required_jobs, kind in gates:
+        spec = records[gate_id]
         if not required_jobs or len(set(required_jobs)) != len(required_jobs):
             raise EvidenceError("invalid_required_jobs")
         excluded = spec.get("excludedJobNames", [])
@@ -260,9 +250,40 @@ def assess(sha, runs, jobs_for_run):
                              "state": state, "runId": run["id"], "runAttempt": run["run_attempt"],
                              "jobsObserved": len(matched), "requiredJobs": list(required_jobs),
                              "jobObservations": detail, "additionalJobs": extras})
+    return observations
+
+
+def assess(sha, runs, jobs_for_run):
+    """Pure classifier; exact run and attempt, exact jobs, no promotion authority."""
+    sha_check(sha)
+    if not isinstance(runs, list):
+        raise EvidenceError("invalid_run_list")
+    if (len(GATES) != 63 or len(GATE_RECORDS) != len(GATES)
+            or len({g[1] for g in GATES}) != len(GATES)):
+        raise EvidenceError("invalid_gate_catalog")
+    candidates_by_path = {}
+    seen_runs = set()
+    for run in runs:
+        if not isinstance(run, dict):
+            raise EvidenceError("invalid_run")
+        path = run.get("path")
+        if not isinstance(path, str) or not _eligible(run, sha, path):
+            continue
+        _rank(run)
+        if run["id"] in seen_runs:
+            raise EvidenceError("duplicate_run_id")
+        seen_runs.add(run["id"])
+        candidates_by_path.setdefault(path, []).append(run)
+    observations = _observe_gates(sha, candidates_by_path, jobs_for_run, GATES, GATE_RECORDS)
+    technical_candidates = {TECHNICAL_WORKFLOW: [r for r in candidates_by_path.get(TECHNICAL_WORKFLOW, [])
+                                                if r.get("event") == "workflow_dispatch"]}
+    technical = _observe_gates(sha, technical_candidates, jobs_for_run, (TECHNICAL_GATE,),
+                               {TECHNICAL_GATE[0]: TECHNICAL_RECORD})[0]
     unreviewed = []
     for path, candidates in sorted(candidates_by_path.items()):
         if path in {g[1] for g in GATES}:
+            continue
+        if path == TECHNICAL_WORKFLOW and all(r.get("event") == "workflow_dispatch" for r in candidates):
             continue
         r = max(candidates, key=_rank)
         unreviewed.append({"workflow": path, "runId": r["id"], "runAttempt": r["run_attempt"],
@@ -275,12 +296,15 @@ def assess(sha, runs, jobs_for_run):
             counts["required"] += 1
             # A successful job within an invalid/missing/failed run is recorded individually but cannot promote an entire gate.
             counts["observedSuccess" if j["state"] == "observed_success" else "notSuccessful"] += 1
+    automatic_ok = all(row["state"] == "observed_success" for row in observations) and not any(r["ideCandidate"] for r in unreviewed)
     return {"schema": SCHEMA, "repository": REPO, "sourceSha": sha,
             "source": "github_actions_read_only_public_api", "catalogReferenceHead": CATALOG["referenceHead"],
             "observations": observations, "unreviewedWorkflows": unreviewed,
             "scopeSummary": scope_summary,
-            "allObservedGatesSuccessful": all(row["state"] == "observed_success" for row in observations)
-                                          and not any(r["ideCandidate"] for r in unreviewed),
+            "allObservedGatesSuccessful": automatic_ok and technical["state"] in ("missing", "observed_success"),
+            "automaticParentCohortSuccessful": automatic_ok,
+            "technicalInstalledObservation": technical,
+            "automaticAndTechnicalInstallationSuccessful": automatic_ok and technical["state"] == "observed_success",
             "releaseApproved": False, "signingIdentityReviewed": False,
             "licenseLegalReviewApproved": False, "protectedExecutionAccepted": False,
             "nativeInstalledReleaseAccepted": False, "gatePromotionAuthority": "none_read_only_snapshot"}

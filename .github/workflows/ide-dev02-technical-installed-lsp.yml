@@ -1,0 +1,121 @@
+name: IDE DEV-02.5 genuine technical-only installed native LSP resources
+# Separate manual acceptance lane: no overlapping CI, no signing/redistribution,
+# no native-lsp runtime feature in this installer, no provider execution.
+on:
+  workflow_dispatch:
+    inputs:
+      expected_source_sha:
+        description: 'Exact accepted candidate to test (full SHA)'
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: ide-dev02-technical-installed-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  technical-installed:
+    name: technical-installed / ${{ matrix.os }} / ${{ matrix.platform }} / ${{ matrix.bundle }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            platform: linux-x86_64
+            bundle: deb
+          - os: windows-2022
+            platform: windows-x86_64
+            bundle: nsis
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 135
+    env:
+      SOURCE_SHA: ${{ inputs.expected_source_sha }}
+      CARGO_INCREMENTAL: '0'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+      - name: Exact source, reviewed locks, default-deny and hostile resource tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$RUNNER_ENVIRONMENT" == github-hosted && "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ && "$(git rev-parse HEAD)" == "$SOURCE_SHA" ]]
+          node scripts/verify-source-tree.mjs
+          python3 ide/packaging/verify_p06_candidate_lock.py --repo-root . --platform '${{ matrix.os }}' --ide-merge02-successor
+          python3 ide/packaging/verify_language_servers.py
+          if python3 ide/packaging/verify_language_servers.py --release; then exit 2; fi
+          python3 -m unittest discover -s ide/packaging -p 'test_verify_technical_lsp_install.py' -v
+          python3 -m unittest discover -s ide/packaging -p 'test_stage_complete_native_lsp_candidate.py' -v
+      - name: Native Linux graphical runtime prerequisites
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf libssl-dev libgtk-3-dev libsecret-1-dev xvfb xauth xdotool dbus-x11 python3-pyatspi at-spi2-core openbox x11-utils
+      - name: Stage complete exact original archives and upstream notices
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 ide/packaging/collect_original_lsp_notices.py --manifest ide/packaging/lsp_original_upstream_notices_20261108.json --output "$RUNNER_TEMP/dev02-technical-notices" --fetch-pinned
+          python3 ide/packaging/stage_complete_native_lsp_candidate.py --platform '${{ matrix.platform }}' --manifest ide/packaging/lsp_upstream_archive_candidates_20261108.json --notices-manifest ide/packaging/lsp_original_upstream_notices_20261108.json --notices-root "$RUNNER_TEMP/dev02-technical-notices" --archives "$RUNNER_TEMP/dev02-technical-archives" --output "$RUNNER_TEMP/dev02-technical-reference" --fetch-locked
+          python3 - <<'PY'
+          import os,sys,shutil
+          from pathlib import Path
+          sys.path.insert(0,'ide/packaging')
+          from verify_technical_lsp_install import MARKER,WARNING
+          root=Path(os.environ['RUNNER_TEMP'])/'dev02-technical-reference'
+          with (root/MARKER).open('xb') as f: f.write(WARNING)
+          dest=Path('ide/app/src-tauri/test-lsp-resources')
+          if dest.exists() or dest.is_symlink(): raise SystemExit('DENIED: reused technical staging')
+          shutil.copytree(root,dest)
+          PY
+      - name: Build real default-deny desktop and technical-only package with original notices
+        shell: bash
+        working-directory: ide/app
+        run: |
+          set -euo pipefail
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm run check
+          cargo fetch --manifest-path src-tauri/Cargo.toml --locked
+          # Compile the explicit native API separately; do not grant runtime
+          # execution in the technical installation. The package is default-only.
+          cargo check --manifest-path src-tauri/Cargo.toml --features native-lsp --lib --locked
+          python3 ../packaging/upstream_notice_receipt.py --repo-root ../.. --source-sha "$SOURCE_SHA" --output src-tauri/upstream-notice-receipt.json
+          python3 ../packaging/collect_verification_licenses.py --repo-root ../.. --source-sha "$SOURCE_SHA" --upstream-receipt src-tauri/upstream-notice-receipt.json --output src-tauri/verification-notices
+          python3 ../packaging/verify_p04_license_bundle.py --license-root src-tauri/verification-notices --source-sha "$SOURCE_SHA" --require-upstream
+          npx --yes @tauri-apps/cli@2.12.4 build --config src-tauri/tauri.dev02.technical-only.conf.json --bundles '${{ matrix.bundle }}'
+      - name: Actual Debian install, native GTK registration, installed byte readback and purge
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          packages=(ide/app/src-tauri/target/release/bundle/deb/*.deb)
+          [[ ${#packages[@]} == 1 ]]
+          bash ide/app/fixtures/Test-DEV02TechnicalInstalledDeb.sh "${packages[0]}" "$SOURCE_SHA" "$RUNNER_TEMP/dev02-technical-reference"
+      - name: Actual NSIS install, Windows native UIA and installed byte readback and uninstall
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $packages=@(Get-ChildItem 'ide/app/src-tauri/target/release/bundle/nsis' -Filter '*setup.exe' -File)
+          if ($packages.Count -ne 1) { throw 'Expected one real NSIS setup' }
+          & 'ide/app/fixtures/Test-DEV02TechnicalInstalledNsis.ps1' -SetupPath $packages[0].FullName -SourceSha $env:SOURCE_SHA -Reference (Join-Path $env:RUNNER_TEMP 'dev02-technical-reference')
+          if (!$?) { throw 'Technical installed acceptance failed' }
+      - name: Verify unchanged tracked source and deny release authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$(git rev-parse HEAD)" == "$SOURCE_SHA" ]]
+          git diff --exit-code HEAD --
+          echo 'DEV02_TECHNICAL_INSTALLATION_ONLY=PASS; PROTECTED_EXECUTION=NOT_TESTED; RELEASE_APPROVED=NO'

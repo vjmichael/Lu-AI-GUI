@@ -1,0 +1,10 @@
+{
+  "app": {"windows": [{"title": "Lu IDE — Technical verification only (not for distribution)", "width": 1240, "height": 820, "minWidth": 820, "minHeight": 580}]},
+  "bundle": {
+    "active": true,
+    "resources": {
+      "test-lsp-resources/": "technical-lsp",
+      "verification-notices/": "THIRD_PARTY_LICENSES"
+    }
+  }
+}

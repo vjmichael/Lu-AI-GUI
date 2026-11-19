@@ -1,5 +1,9 @@
 # Lu IDE — Development changelog
 
+## 2026-11-19 — IDE-MERGE-05B-R3 (unpublished source candidate)
+
+- Restored test-only real NSIS/Debian LSP resource-install lane, pinned archive reconstruction and exact two-job manual observation, without provider execution rights. Recorded 44 outside-cohort workflow dispositions. Native installed and final-SHA acceptance remain open.
+
 ## 2026-11-16 — Grouped original-native-coverage and source-security repair (unpublished)
 
 Sole owner approval completed in Issue #237; no external signoff gate. Restored original service-only D7D and original WO6 Windows/Linux feature-only compiles alongside stronger tests. Reconciled B4/B5 by rerunning each unchanged historical editor-only/performance-only forbidden-scope comparison across its authentic historic SHA span plus a separate integrated current-stack no-new-authority check (seven exact reviewed FIN03/P05/P06 source hashes). Windows sandbox continues historical no-worker check and new opt-in/disabled-by-default worker source assertion; D4 comment-only forbidden names distinguished from executable APIs; D4C verifies CI-only reader and release opt-in without granting debugger control. P05 audit now runs original immutable verifier+hostile unit tests on exact 38-blob tree `8c61d570` and a separate owner-authorized pinned current successor with zero native/release approval. Real OS failures still open; publication and consolidated acceptance not yet performed.
