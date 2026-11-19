@@ -53,6 +53,29 @@ using System.Text;
 public static class P04NativeWebViewWindows {
   public delegate bool Enumeration(IntPtr hwnd, IntPtr state);
   [DllImport("user32.dll", SetLastError=true)]
+  private static extern bool EnumWindows(Enumeration callback, IntPtr data);
+  [DllImport("user32.dll")]
+  private static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint processId);
+  [DllImport("user32.dll")]
+  private static extern bool IsWindowVisible(IntPtr hwnd);
+  public static bool IsOwnedConsentWindow(IntPtr hwnd, IntPtr owner, uint expectedPid) {
+    if (hwnd == IntPtr.Zero || owner == IntPtr.Zero || hwnd == owner ||
+        !IsWindowVisible(hwnd) || GetWindow(hwnd, 4) != owner) return false;
+    uint pid, ownerPid;
+    return GetWindowThreadProcessId(hwnd, out pid) != 0 &&
+      GetWindowThreadProcessId(owner, out ownerPid) != 0 &&
+      pid == expectedPid && ownerPid == expectedPid;
+  }
+  public static IntPtr[] OwnedConsentHandles(IntPtr owner, uint expectedPid) {
+    var results = new List<IntPtr>();
+    Enumeration callback = (hwnd, data) => {
+      if (IsOwnedConsentWindow(hwnd, owner, expectedPid)) results.Add(hwnd);
+      return results.Count <= 16;
+    };
+    EnumWindows(callback, IntPtr.Zero);
+    return results.ToArray();
+  }
+  [DllImport("user32.dll", SetLastError=true)]
   private static extern bool EnumChildWindows(IntPtr parent, Enumeration callback, IntPtr data);
   [DllImport("user32.dll", CharSet=CharSet.Unicode)]
   private static extern int GetClassName(IntPtr hwnd, StringBuilder name, int capacity);
@@ -183,6 +206,30 @@ function Test-EditableNativeEditor($item) {
   } catch {}
   return $false
 }
+function Test-ExactNativeEditorIdentity($item,[string]$expected) {
+  try {
+    if ($expected -cmatch '^Source editor text · (First|Second) editor: (.+)$') {
+      $paneName="$($Matches[1]) editor, $($Matches[2])"
+    } else {return $false}
+    if (!$item.Current.IsEnabled -or $item.Current.IsOffscreen -or
+        !$item.Current.IsKeyboardFocusable -or !(Test-EditableNativeEditor $item)) {return $false}
+    if ($item.Current.Name -ceq $expected) {return $true}
+    if ($item.Current.Name -cne 'Source editor text') {return $false}
+    # Only the independently named native file-bearing pane can qualify an
+    # otherwise generic contenteditable name; do not match another editor.
+    $walker=[System.Windows.Automation.TreeWalker]::RawViewWalker
+    $parent=$item
+    for($i=0;$i -lt 24;$i++) {
+      $parent=$walker.GetParent($parent)
+      if (!$parent) {return $false}
+      $type=$parent.Current.ControlType.ProgrammaticName
+      if ($type -ceq 'ControlType.Window') {return $false}
+      if ($parent.Current.Name -ceq $paneName -and !$parent.Current.IsOffscreen -and
+          $type -cin @('ControlType.Group','ControlType.Pane','ControlType.Custom')) {return $true}
+    }
+  } catch {}
+  return $false
+}
 function Find-Control([string]$query,[string]$kind,[int]$seconds=18,[switch]$Exact) {
   $start=Get-Date
   $end=$start.AddSeconds($seconds)
@@ -200,15 +247,30 @@ function Find-Control([string]$query,[string]$kind,[int]$seconds=18,[switch]$Exa
   while ((Get-Date) -lt $end) {
     # Do not fake a WebView response. Every candidate is a real native UIA
     # provider reached from this exact installed desktop's child HWND chain.
+    $exactEditor=$query.StartsWith('Source editor text · ',[StringComparison]::Ordinal)
+    $editorMatches=[Collections.Generic.List[object]]::new()
     foreach ($window in @(NativeAccessibilityRoots)) {
       try {
         $all=$window.FindAll([System.Windows.Automation.TreeScope]::Descendants,
           [System.Windows.Automation.Condition]::TrueCondition)
+        if ($exactEditor -and (Test-ExactNativeEditorIdentity $window $query)) {
+          $duplicate=$false
+          foreach($seen in $editorMatches) {if ($seen.Equals($window)) {$duplicate=$true;break}}
+          if (!$duplicate) {$editorMatches.Add($window)}
+        }
         foreach($item in $all) {
           try {
             $name=$item.Current.Name
             $type=$item.Current.ControlType.ProgrammaticName
-            if ($query -eq 'Source editor text' -or $query.StartsWith('Source editor text · ')) {
+            if ($exactEditor) {
+              if (Test-ExactNativeEditorIdentity $item $query) {
+                $duplicate=$false
+                foreach($seen in $editorMatches) {if ($seen.Equals($item)) {$duplicate=$true;break}}
+                if (!$duplicate) {$editorMatches.Add($item)}
+              }
+              continue
+            }
+            if ($query -eq 'Source editor text') {
               # Only the real visible editable content surface, never the
               # enclosing CodeMirror region or a stale offscreen renderer.
               $matches=($name -ceq $query -or ($query -eq 'Source editor text' -and
@@ -226,6 +288,7 @@ function Find-Control([string]$query,[string]$kind,[int]$seconds=18,[switch]$Exa
         }
       } catch {}
     }
+    if ($exactEditor -and $editorMatches.Count -eq 1) {return $editorMatches[0]}
     # Do not convert an unavailable WebView into a fabricated UI pass.
     # Only re-focus the exact native installed process (max 2 harmless Tabs),
     # and still require the requested real UIA element to materialize.
@@ -330,7 +393,9 @@ function Focus-ExactNativeControl([string]$label,[string]$kind='') {
       $item=Find-Control $label $kind 2 -Exact
       $actual=[System.Windows.Automation.AutomationElement]::FocusedElement
       if ($item.Current.IsEnabled -and !$item.Current.IsOffscreen -and
-          $item.Current.Name -ceq $label -and
+          (($label.StartsWith('Source editor text · ',[StringComparison]::Ordinal) -and
+            (Test-ExactNativeEditorIdentity $item $label)) -or
+            (!$label.StartsWith('Source editor text · ',[StringComparison]::Ordinal) -and $item.Current.Name -ceq $label)) -and
           [P04NativeWebViewWindows]::GetForegroundWindow() -eq $hwnd -and
           ($item.Current.HasKeyboardFocus -or ($actual -and $actual.Equals($item)))) {
         return $item
@@ -539,7 +604,7 @@ function Ensure-Wo9DependentsBlocked {
     Deny 'wo9_interrupted_or_cancelled_step_unlocked_dependents'
   }
 }
-function Confirm-NativeOneUseDialog([string]$titleFragment,[string]$approvalCaption,[string]$expectedMessage='') {
+function Confirm-NativeOneUseDialog([string]$titleFragment,[string]$approvalCaption,[string]$expectedMessage='', [IntPtr]$expectedOwnerHwnd=[IntPtr]::Zero) {
   # Real WO9 Windows TaskDialog: exact caption exposes UIA Text/Pane, not Button.
   # Only interact with a separate OS popup owned by this installed process.
   $deadline=(Get-Date).AddSeconds(35)
@@ -548,8 +613,23 @@ function Confirm-NativeOneUseDialog([string]$titleFragment,[string]$approvalCapt
   $matchedTextPane=0; $unusableNativePopup=0; $unusableBounds=0
   $unavailableNativeAction=0
   while ((Get-Date) -lt $deadline) {
-    $roots=$desktop.FindAll([System.Windows.Automation.TreeScope]::Children,
-      [System.Windows.Automation.Condition]::TrueCondition)
+    if ($expectedOwnerHwnd -ne [IntPtr]::Zero) {
+      # WO9: the installed popup was visible as a nested UIA Window, but
+      # absent from the desktop-child enumeration. Observe the real owned
+      # native HWND rather than re-focusing the underlying main WebView.
+      $handles=@([P04NativeWebViewWindows]::OwnedConsentHandles($expectedOwnerHwnd,[uint32]$proc.Id))
+      if ($handles.Count -gt 16) {Deny 'native_consent_window_scope_overflow'}
+      $roots=@()
+      foreach($nativeHwnd in $handles) {
+        try {
+          $nativeRoot=[System.Windows.Automation.AutomationElement]::FromHandle($nativeHwnd)
+          if ($nativeRoot) {$roots+=,$nativeRoot}
+        } catch {}
+      }
+    } else {
+      $roots=$desktop.FindAll([System.Windows.Automation.TreeScope]::Children,
+        [System.Windows.Automation.Condition]::TrueCondition)
+    }
     foreach($win in $roots) {
       try {
         if ($win.Current.ProcessId -ne $proc.Id -or !$win.Current.IsEnabled) { continue }
@@ -561,7 +641,12 @@ function Confirm-NativeOneUseDialog([string]$titleFragment,[string]$approvalCapt
         if ($name.IndexOf($titleFragment,[StringComparison]::OrdinalIgnoreCase) -lt 0) { continue }
         $titleMatches++
         $hwnd=[IntPtr]::new([int64]$win.Current.NativeWindowHandle)
-        if ($hwnd -eq [IntPtr]::Zero -or $hwnd -eq $proc.MainWindowHandle) {
+        if ($expectedOwnerHwnd -ne [IntPtr]::Zero) {
+          if (![P04NativeWebViewWindows]::IsOwnedConsentWindow($hwnd,$expectedOwnerHwnd,[uint32]$proc.Id) -or
+              $name -cne ('Lu IDE · '+$titleFragment)) {
+            $unusableNativePopup++; continue
+          }
+        } elseif ($hwnd -eq [IntPtr]::Zero -or $hwnd -eq $proc.MainWindowHandle) {
           $unusableNativePopup++; continue
         }
         $windowBounds=$win.Current.BoundingRectangle
@@ -583,6 +668,10 @@ function Confirm-NativeOneUseDialog([string]$titleFragment,[string]$approvalCapt
             $isTextPane=$kind -eq [System.Windows.Automation.ControlType]::Text -or
               $kind -eq [System.Windows.Automation.ControlType]::Pane
             if (!$isButton -and !$isTextPane) { continue }
+            if ($expectedOwnerHwnd -ne [IntPtr]::Zero -and
+                ![P04NativeWebViewWindows]::IsOwnedConsentWindow($hwnd,$expectedOwnerHwnd,[uint32]$proc.Id)) {
+              $unusableNativePopup++;continue
+            }
             if ($isButton) {
               $buttonMatches++
               try {
@@ -605,6 +694,19 @@ function Confirm-NativeOneUseDialog([string]$titleFragment,[string]$approvalCapt
               }
               if (![P04NativeWebViewWindows]::SetForegroundWindow($hwnd)) {
                 $unavailableNativeAction++; continue
+              }
+              if ($expectedOwnerHwnd -ne [IntPtr]::Zero) {
+                if ([P04NativeWebViewWindows]::GetForegroundWindow() -ne $hwnd) {
+                  $unavailableNativeAction++;continue
+                }
+                $hit=[System.Windows.Automation.AutomationElement]::FromPoint([System.Windows.Point]::new($px,$py))
+                $walker=[System.Windows.Automation.TreeWalker]::RawViewWalker
+                $exactHit=$false
+                for($hop=0;$hit -and $hop -lt 8;$hop++) {
+                  if ($hit.Equals($child)) {$exactHit=$true;break}
+                  $hit=$walker.GetParent($hit)
+                }
+                if (!$exactHit) {$unavailableNativeAction++;continue}
               }
               [System.Windows.Forms.Cursor]::Position=[System.Drawing.Point]::new($px,$py)
               [P04NativeWebViewWindows]::mouse_event(2,0,0,0,[UIntPtr]::Zero)
@@ -1011,9 +1113,14 @@ try {
       if (!$confirm.Current.IsEnabled) { Deny 'button_disabled_Confirm_separate_local_commit' }
       # Exactly one verified foreground pointer dispatch to the reviewed
       # button; the native modal and independent Git bytes remain mandatory.
+      $commitOwnerHwnd=$proc.MainWindowHandle
+      if ($commitOwnerHwnd -eq [IntPtr]::Zero -or
+          [P04NativeWebViewWindows]::GetForegroundWindow() -ne $commitOwnerHwnd) {
+        Deny 'wo9_commit_owner_window_not_verified'
+      }
       Click 'Confirm separate local commit (no push)'
       try {
-        Confirm-NativeOneUseDialog 'Confirm local Git commit' 'Commit exact staged file' 'WO9 installed reviewed Git source'
+        Confirm-NativeOneUseDialog 'Confirm local Git commit' 'Commit exact staged file' 'WO9 installed reviewed Git source' $commitOwnerHwnd
       } catch {
         # Fail closed, but distinguish UI validation/dispatch from a missing
         # native popup; do not retry the commit or print submitted metadata.

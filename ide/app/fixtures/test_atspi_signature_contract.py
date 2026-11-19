@@ -397,5 +397,22 @@ class AtspiSignatureContract(unittest.TestCase):
         self.assertIn('aria-label="Verify frozen Git and artifact evidence again"',ui)
         self.assertIn('aria-label="Export verified artifacts as ZIP (no code execution)"',ui)
 
+    def test_04h_exact_editor_and_owned_native_consent_lookup(self):
+        script=(ROOT / "Test-Wo8NativeDesktopUI.ps1").read_text(encoding="utf-8")
+        self.assertIn("Test-ExactNativeEditorIdentity $item $query",script)
+        self.assertIn("$editorMatches.Count -eq 1",script)
+        self.assertIn("$parent.Current.Name -ceq $paneName",script)
+        self.assertIn("GetWindow(hwnd, 4) != owner",script)
+        self.assertIn("pid == expectedPid && ownerPid == expectedPid",script)
+        self.assertIn("OwnedConsentHandles($expectedOwnerHwnd",script)
+        self.assertIn("$name -cne ('Lu IDE · '+$titleFragment)",script)
+        self.assertIn("'WO9 installed reviewed Git source' $commitOwnerHwnd",script)
+        self.assertIn("if (!$exactHit) {$unavailableNativeAction++;continue}",script)
+        self.assertLess(script.index("$commitOwnerHwnd=$proc.MainWindowHandle"),
+                        script.index("Click 'Confirm separate local commit (no push)'"))
+        editor=(ROOT.parent / "web" / "code_editor.jsx").read_text(encoding="utf-8")
+        self.assertIn("EditorView.contentAttributes.of(view =>",editor)
+        self.assertNotIn("view.contentDOM.setAttribute('aria-label'",editor)
+
 if __name__ == "__main__":
     unittest.main()
