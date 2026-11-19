@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "539d67a249eb8cf13f5787c73a9692d5924b9558",
+  "sourceCommitBeforeLock": "78f477e45f7634f712ba122f9c109d69f36323a5",
   "trackedFileCount": 1129,
   "files": [
     {
@@ -117,7 +117,7 @@
     },
     {
       "path": ".github/workflows/lu-cp05e-closeout.yml",
-      "blob": "89b56067ab268b89fe57958a2e5f6c59c29449b1"
+      "blob": "093e98d8b90446b964df230a9515e5de2d6f5ec9"
     },
     {
       "path": ".github/workflows/lu-cp05e-grouped-native.yml",
@@ -777,7 +777,7 @@
     },
     {
       "path": "docs/LU_DEVELOPMENT_LEDGER.md",
-      "blob": "16e1a8d21485c984d4c312b76d274f19abb427e2"
+      "blob": "5f52ca24aaa53788031dcc4cf82038ea1ef7ad8b"
     },
     {
       "path": "docs/LU_E1_NATIVE_EVIDENCE_20261107.md",
@@ -2149,7 +2149,7 @@
     },
     {
       "path": "lu-desktop/tests/p0-installed-gui-smoke.test.mjs",
-      "blob": "a54619fa207c9afb94a0064a5b5fcaf2e4164b54"
+      "blob": "5137f3fdce9e330a3b9dca6f92c3c7fa78da5a3c"
     },
     {
       "path": "lu-desktop/tests/p0-memory-telemetry.test.mjs",
@@ -2533,11 +2533,11 @@
     },
     {
       "path": "scripts/cp05e5-installed-journal-diagnostics.test.py",
-      "blob": "21acd5bf40f1817608a26fea2249cb6596da0e7f"
+      "blob": "3eb99a4788479d1b93236eb970b3d2483f2b0a18"
     },
     {
       "path": "scripts/cp05e5-installed-journal.py",
-      "blob": "cdc21bb1bf8070129180e85fb297859d43a6d8ac"
+      "blob": "013b3705481738936e496dac4505e34bd9f113f6"
     },
     {
       "path": "scripts/cp05e5-review-browser.py",
@@ -2545,7 +2545,7 @@
     },
     {
       "path": "scripts/cp05e5-windows-installed-gguf.ps1",
-      "blob": "fce77f54ac95a0278c5a390fe48a40ec5ef24359"
+      "blob": "99ef114ed13659826f859598b75d38d334492c6e"
     },
     {
       "path": "scripts/install-lu-agent01l-native-fixture.sh",
@@ -3297,7 +3297,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/inference_supervisor.rs",
-      "blob": "7f9f7744ae52aab00d1b5fcf808fb288f02b0046"
+      "blob": "86cd05e4af41e53d4bb17eb80bade81a4e9e7d4e"
     },
     {
       "path": "src-tauri/lu-core/src/inference_wire.rs",
@@ -3745,7 +3745,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/persistent_llama_backend.rs",
-      "blob": "21ce94cd4600099b8af835653942f7436fe8228c"
+      "blob": "2680a3ec1ba1aa93303d06c22b26ebd7e4712708"
     },
     {
       "path": "src-tauri/lu-core/src/platform_compute.rs",
@@ -3825,7 +3825,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/supervised_tool_generation.rs",
-      "blob": "00150e7348fc561f6daba99163fd83af59cd8e06"
+      "blob": "32dfc107297afd548006accd45710c59f0855f07"
     },
     {
       "path": "src-tauri/lu-core/src/tasks.rs",
