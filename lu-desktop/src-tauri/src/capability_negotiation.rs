@@ -74,6 +74,27 @@ fn candidate_scope(choice:&ReadCandidate)->&'static str{
         _=>"one local folder (read-only file search and document inspection)",
     }
 }
+// Narrow, complete current-resource questions. This is an inert offer
+// filter, never an automatic selection, and never authorizes a resource.
+// Compound/qualified requests retain the general multi-tool route.
+pub(crate) fn direct_read_id(prompt:&str)->Option<&'static str>{
+    if !eligible(prompt){return None}
+    let low=prompt.trim().trim_end_matches(['?','.','!']).trim().to_ascii_lowercase();
+    let low=low.strip_prefix("please ").unwrap_or(&low);
+    let low=low.strip_prefix("could you ").or_else(||low.strip_prefix("can you ")).unwrap_or(low);
+    let document=|resource:&str| ["my ","our ","this "].iter().any(|prefix|
+        resource.strip_prefix(*prefix).is_some_and(|name|matches!(name,"document"|"pdf"|"report"|"memo"|"spreadsheet"|"text file")));
+    if low.strip_prefix("what does ").and_then(|x|x.strip_suffix(" say").or_else(||x.strip_suffix(" contain"))).is_some_and(document)||
+        ["read ","summarize ","extract text from "].iter().any(|prefix|low.strip_prefix(*prefix).is_some_and(document)){
+        return Some("lu.reader.read")
+    }
+    let folder=|resource:&str| ["my ","our ","this "].iter().any(|prefix|
+        resource.strip_prefix(*prefix).is_some_and(|name|matches!(name,"folder"|"directory"|"workspace"|"project folder"|"project directory"|"project workspace")));
+    if ["which files are in ","what files are in ","list files in ","list the files in ","show files in ","show the files in "].iter().any(|prefix|low.strip_prefix(*prefix).is_some_and(folder)){
+        return Some("lu.files.list_directory")
+    }
+    None
+}
 fn eligible_candidates<'a>(views:&'a [PendingCapabilityView],prompt:&str)->Vec<(ReadCandidate,&'a str)>{
     if !eligible(prompt){return Vec::new()}
     let utility=crate::core_utility_desktop::negotiable_core_utility_request(prompt).map(|r|crate::core_utility_desktop::utility_native_id(&r));
@@ -88,7 +109,9 @@ fn eligible_candidates<'a>(views:&'a [PendingCapabilityView],prompt:&str)->Vec<(
             !v.resource_bound&&!v.execution_instance_registered&&!v.task_outcome_verified)
             .map(|v|(ReadCandidate::from_pending(v,false),v.description.as_str())).collect()
     }
-    candidates(views)
+    let mut offered=candidates(views);
+    if let Some(id)=direct_read_id(prompt){offered.retain(|(c,_)|c.native_tool_id==id);}
+    offered
 }
 // An exact-input observation is not optional ordinary prose. The model may
 // abstain, but that is not evidence that the requested check ran.
@@ -102,11 +125,13 @@ fn selection_or_unverified(required:bool,choice:Option<ReadCandidate>)->Result<O
     Ok(choice)
 }
 fn selection_prompt(prompt:&str,available:&[(ReadCandidate,&str)])->Result<String,String>{
-    if required_utility_observation(prompt)&&available.len()==1{
+    if (required_utility_observation(prompt)||direct_read_id(prompt).is_some())&&available.len()==1{
         let (candidate,_)=&available[0];
         let task=match candidate.native_tool_id.as_str(){
             "lu.validate.schema"=>"validate the supplied data against the supplied JSON schema",
             "lu.exec.check_env"=>"check whether the named local program is present",
+            "lu.reader.read"=>"read or summarize one document that the human will choose and approve",
+            "lu.files.list_directory"=>"list files inside one folder that the human will choose and approve",
             _=>return Err("Exact utility selection has an unrelated candidate".into()),
         };
         // A short positive task description helps small models make the
@@ -191,12 +216,17 @@ pub(crate) fn try_read_turn(app:&AppHandle,state:&Arc<DesktopState>,sid:&str,cha
     let views=crate::capability_discovery_desktop::fresh_negotiation_views(state,chat,prompt)?;
     let available=eligible_candidates(&views,prompt);
     let required=required_utility_observation(prompt);
-    if available.is_empty()&&!required{return Ok(NegotiationOutcome::NoSelection)}
+    let required_read=direct_read_id(prompt).is_some();
+    if available.is_empty()&&!required&&!required_read{return Ok(NegotiationOutcome::NoSelection)}
     let journal=ModelTurnJournal::open(&state.catalog_path.with_file_name("lu-capability-negotiation-audit.sqlite"))
         .map_err(|_|"Capability negotiation audit unavailable")?;
     let record=|kind,payload:&str,repair|journal.append(chat,gid,kind,payload,repair).map_err(|_|"Capability negotiation audit unavailable".to_string());
     record(ModelAuditKind::UserRequest,prompt,None)?;
     if available.is_empty(){
+        if required_read&&!required{
+            record(ModelAuditKind::Rejected,"REQUIRED_READ_UNAVAILABLE",None)?;
+            return Err("The requested inspection was not performed. Its native tool is unavailable.".into())
+        }
         record(ModelAuditKind::Rejected,"REQUIRED_UTILITY_UNAVAILABLE",None)?;
         return Err("The requested validation or software check was not performed. Its native tool is unavailable.".into())
     }
@@ -225,7 +255,13 @@ pub(crate) fn try_read_turn(app:&AppHandle,state:&Arc<DesktopState>,sid:&str,cha
             return Err(message)
         }
     };
-    let Some(choice)=choice else{return Ok(NegotiationOutcome::NoSelection)};
+    let Some(choice)=choice else{
+        if required_read{
+            record(ModelAuditKind::Rejected,"REQUIRED_READ_NOT_SELECTED",None)?;
+            return Err("The requested inspection was not performed. No native tool was selected.".into())
+        }
+        return Ok(NegotiationOutcome::NoSelection)
+    };
     // Refresh the real inventory after inference; never trust a stale offer.
     let fresh=crate::capability_discovery_desktop::fresh_negotiation_views(state,chat,prompt)?;
     if !eligible_candidates(&fresh,prompt).iter().any(|(c,_)|c==&choice){
@@ -289,6 +325,29 @@ pub(crate) fn try_read_turn(app:&AppHandle,state:&Arc<DesktopState>,sid:&str,cha
             assert!(!eligible_candidates(&v,p).iter().any(|(c,_)|c.native_tool_id=="lu.validate.schema"));
         }
         assert!(eligible_candidates(&views(false,CandidatePresent),human).is_empty());
+    }
+    #[test] fn cp_dev_01d_exact_read_offer_is_inert_and_cannot_expand_scope(){
+        let v=views(true,CandidatePresent);
+        for (human,id,name) in [
+            ("What does my document say?","lu.reader.read","lu_reader_read"),
+            ("Could you summarize my PDF?","lu.reader.read","lu_reader_read"),
+            ("Which files are in my project folder?","lu.files.list_directory","lu_files_list_directory"),
+            ("What files are in this directory?","lu.files.list_directory","lu_files_list_directory"),
+        ]{
+            assert_eq!(direct_read_id(human),Some(id));
+            let offered=eligible_candidates(&v,human);assert_eq!(offered.len(),1);
+            assert_eq!(offered[0].0.public_name,name);
+            assert!(parse_selection(r#"{"selection":null}"#,&offered).unwrap().0.is_none());
+            assert!(parse_selection(r#"{"selection":"lu_files_search_text"}"#,&offered).is_err());
+            assert!(parse_selection(&serde_json::json!({"selection":name,"path":"/foreign"}).to_string(),&offered).is_err());
+            assert!(eligible_candidates(&views(false,CandidatePresent),human).is_empty());
+        }
+        for human in ["What is a document?","What files are in my folder and subfolders?",
+            "What does my document say and what files are nearby?","Do not read my document",
+            "Summarize my PDF and edit it","Which files are in my folder without tools",
+            "How do I list files in my folder?","Which files contain invoice text?"]{
+            assert_eq!(direct_read_id(human),None,"{human}");
+        }
     }
     #[test] fn fixed_program_offer_never_accepts_unreviewed_or_multiple_names(){
         let v=discover_ordinary_pending(&OrdinaryRuntimeEvidence{workspace:Builtin,git:CandidatePresent,browser:Missing,media:Missing,pdf:Missing,image:Missing,
@@ -486,7 +545,7 @@ pub(crate) fn try_read_turn(app:&AppHandle,state:&Arc<DesktopState>,sid:&str,cha
             (false,r#"Could you validate this JSON schema {"schema":{"type":"integer"},"data":1}"#,
                 r#"{"selection":"lu_validate_schema"}"#,
                 r#"{"kind":"tool","name":"lu_validate_schema","arguments":{"source":"current_request"}}"#,
-                r#"{"kind":"final","text":"The exact data matches the schema."}"#),
+                r#"{"kind":"final","text":"The supplied data is valid against the supplied schema."}"#),
         ]{
             let chat=chats.create_chat().unwrap().chat_id;let gid=next_id("g-");
             let verifier=PersistedHumanTurn::current_chat(&chats,&chat,&gid,human);
@@ -649,6 +708,7 @@ pub(crate) fn try_read_turn(app:&AppHandle,state:&Arc<DesktopState>,sid:&str,cha
             assert_eq!(replies.len(),2);
             assert_eq!(replies[0],serde_json::json!({"kind":"tool","name":"lu_validate_schema","arguments":{"source":"current_request"}}));
             assert_eq!(replies[1],serde_json::json!({"kind":"final","text":&outcome.answer}));
+            assert_eq!(outcome.answer,if expected_valid{"The supplied data is valid against the supplied schema."}else{"The supplied data is invalid against the supplied schema."});
             ticket.commit_completed(sid,||{chats.append_progress(&chat,&gid,&outcome.answer)?;chats.complete(&chat,&gid)}).unwrap();
             println!("CP05_R6_REAL_UTILITY_PASS valid={expected_valid}");
             drop(lane);drop(ticket);drop(audit);drop(tool_audit);
@@ -746,7 +806,7 @@ pub(crate) fn try_read_turn(app:&AppHandle,state:&Arc<DesktopState>,sid:&str,cha
                     },
                     _=>{
                         let scope=base.join("workspace");std::fs::create_dir(&scope).unwrap();std::fs::write(scope.join("ORCHID-4839.txt"),b"The verification token is ORCHID-4839.").unwrap();
-                        let mut lane=WorkspaceReadTurnSession::new(&verifier,&chat,&gid,&gid,&scope).unwrap();
+                        let mut lane=WorkspaceReadTurnSession::new_root_listing(&verifier,&chat,&gid,&gid,&scope).unwrap();
                         assert!(matches_live(&chosen,&lane.capabilities().unwrap()));
                         let mut preferred=lu_core::ai_operations::recommended_read_tools(human,&lane.capabilities().unwrap());
                         preferred.retain(|name|name!=&chosen.public_name);preferred.insert(0,chosen.public_name.clone());
@@ -756,6 +816,7 @@ pub(crate) fn try_read_turn(app:&AppHandle,state:&Arc<DesktopState>,sid:&str,cha
                 }.map_err(|e|format!("{e:?}"))?;
                 let events=tool_audit.events_for(&chat,&gid).unwrap();
                 if outcome.tool_calls==0||outcome.model_generations<2||!events.iter().any(|e|e.kind==ModelAuditKind::ToolFeedback){return Err("Missing genuine model-directed tool feedback/continuation".into())}
+                if kind=="workspace"&&(outcome.tool_calls!=1||!events.iter().any(|e|e.kind==ModelAuditKind::ModelOutput&&serde_json::from_str::<serde_json::Value>(&e.payload).ok()==Some(serde_json::json!({"kind":"tool","name":"lu_files_list_directory","arguments":{"source":"current_request"}})))){return Err("Root listing did not execute the exact bound input".into())}
                 if kind!="utility"&&(!events.iter().any(|e|e.kind==ModelAuditKind::ToolFeedback&&e.payload.contains("ORCHID-4839"))||!outcome.answer.contains("ORCHID-4839")){return Err("Answer did not preserve independently checked native fixture value".into())}
                 if kind=="utility"&&!events.iter().any(|e|e.kind==ModelAuditKind::ToolFeedback&&serde_json::from_str::<serde_json::Value>(&e.payload).ok().is_some_and(|v|v["response"]["ok"]==true&&v["response"]["result"]["valid"]==true)){return Err("Missing independently checked valid=true schema result".into())}
                 ticket.commit_completed(sid,||{chats.append_progress(&chat,&gid,&outcome.answer)?;chats.complete(&chat,&gid)})?;
@@ -769,9 +830,13 @@ pub(crate) fn try_read_turn(app:&AppHandle,state:&Arc<DesktopState>,sid:&str,cha
         }
         // Isolate the cancellation qualification from any preceding terminal
         // inference failure; this is an explicit host unload/reload, not replay.
-        supervisor.unload(sid,"unload-before-stop").unwrap();
+        let prior=supervisor.status().unwrap();
+        if prior.session_id.as_deref()==Some(sid){supervisor.unload(sid,"unload-before-stop").unwrap();}
+        else{assert!(prior.session_id.is_none()&&prior.model_ref.is_none()&&prior.generation_id.is_none()&&prior.pid.is_none());}
+        assert_eq!(supervisor.status().unwrap().phase,lu_core::inference_host::EnginePhase::Idle);
         let sid="cp05e-stop-session";
         supervisor.load("model-1",sid.into(),"load-before-stop").unwrap();
+        let stopped_pid=supervisor.status().unwrap().pid.expect("real worker to cancel");
         // Cancel before selection must not generate or authorize anything.
         let cancelled=Cancellation::default();cancelled.cancel();let mut model=SupervisorModelStep::new(&supervisor,sid.into(),next_id("cancel-")).unwrap();
         let human="What does my document say?";let offered=eligible_candidates(&inventory,human);
@@ -815,16 +880,32 @@ pub(crate) fn try_read_turn(app:&AppHandle,state:&Arc<DesktopState>,sid:&str,cha
         else{assert!(ticket.commit_completed(sid,||panic!("cancelled result committed")).is_err());}
         let before=audit.events_for(&chat,&gid).unwrap();assert!(before.iter().all(|e|!matches!(e.kind,ModelAuditKind::HostRouteSelected|ModelAuditKind::ToolFeedback|ModelAuditKind::FinalAnswer)));
         chats.cancel(&chat,&gid).unwrap();drop(ticket);drop(audit);
-        supervisor.unload(sid,"unload-cp05e").unwrap();assert!(supervisor.status().unwrap().pid.is_none());
+        let stopped=supervisor.status().unwrap();
+        // Actual persistent backend cancellation reaps its worker and detaches
+        // the session. A second unload must not be mistaken for failed Stop.
+        assert_eq!(stopped.phase,lu_core::inference_host::EnginePhase::Idle);
+        assert!(stopped.session_id.is_none()&&stopped.model_ref.is_none()&&stopped.generation_id.is_none()&&stopped.pid.is_none());
+        assert!(matches!(supervisor.unload(sid,"unload-cp05e"),Err(lu_core::inference_supervisor::SupervisorError::Unavailable)));
+        #[cfg(target_os="linux")]
+        assert!(!std::path::Path::new(&format!("/proc/{stopped_pid}")).exists(),"owned cancelled worker still present");
+        println!("CP05E_CANCEL_RECONCILED detached idle worker pid={stopped_pid}");
         let reopened=ModelTurnJournal::open(&audit_path).unwrap();assert_eq!(before,reopened.events_for(&chat,&gid).unwrap());
         let recovered=ChatStore::open(&base.join("chats")).unwrap();assert_eq!(recovered.history(&chat).unwrap().iter().filter(|m|m.role=="user").count(),1);
+        assert_eq!(recovered.require(&chat).unwrap().generation_terminal_kind(&chat,&gid).unwrap(),Some(lu_core::ansf_live_chat::LiveKind::AssistantCancelled));
         // Explicit host reload and fresh generation; no interrupted task is
         // automatically resumed or dispatched. A new selection is inert.
         let sid2="cp05e-reloaded";supervisor.load("model-1",sid2.into(),"load-cp05e-recovery").unwrap();
         let mut model=SupervisorModelStep::new(&supervisor,sid2.into(),next_id("recovered-")).unwrap();
-        let reply=model.generate_step(&real_prompt,256,&Cancellation::default());
+        let reply=audited_selection(&mut model,&real_prompt,&offered,&Cancellation::default(),&||Ok(()),&|_,_,_|Ok(0));
         println!("CP05E_RELOAD_RAW {reply:?}");
-        if reply.is_err(){failures.push("Explicit recovery did not produce completed model reply".into());}
+        if !matches!(&reply,Ok(Some(choice)) if choice.public_name=="lu_reader_read"){
+            failures.push("Explicit recovery did not produce a fresh inert Reader proposal".into());
+        }
+        let recovered_status=supervisor.status().unwrap();
+        assert_eq!(recovered_status.session_id.as_deref(),Some(sid2));
+        assert!(recovered_status.pid.is_some()&&recovered_status.generation_id.is_none());
+        assert_ne!(recovered_status.pid,Some(stopped_pid));
+        assert_eq!(recovered.require(&chat).unwrap().generation_terminal_kind(&chat,&gid).unwrap(),Some(lu_core::ansf_live_chat::LiveKind::AssistantCancelled));
         assert_eq!(before,reopened.events_for(&chat,&gid).unwrap());
         supervisor.unload(sid2,"unload-cp05e-recovery").unwrap();assert!(supervisor.status().unwrap().pid.is_none());
         println!("CP05E_RECEIPTS {}",base.display());assert!(failures.is_empty(),"Genuine capability acceptance incomplete: {failures:?}");

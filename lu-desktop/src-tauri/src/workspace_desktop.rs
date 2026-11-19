@@ -751,6 +751,8 @@ fn execute_approved_read(event_app:AppHandle,host:Arc<DesktopState>,session_id:S
     cancellation:&Cancellation,current_step:&Arc<Mutex<Option<String>>>,selected:Option<&crate::capability_negotiation::ReadCandidate>)->Result<String,String>{
     let root=approved_workspace.root.clone();
     let git_mode=git_executable.is_some();
+    let exact_listing=!git_mode&&crate::capability_negotiation::direct_read_id(&prompt)==Some("lu.files.list_directory")&&
+        selected.is_none_or(|c|c.native_tool_id=="lu.files.list_directory");
             approved_workspace.verify()?;
             if ticket.cancelled()||cancellation.is_cancelled(){
                 return Err("Cancelled workspace generation".into())
@@ -767,6 +769,10 @@ fn execute_approved_read(event_app:AppHandle,host:Arc<DesktopState>,session_id:S
                 WorkspaceReadTurnSession::new_git(
                     &verifier,&chat_id,&gid,&gid,&root,exe,
                 )
+            }else if exact_listing{
+                if let Some(directory)=approved_workspace.pinned_directory()?{
+                    WorkspaceReadTurnSession::new_root_listing_with_approved_directory(&verifier,&chat_id,&gid,&gid,directory)
+                }else{WorkspaceReadTurnSession::new_root_listing(&verifier,&chat_id,&gid,&gid,&root)}
             }else{
                 // P0-TOOLS-03: only the real authenticated Reader tool,
                 // AFTER successfully opening/reading a source within this
@@ -860,8 +866,10 @@ fn execute_approved_read(event_app:AppHandle,host:Arc<DesktopState>,session_id:S
             if !verifier.verify_user_turn(&chat_id,&gid) {
                 return Err("Workspace task lost its authenticated user turn".into())
             }
-            let remembered=host.chats.memory_context_for_turn(&chat_id,&prompt)?;
-            let user_prompt=add_scoped_ansf_task_data(user_prompt,&remembered);
+            let user_prompt=if exact_listing{user_prompt}else{
+                let remembered=host.chats.memory_context_for_turn(&chat_id,&prompt)?;
+                add_scoped_ansf_task_data(user_prompt,&remembered)
+            };
             let observe=progress.dispatch_observer();
             let result=tauri::async_runtime::block_on(turn.run_journaled_observed(
                 &user_prompt,&mut model,&cancellation,&journal,&observe,
@@ -1144,6 +1152,12 @@ mod tests {
 
 /// Shared authorized workspace instruction text, without optional memory context.
 pub(crate) fn workspace_model_prompt(git_mode:bool,prompt:&str,preferred:&[String])->String{
+    // The explicit root-listing lane binds the approved directory and its
+    // default bounded listing arguments before inference. No guessed path.
+    if !git_mode&&preferred.first().map(String::as_str)==Some("lu_files_list_directory")&&
+        crate::capability_negotiation::direct_read_id(prompt)==Some("lu.files.list_directory"){
+        return format!("The human approved one folder for this turn. List its actual root entries using lu_files_list_directory with source=current_request. Do not provide a path. After native feedback, report only the actual returned names and whether the listing was truncated. User request: {prompt}");
+    }
     let user_prompt=if git_mode{
                 format!(
                     "The human has selected one local Git repository through \

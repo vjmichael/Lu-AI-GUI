@@ -289,15 +289,40 @@ mod tests{
         let (path,journal)=audit();
         let mut replies=Replies(VecDeque::from(vec![
             r#"{"kind":"tool","name":"lu_validate_schema","arguments":{"source":"current_request"}}"#.into(),
-            r#"{"kind":"final","text":"The exact supplied data matches the supplied schema."}"#.into()
+            r#"{"kind":"final","text":"The supplied data is valid against the supplied schema."}"#.into()
         ]));
         let result=turn.run_journaled_observed("Validate this exact user schema/data",
             &mut replies,&Cancellation::default(),&journal,&|_|{}).await.unwrap();
         assert_eq!(result.tool_calls,1);
-        assert_eq!(result.answer,"The exact supplied data matches the supplied schema.");
+        assert_eq!(result.answer,"The supplied data is valid against the supplied schema.");
         assert!(turn.capabilities().is_err() ||
             turn.capabilities().unwrap().is_empty());
         drop(turn);drop(journal);let _=fs::remove_file(path);
+    }
+    #[tokio::test]
+    async fn cp_dev_01d_schema_final_requires_observed_truth(){
+        for (data,valid) in [(json!(42),true),(json!("wrong type"),false)]{
+            let correct=if valid{"The supplied data is valid against the supplied schema."}else{"The supplied data is invalid against the supplied schema."};
+            let wrong=if valid{"The supplied data is invalid against the supplied schema."}else{"The supplied data is valid against the supplied schema."};
+            for (text,pass) in [(correct,true),(wrong,false),("Validation only; no data was repaired or written.",false)]{
+                let mut lane=CoreUtilityTurn::new(&Original,"c-original","g-original","g-original",
+                    CoreUtilityRequest::Validate{schema:json!({"type":"integer"}),data:data.clone()}).unwrap();
+                let (path,journal)=audit();
+                let mut model=Replies(VecDeque::from([
+                    r#"{"kind":"tool","name":"lu_validate_schema","arguments":{"source":"current_request"}}"#.into(),
+                    json!({"kind":"final","text":text}).to_string(),
+                ]));
+                let result=lane.run_journaled_observed("Validate original JSON",&mut model,&Cancellation::default(),&journal,&|_|{}).await;
+                assert_eq!(result.is_ok(),pass);
+                let events=journal.events_for("c-original","g-original").unwrap();
+                assert_eq!(events.iter().filter(|e|e.kind==crate::model_turn_journal::ModelAuditKind::ToolFeedback).count(),1);
+                assert_eq!(events.iter().filter(|e|e.kind==crate::model_turn_journal::ModelAuditKind::FinalAnswer).count(),usize::from(pass));
+                if pass{assert_eq!(result.unwrap().answer,correct);}else{
+                    assert!(events.iter().any(|e|e.kind==crate::model_turn_journal::ModelAuditKind::Rejected&&e.payload=="SCHEMA_FINAL_NOT_GROUNDED_IN_OBSERVED_RESULT"));
+                }
+                drop(lane);drop(journal);let _=fs::remove_file(path);
+            }
+        }
     }
     #[tokio::test]
     async fn environment_scope_refuses_unrequested_program_and_fabricated_turn(){

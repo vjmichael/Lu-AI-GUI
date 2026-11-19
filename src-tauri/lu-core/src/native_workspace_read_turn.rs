@@ -7,6 +7,7 @@
 //! Tool registration is not itself authorization.
 use std::{collections::BTreeSet, path::Path, sync::Arc, time::{Duration,SystemTime}};
 use cap_std::fs::Dir;
+use prost::Message;
 use crate::{
     agent_tool_loop::{NativeToolTurn,ToolTurnError,ToolDispatchCheckpoint},
     contracts::{AuthorizationError,ToolAuthorizer,ToolDescriptor,ToolEffect,ToolInvocation},
@@ -45,7 +46,7 @@ pub enum WorkspaceReadError{
 }
 /// Unlike a general permission, this policy is tied to exactly the host
 /// installed read-only descriptors and their Protobuf codecs.
-struct ReadOnlyPolicy { ids:BTreeSet<String> }
+struct ReadOnlyPolicy { ids:BTreeSet<String>,root_listing_only:bool }
 impl ToolAuthorizer for ReadOnlyPolicy{
     fn authorize(&self,call:&ToolInvocation,desc:&ToolDescriptor)
         ->Result<(),AuthorizationError>{
@@ -53,6 +54,13 @@ impl ToolAuthorizer for ReadOnlyPolicy{
             call.tool_id!=desc.id || !self.ids.contains(&desc.id) ||
             call.input.type_url!=desc.input_type_url{
             return Err(AuthorizationError::new("Not in the approved read-only workspace tool set"));
+        }
+        if self.root_listing_only{
+            let request=crate::wire::proto::ListDirectoryRequest::decode(call.input.bytes.as_slice())
+                .map_err(|_|AuthorizationError::new("Malformed root listing request"))?;
+            if call.tool_id!="lu.files.list_directory"||!request.path.is_empty(){
+                return Err(AuthorizationError::new("Only the approved workspace root may be listed"));
+            }
         }
         Ok(())
     }
@@ -74,7 +82,7 @@ impl WorkspaceReadTurnSession{
         host_approved_root:&Path,
     )->Result<Self,WorkspaceReadError>{
         Self::new_with_capability(verifier,conversation_id,user_turn_id,task_id,
-            Some(host_approved_root),None,None,None)
+            Some(host_approved_root),None,None,None,false)
     }
     /// P0-TOOLS-03: the trusted native desktop observes only completed real
     /// Reader source identity, bound to the SAME original human-selected
@@ -86,7 +94,7 @@ impl WorkspaceReadTurnSession{
     )->Result<Self,WorkspaceReadError>{
         Self::new_with_capability(
             verifier,conversation_id,user_turn_id,task_id,
-            Some(host_approved_root),None,None,Some(observer)
+            Some(host_approved_root),None,None,Some(observer),false
         )
     }
     /// Wave 4: read-only local Git from a HUMAN-picked repository directory
@@ -99,7 +107,7 @@ impl WorkspaceReadTurnSession{
         host_approved_repository:&Path,host_trusted_git:&Path,
     )->Result<Self,WorkspaceReadError>{
         Self::new_with_capability(verifier,conversation_id,user_turn_id,task_id,
-            Some(host_approved_repository),None,Some(host_trusted_git),None)
+            Some(host_approved_repository),None,Some(host_trusted_git),None,false)
     }
     /// Native host has already obtained and verified the directory identity.
     /// No pathname is accepted or reopened by the registered tools.
@@ -115,7 +123,23 @@ impl WorkspaceReadTurnSession{
             if meta.file_attributes()&0x400!=0{return Err(WorkspaceReadError::RootUnavailable)}
         }
         Self::new_with_capability(verifier,conversation_id,user_turn_id,task_id,
-            None,Some(Arc::new(Dir::from_std_file(directory))),None,observer)
+            None,Some(Arc::new(Dir::from_std_file(directory))),None,observer,false)
+    }
+    /// Host-only exact root listing after the user chose a folder. The
+    /// original input is bound in the existing codec; no model path is accepted.
+    pub fn new_root_listing(verifier:&dyn TrustedUserTurnVerifier,conversation_id:&str,
+        user_turn_id:&str,task_id:&str,root:&Path)->Result<Self,WorkspaceReadError>{
+        Self::new_with_capability(verifier,conversation_id,user_turn_id,task_id,Some(root),None,None,None,true)
+    }
+    pub fn new_root_listing_with_approved_directory(verifier:&dyn TrustedUserTurnVerifier,conversation_id:&str,
+        user_turn_id:&str,task_id:&str,directory:std::fs::File)->Result<Self,WorkspaceReadError>{
+        let meta=directory.metadata().map_err(|_|WorkspaceReadError::RootUnavailable)?;
+        if !meta.is_dir(){return Err(WorkspaceReadError::RootUnavailable)}
+        #[cfg(windows)]{
+            use std::os::windows::fs::MetadataExt;
+            if meta.file_attributes()&0x400!=0{return Err(WorkspaceReadError::RootUnavailable)}
+        }
+        Self::new_with_capability(verifier,conversation_id,user_turn_id,task_id,None,Some(Arc::new(Dir::from_std_file(directory))),None,None,true)
     }
     #[allow(clippy::too_many_arguments)]
     fn new_with_capability(
@@ -123,7 +147,7 @@ impl WorkspaceReadTurnSession{
         conversation_id:&str,user_turn_id:&str,task_id:&str,
         host_approved_root:Option<&Path>,pinned_root:Option<Arc<Dir>>,
         git_executable:Option<&Path>,
-        reader_observer:Option<ReaderSourceObserver>,
+        reader_observer:Option<ReaderSourceObserver>,root_listing_only:bool,
     )->Result<Self,WorkspaceReadError>{
         if [conversation_id,user_turn_id,task_id].iter().any(|s|
              s.is_empty()||s.len()>128||
@@ -197,9 +221,15 @@ impl WorkspaceReadTurnSession{
                 .map_err(|e|{eprintln!("Workspace artifact registration failed: {e:?}");WorkspaceReadError::RegistrationFailed})?;
             catalog
         };
-        let descriptors=registry.tools().map_err(|e|{eprintln!("Workspace read tool registration failed: {e:?}");WorkspaceReadError::RegistrationFailed})?;
+        let mut descriptors=registry.tools().map_err(|e|{eprintln!("Workspace read tool registration failed: {e:?}");WorkspaceReadError::RegistrationFailed})?;
         if descriptors.is_empty() || descriptors.iter().any(|d|d.effect!=ToolEffect::ReadWorkspace){
             return Err(WorkspaceReadError::RegistrationFailed);
+        }
+        if root_listing_only{
+            descriptors.retain(|d|d.id=="lu.files.list_directory");
+            if descriptors.len()!=1{return Err(WorkspaceReadError::RegistrationFailed)}
+            catalog.bind_current_input(&registry,"lu_files_list_directory",serde_json::Map::new())
+                .map_err(|_|WorkspaceReadError::CatalogUnavailable)?;
         }
         let ids=descriptors.iter().map(|d|d.id.clone()).collect::<BTreeSet<_>>();
         let names=catalog.names_for_native_ids(&ids);
@@ -223,10 +253,10 @@ impl WorkspaceReadTurnSession{
         ).map_err(|_:ToolTurnError|WorkspaceReadError::CatalogUnavailable)?;
         // A dispatched error is not a successful observation. The host must
         // never publish a factual answer or seed source reuse from a failed read.
-        turn.require_observed_tool_result();
+        if root_listing_only{turn.require_single_observed_tool_result();}else{turn.require_observed_tool_result();}
         Ok(Self {
             registry,catalog,authority,turn,
-            policy:ReadOnlyPolicy{ids},task_id:task_id.into(),
+            policy:ReadOnlyPolicy{ids,root_listing_only},task_id:task_id.into(),
             origin,
         })
     }
@@ -291,6 +321,33 @@ mod integrated_reader_tests{
         let name=format!("lu-p0-reader-{}-{:?}",std::process::id(),
             std::thread::current().id());
         std::env::temp_dir().join(name)
+    }
+    #[tokio::test]
+    async fn cp_dev_01d_root_listing_only_binds_approved_root(){
+        let base=directory();let _=std::fs::remove_dir_all(&base);let root=base.join("approved");
+        std::fs::create_dir_all(root.join("child")).unwrap();
+        std::fs::write(root.join("original.txt"),b"source").unwrap();
+        std::fs::write(root.join("child/hidden.txt"),b"not a root member").unwrap();
+        let mut lane=WorkspaceReadTurnSession::new_root_listing(&OriginalTurn,"c-source","g-human","task-list",&root).unwrap();
+        let caps=lane.capabilities().unwrap();assert_eq!(caps.len(),1);assert_eq!(caps[0].public_name,"lu_files_list_directory");
+        let allowed=BTreeSet::from(["lu_files_list_directory".to_owned()]);
+        let encode=|raw|lane.catalog.encode_call(&allowed,"lu_files_list_directory","call",Some("task-list"),raw);
+        assert!(encode(r#"{"source":"current_request","path":"child"}"#).is_err());
+        assert!(encode(r#"{"path":"child"}"#).is_err());
+        assert!(encode(r#"{"source":"other_request"}"#).is_err());
+        let call=encode(r#"{"source":"current_request"}"#).unwrap();
+        assert_eq!(crate::wire::proto::ListDirectoryRequest::decode(call.input.bytes.as_slice()).unwrap().path,"");
+        let journal=ModelTurnJournal::open(&base.join("audit.sqlite")).unwrap();
+        let mut model=Scripted{replies:VecDeque::from([
+            r#"{"kind":"tool","name":"lu_files_list_directory","arguments":{"source":"current_request"}}"#.into(),
+            r#"{"kind":"final","text":"original.txt and child"}"#.into(),
+        ])};
+        let result=lane.run_journaled("List files in my folder",&mut model,&Cancellation::default(),&journal).await.unwrap();
+        let events=journal.events_for("c-source","task-list").unwrap();
+        let feedback=events.iter().filter(|e|e.kind==crate::model_turn_journal::ModelAuditKind::ToolFeedback).collect::<Vec<_>>();
+        assert_eq!(result.tool_calls,1);assert_eq!(feedback.len(),1);
+        assert!(feedback[0].payload.contains("original.txt")&&feedback[0].payload.contains("child")&&!feedback[0].payload.contains("hidden.txt"));
+        drop(lane);drop(journal);std::fs::remove_dir_all(base).unwrap();
     }
     #[tokio::test]
     async fn one_original_turn_discovers_then_reads_document_through_real_codecs(){
