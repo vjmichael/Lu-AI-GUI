@@ -1,11 +1,11 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "85dc3c09a0da665f414e0cc0a81ab83a5285df32",
-  "trackedFileCount": 1961,
+  "sourceCommitBeforeLock": "c6fed4986faccb3e07f164915ec7481e6be14e33",
+  "trackedFileCount": 1962,
   "files": [
     {
       "path": ".gitattributes",
-      "blob": "72050fb2ee63130195556bb14cafce3da9e2e0f7"
+      "blob": "b8baba58044452838e5d3f9f30ee802dbd8f7ee7"
     },
     {
       "path": ".github/ide-group06d-batch-trigger.txt",
@@ -3701,7 +3701,7 @@
     },
     {
       "path": "ide/packaging/collect_verification_licenses.py",
-      "blob": "76c70e27e015550fc4caedb01b9418ecbfcfdbad"
+      "blob": "e1eb5701e7448c59cc5a1c659573d6beb6807b49"
     },
     {
       "path": "ide/packaging/debug-adapters.manifest.json",
@@ -3788,6 +3788,10 @@
       "blob": "d94d92b8e0f30a49f11a7b350e4bd23e5e26981e"
     },
     {
+      "path": "ide/packaging/p06-observer-cohort.json",
+      "blob": "95b286eba80949696cb29fb03ce9c7889e97160c"
+    },
+    {
       "path": "ide/packaging/p06-reviewed-lock-graphs.json",
       "blob": "fa149788d64c618d736acbe5bc1c80b1f185cc3e"
     },
@@ -3797,7 +3801,7 @@
     },
     {
       "path": "ide/packaging/p06_live_native_jobs.py",
-      "blob": "7b8e7358092732f1f09c3f2b4960e18ded9ee1b2"
+      "blob": "e142afabf9139b4bf42a44287edf6d90709d417c"
     },
     {
       "path": "ide/packaging/p06_shipping_content.py",
@@ -3869,7 +3873,7 @@
     },
     {
       "path": "ide/packaging/test_collect_verification_licenses.py",
-      "blob": "41fc5cb0cb8a55190a99fa478fe2e7d4a3b2331a"
+      "blob": "e309d2ea35da9a3f4920d0bf66825c6472291c57"
     },
     {
       "path": "ide/packaging/test_debug_adapters.py",
@@ -3917,7 +3921,7 @@
     },
     {
       "path": "ide/packaging/test_p05_upstream_bundle_integration.py",
-      "blob": "a70d2adddbfb37f95b2a22b3023523b66cd90904"
+      "blob": "f9602c9f3c59948644612bac5b0126204e66402a"
     },
     {
       "path": "ide/packaging/test_p05_upstream_ci_wiring.py",
@@ -3941,7 +3945,7 @@
     },
     {
       "path": "ide/packaging/test_p06_license_provenance.py",
-      "blob": "7247499c4a76321af56d141486a10ea80cbda3b5"
+      "blob": "9f69db7b849705c38af3a24df6fd00b16dbd8276"
     },
     {
       "path": "ide/packaging/test_p06_license_triage.py",
@@ -3949,7 +3953,7 @@
     },
     {
       "path": "ide/packaging/test_p06_live_native_jobs.py",
-      "blob": "28ebe1643e2813cc6aafd143ae2bfbc9ecb077bf"
+      "blob": "3148c189502e4841da28583c2baba4cead6f1a1e"
     },
     {
       "path": "ide/packaging/test_p06_r_efi_authors.py",
@@ -4013,7 +4017,7 @@
     },
     {
       "path": "ide/packaging/test_upstream_notice_receipt.py",
-      "blob": "c8a8ff3103cf02c481256c385c79d32c07c2eb2e"
+      "blob": "b82ba6bc1d24d89dc98072776aaff4703d2ad786"
     },
     {
       "path": "ide/packaging/test_verify_dev045c_debug_bundle.py",
@@ -4029,7 +4033,7 @@
     },
     {
       "path": "ide/packaging/test_verify_p04_license_bundle.py",
-      "blob": "45595c5d03b1f6c49d8771d2a759e5f011740fcc"
+      "blob": "a05b21b5aa02ed67b0e614a0902178bdbf660aa1"
     },
     {
       "path": "ide/packaging/test_verify_p04_transition_evidence.py",
@@ -4169,7 +4173,7 @@
     },
     {
       "path": "ide/packaging/upstream-licenses/README.md",
-      "blob": "0388610dec535e541df76d6b29112f901619545e"
+      "blob": "c2a543bb3fd75014f9d3b98ab58962266c3d27d1"
     },
     {
       "path": "ide/packaging/upstream-licenses/Tauri-LICENSE-APACHE-2.0.txt",
@@ -4185,7 +4189,7 @@
     },
     {
       "path": "ide/packaging/upstream_notice_receipt.py",
-      "blob": "0f15cb6373a743925a4a5c7303efa6dca9208704"
+      "blob": "b5aaec85c854522bc1dd5bcfe190c63c9000269a"
     },
     {
       "path": "ide/packaging/verify_debug_adapters.py",
@@ -4213,7 +4217,7 @@
     },
     {
       "path": "ide/packaging/verify_p04_license_bundle.py",
-      "blob": "835e3c1608492c05ec665e4927c1faee6948f3bf"
+      "blob": "58c4b084c87d3d55ec14389318b1348fd3fa3bd4"
     },
     {
       "path": "ide/packaging/verify_p04_transition_evidence.py",
