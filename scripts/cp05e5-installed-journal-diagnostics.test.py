@@ -47,6 +47,29 @@ class Diagnostic(unittest.TestCase):
         self.assertEqual(o.failure_category('InferenceFailedAt("backend_timeout")'), 'backend_timeout')
         self.assertEqual(o.failure_category('InferenceFailedAt("backend_timeout PRIVATE_TEST_VALUE")'), 'UNCLASSIFIED')
         self.assertEqual(o.failure_category('InferenceFailedAt("backend_timeout") PRIVATE_TEST_VALUE'), 'UNCLASSIFIED')
+    def test_null_selection_and_required_refusal_classified(self):
+        self.add('selection','MODEL_OUTPUT','{"selection":null}')
+        self.add('selection','PARSED_CANDIDATE','{"selection":null}')
+        self.add('selection','REJECTED','REQUIRED_UTILITY_NOT_SELECTED')
+        result=o.failure_diagnostic(self.root,'approve')
+        categories=[r['category'] for r in result['selection']['orderedCategories']]
+        self.assertEqual(categories.count('NULL_SELECTION'),2)
+        self.assertIn('REQUIRED_UTILITY_NOT_SELECTED',categories)
+        self.assertIn('REQUIRED_UTILITY_NOT_SELECTED',self.run_fail())
+    def test_diagnostic_only_before_any_dialog(self):
+        self.add('selection','REJECTED','REQUIRED_UTILITY_UNAVAILABLE')
+        r=subprocess.run([sys.executable,str(PATH),str(self.root),'all','--diagnostic-only'],
+                         capture_output=True,text=True)
+        self.assertEqual(r.returncode,0,r.stderr)
+        report=json.loads(r.stdout); self.assertTrue(report['diagnosticOnly'])
+        self.assertEqual(len(report['turns']),5)
+        self.assertIn('REQUIRED_UTILITY_UNAVAILABLE',r.stdout)
+        self.assertNotIn('PRIVATE_TEST_VALUE',r.stdout)
+        self.assertNotIn('nativeDispatches',r.stdout)
+        r=subprocess.run([sys.executable,str(PATH),str(self.root),'approve','--diagnostic-only',
+                          '--output',str(self.root/'fake.json')],capture_output=True,text=True)
+        self.assertNotEqual(r.returncode,0)
+        self.assertFalse((self.root/'fake.json').exists())
     def test_success_gate_unchanged(self):
         self.add('utility','MODEL_OUTPUT',json.dumps({'kind':'tool','name':'lu_validate_schema','arguments':{'source':'current_request'}}))
         self.add('utility','TOOL_FEEDBACK',json.dumps({'name':'lu_validate_schema','response':{'ok':True,'result':{'valid':True,'draft':'2020-12'}}}))

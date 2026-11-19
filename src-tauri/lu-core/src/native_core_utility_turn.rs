@@ -167,7 +167,7 @@ impl CoreUtilityTurn{
         let mut turn=NativeToolTurn::new_read_only(
             &catalog,&registry,&authority,origin.clone(),task_id.into(),&allowed
         ).map_err(|_|"Original utility tool admission failed")?;
-        turn.require_observed_tool_result();
+        turn.require_single_observed_tool_result();
         Ok(Self{registry,catalog,authority,turn,
             policy:OnlyOriginalInput{tool_id,scope:task_id.into(),exact},origin})
     }
@@ -241,6 +241,30 @@ mod tests{
         let mut substituted=exact;
         substituted.input.bytes=proto::SchemaValidateRequest{schema_json:typed.schema_json,instance_json:b"0".to_vec()}.encode_to_vec();
         assert!(turn.policy.authorize(&substituted,&descriptor).is_err());
+    }
+    #[tokio::test]
+    async fn cp05_r6_single_observation_rejects_duplicate_and_requires_strict_final(){
+        for second in [
+            r#"{"kind":"tool","name":"lu_validate_schema","arguments":{"source":"current_request"}}"#,
+            "It matches.",
+            r#"{"text":"It matches."}"#,
+        ]{
+            let mut turn=CoreUtilityTurn::new(&Original,"c-original","g-original","g-original",
+                CoreUtilityRequest::Validate{schema:json!({"type":"integer"}),data:json!(17)}).unwrap();
+            let (path,journal)=audit();
+            let mut model=Replies(VecDeque::from([
+                r#"{"kind":"tool","name":"lu_validate_schema","arguments":{"source":"current_request"}}"#.into(),
+                second.into()
+            ]));
+            assert!(turn.run_journaled_observed("Validate exact original input",&mut model,
+                &Cancellation::default(),&journal,&|_|{}).await.is_err());
+            let events=journal.events_for("c-original","g-original").unwrap();
+            let native=events.iter().filter(|e|e.kind==crate::model_turn_journal::ModelAuditKind::ToolFeedback
+                &&serde_json::from_str::<Value>(&e.payload).ok().is_some_and(|v|v["name"]=="lu_validate_schema")).count();
+            assert_eq!(native,1);
+            assert!(events.iter().all(|e|e.kind!=crate::model_turn_journal::ModelAuditKind::FinalAnswer));
+            drop(turn);drop(journal);let _=fs::remove_file(path);
+        }
     }
     #[tokio::test]
     async fn original_schema_is_the_only_data_that_model_may_validate(){

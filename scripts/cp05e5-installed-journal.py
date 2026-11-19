@@ -115,7 +115,7 @@ def record(root, phase):
 # raw error messages or process arguments. Counts and fixed categories only.
 _AUDIT_KINDS = frozenset({"USER_REQUEST", "MODEL_OUTPUT", "HOST_ROUTE_SELECTED",
                          "TOOL_FEEDBACK", "FINAL_ANSWER", "REJECTED",
-                         "GENERATION_FAILURE"})
+                         "GENERATION_FAILURE", "PARSED_CANDIDATE"})
 _FAILURE_CODES = (
     "InvalidHostInput", "PromptTooLarge", "ModelReplyTooLarge",
     "MissingCompletion", "Cancelled", "InferenceFailed", "TokenLoop",
@@ -148,7 +148,10 @@ def failure_category(payload):
     for code in _FAILURE_CODES:
         if value == code or value.startswith(code + "(") or value == code + ")":
             return code
-    for prefix, code in (("BOUNDARY_BLOCKED:", "BOUNDARY_BLOCKED"),
+    if value in ("REQUIRED_UTILITY_UNAVAILABLE", "REQUIRED_UTILITY_NOT_SELECTED"):
+        return value
+    for prefix, code in (("SINGLE_OBSERVATION_FAILED:", "SINGLE_OBSERVATION_FAILED"),
+                         ("BOUNDARY_BLOCKED:", "BOUNDARY_BLOCKED"),
                          ("LOOP_GUARD_STOP:", "LOOP_GUARD_STOP"),
                          ("POLICY_DENIED:", "POLICY_DENIED"),
                          ("native feedback encoding failed", "FEEDBACK_ENCODING_FAILED"),
@@ -167,7 +170,7 @@ def failure_category(payload):
 def audit_row_category(kind, payload):
     if kind in ("REJECTED", "GENERATION_FAILURE"):
         return failure_category(payload)
-    if kind not in ("MODEL_OUTPUT", "TOOL_FEEDBACK"):
+    if kind not in ("MODEL_OUTPUT", "PARSED_CANDIDATE", "TOOL_FEEDBACK"):
         return "PRESENT"
     try:
         obj = json.loads(payload)
@@ -175,9 +178,11 @@ def audit_row_category(kind, payload):
         return "NOT_JSON"
     if not isinstance(obj, dict):
         return "NOT_OBJECT"
-    if kind == "MODEL_OUTPUT":
+    if kind in ("MODEL_OUTPUT", "PARSED_CANDIDATE"):
         if obj == {"selection": "lu_validate_schema"}:
             return "EXACT_SELECTION"
+        if obj == {"selection": None}:
+            return "NULL_SELECTION"
         if obj.get("kind") == "tool":
             if (obj.get("name") == "lu_validate_schema" and
                     obj.get("arguments") == {"source": "current_request"}):
@@ -238,8 +243,16 @@ def main():
     parser.add_argument("profile", type=pathlib.Path)
     parser.add_argument("phase", choices=["approve", "deny", "stop", "graceful", "forced", "all"])
     parser.add_argument("--output", type=pathlib.Path)
+    parser.add_argument("--diagnostic-only", action="store_true",
+                        help="capture bounded exact-turn categories; never an acceptance receipt")
     args = parser.parse_args()
     phases = ["approve", "deny", "stop", "graceful", "forced"] if args.phase == "all" else [args.phase]
+    if args.diagnostic_only:
+        if args.output:
+            parser.error("diagnostic-only may not write an acceptance receipt")
+        print(json.dumps({"diagnosticOnly": True, "turns": [
+            failure_diagnostic(args.profile, phase) for phase in phases]}))
+        return
     report = []
     for phase in phases:
         try:

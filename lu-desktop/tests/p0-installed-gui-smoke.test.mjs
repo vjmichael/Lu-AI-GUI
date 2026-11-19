@@ -126,3 +126,16 @@ test('CP-05 Stop proves exact worker ejection and explicit bounded restart, not 
   assert.match(flow,/Load-Lu 'second'/);
   assert.doesNotMatch(flow,/Slot-State \$false/);
 });
+
+test('CP-05 diagnostics run even before consent and exact engine preflight gates the package',()=>{
+  const gguf=readFileSync(new URL('../../scripts/cp05e5-windows-installed-gguf.ps1',import.meta.url),'utf8');
+  const builder=readFileSync(new URL('../../scripts/build-agent01g-physical-windows-nsis.ps1',import.meta.url),'utf8');
+  const closeout=readFileSync(new URL('../../.github/workflows/lu-cp05e-closeout.yml',import.meta.url),'utf8');
+  assert.match(gguf,/python \$oracle \$profile all --diagnostic-only/);
+  assert.match(gguf,/failure-all-turns-diagnostic\.json/);
+  assert.match(gguf,/Wait-NativeWindow 'Allow this inspection\?'/);
+  assert.match(builder,/CP05_R6_REAL_UTILITY_CASES_PASS=3/);
+  assert.ok(builder.indexOf('CP05_R6_REAL_UTILITY_CASES_PASS=3')<builder.indexOf('cargo rustc --release'));
+  assert.match(closeout,/-PreflightGgufPath \$model -PreflightGgufSha256 \$env:MODEL_SHA/);
+  assert.ok(closeout.indexOf('Download and hash previously exercised genuine Qwen3')<closeout.indexOf('Genuine exact-engine preflight, then build'));
+});

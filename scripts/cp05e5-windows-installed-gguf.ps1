@@ -123,8 +123,9 @@ public static class LuP0Mouse {
 # Only an independently created top-level native Tauri window, owned by
 # the same installed EXE process but with a DISTINCT Win32 handle, counts.
 # A same-WebView overlay/dialog in the main Lu window cannot pass this gate.
-function Wait-NativeWindow([string]$title){
-  $deadline=[DateTime]::UtcNow.AddSeconds(30)
+function Wait-NativeWindow([string]$title,[int]$seconds=90){
+  # A genuine local model may still be generating its inert choice.
+  $deadline=[DateTime]::UtcNow.AddSeconds($seconds)
   do{
     $top=[System.Windows.Automation.AutomationElement]::RootElement.FindAll(
       [System.Windows.Automation.TreeScope]::Children,
@@ -664,6 +665,14 @@ try{
 }catch{
   # Never print process command lines or the ephemeral bearer.
   $report.errors+=@($_.Exception.Message)
+  # Capture selection AND utility classifications even if no modal or tool
+  # journal was reached. Run before process cleanup. Never count as PASS.
+  try{
+    $diagnostic=& python $oracle $profile all --diagnostic-only 2>&1
+    if($LASTEXITCODE -eq 0){
+      ($diagnostic -join [Environment]::NewLine)|Set-Content -LiteralPath (Join-Path $EvidenceDir 'failure-all-turns-diagnostic.json') -Encoding utf8
+    }else{$report.errors+=@('Bounded all-turn journal diagnostic unavailable')}
+  }catch{$report.errors+=@('Bounded all-turn journal diagnostic unavailable')}
   try{if($null -ne $script:consentDialog){Save-UIA-Failure $script:consentDialog 'cp05-consent'}}catch{}
   try{if($null -ne $script:window){Save-UIA-Failure $script:window 'cp05-installed'}}catch{}
   Write-Warning ('Installed CP-05E5 witness NOT ACCEPTED: '+$_.Exception.Message)

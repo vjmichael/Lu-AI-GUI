@@ -67,7 +67,7 @@ jobs:
           retention-days: 14
   installed-repaired-windows-gguf:
     runs-on: windows-2025
-    timeout-minutes: 200
+    timeout-minutes: 250
     env:
       ORIGINAL_SOURCE: '99203ea5a014118e27b8677c1e50924da27cffc9'
       ORIGINAL_INSTALLER_ZIP_SHA: '9dce7473393c018f9988d24630a870e13cf009cde5e957bf4f530bbfb6485ed9'
@@ -114,7 +114,8 @@ jobs:
           $tests=@(
             'persistent_llama_backend::tests::cp05_finite_json_disables_hidden_reasoning_without_weakening_schema',
             'supervised_tool_generation::failure_class_tests::cp05_supervisor_failure_detail_is_bounded',
-            'inference_supervisor::tests::cp05_text_and_constrained_failure_clear_only_ejected_session'
+            'inference_supervisor::tests::cp05_text_and_constrained_failure_clear_only_ejected_session',
+            'native_core_utility_turn::tests::cp05_r6_single_observation_rejects_duplicate_and_requires_strict_final'
           )
           foreach($test in $tests){
             $result=(& cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib $test -- --exact --nocapture 2>&1 | Out-String)
@@ -157,13 +158,21 @@ jobs:
           if(-not(Test-Path $exe)){throw 'Pinned makensis.exe missing'}
           & $exe /VERSION
           if($LASTEXITCODE -ne 0){throw 'NSIS compiler unavailable'}
-      - name: Build exact repaired Windows Lu and the original pinned CPU engine source
+      - name: Download and hash previously exercised genuine Qwen3 0.6B Q4_K_M
         shell: pwsh
-        timeout-minutes: 150
+        run: |
+          $ErrorActionPreference='Stop'
+          $model=Join-Path $env:RUNNER_TEMP 'cp05-pinned-qwen.gguf'
+          curl.exe --fail --silent --show-error --location --retry 4 --retry-delay 5 --connect-timeout 30 https://huggingface.co/QuantFactory/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B.Q4_K_M.gguf -o $model
+          if($LASTEXITCODE -ne 0 -or (Get-FileHash -LiteralPath $model -Algorithm SHA256).Hash.ToLowerInvariant() -cne $env:MODEL_SHA){throw 'Actual pinned GGUF unavailable or changed'}
+      - name: Genuine exact-engine preflight, then build exact repaired Windows Lu and pinned CPU engine
+        shell: pwsh
+        timeout-minutes: 200
         run: |
           $ErrorActionPreference='Stop'
           $out=Join-Path $env:RUNNER_TEMP 'cp05-repaired-nsis'
-          & scripts/build-agent01g-physical-windows-nsis.ps1 -SourceSha $env:GITHUB_SHA -OutputDirectory $out
+          $model=Join-Path $env:RUNNER_TEMP 'cp05-pinned-qwen.gguf'
+          & scripts/build-agent01g-physical-windows-nsis.ps1 -SourceSha $env:GITHUB_SHA -OutputDirectory $out -PreflightGgufPath $model -PreflightGgufSha256 $env:MODEL_SHA
           if($LASTEXITCODE -ne 0){throw 'Repaired NSIS build failed'}
           $check=Get-Content -LiteralPath (Join-Path $out 'installer-checksums.json') -Raw|ConvertFrom-Json
           if($check.sourceSha -cne $env:GITHUB_SHA -or $check.genuineInstallerProduced -ne $true){throw 'Repaired installer source mismatch'}
@@ -173,13 +182,8 @@ jobs:
           $prior=Get-Content -LiteralPath cp05-closeout-evidence/original-installer-checksums.json -Raw|ConvertFrom-Json
           if($check.appSha256 -ceq $prior.appSha256){throw 'Repaired production binary unexpectedly equals original failed binary'}
           Copy-Item -LiteralPath (Join-Path $out 'installer-checksums.json') -Destination cp05-closeout-evidence/installer-checksums.json
-      - name: Download and hash previously exercised genuine Qwen3 0.6B Q4_K_M
-        shell: pwsh
-        run: |
-          $ErrorActionPreference='Stop'
-          $model=Join-Path $env:RUNNER_TEMP 'cp05-pinned-qwen.gguf'
-          curl.exe --fail --silent --show-error --location --retry 4 --retry-delay 5 --connect-timeout 30 https://huggingface.co/QuantFactory/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B.Q4_K_M.gguf -o $model
-          if($LASTEXITCODE -ne 0 -or (Get-FileHash -LiteralPath $model -Algorithm SHA256).Hash.ToLowerInvariant() -cne $env:MODEL_SHA){throw 'Actual pinned GGUF unavailable or changed'}
+          Copy-Item -LiteralPath (Join-Path $out 'cp05-exact-engine-preflight.log') -Destination cp05-closeout-evidence
+          Copy-Item -LiteralPath (Join-Path $out 'cp05-exact-utility-policy.log') -Destination cp05-closeout-evidence
       - name: Genuine repaired NSIS model, approval, refusal, active Stop, normal close and forced host-death recovery
         timeout-minutes: 25
         shell: pwsh

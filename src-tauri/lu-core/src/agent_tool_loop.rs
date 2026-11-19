@@ -154,6 +154,7 @@ pub struct NativeToolTurn {
     read_only: bool,
     requires_observed_tool_result: bool,
     observed_tool_result: bool,
+    single_observation: bool,
     // Host-only plan admission: a successful tool reply does not establish a
     // verified deliverable when the independent source oracle is UNSUPPORTED.
     requires_verified_independent_outcome: bool,
@@ -221,6 +222,7 @@ impl NativeToolTurn {
             read_only: false,
             requires_observed_tool_result: false,
             observed_tool_result: false,
+            single_observation: false,
             requires_verified_independent_outcome: false,
             observed_verified_independent_outcome: false,
             previous_request_digest:None,
@@ -282,6 +284,15 @@ impl NativeToolTurn {
     pub fn require_observed_tool_result(&mut self) {
         self.requires_observed_tool_result = true;
     }
+
+    /// Narrow fixed-input utility: one exact observation, followed by a
+    /// strict final response. Never re-dispatch the same bound input.
+    pub(crate) fn require_single_observed_tool_result(&mut self) {
+        self.requires_observed_tool_result=true;
+        self.single_observation=true;
+    }
+    pub(crate) fn is_single_observation(&self)->bool{self.single_observation}
+    pub(crate) fn tool_requests_allowed(&self)->bool{!self.single_observation||self.steps==0}
 
     /// Applied only after an independently authorized native planned-step
     /// preflight. Never called by a model or inferred from plan approval.
@@ -503,7 +514,7 @@ impl NativeToolTurn {
                 let integer_final = error == JsonBoundaryError::NonObject
                     && text.len() <= 64
                     && text.bytes().all(|byte| byte.is_ascii_digit());
-                if plain_final && (error == JsonBoundaryError::Malformed || integer_final) {
+                if !self.single_observation && plain_final && (error == JsonBoundaryError::Malformed || integer_final) {
                     self.ensure_original_scope_authorized(authority)?;
                     self.ensure_final_has_required_observation()?;
                     self.done = true;
@@ -521,7 +532,7 @@ impl NativeToolTurn {
         // otherwise minimal final reply. Only an EXACT single string field
         // may become display data. This branch has no path to tool dispatch,
         // and cannot accept an object carrying extra control/argument fields.
-        if !object.contains_key("kind") && object.len() == 1 {
+        if !self.single_observation && !object.contains_key("kind") && object.len() == 1 {
             let display_text = ["text", "answer", "response"]
                 .into_iter()
                 .find_map(|name| object.get(name).and_then(Value::as_str))
@@ -561,7 +572,7 @@ impl NativeToolTurn {
         if object.len() != 3 || !object.contains_key("name") || !object.contains_key("arguments") {
             return Err(ToolTurnError::UnexpectedFields);
         }
-        if self.steps >= MAX_TOOL_STEPS {
+        if self.steps >= MAX_TOOL_STEPS || !self.tool_requests_allowed() {
             return Err(ToolTurnError::StepLimit);
         }
         let name = object

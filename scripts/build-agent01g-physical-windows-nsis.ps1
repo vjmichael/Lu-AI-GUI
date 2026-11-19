@@ -3,7 +3,9 @@
 [CmdletBinding()]
 param(
   [Parameter(Mandatory=$true)][ValidatePattern('^[a-f0-9]{40}$')][string]$SourceSha,
-  [Parameter(Mandatory=$true)][string]$OutputDirectory
+  [Parameter(Mandatory=$true)][string]$OutputDirectory,
+  [string]$PreflightGgufPath='',
+  [string]$PreflightGgufSha256=''
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
@@ -122,6 +124,38 @@ try{
   # Engine SHA and length are embedded into THIS TEST build at compile time.
   $env:LU_01G_PHYSICAL_CPU_ENGINE_SHA256=$engineHash
   $env:LU_01G_PHYSICAL_CPU_ENGINE_BYTES=[string]$engineSize
+  # CP-05: exercise actual production selection + native utility against
+  # the exact staged engine and model before spending time linking/package.
+  # The optional gate is explicitly required by the CP-05 closeout workflow.
+  if($PreflightGgufPath -or $PreflightGgufSha256){
+    if(-not $PreflightGgufPath -or $PreflightGgufSha256 -cnotmatch '^[a-f0-9]{64}$'){
+      throw 'Both exact GGUF preflight inputs are required'
+    }
+    $model=Get-Item -LiteralPath $PreflightGgufPath -ErrorAction Stop
+    if($model.PSIsContainer -or ($model.Attributes -band [IO.FileAttributes]::ReparsePoint) -or
+       (Get-FileHash -LiteralPath $model.FullName -Algorithm SHA256).Hash.ToLowerInvariant() -cne $PreflightGgufSha256){
+      throw 'Preflight exact model identity failed'
+    }
+    $env:LU_CP05E_SERVER=Join-Path $stage 'llama-server.exe'
+    $env:LU_CP05E_SERVER_SHA256=$engineHash
+    $env:LU_CP05E_GGUF=$model.FullName
+    $env:LU_CP05E_GGUF_SHA256=$PreflightGgufSha256
+    try{
+      $policyLog=Join-Path $out 'cp05-exact-utility-policy.log'
+      & cargo test --release --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --features physical_win_cpu_eval --lib capability_negotiation::tests::cp05_r6_exact_utility_policy_preserves_abstention_without_false_completion -- --exact --nocapture 2>&1 |Tee-Object -FilePath $policyLog
+      if($LASTEXITCODE -ne 0 -or -not(Select-String -LiteralPath $policyLog -SimpleMatch 'test result: ok. 1 passed; 0 failed;')){
+        throw 'Exact utility policy regression did not pass'
+      }
+      $realLog=Join-Path $out 'cp05-exact-engine-preflight.log'
+      & cargo test --release --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --features physical_win_cpu_eval --lib capability_negotiation::tests::cp05_r6_real_exact_utility_with_native_backend -- --ignored --exact --nocapture 2>&1 |Tee-Object -FilePath $realLog
+      if($LASTEXITCODE -ne 0 -or -not(Select-String -LiteralPath $realLog -SimpleMatch 'test result: ok. 1 passed; 0 failed;') -or
+          -not(Select-String -LiteralPath $realLog -SimpleMatch 'CP05_R6_REAL_UTILITY_CASES_PASS=3')){
+        throw 'Genuine exact-engine preflight did not pass; no installer published'
+      }
+    }finally{
+      Remove-Item Env:LU_CP05E_SERVER,Env:LU_CP05E_SERVER_SHA256,Env:LU_CP05E_GGUF,Env:LU_CP05E_GGUF_SHA256 -ErrorAction SilentlyContinue
+    }
+  }
   # build.rs/tauri-build already embeds the one reviewed Common Controls v6
   # Win32 manifest. Linking a second custom .res provably breaks MSVC with
   # CVT1100 duplicate RT_MANIFEST / LNK1123. The PE oracle below is mandatory.
