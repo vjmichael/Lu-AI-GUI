@@ -95,3 +95,25 @@ test('96-tab ceiling across multiple registered projects bounds total editor his
  assert.equal(admitOpenTabs(two,C,[tab(0,C).key]).reason,'GLOBAL_OPEN_TAB_BUDGET_EXCEEDED');
  assert.equal(two.length,96,'no existing unsaved drafts/undo evicted');
 });
+
+test('B5 jump selection excludes placeholder and preserves native Home/End endpoints',async()=>{
+ const {readFileSync}=await import('node:fs');
+ const ui=readFileSync(new URL('../web/main.jsx',import.meta.url),'utf8');
+ const open=ui.indexOf('<select className="editorTabJump"');
+ assert.ok(open>=0);
+ const chooser=ui.slice(open,ui.indexOf('</select>',open));
+ assert.match(chooser,/<option value="" disabled>Open tabs<\/option>/);
+ assert.ok(chooser.includes('if(event.target.value)selectPrimaryEditorTab(event.target.value)'));
+ assert.ok(chooser.includes("!['Home','End'].includes(event.key)"));
+ assert.ok(chooser.includes("event.key==='Home'?projectTabs[0]:projectTabs.at(-1)"));
+ assert.ok(chooser.includes('event.preventDefault()'));
+ assert.ok(chooser.includes('selectPrimaryEditorTab(next.key)'));
+ const win=readFileSync(new URL('../fixtures/Test-Wo8NativeDesktopUI.ps1',import.meta.url),'utf8');
+ const linux=readFileSync(new URL('../fixtures/b5_linux_installed_perf_atspi.py',import.meta.url),'utf8');
+ const switchWin=win.split('function B5-Switch(',2)[1].split('function B5-P95(',1)[0];
+ const switchLinux=linux.split('def choose_tab(',2)[1].split('def percentile(',1)[0];
+ assert.ok(switchWin.includes("SendWait('{HOME}')") && switchWin.includes("SendWait('{END}')"));
+ assert.ok(switchLinux.includes('key("Home")') && switchLinux.includes('key("End")'));
+ assert.ok(!switchWin.includes('{DOWN}') && !switchLinux.includes('key("Down")'));
+ assert.ok(switchWin.includes('B5-VisibleEditor $marker') && switchLinux.includes('assert_current_editor(marker)'));
+});

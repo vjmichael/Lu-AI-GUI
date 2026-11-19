@@ -72,15 +72,8 @@ env WO8_INSTALLED_EXE="$exec_path" WO8_FIXTURE_ROOT="$fixture" \
     openbox >/dev/null 2>&1 &
     wm_pid=$!
     trap "kill $wm_pid 2>/dev/null || true; wait $wm_pid 2>/dev/null || true" EXIT
-    ready=0
-    for n in {1..20}; do
-      if xprop -root _NET_SUPPORTING_WM_CHECK 2>/dev/null | grep -q "window id #"; then
-        ready=1
-        break
-      fi
-      sleep 0.2
-    done
-    if [[ "$ready" -ne 1 ]]; then
+    source ide/app/fixtures/x11_openbox_readiness.sh
+    if ! wait_for_openbox_ewmh "$wm_pid"; then
       echo "WO8_NATIVE_LINUX_DENIED:ewmh_window_manager_not_verified" >&2
       exit 1
     fi
@@ -107,10 +100,11 @@ env WO8_INSTALLED_EXE="$exec_path" WO8_FIXTURE_ROOT="$fixture" \
     openbox >/dev/null 2>&1 &
     wm_pid=$!
     trap "kill $wm_pid 2>/dev/null || true; wait $wm_pid 2>/dev/null || true" EXIT
-    for n in {1..20}; do
-      xprop -root _NET_SUPPORTING_WM_CHECK 2>/dev/null | grep -q "window id #" && break
-      sleep 0.2
-    done
+    source ide/app/fixtures/x11_openbox_readiness.sh
+    if ! wait_for_openbox_ewmh "$wm_pid"; then
+      echo "WO8_NATIVE_LINUX_DENIED:ewmh_window_manager_not_verified" >&2
+      exit 1
+    fi
     /usr/bin/python3 ide/app/fixtures/dev035_jobs_installed_atspi.py
   ' || deny dev035_real_installed_jobs_denied
 echo "WO8_LINUX_PROTECTED_RUN_DEBUG=NOT_ACCEPTED"

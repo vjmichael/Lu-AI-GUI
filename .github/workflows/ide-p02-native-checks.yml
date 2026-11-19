@@ -71,7 +71,9 @@ jobs:
         run: cargo check --manifest-path ide/app/src-tauri/Cargo.toml --features native-build,native-debug,native-lsp --lib
       - name: Guard real Linux accessibility helper-call signatures against regression
         shell: bash
-        run: python3 ide/app/fixtures/test_atspi_signature_contract.py
+        run: |
+          python3 ide/app/fixtures/test_atspi_signature_contract.py
+          python3 ide/app/fixtures/test_wo9_review_control_policy.py
       - name: Validate GUI harness syntax, not installed results
         shell: bash
         run: |

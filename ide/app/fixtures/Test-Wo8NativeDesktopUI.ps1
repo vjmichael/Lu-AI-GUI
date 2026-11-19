@@ -1660,9 +1660,9 @@ try {
         $picker=Focus-ExactNativeControl 'Jump to open file'
         $timer=[Diagnostics.Stopwatch]::StartNew()
         if ($which -eq 'first') {
-          [System.Windows.Forms.SendKeys]::SendWait('{HOME}{DOWN}{ENTER}')
+          [System.Windows.Forms.SendKeys]::SendWait('{HOME}')
         } else {
-          [System.Windows.Forms.SendKeys]::SendWait('{END}{ENTER}')
+          [System.Windows.Forms.SendKeys]::SendWait('{END}')
         }
         B5-VisibleEditor $marker
         $timer.Stop()

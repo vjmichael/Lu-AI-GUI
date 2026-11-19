@@ -140,6 +140,25 @@ def focus_editor(leaf="main.rs", seconds=8):
             activate("Focus primary editor (Ctrl+1)")
         time.sleep(.15)
     print("B5_NATIVE_EDITOR_SCOPE_MATCH_COUNT="+str(len(matches)), flush=True)
+    # Report the actual provider's bounded role/state shapes and pane labels.
+    # Do not log source text or loosen the exact file, pane, editability or focus gate.
+    reported=0
+    for node in _native_source_editor_nodes():
+        if reported>=8:
+            break
+        try:
+            name=(node.name or "").strip()
+            if name.startswith(("First editor, ", "Second editor, ", "Source editor text")):
+                state=node.getState()
+                role=(node.getRoleName() or "").casefold()
+                flags=tuple(int(state.contains(flag)) for flag in
+                    (pyatspi.STATE_VISIBLE, pyatspi.STATE_SHOWING, pyatspi.STATE_FOCUSABLE,
+                     pyatspi.STATE_EDITABLE, pyatspi.STATE_FOCUSED))
+                print("B5_NATIVE_EDITOR_DIAGNOSTIC="+repr(name[:160])+";role="+repr(role[:40])+
+                      ";visible:showing:focusable:editable:focused="+":".join(map(str,flags)),flush=True)
+                reported+=1
+        except Exception:
+            continue
     deny("exact_native_editor_focus_not_verified_"+leaf)
 
 
@@ -210,15 +229,19 @@ def choose_tab(direction,marker):
     try:
         if not picker.queryComponent().grabFocus():
             deny("native_tab_jump_not_focusable")
+        picker=accessible("Jump to open file",seconds=3)
+        if not picker.getState().contains(pyatspi.STATE_FOCUSED):
+            deny("native_tab_jump_focus_not_verified")
+    except RuntimeError:
+        raise
     except Exception:
         deny("native_tab_jump_not_focusable")
+    print("B5_NATIVE_TAB_JUMP="+direction,flush=True)
     start_ns=time.perf_counter_ns()
     if direction=="first":
         key("Home")
-        key("Down")   # skip the actual native empty "Open tabs" option
     else:
         key("End")
-    key("Return")
     assert_current_editor(marker)
     return round((time.perf_counter_ns()-start_ns)/1e6,3)
 
@@ -259,6 +282,7 @@ def main():
         started=time.perf_counter_ns()
         select_native_folder()
         editor_project()
+        print("B5_NATIVE_PHASE=first_large_source",flush=True)
         assert_current_editor("B5_SOURCE_main")
         metric["firstSourceActivationMs"]=round((time.perf_counter_ns()-started)/1e6,3)
         metric["memorySamples"].append(sample_rss(proc.pid,"initial_large_source"))
@@ -277,6 +301,7 @@ def main():
         if any(sha(path)!=originals[path.name] for path in files):
             deny("unsaved_multi_tab_open_changed_source")
         metric["noImplicitSaveVerified"]=True
+        print("B5_NATIVE_PHASE=48_tabs_verified_49th_denied",flush=True)
         for iteration in range(6):
             metric["switchRoundTripMs"].append(choose_tab("first","B5_SOURCE_main"))
             metric["switchRoundTripMs"].append(choose_tab("last","B5_SOURCE_p46"))

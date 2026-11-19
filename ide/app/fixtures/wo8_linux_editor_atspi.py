@@ -61,11 +61,13 @@ def native_workflow_review_control(name, seconds=20):
     A blocked native result is a denial, not an alternative successful label.
     Scan the complete bounded subtree; never accept a partial scan on overflow.
     """
-    role = "status" if name in ("Eligible for human source review", "Exact evidence matched") else "push button"
+    is_status = name in ("Eligible for human source review", "Exact evidence matched")
+    roles = ("status", "status bar") if is_status else ("push button", "button")
     deadline = time.monotonic() + seconds
     last_counts = (0, 0, 0)
     last_named = 0
     last_complete = False
+    last_flags = (0, 0, 0, 0, 0)
     while time.monotonic() < deadline:
         roots = []
         for node in elements():
@@ -79,6 +81,7 @@ def native_workflow_review_control(name, seconds=20):
                 continue
         matches, blocked = [], []
         named = 0
+        flags = (0, 0, 0, 0, 0)
         complete = len(roots) == 1
         if complete:
             stack = [(roots[0], 0)]
@@ -93,13 +96,22 @@ def native_workflow_review_control(name, seconds=20):
                     title = (node.name or "").strip()
                     kind = (node.getRoleName() or "").casefold()
                     state = node.getState()
-                    if title == name:
-                        named += 1
-                    if state.contains(pyatspi.STATE_VISIBLE) and not _native_dialog_ancestor(node):
+                    if not _native_dialog_ancestor(node):
                         if kind in ("status", "status bar") and title == "Blocked by native evidence":
                             blocked.append(node)
-                        if (kind == role or role == "status" and kind == "status bar") and title == name:
-                            matches.append(node)
+                        if title == name:
+                            named += 1
+                            # Offscreen WebKit accessibility buttons may lack
+                            # VISIBLE until scrolled into view. Identification
+                            # is not activation: require role and exact name now,
+                            # and real visibility before any native input below.
+                            flags = tuple(int(value) for value in (
+                                kind in roles, state.contains(pyatspi.STATE_VISIBLE),
+                                state.contains(pyatspi.STATE_SHOWING),
+                                state.contains(pyatspi.STATE_ENABLED),
+                                state.contains(pyatspi.STATE_SENSITIVE)))
+                            if kind in roles and (not is_status or state.contains(pyatspi.STATE_VISIBLE)):
+                                matches.append(node)
                     for i in range(node.childCount):
                         child = node.getChildAtIndex(i)
                         if child is None:
@@ -112,38 +124,65 @@ def native_workflow_review_control(name, seconds=20):
                     complete = False
                     break
         last_counts = (len(roots), len(matches), len(blocked))
-        last_named, last_complete = named, complete
+        last_named, last_complete, last_flags = named, complete, flags
         if complete and blocked:
             deny("workflow_review_blocked_by_native_evidence")
-        if complete and len(matches) == 1:
+        if complete and named == 1 and len(matches) == 1:
             return matches[0]
         time.sleep(.25)
     print("WO9_NATIVE_REVIEW_ACCESSIBILITY=region:%d;match:%d;blocked:%d" % last_counts, flush=True)
     print("WO9_NATIVE_REVIEW_EXACT_NAME_COUNT=%d;complete:%s" %
           (last_named, last_complete), flush=True)
+    print("WO9_NATIVE_REVIEW_QUALIFICATION=role:%d;visible:%d;showing:%d;enabled:%d;sensitive:%d" % last_flags,
+          flush=True)
     deny("workflow_review_exact_control_not_verified_" + name.replace(" ", "_"))
 
 
 def activate_native_workflow_review(name, seconds=20):
     node = native_workflow_review_control(name, seconds)
     try:
+        required = (pyatspi.STATE_VISIBLE, pyatspi.STATE_SHOWING,
+                    pyatspi.STATE_ENABLED, pyatspi.STATE_SENSITIVE)
+        def ready(candidate):
+            state = candidate.getState()
+            return all(state.contains(flag) for flag in required)
+
         state = node.getState()
-        if not state.contains(pyatspi.STATE_SHOWING):
+        if not ready(node):
+            if not all(state.contains(flag) for flag in (pyatspi.STATE_ENABLED, pyatspi.STATE_SENSITIVE)):
+                deny("workflow_review_button_not_enabled_visible")
             component = node.queryComponent()
-            if not component.grabFocus():
-                deny("workflow_review_button_not_revealed")
-            node = native_workflow_review_control(name, seconds=3)
-        state = node.getState()
-        if not all(state.contains(flag) for flag in (pyatspi.STATE_SHOWING, pyatspi.STATE_ENABLED, pyatspi.STATE_SENSITIVE)):
+            try:
+                component.scrollTo(pyatspi.SCROLL_ANYWHERE)
+            except Exception:
+                pass
+            deadline = time.monotonic() + 3
+            while time.monotonic() < deadline:
+                node = native_workflow_review_control(name, seconds=.5)
+                if ready(node):
+                    break
+                time.sleep(.1)
+            if not ready(node):
+                state = node.getState()
+                if not all(state.contains(flag) for flag in (pyatspi.STATE_FOCUSABLE,
+                        pyatspi.STATE_ENABLED, pyatspi.STATE_SENSITIVE)) or not node.queryComponent().grabFocus():
+                    deny("workflow_review_button_not_revealed")
+                node = native_workflow_review_control(name, seconds=3)
+        if not ready(node):
             deny("workflow_review_button_not_enabled_visible")
+        state = node.getState()
         # Choose the route before dispatch. No second input if the actual
         # AT-SPI invocation has an uncertain outcome.
         if state.contains(pyatspi.STATE_FOCUSABLE) and node.queryComponent().grabFocus():
             fresh = native_workflow_review_control(name, seconds=3)
-            if all(fresh.getState().contains(flag) for flag in (pyatspi.STATE_FOCUSED, pyatspi.STATE_SHOWING,
-                    pyatspi.STATE_ENABLED, pyatspi.STATE_SENSITIVE)):
+            if ready(fresh) and fresh.getState().contains(pyatspi.STATE_FOCUSED):
                 key("Return")
                 return
+        # Reacquire after any focus attempt. Never use a stale accessible
+        # object if the workflow was rerendered or became ambiguous.
+        node = native_workflow_review_control(name, seconds=3)
+        if not ready(node):
+            deny("workflow_review_button_not_enabled_visible")
         action = node.queryAction()
         choices = [i for i in range(action.nActions) if action.getName(i).casefold() in ("click", "press", "activate")]
         if len(choices) != 1 or not action.doAction(choices[0]):

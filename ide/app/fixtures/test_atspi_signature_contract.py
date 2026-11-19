@@ -133,7 +133,8 @@ class AtspiSignatureContract(unittest.TestCase):
         deep=correct
         for _ in range(17): deep=Node("","panel",[deep])
         region=Node("Multi-project native workflow evidence","region",[deep])
-        ns={"time":Clock(),"pyatspi":SimpleNamespace(STATE_VISIBLE=1),
+        ns={"time":Clock(),"pyatspi":SimpleNamespace(STATE_VISIBLE=1, STATE_SHOWING=2,
+            STATE_ENABLED=3, STATE_SENSITIVE=4),
             "elements":lambda:[outside,region], "_native_dialog_ancestor":lambda node:node.dialog,
             "deny":lambda reason: (_ for _ in ()).throw(RuntimeError(reason))}
         exec(compile(ast.Module(body=[fn],type_ignores=[]),"review_scope","exec"),ns)

@@ -208,7 +208,7 @@ class ChooserPolicyTests(unittest.TestCase):
             encoding="utf-8")
         self.assertIn("aria-label={'Edit project ' + project.displayName}", web)
         self.assertIn("aria-label={'Reopen project ' + project.displayName}", web)
-        self.assertIn("'File changed on disk. Unsaved edits preserved' : undefined", web)
+        self.assertRegex(web, r"problem\.startsWith\('File changed on disk\.'\)\s*\? 'File changed on disk\. Unsaved edits preserved'\s*:\s*problem\.startsWith\('Open-file budget'\) \? problem : undefined")
         self.assertIn('aria-describedby="ide-visible-error-message"', web)
         self.assertIn("Unsaved source tab ' : 'Saved source tab '", web)
         self.assertIn("'Unsaved editor draft ' : 'Saved editor source '", web)
@@ -242,7 +242,13 @@ class ChooserPolicyTests(unittest.TestCase):
             encoding="utf-8")
         self.assertIn('command -v openbox >/dev/null', script)
         self.assertIn('openbox >/dev/null 2>&1 &', script)
-        self.assertIn('xprop -root _NET_SUPPORTING_WM_CHECK', script)
+        self.assertEqual(script.count('source ide/app/fixtures/x11_openbox_readiness.sh'), 2)
+        self.assertEqual(script.count('if ! wait_for_openbox_ewmh "$wm_pid"; then'), 2)
+        helper = Path(__file__).with_name("x11_openbox_readiness.sh").read_text(encoding="utf-8")
+        for witness in ("xprop -root _NET_SUPPORTING_WM_CHECK", "_NET_ACTIVE_WINDOW",
+                        "_OPENBOX_PID", 'kill -0 "$pid"', '$check == "$root"',
+                        '$previous == "$id"'):
+            self.assertIn(witness, helper)
         self.assertIn('WO8_NATIVE_LINUX_DENIED:ewmh_window_manager_not_verified',script)
         self.assertIn('WO8_NATIVE_LINUX_X11_EWMH_WM=verified', script)
         self.assertIn('/usr/bin/python3 ide/app/fixtures/wo8_linux_editor_atspi.py', script)

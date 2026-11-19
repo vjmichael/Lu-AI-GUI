@@ -17,23 +17,14 @@ cleanup() {
 trap cleanup EXIT
 # Xvfb does not provide an EWMH _NET_ACTIVE_WINDOW manager by itself.
 # Do not send dialog keystrokes until a real X11 WM publishes its identity.
-wm_ready=0
-for _ in $(seq 1 40); do
-  kill -0 "$wm_pid" 2>/dev/null || deny native_window_manager_exited
-  observation="$(xprop -root _NET_SUPPORTING_WM_CHECK 2>/dev/null || true)"
-  if [[ "$observation" =~ ^_NET_SUPPORTING_WM_CHECK\(WINDOW\):[[:space:]]window[[:space:]]id[[:space:]]#[[:space:]]0x[0-9a-fA-F]+ ]]; then
-    wm_ready=1
-    break
-  fi
-  sleep 0.25
-done
-[[ "$wm_ready" == 1 ]] || deny native_window_manager_not_registered
+source "$(dirname -- "${BASH_SOURCE[0]}")/x11_openbox_readiness.sh"
+wait_for_openbox_ewmh "$wm_pid" || deny native_window_manager_not_registered
 printf 'DEV01_GTK_X11_EWMH_WINDOW_MANAGER=VERIFIED_NOT_PICKER_ACCEPTANCE\n'
 # The installed app is opened by the unchanged real AT-SPI driver, not by
 # this wrapper. Missing chooser, foreign focus or absent catalog still fail.
 driver="${1:-dev01_modern_linux_installed_atspi.py}"
 case "$driver" in
-  dev01_modern_linux_installed_atspi.py|b2_linux_installed_draft_atspi.py|b4_linux_installed_split_atspi.py|b5_linux_installed_perf_atspi.py) ;;
+  dev01_modern_linux_installed_atspi.py|b2_linux_installed_draft_atspi.py|b4_linux_installed_split_atspi.py|b5_linux_installed_perf_atspi.py|wo9_linux_workflow_atspi.py) ;;
   *) deny unreviewed_installed_driver ;;
 esac
 [[ "$#" -le 1 ]] || deny unexpected_driver_arguments

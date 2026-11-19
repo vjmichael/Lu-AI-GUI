@@ -11691,8 +11691,17 @@ function App() {
               <select className="editorTabJump" aria-label="Jump to open file"
                 value={belongsToSelectedProject(activeProject, activeTab) ?
                   activeTab.key : ''}
-                onChange={event=>selectPrimaryEditorTab(event.target.value)}>
-                <option value="">Open tabs</option>
+                onChange={event=>{if(event.target.value)selectPrimaryEditorTab(event.target.value);}}
+                onKeyDown={event=>{
+                  // Navigate the actual registered tabs rather than the placeholder.
+                  // Handle closed-combo Home/End consistently across WebViews.
+                  if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey ||
+                      !['Home','End'].includes(event.key) || !projectTabs.length) return;
+                  event.preventDefault();
+                  const next=event.key==='Home'?projectTabs[0]:projectTabs.at(-1);
+                  selectPrimaryEditorTab(next.key);
+                }}>
+                <option value="" disabled>Open tabs</option>
                 {projectTabs.map(tab=><option key={tab.key} value={tab.key}>
                   {tab.dirty?'● ':''}{tab.relativePath}</option>)}
               </select>
