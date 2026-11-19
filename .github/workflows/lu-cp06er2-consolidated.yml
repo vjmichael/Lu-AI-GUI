@@ -68,7 +68,8 @@ jobs:
           git rev-parse HEAD > cp06er2-native-evidence/source.txt
           cargo test --locked --manifest-path src-tauri/lu-win-worker-job/Cargo.toml --lib -- --nocapture 2>&1 | tee cp06er2-native-evidence/worker-job.log
           cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib -- --nocapture 2>&1 | tee cp06er2-native-evidence/core.log
-          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test model_background_control_turn --no-run 2>&1 | tee cp06er2-native-evidence/model-control-build.log
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test model_background_control_turn original_turn_queue_control_native_fixture -- --nocapture 2>&1 | tee cp06er2-native-evidence/model-control-native.log
+          grep -Fq CP06ER2_ORIGINAL_TURN_NATIVE_FIXTURE_PASS cp06er2-native-evidence/model-control-native.log
           cargo test --locked --manifest-path lu-desktop/tests/native-file-scan/Cargo.toml -- --nocapture 2>&1 | tee cp06er2-native-evidence/scanner.log
           cargo build --locked --manifest-path lu-desktop/tests/native-file-scan/Cargo.toml
           node --test lu-desktop/tests/background-scheduler.test.mjs lu-desktop/tests/background-pane.test.mjs lu-desktop/tests/background-worker-e2e.test.mjs 2>&1 | tee cp06er2-native-evidence/frontend-background.log

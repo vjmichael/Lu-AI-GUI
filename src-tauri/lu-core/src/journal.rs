@@ -98,7 +98,8 @@ pub struct EffectJournal {
     connection: Mutex<Connection>,
 }
 
-pub(crate) fn fingerprint(call: &ToolInvocation) -> String {
+/// Canonical digest of the exact invocation; callers may bind a reviewed effect without granting authority.
+pub fn fingerprint(call: &ToolInvocation) -> String {
     let mut hash = Sha256::new();
     for part in [
         call.tool_id.as_bytes(),
@@ -110,6 +111,20 @@ pub(crate) fn fingerprint(call: &ToolInvocation) -> String {
         hash.update(part);
     }
     format!("{:x}", hash.finalize())
+}
+
+/// Background witnesses are deliberately distinct from one another. This
+/// check binds a host observation to its exact typed successful receipt;
+/// it does not itself establish kernel custody or an independent observation.
+fn background_witness_matches(call_id:&str,method:&str,receipt:&[u8])->bool{
+    let expected=match method{
+        "BACKGROUND_QUEUE_DIRECT_V1"=>"type.googleapis.com/lu.v1.ReviewedScanQueued",
+        "BACKGROUND_QUEUE_CANCEL_DIRECT_V1"=>"type.googleapis.com/lu.v1.ReviewedScanQueueCancelled",
+        "BACKGROUND_JOB_CANCEL_DIRECT_V1"|"BACKGROUND_KERNEL_CANCEL_DIRECT_V1"=>"type.googleapis.com/lu.v1.BoundJobCancelled",
+        _=>return true,
+    };
+    crate::wire::decode_reply(receipt).is_ok_and(|r|r.call_id==call_id&&r.output_type_url==expected&&
+        matches!(r.outcome,Some(crate::wire::proto::tool_reply::Outcome::Output(ref bytes)) if !bytes.is_empty()))
 }
 
 impl EffectJournal {
@@ -273,6 +288,7 @@ impl EffectJournal {
         ).optional()?;
         let Some((state,bytes,tool_id))=existing else{return Err(JournalError::InvalidTransition)};
         if state!="APPLIED"||bytes.as_deref()!=Some(receipt)||
+            !background_witness_matches(call_id,method,receipt)||
             (method=="FILE_TRANSFER_DIRECT_V1"&&!matches!(tool_id.as_str(),"lu.files.transfer.copy_new"|"lu.files.transfer.move_new"))||
             (method=="FILE_CUSTODY_DIRECT_V1"&&!matches!(tool_id.as_str(),"lu.files.reversible.trash"|"lu.files.reversible.restore"))||
             (method=="ARCHIVE_TREE_DIRECT_V1"&&tool_id!="lu.archive.tree.extract")||
@@ -364,6 +380,8 @@ impl EffectJournal {
             "lu.archive.zip.extract"|"lu.archive.iso.extract"|"lu.archive.linux.extract"=>method=="ARCHIVE_MEMBER_DIRECT_V1",
             "lu.docx.create"|"lu.pptx.create"|"lu.spreadsheet.create"=>method=="OFFICE_CREATE_DIRECT_V1",
             "lu.office.revisions.create"|"lu.office.batch.revision.create"=>method=="OFFICE_REVISION_DIRECT_V1",
+            "lu.bgstart.run"=>method=="BACKGROUND_QUEUE_DIRECT_V1",
+            "lu.bgcancel.run"=>matches!(method.as_str(),"BACKGROUND_JOB_CANCEL_DIRECT_V1"|"BACKGROUND_KERNEL_CANCEL_DIRECT_V1"|"BACKGROUND_QUEUE_CANCEL_DIRECT_V1"),
             _=>false,
         };
         let Some(receipt)=bytes else{return Ok(false)};
@@ -374,7 +392,7 @@ impl EffectJournal {
         let source_is_valid=observed_source.as_deref()
             .is_some_and(valid_sha);
         Ok(stored_tool==tool_id&&state=="APPLIED"&&verdict=="VERIFIED"
-            &&expected_method&&source_is_valid
+            &&expected_method&&source_is_valid&&background_witness_matches(call_id,&method,&receipt)
             &&actual==receipt_sha256&&actual==observed_receipt)
     }
 

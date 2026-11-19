@@ -84,6 +84,11 @@ async fn dispatch(origin:&Origin<'_>,audit:&ModelTurnJournal,effects:&EffectJour
 }
 fn prove(origin:&Origin<'_>,audit:&ModelTurnJournal,effects:&EffectJournal,id:&str,bytes:&[u8],tool:&str,method:&str,facts:Value){
     let hash=sha(bytes);let observed=sha(facts.to_string().as_bytes());
+    if method=="BACKGROUND_QUEUE_CANCEL_DIRECT_V1"{
+        for other in ["BACKGROUND_JOB_CANCEL_DIRECT_V1","BACKGROUND_KERNEL_CANCEL_DIRECT_V1"]{
+            assert!(effects.record_independent_outcome(id,bytes,IndependentOutcomeVerdict::Verified,other,Some(&observed)).is_err());
+        }
+    }
     effects.record_independent_outcome(id,bytes,IndependentOutcomeVerdict::Verified,method,Some(&observed)).unwrap();
     assert!(effects.independent_verified_receipt(id,tool,&hash).unwrap());
     audit.append(CHAT,&origin.turn,K::ToolFeedback,&json!({"effect_call_id":id,"receipt_sha256":hash,"observed_sha256":observed,"observed":facts}).to_string(),None).unwrap();
@@ -102,7 +107,16 @@ async fn cp06er2_genuine_queue_control(){
         executable:exe.clone(),expected_sha256:pin,threads:NonZeroUsize::new(3).unwrap(),context_tokens:8192,
         startup_timeout:Duration::from_secs(120),request_timeout:Duration::from_secs(120),api_key:"deadbeef".repeat(8),load_observer:None})).unwrap();
     let sid="cp06er2-queue";supervisor.load("model-1",sid.into(),"cp06er2-load").unwrap();assert!(supervisor.status().unwrap().pid.is_some());
-    let root=PathBuf::from(std::env::var("LU_CP06D_EVIDENCE").unwrap());fs::create_dir_all(&root).unwrap();
+    let root=PathBuf::from(std::env::var("LU_CP06D_EVIDENCE").unwrap());
+    exercise_queue_control(&root,|tag|SupervisorModelStep::new(&supervisor,sid.into(),tag.to_owned()).unwrap()).await;
+    supervisor.unload(sid,"cp06er2-unload").unwrap();assert!(supervisor.status().unwrap().pid.is_none());
+    println!("CP06ER2_GENUINE_QUEUE_CONTROL_PASS {msha} 2 effects 2 refusals; no worker launched");
+}
+
+// Same original-turn, typed native dispatch and receipt path, with either
+// a real inference step or a deliberately labeled deterministic test adapter.
+async fn exercise_queue_control<M:ModelStepGenerator>(root:&Path,mut new_step:impl FnMut(&str)->M){
+    fs::create_dir_all(root).unwrap();
     let file=root.join("reviewed.bin");fs::write(&file,b"reviewed queue source").unwrap();let file=file.canonicalize().unwrap();
     let book=AnsfStore::open(&root.join("chat.sqlite")).unwrap();book.create_session(CHAT,"workspace","Background").unwrap();book.start_chapter(CHAT,"Original").unwrap();
     let audit=ModelTurnJournal::open(&root.join("audit.sqlite")).unwrap();let effects=EffectJournal::open(&root.join("effects.sqlite")).unwrap();
@@ -110,7 +124,7 @@ async fn cp06er2_genuine_queue_control(){
     let scheduler=Arc::new(BackgroundScheduler::open(&root.join("schedule.sqlite"),Arc::clone(&store),Arc::clone(&process),
         ResourceBudget{workers:1,cpu:1,ram_mib:1024,gpu:0,vram_mib:0,disk:1,network:0}).unwrap());
     for (n,permit) in [(1,false),(2,true)]{
-        let origin=original(&book,n,START);let mut model=SupervisorModelStep::new(&supervisor,sid.into(),format!("start-{n}")).unwrap();
+        let origin=original(&book,n,START);let mut model=new_step(&format!("start-{n}"));
         select(&mut model,&origin,&audit,"lu_background_start","a one-time read-only file integrity scan");
         let plan=ReviewedScan::prepare(TASK,CHAT,&origin.turn,&file).unwrap();
         let reviewed=json!({"task_id":TASK,"owner":CHAT,"file_id":plan.identity(),"bytes":plan.bytes(),"worker_sha256":plan.executable_sha256()});
@@ -126,7 +140,7 @@ async fn cp06er2_genuine_queue_control(){
     }
     for (n,permit) in [(3,false),(4,true)]{
         let prompt=format!("Cancel background task {TASK}.");let origin=original(&book,n,&prompt);
-        let mut model=SupervisorModelStep::new(&supervisor,sid.into(),format!("cancel-{n}")).unwrap();
+        let mut model=new_step(&format!("cancel-{n}"));
         select(&mut model,&origin,&audit,"lu_background_cancel","cancelling the exact existing task");
         let registry=NativeToolRegistry::new();let catalog=register_reviewed_background_cancel(&registry,Arc::clone(&store),Arc::clone(&process),Arc::clone(&scheduler),CHAT,TASK,"QUEUED").unwrap();
         let result=dispatch(&origin,&audit,&effects,&registry,&catalog,"lu_background_cancel","lu.bgcancel.run",json!({"task_id":TASK}),permit,json!({"target":TASK,"state":"QUEUED"})).await;
@@ -137,6 +151,21 @@ async fn cp06er2_genuine_queue_control(){
         }else{assert_eq!(scheduler.state_for(TASK,CHAT).unwrap().as_deref(),Some("QUEUED"));}
         assert!(store.get(TASK).unwrap().is_none());assert!(!process.can_cancel(TASK));
     }
-    assert_eq!(scheduler.tick().unwrap(),0);supervisor.unload(sid,"cp06er2-unload").unwrap();assert!(supervisor.status().unwrap().pid.is_none());
-    println!("CP06ER2_GENUINE_QUEUE_CONTROL_PASS {msha} 2 effects 2 refusals; no worker launched");
+    assert_eq!(scheduler.tick().unwrap(),0);
+}
+
+#[tokio::test]
+async fn original_turn_queue_control_native_fixture(){
+    use lu_core::supervised_tool_generation::NativeGenerationError;
+    struct Fixture(String);
+    impl ModelStepGenerator for Fixture{
+        fn generate_step(&mut self,_:&str,_:u32,_:&Cancellation)->Result<String,NativeGenerationError>{
+            Ok(json!({"selection":self.0}).to_string())
+        }
+    }
+    let root=std::env::temp_dir().join(format!("lu-cp06er2-native-fixture-{}",std::process::id()));
+    fs::create_dir(&root).unwrap();
+    exercise_queue_control(&root,|tag|Fixture(if tag.starts_with("start-"){"lu_background_start"}else{"lu_background_cancel"}.into())).await;
+    fs::remove_dir_all(&root).unwrap();
+    println!("CP06ER2_ORIGINAL_TURN_NATIVE_FIXTURE_PASS (scripted selection, not GGUF)");
 }
