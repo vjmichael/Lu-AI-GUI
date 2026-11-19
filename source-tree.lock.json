@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "78f477e45f7634f712ba122f9c109d69f36323a5",
+  "sourceCommitBeforeLock": "b8e7b90bd8ac1dfdce8df13a60330ce0182d89c6",
   "trackedFileCount": 1129,
   "files": [
     {
@@ -117,7 +117,7 @@
     },
     {
       "path": ".github/workflows/lu-cp05e-closeout.yml",
-      "blob": "093e98d8b90446b964df230a9515e5de2d6f5ec9"
+      "blob": "ce47c466753dd14689fbdf2f857b6a26fdac44ea"
     },
     {
       "path": ".github/workflows/lu-cp05e-grouped-native.yml",
@@ -777,7 +777,7 @@
     },
     {
       "path": "docs/LU_DEVELOPMENT_LEDGER.md",
-      "blob": "5f52ca24aaa53788031dcc4cf82038ea1ef7ad8b"
+      "blob": "51ed58bc20dd72a49a6564f376ef741e3975577d"
     },
     {
       "path": "docs/LU_E1_NATIVE_EVIDENCE_20261107.md",
@@ -1509,7 +1509,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/capability_negotiation.rs",
-      "blob": "cac73b2d4c572844543b17c2508b147686616fb5"
+      "blob": "e3181484ef4a63d114f17df80f4f1908ab67a053"
     },
     {
       "path": "lu-desktop/src-tauri/src/causal_diagnostic.rs",
@@ -2149,7 +2149,7 @@
     },
     {
       "path": "lu-desktop/tests/p0-installed-gui-smoke.test.mjs",
-      "blob": "5137f3fdce9e330a3b9dca6f92c3c7fa78da5a3c"
+      "blob": "a4049ce3c196f944e1faafed40360abe9733b934"
     },
     {
       "path": "lu-desktop/tests/p0-memory-telemetry.test.mjs",
@@ -2481,7 +2481,7 @@
     },
     {
       "path": "scripts/build-agent01g-physical-windows-nsis.ps1",
-      "blob": "1c75055b14c60ad7eb3679ed4f1bc5a6daa57d67"
+      "blob": "d25e3683334bf881476c168227e96ac6f26dbdb4"
     },
     {
       "path": "scripts/build-current-windows-nsis.ps1",
@@ -2533,11 +2533,11 @@
     },
     {
       "path": "scripts/cp05e5-installed-journal-diagnostics.test.py",
-      "blob": "3eb99a4788479d1b93236eb970b3d2483f2b0a18"
+      "blob": "a59ac95b817c95bb31ef740a254fab105af11e2f"
     },
     {
       "path": "scripts/cp05e5-installed-journal.py",
-      "blob": "013b3705481738936e496dac4505e34bd9f113f6"
+      "blob": "518abb4ae1c6d7a2ca428b5012230b6f16b47fbe"
     },
     {
       "path": "scripts/cp05e5-review-browser.py",
@@ -2545,7 +2545,7 @@
     },
     {
       "path": "scripts/cp05e5-windows-installed-gguf.ps1",
-      "blob": "99ef114ed13659826f859598b75d38d334492c6e"
+      "blob": "2002ba26a096d1e3b9c0831c747cc42576b4cfa7"
     },
     {
       "path": "scripts/install-lu-agent01l-native-fixture.sh",
@@ -3009,7 +3009,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/agent_tool_loop.rs",
-      "blob": "298d03a3e084ab38c8ffe1fbde5bab36895a6743"
+      "blob": "8add32d95ccfa8aa50e049ee429aca6e290da8ca"
     },
     {
       "path": "src-tauri/lu-core/src/ai_operations.rs",
@@ -3485,7 +3485,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/native_core_utility_turn.rs",
-      "blob": "95a4a93bf324716b66baa26bd703423a3cd10d4d"
+      "blob": "20af36c27b5ae67495cd4cc919fffe05a031c3ed"
     },
     {
       "path": "src-tauri/lu-core/src/native_cpio.rs",
@@ -3825,7 +3825,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/supervised_tool_generation.rs",
-      "blob": "32dfc107297afd548006accd45710c59f0855f07"
+      "blob": "a9b2817a1a326e334945c5a7d193283ab6c4def0"
     },
     {
       "path": "src-tauri/lu-core/src/tasks.rs",
