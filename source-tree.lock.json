@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "e014f81bcaf75a26c9c6b998bd16eaa88e6fc333",
-  "trackedFileCount": 1153,
+  "sourceCommitBeforeLock": "a0d2544b974129efaaaf30e4911fe26627f3350b",
+  "trackedFileCount": 1155,
   "files": [
     {
       "path": ".gitattributes",
@@ -804,6 +804,10 @@
       "blob": "196a9c9182386e27cbf1aff5da965a57b5333d5d"
     },
     {
+      "path": "docs/LU_CP06DR3_MODEL_CONFIRMED_REVISION_20261119.md",
+      "blob": "2d697592151c504d27e9150cad82cbdd289c7fd6"
+    },
+    {
       "path": "docs/LU_CP06D_MODEL_CONFIRMED_TRANSFERS_20261119.md",
       "blob": "ba08073502dfbb2e3c91cbda7fcf8c8d7e8d0064"
     },
@@ -817,7 +821,7 @@
     },
     {
       "path": "docs/LU_DEVELOPMENT_LEDGER.md",
-      "blob": "e3c91e6b9b5ad9512b5ff3952915f4e88c710c4c"
+      "blob": "e928c19ee09f89bb25e37960d47fd3c128ebd7ea"
     },
     {
       "path": "docs/LU_E1_NATIVE_EVIDENCE_20261107.md",
@@ -1681,7 +1685,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/model_publication_desktop.rs",
-      "blob": "1fbfb94d3ed62aeea567a93bd48d37dfe210d433"
+      "blob": "727cfbcba28e8e6ac4b9ac313cecdd56ac46bf93"
     },
     {
       "path": "lu-desktop/src-tauri/src/model_transfer_desktop.rs",
@@ -3377,7 +3381,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/journal.rs",
-      "blob": "d182e867036e2bd88375e36d49fc52ac37d119d0"
+      "blob": "f5114bf6d24fa6ae822c8e19152e091e346ce1c6"
     },
     {
       "path": "src-tauri/lu-core/src/lib.rs",
@@ -3420,6 +3424,10 @@
       "blob": "3afbb30a58ffc2136fa0a2f9c7a610591566c737"
     },
     {
+      "path": "src-tauri/lu-core/src/model_office_edits.rs",
+      "blob": "6733cb7dc40aa2ba0e142126b5dcdcb591ed81d7"
+    },
+    {
       "path": "src-tauri/lu-core/src/model_provider_catalog.rs",
       "blob": "57c87b4b8b2fd737ff48be650cc969728a994bac"
     },
@@ -3433,7 +3441,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/model_publication_turn.rs",
-      "blob": "8ec3a5e064e1bdaf42ff0635a6eaa3cf0d211a36"
+      "blob": "00df492262a8d9a52fe426d5df35be5cafd5061c"
     },
     {
       "path": "src-tauri/lu-core/src/model_transfer_turn.rs",
@@ -3729,7 +3737,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/native_reader_office.rs",
-      "blob": "74e8cabc2c3dda46f809d0b8d7ead2875b0071c9"
+      "blob": "cdf7bca6da3a96c825af9b3de782b7865bbb019f"
     },
     {
       "path": "src-tauri/lu-core/src/native_reader_openxml.rs",
@@ -4237,7 +4245,7 @@
     },
     {
       "path": "src-tauri/lu-core/tests/model_publication_turn.rs",
-      "blob": "4b70e33fcc814976badc7d788be2b70cc3586b39"
+      "blob": "a04caa8a23b391f8699ed69f3306210132323a06"
     },
     {
       "path": "src-tauri/lu-core/tests/model_transfer_turn.rs",
