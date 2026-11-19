@@ -15,18 +15,27 @@ import wo8_linux_editor_atspi as ui
 def deny(code):
     raise RuntimeError("WO9_INSTALLED_LINUX_DENIED:" + code)
 
+def require_clean_fixture(root):
+    git = subprocess.run(["git", "-C", str(root), "status", "--porcelain", "--untracked-files=all"],
+                         capture_output=True, check=True, timeout=10, text=True)
+    if git.stdout.strip():
+        deny("fixture_git_dirty_before_review")
+
+
 def main():
     root = ui.ROOT
     export = Path(os.environ["WO9_EXPORT_ROOT"]).resolve()
     if not root.is_dir() or not export.is_dir() or export.is_relative_to(root):
         deny("non_disposable_or_inside_project_export")
     original = (root / "dist" / "verified.tar").read_bytes()
+    require_clean_fixture(root)
     app = ui.start()
     try:
         ui.select_native_folder()
         ui.activate("Packages & workflows")
         ui.accessible("Multi-project release review", seconds=25)
         ui.choose_open_workflow_project(root.name, seconds=20)
+        require_clean_fixture(root)
         ui.activate("Inspect selected workflow")
         ui.accessible("Native workflow review", seconds=35)
         ui.native_workflow_review_control("Eligible for human source review", seconds=15)

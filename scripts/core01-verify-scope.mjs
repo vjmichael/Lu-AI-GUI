@@ -18,6 +18,8 @@ export function reviewedAcceptanceFixture(path, blob) {
     ['ide/app/fixtures/test_dev01_native_confirmation_scope.py', 'acfcd77984123f0a53770826e2bc408258b74b83'],
     ['ide/packaging/b2_b4_installer_handoff.py', '568a7513560e4282b10fda79f7268c235ab36329'],
     ['ide/packaging/test_b2_b4_installer_handoff.py', 'd6332db3e7d822911e05da28dd481272d155374b'],
+    ['ide/app/fixtures/test_wo9_review_control_policy.py', '99d92eb7f1ba4803322c41cf6f9cfa4a292a2224'],
+    ['ide/app/fixtures/x11_openbox_readiness.sh', 'a6015822363cf0c47bd9a04368456ba963569f17'],
   ]);
   return exact.has(path) && exact.get(path) === blob;
 }

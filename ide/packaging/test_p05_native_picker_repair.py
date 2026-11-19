@@ -81,6 +81,23 @@ class NativePickerSourceTests(unittest.TestCase):
         self.assertIn("WO9_NATIVE_COMMIT_OBSERVATION=unchanged_head",source)
         self.assertIn("Deny 'wo9_native_commit_not_observed'",source)
         self.assertIn("git -C $fixed diff-tree --no-commit-id",source)
+        self.assertIn("WO9_NATIVE_STAGE_EXACT_INDEX_AND_SOURCE_BLOB=PASS",source)
+        self.assertIn("git -C $fixed rev-parse :main.rs",source)
+        self.assertIn("git -C $fixed rev-parse 'HEAD:main.rs'",source)
+        self.assertIn("git -C $fixed rev-parse 'HEAD^'",source)
+        self.assertIn("wo9_native_index_not_clean_after_commit",source)
+        self.assertIn("Find-Control ('Local commit: '+$after) '' 15 -Exact",source)
+        self.assertNotIn("Require 'Local commit'",source)
+        self.assertLess(source.index("WO9_NATIVE_STAGE_EXACT_INDEX_AND_SOURCE_BLOB=PASS"), source.index("Click 'Confirm separate local commit (no push)'"))
+
+    def test_split_file_selection_waits_for_fresh_enabled_exact_control(self):
+        source=(ROOT/"ide/app/fixtures/Test-Wo8NativeDesktopUI.ps1").read_text(encoding="utf-8")
+        b4=source.split("if ($Scenario -in @('B4SplitEditor','Dev01Modern'))",1)[1].split("function Get-B4NativeEditors",1)[0]
+        self.assertIn("Find-Control 'second.rs' 'Button' 2 -Exact",b4)
+        self.assertIn("$secondFile.Current.IsEnabled",b4)
+        self.assertIn("$secondFile.Current.IsOffscreen",b4)
+        self.assertEqual(b4.count(".Invoke()"),1)
+        self.assertLess(b4.index("Source editor text · First editor: second.rs"), b4.index("Click 'Toggle split editor'"))
 
     def test_gtk_spatial_acceptance_only_inside_native_visible_chooser(self):
         src=(ROOT/"ide/app/fixtures/wo8_linux_editor_atspi.py").read_text(encoding="utf-8")

@@ -11,6 +11,7 @@ from verify_p05_owner_successor import (
     WO6_PATH, WO6_PRIOR_OWNER_BLOB, WO6_CURRENT_SOURCE_BLOB,
     CLANGD_PATH, CLANGD_PRIOR_BLOB, CLANGD_CURRENT_BLOB, project_checked_out_clangd_source,
     E2_SMOKE_PATH, E2_SMOKE_PRIOR_BLOB, E2_SMOKE_CURRENT_BLOB, project_checked_out_e2_smoke_source,
+    P05_04J_DELTAS, project_reviewed_04j_workflows, project_checked_out_04j_source,
 )
 
 class OriginalAndOwnerSuccessor(unittest.TestCase):
@@ -187,6 +188,36 @@ class E2SmokeCurrentSourceTests(unittest.TestCase):
         self.assertEqual(previous.count("--ide-merge02-successor"), 0)
         with self.assertRaisesRegex(Denied, "p05_e2_smoke_current_source_not_exact"):
             project_checked_out_e2_smoke_source(root, {E2_SMOKE_PATH: "f" * 40})
+
+
+class Reviewed04JWorkflowTests(unittest.TestCase):
+    def setUp(self):
+        self.root = Path(__file__).resolve().parents[2]
+        self.observed = {path: delta[1] for path, delta in P05_04J_DELTAS.items()}
+        self.expected = {path: delta[0] for path, delta in P05_04J_DELTAS.items()}
+
+    def read_blob(self, sha):
+        return subprocess.run(["git", "-C", str(self.root), "cat-file", "blob", sha],
+                              check=True, timeout=20, capture_output=True).stdout
+
+    def test_exact_two_prior_pins_and_original_test_commands(self):
+        projected, prior = project_checked_out_04j_source(self.root, self.observed)
+        self.assertEqual(projected, self.expected)
+        self.assertEqual(set(prior), set(self.expected))
+        self.assertEqual(self.observed, {p:d[1] for p,d in P05_04J_DELTAS.items()})
+        self.assertIn("python3 ide/app/fixtures/test_atspi_signature_contract.py", prior[next(iter(prior))])
+        self.assertIn("test \"$(find \"$exportdir\" -name '*.zip' -type f | wc -l)\" -eq 1", prior[list(prior)[1]])
+
+    def test_arbitrary_blob_and_extra_workflow_delta_are_denied(self):
+        for path in self.observed:
+            bad = dict(self.observed); bad[path] = "f" * 40
+            with self.assertRaisesRegex(Denied, "p05_04j_current_workflow_not_exact"):
+                project_reviewed_04j_workflows(bad, self.read_blob)
+            with self.assertRaisesRegex(Denied, "p05_04j_workflow_delta_not_exact"):
+                project_reviewed_04j_workflows(self.observed, lambda sha: self.read_blob(sha) + b"\n" if sha == self.observed[path] else self.read_blob(sha))
+        missing = dict(self.observed); missing.pop(next(iter(missing)))
+        with self.assertRaisesRegex(Denied, "p05_04j_current_workflow_not_exact"):
+            project_reviewed_04j_workflows(missing, self.read_blob)
 
 
 if __name__=="__main__":

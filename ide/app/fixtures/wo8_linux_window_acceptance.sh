@@ -4,7 +4,8 @@ set -euo pipefail
 [[ -x "${WO8_INSTALLED_EXE:-}" && -n "${WO8_FIXTURE_ROOT:-}" ]] || exit 10
 command -v openbox >/dev/null || { echo 'WO8_NATIVE_LINUX_DENIED:window_manager_absent' >&2; exit 17; }
 source "$(dirname -- "${BASH_SOURCE[0]}")/x11_openbox_readiness.sh"
-openbox >"${WO8_FIXTURE_ROOT}/window-manager-output.txt" 2>&1 &
+log_dir=$(native_fixture_log_dir "$WO8_FIXTURE_ROOT" "${RUNNER_TEMP:-${TMPDIR:-/tmp}}") || { echo 'WO8_NATIVE_LINUX_DENIED:log_directory_outside_fixture_required' >&2; exit 19; }
+openbox >"$log_dir/window-manager-output.txt" 2>&1 &
 wm_pid=$!
 desktop_pid=''
 cleanup() {
@@ -18,7 +19,7 @@ cleanup() {
 trap cleanup EXIT
 wait_for_openbox_ewmh "$wm_pid" || { echo 'WO8_NATIVE_LINUX_DENIED:window_manager_not_ready' >&2; exit 18; }
 env WEBKIT_DISABLE_COMPOSITING_MODE=1 WEBKIT_DISABLE_DMABUF_RENDERER=1 \
-  GDK_BACKEND=x11 "${WO8_INSTALLED_EXE}" >"${WO8_FIXTURE_ROOT}/app-output.txt" 2>&1 &
+  GDK_BACKEND=x11 "${WO8_INSTALLED_EXE}" >"$log_dir/app-output.txt" 2>&1 &
 desktop_pid=$!
 window=""
 for attempt in $(seq 1 45); do

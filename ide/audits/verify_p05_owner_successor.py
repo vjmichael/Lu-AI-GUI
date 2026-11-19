@@ -297,6 +297,50 @@ def project_checked_out_e2_smoke_source(root, blobs):
     return projected, prior.decode("utf-8")
 
 
+# 04J/R2 changed two historical workflow paths. Project only the exact
+# reviewed byte delta to the previous pins; never rewrite historical approval.
+P02_04J_PATH = ".github/workflows/ide-p02-native-checks.yml"
+WO9_04J_PATH = ".github/workflows/ide-wo9-installed-native.yml"
+P05_04J_DELTAS = {
+    P02_04J_PATH: (
+        "b8f80361b98df9f93ee7439ab44242f3d9587f70",
+        "3afcf5b4e179402f01421919d7e88ecb4f67d506",
+        b"        run: python3 ide/app/fixtures/test_atspi_signature_contract.py\n",
+        b"        run: |\n          python3 ide/app/fixtures/test_atspi_signature_contract.py\n"
+        b"          python3 ide/app/fixtures/test_wo9_review_control_policy.py\n"),
+    WO9_04J_PATH: (
+        "6c6e8f89a9a60d8e9703dc54af91e6bc690024b8",
+        "b7c8bb2a4575e1a9da1f8f5d41f3dc8d8c14933c",
+        b"            bash -c 'openbox >/dev/null 2>&1 & exec /usr/bin/python3 ide/app/fixtures/wo9_linux_workflow_atspi.py'\n",
+        b"            bash ide/app/fixtures/Run-DEV01ModernGtkSession.sh wo9_linux_workflow_atspi.py\n"),
+}
+
+
+def project_reviewed_04j_workflows(blobs, read_blob):
+    projected, prior_text = dict(blobs), {}
+    for path, (prior_sha, current_sha, old, new) in P05_04J_DELTAS.items():
+        if blobs.get(path) != current_sha:
+            raise Denied("p05_04j_current_workflow_not_exact:" + path)
+        prior, current = read_blob(prior_sha), read_blob(current_sha)
+        if (original_blob_sha(prior) != prior_sha or
+                original_blob_sha(current) != current_sha or
+                prior.count(old) != 1 or current != prior.replace(old, new, 1)):
+            raise Denied("p05_04j_workflow_delta_not_exact:" + path)
+        projected[path] = prior_sha
+        prior_text[path] = prior.decode("utf-8")
+    return projected, prior_text
+
+
+def project_checked_out_04j_source(root, blobs):
+    def read_blob(sha):
+        try:
+            return subprocess.run(["git", "-C", str(root), "cat-file", "blob", sha],
+                                  check=True, timeout=20, capture_output=True).stdout
+        except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+            raise Denied("p05_04j_required_workflow_blob_unavailable") from exc
+    return project_reviewed_04j_workflows(blobs, read_blob)
+
+
 def compare_38_unchanged_and_replacements(baseline, current):
     if len(baseline) != 38 or set(baseline) != set(current):
         raise Denied("p05_expected_exact_38_original_workflows")
@@ -383,14 +427,17 @@ def verify(root: Path):
     projected = project_checked_out_wo6_source(root, current)
     projected, prior_clangd = project_checked_out_clangd_source(root, projected)
     projected, prior_e2_smoke = project_checked_out_e2_smoke_source(root, projected)
+    projected, prior_04j = project_checked_out_04j_source(root, projected)
     result=compare_38_with_separate_scoped_source_dispositions(original,projected,scoped)
+    result["04jCurrentWorkflowDeltaVerified"] = True
+    result["04jNativeAccepted"] = False
     result["clangdCurrentSourceRepairVerified"] = True
     result["clangdNativeAccepted"] = False
     result["wo6CurrentSourceRepairVerified"] = True
     result["wo6CurrentSourceRepairOwnerAuthorizationInferred"] = False
     for path in SCOPED_SOURCE_ONLY:
         historical=git("show",ORIGINAL+":"+path)
-        current_text = {CLANGD_PATH: prior_clangd, E2_SMOKE_PATH: prior_e2_smoke}.get(path, (root/path).read_text(encoding="utf-8"))
+        current_text = {CLANGD_PATH: prior_clangd, E2_SMOKE_PATH: prior_e2_smoke, **prior_04j}.get(path, (root/path).read_text(encoding="utf-8"))
         verify_source_only_patch(path,historical,current_text)
     listed={x.get("path"):(x.get("original"),x.get("replacement"))
             for x in ledger.get("workflows",[])}

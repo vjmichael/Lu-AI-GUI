@@ -21,6 +21,7 @@ from verify_p05_owner_successor import (
     verify_source_only_patch, project_checked_out_wo6_source,
     CLANGD_PATH, project_checked_out_clangd_source,
     E2_SMOKE_PATH, project_checked_out_e2_smoke_source,
+    project_checked_out_04j_source,
 )
 
 HISTORICAL_INVENTORY_GIT_BLOB = "5299b1ca6981f341d2855f549e567b8c2747dc13"
@@ -189,6 +190,7 @@ def checkout(root):
     projected = project_checked_out_wo6_source(root, blobs)
     projected, prior_clangd = project_checked_out_clangd_source(root, projected)
     projected, prior_e2_smoke = project_checked_out_e2_smoke_source(root, projected)
+    projected, prior_04j = project_checked_out_04j_source(root, projected)
     compare_38_with_separate_scoped_source_dispositions(historical, projected, source_review)
     for path in SCOPED_SOURCE_ONLY:
         try:
@@ -199,9 +201,11 @@ def checkout(root):
             ).stdout
         except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
             raise Denied("source_only_historical_workflow_unavailable") from exc
-        current_text = {CLANGD_PATH: prior_clangd, E2_SMOKE_PATH: prior_e2_smoke}.get(path, (root / path).read_text(encoding="utf-8"))
+        current_text = {CLANGD_PATH: prior_clangd, E2_SMOKE_PATH: prior_e2_smoke, **prior_04j}.get(path, (root / path).read_text(encoding="utf-8"))
         verify_source_only_patch(path, original_text, current_text)
     result = classify(inventory, projected)
+    result["04jCurrentWorkflowDeltaVerified"] = True
+    result["04jNativeAccepted"] = False
     result["clangdCurrentSourceRepairVerified"] = True
     result["clangdNativeAccepted"] = False
     result["wo6CurrentSourceRepairVerified"] = True

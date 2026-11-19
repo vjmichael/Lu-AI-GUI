@@ -1,6 +1,15 @@
 #!/usr/bin/env bash
 # Sourced only by the disposable installed X11 acceptance harnesses.
 # A live process and a WM_CHECK property alone do not establish activation.
+# Installed acceptance must not make a clean Git fixture dirty with its own logs.
+native_fixture_log_dir() {
+  local fixture temp
+  fixture=$(realpath -e -- "$1") || return 1
+  temp=$(realpath -e -- "$2") || return 1
+  [[ -d $fixture && -d $temp ]] || return 1
+  case "$temp/" in "$fixture/"*) return 1 ;; esac
+  mktemp -d -- "$temp/lu-ide-native-logs.XXXXXXXX"
+}
 wait_for_openbox_ewmh() {
   local pid=$1 attempts=${2:-80} i root check supported owner id previous=''
   local pattern='^_NET_SUPPORTING_WM_CHECK\(WINDOW\): window id # (0x[[:xdigit:]]+)$'

@@ -80,6 +80,7 @@ def native_workflow_review_control(name, seconds=20):
             except Exception:
                 continue
         matches, blocked = [], []
+        blocker_categories = set()
         named = 0
         flags = (0, 0, 0, 0, 0)
         complete = len(roots) == 1
@@ -99,6 +100,11 @@ def native_workflow_review_control(name, seconds=20):
                     if not _native_dialog_ancestor(node):
                         if kind in ("status", "status bar") and title == "Blocked by native evidence":
                             blocked.append(node)
+                        if kind in ("status", "status bar") and title.startswith("Blockers: "):
+                            known = {"git_head_unverified", "dirty_or_truncated_git_worktree",
+                                     "artifact_inventory_truncated", "unhashed_or_unverifiable_artifact",
+                                     "artifact_candidate_limit", "no_verified_packaging_artifacts"}
+                            blocker_categories.update(set(title[len("Blockers: "):].split(", ")) & known)
                         if title == name:
                             named += 1
                             # Offscreen WebKit accessibility buttons may lack
@@ -126,6 +132,7 @@ def native_workflow_review_control(name, seconds=20):
         last_counts = (len(roots), len(matches), len(blocked))
         last_named, last_complete, last_flags = named, complete, flags
         if complete and blocked:
+            print("WO9_NATIVE_REVIEW_BLOCKERS=" + (",".join(sorted(blocker_categories)) or "unavailable"), flush=True)
             deny("workflow_review_blocked_by_native_evidence")
         if complete and named == 1 and len(matches) == 1:
             return matches[0]

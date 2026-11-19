@@ -8,7 +8,9 @@ deny() { printf 'DEV01_GTK_SESSION_DENIED:%s\n' "$1" >&2; exit 1; }
   || deny installed_x11_session_required
 command -v openbox >/dev/null || deny native_window_manager_absent
 command -v xprop >/dev/null || deny native_ewmh_probe_absent
-openbox >"${WO8_FIXTURE_ROOT}/window-manager-output.txt" 2>&1 &
+source "$(dirname -- "${BASH_SOURCE[0]}")/x11_openbox_readiness.sh"
+log_dir=$(native_fixture_log_dir "$WO8_FIXTURE_ROOT" "$RUNNER_TEMP") || deny native_log_directory_outside_fixture_required
+openbox >"$log_dir/window-manager-output.txt" 2>&1 &
 wm_pid=$!
 cleanup() {
   kill "$wm_pid" 2>/dev/null || true
@@ -17,7 +19,6 @@ cleanup() {
 trap cleanup EXIT
 # Xvfb does not provide an EWMH _NET_ACTIVE_WINDOW manager by itself.
 # Do not send dialog keystrokes until a real X11 WM publishes its identity.
-source "$(dirname -- "${BASH_SOURCE[0]}")/x11_openbox_readiness.sh"
 wait_for_openbox_ewmh "$wm_pid" || deny native_window_manager_not_registered
 printf 'DEV01_GTK_X11_EWMH_WINDOW_MANAGER=VERIFIED_NOT_PICKER_ACCEPTANCE\n'
 # The installed app is opened by the unchanged real AT-SPI driver, not by

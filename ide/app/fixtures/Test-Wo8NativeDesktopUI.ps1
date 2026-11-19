@@ -1050,9 +1050,31 @@ try {
       $pathInput.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern).SetValue('main.rs')
       Click 'Inspect exact Git file'
       Require 'Reviewed local file'
+      $proc.Refresh()
+      $stageOwnerHwnd=$proc.MainWindowHandle
+      if ($stageOwnerHwnd -eq [IntPtr]::Zero) {Deny 'wo9_stage_owner_window_not_verified'}
+      $expectedStageHash=(Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $fixed 'main.rs')).Hash.ToLowerInvariant()
       Click 'Confirm and stage these reviewed bytes'
-      Confirm-NativeOneUseDialog 'One-file Git stage' 'Stage reviewed bytes'
+      Confirm-NativeOneUseDialog 'One-file Git stage' 'Stage reviewed bytes' $expectedStageHash $stageOwnerHwnd
       Require 'Staged exact file'
+      # Verify bytes independently of the accessibility receipt before commit consent.
+      $expectedStageBlob=(git -C $fixed hash-object --no-filters -- main.rs).Trim()
+      if ($LASTEXITCODE -ne 0 -or $expectedStageBlob -cnotmatch '^[0-9a-f]{40}$') {Deny 'wo9_native_source_blob_unavailable'}
+      $stageDeadline=(Get-Date).AddSeconds(12)
+      $stageObserved=$false
+      do {
+        $stagedFiles=@(git -C $fixed diff --cached --name-only --)
+        if ($LASTEXITCODE -ne 0) {Deny 'wo9_native_index_readback_failed'}
+        $stageBlob=(git -C $fixed rev-parse :main.rs).Trim()
+        if ($LASTEXITCODE -ne 0) {Deny 'wo9_native_index_blob_unavailable'}
+        if ($stagedFiles.Count -eq 1 -and $stagedFiles[0] -ceq 'main.rs' -and $stageBlob -ceq $expectedStageBlob) {
+          $stageObserved=$true; break
+        }
+        if ($stagedFiles.Count -gt 1 -or ($stagedFiles.Count -eq 1 -and $stagedFiles[0] -cne 'main.rs')) {Deny 'wo9_native_unreviewed_index_change'}
+        Start-Sleep -Milliseconds 200
+      } while ((Get-Date) -lt $stageDeadline)
+      if (!$stageObserved -or (git -C $fixed rev-parse HEAD).Trim() -cne $gitHeadBefore) {Deny 'wo9_native_stage_not_observed'}
+      Write-Host 'WO9_NATIVE_STAGE_EXACT_INDEX_AND_SOURCE_BLOB=PASS'
       foreach($pair in @(
           @('Local commit message','WO9 installed reviewed Git source'),
           @('Author name','WO9 Native Acceptance'),
@@ -1135,7 +1157,7 @@ try {
         }
         throw
       }
-      Require 'Local commit'
+      # Do not accept the form's 'Local commit message' input as a receipt.
       # Real Win UIA consent invokes asynchronously: the exact native Git
       # operation is the witness, not the OS dialog click or a UI label.
       # Wait a bounded interval for a genuinely changed, resolvable commit.
@@ -1150,12 +1172,24 @@ try {
       if ($gitHeadBefore -eq $after) {
         $staged=@(git -C $fixed diff --cached --name-only)
         Write-Host ('WO9_NATIVE_COMMIT_OBSERVATION=unchanged_head;staged_files_'+$staged.Count)
+        foreach($category in @(@('Native Git commit not verified','native_result_unverified'),
+          @('Native Git commit cancelled','native_refusal'),
+          @('Awaiting native confirmation for the exact staged Git file','awaiting_native_confirmation'))) {
+          try {if (Find-Control $category[0] '' 2) {Write-Host ('WO9_NATIVE_COMMIT_STAGE='+$category[1])}} catch {}
+        }
         Deny 'wo9_native_commit_not_observed'
       }
       $files=@(git -C $fixed diff-tree --no-commit-id --name-only -r HEAD)
       if ($files.Count -ne 1 -or $files[0] -ne 'main.rs') {
         Deny 'wo9_git_commit_changed_unreviewed_files'
       }
+      $parent=(git -C $fixed rev-parse 'HEAD^').Trim()
+      if ($LASTEXITCODE -ne 0 -or $parent -cne $gitHeadBefore) {Deny 'wo9_native_commit_parent_mismatch'}
+      $committedBlob=(git -C $fixed rev-parse 'HEAD:main.rs').Trim()
+      if ($LASTEXITCODE -ne 0 -or $committedBlob -cne $expectedStageBlob) {Deny 'wo9_native_commit_blob_mismatch'}
+      $remaining=@(git -C $fixed diff --cached --name-only --)
+      if ($LASTEXITCODE -ne 0 -or $remaining.Count -ne 0) {Deny 'wo9_native_index_not_clean_after_commit'}
+      [void](Find-Control ('Local commit: '+$after) '' 15 -Exact)
       Write-Host 'WO9_INSTALLED_ONE_FILE_GIT_STAGE_COMMIT_NO_HOOKS_OR_PUSH=PASS'
     }
     if ($Scenario -eq 'Dev035JobsReadOnly') {
@@ -1900,7 +1934,21 @@ try {
       }
       $mainBefore=(Get-FileHash -Algorithm SHA256 -LiteralPath $mainSource).Hash
       $secondBefore=(Get-FileHash -Algorithm SHA256 -LiteralPath $secondSource).Hash
-      Click 'second.rs'
+      # Opening the first file asynchronously disables the file tree. Wait
+      # for the exact second file to become enabled; never override the gate.
+      $b4Deadline=(Get-Date).AddSeconds(20)
+      $secondFile=$null
+      do {
+        try {$secondFile=Find-Control 'second.rs' 'Button' 2 -Exact} catch {$secondFile=$null}
+        if ($secondFile -and $secondFile.Current.IsEnabled) {break}
+        Start-Sleep -Milliseconds 200
+      } while ((Get-Date) -lt $b4Deadline)
+      if (!$secondFile -or !$secondFile.Current.IsEnabled) {Deny 'b4_second_file_not_ready'}
+      Reveal-NativeControl $secondFile
+      $secondFile=Find-Control 'second.rs' 'Button' 5 -Exact
+      if (!$secondFile.Current.IsEnabled -or $secondFile.Current.IsOffscreen) {Deny 'b4_second_file_not_ready'}
+      $secondFile.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()
+      [void](Find-Control 'Source editor text · First editor: second.rs' '' 25 -Exact)
       Click 'Toggle split editor'
       Require 'Second editor file'
       Require 'Save second file'

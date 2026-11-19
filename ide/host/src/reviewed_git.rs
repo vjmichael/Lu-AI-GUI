@@ -317,7 +317,7 @@ impl IdeWorkspaceRegistry {
             return Err("WO9_GIT_INVALID_REVIEW_TOKEN");
         }
         safe_relative(&expected.relative_path)?;
-        let (repo, _) = checked_project(self, &expected.project_id)?;
+        let (repo, root) = checked_project(self, &expected.project_id)?;
         same_head(&repo, &expected.local_head)?;
         let mut index = clean_index(&repo)?;
         if index_fingerprint(&index) != expected.index_fingerprint {
@@ -364,11 +364,31 @@ impl IdeWorkspaceRegistry {
             return Err("WO9_GIT_SOURCE_CHANGED_DURING_STAGE");
         }
         index.write().map_err(|_| "WO9_GIT_INDEX_WRITE_FAILED")?;
-        let staged_index = repo.index().map_err(|_| "WO9_GIT_INDEX_UNAVAILABLE")?;
+        // A cached libgit2 index is not a persistence witness. Reopen the
+        // registered root and require the exact one-file delta on disk.
+        let persisted = repo_at_selected_root(&root)?;
+        same_head(&persisted, &expected.local_head)?;
+        let mut staged_index = persisted.index().map_err(|_| "WO9_GIT_INDEX_UNAVAILABLE")?;
+        staged_index
+            .read(true)
+            .map_err(|_| "WO9_GIT_INDEX_UNAVAILABLE")?;
+        let head_tree = persisted
+            .head()
+            .and_then(|h| h.peel_to_tree())
+            .map_err(|_| "WO9_GIT_HEAD_TREE_MISSING")?;
+        let delta = persisted
+            .diff_tree_to_index(Some(&head_tree), Some(&staged_index), None)
+            .map_err(|_| "WO9_GIT_STAGED_DIFF_UNAVAILABLE")?;
+        if delta.deltas().count() != 1
+            || delta.deltas().next().and_then(|d| d.new_file().path())
+                != Some(Path::new(&expected.relative_path))
+        {
+            return Err("WO9_GIT_STAGE_NOT_PUBLISHED");
+        }
         let staged_entry = staged_index
             .get_path(Path::new(&expected.relative_path), 0)
             .ok_or("WO9_GIT_STAGE_NOT_PUBLISHED")?;
-        let blob = repo
+        let blob = persisted
             .find_blob(staged_entry.id)
             .map_err(|_| "WO9_GIT_BLOB_MISSING")?;
         if hex_digest(blob.content()) != expected.worktree_sha256 {
@@ -410,9 +430,10 @@ impl IdeWorkspaceRegistry {
             return Err("WO9_GIT_COMMIT_METADATA_DENIED");
         }
         safe_relative(&stage.relative_path)?;
-        let (repo, _) = checked_project(self, &stage.project_id)?;
+        let (repo, root) = checked_project(self, &stage.project_id)?;
         same_head(&repo, &stage.base_head)?;
         let mut index = repo.index().map_err(|_| "WO9_GIT_INDEX_UNAVAILABLE")?;
+        index.read(true).map_err(|_| "WO9_GIT_INDEX_UNAVAILABLE")?;
         if index.has_conflicts()
             || index.len() > MAX_INDEX_ENTRIES
             || index_fingerprint(&index) != stage.staged_index_fingerprint
@@ -477,6 +498,27 @@ impl IdeWorkspaceRegistry {
             "Lu IDE explicit reviewed single-file commit",
         )
         .map_err(|_| "WO9_GIT_CONCURRENT_REF_UPDATE_DENIED")?;
+        // Never return a success receipt unless an independent repository
+        // handle can observe the same original branch, commit and tree.
+        let persisted =
+            repo_at_selected_root(&root).map_err(|_| "WO9_GIT_COMMIT_READBACK_UNVERIFIED")?;
+        let persisted_head = persisted
+            .head()
+            .map_err(|_| "WO9_GIT_COMMIT_READBACK_UNVERIFIED")?;
+        if persisted_head.name() != Some(branch_ref.as_str())
+            || persisted_head.target() != Some(commit_id)
+        {
+            return Err("WO9_GIT_COMMIT_READBACK_UNVERIFIED");
+        }
+        let commit = persisted
+            .find_commit(commit_id)
+            .map_err(|_| "WO9_GIT_COMMIT_READBACK_UNVERIFIED")?;
+        if commit.parent_count() != 1
+            || commit.parent_id(0).ok() != Some(parent.id())
+            || commit.tree_id() != oid
+        {
+            return Err("WO9_GIT_COMMIT_READBACK_UNVERIFIED");
+        }
         Ok(ReviewedCommitReceipt {
             project_id: stage.project_id.clone(),
             relative_path: stage.relative_path.clone(),
@@ -573,6 +615,59 @@ mod tests {
                 .parent_count(),
             1
         );
+    }
+    #[test]
+    fn exact_staged_bytes_and_commit_are_observed_by_independent_git_cli() {
+        let (_t, registry, id, root) = fixture();
+        // Simulate the native Windows fixture: raw source bytes must survive
+        // Git's optional worktree text normalization, not merely its UI label.
+        let git = |args: &[&str]| -> String {
+            let out = std::process::Command::new("git")
+                .arg("-C")
+                .arg(&root)
+                .args(args)
+                .output()
+                .expect("real Git CLI required for acceptance");
+            assert!(
+                out.status.success(),
+                "Git readback {:?}: {:?}",
+                args,
+                out.status
+            );
+            String::from_utf8(out.stdout).unwrap().trim().to_owned()
+        };
+        git(&["config", "core.autocrlf", "true"]);
+        let unchanged = registry.preview_reviewed_git_file(&id, "code.rs").unwrap();
+        assert_eq!(
+            registry.stage_reviewed_git_file(&unchanged).unwrap_err(),
+            "WO9_GIT_STAGE_NOT_PUBLISHED"
+        );
+        assert_eq!(git(&["diff", "--cached", "--name-only"]), "");
+        fs::write(root.join("code.rs"), b"reviewed raw CRLF\r\n").unwrap();
+        let preview = registry.preview_reviewed_git_file(&id, "code.rs").unwrap();
+        let stage = registry.stage_reviewed_git_file(&preview).unwrap();
+        assert_eq!(git(&["diff", "--cached", "--name-only"]), "code.rs");
+        assert_eq!(
+            git(&["rev-parse", ":code.rs"]),
+            git(&["hash-object", "--no-filters", "--", "code.rs"])
+        );
+        assert_eq!(git(&["rev-parse", "HEAD"]), preview.local_head);
+        let c = registry
+            .commit_reviewed_git_file(
+                &stage,
+                "reviewed source",
+                "Tester",
+                "tester@localhost.invalid",
+            )
+            .unwrap();
+        assert_eq!(git(&["rev-parse", "HEAD"]), c.commit_sha);
+        assert_eq!(git(&["rev-parse", "HEAD^"]), preview.local_head);
+        assert_eq!(git(&["rev-parse", "HEAD:code.rs"]), stage.staged_blob_oid);
+        assert_eq!(
+            git(&["diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD"]),
+            "code.rs"
+        );
+        assert_eq!(git(&["diff", "--cached", "--name-only"]), "");
     }
     #[test]
     fn stage_denies_external_file_change_and_symlink_and_untracked_content() {

@@ -92,7 +92,7 @@ test('03G accessible status and native review selectors remain bound to actual U
   assert.match(web,/role="region" aria-label="Projects in workflow"/);
   assert.match(web,/getAll\('relativeSourcePath'\)/);
   assert.match(web,/verifiedRelativeSourcePath\(submittedPath\)/);
-  const nativeCommit = win.split('# Exactly one verified foreground pointer dispatch')[1].split("Require 'Local commit'")[0];
+  const nativeCommit = win.split('# Exactly one verified foreground pointer dispatch')[1].split("Find-Control ('Local commit: '+$after) '' 15 -Exact")[0];
   assert.equal((nativeCommit.match(/Click 'Confirm separate local commit \(no push\)'/g)||[]).length,1);
   assert.match(win,/\$hit\.Equals\(\$fresh\)/);
   assert.match(win,/\$bounds\.Contains\(\$point\)/);

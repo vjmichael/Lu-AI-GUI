@@ -755,10 +755,13 @@ async fn ide_git_stage_reviewed(
             || current.file_size != expected.file_size {
             return Err("WO9_GIT_REVIEW_CHANGED".into());
         }
+        let owner = app.get_webview_window("main")
+            .ok_or_else(|| "WO9_GIT_STAGE_OWNER_UNAVAILABLE".to_owned())?;
         let allow = app.dialog().message(format!(
             "Stage only this reviewed file?\n{}\nSHA-256 {}\nNo hooks, Git CLI, or remote operations.",
             current.relative_path, current.worktree_sha256
         )).title("Lu IDE · One-file Git stage")
+          .parent(&owner)
           .buttons(MessageDialogButtons::OkCancelCustom(
               "Stage reviewed bytes".into(), "Cancel".into())).blocking_show();
         if !allow { return Err("WO9_GIT_STAGE_NOT_AUTHORIZED".into()); }

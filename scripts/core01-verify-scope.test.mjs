@@ -60,3 +60,12 @@ test('integrated 04B permits only exact CI handoff and hostile fixture source, n
   assert.equal(forbiddenPath('ide/packaging/test_b2_b4_installer_handoff.py'),true);
   assert.equal(reviewedAcceptanceFixture('ide/packaging/other.py','a'.repeat(40)),false);
 });
+
+test('integrated 04K admits only exact acceptance fixture blobs', () => {
+  assert.equal(reviewedAcceptanceFixture('ide/app/fixtures/test_wo9_review_control_policy.py','99d92eb7f1ba4803322c41cf6f9cfa4a292a2224'),true);
+  assert.equal(reviewedAcceptanceFixture('ide/app/fixtures/test_wo9_review_control_policy.py','a'.repeat(40)),false);
+  assert.equal(forbiddenPath('ide/app/fixtures/test_wo9_review_control_policy.py'),true);
+  assert.equal(reviewedAcceptanceFixture('ide/app/fixtures/x11_openbox_readiness.sh','a6015822363cf0c47bd9a04368456ba963569f17'),true);
+  assert.equal(reviewedAcceptanceFixture('ide/app/fixtures/x11_openbox_readiness.sh','a'.repeat(40)),false);
+  assert.equal(forbiddenPath('ide/app/fixtures/x11_openbox_readiness.sh'),true);
+});

@@ -1,5 +1,5 @@
 """Policy-only fake AT-SPI tests; not native installed acceptance."""
-import ast, types, unittest
+import ast, types, unittest, subprocess, tempfile, sys
 from pathlib import Path
 source=Path(__file__).with_name("wo8_linux_editor_atspi.py").read_text(encoding="utf-8")
 module=ast.parse(source)
@@ -64,4 +64,31 @@ class Policy(unittest.TestCase):
         n=Node(label,'button',visible,actions=('click','press'));act,_=self.run_case([n]);self.assertRaises(RuntimeError,act,label,.3);self.assertEqual(n.clicks,0)
     def test_status_exact(self):
         n=Node('Exact evidence matched','status',{'VISIBLE'});_,find=self.run_case([n]);self.assertIs(find(n.name,.3),n)
+class LogCustody(unittest.TestCase):
+    @unittest.skipUnless(sys.platform.startswith("linux"), "real Linux fixture log custody")
+    def test_real_git_fixture_remains_clean_with_diagnostics(self):
+        helper=Path(__file__).with_name('x11_openbox_readiness.sh').resolve()
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp)/'fixture'; root.mkdir()
+            (root/'main.rs').write_text('fn main() {}\n')
+            def git(*a):
+                return subprocess.check_output(['git','-C',str(root),*a],text=True).strip()
+            git('init','-q');git('add','main.rs');git('-c','user.name=Fixture','-c','user.email=fixture@localhost.invalid','commit','-qm','initial')
+            args=['bash','-c','source "$1"; native_fixture_log_dir "$2" "$3"','_',str(helper),str(root)]
+            outside=Path(subprocess.check_output([*args,temp],text=True).strip())
+            self.assertFalse(outside.is_relative_to(root))
+            (outside/'window-manager-output.txt').write_text('diagnostic\n')
+            self.assertEqual(git('status','--porcelain','--untracked-files=all'),'')
+            self.assertNotEqual(subprocess.run([*args,str(root)],capture_output=True).returncode,0)
+            nested=root/'nested';nested.mkdir()
+            self.assertNotEqual(subprocess.run([*args,str(nested)],capture_output=True).returncode,0)
+            alias=Path(temp)/'alias';alias.symlink_to(nested,target_is_directory=True)
+            self.assertNotEqual(subprocess.run([*args,str(alias)],capture_output=True).returncode,0)
+    def test_both_launchers_never_write_diagnostics_in_fixture(self):
+        for name in ('Run-DEV01ModernGtkSession.sh','wo8_linux_window_acceptance.sh'):
+            s=Path(__file__).with_name(name).read_text()
+            self.assertIn('native_fixture_log_dir',s)
+            self.assertIn('>"$log_dir/window-manager-output.txt"',s)
+            self.assertNotIn('>${WO8_FIXTURE_ROOT}',s)
+            self.assertNotIn('>"${WO8_FIXTURE_ROOT}',s)
 if __name__=='__main__':unittest.main(verbosity=2)

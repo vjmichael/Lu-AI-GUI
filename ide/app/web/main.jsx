@@ -9917,7 +9917,7 @@ function App() {
                   </button>
                 </form>
               </article>}
-              {gitCommitReceipt && <p role="status">
+              {gitCommitReceipt && <p role="status" aria-label={`Local commit: ${gitCommitReceipt.commitSha}`}>
                 Local commit: <code>{gitCommitReceipt.commitSha}</code>.
                 Remote unchanged; release unapproved.</p>}
             </div>}
