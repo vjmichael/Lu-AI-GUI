@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "732af137a2b972465b8c4ac8ee5a5d02ffe1757b",
-  "trackedFileCount": 1146,
+  "sourceCommitBeforeLock": "7b93a57c67779f9ddea01133d52df18d44323a7a",
+  "trackedFileCount": 1149,
   "files": [
     {
       "path": ".gitattributes",
@@ -796,6 +796,10 @@
       "blob": "0619ccfd2c5d39bc2d44abd6828b65277b366ef3"
     },
     {
+      "path": "docs/LU_CP06DR1_MODEL_CONFIRMED_CUSTODY_20261119.md",
+      "blob": "2bb6a8987b670176275d740b395175223261751a"
+    },
+    {
       "path": "docs/LU_CP06D_MODEL_CONFIRMED_TRANSFERS_20261119.md",
       "blob": "ba08073502dfbb2e3c91cbda7fcf8c8d7e8d0064"
     },
@@ -809,7 +813,7 @@
     },
     {
       "path": "docs/LU_DEVELOPMENT_LEDGER.md",
-      "blob": "4f9279e59a47cda7a94b8d0cc39428f4958a7221"
+      "blob": "d893c6cda4c2e4b94a4b64a55fd27bde84fc1000"
     },
     {
       "path": "docs/LU_E1_NATIVE_EVIDENCE_20261107.md",
@@ -1601,7 +1605,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/file_trash_desktop.rs",
-      "blob": "ea14aa98a1e3c2295794308d5b16a0fb7ef18539"
+      "blob": "39c1928620f809ed4e53f1c940e043527265d44e"
     },
     {
       "path": "lu-desktop/src-tauri/src/generation_queue.rs",
@@ -1625,7 +1629,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/lib.rs",
-      "blob": "80a60ef475ce5ca0df3505c624649227a69b3f57"
+      "blob": "77ea1327af6a2c1a16b9ed8af7c5beef0d8cb097"
     },
     {
       "path": "lu-desktop/src-tauri/src/linked_attachment_file.rs",
@@ -3365,11 +3369,11 @@
     },
     {
       "path": "src-tauri/lu-core/src/journal.rs",
-      "blob": "476d2f996c5f25750c356f4443f49c60abd95e5c"
+      "blob": "c33d960eacc4528e9c0a86489c7fb7526b4d2ae4"
     },
     {
       "path": "src-tauri/lu-core/src/lib.rs",
-      "blob": "d147c24eb84b8efa1034535037d5aba7ee369150"
+      "blob": "bd4dcaeb3446ad47be630e3e9bcc5c3daba54029"
     },
     {
       "path": "src-tauri/lu-core/src/linux_device_hints.rs",
@@ -3394,6 +3398,10 @@
     {
       "path": "src-tauri/lu-core/src/model_admission.rs",
       "blob": "3abf2cb78f3a7c287ac3df9cc33f40abe3e683d2"
+    },
+    {
+      "path": "src-tauri/lu-core/src/model_custody_turn.rs",
+      "blob": "a82a8cbd3e89474457933a5d8a86fe981c3950f9"
     },
     {
       "path": "src-tauri/lu-core/src/model_import.rs",
@@ -4202,6 +4210,10 @@
     {
       "path": "src-tauri/lu-core/tests/m5_effect_authority_acceptance.rs",
       "blob": "baa9ebdcf6c3a3ebb9ce885cbf672d956be4db24"
+    },
+    {
+      "path": "src-tauri/lu-core/tests/model_custody_turn.rs",
+      "blob": "5839841c1a7d29ed3fd69f38d7ce110b9cd6b4ee"
     },
     {
       "path": "src-tauri/lu-core/tests/model_json_boundary.rs",
