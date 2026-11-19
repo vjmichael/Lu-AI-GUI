@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "5d9ccc5150937a1062b7ded1d2aeaf85f47cb55a",
-  "trackedFileCount": 1127,
+  "sourceCommitBeforeLock": "ee6155aebc480afa6c78e3a49b04dd533597c9ae",
+  "trackedFileCount": 1128,
   "files": [
     {
       "path": ".gitattributes",
@@ -117,7 +117,7 @@
     },
     {
       "path": ".github/workflows/lu-cp05e-closeout.yml",
-      "blob": "c1a78dcc2491e2097ab023dd026a528ce115ec21"
+      "blob": "3d1ee3d2bc6cf24f42b15932e09779079c91c8fc"
     },
     {
       "path": ".github/workflows/lu-cp05e-grouped-native.yml",
@@ -777,7 +777,7 @@
     },
     {
       "path": "docs/LU_DEVELOPMENT_LEDGER.md",
-      "blob": "e31fba5335421ce1d27394937d33195c68bd6ff8"
+      "blob": "1ca9614cceaca1736881ae4eb8d5dfbd5b238698"
     },
     {
       "path": "docs/LU_E1_NATIVE_EVIDENCE_20261107.md",
@@ -2149,7 +2149,7 @@
     },
     {
       "path": "lu-desktop/tests/p0-installed-gui-smoke.test.mjs",
-      "blob": "32f7caf574e0b7bc32510b6738f8fab59dc72e80"
+      "blob": "ba39e0de684530dbb81e27a7024ed9d32d62555e"
     },
     {
       "path": "lu-desktop/tests/p0-memory-telemetry.test.mjs",
@@ -2528,6 +2528,10 @@
       "blob": "b1249480fc5cff80f350e687ba417513c296ea28"
     },
     {
+      "path": "scripts/cp05e5-consent-contract.test.ps1",
+      "blob": "0c45242fcafcc319b9ab42e282d5e6329435cffc"
+    },
+    {
       "path": "scripts/cp05e5-installed-journal.py",
       "blob": "39e22af9a3ca993b9322c32b476a7f176e434fd5"
     },
@@ -2537,7 +2541,7 @@
     },
     {
       "path": "scripts/cp05e5-windows-installed-gguf.ps1",
-      "blob": "fed7a58fbb363648ad079750b1627a499a9786f7"
+      "blob": "466cd55ac2f362466d88538032c9833084ef41c1"
     },
     {
       "path": "scripts/install-lu-agent01l-native-fixture.sh",
