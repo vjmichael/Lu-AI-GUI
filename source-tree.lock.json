@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "597b1e562ec836575b495bcd7cef5efaabed0c8f",
-  "trackedFileCount": 1959,
+  "sourceCommitBeforeLock": "292b13e4439b8fb6497d9b5f246735a3bc158eb0",
+  "trackedFileCount": 1961,
   "files": [
     {
       "path": ".gitattributes",
@@ -325,11 +325,11 @@
     },
     {
       "path": ".github/workflows/ide-linux-26-installed-diagnostic.yml",
-      "blob": "3b6b536a243c89b5caf3deaba1a9c1164179c32e"
+      "blob": "5d7aa87f0e91151f76762bcfaef887ea3ba4e3c9"
     },
     {
       "path": ".github/workflows/ide-p02-native-checks.yml",
-      "blob": "b8f80361b98df9f93ee7439ab44242f3d9587f70"
+      "blob": "3afcf5b4e179402f01421919d7e88ecb4f67d506"
     },
     {
       "path": ".github/workflows/ide-p03-native-security-checks.yml",
@@ -437,7 +437,7 @@
     },
     {
       "path": ".github/workflows/ide-wo9-installed-native.yml",
-      "blob": "6c6e8f89a9a60d8e9703dc54af91e6bc690024b8"
+      "blob": "b7c8bb2a4575e1a9da1f8f5d41f3dc8d8c14933c"
     },
     {
       "path": ".github/workflows/ide-wo9-signed-protected-acceptance.yml",
@@ -1709,7 +1709,7 @@
     },
     {
       "path": "ide/app/fixtures/Run-DEV01ModernGtkSession.sh",
-      "blob": "910ae4f225f80e4155f8414cef2ad983e6b7cab1"
+      "blob": "0d6b894b68e7f26b3bdd3cf02b2252842b18ce5c"
     },
     {
       "path": "ide/app/fixtures/Test-B2InstalledDeb.sh",
@@ -1781,11 +1781,11 @@
     },
     {
       "path": "ide/app/fixtures/Test-Wo8InstalledDeb.sh",
-      "blob": "ebe782e6eb70b69ef20ce4d0ed976989e9f16550"
+      "blob": "59b033d585b8d507a35d6a3f7f86dc5606943629"
     },
     {
       "path": "ide/app/fixtures/Test-Wo8NativeDesktopUI.ps1",
-      "blob": "9f2fdd5c2165b1a6d0558c0095fbe46b4c61385b"
+      "blob": "f4bcea3fb0ab404b61b38e62b063dfc6f48be85b"
     },
     {
       "path": "ide/app/fixtures/b2_linux_installed_draft_atspi.py",
@@ -1797,7 +1797,7 @@
     },
     {
       "path": "ide/app/fixtures/b5_linux_installed_perf_atspi.py",
-      "blob": "59cc5b8e7e3bd4ab95efcd274fcbc2b820db4057"
+      "blob": "5322daff8fed1d7ce3a6da86ed40a42a47268055"
     },
     {
       "path": "ide/app/fixtures/dev01_modern_linux_installed_atspi.py",
@@ -1833,7 +1833,7 @@
     },
     {
       "path": "ide/app/fixtures/test_atspi_signature_contract.py",
-      "blob": "a7d6e6e71a552ba38adfea74dabb94cda22baebe"
+      "blob": "262b5507b56ad0a5a15343ccd7b1cae31a8ca475"
     },
     {
       "path": "ide/app/fixtures/test_dev01_native_confirmation_scope.py",
@@ -1853,7 +1853,11 @@
     },
     {
       "path": "ide/app/fixtures/test_gtk_chooser_confirmation_policy.py",
-      "blob": "abaf8bebca00cb3e2c60404f5e2f635f6eb59062"
+      "blob": "ae889982667164921e573042971038a40b1e5e35"
+    },
+    {
+      "path": "ide/app/fixtures/test_wo9_review_control_policy.py",
+      "blob": "28b2d6494ccf0069fa7dd9b72ca904cf90912841"
     },
     {
       "path": "ide/app/fixtures/verify_reviewed_ide_icons.py",
@@ -1861,11 +1865,11 @@
     },
     {
       "path": "ide/app/fixtures/wo8_linux_editor_atspi.py",
-      "blob": "c0eee5b2eb1d6429ccf9a876a1989fa1621795d1"
+      "blob": "9d200e23e9bd4672fb91b14e0cf99a0e971add87"
     },
     {
       "path": "ide/app/fixtures/wo8_linux_window_acceptance.sh",
-      "blob": "9d92e2e08746e8fe6509aba0846c659da15eb450"
+      "blob": "b8d21620fa8185a39ccd9d6e805312a7ff7492f2"
     },
     {
       "path": "ide/app/fixtures/wo9_linux_protected_graph_atspi.py",
@@ -1874,6 +1878,10 @@
     {
       "path": "ide/app/fixtures/wo9_linux_workflow_atspi.py",
       "blob": "63345d82727c9c32fa2fb4328b9e5a2015760869"
+    },
+    {
+      "path": "ide/app/fixtures/x11_openbox_readiness.sh",
+      "blob": "e94379614e558c242f5009211afb64d6dadc1f11"
     },
     {
       "path": "ide/app/package-lock.json",
@@ -2109,7 +2117,7 @@
     },
     {
       "path": "ide/app/tests/editor_working_set.test.mjs",
-      "blob": "6bfa4c73d05c64e3f9ef2ca1a2770d9def429b1c"
+      "blob": "6baa659dd3b82bf4a0535f4dc5bbeb78b7c158c5"
     },
     {
       "path": "ide/app/tests/execution_intent.test.mjs",
@@ -2501,7 +2509,7 @@
     },
     {
       "path": "ide/app/web/main.jsx",
-      "blob": "77366f8d70f8b2f538ae17b4554a84304508ca45"
+      "blob": "cad728b60bd55588aaf7888d1478ede0e15e623f"
     },
     {
       "path": "ide/app/web/native_build_output.js",
