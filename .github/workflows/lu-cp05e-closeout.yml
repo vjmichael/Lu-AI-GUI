@@ -1,4 +1,4 @@
-name: Lu CP-05E5 closeout - original installed GGUF and exact browser review
+name: Lu CP-05E5 closeout - repaired installed GGUF and original browser byte review
 on:
   push:
     branches: [lu/cp01-attachment-transaction-20261116]
@@ -65,9 +65,9 @@ jobs:
           path: cp05-browser-review/
           if-no-files-found: error
           retention-days: 14
-  installed-original-windows-gguf:
+  installed-repaired-windows-gguf:
     runs-on: windows-2025
-    timeout-minutes: 45
+    timeout-minutes: 200
     env:
       ORIGINAL_SOURCE: '99203ea5a014118e27b8677c1e50924da27cffc9'
       ORIGINAL_INSTALLER_ZIP_SHA: '9dce7473393c018f9988d24630a870e13cf009cde5e957bf4f530bbfb6485ed9'
@@ -83,6 +83,9 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
       - name: Verify exact harness source, native identity and hit-proof fixtures
         shell: pwsh
         run: |
@@ -103,7 +106,25 @@ jobs:
           if($LASTEXITCODE -ne 0){throw 'Installed journal diagnostic regression failed'}
           node --test lu-desktop/tests/p0-installed-gui-smoke.test.mjs
           if($LASTEXITCODE -ne 0){throw 'Original installed GUI contracts changed'}
-      - name: Fetch original accepted NSIS ZIP, never rebuild executable
+      - name: Compile and execute affected Rust regression tests before packaging
+        shell: pwsh
+        timeout-minutes: 40
+        run: |
+          $ErrorActionPreference='Stop'
+          $tests=@(
+            'persistent_llama_backend::tests::cp05_finite_json_disables_hidden_reasoning_without_weakening_schema',
+            'supervised_tool_generation::failure_class_tests::cp05_supervisor_failure_detail_is_bounded',
+            'inference_supervisor::tests::cp05_text_and_constrained_failure_clear_only_ejected_session'
+          )
+          foreach($test in $tests){
+            $result=(& cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib $test -- --exact --nocapture 2>&1 | Out-String)
+            $exit=$LASTEXITCODE
+            Write-Output $result
+            if($exit -ne 0 -or $result -notmatch 'test result: ok\. 1 passed; 0 failed;'){
+              throw "Required native regression did not pass: $test"
+            }
+          }
+      - name: Fetch and verify original NSIS ZIP as historical baseline only
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
@@ -122,8 +143,36 @@ jobs:
           $prior=Get-Content -LiteralPath (Join-Path $out 'native-nsis-cycle-evidence/m3-nsis-cycle.json') -Raw|ConvertFrom-Json
           if($prior.installer -ne 'PASS_REAL_NATIVE_PROCESS_EXIT' -or $prior.installedUiSmoke -ne 'PASS_INSTALLED_UNIFIED_TABS' -or $prior.packageRemoval -ne 'PASS_BINARIES_ABSENT' -or $prior.installerSha256 -cne $check.installerSha256){throw 'Original installer acceptance receipt mismatch'}
           New-Item -ItemType Directory -Path cp05-closeout-evidence|Out-Null
-          Copy-Item -LiteralPath (Join-Path $out 'installer-checksums.json') -Destination cp05-closeout-evidence
+          Copy-Item -LiteralPath (Join-Path $out 'installer-checksums.json') -Destination cp05-closeout-evidence/original-installer-checksums.json
           Copy-Item -LiteralPath (Join-Path $out 'native-nsis-cycle-evidence/m3-nsis-cycle.json') -Destination cp05-closeout-evidence/original-nsis-cycle.json
+      - name: Provision pinned NSIS 3.11
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $exe=Join-Path ([Environment]::GetFolderPath('ProgramFilesX86')) 'NSIS\makensis.exe'
+          if(-not(Test-Path $exe)){
+            choco install nsis --version=3.11.0 --yes --no-progress --limit-output
+            if($LASTEXITCODE -ne 0){throw 'Pinned NSIS unavailable'}
+          }
+          if(-not(Test-Path $exe)){throw 'Pinned makensis.exe missing'}
+          & $exe /VERSION
+          if($LASTEXITCODE -ne 0){throw 'NSIS compiler unavailable'}
+      - name: Build exact repaired Windows Lu and the original pinned CPU engine source
+        shell: pwsh
+        timeout-minutes: 150
+        run: |
+          $ErrorActionPreference='Stop'
+          $out=Join-Path $env:RUNNER_TEMP 'cp05-repaired-nsis'
+          & scripts/build-agent01g-physical-windows-nsis.ps1 -SourceSha $env:GITHUB_SHA -OutputDirectory $out
+          if($LASTEXITCODE -ne 0){throw 'Repaired NSIS build failed'}
+          $check=Get-Content -LiteralPath (Join-Path $out 'installer-checksums.json') -Raw|ConvertFrom-Json
+          if($check.sourceSha -cne $env:GITHUB_SHA -or $check.genuineInstallerProduced -ne $true){throw 'Repaired installer source mismatch'}
+          $apps=@(Get-ChildItem -LiteralPath $out -Filter '*.exe' -File)
+          if($apps.Count -ne 1 -or $apps[0].Name -cne $check.installerName){throw 'Unexpected repaired installer inventory'}
+          if((Get-FileHash -LiteralPath $apps[0].FullName -Algorithm SHA256).Hash.ToLowerInvariant() -cne $check.installerSha256){throw 'Repaired installer hash mismatch'}
+          $prior=Get-Content -LiteralPath cp05-closeout-evidence/original-installer-checksums.json -Raw|ConvertFrom-Json
+          if($check.appSha256 -ceq $prior.appSha256){throw 'Repaired production binary unexpectedly equals original failed binary'}
+          Copy-Item -LiteralPath (Join-Path $out 'installer-checksums.json') -Destination cp05-closeout-evidence/installer-checksums.json
       - name: Download and hash previously exercised genuine Qwen3 0.6B Q4_K_M
         shell: pwsh
         run: |
@@ -131,24 +180,31 @@ jobs:
           $model=Join-Path $env:RUNNER_TEMP 'cp05-pinned-qwen.gguf'
           curl.exe --fail --silent --show-error --location --retry 4 --retry-delay 5 --connect-timeout 30 https://huggingface.co/QuantFactory/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B.Q4_K_M.gguf -o $model
           if($LASTEXITCODE -ne 0 -or (Get-FileHash -LiteralPath $model -Algorithm SHA256).Hash.ToLowerInvariant() -cne $env:MODEL_SHA){throw 'Actual pinned GGUF unavailable or changed'}
-      - name: Genuine installed original NSIS model, approval, refusal, active Stop, normal close and forced host-death recovery
+      - name: Genuine repaired NSIS model, approval, refusal, active Stop, normal close and forced host-death recovery
         timeout-minutes: 25
         shell: pwsh
         run: |
           $ErrorActionPreference='Stop'
-          $out=Join-Path $env:RUNNER_TEMP 'cp05-original-nsis'
+          $out=Join-Path $env:RUNNER_TEMP 'cp05-repaired-nsis'
           $check=Get-Content -LiteralPath (Join-Path $out 'installer-checksums.json') -Raw|ConvertFrom-Json
           $model=Join-Path $env:RUNNER_TEMP 'cp05-pinned-qwen.gguf'
           $evidence=Join-Path $env:GITHUB_WORKSPACE 'cp05-closeout-evidence/installed-cycle'
           & scripts/m3-windows-nsis-cycle.ps1 -InstallerPath (Join-Path $out $check.installerName) -InstallerSha256 $check.installerSha256 -ExpectedLuSha256 $check.appSha256 -ExpectedEngineSha256 $check.engineSha256 -UninstallerName 'UninstallLuAGENT01GPhysicalTest.exe' -DisposableWindowsConfirmed -ExerciseInstalledGguf -GgufModelPath $model -GgufModelSha256 $env:MODEL_SHA -EvidenceDir $evidence
-          if($LASTEXITCODE -ne 0){throw 'Original installed GGUF witness failed or incomplete'}
+          if($LASTEXITCODE -ne 0){throw 'Repaired installed GGUF witness failed or incomplete'}
           $receipt=Get-Content -LiteralPath (Join-Path $evidence 'm3-nsis-cycle.json') -Raw|ConvertFrom-Json
           if($receipt.installedGguf -ne 'PASS_INSTALLED_GGUF_NATIVE_CONSENT_AND_LIFECYCLE' -or $receipt.activeModelWorkersReaped -ne 'PASS_ORIGINAL_ACTIVE_GRACEFUL_AND_FORCED' -or $receipt.packageRemoval -ne 'PASS_BINARIES_ABSENT' -or $receipt.profilePreservation -ne 'PASS_UNTOUCHED_APPDATA_SENTINEL'){throw 'Missing required installed model and process receipts'}
-          "Original executable source: $env:ORIGINAL_SOURCE; harness source: $env:GITHUB_SHA. Hosted CPU native UI witness, not physical AMD/Vulkan acceptance." >> $env:GITHUB_STEP_SUMMARY
+          "Repaired executable and harness source: $env:GITHUB_SHA. Historical baseline source: $env:ORIGINAL_SOURCE. Hosted CPU native UI witness, not physical AMD/Vulkan acceptance." >> $env:GITHUB_STEP_SUMMARY
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: cp05-installed-original-windows-gguf-${{ github.sha }}
+          name: Lu-CP05E5-repaired-Windows-CPU-NSIS-${{ github.sha }}
+          path: ${{ runner.temp }}/cp05-repaired-nsis/
+          if-no-files-found: warn
+          retention-days: 14
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cp05-installed-repaired-windows-gguf-${{ github.sha }}
           path: cp05-closeout-evidence/
           if-no-files-found: warn
           retention-days: 14

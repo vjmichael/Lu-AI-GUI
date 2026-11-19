@@ -606,6 +606,9 @@ try{
   # selected Load are through the installed application; no Tauri test hook.
   Start-Lu 'initial'
   Load-Lu 'initial'
+  # StartTime is after the durable backend admission, so this is a
+  # conservative real-clock bound for the original five-minute gate.
+  $firstEngineStarted=$script:engine.Proc.StartTime.ToUniversalTime()
   $report.currentPhase='approve'
   Send-Fixture 'Could you validate this JSON schema {"schema":{"type":"integer"},"data":17}'
   Consent 'Allow once' 'approve'
@@ -620,16 +623,27 @@ try{
   Start-Long 'CP05-WINDOWS-STOP-ORCHID' 'stop'
   $report.activationMethods+=@(Invoke-UIA (Wait-Enabled 'Cancel') $script:window)
   Check-Journal 'stop' 120
-  # Cancellation may legitimately unload this model. Do not auto-reload or
-  # reset the restart circuit. A missing resident idle slot fails this witness.
-  $null=Wait-Observation { Slot-State $false } 120 'original decoder idle after Stop'
-  $report.phases.stop=[ordered]@{actualActiveSlot=$true;cancelReceipt=$true;idle=$true}
+  # The production backend ejects cancelled workers; prove the exact
+  # live worker ended instead of demanding that a dead decoder be idle.
+  $stopped=$script:engine
+  if(-not $stopped.Proc.WaitForExit(15000)){throw 'Original active worker survived Stop'}
+  $null=Wait-Observation {
+    @(Get-CimInstance Win32_Process -Filter ("ParentProcessId="+$script:process.Id+" AND Name='llama-server.exe'")).Count -eq 0
+  } 10 'no replacement model worker after Stop'
+  $report.phases.stop=[ordered]@{actualActiveSlot=$true;cancelReceipt=$true;workerExited=$true;enginePid=$stopped.Pid;noAutomaticRestart=$true}
+  $script:engine=$null
+  # Separate explicit test-operator model load, never replay the cancelled
+  # request or alter the production restart ledger.
+  Load-Lu 'after-stop'
   Start-Long 'CP05-WINDOWS-CLOSE-AZURE' 'graceful'
   Close-Exact $false 'graceful'
-  # Both distinct original workers must be observed; no more than two starts
-  # within the production circuit window, and no counter manipulation.
   Start-Lu 'second'
   Check-Journal 'graceful' 30
+  # A third genuine start must respect the original 2-start / 300-second
+  # circuit; wait actual wall time, never reset, bypass or fake the counter.
+  $earliest=$firstEngineStarted.AddSeconds(305)
+  $null=Wait-Observation { [DateTime]::UtcNow -ge $earliest } 310 'real production restart window elapsed'
+  $report.phases.restartBudget=[ordered]@{firstEngineStarted=$firstEngineStarted.ToString('o');thirdStartNotBefore=$earliest.ToString('o');realClockObserved=[DateTime]::UtcNow.ToString('o')}
   Load-Lu 'second'
   Start-Long 'CP05-WINDOWS-DEATH-CEDAR' 'forced'
   Close-Exact $true 'forced'

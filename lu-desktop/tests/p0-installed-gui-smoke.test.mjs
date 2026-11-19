@@ -110,3 +110,19 @@ test('CP-05 native consent verifies original dialog scope and TaskDialog HWND, n
   assert.match(gguf,/Check-Journal 'approve' 180/);
   assert.match(gguf,/Check-Journal 'deny' 90/);
 });
+
+test('CP-05 Stop proves exact worker ejection and explicit bounded restart, not an idle dead worker',()=>{
+  const gguf=readFileSync(new URL('../../scripts/cp05e5-windows-installed-gguf.ps1',import.meta.url),'utf8');
+  const flow=gguf.split("Start-Long 'CP05-WINDOWS-STOP-ORCHID' 'stop'")[1].split("Start-Long 'CP05-WINDOWS-DEATH-CEDAR' 'forced'")[0];
+  assert.match(flow,/Check-Journal 'stop' 120/);
+  assert.match(flow,/\$stopped\.Proc\.WaitForExit\(15000\)/);
+  assert.match(flow,/no replacement model worker after Stop/);
+  assert.match(flow,/noAutomaticRestart=\$true/);
+  assert.match(flow,/Load-Lu 'after-stop'/);
+  assert.match(flow,/Close-Exact \$false 'graceful'/);
+  assert.match(flow,/Check-Journal 'graceful'/);
+  assert.match(flow,/\$firstEngineStarted\.AddSeconds\(305\)/);
+  assert.match(flow,/real production restart window elapsed/);
+  assert.match(flow,/Load-Lu 'second'/);
+  assert.doesNotMatch(flow,/Slot-State \$false/);
+});

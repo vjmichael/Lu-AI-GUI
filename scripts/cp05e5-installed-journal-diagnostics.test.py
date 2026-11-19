@@ -41,6 +41,12 @@ class Diagnostic(unittest.TestCase):
     def test_failure_category_redacts(self):
         self.assertEqual(o.failure_category('ModelReply(Unauthorized(PRIVATE_TEST_VALUE))'),'Unauthorized')
         self.assertEqual(o.failure_category('PRIVATE_TEST_VALUE'),'UNCLASSIFIED')
+    def test_backend_failure_detail_is_exact_and_redacted(self):
+        self.add('utility','GENERATION_FAILURE','InferenceFailedAt("backend_no_visible_tokens")')
+        s=self.run_fail(); self.assertIn('backend_no_visible_tokens',s)
+        self.assertEqual(o.failure_category('InferenceFailedAt("backend_timeout")'), 'backend_timeout')
+        self.assertEqual(o.failure_category('InferenceFailedAt("backend_timeout PRIVATE_TEST_VALUE")'), 'UNCLASSIFIED')
+        self.assertEqual(o.failure_category('InferenceFailedAt("backend_timeout") PRIVATE_TEST_VALUE'), 'UNCLASSIFIED')
     def test_success_gate_unchanged(self):
         self.add('utility','MODEL_OUTPUT',json.dumps({'kind':'tool','name':'lu_validate_schema','arguments':{'source':'current_request'}}))
         self.add('utility','TOOL_FEEDBACK',json.dumps({'name':'lu_validate_schema','response':{'ok':True,'result':{'valid':True,'draft':'2020-12'}}}))

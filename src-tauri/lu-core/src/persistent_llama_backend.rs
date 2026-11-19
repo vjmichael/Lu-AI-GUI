@@ -735,6 +735,14 @@ impl InferenceBackend for PersistentLlamaBackend {
         self.generate_text(request, Some(schema), cancel, emit)
     }
 }
+fn configure_finite_json_request(json: &mut serde_json::Value, schema: Option<&serde_json::Value>) {
+    if let Some(schema) = schema {
+        json["response_format"] = serde_json::json!({"type":"json_schema","json_schema":{"name":"lu_native_reply","schema":schema}});
+        json["chat_template_kwargs"] = serde_json::json!({"enable_thinking":false});
+        json["reasoning_effort"] = serde_json::json!("none");
+    }
+}
+
 impl PersistentLlamaBackend {
     fn generate_text(&mut self, request: &GenerationRequest, schema: Option<&serde_json::Value>,
         cancel: &Cancellation, emit: &mut dyn FnMut(TokenChunk) -> Result<(), EngineError>) -> Result<(), String> {
@@ -752,10 +760,10 @@ impl PersistentLlamaBackend {
         .map_err(|_| "invalid structured text request".to_string())?;
         let mut json:serde_json::Value=serde_json::from_str(&body)
             .map_err(|_|"invalid structured text JSON")?;
-        // Per-request only, and do not reuse a plain-chat prefix cache.
-        if let Some(schema) = schema {
-            json["response_format"] = serde_json::json!({"type":"json_schema","json_schema":{"name":"lu_native_reply","schema":schema}});
-        }
+        // Per-request only: finite JSON control traffic must not spend its
+        // bounded output budget on hidden reasoning. Ordinary chat retains
+        // its existing model/template defaults. Never drop the host schema.
+        configure_finite_json_request(&mut json, schema);
         let attempt=self.cache_gate.begin_text(if schema.is_some() { None } else { trusted_scope.as_deref() },&mut json)
             .map_err(str::to_owned)?;
         self.sampling.apply(&mut json);
@@ -791,6 +799,28 @@ impl Drop for PersistentLlamaBackend {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cp05_finite_json_disables_hidden_reasoning_without_weakening_schema() {
+        let schema=serde_json::json!({"type":"object","properties":{
+            "kind":{"const":"tool"},"name":{"const":"lu_validate_schema"},
+            "arguments":{"type":"object","properties":{"source":{"type":"string","const":"current_request"}},
+                "required":["source"],"additionalProperties":false}
+        },"required":["kind","name","arguments"],"additionalProperties":false});
+        let ordinary=serde_json::json!({"messages":[{"role":"user","content":"fixture"}],
+            "max_tokens":512,"stream":true});
+        let mut body=ordinary.clone();
+        configure_finite_json_request(&mut body,None);
+        assert_eq!(body,ordinary,"ordinary conversation was changed");
+        configure_finite_json_request(&mut body,Some(&schema));
+        assert_eq!(body["response_format"]["type"],"json_schema");
+        assert_eq!(body["response_format"]["json_schema"]["schema"],schema);
+        assert_eq!(body["chat_template_kwargs"]["enable_thinking"],false);
+        assert_eq!(body["reasoning_effort"],"none");
+        assert_eq!(body["max_tokens"],ordinary["max_tokens"]);
+        assert_eq!(body["messages"],ordinary["messages"]);
+        assert_eq!(body["stream"],ordinary["stream"]);
+    }
 
     #[cfg(target_os = "linux")]
     #[test]

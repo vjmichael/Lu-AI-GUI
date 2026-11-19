@@ -128,6 +128,21 @@ _FAILURE_CODES = (
 
 
 def failure_category(payload):
+    # Only exact host-generated classifications may cross the diagnostic boundary.
+    detail_codes = (
+        "backend_http_request_rejected", "backend_http_endpoint_auth",
+        "backend_http_server_error", "backend_http_other", "backend_no_visible_tokens",
+        "backend_stream_event_invalid", "backend_stream_incomplete", "backend_timeout",
+        "backend_worker_stop_unverified", "backend_engine_unavailable",
+        "backend_other", "supervisor_busy", "supervisor_invalid_request",
+        "supervisor_wrong_session", "supervisor_wrong_generation", "supervisor_unavailable",
+        "supervisor_poisoned", "bridge_rejected", "engine_invalid_request",
+        "engine_not_loaded", "engine_busy", "engine_cancelled", "engine_other",
+        "inference_failure_event",
+    )
+    for code in detail_codes:
+        if payload == f'InferenceFailedAt("{code}")':
+            return code
     # Fixed native Rust enum discriminants; do not retain arbitrary suffixes.
     value = payload.removeprefix("ModelReply(")
     for code in _FAILURE_CODES:

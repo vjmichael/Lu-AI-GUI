@@ -17,8 +17,8 @@ use crate::{
     conversation_authority::ConversationAuthority,
     inference_bridge::BridgeError,
     generation_loop_guard::{StreamLoopGuard, StreamLoopVerdict},
-    inference_host::{Cancellation, InferenceBackend},
-    inference_supervisor::TrustedInferenceSupervisor,
+    inference_host::{Cancellation, EngineError, InferenceBackend},
+    inference_supervisor::{SupervisorError, TrustedInferenceSupervisor},
     inference_wire::decode_frame,
     journal::EffectJournal,
     model::{ModelToolCatalog, ModelToolError},
@@ -235,6 +235,56 @@ pub struct NativeTurnReport {
     pub records: Vec<NativeTurnRecord>,
 }
 
+// Map only fixed error classes. Never include the raw path, response body,
+// model tokens, credentials, or error payload in the journal diagnostic.
+fn supervisor_failure_detail(error: &SupervisorError) -> &'static str {
+    match error {
+        SupervisorError::Busy => "supervisor_busy",
+        SupervisorError::InvalidRequest => "supervisor_invalid_request",
+        SupervisorError::WrongSession => "supervisor_wrong_session",
+        SupervisorError::WrongGeneration => "supervisor_wrong_generation",
+        SupervisorError::Unavailable => "supervisor_unavailable",
+        SupervisorError::Poisoned => "supervisor_poisoned",
+        SupervisorError::Bridge(BridgeError::Engine(engine)) => match engine {
+            EngineError::InvalidRequest => "engine_invalid_request",
+            EngineError::NotLoaded => "engine_not_loaded",
+            EngineError::Busy => "engine_busy",
+            EngineError::Cancelled => "engine_cancelled",
+            EngineError::Backend(message) => {
+                let m=message.as_str();
+                if m.starts_with("llama.cpp chat request rejected (HTTP ") {
+                    if m.starts_with("llama.cpp chat request rejected (HTTP 400)") ||
+                       m.starts_with("llama.cpp chat request rejected (HTTP 422)") {
+                        "backend_http_request_rejected"
+                    } else if m.starts_with("llama.cpp chat request rejected (HTTP 401)") ||
+                              m.starts_with("llama.cpp chat request rejected (HTTP 403)") {
+                        "backend_http_endpoint_auth"
+                    } else if m.starts_with("llama.cpp chat request rejected (HTTP 5") {
+                        "backend_http_server_error"
+                    } else { "backend_http_other" }
+                } else if m.starts_with("multimodal engine completed with zero visible answer tokens;") {
+                    "backend_no_visible_tokens"
+                } else if m=="invalid multimodal chat event" {
+                    "backend_stream_event_invalid"
+                } else if matches!(m,"llama server truncated multimodal response" |
+                    "llama server closed multimodal stream" | "multimodal response read failed" |
+                    "multimodal stream did not complete") {
+                    "backend_stream_incomplete"
+                } else if m=="multimodal generation timed out" {
+                    "backend_timeout"
+                } else if m=="llama.cpp stream ended without verified idle slot; worker ejected" {
+                    "backend_worker_stop_unverified"
+                } else if matches!(m,"Lu multimodal engine unavailable" |
+                    "llama.cpp worker is not loaded" | "persistent inference endpoint missing") {
+                    "backend_engine_unavailable"
+                } else { "backend_other" }
+            }
+            _ => "engine_other",
+        },
+        _ => "bridge_rejected",
+    }
+}
+
 pub trait ModelStepGenerator {
     /// Return only a *completed* model reply. Generated text is untrusted.
     /// The implementation must support cancellation and bound all outputs.
@@ -249,6 +299,9 @@ pub trait ModelStepGenerator {
         cancel: &Cancellation, _schema: &Value) -> Result<String, NativeGenerationError> {
         self.generate_step(prompt, max_tokens, cancel)
     }
+    /// Optional content-free detail for the last failed host generation.
+    /// Scripted adapters do not claim backend diagnostics.
+    fn inference_failure_detail(&self) -> Option<&'static str> { None }
 }
 
 pub struct SupervisorModelStep<'a, B: InferenceBackend + Send + 'static> {
@@ -261,6 +314,7 @@ pub struct SupervisorModelStep<'a, B: InferenceBackend + Send + 'static> {
     /// Lets the desktop cancel a multi-step tool turn without allowing the
     /// model to invent or select process/generation identities.
     step_start: Option<std::sync::Arc<dyn Fn(&str)+Send+Sync>>,
+    last_failure_detail: Option<&'static str>,
 }
 
 impl<'a, B: InferenceBackend + Send + 'static> SupervisorModelStep<'a, B> {
@@ -284,6 +338,7 @@ impl<'a, B: InferenceBackend + Send + 'static> SupervisorModelStep<'a, B> {
             turn_nonce,
             index: 0,
             step_start: None,
+            last_failure_detail: None,
         })
     }
     pub fn with_step_start_observer(
@@ -307,10 +362,14 @@ impl<B: InferenceBackend + Send + 'static> ModelStepGenerator for SupervisorMode
         cancel: &Cancellation, schema: &Value) -> Result<String, NativeGenerationError> {
         self.generate_inner(prompt, max_tokens, cancel, Some(schema))
     }
+    fn inference_failure_detail(&self) -> Option<&'static str> {
+        self.last_failure_detail
+    }
 }
 impl<B: InferenceBackend + Send + 'static> SupervisorModelStep<'_, B> {
     fn generate_inner(&mut self, prompt: &str, max_tokens: u32, cancel: &Cancellation,
         schema: Option<&Value>) -> Result<String, NativeGenerationError> {
+        self.last_failure_detail=None;
         if cancel.is_cancelled() {
             return Err(NativeGenerationError::Cancelled);
         }
@@ -400,7 +459,12 @@ impl<B: InferenceBackend + Send + 'static> SupervisorModelStep<'_, B> {
         if malformed {
             return Err(NativeGenerationError::InvalidInferenceEvent);
         }
-        if failed || result.is_err() {
+        if let Err(error)=result {
+            self.last_failure_detail=Some(supervisor_failure_detail(&error));
+            return Err(NativeGenerationError::InferenceFailed);
+        }
+        if failed {
+            self.last_failure_detail=Some("inference_failure_event");
             return Err(NativeGenerationError::InferenceFailed);
         }
         if !finished || output.trim().is_empty() {
@@ -891,12 +955,17 @@ async fn execute_supervised_native_turn(
         let reply = match model.generate_step_constrained(&prompt, LU_TURN_GENERATION_TOKENS, cancel, &output_schema) {
             Ok(reply) => reply,
             Err(error) => {
+                let detail=if error==NativeGenerationError::InferenceFailed {
+                    model.inference_failure_detail()
+                        .map(|class| format!("InferenceFailedAt({class:?})"))
+                } else { None };
+                let audit_category=detail.unwrap_or_else(|| format!("{error:?}"));
                 record_audit(
                     journal,
                     &conversation_id,
                     &task_id,
                     ModelAuditKind::GenerationFailure,
-                    &format!("{error:?}"),
+                    &audit_category,
                     None,
                 )?;
                 return Err(error);
@@ -1127,6 +1196,24 @@ Rejected model tool envelope (not an executed call): {feedback}
 #[cfg(test)]
 mod failure_class_tests {
     use super::*;
+
+    #[test]
+    fn cp05_supervisor_failure_detail_is_bounded() {
+        let backend=|message:&str| SupervisorError::Bridge(BridgeError::Engine(
+            EngineError::Backend(message.into())));
+        for (error,expected) in [
+            (SupervisorError::Busy,"supervisor_busy"),
+            (SupervisorError::InvalidRequest,"supervisor_invalid_request"),
+            (backend("llama.cpp chat request rejected (HTTP 400); private data"),"backend_http_request_rejected"),
+            (backend("llama.cpp chat request rejected (HTTP 503); private data"),"backend_http_server_error"),
+            (backend("multimodal engine completed with zero visible answer tokens; private data"),"backend_no_visible_tokens"),
+            (backend("llama.cpp stream ended without verified idle slot; worker ejected"),"backend_worker_stop_unverified"),
+            (backend("PRIVATE_MODEL_OUTPUT"),"backend_other"),
+        ] {
+            assert_eq!(supervisor_failure_detail(&error),expected);
+            assert!(!supervisor_failure_detail(&error).contains("private"));
+        }
+    }
 
     #[test]
     fn constrained_schema_tracks_live_catalog_and_observation_gate() {

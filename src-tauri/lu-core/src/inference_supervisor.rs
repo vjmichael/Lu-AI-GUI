@@ -709,12 +709,24 @@ impl<B: InferenceBackend + Send + 'static> TrustedInferenceSupervisor<B> {
             generation_id: generation_id.into(),
         };
         // Never hold session control while the actual inference runs.
-        let outcome = match session.engine.lock() {
-            Ok(mut engine) => engine.set_trusted_cache_scope(cache_scope.as_deref())
-                .and_then(|()|engine.generate_with_output_schema(&frame, &[], schema, cancellation, emit))
-                .map_err(Into::into),
-            Err(_) => Err(SupervisorError::Poisoned),
+        let (outcome,ejected) = match session.engine.lock() {
+            Ok(mut engine) => {
+                let result=engine.set_trusted_cache_scope(cache_scope.as_deref())
+                    .and_then(|()|engine.generate_with_output_schema(&frame, &[], schema, cancellation, emit))
+                    .map_err(SupervisorError::Bridge);
+                (result,session.pid.is_some()&&engine.process_id().is_none())
+            }
+            Err(_) => (Err(SupervisorError::Poisoned),false),
         };
+        if ejected {
+            // Mirror verified image-worker reconciliation for text/tool
+            // generations. The backend has already reaped the owned child.
+            // Do not leave a stale Ready identity or auto-restart a worker.
+            let mut current=self.current.lock().map_err(|_|SupervisorError::Poisoned)?;
+            if current.as_ref().is_some_and(|v|Arc::ptr_eq(v,&session)){
+                *current=None;
+            }
+        }
         outcome
     }
     pub fn generate(
@@ -937,6 +949,59 @@ mod tests {
             Ok(())
         }
     }
+    #[test]
+    fn cp05_text_and_constrained_failure_clear_only_ejected_session() {
+        struct TextBackend { loaded: bool }
+        impl InferenceBackend for TextBackend {
+            fn load(&mut self, _: &AdmittedModel) -> Result<(), String> {
+                self.loaded=true; Ok(())
+            }
+            fn unload(&mut self) { self.loaded=false; }
+            fn process_id(&self)->Option<u32>{self.loaded.then_some(12345)}
+            fn generate(&mut self, req:&GenerationRequest, _: &Cancellation,
+                emit:&mut dyn FnMut(TokenChunk)->Result<(),EngineError>)->Result<(),String>{
+                if req.prompt=="eject" {
+                    self.loaded=false;
+                    return Err("simulated exact worker ejection".into());
+                }
+                if req.prompt=="reject" {return Err("simulated non-ejecting refusal".into());}
+                emit(TokenChunk{text:"ok".into(),index:0}).map_err(|_|"fixture receiver".to_owned())
+            }
+            fn generate_constrained(&mut self, req:&GenerationRequest, _: &serde_json::Value,
+                cancel:&Cancellation, emit:&mut dyn FnMut(TokenChunk)->Result<(),EngineError>)->Result<(),String>{
+                self.generate(req,cancel,emit)
+            }
+        }
+        let dir=std::env::temp_dir().join(format!("lu-cp05-text-resident-{}-{:?}",
+            std::process::id(),std::thread::current().id()));
+        fs::create_dir_all(&dir).unwrap();
+        let mut file=fs::File::create(dir.join("model.gguf")).unwrap();
+        file.write_all(b"GGUF").unwrap();
+        file.write_all(&3u32.to_le_bytes()).unwrap();
+        file.write_all(&1u64.to_le_bytes()).unwrap();
+        file.write_all(&1u64.to_le_bytes()).unwrap();
+        drop(file);
+        let mut admission=ModelAdmissionManager::new();
+        let model=admission.admit(&dir,"model.gguf").unwrap().clone();
+        let sup=TrustedInferenceSupervisor::new("llama-cpu".into(),512,
+            vec![("model-1".into(),model)],||Ok(TextBackend{loaded:false})).unwrap();
+        sup.load("model-1","session".into(),"load").unwrap();
+        sup.generate("session","g-success".into(),"r-success","ok".into(),32,|_|Ok(())).unwrap();
+        assert_eq!(sup.status().unwrap().session_id.as_deref(),Some("session"));
+        assert!(sup.generate("session","g-reject".into(),"r-reject","reject".into(),32,|_|Ok(())).is_err());
+        assert_eq!(sup.status().unwrap().session_id.as_deref(),Some("session"));
+        let schema=serde_json::json!({"type":"object"});
+        assert!(sup.generate_constrained("session","g-fail".into(),"r-fail","eject".into(),32,&schema,|_|Ok(())).is_err());
+        assert_eq!(sup.status().unwrap().session_id,None);
+        assert_eq!(sup.status().unwrap().pid,None);
+        sup.load("model-1","fresh".into(),"fresh-load").unwrap();
+        assert!(sup.generate("fresh","g-fail2".into(),"r-fail2","eject".into(),32,|_|Ok(())).is_err());
+        assert_eq!(sup.status().unwrap().session_id,None);
+        drop(sup);
+        drop(admission);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
     #[test]
     fn image_reservation_rejects_reordering_and_reaps_ejected_session(){
         struct ImageBackend{loaded:bool}
