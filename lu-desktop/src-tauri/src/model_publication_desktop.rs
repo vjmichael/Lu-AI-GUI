@@ -64,3 +64,21 @@ pub(crate) fn try_model_publication(app:&tauri::AppHandle,state:&Arc<crate::Desk
 }
 #[cfg(test)]
 mod tests{use super::*;#[test]fn cp06dr2_review_paginates_all_text(){let text="漢字🦊\n".repeat(500);let pages=review_pages(&text);assert!(pages.len()>1);assert_eq!(pages.concat(),text);assert!(pages.iter().all(|p|p.chars().count()<=660&&p.lines().count()<=11));}}
+
+/// Exact, current-human, chat-owned task read. No scheduler grant or process poll.
+pub(crate) fn try_model_background(app:&tauri::AppHandle,state:&Arc<crate::DesktopState>,sid:&str,chat:&str,gid:&str,original:&str,ticket:&crate::generation_queue::Ticket)->Result<Option<String>,String>{
+    use lu_core::model_background_observation::{Request,Observation};
+    if Request::parse(original).is_none(){return Ok(None)}
+    let verifier=crate::turn_authority::PersistedHumanTurn::current_chat(&state.chats,chat,gid,original);
+    let cancellation=Cancellation::default();let watermark=state.chats.p0_auth_requested_watermark(chat)?;
+    let checkpoint=||->Result<(),String>{ticket.verify_active_foreground(sid,chat,gid)?;if cancellation.is_cancelled()||ticket.cancelled()||state.chats.p0_auth_requested_watermark(chat)?!=watermark||!verifier.verify_user_turn(chat,gid){return Err("Cancelled background observation".into())}if state.supervisor.status().map_err(|_|"Model unavailable")?.session_id.as_deref()!=Some(sid){return Err("Model changed during task observation".into())}Ok(())};
+    checkpoint()?;let journal=ModelTurnJournal::open(&state.catalog_path.with_file_name("lu-model-background-audit.sqlite")).map_err(|_|"Task audit unavailable")?;let step=Arc::new(Mutex::new(None));
+    {let mut all=state.reader_generations.lock().map_err(|_|"Task cancellation unavailable")?;if all.contains_key(gid){return Err("Duplicate task observation ownership".into())}all.insert(gid.into(),crate::ReaderRunControl{cancellation:cancellation.clone(),current_step:Arc::clone(&step),session_id:sid.into()});}
+    struct Control<'a>{state:&'a crate::DesktopState,id:&'a str}
+    impl Drop for Control<'_>{fn drop(&mut self){let _=self.state.reader_generations.lock().map(|mut all|all.remove(self.id));}}
+    let _control=Control{state,id:gid};let progress=crate::native_turn_lifecycle::NativeTurnProgress::new(app,chat,gid,&step);let _=app.emit("lu-generation-start",crate::GenerationEvent{chat_id:chat.into(),generation_id:gid.into(),phase:"running",position:0});
+    let mut observation=Observation::new(&verifier,chat,gid,original,Arc::clone(&state.background_tasks))?;let mut model=SupervisorModelStep::new(&state.supervisor,sid.into(),crate::next_id("mbg-")).map_err(|_|"Task observation model unavailable")?.with_step_start_observer(progress.model_observer());
+    let result=tauri::async_runtime::block_on(observation.run(&mut model,&verifier,&cancellation,&journal,&checkpoint,&progress.dispatch_observer()));*step.lock().map_err(|_|"Task observation step unavailable")?=None;
+    checkpoint()?;let answer=match result{Ok(report)=>report.answer,Err(_)=>"I could not verify that task's requested status or result in this conversation. No task was started, stopped or modified.".into()};
+    ticket.commit_completed(sid,||{state.chats.append_progress(chat,gid,&answer)?;state.chats.complete_reviewed_if_not_revoked(chat,gid,watermark)})?;Ok(Some(answer))
+}

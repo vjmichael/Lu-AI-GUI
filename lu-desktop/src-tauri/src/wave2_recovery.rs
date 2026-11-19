@@ -12,8 +12,8 @@ use lu_core::{
     native_archive_batch::{
         ArchiveBatchManifest,verify_archive_batch_plan,observe_archive_batch_completion,
     },
-    native_docx_tool,native_pptx_tool,native_office_revision_tool,native_office_batch_tool,
-    native_file_transfer_tool,
+    native_docx_tool,native_pptx_tool,native_spreadsheet_tool,native_office_revision_tool,native_office_batch_tool,
+    native_file_transfer_tool,native_linux_archive_tool,
     wire::{self,proto},
 };
 use prost::Message;
@@ -38,6 +38,8 @@ fn known_tool(s:&str)->bool{
         native_archive_tree_tool::TOOL_ID|
         native_docx_tool::TOOL_ID|
         native_pptx_tool::TOOL_ID|
+        native_spreadsheet_tool::TOOL_ID|
+        native_linux_archive_tool::CREATE_ID|
         native_office_revision_tool::TOOL_ID|
         native_office_batch_tool::TOOL_ID|
         native_file_transfer_tool::COPY_ID|
@@ -51,6 +53,8 @@ fn expected_output(s:&str)->Option<&'static str>{
         native_archive_tree_tool::TOOL_ID=>Some(native_archive_tree_tool::OUTPUT),
         native_docx_tool::TOOL_ID=>Some(native_docx_tool::OUTPUT),
         native_pptx_tool::TOOL_ID=>Some(native_pptx_tool::OUTPUT),
+        native_spreadsheet_tool::TOOL_ID=>Some(native_spreadsheet_tool::OUTPUT),
+        native_linux_archive_tool::CREATE_ID=>Some(native_linux_archive_tool::OUTPUT),
         native_office_revision_tool::TOOL_ID=>Some(native_office_revision_tool::OUTPUT),
         native_office_batch_tool::TOOL_ID=>Some(native_office_batch_tool::OUTPUT),
         native_file_transfer_tool::COPY_ID|native_file_transfer_tool::MOVE_ID=>
@@ -239,6 +243,14 @@ impl Wave2OperationLedger{
             native_pptx_tool::TOOL_ID=>{
                 let Ok(r)=proto::PptxCreateResult::decode(data.as_slice())
                     else{return false};
+                r.file_name==rec.target_name&&r.sha256==rec.approved_sha256
+            },
+            native_linux_archive_tool::CREATE_ID=>{
+                let Ok(r)=proto::LinuxArchiveWriteResult::decode(data.as_slice()) else{return false};
+                r.target_name==rec.target_name&&r.sha256==rec.approved_sha256&&r.member_count>0
+            },
+            native_spreadsheet_tool::TOOL_ID=>{
+                let Ok(r)=proto::SpreadsheetCreateResult::decode(data.as_slice()) else{return false};
                 r.file_name==rec.target_name&&r.sha256==rec.approved_sha256
             },
             WORD_REPLACE_TOOL_ID|
@@ -534,5 +546,15 @@ mod archive_restart_tests{
         assert!(observed[0].assessment.contains("no automatic replay"));
         drop(reloaded);drop(effects);drop(ledger);drop(dir);
         fs::remove_dir_all(root).unwrap();
+    }
+}
+#[cfg(test)]
+mod cp06e_recovery_tests{
+    use super::*;
+    use lu_core::{contracts::{ToolInvocation,ToolOutput,ProtoPayload},registry::ToolResponse};
+    #[test]fn exact_new_sheet_and_tar_recovery_types_are_matched(){
+        let root=std::env::temp_dir().join(format!("lu-cp06e-recovery-{}",crate::next_id("test-")));fs::create_dir_all(&root).unwrap();let ledger=Wave2OperationLedger::new(&root).unwrap();let effects=EffectJournal::open(&root.join("effects.sqlite")).unwrap();
+        for tar in [false,true]{let call=crate::next_id("g-");let digest="a".repeat(64);let (id,input,output,name,bytes)=if tar{(native_linux_archive_tool::CREATE_ID,native_linux_archive_tool::CREATE_INPUT,native_linux_archive_tool::OUTPUT,"new.tar",proto::LinuxArchiveWriteResult{target_name:"new.tar".into(),bytes_written:123,sha256:digest.clone(),member_count:1}.encode_to_vec())}else{(native_spreadsheet_tool::TOOL_ID,native_spreadsheet_tool::INPUT,native_spreadsheet_tool::OUTPUT,"new.xlsx",proto::SpreadsheetCreateResult{file_name:"new.xlsx".into(),bytes_written:123,sha256:digest.clone()}.encode_to_vec())};ledger.record_intent("chat-one",&call,id,&format!("C:/Documents/{name}"),name,&digest,"New reviewed output").unwrap();effects.prepare(&ToolInvocation{call_id:call.clone(),tool_id:id.into(),workspace_id:None,input:ProtoPayload{type_url:input.into(),bytes:vec![1]}}).unwrap();effects.mark_executing(&call).unwrap();let response:ToolResponse=Ok(ToolOutput{payload:ProtoPayload{type_url:output.into(),bytes}});effects.mark_applied(&call,&wire::encode_reply(&call,&response).unwrap()).unwrap();}
+        let reopened=Wave2OperationLedger::new(&root).unwrap();assert!(reopened.list("chat-two",&effects).unwrap().is_empty());let rows=reopened.list("chat-one",&effects).unwrap();assert_eq!(rows.len(),2);assert!(rows.iter().all(|r|r.state=="APPLIED_RECEIPT_MATCHED"&&r.receipt_matched&&r.assessment.contains("not rechecked")));drop(reopened);drop(effects);drop(ledger);fs::remove_dir_all(root).unwrap();
     }
 }

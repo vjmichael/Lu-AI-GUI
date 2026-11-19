@@ -104,6 +104,18 @@ fn present(name:&str,v:&Value)->Result<String,()>{
         "lu_git_diff"=>{
             let mut s=format!("Tracked diff returned:\n\n{}",block(text(v,"diff")?));limited(&mut s,flag(v,"truncated")?);s
         },
+        "lu_background_status"|"lu_background_result"=>{
+            let state=text(v,"state")?;let progress=number(v,"progress")?;let task=text(v,"task_id")?;
+            if task.is_empty()||task.len()>128||!task.bytes().all(|b|b.is_ascii_alphanumeric()||matches!(b,b'-'|b'_'))||progress>100||!matches!(state,"PENDING"|"RUNNING"|"PAUSED"|"COMPLETED"|"FAILED"|"CANCELLED"|"INTERRUPTED"|"TIMED_OUT"){return Err(())}
+            let mut s=format!("Task {}: recorded state {}, progress {progress}%. This is a stored observation, not a live process or output-file check.",literal(task),state);
+            if name=="lu_background_result"{
+                if !flag(v,"terminal")?||flag(v,"artifacts_verified")?||!matches!(state,"COMPLETED"|"FAILED"|"CANCELLED"|"INTERRUPTED"|"TIMED_OUT"){return Err(())}
+                let kind=text(v,"result_kind")?;let sha=text(v,"verified_sha256")?;let bytes=number(v,"verified_bytes")?;
+                if kind=="sha256_scan"&&state=="COMPLETED"&&progress==100&&bytes>0{s.push_str(&format!(" Recorded verified SHA-256 scan receipt: {} ({bytes} bytes).",literal(digest(sha)?)));}else if !kind.is_empty()||!sha.is_empty()||bytes!=0{return Err(())}else{s.push_str(" No verified scan receipt was recorded.");}
+                s.push_str(" No exported file artifact was independently verified.");
+            }
+            s
+        },
         "lu_check_env"=>{
             let present=flag(v,"candidate_present")?;
             if text(v,"evidence")?!=if present{"file_present_only"}else{"not_found"}||flag(v,"execution_verified")?||!v.get("version").ok_or(())?.is_null(){return Err(())}
@@ -119,7 +131,7 @@ fn present(name:&str,v:&Value)->Result<String,()>{
 }
 pub(crate) fn from_feedback(feedback:&Value)->Result<Option<EvidencePresentation>,()> {
     let name=text(feedback,"name")?;
-    if !matches!(name,"lu_files_read_text"|"lu_reader_read"|"lu_files_list_directory"|"lu_files_stat"|"lu_files_search_text"|"lu_files_discover"|"lu_archive_list"|"lu_artifact_inspect"|"lu_git_status"|"lu_git_log"|"lu_git_diff"|"lu_check_env"){return Ok(None)}
+    if !matches!(name,"lu_files_read_text"|"lu_reader_read"|"lu_files_list_directory"|"lu_files_stat"|"lu_files_search_text"|"lu_files_discover"|"lu_archive_list"|"lu_artifact_inspect"|"lu_git_status"|"lu_git_log"|"lu_git_diff"|"lu_check_env"|"lu_background_status"|"lu_background_result"){return Ok(None)}
     let response=feedback.get("response").ok_or(())?;
     let call=text(feedback,"call_id")?;
     if call.is_empty()||call.len()>128||text(feedback,"kind")?!="tool_result"||text(response,"tool")?!=name||!flag(response,"ok")?{return Err(())}

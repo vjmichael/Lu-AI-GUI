@@ -177,14 +177,18 @@ impl ModelToolCodec for StatusCodec {
         }
         let value = StatusReply::decode(output.bytes.as_slice())
             .map_err(|_| ModelToolError::InvalidResult("invalid status protobuf".into()))?;
-        if !valid_task_id(&value.task_id) || value.progress > 100 {
+        if !valid_task_id(&value.task_id) || value.progress > 100
+            || !matches!(value.state.as_str(),"PENDING"|"RUNNING"|"PAUSED"|"COMPLETED"|"FAILED"|"CANCELLED"|"INTERRUPTED"|"TIMED_OUT")
+            || value.interrupted != (value.state=="INTERRUPTED") {
             return Err(ModelToolError::InvalidResult("invalid status contents".into()));
         }
         Ok(json!({
             "task_id": value.task_id,
             "state": value.state,
             "progress": value.progress,
-            "detail": value.detail,
+            // Task detail can contain private paths or worker-controlled text.
+            // The model observes only state/progress; raw detail stays host-side.
+            "detail": "",
             "detail_is_untrusted_task_data": true,
             "interrupted": value.interrupted
         }))
