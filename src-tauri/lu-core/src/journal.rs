@@ -247,7 +247,7 @@ impl EffectJournal {
                 "WAV_PCM_DIRECT_V1"|"GIT_STATUS_UNSUPPORTED_V1"|
                 "GIT_HISTORY_UNSUPPORTED_V1"|"GIT_HISTORY_LOOSE_DAG_V1"|
             "GIT_HISTORY_OBJECT_DAG_V2"|"GIT_STATUS_INDEX_TREE_V1"|
-            "MP4_BOXES_DIRECT_V1"|"MP4_UNSUPPORTED_V1"|"FILE_TRANSFER_DIRECT_V1"){
+            "MP4_BOXES_DIRECT_V1"|"MP4_UNSUPPORTED_V1"|"FILE_TRANSFER_DIRECT_V1"|"FILE_CUSTODY_DIRECT_V1"){
             return Err(JournalError::InvalidTransition)
         }
         let valid_sha=|s:&str|s.len()==64&&s.bytes().all(|b|
@@ -273,7 +273,8 @@ impl EffectJournal {
         ).optional()?;
         let Some((state,bytes,tool_id))=existing else{return Err(JournalError::InvalidTransition)};
         if state!="APPLIED"||bytes.as_deref()!=Some(receipt)||
-            (method=="FILE_TRANSFER_DIRECT_V1"&&!matches!(tool_id.as_str(),"lu.files.transfer.copy_new"|"lu.files.transfer.move_new")){
+            (method=="FILE_TRANSFER_DIRECT_V1"&&!matches!(tool_id.as_str(),"lu.files.transfer.copy_new"|"lu.files.transfer.move_new"))||
+            (method=="FILE_CUSTODY_DIRECT_V1"&&!matches!(tool_id.as_str(),"lu.files.reversible.trash"|"lu.files.reversible.restore")){
             return Err(JournalError::InvalidTransition)
         }
         let inserted=tx.execute(
@@ -350,6 +351,7 @@ impl EffectJournal {
             "lu.reviewed.media.facts"=>
                 matches!(method.as_str(),"WAV_PCM_DIRECT_V1"|"MP4_BOXES_DIRECT_V1"),
             "lu.files.transfer.copy_new"|"lu.files.transfer.move_new"=>method=="FILE_TRANSFER_DIRECT_V1",
+            "lu.files.reversible.trash"|"lu.files.reversible.restore"=>method=="FILE_CUSTODY_DIRECT_V1",
             _=>false,
         };
         let Some(receipt)=bytes else{return Ok(false)};

@@ -5698,6 +5698,7 @@ async fn generate_internal(
             // any separately approved negotiated native read/utility lane.
             let no_negotiated_selection=if origin==GenerationOrigin::Human&&!plan_only&&images.is_empty()&&linked.is_empty()&&manifest.is_empty()&&
                 !contains_document_context(&prompt){
+                if let Some(answer)=file_trash_desktop::try_model_custody(&app,&state,&sid,&chat_id,&gid,&prompt,&ticket)?{return Ok(answer)}
                 if let Some(answer)=file_transfer_desktop::try_model_transfer(&app,&state,&sid,&chat_id,&gid,&prompt,&ticket)?{return Ok(answer)}
                 match capability_negotiation::try_read_turn(&app,&state,&sid,&chat_id,&gid,&prompt,&ticket)?{
                     capability_negotiation::NegotiationOutcome::Completed(answer)=>return Ok(answer),
