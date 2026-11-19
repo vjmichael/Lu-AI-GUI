@@ -108,11 +108,18 @@ fn genuine_selection_and_native_reachability_matrix(){
    }else if name=="lu_reader_read"{
     let mut lane=ReaderTurnSession::new(&verifier,&chat,&gid,&gid,"approved.txt",contents.as_bytes().to_vec()).unwrap();assert!(matches_live(&choice,&lane.capabilities().unwrap()));tauri::async_runtime::block_on(lane.run_journaled(&crate::reader_desktop::reader_model_prompt("approved.txt",false,human),&mut step,&cancel,&tool))
    }else{
-    let mut lane=if choice.git{WorkspaceReadTurnSession::new_git(&verifier,&chat,&gid,&gid,&repo,&git)}else if name=="lu_files_list_directory"{WorkspaceReadTurnSession::new_root_listing(&verifier,&chat,&gid,&gid,&root)}else{WorkspaceReadTurnSession::new(&verifier,&chat,&gid,&gid,&root)}.map_err(|e|format!("{e:?}"))?;
+    let op=exact_workspace_read(human)?.ok_or("Missing exact original workspace input")?;
+    if op.native_id()!=choice.native_tool_id{return Err("Selected capability differs from exact input".into())}
+    let (approved,exe)=if choice.git{(&repo,Some(git.as_path()))}else{(&root,None)};
+    let mut lane=WorkspaceReadTurnSession::new_exact(&verifier,&chat,&gid,&gid,approved,exe,op).map_err(|e|format!("{e:?}"))?;
     let caps=lane.capabilities().unwrap();assert!(matches_live(&choice,&caps));let mut preferred=lu_core::ai_operations::recommended_read_tools(human,&caps);preferred.retain(|n|n!=name);preferred.insert(0,name.into());tauri::async_runtime::block_on(lane.run_journaled(&crate::workspace_desktop::workspace_model_prompt(choice.git,human,&preferred),&mut step,&cancel,&tool))
    }.map_err(|e|format!("native loop {e:?}"))?;
    let events=tool.events_for(&chat,&gid).unwrap();let values:Vec<serde_json::Value>=events.iter().filter(|e|e.kind==ModelAuditKind::ToolFeedback).filter_map(|e|serde_json::from_str(&e.payload).ok()).filter(|v: &serde_json::Value|v["name"]==name&&v["response"]["ok"]==true).collect();
    if outcome.tool_calls==0||outcome.host_routed_calls!=0||values.is_empty(){return Err("no verified feedback for selected model tool".into())}
+   if exact_workspace_read(human)?.is_some(){
+    let feedbacks=events.iter().filter(|e|e.kind==ModelAuditKind::ToolFeedback).count();
+    if outcome.tool_calls!=1||feedbacks!=1||values.len()!=1{return Err("Exact read did not produce exactly one selected native result".into())}
+   }
    let v=&values[0]["response"]["result"];let serialized=v.to_string();let sha=hash(&root.join("notes.txt"));
    let (facts,grounded)=match name{
     "lu_files_read_text"=>(v["content"].as_str()==Some(contents.as_str()),outcome.answer.contains(marker)),

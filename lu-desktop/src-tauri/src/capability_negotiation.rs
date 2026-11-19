@@ -84,6 +84,62 @@ pub(crate) fn direct_read_id(prompt:&str)->Option<&'static str>{
     if !eligible(prompt){return None}
     scoped_read_intent::direct_read_id(prompt)
 }
+/// Compile only a complete, eligible original-human shape into fixed input.
+/// ASCII case-folding locates delimiters; the original filename/query bytes
+/// are preserved for case-sensitive filesystems and literal search.
+pub(crate) fn exact_workspace_read(prompt:&str)->Result<Option<lu_core::native_workspace_read_turn::ExactWorkspaceRead>,String>{
+    use lu_core::native_workspace_read_turn::ExactWorkspaceRead as R;
+    let Some(id)=direct_read_id(prompt) else{return Ok(None)};
+    let mut body=prompt.trim().trim_end_matches(['?', '.', '!']).trim();
+    for prefixes in [&["please "][..],&["could you ","can you "][..],&["please "][..]]{
+        if let Some(p)=prefixes.iter().find(|p|body.to_ascii_lowercase().starts_with(**p)){body=&body[p.len()..];}
+    }
+    let low=body.to_ascii_lowercase();
+    let tail=|prefixes:&[&str]|->Option<&str>{prefixes.iter().find_map(|p|low.starts_with(p).then(||&body[p.len()..]))};
+    let literal=|prefixes:&[&str]|->Result<String,String>{
+        let rest=tail(prefixes).ok_or("Original read input unavailable")?;
+        let folded=rest.to_ascii_lowercase();
+        for p in ["my workspace file ","our workspace file ","this workspace file ","my project file "]{
+            if folded.starts_with(p){return Ok(rest[p.len()..].into())}
+        }
+        let at=folded.rfind(" in ").ok_or("Original scoped read input unavailable")?;
+        Ok(rest[..at].into())
+    };
+    let operation=match id{
+        "lu.files.list_directory"=>R::RootListing,
+        "lu.files.read_text"=>R::ReadText(literal(&["what is the exact utf-8 text in ","what is the text in ","read the text in ","read "])?),
+        "lu.inspect.stat"=>R::Stat(literal(&["what is the exact byte size of ","what is the byte size of ","what is the size of "])?),
+        "lu.inspect.search_text"=>{
+            let sep=" contain the literal text ";let at=low.find(sep).ok_or("Original search literal unavailable")?;
+            R::SearchText(body[at+sep.len()..].into())
+        },
+        "lu.file_discovery.discover"=>R::Discover(literal(&["where is the file named ","find the file named ","locate the file named "])?),
+        "lu.archive.list"=>R::ArchiveList(literal(&["what are the member names inside ","list the members inside ","list archive members in "])?),
+        "lu.artifact.inspect"=>{
+            let path=literal(&["what is the sha-256 digest of ","what is the sha256 digest of ","calculate the sha-256 of "])?;
+            let ext=path.rsplit_once('.').map(|(_,x)|x.to_ascii_lowercase());
+            let format=match ext.as_deref(){Some("txt")=>"text",Some("jpg"|"jpeg")=>"jpeg",Some(x @ ("docx"|"xlsx"|"pptx"|"zip"|"json"|"csv"|"pdf"|"png"))=>x,_=>return Err("Requested artifact format is not supported; no inspection was performed".into())}.to_owned();
+            R::ArtifactInspect{path,format}
+        },
+        "lu.git.status"=>R::GitStatus,
+        "lu.git.log"=>R::GitLog{latest_only:low.starts_with("what is the latest commit ")},
+        "lu.git.diff"=>R::GitDiff(if low.starts_with("what is the tracked diff of ")||low.starts_with("show the tracked diff of "){Some(literal(&["what is the tracked diff of ","show the tracked diff of "])?)}else{None}),
+        _=>return Ok(None),
+    };
+    if operation.native_id()!=id{return Err("Exact read capability identity mismatch".into())}
+    Ok(Some(operation))
+}
+#[test]
+fn cp06br1_original_literals_and_refusals(){
+    use lu_core::native_workspace_read_turn::ExactWorkspaceRead as R;
+    assert_eq!(exact_workspace_read("Please can you read Notes.TXT in my project folder?").unwrap(),Some(R::ReadText("Notes.TXT".into())));
+    assert_eq!(exact_workspace_read("Which files in my folder contain the literal text Audit-Needle?").unwrap(),Some(R::SearchText("Audit-Needle".into())));
+    assert_eq!(exact_workspace_read("What is the latest commit subject in my Git repository?").unwrap(),Some(R::GitLog{latest_only:true}));
+    assert_eq!(exact_workspace_read("Show the tracked diff of Notes.TXT in my Git repository?").unwrap(),Some(R::GitDiff(Some("Notes.TXT".into()))));
+    assert_eq!(exact_workspace_read("Read ../secret.txt in my workspace").unwrap(),None);
+    assert_eq!(exact_workspace_read("Read notes.txt in my workspace and delete it").unwrap(),None);
+    assert!(exact_workspace_read("What is the SHA-256 digest of notes.bin in my workspace?").is_err());
+}
 fn required_read_observation(prompt:&str)->bool{
     eligible(prompt)&&(direct_read_id(prompt).is_some()||
         crate::browser_model_desktop::negotiated_browser_origin(prompt).is_some()||

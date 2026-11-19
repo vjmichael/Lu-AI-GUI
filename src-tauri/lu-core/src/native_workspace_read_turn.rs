@@ -7,10 +7,11 @@
 //! Tool registration is not itself authorization.
 use std::{collections::BTreeSet, path::Path, sync::Arc, time::{Duration,SystemTime}};
 use cap_std::fs::Dir;
+#[cfg(test)]
 use prost::Message;
 use crate::{
     agent_tool_loop::{NativeToolTurn,ToolTurnError,ToolDispatchCheckpoint},
-    contracts::{AuthorizationError,ToolAuthorizer,ToolDescriptor,ToolEffect,ToolInvocation},
+    contracts::{AuthorizationError,ToolAuthorizer,ToolDescriptor,ToolEffect,ToolInvocation,ProtoPayload},
     conversation_authority::{
         AuthorizedCapability,BoundCallOrigin,ConversationAuthority,TaskAuthority,
         TrustedUserTurnVerifier,
@@ -46,7 +47,36 @@ pub enum WorkspaceReadError{
 }
 /// Unlike a general permission, this policy is tied to exactly the host
 /// installed read-only descriptors and their Protobuf codecs.
-struct ReadOnlyPolicy { ids:BTreeSet<String>,root_listing_only:bool }
+struct ReadOnlyPolicy { ids:BTreeSet<String>,fixed_input:Option<ProtoPayload> }
+/// A native-host-only original-input read. No model path, literal, limits or
+/// tool choice is accepted after approval. The existing registry, codec and
+/// conversation authority still perform independent validation.
+#[derive(Debug,Clone,PartialEq,Eq)]
+pub enum ExactWorkspaceRead {
+    RootListing, ReadText(String), Stat(String), SearchText(String),
+    Discover(String), ArchiveList(String), ArtifactInspect{path:String,format:String},
+    GitStatus, GitLog{latest_only:bool}, GitDiff(Option<String>),
+}
+impl ExactWorkspaceRead {
+    pub fn native_id(&self)->&'static str{self.contract().0}
+    pub fn public_name(&self)->&'static str{self.contract().1}
+    fn git(&self)->bool{matches!(self,Self::GitStatus|Self::GitLog{..}|Self::GitDiff(_))}
+    fn contract(&self)->(&'static str,&'static str,serde_json::Value){
+        use serde_json::json;
+        match self{
+            Self::RootListing=>("lu.files.list_directory","lu_files_list_directory",json!({})),
+            Self::ReadText(p)=>("lu.files.read_text","lu_files_read_text",json!({"path":p})),
+            Self::Stat(p)=>("lu.inspect.stat","lu_files_stat",json!({"path":p})),
+            Self::SearchText(q)=>("lu.inspect.search_text","lu_files_search_text",json!({"query":q})),
+            Self::Discover(q)=>("lu.file_discovery.discover","lu_files_discover",json!({"query":q,"kind":"file"})),
+            Self::ArchiveList(p)=>("lu.archive.list","lu_archive_list",json!({"path":p})),
+            Self::ArtifactInspect{path,format}=>("lu.artifact.inspect","lu_artifact_inspect",json!({"path":path,"format":format})),
+            Self::GitStatus=>("lu.git.status","lu_git_status",json!({})),
+            Self::GitLog{latest_only}=>("lu.git.log","lu_git_log",if *latest_only{json!({"limit":1})}else{json!({})}),
+            Self::GitDiff(path)=>("lu.git.diff","lu_git_diff",match path{Some(p)=>json!({"path":p}),None=>json!({})}),
+        }
+    }
+}
 impl ToolAuthorizer for ReadOnlyPolicy{
     fn authorize(&self,call:&ToolInvocation,desc:&ToolDescriptor)
         ->Result<(),AuthorizationError>{
@@ -55,12 +85,8 @@ impl ToolAuthorizer for ReadOnlyPolicy{
             call.input.type_url!=desc.input_type_url{
             return Err(AuthorizationError::new("Not in the approved read-only workspace tool set"));
         }
-        if self.root_listing_only{
-            let request=crate::wire::proto::ListDirectoryRequest::decode(call.input.bytes.as_slice())
-                .map_err(|_|AuthorizationError::new("Malformed root listing request"))?;
-            if call.tool_id!="lu.files.list_directory"||!request.path.is_empty(){
-                return Err(AuthorizationError::new("Only the approved workspace root may be listed"));
-            }
+        if self.fixed_input.as_ref().is_some_and(|expected|expected!=&call.input){
+            return Err(AuthorizationError::new("Invocation differs from the original approved read input"));
         }
         Ok(())
     }
@@ -82,7 +108,7 @@ impl WorkspaceReadTurnSession{
         host_approved_root:&Path,
     )->Result<Self,WorkspaceReadError>{
         Self::new_with_capability(verifier,conversation_id,user_turn_id,task_id,
-            Some(host_approved_root),None,None,None,false)
+            Some(host_approved_root),None,None,None,None)
     }
     /// P0-TOOLS-03: the trusted native desktop observes only completed real
     /// Reader source identity, bound to the SAME original human-selected
@@ -94,7 +120,7 @@ impl WorkspaceReadTurnSession{
     )->Result<Self,WorkspaceReadError>{
         Self::new_with_capability(
             verifier,conversation_id,user_turn_id,task_id,
-            Some(host_approved_root),None,None,Some(observer),false
+            Some(host_approved_root),None,None,Some(observer),None
         )
     }
     /// Wave 4: read-only local Git from a HUMAN-picked repository directory
@@ -107,7 +133,7 @@ impl WorkspaceReadTurnSession{
         host_approved_repository:&Path,host_trusted_git:&Path,
     )->Result<Self,WorkspaceReadError>{
         Self::new_with_capability(verifier,conversation_id,user_turn_id,task_id,
-            Some(host_approved_repository),None,Some(host_trusted_git),None,false)
+            Some(host_approved_repository),None,Some(host_trusted_git),None,None)
     }
     /// Native host has already obtained and verified the directory identity.
     /// No pathname is accepted or reopened by the registered tools.
@@ -123,13 +149,13 @@ impl WorkspaceReadTurnSession{
             if meta.file_attributes()&0x400!=0{return Err(WorkspaceReadError::RootUnavailable)}
         }
         Self::new_with_capability(verifier,conversation_id,user_turn_id,task_id,
-            None,Some(Arc::new(Dir::from_std_file(directory))),None,observer,false)
+            None,Some(Arc::new(Dir::from_std_file(directory))),None,observer,None)
     }
     /// Host-only exact root listing after the user chose a folder. The
     /// original input is bound in the existing codec; no model path is accepted.
     pub fn new_root_listing(verifier:&dyn TrustedUserTurnVerifier,conversation_id:&str,
         user_turn_id:&str,task_id:&str,root:&Path)->Result<Self,WorkspaceReadError>{
-        Self::new_with_capability(verifier,conversation_id,user_turn_id,task_id,Some(root),None,None,None,true)
+        Self::new_with_capability(verifier,conversation_id,user_turn_id,task_id,Some(root),None,None,None,Some(ExactWorkspaceRead::RootListing))
     }
     pub fn new_root_listing_with_approved_directory(verifier:&dyn TrustedUserTurnVerifier,conversation_id:&str,
         user_turn_id:&str,task_id:&str,directory:std::fs::File)->Result<Self,WorkspaceReadError>{
@@ -139,7 +165,25 @@ impl WorkspaceReadTurnSession{
             use std::os::windows::fs::MetadataExt;
             if meta.file_attributes()&0x400!=0{return Err(WorkspaceReadError::RootUnavailable)}
         }
-        Self::new_with_capability(verifier,conversation_id,user_turn_id,task_id,None,Some(Arc::new(Dir::from_std_file(directory))),None,None,true)
+        Self::new_with_capability(verifier,conversation_id,user_turn_id,task_id,None,Some(Arc::new(Dir::from_std_file(directory))),None,None,Some(ExactWorkspaceRead::RootListing))
+    }
+    /// One model-selected exact observation within the separately approved
+    /// resource. Git and ordinary file lanes cannot be interchanged.
+    pub fn new_exact(verifier:&dyn TrustedUserTurnVerifier,conversation_id:&str,user_turn_id:&str,task_id:&str,
+        root:&Path,git:Option<&Path>,operation:ExactWorkspaceRead)->Result<Self,WorkspaceReadError>{
+        if operation.git()!=git.is_some(){return Err(WorkspaceReadError::InvalidScope)}
+        Self::new_with_capability(verifier,conversation_id,user_turn_id,task_id,Some(root),None,git,None,Some(operation))
+    }
+    pub fn new_exact_with_approved_directory(verifier:&dyn TrustedUserTurnVerifier,conversation_id:&str,user_turn_id:&str,task_id:&str,
+        directory:std::fs::File,operation:ExactWorkspaceRead)->Result<Self,WorkspaceReadError>{
+        if operation.git(){return Err(WorkspaceReadError::InvalidScope)}
+        let meta=directory.metadata().map_err(|_|WorkspaceReadError::RootUnavailable)?;
+        if !meta.is_dir(){return Err(WorkspaceReadError::RootUnavailable)}
+        #[cfg(windows)]{
+            use std::os::windows::fs::MetadataExt;
+            if meta.file_attributes()&0x400!=0{return Err(WorkspaceReadError::RootUnavailable)}
+        }
+        Self::new_with_capability(verifier,conversation_id,user_turn_id,task_id,None,Some(Arc::new(Dir::from_std_file(directory))),None,None,Some(operation))
     }
     #[allow(clippy::too_many_arguments)]
     fn new_with_capability(
@@ -147,7 +191,7 @@ impl WorkspaceReadTurnSession{
         conversation_id:&str,user_turn_id:&str,task_id:&str,
         host_approved_root:Option<&Path>,pinned_root:Option<Arc<Dir>>,
         git_executable:Option<&Path>,
-        reader_observer:Option<ReaderSourceObserver>,root_listing_only:bool,
+        reader_observer:Option<ReaderSourceObserver>,exact:Option<ExactWorkspaceRead>,
     )->Result<Self,WorkspaceReadError>{
         if [conversation_id,user_turn_id,task_id].iter().any(|s|
              s.is_empty()||s.len()>128||
@@ -225,12 +269,19 @@ impl WorkspaceReadTurnSession{
         if descriptors.is_empty() || descriptors.iter().any(|d|d.effect!=ToolEffect::ReadWorkspace){
             return Err(WorkspaceReadError::RegistrationFailed);
         }
-        if root_listing_only{
-            descriptors.retain(|d|d.id=="lu.files.list_directory");
+        let fixed_input=if let Some(operation)=exact{
+            let (id,name,args)=operation.contract();
+            descriptors.retain(|d|d.id==id);
             if descriptors.len()!=1{return Err(WorkspaceReadError::RegistrationFailed)}
-            catalog.bind_current_input(&registry,"lu_files_list_directory",serde_json::Map::new())
+            let ids=BTreeSet::from([id.to_owned()]);
+            let names=catalog.names_for_native_ids(&ids);
+            if names!=BTreeSet::from([name.to_owned()]){return Err(WorkspaceReadError::CatalogUnavailable)}
+            let original=catalog.encode_call(&names,name,"host-exact-read",Some(task_id),&args.to_string())
+                .map_err(|_|WorkspaceReadError::CatalogUnavailable)?.input;
+            catalog.bind_current_input(&registry,name,args.as_object().ok_or(WorkspaceReadError::CatalogUnavailable)?.clone())
                 .map_err(|_|WorkspaceReadError::CatalogUnavailable)?;
-        }
+            Some(original)
+        }else{None};
         let ids=descriptors.iter().map(|d|d.id.clone()).collect::<BTreeSet<_>>();
         let names=catalog.names_for_native_ids(&ids);
         let authority=ConversationAuthority::new();
@@ -253,10 +304,10 @@ impl WorkspaceReadTurnSession{
         ).map_err(|_:ToolTurnError|WorkspaceReadError::CatalogUnavailable)?;
         // A dispatched error is not a successful observation. The host must
         // never publish a factual answer or seed source reuse from a failed read.
-        if root_listing_only{turn.require_single_observed_tool_result();}else{turn.require_observed_tool_result();}
+        if fixed_input.is_some(){turn.require_single_observed_tool_result();}else{turn.require_observed_tool_result();}
         Ok(Self {
             registry,catalog,authority,turn,
-            policy:ReadOnlyPolicy{ids,root_listing_only},task_id:task_id.into(),
+            policy:ReadOnlyPolicy{ids,fixed_input},task_id:task_id.into(),
             origin,
         })
     }
@@ -347,6 +398,38 @@ mod integrated_reader_tests{
         let feedback=events.iter().filter(|e|e.kind==crate::model_turn_journal::ModelAuditKind::ToolFeedback).collect::<Vec<_>>();
         assert_eq!(result.tool_calls,1);assert_eq!(feedback.len(),1);
         assert!(feedback[0].payload.contains("original.txt")&&feedback[0].payload.contains("child")&&!feedback[0].payload.contains("hidden.txt"));
+        drop(lane);drop(journal);std::fs::remove_dir_all(base).unwrap();
+    }
+    #[tokio::test]
+    async fn cp06br1_exact_stat_denies_other_tool_path_and_payload(){
+        let base=directory();let _=std::fs::remove_dir_all(&base);let root=base.join("approved");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(root.join("Notes.TXT"),b"original").unwrap();
+        std::fs::write(root.join("other.txt"),b"wrong").unwrap();
+        let mut lane=WorkspaceReadTurnSession::new_exact(&OriginalTurn,"c-source","g-human","task-stat",&root,None,ExactWorkspaceRead::Stat("Notes.TXT".into())).unwrap();
+        let caps=lane.capabilities().unwrap();assert_eq!(caps.len(),1);assert_eq!(caps[0].public_name,"lu_files_stat");
+        let allowed=BTreeSet::from(["lu_files_stat".to_owned()]);
+        let encode=|raw|lane.catalog.encode_call(&allowed,"lu_files_stat","call",Some("task-stat"),raw);
+        assert!(encode(r#"{"source":"current_request","path":"other.txt"}"#).is_err());
+        assert!(encode(r#"{"path":"other.txt"}"#).is_err());
+        assert!(encode(r#"{"source":"other_request"}"#).is_err());
+        assert!(lane.catalog.encode_call(&allowed,"lu_reader_read","call",Some("task-stat"),r#"{"path":"other.txt"}"#).is_err());
+        let mut call=encode(r#"{"source":"current_request"}"#).unwrap();
+        assert_eq!(crate::wire::proto::FileStatRequest::decode(call.input.bytes.as_slice()).unwrap().path,"Notes.TXT");
+        let descriptor=lane.registry.tools().unwrap().into_iter().find(|d|d.id=="lu.inspect.stat").unwrap();
+        assert!(lane.policy.authorize(&call,&descriptor).is_ok());
+        call.input.bytes=crate::wire::proto::FileStatRequest{path:"other.txt".into()}.encode_to_vec();
+        assert!(lane.policy.authorize(&call,&descriptor).is_err());
+        let journal=ModelTurnJournal::open(&base.join("audit.sqlite")).unwrap();
+        let mut model=Scripted{replies:VecDeque::from([
+            r#"{"kind":"tool","name":"lu_files_stat","arguments":{"source":"current_request"}}"#.into(),
+            r#"{"kind":"final","text":"8 bytes"}"#.into(),
+        ])};
+        let result=lane.run_journaled("What is the byte size of Notes.TXT?",&mut model,&Cancellation::default(),&journal).await.unwrap();
+        assert_eq!(result.tool_calls,1);
+        let events=journal.events_for("c-source","task-stat").unwrap();
+        let feedback=events.iter().filter(|e|e.kind==crate::model_turn_journal::ModelAuditKind::ToolFeedback).collect::<Vec<_>>();
+        assert_eq!(feedback.len(),1);assert!(feedback[0].payload.contains("\"size_bytes\":8"));
         drop(lane);drop(journal);std::fs::remove_dir_all(base).unwrap();
     }
     #[tokio::test]
