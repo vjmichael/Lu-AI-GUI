@@ -102,6 +102,14 @@ pub struct PrioritySnapshot {
     pub foreground_streak:u8,
 }
 
+/// Exact host-owned identities captured at the irreversible shutdown fence.
+/// No prompt, model output, externally supplied ID or permission is retained.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ShutdownTurn {
+    pub(crate) chat_id: String,
+    pub(crate) generation_id: String,
+}
+
 /// Owns its place in the queue; releases the slot on every exit path.
 pub struct Ticket {
     queue: Arc<GenerationQueue>,
@@ -195,18 +203,31 @@ impl GenerationQueue {
         ))
     }
 
-    /// Host-only shutdown: fence new admissions and completion commits, and
-    /// wake every waiter. Existing tickets still unwind through normal cleanup.
-    pub fn close(&self) -> Result<(), String> {
+    /// Host-only shutdown: atomically fence new admissions and completion,
+    /// latch cancellation, and capture exact unfinished IDs before any
+    /// waiter can release its ticket. The exit owner can reconcile journals
+    /// even if workers never get to unwind.
+    pub(crate) fn begin_shutdown(&self) -> Result<Vec<ShutdownTurn>, String> {
         let mut state = self.state.lock().map_err(|_| "generation queue poisoned")?;
         state.closing = true;
-        for job in state.jobs.values_mut() {
-            if !job.completed { job.cancelled = true; }
+        let mut turns=Vec::new();
+        for (generation_id,job) in state.jobs.iter_mut() {
+            if !job.completed {
+                job.cancelled=true;
+                turns.push(ShutdownTurn{chat_id:job.chat_id.clone(),
+                    generation_id:generation_id.clone()});
+            }
         }
+        turns.sort_by(|a,b|a.generation_id.cmp(&b.generation_id));
         state.foreground_waiting.clear();
         state.background_waiting.clear();
         self.ready.notify_all();
-        Ok(())
+        Ok(turns)
+    }
+
+    #[cfg(test)]
+    pub fn close(&self) -> Result<(), String> {
+        self.begin_shutdown().map(|_|())
     }
 
     pub fn cancel(&self, session_id: &str, generation_id: &str) -> Result<CancelState, String> {
@@ -468,6 +489,73 @@ mod tests {
             || panic!("close allowed admission")).is_err());
         q.close().unwrap();
     }
+    #[test]
+    fn cp05_r6_graceful_shutdown_reconciles_original_queued_and_active_journals() {
+        use crate::chat_store::ChatStore;
+        use lu_core::ansf_live_chat::LiveKind;
+        let root=std::env::temp_dir().join(crate::next_id("lu-cp05-shutdown-"));
+        std::fs::create_dir_all(&root).unwrap();
+        let chats=ChatStore::open(&root).unwrap();
+        let q=Arc::new(GenerationQueue::default());
+        let completed=chats.create_chat().unwrap().chat_id;
+        let active=chats.create_chat().unwrap().chat_id;
+        let waiting=chats.create_chat().unwrap().chat_id;
+        let unrelated=chats.create_chat().unwrap().chat_id;
+        let g_done=crate::next_id("g-");let g_active=crate::next_id("g-");
+        let g_wait=crate::next_id("g-");let g_other=crate::next_id("g-");
+        chats.append_user_with_turn_id(&unrelated,&g_other,"Unrelated prior request").unwrap();
+        let (done,_)=q.enqueue_with_class_committing("s",&completed,&g_done,TurnClass::Foreground,
+            ||chats.append_user_with_turn_id(&completed,&g_done,"Completed original")).unwrap();
+        done.wait_for_slot().unwrap();
+        done.commit_completed("s",||{
+            chats.append_progress(&completed,&g_done,"Saved answer")?;
+            chats.complete(&completed,&g_done)
+        }).unwrap();
+        // A completed ticket still held by a worker must not be cancelled.
+        let already_completed=q.begin_shutdown().unwrap();
+        assert!(already_completed.is_empty());
+        drop(done);
+        let q=Arc::new(GenerationQueue::default());
+        let (a,_)=q.enqueue_with_class_committing("s",&active,&g_active,TurnClass::Foreground,
+            ||chats.append_user_with_turn_id(&active,&g_active,"Active original")).unwrap();
+        a.wait_for_slot().unwrap();
+        chats.append_progress(&active,&g_active,"Saved partial").unwrap();
+        let (b,_)=q.enqueue_with_class_committing("s",&waiting,&g_wait,TurnClass::Foreground,
+            ||chats.append_user_with_turn_id(&waiting,&g_wait,"Queued original")).unwrap();
+        let pending=q.begin_shutdown().unwrap();
+        assert_eq!(pending.len(),2);
+        assert!(a.cancelled());
+        assert!(b.wait_for_slot().is_err());
+        assert!(a.commit_completed("s",||panic!("shutdown allowed completion")).is_err());
+        assert!(q.enqueue("s",&unrelated,&g_other).is_err());
+        // Exercise both the normal worker cancelling first and the exit
+        // owner handling the remaining queue despite released tickets.
+        chats.cancel(&active,&g_active).unwrap();
+        drop(a);drop(b);
+        for turn in &pending{
+            chats.cancel_for_shutdown(&turn.chat_id,&turn.generation_id).unwrap();
+            chats.cancel_for_shutdown(&turn.chat_id,&turn.generation_id).unwrap();
+        }
+        drop(chats);
+        let reopened=ChatStore::open(&root).unwrap();
+        for (chat,gid,expected) in [
+            (&completed,&g_done,Some(LiveKind::AssistantCompleted)),
+            (&active,&g_active,Some(LiveKind::AssistantCancelled)),
+            (&waiting,&g_wait,Some(LiveKind::AssistantCancelled)),
+            (&unrelated,&g_other,None)
+        ]{
+            let book=reopened.require(chat).unwrap();
+            assert_eq!(book.generation_terminal_kind(chat,gid).unwrap(),expected);
+            let events=book.live_chat_events_after(chat,0,64).unwrap();
+            assert_eq!(events.iter().filter(|e|e.event.generation_id.as_deref()==Some(gid.as_str())
+                &&matches!(e.event.kind,LiveKind::AssistantCompleted|LiveKind::AssistantCancelled)).count(),
+                usize::from(expected.is_some()));
+        }
+        let history=reopened.history(&active).unwrap();
+        assert!(history.iter().any(|m|m.text=="Saved partial"&&m.cancelled));
+        drop(reopened);std::fs::remove_dir_all(root).unwrap();
+    }
+
     #[test]
     fn admission_failure_never_publishes_or_consumes_capacity() {
         let q = Arc::new(GenerationQueue::default());

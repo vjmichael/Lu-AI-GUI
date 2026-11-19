@@ -782,6 +782,26 @@ impl ChatStore {
         self.append(chat_id,LiveKind::AssistantCancelled,"",None,
             Some(generation_id),None,None)
     }
+    /// Reconcile exactly the generation cancelled by the shutdown queue
+    /// fence. A worker may already have durably cancelled or completed it;
+    /// never manufacture a second terminal event or override completion.
+    pub(crate) fn cancel_for_shutdown(&self,chat_id:&str,generation_id:&str)->Result<(),String>{
+        let book=self.require(chat_id)?;
+        if book.generation_terminal_kind(chat_id,generation_id).map_err(to_err)?.is_some(){
+            return Ok(())
+        }
+        match self.cancel(chat_id,generation_id){
+            Ok(())=>Ok(()),
+            Err(error)=>{
+                // A concurrent worker or catalog-refresh failure may have
+                // committed the original book event. Only an actual immutable
+                // terminal event can turn this into an idempotent success.
+                if book.generation_terminal_kind(chat_id,generation_id).map_err(to_err)?.is_some(){
+                    Ok(())
+                }else{Err(error)}
+            }
+        }
+    }
     /// E1-P08: host-only startup projection of a recovered reviewed-app turn.
     /// Existing ANSF user-turn IDs are authoritative. Never infer chat ownership
     /// from a model-provided path or from worker stdout.

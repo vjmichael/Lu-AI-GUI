@@ -146,6 +146,11 @@ try{
       if($LASTEXITCODE -ne 0 -or -not(Select-String -LiteralPath $policyLog -SimpleMatch 'test result: ok. 1 passed; 0 failed;')){
         throw 'Exact utility policy regression did not pass'
       }
+      $shutdownLog=Join-Path $out 'cp05-shutdown-receipts.log'
+      & cargo test --release --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --features physical_win_cpu_eval --lib generation_queue::tests::cp05_r6_graceful_shutdown_reconciles_original_queued_and_active_journals -- --exact --nocapture 2>&1 |Tee-Object -FilePath $shutdownLog
+      if($LASTEXITCODE -ne 0 -or -not(Select-String -LiteralPath $shutdownLog -SimpleMatch 'test result: ok. 1 passed; 0 failed;')){
+        throw 'Durable shutdown journal regression did not pass'
+      }
       $realLog=Join-Path $out 'cp05-exact-engine-preflight.log'
       & cargo test --release --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --features physical_win_cpu_eval --lib capability_negotiation::tests::cp05_r6_real_exact_utility_with_native_backend -- --ignored --exact --nocapture 2>&1 |Tee-Object -FilePath $realLog
       if($LASTEXITCODE -ne 0 -or -not(Select-String -LiteralPath $realLog -SimpleMatch 'test result: ok. 1 passed; 0 failed;') -or

@@ -560,6 +560,24 @@ impl AnsfStore{
         for row in rows{result.push(decode(row?)?)}
         Ok(result)
     }
+    /// Indexed exact-generation terminal read. Host shutdown uses this
+    /// to recognize a durable terminal event, never a model assertion.
+    pub fn generation_terminal_kind(&self,session_id:&str,generation_id:&str)
+        ->Result<Option<LiveKind>,AnsfError>{
+        if !valid_session(session_id)||!opaque(generation_id,"g-"){
+            return Err(AnsfError::InvalidInput)
+        }
+        let conn=self.conn.lock().map_err(|_|AnsfError::Locked)?;
+        let mut statement=conn.prepare(
+            "SELECT kind FROM ansf_live_chat_events
+             WHERE session_id=?1 AND generation_id=?2
+               AND kind IN ('assistant_completed','assistant_cancelled')
+               AND origin='host' LIMIT 2")?;
+        let mut rows=statement.query(params![session_id,generation_id])?;
+        let first=rows.next()?.map(|row|row.get::<_,String>(0)).transpose()?;
+        if rows.next()?.is_some(){return Err(AnsfError::InvalidInput)}
+        first.map(|kind|LiveKind::parse(&kind)).transpose()
+    }
     /// Indexed, bounded terminal/notice lookup for one exact reviewed turn.
     /// Avoid reconstructing the entire potentially infinite ANSF chat stream.
     pub fn reviewed_turn_recovery_state(

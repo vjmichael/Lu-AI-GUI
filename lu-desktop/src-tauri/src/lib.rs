@@ -10213,14 +10213,18 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("Lu native desktop failed")
         .run(|app, event| {
-            // Tauri can exit while watchdog-owned state still holds the backend.
-            // Reap the resident Linux engine explicitly on graceful application exit.
-            #[cfg(target_os = "linux")]
+            // A Windows Job Object or Linux process cleanup does not itself
+            // commit a chat terminal event. Every graceful application exit
+            // must fence the original queue and reconcile its saved turns.
             if matches!(event, tauri::RunEvent::Exit) {
                 if let Some(state) = app.try_state::<Arc<DesktopState>>() {
-                    // Prevent late queue completion and additional admissions before
-                    // asking the real inference supervisor to stop.
-                    let _ = state.generation_queue.close();
+                    let pending=match state.generation_queue.begin_shutdown(){
+                        Ok(turns)=>turns,
+                        Err(_) => {
+                            eprintln!("Lu inference exit: generation shutdown fence unavailable");
+                            Vec::new()
+                        }
+                    };
                     if let Ok(readers) = state.reader_generations.lock() {
                         for reader in readers.values() { reader.cancellation.cancel(); }
                     }
@@ -10242,10 +10246,20 @@ pub fn run() {
                             break;
                         }
                     }
+                    // Give ordinary workers the remaining bounded grace
+                    // period to retain partial text and record cancellation.
+                    // A released ticket or killed process cannot erase the
+                    // immutable host-owned shutdown snapshot.
+                    while state.generation_queue.has_jobs() && std::time::Instant::now()<deadline {
+                        std::thread::sleep(std::time::Duration::from_millis(50));
+                    }
+                    for turn in pending{
+                        if state.chats.cancel_for_shutdown(&turn.chat_id,&turn.generation_id).is_err(){
+                            eprintln!("Lu inference exit: original cancellation receipt unavailable");
+                        }
+                    }
                 }
             }
-            #[cfg(not(target_os = "linux"))]
-            let _ = (app, event);
         });
 }
 

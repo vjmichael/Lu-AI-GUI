@@ -139,3 +139,23 @@ test('CP-05 diagnostics run even before consent and exact engine preflight gates
   assert.match(closeout,/-PreflightGgufPath \$model -PreflightGgufSha256 \$env:MODEL_SHA/);
   assert.ok(closeout.indexOf('Download and hash previously exercised genuine Qwen3')<closeout.indexOf('Genuine exact-engine preflight, then build'));
 });
+
+test('CP-05 graceful exit fences exact jobs and reconciles ANSF on Windows as well as Linux',()=>{
+  const host=readFileSync(new URL('../src-tauri/src/lib.rs',import.meta.url),'utf8');
+  const queue=readFileSync(new URL('../src-tauri/src/generation_queue.rs',import.meta.url),'utf8');
+  const store=readFileSync(new URL('../src-tauri/src/ansf_chat_store.rs',import.meta.url),'utf8');
+  const builder=readFileSync(new URL('../../scripts/build-agent01g-physical-windows-nsis.ps1',import.meta.url),'utf8');
+  const exit=host.split('.run(|app, event| {').at(-1).split('#[cfg(test)]')[0];
+  assert.doesNotMatch(exit,/cfg\(target_os\s*=\s*"linux"\)/);
+  assert.match(exit,/RunEvent::Exit/);
+  assert.ok(exit.indexOf('begin_shutdown()')<exit.indexOf('supervisor.cancel('));
+  assert.ok(exit.indexOf('supervisor.cancel(')<exit.indexOf('cancel_for_shutdown('));
+  assert.match(exit,/for turn in pending/);
+  assert.match(exit,/generation_queue\.has_jobs\(\).*Instant::now\(\)<deadline/);
+  assert.match(queue,/fn begin_shutdown\(&self\).*Vec<ShutdownTurn>/);
+  assert.match(queue,/if !job\.completed \{/);
+  assert.match(queue,/job\.cancelled=true/);
+  assert.match(store,/book\.generation_terminal_kind\(chat_id,generation_id\)/);
+  assert.match(builder,/cp05_r6_graceful_shutdown_reconciles_original_queued_and_active_journals/);
+  assert.ok(builder.indexOf('cp05-shutdown-receipts.log')<builder.indexOf('cargo rustc --release'));
+});

@@ -184,6 +184,7 @@ jobs:
           Copy-Item -LiteralPath (Join-Path $out 'installer-checksums.json') -Destination cp05-closeout-evidence/installer-checksums.json
           Copy-Item -LiteralPath (Join-Path $out 'cp05-exact-engine-preflight.log') -Destination cp05-closeout-evidence
           Copy-Item -LiteralPath (Join-Path $out 'cp05-exact-utility-policy.log') -Destination cp05-closeout-evidence
+          Copy-Item -LiteralPath (Join-Path $out 'cp05-shutdown-receipts.log') -Destination cp05-closeout-evidence
       - name: Genuine repaired NSIS model, approval, refusal, active Stop, normal close and forced host-death recovery
         timeout-minutes: 25
         shell: pwsh
