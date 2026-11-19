@@ -247,7 +247,7 @@ impl EffectJournal {
                 "WAV_PCM_DIRECT_V1"|"GIT_STATUS_UNSUPPORTED_V1"|
                 "GIT_HISTORY_UNSUPPORTED_V1"|"GIT_HISTORY_LOOSE_DAG_V1"|
             "GIT_HISTORY_OBJECT_DAG_V2"|"GIT_STATUS_INDEX_TREE_V1"|
-            "MP4_BOXES_DIRECT_V1"|"MP4_UNSUPPORTED_V1"|"FILE_TRANSFER_DIRECT_V1"|"FILE_CUSTODY_DIRECT_V1"|"ARCHIVE_TREE_DIRECT_V1"|"OFFICE_CREATE_DIRECT_V1"){
+            "MP4_BOXES_DIRECT_V1"|"MP4_UNSUPPORTED_V1"|"FILE_TRANSFER_DIRECT_V1"|"FILE_CUSTODY_DIRECT_V1"|"ARCHIVE_TREE_DIRECT_V1"|"OFFICE_CREATE_DIRECT_V1"|"OFFICE_REVISION_DIRECT_V1"){
             return Err(JournalError::InvalidTransition)
         }
         let valid_sha=|s:&str|s.len()==64&&s.bytes().all(|b|
@@ -276,7 +276,8 @@ impl EffectJournal {
             (method=="FILE_TRANSFER_DIRECT_V1"&&!matches!(tool_id.as_str(),"lu.files.transfer.copy_new"|"lu.files.transfer.move_new"))||
             (method=="FILE_CUSTODY_DIRECT_V1"&&!matches!(tool_id.as_str(),"lu.files.reversible.trash"|"lu.files.reversible.restore"))||
             (method=="ARCHIVE_TREE_DIRECT_V1"&&tool_id!="lu.archive.tree.extract")||
-            (method=="OFFICE_CREATE_DIRECT_V1"&&!matches!(tool_id.as_str(),"lu.docx.create"|"lu.pptx.create")){
+            (method=="OFFICE_CREATE_DIRECT_V1"&&!matches!(tool_id.as_str(),"lu.docx.create"|"lu.pptx.create"))||
+            (method=="OFFICE_REVISION_DIRECT_V1"&&!matches!(tool_id.as_str(),"lu.office.revisions.create"|"lu.office.batch.revision.create")){
             return Err(JournalError::InvalidTransition)
         }
         let inserted=tx.execute(
@@ -356,6 +357,7 @@ impl EffectJournal {
             "lu.files.reversible.trash"|"lu.files.reversible.restore"=>method=="FILE_CUSTODY_DIRECT_V1",
             "lu.archive.tree.extract"=>method=="ARCHIVE_TREE_DIRECT_V1",
             "lu.docx.create"|"lu.pptx.create"=>method=="OFFICE_CREATE_DIRECT_V1",
+            "lu.office.revisions.create"|"lu.office.batch.revision.create"=>method=="OFFICE_REVISION_DIRECT_V1",
             _=>false,
         };
         let Some(receipt)=bytes else{return Ok(false)};

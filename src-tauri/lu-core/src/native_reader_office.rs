@@ -492,3 +492,27 @@ mod tests{
             "xl/worksheets/sheet1.xml");
     }
 }
+
+/// Existing revision codecs address numbered physical parts, not displayed
+/// order. Only accept the chat shortcut when both identities coincide.
+pub(crate) fn ordered_revision_parts(bytes:&[u8],format:&str)->Result<Vec<String>,ReaderFailure>{
+    let pkg=OpenXmlPackage::new(bytes)?;
+    if format=="pptx"{return pptx_slide_paths(&pkg)}
+    if format!="xlsx"{return Err(bad())}
+    let rels=relationships(pkg.part("xl/_rels/workbook.xml.rels")?)?;
+    let mut reader=Reader::from_reader(pkg.part("xl/workbook.xml")?);
+    let mut paths=Vec::new();
+    for _ in 0..10_000{
+        match reader.read_event().map_err(|_|bad())?{
+            Event::Empty(ref e)|Event::Start(ref e) if e.local_name().as_ref()==b"sheet"=>{
+                let id=attr(e,b"r:id").ok_or_else(bad)?;
+                let path=resolve("xl/workbook.xml",rels.get(&id).ok_or_else(bad)?)?;
+                if !pkg.has(&path)||paths.len()>=256{return Err(bad())}
+                paths.push(path);
+            },
+            Event::Eof=>{return if paths.is_empty(){Err(bad())}else{Ok(paths)}},
+            Event::DocType(_)=>return Err(bad()),_=>{},
+        }
+    }
+    Err(ReaderFailure::TooLarge)
+}
