@@ -97,6 +97,7 @@ jobs:
           findmnt -n -o OPTIONS /sys/fs/cgroup | grep -Eq '(^|,)rw(,|$)'
           test "$(id -u)" -ne 0
           python3 -m py_compile scripts/lu-sec06c-owned-native-launcher.py scripts/lu-sec06c-owned-native-worker.py scripts/lu-sec06c-owned-kernel-manager.py
+          python3 scripts/test-sec06c-reviewed-scan-progress.py 2>&1 | tee cp06er2-native-evidence/reviewed-scan-progress.log
           cargo build --locked --manifest-path lu-desktop/tests/native-file-scan/Cargo.toml --release
           sudo install -d -o root -g root -m 0755 /usr/libexec/lu
           sudo install -o root -g root -m 0755 scripts/lu-sec06c-owned-native-launcher.py /usr/libexec/lu/lu-sec06c-launch-native

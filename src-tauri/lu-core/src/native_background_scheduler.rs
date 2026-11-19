@@ -297,6 +297,15 @@ impl ReviewedScan{
 
     #[cfg(target_os="linux")]
     pub fn prepare(task_id:&str,workspace:&str,turn:&str,selected:&Path)->Result<Self,SchedulerError>{
+        let executable=std::env::current_exe().map_err(|_|SchedulerError::InvalidRequest)?;
+        Self::prepare_linux_with_executable(task_id,workspace,turn,selected,&executable)
+    }
+
+    // The production caller always supplies current_exe(). The native
+    // acceptance harness supplies the root-installed production scanner,
+    // avoiding hashing a large unrelated debug test runner only to discard it.
+    #[cfg(target_os="linux")]
+    fn prepare_linux_with_executable(task_id:&str,workspace:&str,turn:&str,selected:&Path,executable:&Path)->Result<Self,SchedulerError>{
         use std::{fs::{self,OpenOptions},io::Read,os::unix::fs::OpenOptionsExt};
         use sha2::{Digest,Sha256};
         let id=|s:&str,p:&str|s.starts_with(p)&&s.len()==p.len()+32&&s[p.len()..].bytes().all(|b|
@@ -314,8 +323,7 @@ impl ReviewedScan{
             .open(selected).map_err(|_|SchedulerError::InvalidRequest)?;
         let identity=linux_scan_identity(&input).map_err(|_|SchedulerError::InvalidRequest)?;
         let bytes=input.metadata().map_err(|_|SchedulerError::InvalidRequest)?.len();
-        let executable=std::env::current_exe().map_err(|_|SchedulerError::InvalidRequest)?
-            .canonicalize().map_err(|_|SchedulerError::InvalidRequest)?;
+        let executable=executable.canonicalize().map_err(|_|SchedulerError::InvalidRequest)?;
         let mut file=fs::File::open(&executable).map_err(|_|SchedulerError::InvalidRequest)?;
         let mut hash=Sha256::new();let mut buffer=[0u8;65536];
         loop{let n=file.read(&mut buffer).map_err(|_|SchedulerError::InvalidRequest)?;
@@ -1401,10 +1409,11 @@ mod tests{
         let chat=format!("c-{}","a".repeat(32));let turn=format!("g-{}","b".repeat(32));
         let done=format!("scan-{}","c".repeat(32));let stop=format!("scan-{}","d".repeat(32));
         for (id,input) in [(&done,&small),(&stop,&large)]{
-            let mut reviewed=ReviewedScan::prepare(id,&chat,&turn,input).unwrap();
-            // Test-only first-party scanner executable is separately built
-            // from the production source and installed root-owned.
-            reviewed.plan.executable=exe.clone();reviewed.plan.expected_sha256=engine_sha.clone();
+            // Root-installed first-party scanner is separately built from
+            // the production worker source. Prepare uses the same identity
+            // checks and hashes the exact executable that actually runs.
+            let reviewed=ReviewedScan::prepare_linux_with_executable(id,&chat,&turn,input,&exe).unwrap();
+            assert_eq!(reviewed.executable_sha256(),engine_sha);
             q.enqueue_reviewed_scan(reviewed).unwrap();
             assert_eq!(q.tick_foreground_guarded(true).unwrap(),0);
             assert!(store.get(id).unwrap().is_none());

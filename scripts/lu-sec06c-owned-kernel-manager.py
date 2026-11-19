@@ -421,6 +421,11 @@ def run(args):
     exit_status=93
     output=b""
     native_output=bytearray()
+    native_seen=0
+    # Only reviewed file-scan progress may leave the root supervisor early.
+    # The digest and all other output remain behind the kernel-empty receipt.
+    live_scan=(args.domain=="native" and args.op=="scan-file" and len(args.arg)==4)
+    streamed=0
     native_limit=(
         16*1024*1024 if args.domain=="native" and args.op=="fixed-artifact"
         else 128*1024 if args.domain=="native" and args.op=="scan-file"
@@ -455,10 +460,17 @@ def run(args):
                     if ready:
                         chunk=os.read(child.stdout.fileno(),65536)
                         if chunk:
+                            native_seen+=len(chunk)
                             native_output.extend(chunk)
-                            if len(native_output)>native_limit:
+                            if native_seen>native_limit:
                                 exit_status=93
                                 break
+                            if live_scan:
+                                prefix=reviewed_scan_progress_prefix(native_output,8192-streamed)
+                                if prefix:
+                                    sys.stdout.buffer.write(prefix);sys.stdout.buffer.flush()
+                                    streamed+=len(prefix)
+                                    del native_output[:len(prefix)]
                 poll=child.poll()
                 if poll is not None:
                     exit_status=poll
@@ -478,9 +490,9 @@ def run(args):
             kernel_verified=True
             if exit_status==0:
                 if args.domain=="native":
-                    tail=child.stdout.read(native_limit+1-len(native_output))
+                    tail=child.stdout.read(native_limit+1-native_seen)
                     native_output.extend(tail)
-                    if len(native_output)>native_limit:
+                    if native_seen+len(tail)>native_limit:
                         refuse("finite native worker exceeded reviewed stdout bound")
                     output=bytes(native_output)
                 else:
@@ -534,6 +546,20 @@ def run(args):
     if exit_status==0:
         sys.stdout.buffer.write(output);sys.stdout.buffer.flush()
     return 0 if exit_status==0 else 73
+
+def reviewed_scan_progress_prefix(buffer,budget):
+    """Only complete canonical P lines, never a digest or a partial frame.
+
+    Bound live publication independently of the full finite stdout budget.
+    The Rust reader validates ordering, totals and completion separately.
+    """
+    offset=0
+    while offset<min(len(buffer),budget):
+        end=buffer.find(b"\n",offset,min(len(buffer),offset+128,budget))
+        if end<0 or re.fullmatch(rb"P\t(?:0|[1-9][0-9]{0,9})\t[1-9][0-9]{0,9}",buffer[offset:end]) is None:
+            break
+        offset=end+1
+    return bytes(buffer[:offset])
 
 def main():
     if "--attack-leaf" in sys.argv:
