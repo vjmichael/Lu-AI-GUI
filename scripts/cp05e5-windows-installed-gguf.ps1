@@ -27,7 +27,7 @@ $report=[ordered]@{
   genuineGgufInference='NOT_TESTED'; activeGpuOffload='NOT_TESTED'
   authorization='TEST_OPERATOR_FIXTURE_NOT_PHYSICAL_OWNER'
 }
-$process=$null;$window=$null;$engine=$null
+$process=$null;$window=$null;$engine=$null;$consentDialog=$null
 
 function Save-UIA-Failure([System.Windows.Automation.AutomationElement]$owner,[string]$phase){
   if($null -eq $owner){return}
@@ -218,6 +218,20 @@ using System.Runtime.InteropServices;
 public static class LuCp05Window {
   [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
   [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hwnd);
+  [DllImport("user32.dll")] public static extern bool IsWindow(IntPtr hwnd);
+  [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr hwnd);
+  [DllImport("user32.dll")] public static extern bool IsWindowEnabled(IntPtr hwnd);
+  [DllImport("user32.dll")] public static extern bool IsChild(IntPtr parent, IntPtr child);
+  [DllImport("user32.dll")] public static extern int GetDlgCtrlID(IntPtr hwnd);
+  [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint pid);
+  [StructLayout(LayoutKind.Sequential)] private struct POINT { public int X; public int Y; }
+  [DllImport("user32.dll")] private static extern IntPtr WindowFromPoint(POINT point);
+  public static uint OwnerPid(IntPtr hwnd) {
+    uint pid; return GetWindowThreadProcessId(hwnd, out pid) == 0 ? 0 : pid;
+  }
+  public static IntPtr HitWindow(int x, int y) {
+    return WindowFromPoint(new POINT { X = x, Y = y });
+  }
 }
 '@
 function Verify-File([string]$path,[string]$sha){
@@ -363,11 +377,114 @@ function Check-Journal([string]$phase,[int]$seconds=90){
   } $seconds ('native read-only journal '+$phase)
   $raw|Set-Content -LiteralPath (Join-Path $EvidenceDir ($phase+'-journal.json')) -Encoding utf8
 }
+function Test-ConsentControlIdentity($current,[string]$action,[int]$ownerPid){
+  # Windows native TaskDialog exposes CCPushButton as Pane in some UIA
+  # providers. This narrow exception is NEVER used for WebView controls,
+  # arbitrary panes, or a label that belongs to another process.
+  $id=switch -CaseSensitive ($action){
+    'Allow once'{'CommandButton_1000'}
+    'Cancel'{'CommandButton_1001'}
+    default{return $false}
+  }
+  return ($current.Name -ceq $action -and
+    $current.AutomationId -ceq $id -and
+    $current.ClassName -ceq 'CCPushButton' -and
+    $current.ControlType.ProgrammaticName -cin @('ControlType.Pane','ControlType.Button') -and
+    [int64]$current.ProcessId -eq $ownerPid -and
+    [int64]$current.NativeWindowHandle -ne 0 -and
+    $current.IsEnabled -and -not $current.IsOffscreen)
+}
 function Consent([string]$action,[string]$phase){
-  # A genuine separate native modal of the installed app, not a web overlay.
+  # Bind this native human-fixture interaction to the actual displayed
+  # request text, not merely the first button with a matching display label.
+  $report.currentPhase=$phase+'-consent'
+  if($phase -ceq 'approve' -and $action -ceq 'Allow once'){
+    $request='Could you validate this JSON schema {"schema":{"type":"integer"},"data":17}'
+    $controlId=1000
+  }elseif($phase -ceq 'deny' -and $action -ceq 'Cancel'){
+    $request='Could you validate this JSON schema {"schema":{"type":"integer"},"data":18}'
+    $controlId=1001
+  }else{throw 'Unexpected synthetic consent phase/action'}
   $dialog=Wait-NativeWindow 'Allow this inspection?'
+  $script:consentDialog=$dialog
+  $owner=[IntPtr][int64]$dialog.Current.NativeWindowHandle
+  if($owner -eq [IntPtr]::Zero -or $owner -eq [IntPtr][int64]$script:window.Current.NativeWindowHandle -or
+     [LuCp05Window]::OwnerPid($owner) -ne $script:process.Id -or
+     -not [LuCp05Window]::IsWindowVisible($owner)){
+    throw 'Consent dialog is not an exact visible native modal of installed Lu'
+  }
   $null=Save-Visible-Desktop ($phase+'-native-dialog.png')
-  $report.activationMethods+=@(Invoke-UIA (Wait-Element $dialog $action $true) $dialog)
+  $expected="Lu suggests using the exact schema and data from your message (offline validation only) for this request:`n`n$request`n`nNo files will be changed."
+  $elements=$dialog.FindAll([System.Windows.Automation.TreeScope]::Descendants,
+    [System.Windows.Automation.Condition]::TrueCondition)
+  $content=@($elements|Where-Object{
+    try{$_.Current.AutomationId -ceq 'ContentText' -and
+       $_.Current.ProcessId -eq $script:process.Id -and
+       $_.Current.ControlType -eq [System.Windows.Automation.ControlType]::Text -and
+       -not $_.Current.IsOffscreen -and
+       ($_.Current.Name.Replace("`r`n","`n")) -ceq $expected}catch{$false}
+  })
+  if($content.Count -ne 1){throw 'Native consent text does not match exact synthetic request and scope'}
+  $matches=@($elements|Where-Object{
+    try{Test-ConsentControlIdentity $_.Current $action $script:process.Id}catch{$false}
+  })
+  if($matches.Count -ne 1){throw 'Expected exactly one owned native consent command control'}
+  $button=$matches[0]
+  $child=[IntPtr][int64]$button.Current.NativeWindowHandle
+  function Test-NativeConsentTarget {
+    return ([LuCp05Window]::IsWindow($owner) -and
+      [LuCp05Window]::IsWindow($child) -and
+      [LuCp05Window]::OwnerPid($owner) -eq $script:process.Id -and
+      [LuCp05Window]::OwnerPid($child) -eq $script:process.Id -and
+      [LuCp05Window]::IsChild($owner,$child) -and
+      [LuCp05Window]::GetDlgCtrlID($child) -eq $controlId -and
+      [LuCp05Window]::IsWindowVisible($child) -and
+      [LuCp05Window]::IsWindowEnabled($child))
+  }
+  if(-not (Test-NativeConsentTarget)){throw 'Consent HWND child identity or command ID mismatch'}
+  $null=[LuCp05Window]::SetForegroundWindow($owner)
+  $null=Wait-Observation {[LuCp05Window]::GetForegroundWindow() -eq $owner} 5 'original native consent modal foreground'
+  $rect=$button.Current.BoundingRectangle
+  $bounds=$dialog.Current.BoundingRectangle
+  # For a genuine CCPushButton with no InvokePattern or clickable-point
+  # provider, use its current rectangle only after a Win32 native hit test.
+  try{$point=$button.GetClickablePoint()}catch{
+    $point=[System.Windows.Point]::new($rect.Left+$rect.Width/2,$rect.Top+$rect.Height/2)
+  }
+  $x=[int][Math]::Round($point.X);$y=[int][Math]::Round($point.Y)
+  if($rect.Width -lt 3 -or $rect.Height -lt 3 -or
+     $x -lt $rect.Left -or $x -ge $rect.Right -or $y -lt $rect.Top -or $y -ge $rect.Bottom -or
+     $x -lt $bounds.Left -or $x -ge $bounds.Right -or $y -lt $bounds.Top -or $y -ge $bounds.Bottom -or
+     -not (Test-NativeConsentTarget) -or
+     [LuCp05Window]::GetForegroundWindow() -ne $owner){
+    throw 'Native consent command is not currently reachable in original modal'
+  }
+  $hit=[LuCp05Window]::HitWindow($x,$y)
+  if($hit -ne $child -and -not [LuCp05Window]::IsChild($child,$hit)){
+    throw 'Native hit test did not resolve to exact consent command HWND'
+  }
+  if(-not [LuP0Mouse]::SetCursorPos($x,$y)){throw 'Cannot position pointer at verified consent control'}
+  # Recheck immediately before the sole physical click. No generic Pane
+  # activation, Enter-key default, synthetic RPC or fallback second click.
+  $hit=[LuCp05Window]::HitWindow($x,$y)
+  if(-not (Test-NativeConsentTarget) -or [LuCp05Window]::GetForegroundWindow() -ne $owner -or
+     ($hit -ne $child -and -not [LuCp05Window]::IsChild($child,$hit))){
+    throw 'Consent target changed before physical click'
+  }
+  $report.phases[$phase+'-dialog']=[ordered]@{
+    appPid=$script:process.Id;dialogHandle=$owner.ToInt64()
+    commandHandle=$child.ToInt64();commandId=$controlId
+    className=$button.Current.ClassName;controlType=$button.Current.ControlType.ProgrammaticName
+    action=$action;exactRequestText=$true;nativeOwnedHit=$true
+  }
+  [LuP0Mouse]::mouse_event(0x0002,0,0,0,[UIntPtr]::Zero)
+  [LuP0Mouse]::mouse_event(0x0004,0,0,0,[UIntPtr]::Zero)
+  $null=Wait-Observation {(-not [LuCp05Window]::IsWindow($owner)) -or
+    (-not [LuCp05Window]::IsWindowVisible($owner))} 15 'original consent dialog dismissed'
+  $report.phases[$phase+'-dialog'].dismissed=$true
+  $script:consentDialog=$null
+  $report.activationMethods+=@('EXACT_NATIVE_CONSENT_COMMAND_HIT_TEST_OS_CLICK')
+  $report.currentPhase=$phase+'-journal'
 }
 function Start-Long([string]$marker,[string]$phase){
   $report.currentPhase=$phase+'-active-generation'
@@ -448,6 +565,7 @@ try{
 }catch{
   # Never print process command lines or the ephemeral bearer.
   $report.errors+=@($_.Exception.Message)
+  try{if($null -ne $script:consentDialog){Save-UIA-Failure $script:consentDialog 'cp05-consent'}}catch{}
   try{if($null -ne $script:window){Save-UIA-Failure $script:window 'cp05-installed'}}catch{}
   Write-Warning ('Installed CP-05E5 witness NOT ACCEPTED: '+$_.Exception.Message)
 }finally{

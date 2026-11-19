@@ -95,6 +95,8 @@ jobs:
             [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $file).Path,[ref]$tokens,[ref]$errors)|Out-Null
             if($errors.Count -ne 0){throw "Native PowerShell parser rejected $file : $errors"}
           }
+          pwsh -NoProfile -File scripts/cp05e5-consent-contract.test.ps1
+          if($LASTEXITCODE -ne 0){throw 'Native consent identity fixture failed'}
           python -m py_compile scripts/cp05e5-installed-journal.py
           if($LASTEXITCODE -ne 0){throw 'Installed journal oracle syntax error'}
           node --test lu-desktop/tests/p0-installed-gui-smoke.test.mjs

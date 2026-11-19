@@ -70,3 +70,33 @@ test('CP-05 installed GGUF witness waits for ready WebView descendants rather th
   assert.match(gguf,/Slot-State \$true/);
   assert.match(gguf,/Close-Exact \$true 'forced'/);
 });
+
+test('CP-05 native consent verifies original dialog scope and TaskDialog HWND, not generic pane or label',()=>{
+  const gguf=readFileSync(new URL('../../scripts/cp05e5-windows-installed-gguf.ps1',import.meta.url),'utf8');
+  const predicate=gguf.split('function Test-ConsentControlIdentity(')[1].split('function Consent(')[0];
+  const consent=gguf.split('function Consent(')[1].split('function Start-Long')[0];
+  const fixture=readFileSync(new URL('../../scripts/cp05e5-consent-contract.test.ps1',import.meta.url),'utf8');
+  const closeout=readFileSync(new URL('../../.github/workflows/lu-cp05e-closeout.yml',import.meta.url),'utf8');
+  assert.match(predicate,/'Allow once'\{'CommandButton_1000'\}/);
+  assert.match(predicate,/'Cancel'\{'CommandButton_1001'\}/);
+  assert.match(predicate,/\$current\.ClassName -ceq 'CCPushButton'/);
+  assert.match(predicate,/\$current\.ControlType\.ProgrammaticName -cin @\('ControlType\.Pane','ControlType\.Button'\)/);
+  assert.match(predicate,/\[int64\]\$current\.ProcessId -eq \$ownerPid/);
+  assert.match(predicate,/\$current\.IsEnabled -and -not \$current\.IsOffscreen/);
+  assert.match(consent,/Wait-NativeWindow 'Allow this inspection\?'/);
+  assert.match(consent,/ContentText/);
+  assert.match(consent,/Native consent text does not match exact synthetic request and scope/);
+  assert.match(consent,/if\(\$matches\.Count -ne 1\)/);
+  assert.match(consent,/OwnerPid\(\$child\) -eq \$script:process\.Id/);
+  assert.match(consent,/IsChild\(\$owner,\$child\)/);
+  assert.match(consent,/GetDlgCtrlID\(\$child\) -eq \$controlId/);
+  assert.match(consent,/GetForegroundWindow\(\) -ne \$owner/);
+  assert.match(consent,/HitWindow\(\$x,\$y\)/);
+  assert.equal((consent.match(/mouse_event\(/g)||[]).length,2);
+  assert.match(consent,/original consent dialog dismissed/);
+  assert.doesNotMatch(consent,/Wait-Element \$dialog|SendKeys|Invoke-UIA/);
+  assert.match(fixture,/CP05_NATIVE_CONSENT_IDENTITY_FIXTURES_PASS=13/);
+  assert.match(closeout,/pwsh -NoProfile -File scripts\/cp05e5-consent-contract\.test\.ps1/);
+  assert.match(gguf,/Check-Journal 'approve' 180/);
+  assert.match(gguf,/Check-Journal 'deny' 90/);
+});
