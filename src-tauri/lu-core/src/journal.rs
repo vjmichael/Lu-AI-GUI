@@ -247,7 +247,7 @@ impl EffectJournal {
                 "WAV_PCM_DIRECT_V1"|"GIT_STATUS_UNSUPPORTED_V1"|
                 "GIT_HISTORY_UNSUPPORTED_V1"|"GIT_HISTORY_LOOSE_DAG_V1"|
             "GIT_HISTORY_OBJECT_DAG_V2"|"GIT_STATUS_INDEX_TREE_V1"|
-            "MP4_BOXES_DIRECT_V1"|"MP4_UNSUPPORTED_V1"){
+            "MP4_BOXES_DIRECT_V1"|"MP4_UNSUPPORTED_V1"|"FILE_TRANSFER_DIRECT_V1"){
             return Err(JournalError::InvalidTransition)
         }
         let valid_sha=|s:&str|s.len()==64&&s.bytes().all(|b|
@@ -267,12 +267,13 @@ impl EffectJournal {
         let mut conn=self.connection.lock().map_err(|_|JournalError::Poisoned)?;
         let tx=conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let existing=tx.query_row(
-            "SELECT state,receipt FROM lu_effects WHERE call_id=?1",
+            "SELECT state,receipt,tool_id FROM lu_effects WHERE call_id=?1",
             params![call_id],
-            |row|Ok((row.get::<_,String>(0)?,row.get::<_,Option<Vec<u8>>>(1)?))
+            |row|Ok((row.get::<_,String>(0)?,row.get::<_,Option<Vec<u8>>>(1)?,row.get::<_,String>(2)?))
         ).optional()?;
-        let Some((state,bytes))=existing else{return Err(JournalError::InvalidTransition)};
-        if state!="APPLIED"||bytes.as_deref()!=Some(receipt){
+        let Some((state,bytes,tool_id))=existing else{return Err(JournalError::InvalidTransition)};
+        if state!="APPLIED"||bytes.as_deref()!=Some(receipt)||
+            (method=="FILE_TRANSFER_DIRECT_V1"&&!matches!(tool_id.as_str(),"lu.files.transfer.copy_new"|"lu.files.transfer.move_new")){
             return Err(JournalError::InvalidTransition)
         }
         let inserted=tx.execute(
@@ -348,6 +349,7 @@ impl EffectJournal {
                     "GIT_HISTORY_LOOSE_DAG_V1"|"GIT_HISTORY_OBJECT_DAG_V2"),
             "lu.reviewed.media.facts"=>
                 matches!(method.as_str(),"WAV_PCM_DIRECT_V1"|"MP4_BOXES_DIRECT_V1"),
+            "lu.files.transfer.copy_new"|"lu.files.transfer.move_new"=>method=="FILE_TRANSFER_DIRECT_V1",
             _=>false,
         };
         let Some(receipt)=bytes else{return Ok(false)};

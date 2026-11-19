@@ -265,3 +265,81 @@ mod tests{
         fs::remove_dir_all(root).unwrap();
     }
 }
+
+/// CP-06D: exact original-human copy/move proposals use the active foreground
+/// ticket, the existing OS picker/review custody, and the durable Core transfer
+/// lane. Other manual file workflows remain separate. Nothing in a model
+/// reply can create a review, pick a source or confer approval without this
+/// trusted adapter's independent current-turn and native confirmation checks.
+pub(crate) fn try_model_transfer(app:&tauri::AppHandle,state:&Arc<crate::DesktopState>,sid:&str,chat:&str,gid:&str,
+    original:&str,ticket:&crate::generation_queue::Ticket)->Result<Option<String>,String>{
+    use tauri::Emitter;
+    use tauri_plugin_dialog::DialogExt;
+    use lu_core::{conversation_authority::TrustedUserTurnVerifier,inference_host::Cancellation,
+        model_transfer_turn::TransferIntent,model_turn_journal::ModelTurnJournal,
+        supervised_tool_generation::SupervisorModelStep};
+    let Some(intent)=TransferIntent::parse(original) else{return Ok(None)};
+    if lu_core::capability_router::user_declines_tools(original){return Ok(None)}
+    let verifier=crate::turn_authority::PersistedHumanTurn::current_chat(&state.chats,chat,gid,original);
+    let cancellation=Cancellation::default();
+    let watermark=state.chats.p0_auth_requested_watermark(chat)?;
+    let checkpoint=||->Result<(),String>{
+        ticket.verify_active_foreground(sid,chat,gid)?;
+        if cancellation.is_cancelled()||ticket.cancelled()||state.chats.p0_auth_requested_watermark(chat)?!=watermark||!verifier.verify_user_turn(chat,gid){return Err("Cancelled original file operation".into())}
+        if state.supervisor.status().map_err(|_|"Model session unavailable")?.session_id.as_deref()!=Some(sid){return Err("Model changed during file operation".into())}
+        Ok(())
+    };
+    checkpoint()?;
+    let journal=ModelTurnJournal::open(&state.catalog_path.with_file_name("lu-model-transfer-audit.sqlite")).map_err(|_|"File operation audit unavailable")?;
+    let current_step=Arc::new(Mutex::new(None));
+    {
+        let mut all=state.reader_generations.lock().map_err(|_|"File operation cancellation unavailable")?;
+        if all.contains_key(gid){return Err("Duplicate file operation ownership".into())}
+        all.insert(gid.into(),crate::ReaderRunControl{cancellation:cancellation.clone(),current_step:Arc::clone(&current_step),session_id:sid.into()});
+    }
+    struct Control<'a>{state:&'a crate::DesktopState,id:&'a str}
+    impl Drop for Control<'_>{fn drop(&mut self){let _=self.state.reader_generations.lock().map(|mut all|all.remove(self.id));}}
+    let _control=Control{state,id:gid};
+    let progress=crate::native_turn_lifecycle::NativeTurnProgress::new(app,chat,gid,&current_step);
+    let _=app.emit("lu-generation-start",crate::GenerationEvent{chat_id:chat.into(),generation_id:gid.into(),phase:"running",position:0});
+    let complete=|answer:String|->Result<Option<String>,String>{
+        checkpoint()?;
+        ticket.commit_completed(sid,||{
+            state.chats.append_progress(chat,gid,&answer)?;
+            state.chats.complete_reviewed_if_not_revoked(chat,gid,watermark)
+        })?;
+        Ok(Some(answer))
+    };
+    let mut model=SupervisorModelStep::new(&state.supervisor,sid.into(),crate::next_id("mtr-")).map_err(|_|"File operation model unavailable")?.with_step_start_observer(progress.model_observer());
+    let proposed=intent.propose(chat,gid,&verifier,&mut model,&cancellation,&journal,&checkpoint);
+    *current_step.lock().map_err(|_|"File operation active step unavailable")?=None;
+    let Some(proposal)=proposed? else{return complete("No file operation was authorized or performed. I could not select the requested action.".into())};
+    checkpoint()?;
+    let Some(picked)=app.dialog().file().blocking_pick_file() else{proposal.deny(&journal)?;return complete("File selection cancelled. No file operation was performed.".into())};
+    checkpoint()?;
+    let picked=picked.into_path().map_err(|_|"Invalid selected file")?;
+    // This private queue cannot be consumed via the WebView's manual-review IPC.
+    let queue=FileTransferReviewQueue::default();let review_id=crate::next_id("ft-");
+    let view=queue.stage(chat,&review_id,&picked,proposal.action().operation())?;
+    let pinned=queue.inspect(chat,&review_id)?;
+    let reviewed=proposal.review(Arc::clone(&pinned.root),&pinned.source_name,&pinned.target_name,pinned.bytes,&pinned.sha256,&journal)?;
+    checkpoint()?;
+    let warning=if view.removes_original{"MOVE changes the original filename to the exact new name; the original name will no longer exist if successful."}else{"COPY creates a new name and preserves the original file."};
+    let confirmed=app.dialog().message(format!("Approve this exact file operation?\n\nOriginal: {}\nNew output: {}\nSize: {} bytes\nOriginal SHA-256: {}\n\n{}\nThe action is single-use and will never be automatically retried. After it begins, stopping chat may not stop the filesystem operation.",view.source_display,view.destination_display,view.bytes,view.source_sha256,warning))
+        .title("Lu — Approve exact file operation").buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom("Approve exact action".into(),"Cancel".into())).blocking_show();
+    checkpoint()?;
+    if !confirmed{reviewed.deny(&journal)?;queue.deny(chat,&review_id)?;return complete("File operation declined. No file was changed.".into())}
+    let selected=queue.consume(chat,&review_id)?;
+    if !selected.same_as(&pinned){return Err("File review changed before confirmation".into())}
+    let effect_id=crate::next_id("g-");let tool=if view.removes_original{MOVE_ID}else{COPY_ID};
+    state.wave2_recovery.record_intent(chat,&effect_id,tool,&view.destination_display,&view.target_name,&view.source_sha256,"Model-proposed, separately native-confirmed file transfer")?;
+    checkpoint()?;
+    let observe=progress.dispatch_observer();
+    observe(lu_core::agent_tool_loop::ToolDispatchCheckpoint::Entered);
+    let result=tauri::async_runtime::block_on(reviewed.execute(true,&effect_id,&verifier,&state.effects,&journal,&checkpoint));
+    observe(lu_core::agent_tool_loop::ToolDispatchCheckpoint::Returned);
+    let result=result?.ok_or("No confirmed file receipt")?;
+    let answer=result.present(&mut model,&cancellation,&journal,&state.effects,&checkpoint);
+    *current_step.lock().map_err(|_|"File operation active step unavailable")?=None;
+    complete(answer?)
+}
