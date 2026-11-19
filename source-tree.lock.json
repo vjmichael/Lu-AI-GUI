@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "33c7eddfb30fde5874493d325a098f2dfe46b4ef",
-  "trackedFileCount": 1962,
+  "sourceCommitBeforeLock": "60a3ef5bf5a0bdb2e0772505c070895bd36b22e4",
+  "trackedFileCount": 1973,
   "files": [
     {
       "path": ".gitattributes",
@@ -130,6 +130,10 @@
     {
       "path": ".github/workflows/ide-dev02-python-semantic-candidate-ci.yml",
       "blob": "2de2c7acab5628a20769986ba28dfadc425704a9"
+    },
+    {
+      "path": ".github/workflows/ide-dev02-technical-installed-lsp.yml",
+      "blob": "0b55e5f43dae8ba2544003d5eed5ee142e88e6ec"
     },
     {
       "path": ".github/workflows/ide-dev02-upstream-native-asset-intake.yml",
@@ -1685,7 +1689,7 @@
     },
     {
       "path": "ide/CHANGELOG.md",
-      "blob": "c5976cd198b89163b407feec065ad0938acaa6cb"
+      "blob": "b43f3f9fc2832a4fcddd0bd4e7dde2d4a0da158c"
     },
     {
       "path": "ide/CONTINUITY_PROTOCOL.md",
@@ -1697,7 +1701,7 @@
     },
     {
       "path": "ide/PROJECT_STATE.md",
-      "blob": "87f03f5279c32a838e899d307e4e1de8953a3905"
+      "blob": "de4e4391435b9c1b04a82a2402a613d3c429fdb7"
     },
     {
       "path": "ide/README.md",
@@ -1710,6 +1714,10 @@
     {
       "path": "ide/app/fixtures/Run-DEV01ModernGtkSession.sh",
       "blob": "0d406f4992bcad8950bc59ce1578d29ed7a026df"
+    },
+    {
+      "path": "ide/app/fixtures/Run-DEV02TechnicalGtkSession.sh",
+      "blob": "8a0f37bc60a394d756ce9806ac75d014b23a2e57"
     },
     {
       "path": "ide/app/fixtures/Test-B2InstalledDeb.sh",
@@ -1730,6 +1738,14 @@
     {
       "path": "ide/app/fixtures/Test-DEV01ModernInstalledNsis.ps1",
       "blob": "84ffc0c0ece6bd36966dca5715f090564b6221a1"
+    },
+    {
+      "path": "ide/app/fixtures/Test-DEV02TechnicalInstalledDeb.sh",
+      "blob": "b485652458b6c75c916aaa2bfe5072d96366283a"
+    },
+    {
+      "path": "ide/app/fixtures/Test-DEV02TechnicalInstalledNsis.ps1",
+      "blob": "21c78ad423e52238dee29d8b14673c1e4014749c"
     },
     {
       "path": "ide/app/fixtures/Test-DEV046D-PhysicalHumanConsent.ps1",
@@ -1806,6 +1822,10 @@
     {
       "path": "ide/app/fixtures/dev02_linux_installed_lsp_atspi.py",
       "blob": "f0a0d19d26bf7b5a79f45ad043e88a2a429ed56c"
+    },
+    {
+      "path": "ide/app/fixtures/dev02_technical_installed_linux.py",
+      "blob": "459b6ccee788928e49398a69f89851741be30afd"
     },
     {
       "path": "ide/app/fixtures/dev035_jobs_installed_atspi.py",
@@ -1970,6 +1990,10 @@
     {
       "path": "ide/app/src-tauri/tauri.dev02.linux.conf.json",
       "blob": "daddaf31d959bb5b31e0a736200c408901d4d93b"
+    },
+    {
+      "path": "ide/app/src-tauri/tauri.dev02.technical-only.conf.json",
+      "blob": "31010228b7fac0cd8d0dbf08df074c8aafb94124"
     },
     {
       "path": "ide/app/src-tauri/tauri.dev02.windows.conf.json",
@@ -2585,15 +2609,15 @@
     },
     {
       "path": "ide/ci/merge02-reviewed-native-boundaries.json",
-      "blob": "eb49d5d2a4998268798c3924d83ee92710b684a8"
+      "blob": "edaffd598085a29bc95e73f0c6c1c9d630c23b05"
     },
     {
       "path": "ide/ci/test_verify_reviewed_native_boundaries.py",
-      "blob": "fa43e05f9298f561e99ab52412c6a704eca5b21c"
+      "blob": "4e31e9db503f130255c050bb09fc0bb78f681faf"
     },
     {
       "path": "ide/ci/verify_reviewed_native_boundaries.py",
-      "blob": "0698984bba1258283d63c229d3388c4e24516567"
+      "blob": "552591d3128dc3f2fb883247d4b4d4c187374112"
     },
     {
       "path": "ide/docs/ADR_0001_STANDALONE_APP_AND_LU_BRIDGE.md",
@@ -3708,6 +3732,10 @@
       "blob": "d6fa50a93b379ddb469ac2a9f8d3a14d37817124"
     },
     {
+      "path": "ide/packaging/ide-05b-r3-outside-cohort.json",
+      "blob": "8f2fa3bb2c71ae5f17929613820e589be42bc657"
+    },
+    {
       "path": "ide/packaging/ide-merge02-reviewed-lock-successor.json",
       "blob": "57dc6adb4badf56bf62e116b0c933f7e9518e99b"
     },
@@ -3801,7 +3829,7 @@
     },
     {
       "path": "ide/packaging/p06_live_native_jobs.py",
-      "blob": "88062d3408f51a661c65b02d3cddc9911a7d3ab0"
+      "blob": "f8e92884eb413680cadc349f22c8ae877c013315"
     },
     {
       "path": "ide/packaging/p06_shipping_content.py",
@@ -3892,6 +3920,10 @@
       "blob": "9c29f8264db60bd09c3a2bbb7bb9d4c73f491b22"
     },
     {
+      "path": "ide/packaging/test_ide_05b_r3_workflow_dispositions.py",
+      "blob": "a1b886e82efc3bc7f9d00f9b45d78bd700261a15"
+    },
+    {
       "path": "ide/packaging/test_ide_merge02c_native_locks.py",
       "blob": "2a491717de77283b520e0addc561d9069e34daa0"
     },
@@ -3970,6 +4002,10 @@
     {
       "path": "ide/packaging/test_p06_target_license_scope.py",
       "blob": "8464bccac7a6a4c5f6b91c841054bf7f9255c7ce"
+    },
+    {
+      "path": "ide/packaging/test_p06_technical_observation.py",
+      "blob": "aa7d77fe353625d9395446387489f4274e218e4a"
     },
     {
       "path": "ide/packaging/test_p06_wo8_lock_wiring.py",
@@ -4058,6 +4094,10 @@
     {
       "path": "ide/packaging/test_verify_tauri_minor.py",
       "blob": "b8dbe0adb38735a271c885ea7af511ecd8f1dbff"
+    },
+    {
+      "path": "ide/packaging/test_verify_technical_lsp_install.py",
+      "blob": "a308a188e0ce1ed7cb99bedb14e038d48ddd1143"
     },
     {
       "path": "ide/packaging/test_verify_wo7_candidate.py",
@@ -4254,6 +4294,10 @@
     {
       "path": "ide/packaging/verify_tauri_minor.py",
       "blob": "d179c5981887cec5b43a0e34d1cd33cc6a5bb89c"
+    },
+    {
+      "path": "ide/packaging/verify_technical_lsp_install.py",
+      "blob": "8961a523a8d5542fe9c2c90569e4af55ee22ed48"
     },
     {
       "path": "ide/packaging/verify_wo7_candidate.py",
