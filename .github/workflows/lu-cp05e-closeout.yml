@@ -99,6 +99,8 @@ jobs:
           if($LASTEXITCODE -ne 0){throw 'Native consent identity or hit-proof fixture failed'}
           python -m py_compile scripts/cp05e5-installed-journal.py
           if($LASTEXITCODE -ne 0){throw 'Installed journal oracle syntax error'}
+          python scripts/cp05e5-installed-journal-diagnostics.test.py
+          if($LASTEXITCODE -ne 0){throw 'Installed journal diagnostic regression failed'}
           node --test lu-desktop/tests/p0-installed-gui-smoke.test.mjs
           if($LASTEXITCODE -ne 0){throw 'Original installed GUI contracts changed'}
       - name: Fetch original accepted NSIS ZIP, never rebuild executable
