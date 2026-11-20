@@ -2122,14 +2122,15 @@ async fn lu_cp01_diagnostic_report(app:AppHandle,caller:tauri::WebviewWindow,
     state:State<'_,Arc<DesktopState>>)->Result<Option<diagnostic_archive::ArchiveReport>,String>{
     if !matches!(caller.label(),"main"|"settings"){return Ok(None)}
     let archive=state.perf01.archive().ok_or("Local response diagnostics unavailable")?;
+    let scheduler=state.background_scheduler.clone();
     tauri::async_runtime::spawn_blocking(move||{
         let approved=app.dialog().message(
-            "Prepare a local troubleshooting report? It contains only bounded response checkpoints, timing, failure categories and the latest local sample-check results, not conversations, images, model names or file paths. Nothing is sent anywhere."
+            "Prepare a local troubleshooting report? It contains only bounded response checkpoints, timing, failure categories, scheduled-result counts and the latest local sample-check results, not conversations, images, model names or file paths. Nothing is sent anywhere."
         ).title("Lu — Troubleshooting")
          .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom(
              "Prepare report".into(),"Cancel".into())).blocking_show();
         if !approved{return Ok(None)}
-        archive.report().map(Some)
+        archive.report().map(|report|Some(report.with_scheduled_runs(scheduler.ai_diagnostic_summary())))
     }).await.map_err(|_|"Troubleshooting report unavailable")?
 }
 /// CP-11A: one fixed local health-check suite, always fresh native consent.
@@ -5184,9 +5185,16 @@ fn lu_perf01_recent(
     state.perf01.recent(&chat_id,limit.unwrap_or(8))
 }
 
+#[derive(Serialize)]
+#[serde(untagged)]
+enum TextGenerationResult {
+    Legacy(String),
+    Observed { answer:String, delivery:Option<perf01_telemetry::DeliveryWitness> },
+}
 #[tauri::command]
 async fn lu_generate(
     app: AppHandle,
+    caller:tauri::WebviewWindow,
     state: State<'_, Arc<DesktopState>>,
     session_id: String,
     chat_id: String,
@@ -5196,11 +5204,32 @@ async fn lu_generate(
     read_only_workspace: Option<bool>,
     plan_only: Option<bool>,
     submission_id:Option<String>,
-) -> Result<String, String> {
+    observe_delivery:Option<bool>,
+) -> Result<TextGenerationResult, String> {
     // Compatibility flags are decoded only at the old RPC boundary.
     let mode=turn_coordinator::SendMode::from_legacy(read_only_workspace,plan_only)?;
-    lu_generate_impl(app,state,session_id,chat_id,prompt,image_refs,max_new_tokens,
-        mode,submission_id,None).await
+    if observe_delivery==Some(true) && caller.label()!="main"{return Err("Response confirmation is only available in Chat".into())}
+    let observed=observe_delivery==Some(true)&&image_refs.is_empty()&&submission_id.is_none()&&mode==turn_coordinator::SendMode::Ordinary;
+    let context=observed.then(||(next_id(""),std::time::Instant::now()));
+    let owner=Arc::clone(state.inner());
+    let answer=lu_generate_impl(app,state,session_id,chat_id.clone(),prompt,image_refs,max_new_tokens,
+        mode,submission_id,context.clone()).await?;
+    if observed{
+        let delivery=context.and_then(|(r,_)|owner.perf01.text_delivery(&owner.chats,&chat_id,&r));
+        Ok(TextGenerationResult::Observed{answer,delivery})
+    }else{Ok(TextGenerationResult::Legacy(answer))}
+}
+/// Readback of the original final row and exact ephemeral invocation witness.
+/// An acknowledgement is a renderer report, not a grant or proof of paint.
+#[tauri::command]
+fn lu_text_reply_observed(caller:tauri::WebviewWindow,state:State<'_,Arc<DesktopState>>,
+    chat_id:String,generation_id:String,diagnostic_ref:String,assistant_seq:i64,delivered:bool)->Result<bool,String>{
+    if caller.label()!="main"||assistant_seq<=0||diagnostic_ref.len()!=32||!diagnostic_ref.bytes().all(|b|b.is_ascii_digit()||(b'a'..=b'f').contains(&b)){return Ok(false)}
+    let Some(w)=state.perf01.text_delivery(&state.chats,&chat_id,&diagnostic_ref)else{return Ok(false)};
+    if w.generation_id!=generation_id||w.assistant_seq!=assistant_seq{return Ok(false)}
+    if state.chats.require(&chat_id)?.diagnostic_completed_assistant_seq(&chat_id,&generation_id,None,w.reader)
+        .map_err(|_|"Diagnostic receipt unavailable")?!=Some(assistant_seq){return Ok(false)}
+    Ok(state.perf01.observe_text_reply(&w,delivered))
 }
 
 // The internal diagnostic context is minted only by the native image
@@ -5468,17 +5497,17 @@ async fn lu_generate_impl(
       }
       TurnRoute::Git=>{
         return workspace_desktop::ask_git_for_chat(
-            app,Arc::clone(state.inner()),session_id,chat_id,prompt,
+            app,Arc::clone(state.inner()),session_id,chat_id,prompt,cp01_trace,
         ).await?.ok_or_else(||"Git repository was not selected".into());
       }
       TurnRoute::Reader{exact}=>{
         return reader_desktop::ask_reader_for_chat(
-            app,Arc::clone(state.inner()),session_id,chat_id,prompt,
+            app,Arc::clone(state.inner()),session_id,chat_id,prompt,cp01_trace,
         ).await?.ok_or_else(||if exact {"Reader document was not approved"}else{"Reader document was not selected"}.into());
       }
       TurnRoute::Workspace=>{
         return workspace_desktop::ask_workspace_for_chat(
-            app,Arc::clone(state.inner()),session_id,chat_id,prompt,
+            app,Arc::clone(state.inner()),session_id,chat_id,prompt,cp01_trace,
         ).await?.ok_or_else(||"Workspace folder was not selected".into());
       }
       TurnRoute::Specialist(kind)=>{
@@ -5488,7 +5517,7 @@ async fn lu_generate_impl(
       }
       TurnRoute::Utility(request)=>{
         return core_utility_desktop::ask_utility_for_chat(
-            app,Arc::clone(state.inner()),session_id,chat_id,prompt,request
+            app,Arc::clone(state.inner()),session_id,chat_id,prompt,request,cp01_trace
         ).await;
       }
       TurnRoute::Model=>{}
@@ -6476,7 +6505,7 @@ async fn generate_internal(
                         let _=supervisor.invalidate_prefix_cache(&sid);
                     }
                     saved?;
-                    perf_trace.causal_checkpoint(CausalCheckpoint::AssistantSaved);
+                    perf_trace.causal_saved_response(&state.chats,&chat_id,&gid,&answer);
                     if has_images{perf_trace.image_stage("ORIGINAL_RESPONSE_SAVED");}
                     if plan_only{
                         let result=plan_source.as_ref()
@@ -6670,6 +6699,7 @@ async fn generate_internal(
             Err(e) if e.contains("Cancelled") || e.contains("Canceled") => "cancelled",
             Err(_) => "failed",
         };
+        if ticket.cancelled(){perf_trace.causal_cancelled();}
         let observed_engine_starts_after=state.engine_start_events.load(Ordering::Relaxed);
         if has_images{perf_trace.finalize_image_outcome(phase);}
         let _=state.perf01.record(perf_trace
@@ -10174,6 +10204,7 @@ pub fn run() {
             lu_native_route_catalog,
             lu_perf01_recent,
             lu_cp01_reply_observed,
+            lu_text_reply_observed,
             lu_cp01_diagnostic_report,
             lu_run_local_checks,
             lu_run_model_checks,

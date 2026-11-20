@@ -39,6 +39,13 @@ pub(crate) struct ArchiveReport{
     // Additive local-check summary under the existing explicit native consent.
     active_check:Option<CheckReport>,
     active_check_unavailable:bool,
+    scheduled_runs:Option<lu_core::native_background_scheduler::ScheduledDiagnosticSummary>,
+    scheduled_runs_unavailable:bool,
+}
+impl ArchiveReport {
+    pub fn with_scheduled_runs(mut self,summary:Result<lu_core::native_background_scheduler::ScheduledDiagnosticSummary,lu_core::native_background_scheduler::SchedulerError>)->Self {
+        self.scheduled_runs_unavailable=summary.is_err();self.scheduled_runs=summary.ok();self
+    }
 }
 impl DiagnosticArchive{
     // Called only after process-exclusive DesktopOwner acquisition.
@@ -163,10 +170,10 @@ impl DiagnosticArchive{
         for row in rows{
             let Ok((key,body,state))=row else{unavailable_records+=1;continue};
             let Ok(mut trace)=decode_diagnostic_trace(&body) else{unavailable_records+=1;continue};
-            let terminal=trace.events.last().is_some_and(|e|e.stage==13||matches!(e.outcome,3..=5)||
-                (e.stage==12 && trace.events.iter().any(|v|v.stage==6&&v.outcome==2)));
+            let terminal=trace.events.last().is_some_and(|e|e.stage==13||matches!(e.outcome,3..=5));
+            let legacy_saved=trace.events.last().is_some_and(|e|e.stage==12 && trace.events.iter().any(|v|v.stage==6&&v.outcome==2));
             if trace.trace_ref!=key||!matches!(state.as_str(),"sealed"|"live"|"recovered")||
-                (state=="sealed")!=terminal{
+                (state=="sealed" && !terminal && !legacy_saved)||(state!="sealed" && terminal){
                 unavailable_records+=1;continue
             }
             let recording_state=match state.as_str(){
@@ -182,7 +189,7 @@ impl DiagnosticArchive{
         let checked=Self::read_active_check(&conn);
         let active_check_unavailable=checked.is_err();
         Ok(ArchiveReport{schema:"lu.dx.cp01.local-report.v1",findings,unavailable_records,
-            active_check:checked.ok().flatten(),active_check_unavailable})
+            active_check:checked.ok().flatten(),active_check_unavailable,scheduled_runs:None,scheduled_runs_unavailable:false})
     }
 }
 /// Only fixed host vocabulary; never echo exception text, filenames or IDs.
@@ -192,7 +199,7 @@ fn plain_finding(f:&DiagnosticFinding)->(&'static str,&'static str){
     if f.evidence_strength==Complete{return ("Lu confirmed the response was saved and reported displayed.","No action needed for delivery. This does not verify the answer's accuracy.")}
     match (f.failure_code,f.fault_region,f.confirmed_until) {
         ("authority_denied",_,_) => ("The request was not authorized.","Review the requested permission if you want to try again."),
-        ("cancelled",_,_) => ("The request was stopped.","Check the saved conversation before retrying."),
+        ("cancelled",_,_) => ("A stop was requested. Lu did not independently confirm worker exit.","Check the saved conversation before retrying."),
         ("backend_unavailable",_,_) => ("The loaded model could not complete the request.","Check that the model is loaded and available."),
         ("protocol",_,_) => ("Lu could not verify the model's structured response.","Try a clearer request or a model that supports the operation."),
         ("persistence",_,_) => ("Lu could not confirm a required saved record.","Check the conversation and available storage before trying again."),
@@ -254,6 +261,26 @@ mod tests{
             lu_core::diagnostic_localization::EvidenceStrength::InsufficientEvidence);
         drop(reopened);
         std::fs::remove_file(path).unwrap();
+    }
+    #[test]
+    fn cp12ar1_cancellation_and_abrupt_recovery_never_claim_worker_exit_or_layout(){
+        use lu_core::diagnostic_localization::EvidenceStrength;
+        let path=std::env::temp_dir().join(format!("lu-cp12a-recover-{}-{}.sqlite",std::process::id(),rand::random::<u64>()));
+        let archive=DiagnosticArchive::open(&path).unwrap();
+        let mut cancelled=trace("0123456789abcdef0123456789abcdef");
+        for cp in [Checkpoint::SessionReady,Checkpoint::UserSaved,Checkpoint::WorkerEntered,Checkpoint::SavedAttested,Checkpoint::ModelEntered]{assert!(cancelled.observe(cp));}
+        cancelled.observed_cancel();assert!(archive.persist(&cancelled));
+        assert!(!cancelled.observations().iter().any(|e|matches!(e.stage,17|18|13)));
+        let r=archive.report().unwrap();assert_eq!(r.findings[0].finding.failure_code,"cancelled");assert_eq!(r.findings[0].finding.evidence_strength,EvidenceStrength::ObservedFailure);
+        let mut pending=trace("fedcba9876543210fedcba9876543210").awaiting_delivery();
+        for cp in [Checkpoint::SessionReady,Checkpoint::UserSaved,Checkpoint::WorkerEntered,Checkpoint::SavedAttested,Checkpoint::TaskAuthorized,Checkpoint::ModelEntered,Checkpoint::ModelReturned,Checkpoint::AssistantSaved]{assert!(pending.observe(cp));}
+        assert!(archive.persist(&pending));assert!(!pending.terminal());
+        drop(archive);
+        let archive=DiagnosticArchive::open(&path).unwrap();
+        assert!(pending.observe(Checkpoint::ReplyObserved));assert!(!archive.persist(&pending));
+        let r=archive.report().unwrap();assert_eq!(r.unavailable_records,0);assert_eq!(r.findings[0].recording_state,"recovered_incomplete");assert_eq!(r.findings[0].finding.evidence_strength,EvidenceStrength::InsufficientEvidence);
+        assert_eq!(r.findings[1].finding.failure_code,"cancelled");
+        drop(archive);std::fs::remove_file(path).unwrap();
     }
     #[test]
     fn storage_is_bounded_and_corrupt_row_is_not_reported_as_success(){

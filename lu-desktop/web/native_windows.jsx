@@ -820,6 +820,12 @@ export function SettingsWindow({onNavigate,active=true}={}){
             {troubleshooting&&<div role="status">
               {troubleshooting.findings?.length===0&&<p>No recent response records are available.</p>}
               {troubleshooting.findings?.slice(0,8).map((item,index)=><div key={index}><strong>{item.explanation}</strong><p>{item.suggestion}</p></div>)}
+              {troubleshooting.scheduledRuns&&<div><strong>Scheduled tasks</strong>
+                <p>{troubleshooting.scheduledRuns.savedText} saved responses; {troubleshooting.scheduledRuns.readerResultMatches} results match their saved source receipts. A saved response is not proof of accuracy.</p>
+                <p>{troubleshooting.scheduledRuns.failed} failed, {troubleshooting.scheduledRuns.stopped} stopped, {troubleshooting.scheduledRuns.interrupted} interrupted and {troubleshooting.scheduledRuns.running} in progress.</p>
+                {troubleshooting.scheduledRuns.unavailable>0&&<p>Some scheduled results could not be confirmed.</p>}
+              </div>}
+              {troubleshooting.scheduledRunsUnavailable&&<p>Scheduled task records could not be checked.</p>}
               {troubleshooting.unavailableRecords>0&&<p>Some records could not be confirmed.</p>}
             </div>}
             <button type="button" disabled={busy} onClick={()=>void act('Troubleshooting report copied. Share only if you choose.',async()=>{

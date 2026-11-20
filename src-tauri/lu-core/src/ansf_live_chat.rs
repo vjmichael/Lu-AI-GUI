@@ -703,14 +703,20 @@ impl AnsfStore{
     /// reply and completion marker must agree; this never creates authority.
     pub fn diagnostic_native_response_matches(&self,session_id:&str,turn_id:&str,
         expected:&str,reader:bool)->Result<bool,AnsfError>{
-        if !valid_session(session_id)||!opaque(turn_id,"g-")||expected.is_empty(){return Ok(false)}
+        Ok(self.diagnostic_completed_assistant_seq(session_id,turn_id,Some(expected),reader)?.is_some())
+    }
+    /// Correlate a saved response to the exact original host turn for passive
+    /// delivery acknowledgement. None means the row was not proven final.
+    pub fn diagnostic_completed_assistant_seq(&self,session_id:&str,turn_id:&str,
+        expected:Option<&str>,reader:bool)->Result<Option<i64>,AnsfError>{
+        if !valid_session(session_id)||!opaque(turn_id,"g-")||expected==Some(""){return Ok(None)}
         let conn=self.conn.lock().map_err(|_|AnsfError::Locked)?;
-        let matched:bool=conn.query_row(
-            "SELECT EXISTS(SELECT 1 FROM ansf_visible_chat d
+        conn.query_row(
+            "SELECT d.first_seq FROM ansf_visible_chat d
               JOIN ansf_live_chat_events e ON e.seq=d.latest_event_seq
                 AND e.session_id=d.session_id AND e.generation_id=d.generation_id
               WHERE d.session_id=?1 AND d.generation_id=?2 AND d.role='assistant'
-                AND d.status='final' AND e.kind='assistant_progress' AND e.origin='host' AND e.text=?3
+                AND d.status='final' AND e.kind='assistant_progress' AND e.origin='host' AND length(e.text)>0 AND (?3 IS NULL OR e.text=?3)
                 AND EXISTS(SELECT 1 FROM ansf_live_chat_events u WHERE u.session_id=d.session_id
                   AND u.origin='host' AND u.seq<d.first_seq AND
                   ((?4 AND u.kind='reader_user' AND u.generation_id=?2) OR
@@ -718,9 +724,8 @@ impl AnsfStore{
                 AND EXISTS(SELECT 1 FROM ansf_live_chat_events c WHERE c.session_id=d.session_id
                   AND c.generation_id=?2 AND c.kind='assistant_completed' AND c.origin='host' AND c.seq>e.seq)
                 AND NOT EXISTS(SELECT 1 FROM ansf_live_chat_events x WHERE x.session_id=d.session_id
-                  AND x.generation_id=?2 AND x.kind='assistant_cancelled'))",
-            params![session_id,turn_id,expected,reader],|r|r.get(0))?;
-        Ok(matched)
+                  AND x.generation_id=?2 AND x.kind='assistant_cancelled')",
+            params![session_id,turn_id,expected,reader],|r|r.get(0)).optional().map_err(Into::into)
     }
     /// Indexed latest human-origin authenticated user turn. No imported,
     /// unauthenticated or Reader event ever appears in this result.
@@ -1027,6 +1032,11 @@ mod tests{
         assert!(!store.diagnostic_native_response_matches("c-reader",&gid,"original",true).unwrap());
         store.append_host_chat_event("c-reader",&event(4,LiveKind::AssistantCompleted,"",None,Some(3))).unwrap();
         assert!(store.diagnostic_native_response_matches("c-reader",&gid,"original",true).unwrap());
+        let seq=store.diagnostic_completed_assistant_seq("c-reader",&gid,Some("original"),true).unwrap();
+        assert!(seq.is_some());
+        assert_eq!(store.diagnostic_completed_assistant_seq("c-reader",&gid,None,true).unwrap(),seq);
+        assert!(store.diagnostic_completed_assistant_seq("c-reader",&gid,None,false).unwrap().is_none());
+        assert!(store.diagnostic_completed_assistant_seq("c-other",&gid,None,true).unwrap().is_none());
         assert!(!store.diagnostic_native_response_matches("c-reader",&gid,"other",true).unwrap());
         assert!(!store.diagnostic_native_response_matches("c-reader",&gid,"original",false).unwrap());
         assert!(!store.diagnostic_native_response_matches("c-reader",&format!("g-{:032x}",4),"original",true).unwrap());

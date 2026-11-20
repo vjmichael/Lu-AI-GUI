@@ -168,15 +168,15 @@ pub(crate) async fn lu_reader_ask_document(
     chat_id:String,
     prompt:String,
 )->Result<Option<String>,String>{
-    ask_reader_for_chat(app,Arc::clone(state.inner()),session_id,chat_id,prompt).await
+    ask_reader_for_chat(app,Arc::clone(state.inner()),session_id,chat_id,prompt,None).await
 }
 /// Shared by normal Send and the separate Ask Reader action. The OS picker
 /// and verified source bytes remain mandatory regardless of entrypoint.
 pub(crate) async fn ask_reader_for_chat(
     app:AppHandle,state:Arc<DesktopState>,session_id:String,
-    chat_id:String,prompt:String,
+    chat_id:String,prompt:String,diagnostic:Option<(String,std::time::Instant)>,
 )->Result<Option<String>,String>{
-    let trace=NativeDiagnosticTrace::new(&state);
+    let trace=NativeDiagnosticTrace::correlated(&state,diagnostic);
     if prompt.trim().is_empty()||prompt.len()>8*1024{
         return Err("Reader question must be 1–8192 bytes".into())
     }
@@ -360,7 +360,7 @@ fn execute_approved_reader(event_app:&AppHandle,host:&Arc<DesktopState>,session_
             })?;
             // Independently read the ORIGINAL saved completion. This is not
             // a renderer paint witness or an accuracy claim.
-            trace.saved_response(&host.chats,&chat_id,&gid,&answer,!negotiated);
+            trace.saved_response(&host,&chat_id,&gid,&answer,!negotiated);
             // Only a completed native Reader run with an actual successful
             // tool call may seed future metadata-only re-identification.
             host.source_reuse.remember_verified(

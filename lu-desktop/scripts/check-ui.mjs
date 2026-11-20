@@ -145,7 +145,7 @@ const tests = [
     workspaceHost.includes('blocking_pick_folder()') &&
     workspaceHost.includes('ApprovedWorkspace::hold(path)') && workspaceHost.includes('blocking_show()') &&
     /enqueue_with_class_committing\(&session_id,&chat_id,&generation_id,TurnClass::Foreground,\s*\|\|state\.chats\.append_user_with_turn_id\(&chat_id,&generation_id,&prompt\)\)\?/.test(workspaceHost) &&
-    workspaceHost.includes('ask_scoped_read_for_chat(app,state,session_id,chat_id,prompt,false).await')],
+    workspaceHost.includes('ask_scoped_read_for_chat(app,state,session_id,chat_id,prompt,false,diagnostic).await')],
   ['native GGUF import and generate remain Lu-only', ui.includes("invoke('lu_import_model')") && ui.includes("invoke('lu_generate'")],
   ['no Jan execution paths introduced', !/jan_llama|JanInference|jan-cowork/.test(ui + host)],
   ['new chats and conversation history are host-owned', ui.includes("invoke('lu_new_chat')") && ui.includes("invoke('lu_chats')") && host.includes('fn lu_new_chat(')],
@@ -159,8 +159,8 @@ const tests = [
   ['submitted draft clears only on exact saved receipt or successful text reply; rejected/uncertain draft is retained',
     send.includes('const snapshot=snapshotDraft(readComposerDraft(origin));') &&
     send.includes('writeComposerDraft(activeId,clearSubmittedDraft(readComposerDraft(activeId),snapshot))') &&
-    send.includes("if(typeof output!=='string')throw Error(") &&
-    send.indexOf("if(typeof output!=='string')throw Error(") < send.indexOf("writeComposerDraft(activeId,clearSubmittedDraft(readComposerDraft(activeId),snapshot))") &&
+    send.includes("if(typeof output?.answer!=='string')throw Error(") &&
+    send.indexOf("if(typeof output?.answer!=='string')throw Error(") < send.indexOf("writeComposerDraft(activeId,clearSubmittedDraft(readComposerDraft(activeId),snapshot))") &&
     imageAdmission.includes("if(receiptDecision(attempt,receipt)!=='saved')return false;") &&
     imageAdmission.includes('writeComposerDraft(target,clearSubmittedDraft(old,attempt.snapshot))') &&
     lifecycle.includes("if(!sameSubmittedDraft(current,original))return current;") &&

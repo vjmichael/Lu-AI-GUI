@@ -83,9 +83,9 @@ fn parse_core_utility_request(text:&str,negotiated:bool)->Option<CoreUtilityRequ
 }
 pub(crate) async fn ask_utility_for_chat(
     app:AppHandle,state:Arc<DesktopState>,session_id:String,
-    chat_id:String,prompt:String,request:CoreUtilityRequest,
+    chat_id:String,prompt:String,request:CoreUtilityRequest,diagnostic:Option<(String,std::time::Instant)>,
 )->Result<String,String>{
-    let trace=NativeDiagnosticTrace::new(&state);
+    let trace=NativeDiagnosticTrace::correlated(&state,diagnostic);
     // Recompute from the SAME original human bytes. No frontend-selected
     // utility ID or privately constructed request is authoritative.
     let canonical=explicit_core_utility_request(&prompt)
@@ -240,7 +240,7 @@ fn execute_approved_utility(event_app:&AppHandle,host:&Arc<DesktopState>,session
                 host.chats.append_progress(&chat_id,&gid,&result.answer)?;
                 host.chats.complete(&chat_id,&gid)
             })?;
-            trace.saved_response(&host.chats,&chat_id,&gid,&result.answer,false);
+            trace.saved_response(&host,&chat_id,&gid,&result.answer,false);
             Ok(result.answer)
 }
 

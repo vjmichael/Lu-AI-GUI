@@ -109,9 +109,18 @@ fn base(chat_id:&str,generation_id:&str,route:&str,reason_code:&str,
         cache_scope_admitted:None,
     }
 }
+#[derive(Clone,Debug,Serialize,PartialEq,Eq)]
+#[serde(rename_all="camelCase")]
+pub(crate) struct DeliveryWitness {
+    pub chat_id:String,pub generation_id:String,pub diagnostic_ref:String,
+    pub assistant_seq:i64,
+    #[serde(skip)] pub reader:bool,
+}
+struct NativeDelivery { witness:DeliveryWitness, trace:CausalProgress }
 #[derive(Default)]
 pub(crate) struct PerfLedger {
     recent:Mutex<VecDeque<PerfReceipt>>,
+    native_delivery:Mutex<VecDeque<NativeDelivery>>,
     archive:Option<Arc<DiagnosticArchive>>,
 }
 impl PerfLedger{
@@ -137,6 +146,33 @@ impl PerfLedger{
         let q=self.recent.lock().ok()?;
         q.iter().rev().find(|row|row.chat_id==chat_id&&row.generation_id==generation_id
             &&row.cp01_trace.as_ref().is_some_and(|t|t.trace_ref()==trace_ref)).cloned()
+    }
+    pub fn offer_native_delivery(&self,chat:&str,gid:&str,seq:i64,reader:bool,trace:CausalProgress){
+        if seq<=0||!trace.saved(){return}
+        if let Ok(mut q)=self.native_delivery.try_lock(){
+            let witness=DeliveryWitness{chat_id:chat.into(),generation_id:gid.into(),diagnostic_ref:trace.trace_ref().into(),assistant_seq:seq,reader};
+            if q.iter().any(|r|r.witness.diagnostic_ref==witness.diagnostic_ref){return}
+            q.push_back(NativeDelivery{witness,trace});
+            while q.len()>64{q.pop_front();}
+        }
+    }
+    pub fn text_delivery(&self,chats:&crate::chat_store::ChatStore,chat:&str,reference:&str)->Option<DeliveryWitness>{
+        if let Some(w)=self.native_delivery.try_lock().ok().and_then(|q|q.iter().find(|r|r.witness.chat_id==chat&&r.witness.diagnostic_ref==reference).map(|r|r.witness.clone())){return Some(w)}
+        let gid=self.recent.try_lock().ok()?.iter().find(|r|r.chat_id==chat&&r.terminal_state=="COMPLETED"&&r.cp01_trace.as_ref().is_some_and(|t|t.trace_ref()==reference&&t.saved()))?.generation_id.clone();
+        let seq=chats.require(chat).ok()?.diagnostic_completed_assistant_seq(chat,&gid,None,false).ok().flatten()?;
+        Some(DeliveryWitness{chat_id:chat.into(),generation_id:gid,diagnostic_ref:reference.into(),assistant_seq:seq,reader:false})
+    }
+    pub fn observe_text_reply(&self,witness:&DeliveryWitness,delivered:bool)->bool{
+        if let Ok(mut q)=self.native_delivery.try_lock(){
+            if let Some(row)=q.iter_mut().find(|r|&r.witness==witness){
+                return record_text_ack(&mut row.trace,self.archive.as_deref(),delivered);
+            }
+        }
+        let Ok(mut q)=self.recent.try_lock() else{return false};
+        let Some(row)=q.iter_mut().find(|r|r.chat_id==witness.chat_id&&r.generation_id==witness.generation_id&&r.terminal_state=="COMPLETED"&&r.cp01_trace.as_ref().is_some_and(|t|t.trace_ref()==witness.diagnostic_ref))else{return false};
+        let Some(trace)=row.cp01_trace.as_mut()else{return false};
+        let ok=record_text_ack(trace,self.archive.as_deref(),delivered);
+        row.refresh_cp01_finding();ok
     }
     // Reports are observational only. Never let a stale attempt mutate a
     // newer row, and never block inference/cancellation on telemetry.
@@ -166,6 +202,12 @@ impl PerfLedger{
         Ok(q.iter().rev().filter(|v|v.chat_id==chat_id)
             .take(limit).cloned().collect())
     }
+}
+fn record_text_ack(trace:&mut CausalProgress,archive:Option<&DiagnosticArchive>,delivered:bool)->bool{
+    if !trace.saved() || (delivered&&!trace.reply_seen()){return false}
+    let accepted=if delivered{trace.observe(Checkpoint::StreamClosed)&&trace.observe(Checkpoint::AssistantRendered)}else{trace.observe(Checkpoint::ReplyObserved)};
+    if let Some(archive)=archive{if !archive.persist(trace){trace.mark_lost();return false}}
+    accepted
 }
 pub(crate) fn cpu_receipt(
     chat_id:&str,generation_id:&str,reason_code:&str,
@@ -232,6 +274,15 @@ impl ModelTrace{
         // SessionReady/UserSaved occur inside the attachment admission gate.
         // Flush directly after releasing the gate.
         if !matches!(stage,Checkpoint::SessionReady|Checkpoint::UserSaved){self.persist_cp01();}
+    }
+    pub fn causal_cancelled(&mut self){
+        if let Some(trace)=self.row.cp01_trace.as_mut(){trace.observed_cancel();}
+        self.persist_cp01();
+    }
+    pub fn causal_saved_response(&mut self,chats:&crate::chat_store::ChatStore,chat:&str,gid:&str,answer:&str){
+        if self.row.cp01_trace.is_none(){return}
+        if chats.require(chat).ok().and_then(|book|book.diagnostic_completed_assistant_seq(chat,gid,Some(answer),false).ok().flatten()).is_some(){self.causal_checkpoint(Checkpoint::AssistantSaved)}
+        else if let Some(trace)=self.row.cp01_trace.as_mut(){trace.mark_lost();self.persist_cp01();}
     }
     pub fn causal_model_failed(&mut self){
         if let Some(trace)=self.row.cp01_trace.as_mut(){trace.model_failed();}
@@ -327,6 +378,27 @@ impl ModelTrace{
 #[cfg(test)]
 mod tests{
     use super::*;
+    #[test]
+    fn cp12ar1_native_delivery_is_exact_and_requires_prior_reply() {
+        use lu_core::agent_tool_loop::ToolDispatchCheckpoint::*;
+        let archive=Arc::new(DiagnosticArchive::open(std::path::Path::new(":memory:")).unwrap());
+        let ledger=PerfLedger::with_archive(Some(archive.clone()));
+        let mut trace=CausalProgress::new("123456789abcdef0123456789abcdef0".into(),Instant::now()).awaiting_delivery();
+        for cp in [Checkpoint::SessionReady,Checkpoint::UserSaved,Checkpoint::WorkerEntered,Checkpoint::SavedAttested,Checkpoint::TaskAuthorized,Checkpoint::ModelEntered]{assert!(trace.observe(cp));}
+        trace.tool_checkpoint(Entered);trace.tool_checkpoint(Returned);trace.tool_checkpoint(FeedbackAudited);
+        assert!(trace.observe(Checkpoint::ModelReturned));assert!(trace.observe(Checkpoint::AssistantSaved));
+        assert!(archive.persist(&trace));assert!(!trace.terminal());
+        let witness=DeliveryWitness{chat_id:"private-chat".into(),generation_id:"private-generation".into(),diagnostic_ref:trace.trace_ref().into(),assistant_seq:42,reader:true};
+        ledger.offer_native_delivery(&witness.chat_id,&witness.generation_id,42,true,trace);
+        assert!(!ledger.observe_text_reply(&witness,true));
+        for wrong in [DeliveryWitness{assistant_seq:43,..witness.clone()},DeliveryWitness{reader:false,..witness.clone()},DeliveryWitness{chat_id:"other".into(),..witness.clone()},DeliveryWitness{generation_id:"old".into(),..witness.clone()}]{assert!(!ledger.observe_text_reply(&wrong,false));}
+        assert!(ledger.observe_text_reply(&witness,false));
+        assert!(ledger.observe_text_reply(&witness,true));assert!(ledger.observe_text_reply(&witness,true));
+        let report=serde_json::to_value(archive.report().unwrap()).unwrap();
+        assert_eq!(report["findings"][0]["recordingState"],"sealed");
+        assert_eq!(report["findings"][0]["finding"]["evidenceStrength"],"complete");
+        for value in [&witness.chat_id,&witness.generation_id,&witness.diagnostic_ref]{assert!(!report.to_string().contains(value));}
+    }
     #[test]
     fn cp01_exact_attempt_delivery_persists_only_sanitized_findings(){
         let archive=Arc::new(DiagnosticArchive::open(std::path::Path::new(":memory:")).unwrap());

@@ -46,13 +46,14 @@ pub(crate) struct CausalProgress {
     // never advance it. 0=idle, 1=dispatch entered, 2=returned but not audited.
     cursor: usize,
     tool_phase: u8,
+    await_delivery: bool,
 }
 
 impl CausalProgress {
     pub fn new(trace_ref: String, started: Instant) -> Self {
         let mut trace = Self {
             trace_ref, started, observations: Vec::with_capacity(ORDER.len()),
-            dropped: 0, failed: false, cursor: 1, tool_phase: 0,
+            dropped: 0, failed: false, cursor: 1, tool_phase: 0, await_delivery:false,
         };
         // The trusted native wrapper minted the reference at its entry.
         trace.observations.push(Observation {
@@ -69,9 +70,18 @@ impl CausalProgress {
     pub fn terminal(&self) -> bool {
         self.failed || self.observations.last().is_some_and(|e|
             e.stage == Checkpoint::AssistantRendered as i32 ||
-            (e.stage == Checkpoint::AssistantSaved as i32 && self.has_tool_authority()))
+            (e.stage == Checkpoint::AssistantSaved as i32 && self.has_tool_authority() && !self.await_delivery))
     }
 
+    pub fn awaiting_delivery(mut self)->Self { self.await_delivery=true; self }
+    pub fn saved(&self)->bool { !self.failed && self.cursor>=8 && self.observations.iter().any(|e|e.stage==12&&e.outcome==2) }
+    pub fn reply_seen(&self)->bool { self.observations.iter().any(|e|e.stage==10&&e.outcome==2) }
+    /// A real queue/control cancellation proves the request was fenced, not
+    /// worker exit or rollback. Avoid synthesizing either downstream event.
+    pub fn observed_cancel(&mut self) {
+        if self.terminal()||self.saved(){return}
+        self.append(16,4,9); self.failed=true;
+    }
     fn has_tool_authority(&self)->bool { self.observations.iter().any(|e|e.stage==6) }
 
     fn append(&mut self, stage: i32, outcome: i32, failure_code: i32) {
@@ -143,7 +153,7 @@ impl CausalProgress {
     /// Generic failure/cancellation with no independently observed cause.
     /// Mark evidence incomplete; never infer worker termination or rollback.
     pub fn finish_incomplete(&mut self, cancelled: bool) {
-        if self.terminal() { return; }
+        if self.terminal() || self.saved() { return; }
         self.dropped = self.dropped.saturating_add(1);
         self.append(21, if cancelled { 4 } else { 3 }, if cancelled { 9 } else { 1 });
         self.failed = true;
@@ -155,10 +165,18 @@ impl CausalProgress {
 pub(crate) struct NativeDiagnosticTrace {
     trace:Mutex<CausalProgress>,
     archive:Option<Arc<crate::diagnostic_archive::DiagnosticArchive>>,
+    correlated:bool,
 }
 impl NativeDiagnosticTrace {
     pub fn new(host:&crate::DesktopState)->Self {
-        let this=Self{trace:Mutex::new(CausalProgress::new(crate::next_id(""),std::time::Instant::now())),archive:host.perf01.archive()};
+        Self::correlated(host,None)
+    }
+    pub fn correlated(host:&crate::DesktopState,context:Option<(String,Instant)>)->Self {
+        let correlated=context.is_some();
+        let (reference,started)=context.unwrap_or_else(||(crate::next_id(""),Instant::now()));
+        let trace=CausalProgress::new(reference,started);
+        let trace=if correlated{trace.awaiting_delivery()}else{trace};
+        let this=Self{trace:Mutex::new(trace),archive:host.perf01.archive(),correlated};
         this.record(|_|{});this
     }
     pub fn record(&self,apply:impl FnOnce(&mut CausalProgress)) {
@@ -170,9 +188,17 @@ impl NativeDiagnosticTrace {
     pub fn point(&self,point:Checkpoint){self.record(|t|{t.observe(point);});}
     pub fn decline(&self){self.record(|t|t.human_declined());}
     pub fn lost(&self){self.record(|t|t.mark_lost());}
-    pub fn incomplete(&self,cancelled:bool){self.record(|t|t.finish_incomplete(cancelled));}
-    pub fn saved_response(&self,chats:&crate::chat_store::ChatStore,chat:&str,gid:&str,answer:&str,reader:bool){
-        if chats.require(chat).ok().and_then(|book|book.diagnostic_native_response_matches(chat,gid,answer,reader).ok())==Some(true){self.point(Checkpoint::AssistantSaved)}else{self.lost()}
+    pub fn incomplete(&self,cancelled:bool){self.record(|t|if cancelled{t.observed_cancel()}else{t.finish_incomplete(false)});}
+    pub fn saved_response(&self,host:&crate::DesktopState,chat:&str,gid:&str,answer:&str,reader:bool){
+        let seq=host.chats.require(chat).ok().and_then(|book|book.diagnostic_completed_assistant_seq(chat,gid,Some(answer),reader).ok().flatten());
+        if let Some(seq)=seq {
+            self.point(Checkpoint::AssistantSaved);
+            if self.correlated {
+                if let Ok(trace)=self.trace.lock(){
+                    if trace.saved(){host.perf01.offer_native_delivery(chat,gid,seq,reader,trace.clone());}
+                }
+            }
+        }else{self.lost()}
     }
     pub fn model_error(&self,error:&lu_core::supervised_tool_generation::NativeGenerationError)->&'static str{
         let (code,message)=native_failure(error);

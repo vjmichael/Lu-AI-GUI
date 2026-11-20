@@ -2536,10 +2536,12 @@ function App() {
       if(!deliveryCandidate({witness,chatId,activeTab,currentChat:currentChat.current,
           job:visibleJob,entries:displayedHistory,hasCommittedNode}))continue;
       pendingDelivery.current.delete(ref);
-      const {replyReceipt,...delivery}=witness;
-      // One asynchronous acknowledgment follows the earlier reply receipt;
-      // no additional user submission or model request is issued.
-      void Promise.resolve(replyReceipt).then(()=>invoke('lu_cp01_reply_observed',delivery)).catch(()=>false);
+      const {replyReceipt,textDelivery,...delivery}=witness;
+      // The exact original IPC reply precedes the React layout report.
+      // A failed text receipt cannot be promoted to displayed.
+      void Promise.resolve(replyReceipt).then(ok=>textDelivery
+        ?(ok===true?invoke('lu_text_reply_observed',{...delivery,delivered:true}):false)
+        :invoke('lu_cp01_reply_observed',delivery)).catch(()=>false);
     }
   });
   useLayoutEffect(() => {
@@ -4395,8 +4397,14 @@ function App() {
     let completed=false;
     try{
       const output=await invoke('lu_generate',{sessionId:runtime.sessionId??'',chatId:activeId,
-        prompt:submitted,imageRefs:[],maxNewTokens:512});
-      if(typeof output!=='string')throw Error('Lu did not return a text response');
+        prompt:submitted,imageRefs:[],maxNewTokens:512,observeDelivery:true});
+      if(typeof output?.answer!=='string')throw Error('Lu did not return a text response');
+      const w=output.delivery;
+      if(w?.chatId===activeId&&typeof w.diagnosticRef==='string'&&Number.isSafeInteger(w.assistantSeq)&&w.assistantSeq>0){
+        const replyReceipt=invoke('lu_text_reply_observed',{...w,delivered:false}).catch(()=>false);
+        pendingDelivery.current.set(w.diagnosticRef,{...w,textDelivery:true,replyReceipt});
+        while(pendingDelivery.current.size>64)pendingDelivery.current.delete(pendingDelivery.current.keys().next().value);
+      }
       completed=true;
       writeComposerDraft(activeId,clearSubmittedDraft(readComposerDraft(activeId),snapshot));
     }catch(error){

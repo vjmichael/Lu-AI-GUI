@@ -35,6 +35,19 @@ pub struct AiRun {
     pub output: String,
     pub reader_receipt: Option<ReaderReceipt>,
 }
+/// Bounded, content-free diagnostics from the original scheduler journal.
+/// A completed text-only occurrence proves a saved result, not its accuracy.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScheduledDiagnosticSummary {
+    pub running:u32,
+    pub saved_text:u32,
+    pub reader_result_matches:u32,
+    pub failed:u32,
+    pub stopped:u32,
+    pub interrupted:u32,
+    pub unavailable:u32,
+}
 fn decode_schedule(r: &rusqlite::Row<'_>) -> rusqlite::Result<AiSchedule> {
     Ok(AiSchedule {
         id: r.get(0)?,
@@ -614,6 +627,34 @@ impl BackgroundScheduler {
         let rows = q.query_map([], decode_schedule).map_err(db_error)?;
         rows.collect::<Result<Vec<_>, _>>().map_err(db_error)
     }
+    /// One read-only bounded snapshot; no content, identity, permission or
+    /// inference is returned or acquired by this diagnostic operation.
+    pub fn ai_diagnostic_summary(&self) -> Result<ScheduledDiagnosticSummary,SchedulerError> {
+        let g=self.inner.lock().map_err(|_|SchedulerError::Poisoned)?;
+        let mut stmt=g.db.prepare("SELECT r.state, r.finished IS NOT NULL, length(r.output)>0,
+            t.sequence IS NOT NULL, COALESCE(r.output=t.verified_text,0),
+            (EXISTS(SELECT 1 FROM lu_ai_reader_grants f WHERE f.schedule_id=s.id) OR
+             EXISTS(SELECT 1 FROM lu_ai_live_grants l WHERE l.schedule_id=s.id))
+            FROM lu_ai_runs r JOIN lu_ai_schedules s ON s.id=r.schedule_id
+            LEFT JOIN lu_ai_reader_receipts t ON t.schedule_id=r.schedule_id AND t.sequence=r.sequence
+            ORDER BY r.started DESC LIMIT 2049").map_err(db_error)?;
+        let rows=stmt.query_map([],|r|Ok((r.get::<_,String>(0)?,r.get::<_,bool>(1)?,r.get::<_,bool>(2)?,r.get::<_,bool>(3)?,r.get::<_,bool>(4)?,r.get::<_,bool>(5)?))).map_err(db_error)?;
+        let mut report=ScheduledDiagnosticSummary::default();
+        for (i,row) in rows.enumerate(){
+            if i>=2048{return Err(SchedulerError::Database)}
+            let (state,finished,has_output,has_reader,matches_reader,requires_reader)=row.map_err(db_error)?;
+            match (state.as_str(),finished,has_output,requires_reader,has_reader,matches_reader){
+                ("RUNNING",false,false,_,_,_)=>report.running+=1,
+                ("COMPLETED",true,true,true,true,true)=>report.reader_result_matches+=1,
+                ("COMPLETED",true,true,false,false,_)=>report.saved_text+=1,
+                ("FAILED",true,false,_,_,_)=>report.failed+=1,
+                ("STOPPED",true,false,_,_,_)=>report.stopped+=1,
+                ("INTERRUPTED",true,false,_,_,_)=>report.interrupted+=1,
+                _=>report.unavailable+=1,
+            }
+        }
+        Ok(report)
+    }
     pub fn ai_runs(&self, id: &str, owner: &str) -> Result<Vec<AiRun>, SchedulerError> {
         let g = self.inner.lock().map_err(|_| SchedulerError::Poisoned)?;
         let mut q=g.db.prepare("SELECT r.schedule_id,r.sequence,r.due,r.started,r.finished,r.state,r.output,t.sha256,t.line,t.verified_text FROM lu_ai_runs r LEFT JOIN lu_ai_reader_receipts t ON t.schedule_id=r.schedule_id AND t.sequence=r.sequence JOIN lu_ai_schedules s ON s.id=r.schedule_id WHERE s.id=?1 AND s.workspace_id=?2 ORDER BY r.sequence DESC LIMIT 32").map_err(db_error)?;
@@ -803,6 +844,23 @@ mod tests {
         let t = Arc::new(TaskStore::open(Path::new(":memory:")).unwrap());
         let p = Arc::new(BackgroundProcessSupervisor::new(t.clone()));
         BackgroundScheduler::open(path, t, p, ResourceBudget::interactive_first()).unwrap()
+    }
+    #[test]
+    fn cp12ar1_scheduler_summary_is_content_free_and_read_only(){
+        let s=open(Path::new(":memory:"));
+        s.create_ai_at("private-id","c-a","private task text","m-a",60,Some(60),100).unwrap();
+        let (_,seq)=s.claim_ai_at("private-id","c-a","m-a",160).unwrap().unwrap();
+        assert_eq!(s.ai_diagnostic_summary().unwrap().running,1);
+        s.finish_ai("private-id",seq,"COMPLETED","private response text").unwrap();
+        let (_,seq)=s.claim_ai_at("private-id","c-a","m-a",220).unwrap().unwrap();
+        s.finish_ai("private-id",seq,"FAILED","").unwrap();
+        s.claim_ai_at("private-id","c-a","m-a",280).unwrap().unwrap();
+        s.control_ai("private-id","c-a","cancel").unwrap();
+        let summary=s.ai_diagnostic_summary().unwrap();
+        assert_eq!((summary.saved_text,summary.failed,summary.stopped,summary.running),(1,1,1,0));
+        assert_eq!(summary.unavailable,0);
+        assert!(!serde_json::to_string(&summary).unwrap().contains("private"));
+        assert_eq!(s.ai_runs("private-id","c-a").unwrap().len(),3);
     }
     #[test]
     fn cp11br1_exact_claim_and_owner_model_binding() {

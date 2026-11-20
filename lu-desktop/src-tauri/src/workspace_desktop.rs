@@ -638,30 +638,30 @@ pub(crate) async fn lu_workspace_ask_directory(
     chat_id:String,
     prompt:String,
 )->Result<Option<String>,String> {
-    ask_workspace_for_chat(app,Arc::clone(state.inner()),session_id,chat_id,prompt).await
+    ask_workspace_for_chat(app,Arc::clone(state.inner()),session_id,chat_id,prompt,None).await
 }
 /// Shared by the legacy Ask Workspace button and the Wave 3 normal Send
 /// opt-in. Both always require the OS picker and a new persisted user turn.
 pub(crate) async fn ask_workspace_for_chat(
     app:AppHandle,state:Arc<DesktopState>,session_id:String,
-    chat_id:String,prompt:String,
+    chat_id:String,prompt:String,diagnostic:Option<(String,std::time::Instant)>,
 )->Result<Option<String>,String>{
-    ask_scoped_read_for_chat(app,state,session_id,chat_id,prompt,false).await
+    ask_scoped_read_for_chat(app,state,session_id,chat_id,prompt,false,diagnostic).await
 }
 pub(crate) async fn ask_git_for_chat(
     app:AppHandle,state:Arc<DesktopState>,session_id:String,
-    chat_id:String,prompt:String,
+    chat_id:String,prompt:String,diagnostic:Option<(String,std::time::Instant)>,
 )->Result<Option<String>,String>{
     if !explicit_read_git_request(&prompt){
         return Err("A Git inspection requires a clear human request".into())
     }
-    ask_scoped_read_for_chat(app,state,session_id,chat_id,prompt,true).await
+    ask_scoped_read_for_chat(app,state,session_id,chat_id,prompt,true,diagnostic).await
 }
 async fn ask_scoped_read_for_chat(
     app:AppHandle,state:Arc<DesktopState>,session_id:String,
-    chat_id:String,prompt:String,git_mode:bool,
+    chat_id:String,prompt:String,git_mode:bool,diagnostic:Option<(String,std::time::Instant)>,
 )->Result<Option<String>,String>{
-    let trace=NativeDiagnosticTrace::new(&state);
+    let trace=NativeDiagnosticTrace::correlated(&state,diagnostic);
     if prompt.trim().is_empty()||prompt.len()>8*1024 {
         return Err("Workspace question must be 1–8192 bytes".into())
     }
@@ -909,7 +909,7 @@ fn execute_approved_read(event_app:AppHandle,host:Arc<DesktopState>,session_id:S
                 host.chats.complete(&chat_id,&gid)?;
                 Ok(())
             })?;
-            trace.saved_response(&host.chats,&chat_id,&gid,&result.answer,false);
+            trace.saved_response(&host,&chat_id,&gid,&result.answer,false);
             Ok(result.answer)
 }
 

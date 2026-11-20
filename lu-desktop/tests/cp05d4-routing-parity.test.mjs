@@ -24,7 +24,7 @@ test('CP05D4 ordinary composer has exactly one textual RPC, attachment transacti
   assert.equal([...send.matchAll(/invoke\('lu_generate'/g)].length,1);
   assert.doesNotMatch(ui,/workspaceToolsNextSend|planDraftNextSend|reviewedAppNextSend|browserResearchNextSend|browserOrigins|readOnlyWorkspace:|planOnly:|lu_reviewed_app_ask|lu_generate_browser/);
   assert.match(send,/if\(attempt\.nonce\)\{\s*await runImageAttempt/);
-  assert.match(send,/invoke\('lu_generate',\{sessionId:runtime\.sessionId\?\?'',chatId:activeId,\s*prompt:submitted,imageRefs:\[\],maxNewTokens:512\}\)/);
+  assert.match(send,/invoke\('lu_generate',\{sessionId:runtime\.sessionId\?\?'',chatId:activeId,\s*prompt:submitted,imageRefs:\[\],maxNewTokens:512,observeDelivery:true\}\)/);
   assert.match(send,/clearSubmittedDraft\(readComposerDraft\(activeId\),snapshot\)/);
   assert.match(host,/SendMode::from_legacy\(read_only_workspace,plan_only\)\?/);
   assert.match(host,/match turn_coordinator::select\(&prompt,&image_refs,max_new_tokens,mode\)/);
