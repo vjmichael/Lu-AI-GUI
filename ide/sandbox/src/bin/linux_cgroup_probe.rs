@@ -137,6 +137,8 @@ mod probe {
                 return Ok(false);
             }
         }
+        // Positive acceptance also requires successful removal of the empty child.
+        fs::remove_dir(&child)?;
         println!("PASS: dedicated empty Lu IDE cgroup-v2 parent delegated CPU/memory/PID quotas to a fresh worker child");
         println!("UNVERIFIED: atomic pre-exec placement, subtree kill, bwrap linkage, filesystem/network isolation, recovery");
         Ok(true)

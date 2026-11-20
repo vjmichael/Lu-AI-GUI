@@ -26,17 +26,22 @@ fn run() -> Result<(), &'static str> {
                     | "--project-debug"
                     | "--project-debug-cancel"
                     | "--cancel"
+                    | "--interrupted"
             )
         )
     {
         return Err(
-            "only fixed check, test, build, project-debug, project-debug-cancel and cancel modes",
+            "only fixed check, test, build, project-debug, project-debug-cancel, cancel and interruption modes",
         );
     }
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let helper = root.join("target/debug/linux_cgroup_prepare");
-    let fixture =
-        root.join("../supervisor/target/debug/examples/wo6_linux_native_build_acceptance");
+    let interrupted = first.to_str() == Some("--interrupted");
+    let fixture = if interrupted {
+        root.join("../supervisor/target/debug/examples/wo6_linux_interrupted_recovery")
+    } else {
+        root.join("../supervisor/target/debug/examples/wo6_linux_native_build_acceptance")
+    };
     for executable in [&helper, &fixture] {
         let meta = fs::symlink_metadata(executable).map_err(|_| "fixed native binary missing")?;
         if !meta.is_file() || meta.file_type().is_symlink() {
@@ -55,11 +60,10 @@ fn run() -> Result<(), &'static str> {
         Some("--project-debug" | "--project-debug-cancel")
     );
     let mut command = Command::new(&fixture);
-    command
-        .arg(first)
-        .env_clear()
-        .env("HOME", "/tmp")
-        .env("LANG", "C");
+    if !interrupted {
+        command.arg(first);
+    }
+    command.env_clear().env("HOME", "/tmp").env("LANG", "C");
     if source_stop {
         // Only the fixed disposable host enables the existing redacted stages.
         command.env("LU_IDE_E2_NATIVE_TRACE", "1");

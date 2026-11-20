@@ -61,6 +61,11 @@ jobs:
       - name: Classify Windows LLDB-DAP loader status without spawning a project
         shell: bash
         run: python ide/supervisor/fixtures/debug/test_probe_windows_dap_initialize.py
+      - name: Restore original fixed debugger launch and OS source regressions
+        shell: bash
+        run: |
+          python ide/supervisor/fixtures/debug/test_dap_launch_contract.py
+          python ide/supervisor/fixtures/debug/test_dap_native_source_contract.py
       - name: Source evidence boundary
         shell: bash
         run: |
@@ -106,7 +111,7 @@ jobs:
       - name: Compile fixed cgroup-v2 prepare, independent witness and trusted unit host
         run: |
           set -euo pipefail
-          cargo build --manifest-path ide/sandbox/Cargo.toml --bin linux_cgroup_prepare --bin linux_cgroup_native_witness --bin linux_delegated_ci_wo4_host
+          cargo build --manifest-path ide/sandbox/Cargo.toml --bin linux_cgroup_prepare --bin linux_cgroup_probe --bin linux_cgroup_native_witness --bin linux_delegated_ci_wo4_host
           cargo test --manifest-path ide/sandbox/Cargo.toml --bin linux_cgroup_native_witness
       - name: Live actual CPU/memory/PID quota, child + grandchild cgroup.kill and populated zero
         shell: bash

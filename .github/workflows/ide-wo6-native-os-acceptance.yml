@@ -445,7 +445,7 @@ jobs:
           test "${#LU_IDE_D3_LINUX_SYMBOLIZER_SHA256}" = 64
           cargo build --manifest-path ide/sandbox/Cargo.toml --bin linux_cgroup_prepare --bin linux_delegated_ci_wo6_build_host
           # Preserve the historical Linux-worker-only build without a debugger oracle.
-          cargo build --manifest-path ide/supervisor/Cargo.toml --features linux-worker --example wo6_linux_native_build_acceptance
+          cargo build --manifest-path ide/supervisor/Cargo.toml --features linux-worker --example wo6_linux_native_build_acceptance --example wo6_linux_interrupted_recovery
           if [ $? -ne 0 ]; then echo 'DENIED: WO6 historical Linux native build failed'; exit 2; fi
           cargo test --manifest-path ide/host/Cargo.toml --features dev045d3-ci-oracle --lib ci_source_trap_launch
           cargo build --manifest-path ide/supervisor/Cargo.toml --features 'linux-worker,dap-transport,dev045d3-ci-oracle' --example wo6_linux_native_build_acceptance
@@ -454,7 +454,7 @@ jobs:
         run: |
           set -euo pipefail
           host="$(realpath ide/sandbox/target/debug/linux_delegated_ci_wo6_build_host)"
-          for mode in --check --test --build --project-debug --project-debug-cancel --cancel; do
+          for mode in --check --test --build --project-debug --project-debug-cancel --cancel --interrupted; do
             rc=0
             sudo /usr/bin/systemd-run --wait --collect --pipe \
               --unit=lu-ide-delegated \

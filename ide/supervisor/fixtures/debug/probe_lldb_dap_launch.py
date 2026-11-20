@@ -13,6 +13,7 @@ import subprocess
 import time
 
 from probe_lldb_dap_initialize import SOURCE, COPIED, NAMESPACE, BUNDLE
+from dap_launch_contract import MAX_BUFFER, launch_arguments, pop_frame
 
 FIXED_HOST = BUNDLE + "/debuggee/wo6-selftest"
 SERVER_HOST = BUNDLE + "/bin/lldb-server"
@@ -93,38 +94,27 @@ def stage(label: str, argv: list[str], target: str, server: str | None) -> bool:
                 if not raw:
                     sel.unregister(key.fileobj)
                     continue
-                into = buffer if key.data == "out" else stderr
-                into.extend(raw[:max(0, 32768 - len(into))])
+                if key.data == "out":
+                    if len(buffer) + len(raw) > MAX_BUFFER:
+                        failure = "invalid_frame"
+                        break
+                    buffer.extend(raw)
+                else:
+                    stderr.extend(raw[:max(0, 32768 - len(stderr))])
+            if failure != "timeout_or_disconnect":
+                break
             while True:
-                end_header = buffer.find(b"\r\n\r\n")
-                if end_header < 0 or end_header > 512:
-                    break
-                header = bytes(buffer[:end_header])
                 try:
-                    size = int(header.split(b"Content-Length: ", 1)[1].split(b"\r\n")[0])
-                except (ValueError, IndexError):
+                    item = pop_frame(buffer)
+                except ValueError:
                     failure = "invalid_frame"
                     break
-                if size <= 0 or size > 32768:
-                    failure = "invalid_frame"
+                if item is None:
                     break
-                end = end_header + 4 + size
-                if len(buffer) < end:
-                    break
-                try:
-                    item = json.loads(buffer[end_header + 4:end])
-                except (ValueError, UnicodeError):
-                    failure = "invalid_frame"
-                    break
-                del buffer[:end]
                 if item.get("type") == "response" and item.get("request_seq") == 1:
                     if item.get("command") == "initialize" and item.get("success") is True:
                         if not sent_launch:
-                            child.stdin.write(request(2, "launch", {
-                                "program": target, "stopOnEntry": True, "noDebug": False,
-                                "disableASLR": False, "disableSTDIO": True,
-                                "args": [], "env": {}, "runInTerminal": False,
-                            }))
+                            child.stdin.write(request(2, "launch", launch_arguments(target)))
                             child.stdin.flush()
                             sent_launch = True
                             if got_initialized_event and not sent_configuration:
@@ -161,19 +151,19 @@ def stage(label: str, argv: list[str], target: str, server: str | None) -> bool:
                     got_configuration = True
                 elif item.get("type") == "event" and item.get("event") == "stopped":
                     got_stop = True
-            if got_launch and got_stop and got_configuration:
-                break
             if failure != "timeout_or_disconnect":
+                break
+            if got_launch and got_stop and got_configuration:
                 break
             if child.poll() is not None and not sel.get_map():
                 break
-        if not got_launch:
-            if failure == "timeout_or_disconnect":
+        if failure == "timeout_or_disconnect":
+            if not got_launch:
                 failure = "process_exited" if child.poll() is not None else "response_not_received"
-        elif not got_configuration:
-            failure = "launch_without_configuration_done"
-        elif not got_stop:
-            failure = "launch_ack_without_kernel_stop"
+            elif not got_configuration:
+                failure = "launch_without_configuration_done"
+            elif not got_stop:
+                failure = "launch_ack_without_kernel_stop"
     except (OSError, BrokenPipeError, ValueError):
         failure = "native_pipe_or_spawn_failure"
     finally:
@@ -187,10 +177,11 @@ def stage(label: str, argv: list[str], target: str, server: str | None) -> bool:
             for pipe in (child.stdin, child.stdout, child.stderr):
                 if pipe:
                     pipe.close()
-    outcome = ("launch_stop_observed_not_os_attested" if
-               (got_launch and got_stop and got_configuration) else failure)
+    success = (failure == "timeout_or_disconnect" and
+               got_launch and got_stop and got_configuration)
+    outcome = "launch_stop_observed_not_os_attested" if success else failure
     print(f"FIN04_NATIVE_LAUNCH_PROBE={label}:{outcome}", flush=True)
-    return got_launch and got_stop and got_configuration
+    return success
 
 def main() -> int:
     outcomes = [stage(*entry) for entry in CASES]
