@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "506020aa0c05e3f501603de04f84a7239fc7b846",
-  "trackedFileCount": 1224,
+  "sourceCommitBeforeLock": "fc56afd467cd0b173d170afc4939a7ac8e7e6b47",
+  "trackedFileCount": 1228,
   "files": [
     {
       "path": ".gitattributes",
@@ -917,7 +917,7 @@
     },
     {
       "path": "docs/LU_DEVELOPMENT_LEDGER.md",
-      "blob": "29451051816772494924a6fd56db2103b86c68ef"
+      "blob": "520f2edc9f9a04921e19b2cc0a2cf650a71a6fee"
     },
     {
       "path": "docs/LU_E1_NATIVE_EVIDENCE_20261107.md",
@@ -1693,7 +1693,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/diagnostic_archive.rs",
-      "blob": "3759ccc12aff6d6581eeeee2c0ee12309af16e68"
+      "blob": "ff4fa8b454f0a74c270c9297017b337552f20a7c"
     },
     {
       "path": "lu-desktop/src-tauri/src/document_create_desktop.rs",
@@ -1701,7 +1701,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/dx_ipc.rs",
-      "blob": "ef2bfd9233a1c36c7abc20a329cb805740e0dd2b"
+      "blob": "fdb52d90f4d6a10fb435b1145e4d20f16b6d619c"
     },
     {
       "path": "lu-desktop/src-tauri/src/edit_proposal.rs",
@@ -2206,6 +2206,18 @@
     {
       "path": "lu-desktop/tests/cp12b-local-diagnostic-exchange.test.mjs",
       "blob": "309116c2e487bd43c092c85934fd9faedb39b85d"
+    },
+    {
+      "path": "lu-desktop/tests/dx-exchange-windows-check/Cargo.lock",
+      "blob": "c9ff8efe38ac96198df2ee5767e853dc7bb01004"
+    },
+    {
+      "path": "lu-desktop/tests/dx-exchange-windows-check/Cargo.toml",
+      "blob": "4ccee2ae124013f721918ffb08033c15ab2fca2c"
+    },
+    {
+      "path": "lu-desktop/tests/dx-exchange-windows-check/src/lib.rs",
+      "blob": "418cc83db55ce010fb42f18022f1287aa656cc12"
     },
     {
       "path": "lu-desktop/tests/filesystem-discovery.test.mjs",
@@ -2830,6 +2842,10 @@
     {
       "path": "scripts/cp12b-local-diagnostic-exchange-gui.py",
       "blob": "60e82d381f87cc2572b9e2932f1fb7aca03d202b"
+    },
+    {
+      "path": "scripts/cp12br1-local-diagnostic-exchange-gui.py",
+      "blob": "f249474a8d1c933e16eadd8593b5dcbc840f7270"
     },
     {
       "path": "scripts/install-lu-agent01l-native-fixture.sh",
