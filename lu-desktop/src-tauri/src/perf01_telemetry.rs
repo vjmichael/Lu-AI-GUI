@@ -264,6 +264,8 @@ impl ModelTrace{
         self.archive=archive;
         self
     }
+    /// Transfer the one invocation's causal prefix, not a second trace or grant.
+    pub fn take_causal_progress(&mut self)->Option<CausalProgress>{self.row.cp01_trace.take()}
     pub fn persist_cp01(&mut self){
         if let (Some(trace),Some(archive))=(self.row.cp01_trace.as_mut(),self.archive.as_ref()){
             if !archive.persist(trace){trace.mark_lost();}
@@ -378,6 +380,32 @@ impl ModelTrace{
 #[cfg(test)]
 mod tests{
     use super::*;
+    #[test]
+    fn cp12ar2_negotiated_route_transfers_single_original_trace(){
+        use lu_core::agent_tool_loop::ToolDispatchCheckpoint::*;
+        let archive=Arc::new(DiagnosticArchive::open(std::path::Path::new(":memory:")).unwrap());
+        let ledger=PerfLedger::with_archive(Some(archive.clone()));
+        let reference="123456789abcdef0123456789abcdef0";
+        let start=Instant::now();
+        let mut parent=ModelTrace::new("c-a","g-a",start,true).with_cp01_trace(reference.into(),start,ledger.archive());
+        for step in [Checkpoint::SessionReady,Checkpoint::UserSaved,Checkpoint::WorkerEntered,Checkpoint::SavedAttested]{parent.causal_checkpoint(step)}
+        let native=crate::causal_diagnostic::NativeDiagnosticTrace::resume_parent(parent.take_causal_progress().unwrap(),ledger.archive());
+        assert!(parent.take_causal_progress().is_none());
+        // Real route rechecks original host authorization; do not repeat
+        // already persisted observational checkpoints on the inherited trace.
+        for step in [Checkpoint::SessionReady,Checkpoint::UserSaved,Checkpoint::WorkerEntered,Checkpoint::SavedAttested,Checkpoint::TaskAuthorized,Checkpoint::ModelEntered]{native.point(step)}
+        native.record(|t|{t.tool_checkpoint(Entered);t.tool_checkpoint(Returned);t.tool_checkpoint(FeedbackAudited);});
+        native.point(Checkpoint::ModelReturned);native.point(Checkpoint::AssistantSaved);
+        native.record(|t|{assert_eq!(t.trace_ref(),reference);assert_eq!(t.dropped(),0);assert!(t.saved());ledger.offer_native_delivery("c-a","g-a",42,false,t.clone())});
+        ledger.record(parent.finish("COMPLETED")).unwrap();
+        drop(native);
+        let w=DeliveryWitness{chat_id:"c-a".into(),generation_id:"g-a".into(),diagnostic_ref:reference.into(),assistant_seq:42,reader:false};
+        assert!(!ledger.observe_text_reply(&w,true));assert!(ledger.observe_text_reply(&w,false));assert!(ledger.observe_text_reply(&w,true));
+        let report=serde_json::to_value(archive.report().unwrap()).unwrap();
+        assert_eq!(report["findings"].as_array().unwrap().len(),1);
+        assert_eq!(report["findings"][0]["finding"]["evidenceStrength"],"complete");
+        assert_eq!(report["unavailableRecords"],0);
+    }
     #[test]
     fn cp12ar1_native_delivery_is_exact_and_requires_prior_reply() {
         use lu_core::agent_tool_loop::ToolDispatchCheckpoint::*;

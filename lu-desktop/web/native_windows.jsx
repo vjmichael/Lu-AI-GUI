@@ -824,6 +824,7 @@ export function SettingsWindow({onNavigate,active=true}={}){
                 <p>{troubleshooting.scheduledRuns.savedText} saved responses; {troubleshooting.scheduledRuns.readerResultMatches} results match their saved source receipts. A saved response is not proof of accuracy.</p>
                 <p>{troubleshooting.scheduledRuns.failed} failed, {troubleshooting.scheduledRuns.stopped} stopped, {troubleshooting.scheduledRuns.interrupted} interrupted and {troubleshooting.scheduledRuns.running} in progress.</p>
                 {troubleshooting.scheduledRuns.unavailable>0&&<p>Some scheduled results could not be confirmed.</p>}
+                {troubleshooting.scheduledRuns.recent?.slice(0,8).map((run,index)=><div key={index}><p><strong>Recent task attempt {run.attempt}</strong> — {run.explanation}</p><p>{run.checkpointDescription}</p>{run.sourceReceiptPresent&&<p>Original source receipt retained.</p>}</div>)}
               </div>}
               {troubleshooting.scheduledRunsUnavailable&&<p>Scheduled task records could not be checked.</p>}
               {troubleshooting.unavailableRecords>0&&<p>Some records could not be confirmed.</p>}

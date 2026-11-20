@@ -44,7 +44,8 @@ test('ordinary user chat includes a conservative media route with native review 
   assert.match(reviewed,/fn explicit_media_metadata_request\(prompt:&str\)->bool/);
   assert.match(reviewed,/original_human_media_fact_requests_offer_only_native_picker/);
   assert.match(coordinator,/reviewed_app_desktop::explicit_media_metadata_request\(prompt\)/);
-  assert.match(rust,/reviewed_app_desktop::lu_reviewed_app_ask/);
+  assert.match(rust,/reviewed_app_desktop::ask_reviewed_for_chat\([\s\S]*?cp01_trace/);
+  assert.match(reviewed,/ask_reviewed_for_chat\(app,Arc::clone\(state.inner\(\)\),session_id,chat_id,prompt,mode,None\).await/);
   assert.match(coordinator,/workspace_desktop::explicit_read_git_request/);
   assert.match(coordinator,/browser_model_desktop::explicit_browse_origin/);
   assert.match(coordinator,/reader_desktop::explicit_reader_document_request/);

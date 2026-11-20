@@ -2125,7 +2125,7 @@ async fn lu_cp01_diagnostic_report(app:AppHandle,caller:tauri::WebviewWindow,
     let scheduler=state.background_scheduler.clone();
     tauri::async_runtime::spawn_blocking(move||{
         let approved=app.dialog().message(
-            "Prepare a local troubleshooting report? It contains only bounded response checkpoints, timing, failure categories, scheduled-result counts and the latest local sample-check results, not conversations, images, model names or file paths. Nothing is sent anywhere."
+            "Prepare a local troubleshooting report? It contains only bounded response checkpoints, timing, failure categories, scheduled-result counts, recent task progress and the latest local sample-check results, not conversations, images, model names or file paths. Nothing is sent anywhere."
         ).title("Lu — Troubleshooting")
          .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom(
              "Prepare report".into(),"Cancel".into())).blocking_show();
@@ -5493,7 +5493,7 @@ async fn lu_generate_impl(
         }).await.map_err(|_|"Native current-time utility interrupted")?;
       }
       TurnRoute::Browser(origin)=>{
-        return browser_model_desktop::lu_generate_browser(app,state,session_id,chat_id,prompt,origin,512).await;
+        return browser_model_desktop::generate_browser_for_chat(app,Arc::clone(state.inner()),session_id,chat_id,prompt,origin,512,cp01_trace).await;
       }
       TurnRoute::Git=>{
         return workspace_desktop::ask_git_for_chat(
@@ -5511,8 +5511,8 @@ async fn lu_generate_impl(
         ).await?.ok_or_else(||"Workspace folder was not selected".into());
       }
       TurnRoute::Specialist(kind)=>{
-        return reviewed_app_desktop::lu_reviewed_app_ask(
-            app,state,session_id,chat_id,prompt,kind.into()
+        return reviewed_app_desktop::ask_reviewed_for_chat(
+            app,Arc::clone(state.inner()),session_id,chat_id,prompt,kind.into(),cp01_trace
         ).await?.ok_or_else(||if kind=="media"{"Media file was not selected"}else{"Specialist source selection was cancelled"}.into());
       }
       TurnRoute::Utility(request)=>{
@@ -5805,14 +5805,14 @@ async fn generate_internal(
             // any separately approved negotiated native read/utility lane.
             let no_negotiated_selection=if origin==GenerationOrigin::Human&&!plan_only&&images.is_empty()&&linked.is_empty()&&manifest.is_empty()&&
                 !contains_document_context(&prompt){
-                if let Some(answer)=model_web_research_desktop::try_model_web_research(&app,&state,&sid,&chat_id,&gid,&prompt,&ticket)?{return Ok(answer)}
+                if let Some(answer)=model_web_research_desktop::try_model_web_research(&app,&state,&sid,&chat_id,&gid,&prompt,&ticket,&mut perf_trace)?{return Ok(answer)}
                 if let Some(answer)=model_publication_desktop::try_model_background_start(&app,&state,&sid,&chat_id,&gid,&prompt,&ticket)?{return Ok(answer)}
                 if let Some(answer)=model_publication_desktop::try_model_background_control(&app,&state,&sid,&chat_id,&gid,&prompt,&ticket)?{return Ok(answer)}
                 if let Some(answer)=model_publication_desktop::try_model_background(&app,&state,&sid,&chat_id,&gid,&prompt,&ticket)?{return Ok(answer)}
                 if let Some(answer)=model_publication_desktop::try_model_publication(&app,&state,&sid,&chat_id,&gid,&prompt,&ticket)?{return Ok(answer)}
                 if let Some(answer)=file_trash_desktop::try_model_custody(&app,&state,&sid,&chat_id,&gid,&prompt,&ticket)?{return Ok(answer)}
                 if let Some(answer)=file_transfer_desktop::try_model_transfer(&app,&state,&sid,&chat_id,&gid,&prompt,&ticket)?{return Ok(answer)}
-                match capability_negotiation::try_read_turn(&app,&state,&sid,&chat_id,&gid,&prompt,&ticket)?{
+                match capability_negotiation::try_read_turn(&app,&state,&sid,&chat_id,&gid,&prompt,&ticket,&mut perf_trace)?{
                     capability_negotiation::NegotiationOutcome::Completed(answer)=>return Ok(answer),
                     capability_negotiation::NegotiationOutcome::NoSelection=>true,
                     capability_negotiation::NegotiationOutcome::Skipped=>false,

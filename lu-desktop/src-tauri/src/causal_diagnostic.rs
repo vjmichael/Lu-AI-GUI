@@ -166,6 +166,7 @@ pub(crate) struct NativeDiagnosticTrace {
     trace:Mutex<CausalProgress>,
     archive:Option<Arc<crate::diagnostic_archive::DiagnosticArchive>>,
     correlated:bool,
+    inherited_prefix:bool,
 }
 impl NativeDiagnosticTrace {
     pub fn new(host:&crate::DesktopState)->Self {
@@ -176,8 +177,18 @@ impl NativeDiagnosticTrace {
         let (reference,started)=context.unwrap_or_else(||(crate::next_id(""),Instant::now()));
         let trace=CausalProgress::new(reference,started);
         let trace=if correlated{trace.awaiting_delivery()}else{trace};
-        let this=Self{trace:Mutex::new(trace),archive:host.perf01.archive(),correlated};
+        let this=Self{trace:Mutex::new(trace),archive:host.perf01.archive(),correlated,inherited_prefix:false};
         this.record(|_|{});this
+    }
+    /// The negotiated route consumes the original parent CP-01 prefix. The
+    /// parent no longer writes it. Existing native prefix checks are repeated
+    /// for authorization but must not duplicate old observational events.
+    pub fn from_parent(host:&crate::DesktopState,parent:Option<CausalProgress>)->Self {
+        let Some(trace)=parent else{return Self::new(host)};
+        Self::resume_parent(trace,host.perf01.archive())
+    }
+    pub(crate) fn resume_parent(trace:CausalProgress,archive:Option<Arc<crate::diagnostic_archive::DiagnosticArchive>>)->Self{
+        Self{trace:Mutex::new(trace.awaiting_delivery()),archive,correlated:true,inherited_prefix:true}
     }
     pub fn record(&self,apply:impl FnOnce(&mut CausalProgress)) {
         if let Ok(mut trace)=self.trace.lock(){
@@ -185,7 +196,11 @@ impl NativeDiagnosticTrace {
             if let Some(archive)=&self.archive{if !archive.persist(&trace){trace.mark_lost();}}
         }
     }
-    pub fn point(&self,point:Checkpoint){self.record(|t|{t.observe(point);});}
+    pub fn point(&self,point:Checkpoint){self.record(|t|{
+        if self.inherited_prefix && matches!(point,Checkpoint::SessionReady|Checkpoint::UserSaved|Checkpoint::WorkerEntered|Checkpoint::SavedAttested)
+            && t.observations().iter().any(|e|e.stage==point as i32){return}
+        t.observe(point);
+    });}
     pub fn decline(&self){self.record(|t|t.human_declined());}
     pub fn lost(&self){self.record(|t|t.mark_lost());}
     pub fn incomplete(&self,cancelled:bool){self.record(|t|if cancelled{t.observed_cancel()}else{t.finish_incomplete(false)});}

@@ -167,8 +167,8 @@ pub(crate) async fn ask_utility_for_chat(
 /// Recompute the host-owned input after separate native consent. No second
 /// human message, queue ticket, arbitrary PATH, or model-supplied arguments.
 pub(crate) fn execute_negotiated_utility(app:&AppHandle,host:&Arc<DesktopState>,session:&str,chat:&str,gid:&str,prompt:&str,
-    ticket:&generation_queue::Ticket,cancellation:&Cancellation,current_step:&Arc<Mutex<Option<String>>>,choice:&crate::capability_negotiation::ReadCandidate)->Result<String,String>{
-    let trace=NativeDiagnosticTrace::new(host);
+    ticket:&generation_queue::Ticket,cancellation:&Cancellation,current_step:&Arc<Mutex<Option<String>>>,choice:&crate::capability_negotiation::ReadCandidate,parent:Option<crate::causal_diagnostic::CausalProgress>)->Result<String,String>{
+    let trace=NativeDiagnosticTrace::from_parent(host,parent);
     let request=negotiable_core_utility_request(prompt).ok_or("No exact original utility input")?;
     if utility_native_id(&request)!=choice.native_tool_id{return Err("Selected utility differs from original human input".into())}
     let result=execute_approved_utility(app,host,session.into(),chat.into(),gid.into(),prompt.into(),request,ticket,cancellation,current_step,Some(choice),&trace);

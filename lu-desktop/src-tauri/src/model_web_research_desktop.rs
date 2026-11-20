@@ -2,10 +2,12 @@
 use std::sync::{Arc,Mutex};
 use lu_core::{conversation_authority::TrustedUserTurnVerifier,inference_host::Cancellation,model_turn_journal::{ModelAuditKind,ModelTurnJournal},model_web_research_turn::{ApprovedWebTurn,Request},supervised_tool_generation::SupervisorModelStep};
 use tauri::Emitter;
+use crate::causal_diagnostic::{NativeDiagnosticTrace,Checkpoint};
 use tauri_plugin_dialog::{DialogExt,MessageDialogButtons};
 
-pub(crate) fn try_model_web_research(app:&tauri::AppHandle,state:&Arc<crate::DesktopState>,sid:&str,chat:&str,gid:&str,original:&str,ticket:&crate::generation_queue::Ticket)->Result<Option<String>,String>{
+pub(crate) fn try_model_web_research(app:&tauri::AppHandle,state:&Arc<crate::DesktopState>,sid:&str,chat:&str,gid:&str,original:&str,ticket:&crate::generation_queue::Ticket,perf_trace:&mut crate::perf01_telemetry::ModelTrace)->Result<Option<String>,String>{
     let Some(request)=Request::parse(original) else{return Ok(None)};
+    let trace=NativeDiagnosticTrace::from_parent(state,perf_trace.take_causal_progress());
     let verifier=crate::turn_authority::PersistedHumanTurn::current_chat(&state.chats,chat,gid,original);
     let cancel=Cancellation::default();let watermark=state.chats.p0_auth_requested_watermark(chat)?;
     let checkpoint=||->Result<(),String>{
@@ -16,6 +18,7 @@ pub(crate) fn try_model_web_research(app:&tauri::AppHandle,state:&Arc<crate::Des
         Ok(())
     };
     checkpoint()?;
+    for point in [Checkpoint::SessionReady,Checkpoint::UserSaved,Checkpoint::WorkerEntered,Checkpoint::SavedAttested]{trace.point(point);}
     let journal=ModelTurnJournal::open(&state.catalog_path.with_file_name("lu-model-web-research-audit.sqlite")).map_err(|_|"Network audit unavailable")?;
     let step=Arc::new(Mutex::new(None));
     {let mut all=state.reader_generations.lock().map_err(|_|"Network cancellation unavailable")?;if all.contains_key(gid){return Err("Duplicate network request ownership".into())}all.insert(gid.into(),crate::ReaderRunControl{cancellation:cancel.clone(),current_step:Arc::clone(&step),session_id:sid.into()});}
@@ -31,6 +34,7 @@ pub(crate) fn try_model_web_research(app:&tauri::AppHandle,state:&Arc<crate::Des
     let approved=app.dialog().message(request.review()).title("Allow web access?").buttons(MessageDialogButtons::OkCancelCustom("Allow once".into(),"Cancel".into())).blocking_show();
     checkpoint()?;
     if !approved{
+        trace.decline();
         journal.append(chat,gid,ModelAuditKind::UserRequest,original,None).map_err(|_|"Network audit unavailable")?;
         journal.append(chat,gid,ModelAuditKind::Rejected,"HUMAN_DECLINED_NETWORK",None).map_err(|_|"Network audit unavailable")?;
         return complete("Web request declined. No network request was made.".into());
@@ -42,8 +46,15 @@ pub(crate) fn try_model_web_research(app:&tauri::AppHandle,state:&Arc<crate::Des
     let mut native=ApprovedWebTurn::new_after_review(&verifier,chat,gid,original,&curl,cancel.clone())?;
     let live=||{checkpoint()?;if !state.research.available(){return Err("Reviewed HTTPS runtime changed".into())}Ok(())};
     let mut model=SupervisorModelStep::new(&state.supervisor,sid.into(),crate::next_id("mweb-")).map_err(|_|"Network model unavailable")?.with_step_start_observer(progress.model_observer());
-    let result=tauri::async_runtime::block_on(native.run(&mut model,&verifier,&journal,&live,&progress.dispatch_observer()));
+    trace.point(Checkpoint::TaskAuthorized);
+    let observer=progress.dispatch_observer();
+    let dispatch=|point|{observer(point);trace.record(|t|t.tool_checkpoint(point));};
+    trace.point(Checkpoint::ModelEntered);
+    let result=tauri::async_runtime::block_on(native.run(&mut model,&verifier,&journal,&live,&dispatch));
     *step.lock().map_err(|_|"Network active step unavailable")?=None;
-    let answer=match result{Ok(report)=>report.answer,Err(_)=>"I couldn’t retrieve a usable response. No further web request was made.".into()};
-    complete(answer)
+    match result {
+        Ok(report)=>{trace.point(Checkpoint::ModelReturned);let answer=report.answer;
+            let saved=complete(answer.clone())?;trace.saved_response(state,chat,gid,&answer,false);Ok(saved)}
+        Err(error)=>{trace.model_error(&error);complete("I couldn’t retrieve a usable response. No further web request was made.".into())}
+    }
 }

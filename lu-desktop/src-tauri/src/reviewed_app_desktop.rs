@@ -144,6 +144,7 @@ use lu_core::{
 use std::{collections::BTreeSet,sync::{Arc,Mutex},time::{Duration,SystemTime}};
 
 use crate::turn_authority::PersistedHumanTurn;
+use crate::causal_diagnostic::{NativeDiagnosticTrace,Checkpoint};
 use lu_core::conversation_authority::TrustedUserTurnVerifier;
 struct ReviewedDesktopPolicy{
     approved:BTreeSet<String>,
@@ -593,6 +594,7 @@ pub(crate) async fn lu_agent_run_reviewed_step(
          completion merely because a native tool returned.",
         step_index+1,description,plan_id,revision_sha,selection.deliverable_id
     );
+    let trace=NativeDiagnosticTrace::new(&host);
     reviewed_app_ask_internal(
         app,host,session_id,chat_id,prompt,mode.into(),
         Some(ApprovedStepTarget{
@@ -600,7 +602,7 @@ pub(crate) async fn lu_agent_run_reviewed_step(
             revision_sha,step_index,
             deliverable_id:selection.deliverable_id,
             operation:reviewed_op
-        }),None
+        }),None,trace
     ).await
 }
 /// Existing ordinary reviewed-app asks remain separate and unrestricted by
@@ -610,9 +612,11 @@ pub(crate) async fn lu_reviewed_app_ask(
     app:AppHandle,state:State<'_,Arc<DesktopState>>,
     session_id:String,chat_id:String,prompt:String,mode:String,
 )->Result<Option<String>,String>{
-    reviewed_app_ask_internal(
-        app,Arc::clone(state.inner()),session_id,chat_id,prompt,mode,None,None
-    ).await
+    ask_reviewed_for_chat(app,Arc::clone(state.inner()),session_id,chat_id,prompt,mode,None).await
+}
+pub(crate) async fn ask_reviewed_for_chat(app:AppHandle,host:Arc<DesktopState>,session_id:String,chat_id:String,prompt:String,mode:String,diagnostic:Option<(String,std::time::Instant)>)->Result<Option<String>,String>{
+    let trace=NativeDiagnosticTrace::correlated(&host,diagnostic);
+    reviewed_app_ask_internal(app,host,session_id,chat_id,prompt,mode,None,None,trace).await
 }
 struct NegotiatedReviewed<'a>{
     gid:&'a str,ticket:&'a generation_queue::Ticket,
@@ -623,17 +627,18 @@ struct NegotiatedReviewed<'a>{
 /// durable broker, worker and verification path, not an alternate launcher.
 pub(crate) fn execute_negotiated_reviewed(app:&AppHandle,host:&Arc<DesktopState>,sid:&str,chat:&str,gid:&str,
     prompt:&str,ticket:&generation_queue::Ticket,cancellation:&Cancellation,current_step:&Arc<Mutex<Option<String>>>,
-    choice:&crate::capability_negotiation::ReadCandidate,watermark:i64)->Result<String,String>{
+    choice:&crate::capability_negotiation::ReadCandidate,watermark:i64,parent:Option<crate::causal_diagnostic::CausalProgress>)->Result<String,String>{
+    let trace=NativeDiagnosticTrace::from_parent(host,parent);
     let mode=negotiable_specialist_mode(prompt).ok_or("No exact reviewed specialist subject")?;
     if reviewed_mode_id(mode)!=Some(choice.native_tool_id.as_str()){return Err("Reviewed capability does not match human request".into())}
     tauri::async_runtime::block_on(reviewed_app_ask_internal(app.clone(),host.clone(),sid.into(),chat.into(),prompt.into(),mode.into(),None,
-        Some(NegotiatedReviewed{gid,ticket,cancellation,current_step,choice,watermark})))?
+        Some(NegotiatedReviewed{gid,ticket,cancellation,current_step,choice,watermark}),trace))?
         .ok_or_else(||"Cancelled reviewed resource approval".into())
 }
 async fn reviewed_app_ask_internal(
     app:AppHandle,host:Arc<DesktopState>,
     session_id:String,chat_id:String,prompt:String,mode:String,
-    scheduled:Option<ApprovedStepTarget>,negotiated:Option<NegotiatedReviewed<'_>>,
+    scheduled:Option<ApprovedStepTarget>,negotiated:Option<NegotiatedReviewed<'_>>,trace:NativeDiagnosticTrace,
 )->Result<Option<String>,String>{
     if !matches!(mode.as_str(),"git"|"media"|"pdf"|"image"){
         return Err("Unsupported reviewed application operation".into())
@@ -668,6 +673,7 @@ async fn reviewed_app_ask_internal(
     if status.session_id.as_deref()!=Some(session_id.as_str()){
         return Err("Selected model session changed".into())
     }
+    trace.point(Checkpoint::SessionReady);
     // No model path or WebView-supplied path is accepted: native picker only.
     let chooser=app.clone();
     let file_mode=mode!="git";
@@ -679,7 +685,7 @@ async fn reviewed_app_ask_internal(
         }
     }).await.map_err(|_|"Native reviewed-app picker unavailable")?;
     check()?;
-    let Some(picked)=picked else{return Ok(None)};
+    let Some(picked)=picked else{trace.decline();return Ok(None)};
     let selected=picked.into_path()
         .map_err(|_|"Native file picker returned unsupported resource")?;
     let git_mode=mode=="git";
@@ -758,7 +764,7 @@ async fn reviewed_app_ask_internal(
                     "Authorize one step".into(),"Cancel".into()
                 )).blocking_show()
         }).await.map_err(|_|"Fresh native step confirmation unavailable")?;
-        if !confirmed{return Ok(None)}
+        if !confirmed{trace.decline();return Ok(None)}
     }
     if let Some(kind)=specialist_kind{
         let identity=specialist_sha.as_deref()
@@ -782,7 +788,7 @@ async fn reviewed_app_ask_internal(
                     "Authorize one read".into(),"Cancel".into()
                 )).blocking_show()
         }).await.map_err(|_|"Native specialist approval unavailable")?;
-        if !yes{return Ok(None)}
+        if !yes{trace.decline();return Ok(None)}
         if hash_file(&selected,32*1024*1024)?!=identity||
             hash_file(&executable,1024*1024*1024)?!=exe_sha{
             return Err("Specialist source or installed utility changed during approval".into())
@@ -794,7 +800,7 @@ async fn reviewed_app_ask_internal(
         let dialog=app.clone();
         let yes=tauri::async_runtime::spawn_blocking(move||dialog.dialog().message(info)
             .title("Lu — Review media application").buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom("Authorize one read".into(),"Cancel".into())).blocking_show()).await.map_err(|_|"Native media approval unavailable")?;
-        if !yes{return Ok(None)}
+        if !yes{trace.decline();return Ok(None)}
         if hash_file(&selected,256*1024*1024)?!=identity||hash_file(&executable,1024*1024*1024)?!=exe_sha{return Err("Media source or executable changed during approval".into())}
     }
     check()?;
@@ -828,12 +834,14 @@ async fn reviewed_app_ask_internal(
         phase:"queued",position,
     });
     Some((ticket,cancellation,current_step))};
+    trace.point(Checkpoint::UserSaved);
     let emitted=app.clone();
     let gid_run=gid.clone();
     let execute=move |ticket:&generation_queue::Ticket,cancellation:Cancellation,current_step:Arc<Mutex<Option<String>>>|{
         let work=(||->Result<String,String>{
             if !is_negotiated{ticket.wait_for_slot()?;}
             ticket.verify_active_foreground(&session_id,&chat_id,&gid_run)?;
+            trace.point(Checkpoint::WorkerEntered);
             if host.chats.p0_auth_requested_watermark(&chat_id)?
                 !=revocation_watermark{
                 return Err("Cancelled reviewed application turn during approval or queue".into())
@@ -848,6 +856,7 @@ async fn reviewed_app_ask_internal(
             }
             let verifier=if is_negotiated{PersistedHumanTurn::current_chat(&host.chats,&chat_id,&gid_run,&prompt)}else{PersistedHumanTurn::queued_chat(&host.chats,&chat_id,&gid_run,&prompt)};
             if !verifier.verify_user_turn(&chat_id,&gid_run){return Err("Original reviewed human turn changed".into())}
+            trace.point(Checkpoint::SavedAttested);
             let authority=ConversationAuthority::new();
             let origin=BoundCallOrigin{
                 conversation_id:chat_id.clone(),
@@ -1073,6 +1082,7 @@ async fn reviewed_app_ask_internal(
             if let Some(choice)=chosen.as_ref(){
                 if available.len()!=1||!crate::capability_negotiation::matches_live(choice,&available){return Err("Selected reviewed capability changed after approval".into())}
             }
+            trace.point(Checkpoint::TaskAuthorized);
             // The actual admitted catalog is host/model-only, never a UI event.
             let audit=ModelTurnJournal::open(
                 &host.catalog_path.with_file_name("lu-reviewed-app-model-audit.sqlite")
@@ -1158,12 +1168,15 @@ async fn reviewed_app_ask_internal(
                      Human: {prompt}"
                 )
             };
-            let dispatch=progress.dispatch_observer();
+            let progress_dispatch=progress.dispatch_observer();
+            let dispatch=|point|{progress_dispatch(point);trace.record(|t|t.tool_checkpoint(point));};
+            trace.point(Checkpoint::ModelEntered);
             let answer=tauri::async_runtime::block_on(
                 reviewed.run_journaled_observed(
                     &model_prompt,&mut model,&cancellation,&audit,&dispatch
                 )
-            ).map_err(|e|format!("Reviewed application turn failed: {e:?}"))?;
+            ).map_err(|e|trace.model_error(&e).to_owned())?;
+            trace.point(Checkpoint::ModelReturned);
             if cancellation.is_cancelled()||ticket.cancelled(){
                 return Err("Cancelled reviewed application turn".into())
             }
@@ -1287,8 +1300,10 @@ async fn reviewed_app_ask_internal(
             if let Some(event)=verified_event{
                 let _=emitted.emit("lu-agent-step-verified",event);
             }
+            trace.saved_response(&host,&chat_id,&gid_run,&answer_text,false);
             Ok(answer_text)
         })();
+        if work.is_err(){trace.incomplete(ticket.cancelled()||cancellation.is_cancelled());}
         // A failed native/model turn must never disappear from the user's
         // history. Status is deliberately host-authored and contains no
         // potentially sensitive native error, argv or worker stdout.

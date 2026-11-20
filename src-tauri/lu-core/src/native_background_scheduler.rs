@@ -20,7 +20,7 @@ use crate::{
 
 mod reminders;
 mod scheduled_ai;
-pub use scheduled_ai::{AiSchedule,AiRun,ScheduledDiagnosticSummary,validate_ai_schedule,validate_ai_reader,LiveFile,MAX_SCHEDULE_OUTPUT};
+pub use scheduled_ai::{AiSchedule,AiRun,AiDiagnosticStep,ReaderReceipt,ScheduledDiagnosticSummary,validate_ai_schedule,validate_ai_reader,LiveFile,MAX_SCHEDULE_OUTPUT};
 pub use reminders::{ReminderDraft, ReminderView, parse_reminder_request, validate_reminder};
 
 const MAX_QUEUE:usize=128;

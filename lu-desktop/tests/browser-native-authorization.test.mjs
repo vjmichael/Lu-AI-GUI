@@ -99,7 +99,8 @@ test('Browser research creates a durable queued USER turn and revokes it on exit
 test('Browser is selected by the native host for ordinary Send, without renderer permission flags',()=>{
   assert.doesNotMatch(ui,/browserResearchNextSend|useBrowserResearch|browserOrigins/);
   assert.match(host,/TurnRoute::Browser\(origin\)/);
-  assert.match(host,/browser_model_desktop::lu_generate_browser\(app,state,session_id,chat_id,prompt,origin,512\)/);
+  assert.match(host,/browser_model_desktop::generate_browser_for_chat\(app,Arc::clone\(state.inner\(\)\),session_id,chat_id,prompt,origin,512,cp01_trace\)/);
+  assert.match(model,/generate_browser_for_chat\(app,Arc::clone\(state.inner\(\)\),session_id,chat_id,prompt,origins,max_new_tokens,None\).await/);
   assert.match(ui,/lu_generate'\s*,/);
   assert.match(model,/Browser research requires exact public HTTPS origins/);
   assert.match(host,/fn browser_origin_list\(raw:&str\)/);
@@ -184,5 +185,5 @@ test('public search provider is selected by authenticated human input and cannot
   assert.match(model,/scope\.origins\(\)!=vec!\[search\.origin\.to_owned\(\)\]/);
   assert.match(runtime,/approved_origins\.len\(\)!=1\|\|!super::browser_model_desktop::is_public_search_origin\(&approved_origins\[0\]\)/);
   assert.match(coordinator,/browser_model_desktop::public_search_intent\(prompt\)\?[\s\S]*?return Ok\(TurnRoute::Browser\(search\.origin\.into\(\)\)\)/);
-  assert.match(host,/TurnRoute::Browser\(origin\)=>\{[\s\S]*?lu_generate_browser\(app,state,session_id,chat_id,prompt,origin,512\)/);
+  assert.match(host,/TurnRoute::Browser\(origin\)=>\{[\s\S]*?generate_browser_for_chat\(app,Arc::clone\(state.inner\(\)\),session_id,chat_id,prompt,origin,512,cp01_trace\)/);
 });

@@ -258,7 +258,7 @@ impl Drop for Control<'_>{fn drop(&mut self){let _=self.state.reader_generations
 /// human event. An invalid/unknown proposal is never granted. A refused
 /// native picker ends this selection without any tool dispatch or retry.
 pub(crate) fn try_read_turn(app:&AppHandle,state:&Arc<DesktopState>,sid:&str,chat:&str,gid:&str,
-    prompt:&str,ticket:&generation_queue::Ticket)->Result<NegotiationOutcome,String>{
+    prompt:&str,ticket:&generation_queue::Ticket,perf_trace:&mut crate::perf01_telemetry::ModelTrace)->Result<NegotiationOutcome,String>{
     if !eligible(prompt){return Ok(NegotiationOutcome::Skipped)}
     let verifier=PersistedHumanTurn::current_chat(&state.chats,chat,gid,prompt);
     let cancellation=Cancellation::default();
@@ -341,11 +341,11 @@ pub(crate) fn try_read_turn(app:&AppHandle,state:&Arc<DesktopState>,sid:&str,cha
     // native lane below under the original ticket and cancellation control.
     record(ModelAuditKind::HostRouteSelected,&serde_json::json!({"candidate":choice.public_name,"nativeToolId":choice.native_tool_id,"intentApproved":true,"resourceApproved":false,"executed":false}).to_string(),None)?;
     match choice.native_tool_id.as_str(){
-        "lu.web.browser.read"=>crate::browser_model_desktop::execute_negotiated_browser(app,state,sid,chat,gid,prompt,ticket,&cancellation,&current_step,&choice,watermark),
-        "lu.reviewed.media.facts"|"lu.reviewed.pdf.info"|"lu.reviewed.image.info"=>crate::reviewed_app_desktop::execute_negotiated_reviewed(app,state,sid,chat,gid,prompt,ticket,&cancellation,&current_step,&choice,watermark),
-        "lu.reader.read"=>crate::reader_desktop::execute_negotiated_reader(app,state,sid,chat,gid,prompt,ticket,&cancellation,&current_step),
-        "lu.exec.check_env"|"lu.validate.schema"=>crate::core_utility_desktop::execute_negotiated_utility(app,state,sid,chat,gid,prompt,ticket,&cancellation,&current_step,&choice),
-        _=>crate::workspace_desktop::execute_negotiated_read(app,state,sid,chat,gid,prompt,ticket,&cancellation,&current_step,&choice),
+        "lu.web.browser.read"=>crate::browser_model_desktop::execute_negotiated_browser(app,state,sid,chat,gid,prompt,ticket,&cancellation,&current_step,&choice,watermark,perf_trace.take_causal_progress()),
+        "lu.reviewed.media.facts"|"lu.reviewed.pdf.info"|"lu.reviewed.image.info"=>crate::reviewed_app_desktop::execute_negotiated_reviewed(app,state,sid,chat,gid,prompt,ticket,&cancellation,&current_step,&choice,watermark,perf_trace.take_causal_progress()),
+        "lu.reader.read"=>crate::reader_desktop::execute_negotiated_reader(app,state,sid,chat,gid,prompt,ticket,&cancellation,&current_step,perf_trace.take_causal_progress()),
+        "lu.exec.check_env"|"lu.validate.schema"=>crate::core_utility_desktop::execute_negotiated_utility(app,state,sid,chat,gid,prompt,ticket,&cancellation,&current_step,&choice,perf_trace.take_causal_progress()),
+        _=>crate::workspace_desktop::execute_negotiated_read(app,state,sid,chat,gid,prompt,ticket,&cancellation,&current_step,&choice,perf_trace.take_causal_progress()),
     }.map(NegotiationOutcome::Completed)
 }
 

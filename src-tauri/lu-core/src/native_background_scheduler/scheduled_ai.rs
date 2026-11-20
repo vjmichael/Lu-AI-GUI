@@ -40,6 +40,7 @@ pub struct AiRun {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ScheduledDiagnosticSummary {
+    pub recent:Vec<ScheduledOccurrenceFinding>,
     pub running:u32,
     pub saved_text:u32,
     pub reader_result_matches:u32,
@@ -47,6 +48,37 @@ pub struct ScheduledDiagnosticSummary {
     pub stopped:u32,
     pub interrupted:u32,
     pub unavailable:u32,
+}
+/// Only host checkpoints, with fixed vocabulary and no user content.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScheduledOccurrenceFinding {
+    pub attempt:u64,
+    pub outcome:&'static str,
+    pub checkpoint:&'static str,
+    pub checkpoint_description:&'static str,
+    pub source_receipt_present:bool,
+    pub explanation:&'static str,
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(i64)]
+pub enum AiDiagnosticStep {
+    ModelEntered=1, ModelReturned=2, ReaderEntered=3, ReaderVerified=4,
+    AnswerEntered=5, AnswerReturned=6, AnswerMismatch=7,
+}
+impl AiDiagnosticStep {
+    fn label(value:Option<i64>)->&'static str {
+        match value {Some(0)=>"claimed",Some(1)=>"model_entered",Some(2)=>"model_returned",
+            Some(3)=>"reader_entered",Some(4)=>"reader_verified",Some(5)=>"answer_entered",
+            Some(6)=>"answer_returned",Some(7)=>"answer_mismatch",_=>"untraced"}
+    }
+    fn description(value:Option<i64>)->&'static str {
+        match value {Some(0)=>"Scheduled attempt was claimed.",Some(1)=>"Model execution was entered.",
+            Some(2)=>"Model response was received.",Some(3)=>"The Reader request reached native validation.",
+            Some(4)=>"The source receipt was independently read back.",Some(5)=>"Final answer execution was entered.",
+            Some(6)=>"Final model answer was received.",Some(7)=>"The answer was rejected by source comparison.",
+            _=>"No detailed execution checkpoint is available."}
+    }
 }
 fn decode_schedule(r: &rusqlite::Row<'_>) -> rusqlite::Result<AiSchedule> {
     Ok(AiSchedule {
@@ -362,7 +394,8 @@ pub(super) fn initialize(db: &Connection) -> Result<(), SchedulerError> {
       CREATE UNIQUE INDEX IF NOT EXISTS lu_ai_one_running ON lu_ai_runs(state) WHERE state='RUNNING';
       CREATE TABLE IF NOT EXISTS lu_ai_reader_grants(schedule_id TEXT PRIMARY KEY, note TEXT NOT NULL,line INTEGER NOT NULL,sha256 TEXT NOT NULL,scope_sha256 TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS lu_ai_live_grants(schedule_id TEXT PRIMARY KEY,display TEXT NOT NULL,identity TEXT NOT NULL,line INTEGER NOT NULL,scope_sha256 TEXT NOT NULL,permission TEXT NOT NULL CHECK(permission IN ('APPROVED','REVIEW','REVOKED','ENDED')));
-      CREATE TABLE IF NOT EXISTS lu_ai_reader_receipts(schedule_id TEXT NOT NULL,sequence INTEGER NOT NULL,sha256 TEXT NOT NULL,line INTEGER NOT NULL,verified_text TEXT NOT NULL,PRIMARY KEY(schedule_id,sequence));").map_err(db_error)?;
+      CREATE TABLE IF NOT EXISTS lu_ai_reader_receipts(schedule_id TEXT NOT NULL,sequence INTEGER NOT NULL,sha256 TEXT NOT NULL,line INTEGER NOT NULL,verified_text TEXT NOT NULL,PRIMARY KEY(schedule_id,sequence));
+      CREATE TABLE IF NOT EXISTS lu_ai_diagnostic_progress(schedule_id TEXT NOT NULL,sequence INTEGER NOT NULL,phase INTEGER NOT NULL DEFAULT 0 CHECK(phase BETWEEN 0 AND 7),PRIMARY KEY(schedule_id,sequence));").map_err(db_error)?;
     // A claimed occurrence is never replayed. Its cadence was already advanced
     // atomically at claim. The next future occurrence still has original consent.
     db.execute_batch("BEGIN IMMEDIATE;
@@ -627,6 +660,33 @@ impl BackgroundScheduler {
         let rows = q.query_map([], decode_schedule).map_err(db_error)?;
         rows.collect::<Result<Vec<_>, _>>().map_err(db_error)
     }
+    /// Best-effort observational checkpoint, never a grant. Only the exact
+    /// running occurrence and original owner/model can advance one step.
+    /// A Reader receipt is independently read from the original journal.
+    pub fn record_ai_diagnostic_step(&self,id:&str,owner:&str,model:&str,sequence:u64,step:AiDiagnosticStep)->Result<bool,SchedulerError>{
+        self.advance_ai_diagnostic(id,owner,model,sequence,step,None)
+    }
+    /// Independently compare the actual returned Reader result against its
+    /// immutable journal row. The data is used only for equality, never copied
+    /// into the diagnostic table or exported by this method.
+    pub fn record_ai_reader_diagnostic(&self,id:&str,owner:&str,model:&str,sequence:u64,receipt:&ReaderReceipt)->Result<bool,SchedulerError>{
+        self.advance_ai_diagnostic(id,owner,model,sequence,AiDiagnosticStep::ReaderVerified,Some(receipt))
+    }
+    fn advance_ai_diagnostic(&self,id:&str,owner:&str,model:&str,sequence:u64,step:AiDiagnosticStep,receipt:Option<&ReaderReceipt>)->Result<bool,SchedulerError>{
+        if (step==AiDiagnosticStep::ReaderVerified)!=receipt.is_some(){return Ok(false)}
+        let g=self.inner.lock().map_err(|_|SchedulerError::Poisoned)?;
+        let n=g.db.execute("UPDATE lu_ai_diagnostic_progress AS d SET phase=?5
+            WHERE d.schedule_id=?1 AND d.sequence=?4 AND d.phase=?5-1
+            AND EXISTS(SELECT 1 FROM lu_ai_runs r JOIN lu_ai_schedules s ON s.id=r.schedule_id
+            WHERE r.schedule_id=d.schedule_id AND r.sequence=d.sequence AND r.state='RUNNING'
+            AND s.workspace_id=?2 AND s.model_ref=?3
+            AND (?5<=2 OR EXISTS(SELECT 1 FROM lu_ai_reader_grants f WHERE f.schedule_id=s.id)
+                OR EXISTS(SELECT 1 FROM lu_ai_live_grants l WHERE l.schedule_id=s.id)))
+            AND (?5<4 OR EXISTS(SELECT 1 FROM lu_ai_reader_receipts t WHERE t.schedule_id=d.schedule_id AND t.sequence=d.sequence
+                AND (?5!=4 OR (t.sha256=?6 AND t.line=?7 AND t.verified_text=?8))))",
+            params![id,owner,model,to_sql(sequence)?,step as i64,receipt.map(|r|r.source_sha256.as_str()),receipt.map(|r|r.line),receipt.map(|r|r.verified_text.as_str())]).map_err(db_error)?;
+        Ok(n==1)
+    }
     /// One read-only bounded snapshot; no content, identity, permission or
     /// inference is returned or acquired by this diagnostic operation.
     pub fn ai_diagnostic_summary(&self) -> Result<ScheduledDiagnosticSummary,SchedulerError> {
@@ -634,23 +694,40 @@ impl BackgroundScheduler {
         let mut stmt=g.db.prepare("SELECT r.state, r.finished IS NOT NULL, length(r.output)>0,
             t.sequence IS NOT NULL, COALESCE(r.output=t.verified_text,0),
             (EXISTS(SELECT 1 FROM lu_ai_reader_grants f WHERE f.schedule_id=s.id) OR
-             EXISTS(SELECT 1 FROM lu_ai_live_grants l WHERE l.schedule_id=s.id))
+             EXISTS(SELECT 1 FROM lu_ai_live_grants l WHERE l.schedule_id=s.id)),r.sequence,d.phase
             FROM lu_ai_runs r JOIN lu_ai_schedules s ON s.id=r.schedule_id
             LEFT JOIN lu_ai_reader_receipts t ON t.schedule_id=r.schedule_id AND t.sequence=r.sequence
-            ORDER BY r.started DESC LIMIT 2049").map_err(db_error)?;
-        let rows=stmt.query_map([],|r|Ok((r.get::<_,String>(0)?,r.get::<_,bool>(1)?,r.get::<_,bool>(2)?,r.get::<_,bool>(3)?,r.get::<_,bool>(4)?,r.get::<_,bool>(5)?))).map_err(db_error)?;
+            LEFT JOIN lu_ai_diagnostic_progress d ON d.schedule_id=r.schedule_id AND d.sequence=r.sequence
+            ORDER BY r.started DESC,r.schedule_id,r.sequence DESC LIMIT 2049").map_err(db_error)?;
+        let rows=stmt.query_map([],|r|Ok((r.get::<_,String>(0)?,r.get::<_,bool>(1)?,r.get::<_,bool>(2)?,r.get::<_,bool>(3)?,r.get::<_,bool>(4)?,r.get::<_,bool>(5)?,r.get::<_,u64>(6)?,r.get::<_,Option<i64>>(7)?))).map_err(db_error)?;
         let mut report=ScheduledDiagnosticSummary::default();
         for (i,row) in rows.enumerate(){
             if i>=2048{return Err(SchedulerError::Database)}
-            let (state,finished,has_output,has_reader,matches_reader,requires_reader)=row.map_err(db_error)?;
-            match (state.as_str(),finished,has_output,requires_reader,has_reader,matches_reader){
-                ("RUNNING",false,false,_,_,_)=>report.running+=1,
-                ("COMPLETED",true,true,true,true,true)=>report.reader_result_matches+=1,
-                ("COMPLETED",true,true,false,false,_)=>report.saved_text+=1,
-                ("FAILED",true,false,_,_,_)=>report.failed+=1,
-                ("STOPPED",true,false,_,_,_)=>report.stopped+=1,
-                ("INTERRUPTED",true,false,_,_,_)=>report.interrupted+=1,
-                _=>report.unavailable+=1,
+            let (state,finished,has_output,has_reader,matches_reader,requires_reader,attempt,phase)=row.map_err(db_error)?;
+            let outcome=match (state.as_str(),finished,has_output,requires_reader,has_reader,matches_reader){
+                ("RUNNING",false,false,_,_,_)=>{report.running+=1;"running"},
+                ("COMPLETED",true,true,true,true,true)=>{report.reader_result_matches+=1;"source_match"},
+                ("COMPLETED",true,true,false,false,_)=>{report.saved_text+=1;"saved"},
+                ("FAILED",true,false,_,_,_)=>{report.failed+=1;"failed"},
+                ("STOPPED",true,false,_,_,_)=>{report.stopped+=1;"stopped"},
+                ("INTERRUPTED",true,false,_,_,_)=>{report.interrupted+=1;"interrupted"},
+                _=>{report.unavailable+=1;"unavailable"},
+            };
+            if i<16 {
+                let phase=phase.filter(|p| (0..=7).contains(p) && (*p<=2||requires_reader) && (*p<4||has_reader));
+                let explanation=match (outcome,phase){
+                    ("unavailable",_)=>"The saved result could not be confirmed.",
+                    ("source_match",_)=>"The saved answer matches its original Reader receipt. This does not verify the source itself.",
+                    ("saved",_)=>"A response was saved. Its accuracy was not checked.",
+                    ("stopped",_)=>"Execution was stopped; worker exit is not established by this record.",
+                    ("interrupted",_)=>"Execution was interrupted. The original occurrence was not replayed.",
+                    ("failed",Some(7))=>"The model answer did not match the approved source receipt.",
+                    ("failed",Some(3))=>"Lu could not confirm a Reader result for this attempt.",
+                    ("failed",Some(1|5))=>"Lu could not confirm that inference returned a usable response.",
+                    ("failed",_)=>"The task failed; the exact cause could not be confirmed.",
+                    _=>"Execution is in progress; no final result has been confirmed.",
+                };
+                report.recent.push(ScheduledOccurrenceFinding{attempt,outcome,checkpoint:AiDiagnosticStep::label(phase),checkpoint_description:AiDiagnosticStep::description(phase),source_receipt_present:has_reader,explanation});
             }
         }
         Ok(report)
@@ -732,6 +809,7 @@ impl BackgroundScheduler {
             (original, original)
         };
         tx.execute("INSERT INTO lu_ai_runs(schedule_id,sequence,due,started,state) VALUES(?1,?2,?3,?4,'RUNNING')",params![id,to_sql(sequence)?,due,now]).map_err(db_error)?;
+        tx.execute("INSERT INTO lu_ai_diagnostic_progress(schedule_id,sequence,phase) VALUES(?1,?2,0)",params![id,to_sql(sequence)?]).map_err(db_error)?;
         tx.execute(
             "UPDATE lu_ai_schedules SET next_due=?2,run_count=?3 WHERE id=?1",
             params![id, next, to_sql(sequence)?],
@@ -861,6 +939,60 @@ mod tests {
         assert_eq!(summary.unavailable,0);
         assert!(!serde_json::to_string(&summary).unwrap().contains("private"));
         assert_eq!(s.ai_runs("private-id","c-a").unwrap().len(),3);
+    }
+    #[test]
+    fn cp12ar2_occurrence_progress_is_exact_and_receipt_bound(){
+        use AiDiagnosticStep::*;
+        let s=open(Path::new(":memory:"));
+        s.create_ai_with_grant_at("private-task","c-private-owner","private prompt","m-private-model",60,Some(60),100,Some(("private source",1)),None).unwrap();
+        let (_,seq)=s.claim_ai_at("private-task","c-private-owner","m-private-model",160).unwrap().unwrap();
+        let mark=|step|s.record_ai_diagnostic_step("private-task","c-private-owner","m-private-model",seq,step).unwrap();
+        assert!(!mark(ModelReturned));
+        assert!(!s.record_ai_diagnostic_step("private-task","wrong","m-private-model",seq,ModelEntered).unwrap());
+        assert!(!s.record_ai_diagnostic_step("private-task","c-private-owner","wrong",seq,ModelEntered).unwrap());
+        assert!(mark(ModelEntered));assert!(!mark(ModelEntered));assert!(mark(ModelReturned));assert!(mark(ReaderEntered));
+        assert!(!mark(ReaderVerified));
+        let receipt=s.execute_ai_reader("private-task","c-private-owner","m-private-model",seq,"READ").unwrap();
+        assert!(!mark(ReaderVerified));
+        let mut wrong=receipt.clone();wrong.verified_text="other".into();
+        assert!(!s.record_ai_reader_diagnostic("private-task","c-private-owner","m-private-model",seq,&wrong).unwrap());
+        assert!(s.record_ai_reader_diagnostic("private-task","c-private-owner","m-private-model",seq,&receipt).unwrap());assert!(mark(AnswerEntered));assert!(mark(AnswerReturned));assert!(mark(AnswerMismatch));
+        s.finish_ai("private-task",seq,"FAILED","").unwrap();
+        assert!(!mark(AnswerMismatch));
+        let summary=s.ai_diagnostic_summary().unwrap();assert_eq!(summary.failed,1);
+        let finding=&summary.recent[0];assert_eq!(finding.checkpoint,"answer_mismatch");assert!(finding.source_receipt_present);
+        assert!(finding.explanation.contains("did not match"));
+        assert!(!serde_json::to_string(&summary).unwrap().contains("private"));
+        let (_,next)=s.claim_ai_at("private-task","c-private-owner","m-private-model",220).unwrap().unwrap();
+        assert_ne!(seq,next);assert!(!mark(ModelEntered));
+        assert_eq!(s.ai_diagnostic_summary().unwrap().recent[0].checkpoint,"claimed");
+        assert!(s.record_ai_diagnostic_step("private-task","c-private-owner","m-private-model",next,ModelEntered).unwrap());
+        s.control_ai("private-task","c-private-owner","cancel").unwrap();
+        assert!(!s.record_ai_diagnostic_step("private-task","c-private-owner","m-private-model",next,ModelReturned).unwrap());
+        let stopped=s.ai_diagnostic_summary().unwrap();assert_eq!(stopped.recent[0].outcome,"stopped");
+        assert_eq!(stopped.recent[0].checkpoint,"model_entered");
+    }
+    #[test]
+    fn cp12ar2_restart_preserves_last_confirmed_checkpoint_and_legacy_rows(){
+        use AiDiagnosticStep::*;
+        let path=std::env::temp_dir().join(format!("lu-cp12ar2-{}-{}.sqlite",std::process::id(),SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos()));
+        {
+            let s=open(&path);
+            s.create_ai_at("ai-1","c-a","Write a note","m-a",60,Some(60),100).unwrap();
+            let (_,first)=s.claim_ai_at("ai-1","c-a","m-a",160).unwrap().unwrap();
+            s.finish_ai("ai-1",first,"COMPLETED","old").unwrap();
+            s.inner.lock().unwrap().db.execute("DELETE FROM lu_ai_diagnostic_progress WHERE schedule_id='ai-1' AND sequence=1",[]).unwrap();
+            let (_,seq)=s.claim_ai_at("ai-1","c-a","m-a",220).unwrap().unwrap();
+            assert!(s.record_ai_diagnostic_step("ai-1","c-a","m-a",seq,ModelEntered).unwrap());
+            assert!(!s.record_ai_diagnostic_step("ai-1","c-a","m-a",seq,ReaderEntered).unwrap());
+        }
+        let s=open(&path);let report=s.ai_diagnostic_summary().unwrap();
+        assert_eq!((report.interrupted,report.saved_text),(1,1));
+        assert_eq!(report.recent[0].outcome,"interrupted");assert_eq!(report.recent[0].checkpoint,"model_entered");
+        assert_eq!(report.recent[1].checkpoint,"untraced");
+        assert!(!s.record_ai_diagnostic_step("ai-1","c-a","m-a",2,ModelReturned).unwrap());
+        assert_eq!(s.ai_runs("ai-1","c-a").unwrap().len(),2);
+        drop(s);let _=std::fs::remove_file(path);
     }
     #[test]
     fn cp11br1_exact_claim_and_owner_model_binding() {

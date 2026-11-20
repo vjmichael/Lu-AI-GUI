@@ -733,8 +733,8 @@ async fn ask_scoped_read_for_chat(
 /// and separately confirmed by the existing native scope acquisition.
 pub(crate) fn execute_negotiated_read(app:&AppHandle,state:&Arc<DesktopState>,session:&str,chat:&str,gid:&str,
     prompt:&str,ticket:&generation_queue::Ticket,cancel:&Cancellation,current_step:&Arc<Mutex<Option<String>>>,
-    choice:&crate::capability_negotiation::ReadCandidate)->Result<String,String>{
-    let trace=NativeDiagnosticTrace::new(state);
+    choice:&crate::capability_negotiation::ReadCandidate,parent:Option<crate::causal_diagnostic::CausalProgress>)->Result<String,String>{
+    let trace=NativeDiagnosticTrace::from_parent(state,parent);
     if ticket.cancelled()||cancel.is_cancelled(){return Err("Cancelled capability selection".into())}
     let verifier=PersistedHumanTurn::current_chat(&state.chats,chat,gid,prompt);
     if !verifier.verify_user_turn(chat,gid){return Err("Original human turn changed".into())}

@@ -244,8 +244,8 @@ pub(crate) async fn ask_reader_for_chat(
 /// Model selection of Reader never supplies a file path. This entry runs under
 /// the existing authenticated ordinary Send ticket and cancellation registry.
 pub(crate) fn execute_negotiated_reader(app:&AppHandle,host:&Arc<DesktopState>,session:&str,chat:&str,gid:&str,prompt:&str,
-    ticket:&generation_queue::Ticket,cancellation:&Cancellation,current_step:&Arc<Mutex<Option<String>>>)->Result<String,String>{
-    let trace=NativeDiagnosticTrace::new(host);
+    ticket:&generation_queue::Ticket,cancellation:&Cancellation,current_step:&Arc<Mutex<Option<String>>>,parent:Option<crate::causal_diagnostic::CausalProgress>)->Result<String,String>{
+    let trace=NativeDiagnosticTrace::from_parent(host,parent);
     let verifier=PersistedHumanTurn::current_chat(&host.chats,chat,gid,prompt);
     let checkpoint=||{
         if ticket.cancelled()||cancellation.is_cancelled(){return Err("Cancelled Reader selection".to_owned())}
