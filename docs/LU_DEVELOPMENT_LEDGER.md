@@ -2,6 +2,19 @@
 
 > **START HERE for Lu project status.** This file on **`main`** is the authoritative *development index*, not a guarantee that draft code is merged, installed, or accepted. See [CHANGELOG.md](../CHANGELOG.md) for accepted milestones and [v1.0 design](LU_V1_0_DESIGN_RECONCILIATION_20261103.md) for requirements. Historical branch-local task logs and conversations are evidence, **not competing current status boards**.
 
+### IDE-LINUX-08-R2 — consolidated protected offline package-worker laboratory acceptance (2026-11-19)
+
+**State: CLOSED for the scoped Debian/QEMU laboratory matrix.** Reopened retained R2 logs and independently reauthenticated all nine uploaded Git/Unzip archives against the previously retained Debian trixie signed index: three valid signatures, exact index SHA-256 and archive SHA-256/size matches. Guest installed 52 packages offline, zero upgrades/removals. Exact local source `6c2889f38cd4f8c9e569a83c9ca2efeab2b5ffc6` (1,978 tracked source entries verified); native supervisor 111/111. Fixed uv live-cancellation witness added in local `d81e8e06f209565e36b42337ae70f181410ee490`; native build succeeded.
+
+| Runtime | Positive cache | Cache miss | Live cancel | Interrupted recovery |
+| --- | --- | --- | --- | --- |
+| vcpkg | PASS | PASS | PASS | PASS |
+| uv 0.9.9 | PASS | PASS | PASS | PASS |
+
+Original uv prelaunch cancellation also PASS. Consolidated guest console records all nine fixed acceptance modes, 6,368 payload hashes matched and terminal exit 0. Recovered driver log confirms clean guest shutdown, unchanged base image and successful overlay integrity check. The R1 Git-missing failures no longer occur. Retain original source preservation, private installed-byte/tamper controls, durable recovery and refusal of replay; no relaxation of kernel custody. Scope is synthetic lab consent, not installed-user authorization or redistribution approval. Native compilation remains outside QEMU.
+
+**Next:** IDE-LINUX-09 — installed Linux desktop and LSP acceptance, followed by IDE-LINUX-10 consolidated acceptance. Local tested source has not been promoted/merged to PR #236; keep grouped integration, immutable candidate CI and physical/installed gates open. This documentation-only publication is not source promotion or a manual CI dispatch.
+
 ### IDE-LINUX-08-R1 — protected offline package acceptance, partial closeout (2026-11-19)
 
 **State: PARTIALLY ACCEPTED in the isolated Debian/QEMU lab; package group remains OPEN.** Native development and cache generation stayed on the native host; guest performed fixed privileged runtime cases only. Current local source candidate `5b6ed60bb39a9c8f5edde5bd82663b231e6eded8`, 1,978 tracked entries verified. Published integration PR #236 remains on `e066faf9cf866163c65bc43d7a7efa3093cde810`, no merge/source promotion.
