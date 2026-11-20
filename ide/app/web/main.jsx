@@ -10633,6 +10633,8 @@ function App() {
                   {' · '}Index conflicts: {String(gitRefsHealth.health.indexConflicts)}
                   {' · '}Shallow: {String(gitRefsHealth.health.shallow)}
                   {' · '}Detached: {String(gitRefsHealth.health.detachedHead)}</p>
+                {(!gitRefsHealth.health.recovery || gitRefsHealth.health.recovery.requiresOperatorReconciliation) &&
+                  <p role="alert">Git recovery requires operator reconciliation. Review the interrupted operation before making further changes. Nothing will resume or abort automatically.</p>}
                 <p>Remote aliases (URLs and credentials hidden):
                   {' '}{gitRefsHealth.remoteAliases.join(', ') || 'none observed'}</p>
                 <p>Local/tracking/tag refs ({gitRefsHealth.localRefs.length}{gitRefsHealth.refsTruncated ? '+' : ''}):</p>

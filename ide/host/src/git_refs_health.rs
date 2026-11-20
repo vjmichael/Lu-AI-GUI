@@ -23,6 +23,18 @@ pub struct GitRefEvidence {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct GitRecoveryState {
+    pub classification: &'static str,
+    pub requires_operator_reconciliation: bool,
+    pub index_conflicts_verified_absent: bool,
+    pub can_auto_resume: bool,
+    pub can_auto_abort: bool,
+    pub write_authority_granted: bool,
+    pub source: &'static str,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct GitRepositoryHealth {
     pub repository_state: String,
     pub index_conflicts: Option<bool>,
@@ -31,6 +43,7 @@ pub struct GitRepositoryHealth {
     pub unborn_head: bool,
     pub metadata_clean_only: bool,
     pub operation_ready: bool,
+    pub recovery: GitRecoveryState,
 }
 
 #[derive(Debug, Serialize)]
@@ -53,6 +66,40 @@ pub struct GitRefsAndHealthEvidence {
 fn safe_name(s: &str) -> bool {
     !s.is_empty() && s.len() <= MAX_NAME_BYTES && !s.chars().any(char::is_control)
 }
+fn classify_recovery(state: git2::RepositoryState, conflicts: Option<bool>) -> GitRecoveryState {
+    // Read-only evidence; never authorize resuming or aborting a Git operation.
+    let classification = if conflicts == Some(true) {
+        "index_conflicts_detected"
+    } else if conflicts.is_none() {
+        "index_unverifiable"
+    } else {
+        match state {
+            git2::RepositoryState::Clean => "no_git_interruption_detected",
+            git2::RepositoryState::Merge => "merge_in_progress",
+            git2::RepositoryState::CherryPick | git2::RepositoryState::CherryPickSequence => {
+                "cherry_pick_in_progress"
+            }
+            git2::RepositoryState::Revert | git2::RepositoryState::RevertSequence => {
+                "revert_in_progress"
+            }
+            git2::RepositoryState::Rebase
+            | git2::RepositoryState::RebaseInteractive
+            | git2::RepositoryState::RebaseMerge => "rebase_in_progress",
+            git2::RepositoryState::Bisect => "bisect_in_progress",
+            _ => "other_git_operation_in_progress",
+        }
+    };
+    GitRecoveryState {
+        classification,
+        requires_operator_reconciliation: classification != "no_git_interruption_detected",
+        index_conflicts_verified_absent: conflicts == Some(false),
+        can_auto_resume: false,
+        can_auto_abort: false,
+        write_authority_granted: false,
+        source: "native_local_git_state_and_index_only",
+    }
+}
+
 fn selected_repo(
     registry: &IdeWorkspaceRegistry,
     project_id: &str,
@@ -128,13 +175,17 @@ impl IdeWorkspaceRegistry {
             }
         }
         aliases.sort();
-        let state = format!("{:?}", repo.state());
+        let observed_state = repo.state();
+        let state = format!("{:?}", observed_state);
         let conflicts = repo.index().ok().map(|index| index.has_conflicts());
         let unborn = repo.head().is_err() && repo.is_empty().unwrap_or(false);
-        let detached = repo.head_detached().unwrap_or(false);
-        let healthy = matches!(repo.state(), git2::RepositoryState::Clean)
-            && conflicts == Some(false)
-            && !unborn;
+        let detached_check = repo.head_detached();
+        let detached = detached_check.as_ref().copied().unwrap_or(false);
+        let recovery = classify_recovery(observed_state, conflicts);
+        let healthy = !recovery.requires_operator_reconciliation
+            && !unborn
+            && matches!(detached_check, Ok(false))
+            && repo.head().is_ok();
         Ok(GitRefsAndHealthEvidence {
             schema_version: 1,
             project_id: project_id.to_owned(),
@@ -155,6 +206,7 @@ impl IdeWorkspaceRegistry {
                 unborn_head: unborn,
                 metadata_clean_only: healthy,
                 operation_ready: false,
+                recovery,
             },
             remote_url_exposed: false,
             network_queried: false,
@@ -182,6 +234,83 @@ mod tests {
             let _ = fs::remove_dir_all(&self.0);
         }
     }
+    #[test]
+    fn interrupted_states_and_conflicted_index_never_authorize_replay() {
+        use git2::RepositoryState::*;
+        for (state, conflicts, classification) in [
+            (Merge, Some(false), "merge_in_progress"),
+            (CherryPick, Some(false), "cherry_pick_in_progress"),
+            (Revert, Some(false), "revert_in_progress"),
+            (Rebase, Some(false), "rebase_in_progress"),
+            (Bisect, Some(false), "bisect_in_progress"),
+            (Clean, Some(true), "index_conflicts_detected"),
+            (Clean, None, "index_unverifiable"),
+            (Merge, None, "index_unverifiable"),
+            (Clean, Some(false), "no_git_interruption_detected"),
+        ] {
+            let result = classify_recovery(state, conflicts);
+            assert_eq!(result.classification, classification);
+            assert_eq!(
+                result.requires_operator_reconciliation,
+                classification != "no_git_interruption_detected"
+            );
+            assert_eq!(result.index_conflicts_verified_absent, conflicts == Some(false));
+            assert!(!result.can_auto_resume);
+            assert!(!result.can_auto_abort);
+            assert!(!result.write_authority_granted);
+        }
+    }
+
+    #[test]
+    fn actual_git_merge_head_marker_survives_reopen_without_auto_recovery() {
+        let path =
+            std::env::temp_dir().join(format!("ide-g06a-merge-{:032x}", rand::random::<u128>()));
+        let _fixture = Fixture(path.clone());
+        let root = path.join("root");
+        fs::create_dir_all(&root).unwrap();
+        let repo = Repository::init(&root).unwrap();
+        fs::write(root.join("source.rs"), b"hello\n").unwrap();
+        let mut index = repo.index().unwrap();
+        index.add_path(std::path::Path::new("source.rs")).unwrap();
+        index.write().unwrap();
+        let tree = repo.find_tree(index.write_tree().unwrap()).unwrap();
+        let sig = Signature::now("Fixture", "fixture@localhost.invalid").unwrap();
+        let oid = repo
+            .commit(Some("HEAD"), &sig, &sig, "initial", &tree, &[])
+            .unwrap();
+        let marker = repo.path().join("MERGE_HEAD");
+        let marker_bytes = format!("{oid}\n").into_bytes();
+        fs::write(&marker, &marker_bytes).unwrap();
+        drop(tree);
+        drop(index);
+        drop(repo);
+        let catalog = path.join("catalog.json");
+        let registry = IdeWorkspaceRegistry::open(catalog.clone()).unwrap();
+        let id = registry
+            .register_from_native_picker(&mut Picker(root.clone()))
+            .unwrap()
+            .unwrap()
+            .project_id;
+        for _ in 0..2 {
+            let result = registry.inspect_git_refs_health(&id).unwrap();
+            assert_eq!(result.health.recovery.classification, "merge_in_progress");
+            assert!(result.health.recovery.requires_operator_reconciliation);
+            assert!(!result.health.recovery.can_auto_resume);
+            assert!(!result.health.recovery.can_auto_abort);
+            assert!(!result.health.recovery.write_authority_granted);
+            assert!(!result.health.metadata_clean_only);
+            assert!(!result.health.operation_ready);
+            assert!(!result.refs_or_files_modified);
+            assert_eq!(fs::read(&marker).unwrap(), marker_bytes);
+            assert_eq!(fs::read(root.join("source.rs")).unwrap(), b"hello\n");
+        }
+        drop(registry);
+        let reopened = Repository::open(root).unwrap();
+        assert_eq!(reopened.state(), git2::RepositoryState::Merge);
+        assert_eq!(reopened.head().unwrap().target(), Some(oid));
+        assert_eq!(fs::read(&marker).unwrap(), marker_bytes);
+    }
+
     #[test]
     fn local_refs_and_remote_aliases_never_return_credential_url() {
         let path =
@@ -230,5 +359,13 @@ mod tests {
         assert_eq!(result.health.index_conflicts, Some(false));
         assert!(result.health.metadata_clean_only);
         assert!(!result.health.operation_ready);
+        assert!(!result.health.recovery.requires_operator_reconciliation);
+        assert!(!result.health.recovery.write_authority_granted);
+        let repo = Repository::open(path.join("root")).unwrap();
+        repo.set_head_detached(oid).unwrap();
+        let detached = registry.inspect_git_refs_health(&id).unwrap();
+        assert!(detached.health.detached_head);
+        assert!(!detached.health.metadata_clean_only);
+        assert!(!detached.health.operation_ready);
     }
 }
