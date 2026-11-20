@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "a39e2f5b7817ae9ab5ec5b501704da35ec1322dd",
+  "sourceCommitBeforeLock": "e9f1177f13c97320af9f958c546a6f10846fdfab",
   "trackedFileCount": 1236,
   "files": [
     {
@@ -1705,11 +1705,11 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/dx_ipc.rs",
-      "blob": "1f94fa8bd58da9274ac82daa103bbc784f3aa3ca"
+      "blob": "e89faae386322b937a0080a1b4de694f43ac843e"
     },
     {
       "path": "lu-desktop/src-tauri/src/dx_review.rs",
-      "blob": "a4e5ac4ad23987e0d4931e31911e5589bca9cfe3"
+      "blob": "b230f92ce3dfc013af36ef698c87e58b06d4602f"
     },
     {
       "path": "lu-desktop/src-tauri/src/dx_windows_pipe.rs",
@@ -2697,7 +2697,7 @@
     },
     {
       "path": "lu-desktop/web/native_windows.jsx",
-      "blob": "aca3dc1aa146f4018c1566c9eaa42f7a522df073"
+      "blob": "38795b9b4776f4b435dc5bc7f8acd86bae8a8596"
     },
     {
       "path": "lu-desktop/web/response_view.mjs",
