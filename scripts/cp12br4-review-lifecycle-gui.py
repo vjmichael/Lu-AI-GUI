@@ -56,6 +56,18 @@ def main():
         require(named(pid,'Clear review',actionable=True) is None and named(pid,'Copy invitation',actionable=True) is None,'cancelled result published')
     def no_result(pid,label):
         stopped(pid);capture(label);mark(label,'PASS_NO_RESULT_VISUAL_STATUS_REVIEW_REQUIRED')
+    def explicit_model_recovery(pid,worker,label):
+        # The inference supervisor may reap its worker to enforce cancellation.
+        # Never silently re-run or load: witness the idle state, then use the
+        # ordinary model picker and explicit user load if it was ejected.
+        previous=bm.model_worker(pid)
+        if previous is None:
+            require(bm.ticks(worker) is None,'cancelled owned worker still present')
+            action(pid,'Chat');worker=bm.load(pid);settings(pid)
+            mark(label,'PASS_EXPLICIT_RELOAD_AFTER_WORKER_REAP')
+        else:
+            require(previous==worker,'model replaced without explicit load');mark(label,'PASS_SAME_WORKER_READY')
+        return worker
     def make_invitation(pid,worker,base):
         for _ in range(3):
             before=bm.ticks(worker);share(pid)
@@ -81,10 +93,10 @@ def main():
         baseline=sockets();sender,spath=start('sender');focus(sender.pid);bm.send_chat(sender.pid,'Show local model status');wait(lambda:next((t for t in dx.traces(spath) if t['state']=='sealed' and [13,2,0] in t['events']),None),40,'source delivery');source=dx.traces(spath)
         require(len(source)==1 and not source[0]['dropped'],'source fixture count');sw=bm.load(sender.pid);settings(sender.pid)
         require(sockets()==baseline,'unexpected initial invitation');mark('initial_default_off')
-        st=bm.ticks(sw);share(sender.pid);n=active(sender.pid,sw,st);require(n.get_action_iface().do_action(0),'native stop click');stopped(sender.pid);require(sockets()==baseline and dx.traces(spath)==source,'sender cancellation changed evidence or created invitation');capture('sender-cancel');mark('sender_active_cancel')
+        st=bm.ticks(sw);share(sender.pid);n=active(sender.pid,sw,st);require(n.get_action_iface().do_action(0),'native stop click');stopped(sender.pid);require(sockets()==baseline and dx.traces(spath)==source,'sender cancellation changed evidence or created invitation');capture('sender-cancel');mark('sender_active_cancel');sw=explicit_model_recovery(sender.pid,sw,'sender_model_recovery')
         # Fresh review after cancel proves the model is usable without auto-retry.
         ep=make_invitation(sender.pid,sw,baseline);receiver,rpath=start('receiver');rw=bm.load(receiver.pid);settings(receiver.pid)
-        prior=dx.traces(rpath);rt=bm.ticks(rw);receive(receiver.pid);n=active(receiver.pid,rw,rt);require(n.get_action_iface().do_action(0),'native receiver stop click');stopped(receiver.pid);require(not ep.exists() and dx.traces(rpath)==prior,'receiver cancellation changed source or resurrected invitation');capture('receiver-cancel');mark('receiver_active_cancel')
+        prior=dx.traces(rpath);rt=bm.ticks(rw);receive(receiver.pid);n=active(receiver.pid,rw,rt);require(n.get_action_iface().do_action(0),'native receiver stop click');stopped(receiver.pid);require(not ep.exists() and dx.traces(rpath)==prior,'receiver cancellation changed source or resurrected invitation');capture('receiver-cancel');mark('receiver_active_cancel');rw=explicit_model_recovery(receiver.pid,rw,'receiver_model_recovery')
         rt=bm.ticks(rw);receive(receiver.pid);no_result(receiver.pid,'cancelled_invitation_replay');require(bm.ticks(rw)==rt,'replayed proof ran model')
         ep=make_invitation(sender.pid,sw,baseline);focus(sender.pid);action(sender.pid,'Stop sharing');wait(lambda:not ep.exists(),15,'revoked endpoint');rt=bm.ticks(rw);receive(receiver.pid);no_result(receiver.pid,'revoked_invitation');require(bm.ticks(rw)==rt,'revoked proof ran model');mark('revocation_no_new_inference')
         st=bm.ticks(sw);share(sender.pid);active(sender.pid,sw,st);crash(sender,sw);require(sockets()==baseline,'active sender crash published an invitation');sender,spath=start('sender');settings(sender.pid);require(bm.model_worker(sender.pid) is None and sockets()==baseline and dx.traces(spath)==source,'sender restart changed evidence or auto-loaded model');mark('sender_active_crash_restart')
