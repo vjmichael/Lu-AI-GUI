@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "0d2190c2fd7fbc6aacce8f1555b9be3ac4264f16",
-  "trackedFileCount": 1243,
+  "sourceCommitBeforeLock": "1038292df0cd84427da6e4bbbfbebdc8315778be",
+  "trackedFileCount": 1246,
   "files": [
     {
       "path": ".gitattributes",
@@ -1709,7 +1709,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/diagnostic_archive.rs",
-      "blob": "ff4fa8b454f0a74c270c9297017b337552f20a7c"
+      "blob": "99c91548b802536c19241ff943d47e4b8c254631"
     },
     {
       "path": "lu-desktop/src-tauri/src/document_create_desktop.rs",
@@ -1717,15 +1717,19 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/dx_ipc.rs",
-      "blob": "95d921faf28a8cc7db17bcec4ed1cbc533c431fb"
+      "blob": "795974fb56ca1bb075386a3c14ea78f001cea3e9"
     },
     {
       "path": "lu-desktop/src-tauri/src/dx_review.rs",
-      "blob": "71c7cd2c705d72a4d9a557a3aae3db9919091382"
+      "blob": "4f0460e84b36d29d120898b462f2c213a920acca"
     },
     {
       "path": "lu-desktop/src-tauri/src/dx_review_control.rs",
       "blob": "b218667b6af78a925cced3c1d20c4933cbba0c86"
+    },
+    {
+      "path": "lu-desktop/src-tauri/src/dx_stage.rs",
+      "blob": "67a2da52262af1327cc88eb1092b84f34ead8b5e"
     },
     {
       "path": "lu-desktop/src-tauri/src/dx_windows_pipe.rs",
@@ -1777,7 +1781,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/lib.rs",
-      "blob": "dd8bbbf65a5c744627eef1c9f4fe909a9e5f3313"
+      "blob": "6a4fa42f7bcb1739c7a6495e1ac09f462f4bd887"
     },
     {
       "path": "lu-desktop/src-tauri/src/linked_attachment_file.rs",
@@ -2238,6 +2242,10 @@
     {
       "path": "lu-desktop/tests/cp12br3-review.test.mjs",
       "blob": "1506b7cbd3eae6f4c5c98a39de55a6509eb1fe38"
+    },
+    {
+      "path": "lu-desktop/tests/cp12br5-stages.test.mjs",
+      "blob": "eff0b959f269c5411c42d4fd72b5600f7ddf9523"
     },
     {
       "path": "lu-desktop/tests/dx-exchange-windows-check/Cargo.lock",
@@ -2713,7 +2721,7 @@
     },
     {
       "path": "lu-desktop/web/native_windows.jsx",
-      "blob": "4540c84c5c1a9f289c254c6b156eb89540a5920f"
+      "blob": "4057a749f5fd18278af94817d4b95ce76bbf869f"
     },
     {
       "path": "lu-desktop/web/response_view.mjs",
@@ -2906,6 +2914,10 @@
     {
       "path": "scripts/cp12br4r1-crash-recovery-gui.py",
       "blob": "fde2f1e2e034a3ca5eb2e9d771cb0d2ad92a3625"
+    },
+    {
+      "path": "scripts/cp12br5-stage-review-gui.py",
+      "blob": "395d85362c84abe53c0381c9c5086112bd1b596e"
     },
     {
       "path": "scripts/install-lu-agent01l-native-fixture.sh",
