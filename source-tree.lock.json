@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "4eef6d96905995905cac37b0c5628e1f770c7a55",
+  "sourceCommitBeforeLock": "9a0d9748aee13d6d50cc6391adf6ef447f75fdde",
   "trackedFileCount": 1178,
   "files": [
     {
@@ -501,7 +501,7 @@
     },
     {
       "path": "benchmarks/e1/sec06er1_browser_guest.sh",
-      "blob": "d1ed1cab788cf6abfa8d78a0b10e5174099fa811"
+      "blob": "08b92c5618cdf9705b2f02df7153f7e4b9debd86"
     },
     {
       "path": "benchmarks/e1/sec06er1_browser_renderer_observer.py",
@@ -2817,7 +2817,7 @@
     },
     {
       "path": "scripts/lu-sec06c-owned-browser-worker.py",
-      "blob": "6f814a2a874a98181a630c868b6af56bc75601f1"
+      "blob": "8b2a3845aa737a94fe219f3f9c208fec52be6ec5"
     },
     {
       "path": "scripts/lu-sec06c-owned-git-launcher.py",
@@ -2989,7 +2989,7 @@
     },
     {
       "path": "scripts/test-sec06e-browser-admission.py",
-      "blob": "923af503e0fb7d1b89b7e61e89c0cbb7d0a56706"
+      "blob": "dd728371c6c488662f395e283c66bfb795211c06"
     },
     {
       "path": "scripts/test-sec06e-native-watchdog.py",
@@ -3241,7 +3241,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/browser_host_bridge.rs",
-      "blob": "78b956f9301578b6826047cb8ed7591befd7f0be"
+      "blob": "4c2587e969a3e86ea2eed60e74f8d63bcd553e5f"
     },
     {
       "path": "src-tauri/lu-core/src/browser_model_codec.rs",
@@ -3257,7 +3257,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/browser_process_owner.rs",
-      "blob": "75e250d444fdbdd42fa3ed41e18ed4e74d4eb38a"
+      "blob": "3e5039c3f14b667648568cb4d70fab3142e4e6d0"
     },
     {
       "path": "src-tauri/lu-core/src/browser_tool_stream.rs",
@@ -3269,11 +3269,11 @@
     },
     {
       "path": "src-tauri/lu-core/src/browser_window_x11.rs",
-      "blob": "2f571fbdccba003b686a0a1ddbd7a5d3ef607447"
+      "blob": "e7c821875be147aee8491fedbebc2b54f4252928"
     },
     {
       "path": "src-tauri/lu-core/src/browser_worker_supervisor.rs",
-      "blob": "69ae7a4f2c29243ae93eabcc1dc4f75e1fcddd39"
+      "blob": "ec4d7e4ad538a7cc334ec660d3f14154c339b085"
     },
     {
       "path": "src-tauri/lu-core/src/capability_router.rs",
