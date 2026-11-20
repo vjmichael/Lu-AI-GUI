@@ -28,7 +28,15 @@ def main():
         wins=subprocess.check_output(['xdotool','search','--onlyvisible','--pid',str(pid)],text=True,timeout=5).splitlines();require(wins,'no app window')
         subprocess.run(['xdotool','windowactivate','--sync',wins[-1]],check=True,timeout=5)
     def settings(pid):
-        focus(pid);action(pid,'Settings');action(pid,'Privacy & Observe');wait(lambda:named(pid,CREATE,actionable=True) or named(pid,'Stop sharing',actionable=True),25,'review panel')
+        focus(pid)
+        ready=lambda:named(pid,CREATE,actionable=True) or named(pid,'Stop sharing',actionable=True)
+        if not ready():action(pid,'Settings')
+        if not ready():
+            # The previous Settings subsection can remain selected. The
+            # title and button may both expose the same accessible name.
+            time.sleep(.4)
+            if not ready():action(pid,'Privacy & Observe')
+        wait(ready,25,'review panel')
     def sockets():return {str(p) for p in Path('/tmp').glob('lu-dx-*') if p.is_dir() and p.stat().st_uid==os.geteuid() and (p/'s').is_socket()}
     def start(name):
         root=a.out/name;data=root/'data'/'org.lu.desktop';models=data/'lu-models';models.mkdir(parents=True,exist_ok=True)
