@@ -56,11 +56,121 @@ struct Response {
     #[prost(bytes = "vec", tag = "5")]
     mac: Vec<u8>,
 }
-#[cfg(target_os = "linux")]
-mod linux {
+#[cfg(any(
+    target_os = "linux",
+    all(target_os = "windows", feature = "windows_dx_eval")
+))]
+mod protocol {
     use super::*;
     use rand::{rngs::OsRng, RngCore};
     use sha2::{Digest, Sha256};
+    use std::{io, time::Duration};
+    use subtle::ConstantTimeEq;
+    pub(super) const TTL: Duration = Duration::from_secs(120);
+    pub(super) const FRAME: Duration = Duration::from_secs(3);
+    pub(super) const TICK: Duration = Duration::from_millis(20);
+    pub(super) const MAX: usize = 4096;
+    pub(super) fn random<const N: usize>() -> io::Result<[u8; N]> {
+        let mut b = [0; N];
+        OsRng
+            .try_fill_bytes(&mut b)
+            .map_err(|_| io::Error::other("random unavailable"))?;
+        Ok(b)
+    }
+    pub(super) fn hex(b: &[u8]) -> String {
+        b.iter().map(|x| format!("{x:02x}")).collect()
+    }
+    pub(super) fn unhex<const N: usize>(s: &str) -> Option<[u8; N]> {
+        if s.len() != N * 2
+            || !s
+                .bytes()
+                .all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c))
+        {
+            return None;
+        }
+        let mut b = [0; N];
+        for (i, v) in b.iter_mut().enumerate() {
+            *v = u8::from_str_radix(&s[i * 2..i * 2 + 2], 16).ok()?;
+        }
+        Some(b)
+    }
+    // RFC 2104 HMAC over existing SHA-256 with a fixed 256-bit key.
+    pub(super) fn mac(key: &[u8; 32], domain: &[u8], body: &[u8]) -> [u8; 32] {
+        let mut i = [0x36; 64];
+        let mut o = [0x5c; 64];
+        for (n, k) in key.iter().enumerate() {
+            i[n] ^= k;
+            o[n] ^= k;
+        }
+        let d = Sha256::new()
+            .chain_update(i)
+            .chain_update(domain)
+            .chain_update(body)
+            .finalize();
+        Sha256::new()
+            .chain_update(o)
+            .chain_update(d)
+            .finalize()
+            .into()
+    }
+    pub(super) fn request(key: &[u8; 32], nonce: Vec<u8>) -> Request {
+        let mut r = Request {
+            version: VERSION,
+            dx_version: DX_VERSION,
+            nonce,
+            mac: vec![],
+        };
+        r.mac = mac(key, b"lu.dx.request.v1\0", &r.encode_to_vec()).to_vec();
+        r
+    }
+    pub(super) fn response(key: &[u8; 32], nonce: Vec<u8>, summary: Summary) -> Response {
+        let mut r = Response {
+            version: VERSION,
+            dx_version: DX_VERSION,
+            nonce,
+            summary: Some(summary),
+            mac: vec![],
+        };
+        r.mac = mac(key, b"lu.dx.response.v1\0", &r.encode_to_vec()).to_vec();
+        r
+    }
+    pub(super) fn canonical<M: Message + Default>(b: &[u8]) -> Option<M> {
+        let m = M::decode(b).ok()?;
+        (m.encode_to_vec() == b).then_some(m)
+    }
+    pub(super) fn auth_request(key: &[u8; 32], b: &[u8]) -> Option<Request> {
+        let r: Request = canonical(b)?;
+        if r.version != VERSION
+            || r.dx_version != DX_VERSION
+            || r.nonce.len() != 32
+            || r.mac.len() != 32
+        {
+            return None;
+        }
+        let e = request(key, r.nonce.clone());
+        bool::from(r.mac.ct_eq(&e.mac)).then_some(r)
+    }
+    pub(super) fn auth_response(key: &[u8; 32], nonce: &[u8], b: &[u8]) -> Option<Summary> {
+        let r: Response = canonical(b)?;
+        if r.version != VERSION
+            || r.dx_version != DX_VERSION
+            || r.nonce != nonce
+            || r.mac.len() != 32
+        {
+            return None;
+        }
+        let s = r.summary?;
+        if !s.valid() {
+            return None;
+        }
+        let e = response(key, nonce.to_vec(), s.clone());
+        bool::from(r.mac.ct_eq(&e.mac)).then_some(s)
+    }
+}
+#[cfg(target_os = "linux")]
+mod linux {
+    use super::protocol::*;
+    use super::*;
     use std::{
         fs,
         io::{self, Read, Write},
@@ -79,107 +189,6 @@ mod linux {
         thread::{self, JoinHandle},
         time::{Duration, Instant},
     };
-    use subtle::ConstantTimeEq;
-    const TTL: Duration = Duration::from_secs(120);
-    const FRAME: Duration = Duration::from_secs(3);
-    const TICK: Duration = Duration::from_millis(20);
-    const MAX: usize = 4096;
-    fn random<const N: usize>() -> io::Result<[u8; N]> {
-        let mut b = [0; N];
-        OsRng
-            .try_fill_bytes(&mut b)
-            .map_err(|_| io::Error::other("random unavailable"))?;
-        Ok(b)
-    }
-    fn hex(b: &[u8]) -> String {
-        b.iter().map(|x| format!("{x:02x}")).collect()
-    }
-    fn unhex<const N: usize>(s: &str) -> Option<[u8; N]> {
-        if s.len() != N * 2
-            || !s
-                .bytes()
-                .all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c))
-        {
-            return None;
-        }
-        let mut b = [0; N];
-        for (i, v) in b.iter_mut().enumerate() {
-            *v = u8::from_str_radix(&s[i * 2..i * 2 + 2], 16).ok()?;
-        }
-        Some(b)
-    }
-    // RFC 2104 HMAC over existing SHA-256 with a fixed 256-bit key.
-    fn mac(key: &[u8; 32], domain: &[u8], body: &[u8]) -> [u8; 32] {
-        let mut i = [0x36; 64];
-        let mut o = [0x5c; 64];
-        for (n, k) in key.iter().enumerate() {
-            i[n] ^= k;
-            o[n] ^= k;
-        }
-        let d = Sha256::new()
-            .chain_update(i)
-            .chain_update(domain)
-            .chain_update(body)
-            .finalize();
-        Sha256::new()
-            .chain_update(o)
-            .chain_update(d)
-            .finalize()
-            .into()
-    }
-    fn request(key: &[u8; 32], nonce: Vec<u8>) -> Request {
-        let mut r = Request {
-            version: VERSION,
-            dx_version: DX_VERSION,
-            nonce,
-            mac: vec![],
-        };
-        r.mac = mac(key, b"lu.dx.request.v1\0", &r.encode_to_vec()).to_vec();
-        r
-    }
-    fn response(key: &[u8; 32], nonce: Vec<u8>, summary: Summary) -> Response {
-        let mut r = Response {
-            version: VERSION,
-            dx_version: DX_VERSION,
-            nonce,
-            summary: Some(summary),
-            mac: vec![],
-        };
-        r.mac = mac(key, b"lu.dx.response.v1\0", &r.encode_to_vec()).to_vec();
-        r
-    }
-    fn canonical<M: Message + Default>(b: &[u8]) -> Option<M> {
-        let m = M::decode(b).ok()?;
-        (m.encode_to_vec() == b).then_some(m)
-    }
-    fn auth_request(key: &[u8; 32], b: &[u8]) -> Option<Request> {
-        let r: Request = canonical(b)?;
-        if r.version != VERSION
-            || r.dx_version != DX_VERSION
-            || r.nonce.len() != 32
-            || r.mac.len() != 32
-        {
-            return None;
-        }
-        let e = request(key, r.nonce.clone());
-        bool::from(r.mac.ct_eq(&e.mac)).then_some(r)
-    }
-    fn auth_response(key: &[u8; 32], nonce: &[u8], b: &[u8]) -> Option<Summary> {
-        let r: Response = canonical(b)?;
-        if r.version != VERSION
-            || r.dx_version != DX_VERSION
-            || r.nonce != nonce
-            || r.mac.len() != 32
-        {
-            return None;
-        }
-        let s = r.summary?;
-        if !s.valid() {
-            return None;
-        }
-        let e = response(key, nonce.to_vec(), s.clone());
-        bool::from(r.mac.ct_eq(&e.mac)).then_some(s)
-    }
     fn uid() -> u32 {
         unsafe { libc::geteuid() }
     }
@@ -523,12 +532,14 @@ mod linux {
             assert!(c.start(summary()).is_err());
         }
         #[test]
-        fn cp12br1_incompatible_diagnostic_version_and_oversized_frame_leave_invitation_unconsumed() {
+        fn cp12br1_incompatible_diagnostic_version_and_oversized_frame_leave_invitation_unconsumed()
+        {
             let c = Controller::default();
             let code = c.start(summary()).unwrap();
             let key = unhex::<32>(code.split('-').nth(2).unwrap()).unwrap();
             let stop = AtomicBool::new(false);
-            for (version, dx_version) in [(0, DX_VERSION), (VERSION, 1), (VERSION, DX_VERSION + 1)] {
+            for (version, dx_version) in [(0, DX_VERSION), (VERSION, 1), (VERSION, DX_VERSION + 1)]
+            {
                 let mut req = request(&key, vec![9; 32]);
                 req.version = version;
                 req.dx_version = dx_version;
@@ -547,7 +558,7 @@ mod linux {
                 assert!(auth_response(&key, &[9; 32], &rsp.encode_to_vec()).is_none());
             }
             let mut stream = UnixStream::connect(endpoint(&code).join("s")).unwrap();
-            stream.write_all(&((MAX+1) as u32).to_be_bytes()).unwrap();
+            stream.write_all(&((MAX + 1) as u32).to_be_bytes()).unwrap();
             stream.set_nonblocking(true).unwrap();
             assert!(read(&mut stream, &stop, Instant::now() + FRAME).is_err());
             assert_eq!(receive(&code).unwrap(), summary());
@@ -681,10 +692,29 @@ mod linux {
 }
 #[cfg(target_os = "linux")]
 pub(crate) use linux::{receive, Controller};
-#[cfg(not(target_os = "linux"))]
+#[cfg(all(target_os = "windows", feature = "windows_dx_eval"))]
+#[path = "dx_windows_pipe.rs"]
+mod windows_pipe;
+#[cfg(all(target_os = "windows", feature = "windows_dx_eval"))]
+pub(crate) use windows_pipe::{receive, Controller};
+
+/// Windows evaluation is never in the default release build.
+pub(crate) const fn supported() -> bool {
+    cfg!(any(
+        target_os = "linux",
+        all(target_os = "windows", feature = "windows_dx_eval")
+    ))
+}
+#[cfg(not(any(
+    target_os = "linux",
+    all(target_os = "windows", feature = "windows_dx_eval")
+)))]
 #[derive(Default)]
 pub(crate) struct Controller;
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(any(
+    target_os = "linux",
+    all(target_os = "windows", feature = "windows_dx_eval")
+)))]
 impl Controller {
     pub fn active(&self) -> bool {
         false
@@ -697,18 +727,27 @@ impl Controller {
         Err("Local sharing is not available on this platform.".into())
     }
 }
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(any(
+    target_os = "linux",
+    all(target_os = "windows", feature = "windows_dx_eval")
+)))]
 pub(crate) fn receive(_: &str) -> Result<Summary, String> {
     Err("Local sharing is not available on this platform.".into())
 }
 
-#[cfg(all(test, target_os = "windows"))]
+#[cfg(all(test, target_os = "windows", not(feature = "windows_dx_eval")))]
 mod windows_disabled_tests {
     use super::*;
     #[test]
     fn cp12br1_windows_transport_is_unavailable_without_explicit_qualification() {
-        let controller=Controller::default();
-        let summary=Summary{complete:0,observed_failure:0,bounded:0,incomplete:0,unavailable:0};
+        let controller = Controller::default();
+        let summary = Summary {
+            complete: 0,
+            observed_failure: 0,
+            bounded: 0,
+            incomplete: 0,
+            unavailable: 0,
+        };
         assert!(!controller.active());
         assert!(controller.start(summary).is_err());
         assert!(receive("untrusted invitation").is_err());

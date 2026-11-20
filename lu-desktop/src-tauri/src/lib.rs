@@ -2140,7 +2140,7 @@ async fn lu_cp01_diagnostic_report(app:AppHandle,caller:tauri::WebviewWindow,
 #[tauri::command]
 async fn lu_dx_share(app:AppHandle,caller:tauri::WebviewWindow,state:State<'_,Arc<DesktopState>>)->Result<Option<String>,String>{
     if !matches!(caller.label(),"main"|"settings"){return Ok(None)}
-    if !cfg!(target_os="linux"){return Err("Local diagnostic sharing is not available on this platform.".into())}
+    if !dx_ipc::supported(){return Err("Local diagnostic sharing is not available on this platform.".into())}
     let owner=Arc::clone(state.inner());
     tauri::async_runtime::spawn_blocking(move||{
         if !app.dialog().message("Share a one-time summary of recent response outcomes with another local Lu session on this computer? Only five counts are shared: confirmed delivery, observed failures, incomplete steps, uncertain records and unavailable records. No conversations, model names, files, or tool access. The invitation expires after two minutes or one use. You may stop sharing at any time.")
@@ -2152,7 +2152,7 @@ async fn lu_dx_share(app:AppHandle,caller:tauri::WebviewWindow,state:State<'_,Ar
 #[tauri::command]
 async fn lu_dx_receive(app:AppHandle,caller:tauri::WebviewWindow,code:String)->Result<Option<dx_ipc::Summary>,String>{
     if !matches!(caller.label(),"main"|"settings"){return Ok(None)}
-    if !cfg!(target_os="linux"){return Err("Local diagnostic sharing is not available on this platform.".into())}
+    if !dx_ipc::supported(){return Err("Local diagnostic sharing is not available on this platform.".into())}
     if code.len()!=101{return Err("Invalid invitation".into())}
     tauri::async_runtime::spawn_blocking(move||{
         if !app.dialog().message("Accept a one-time troubleshooting summary from another local Lu session? Only count totals will be imported for display. This grants neither session access to your conversations, files, tools or model.")
@@ -2161,7 +2161,7 @@ async fn lu_dx_receive(app:AppHandle,caller:tauri::WebviewWindow,code:String)->R
     }).await.map_err(|_|"Local sharing unavailable")?
 }
 #[tauri::command]
-fn lu_dx_supported(caller:tauri::WebviewWindow)->bool{matches!(caller.label(),"main"|"settings")&&cfg!(target_os="linux")}
+fn lu_dx_supported(caller:tauri::WebviewWindow)->bool{matches!(caller.label(),"main"|"settings")&&dx_ipc::supported()}
 #[tauri::command]
 fn lu_dx_share_active(caller:tauri::WebviewWindow,state:State<'_,Arc<DesktopState>>)->bool{matches!(caller.label(),"main"|"settings")&&state.diagnostic_exchange.active()}
 #[tauri::command]
