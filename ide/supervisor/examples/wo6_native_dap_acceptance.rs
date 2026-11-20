@@ -262,10 +262,7 @@ mod protected {
             wo6_output_evidence::audit_published_output,
         };
         if protected_release_pdb
-            && (verify_owner_event
-                || verify_independent_pdb
-                || crash_owner
-                || ci_control.is_some())
+            && (verify_owner_event || verify_independent_pdb || crash_owner || ci_control.is_some())
         {
             return Err(
                 "DENIED: release protected PDB is observation-only, never a CI control mode".into(),

@@ -158,9 +158,10 @@ impl OwnerEventLedger {
     fn claim_terminal_continue_wait(&mut self, sequence: u64) -> Result<(), SupervisorError> {
         if self.continuation_wait_claimed.is_some()
             || self.revoked
-            || !self.active.as_ref().is_some_and(|event| {
-                event.kind == RECEIVED && event.seq == sequence
-            })
+            || !self
+                .active
+                .as_ref()
+                .is_some_and(|event| event.kind == RECEIVED && event.seq == sequence)
         {
             return Err(denied());
         }

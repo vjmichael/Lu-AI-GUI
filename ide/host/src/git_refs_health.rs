@@ -254,7 +254,10 @@ mod tests {
                 result.requires_operator_reconciliation,
                 classification != "no_git_interruption_detected"
             );
-            assert_eq!(result.index_conflicts_verified_absent, conflicts == Some(false));
+            assert_eq!(
+                result.index_conflicts_verified_absent,
+                conflicts == Some(false)
+            );
             assert!(!result.can_auto_resume);
             assert!(!result.can_auto_abort);
             assert!(!result.write_authority_granted);

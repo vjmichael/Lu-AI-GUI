@@ -847,10 +847,18 @@ impl Supervisor {
                                         })
                             }
                             JobPhase::Cancelled => matches!(
-                                (entry.body.outcome_code.as_str(), entry.body.evidence_code.as_str()),
-                                ("os_tree_termination_verified", "native_supervisor_tree_kill_evidence")
-                                    | ("os_orphan_cleanup_verified", "explicit_host_reconciliation")
-                                    | ("native_cancel_service_release_verified", "tree_empty_and_independent_service_ack")
+                                (
+                                    entry.body.outcome_code.as_str(),
+                                    entry.body.evidence_code.as_str()
+                                ),
+                                (
+                                    "os_tree_termination_verified",
+                                    "native_supervisor_tree_kill_evidence"
+                                ) | ("os_orphan_cleanup_verified", "explicit_host_reconciliation")
+                                    | (
+                                        "native_cancel_service_release_verified",
+                                        "tree_empty_and_independent_service_ack"
+                                    )
                             ),
                             _ => false,
                         }
