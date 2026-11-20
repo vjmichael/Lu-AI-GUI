@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "08b501618cc622b6faede50c6bf155d4ef905c64",
+  "sourceCommitBeforeLock": "bcddc292b7d71556852035e234cc87390c0c66ee",
   "trackedFileCount": 1978,
   "files": [
     {
@@ -13,7 +13,7 @@
     },
     {
       "path": ".github/ide-merge/ide-merge-01-02-native-batch.txt",
-      "blob": "cd22f90e294c72280b7a1bc7e4e04a6ad2987b95"
+      "blob": "1e985d6fb6ce51027917b8bd502124541b68b343"
     },
     {
       "path": ".github/pull_request_template.md",
@@ -2601,11 +2601,11 @@
     },
     {
       "path": "ide/audits/test_p05_owner_successor.py",
-      "blob": "a2924cb9a8af40a5195cc1041604a193fc7c5eef"
+      "blob": "fbb13ec4b944af9c6dd7fda09b8c2ee680251199"
     },
     {
       "path": "ide/audits/verify_p05_owner_successor.py",
-      "blob": "23b990a1f25bd0d4beab94c6ad48023c018dccb3"
+      "blob": "720c6b3890e1c2136cead9ef16b5b5d79ea3bd4c"
     },
     {
       "path": "ide/ci/merge02-reviewed-native-boundaries.json",
