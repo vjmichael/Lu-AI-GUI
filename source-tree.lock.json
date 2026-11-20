@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "1038292df0cd84427da6e4bbbfbebdc8315778be",
-  "trackedFileCount": 1246,
+  "sourceCommitBeforeLock": "42205de97beebbf7c2934eb993f5f05c6cd4498e",
+  "trackedFileCount": 1247,
   "files": [
     {
       "path": ".gitattributes",
@@ -924,6 +924,10 @@
       "blob": "4bcb901e25a9f10c6b45d4746104917807787746"
     },
     {
+      "path": "docs/LU_CP12B_R5_STAGE_REVIEW_20261120.md",
+      "blob": "e44ef424c0a61bfe5f3031a9c7152da1e94b7e0d"
+    },
+    {
       "path": "docs/LU_CURRENT_PREVIEW_CPU_VULKAN_DUAL_ENGINE_20261109.md",
       "blob": "c1664658ded245a3df6041114e42587f49550200"
     },
@@ -933,7 +937,7 @@
     },
     {
       "path": "docs/LU_DEVELOPMENT_LEDGER.md",
-      "blob": "fb2aad98dccbd9afa56b5f8fe59af8a32384e2c8"
+      "blob": "687899609bf5833c71b443ab4da7842e5dcbf919"
     },
     {
       "path": "docs/LU_E1_NATIVE_EVIDENCE_20261107.md",
