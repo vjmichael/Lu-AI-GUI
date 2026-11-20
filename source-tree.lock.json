@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "aef64f877bc2857742ce7c85460f799f4ffc331a",
+  "sourceCommitBeforeLock": "a1f51865d6eefe8c987337daf4655fdb0e8d6f2e",
   "trackedFileCount": 1982,
   "files": [
     {
@@ -2613,7 +2613,7 @@
     },
     {
       "path": "ide/ci/merge02-reviewed-native-boundaries.json",
-      "blob": "411335f5f069c2b468d8eaada96373c1cdd58aea"
+      "blob": "8b82fdc2cb200b13df785b02d124c0ccef85ecb8"
     },
     {
       "path": "ide/ci/test_verify_reviewed_native_boundaries.py",
@@ -3385,7 +3385,7 @@
     },
     {
       "path": "ide/host/src/git_refs_health.rs",
-      "blob": "e7769d797a42b5f69c9c635aecb18a9c441f9969"
+      "blob": "4cc02a1563be61f1a320621ba6dbb94ad79c9dc7"
     },
     {
       "path": "ide/host/src/git_replay_quarantine.rs",
@@ -4529,7 +4529,7 @@
     },
     {
       "path": "ide/supervisor/examples/wo6_native_dap_acceptance.rs",
-      "blob": "3776ad28f967235f732ee4b2dadb6c7b5a988159"
+      "blob": "2631c910e18b0b5f7fa3fff3b47e774e6140efc1"
     },
     {
       "path": "ide/supervisor/fixtures/Install-ProtectedRecoveryService.ps1",
@@ -4693,7 +4693,7 @@
     },
     {
       "path": "ide/supervisor/src/lib.rs",
-      "blob": "b10383b49ff6343c3dc851a462f9facebef39a72"
+      "blob": "6e94d1338658a61c46ba0925c2373c021dbcac1f"
     },
     {
       "path": "ide/supervisor/src/linux_lsp_worker.rs",
@@ -4745,7 +4745,7 @@
     },
     {
       "path": "ide/supervisor/src/windows_event_owner.rs",
-      "blob": "616bed4e4bad727859269619eae4912f22ce5c68"
+      "blob": "60110c3c608f8cc0c490e869ce0f07892473b0b6"
     },
     {
       "path": "ide/supervisor/src/windows_fin04w2_c2_host.rs",
