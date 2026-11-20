@@ -181,8 +181,17 @@ impl AnsfStore{
         &self,session_id:&str,embedding_model:&str,query:&[f32],
         limit:usize
     )->Result<Vec<SemanticHit>,AnsfError>{
+        self.semantic_candidates_before(session_id,embedding_model,query,limit,i64::MAX,None)
+    }
+
+    /// Ordinary authenticated recall: filter current/future entries and
+    /// repeated questions before the vector scan and ranking limits.
+    pub fn semantic_candidates_before(
+        &self,session_id:&str,embedding_model:&str,query:&[f32],limit:usize,
+        before_entry:i64,exclude_user_text:Option<&str>
+    )->Result<Vec<SemanticHit>,AnsfError>{
         if session_id.is_empty()||session_id.len()>128||session_id.contains('\0')||
-           !valid_model(embedding_model)||limit==0||limit>MAX_HITS {
+           before_entry<1||!valid_model(embedding_model)||limit==0||limit>MAX_HITS {
             return Err(AnsfError::InvalidInput)
         }
         vector_bytes(query)?;
@@ -191,7 +200,8 @@ impl AnsfStore{
             "SELECT e.id,s.chunk_ordinal,s.dimension,s.source_sha256,s.vector_le_f32
              FROM ansf_semantic_projection s JOIN ansf_entries e ON s.entry_id=e.id
              WHERE e.session_id=?1 AND s.embedding_model=?2
-               AND e.role IN ('user','assistant')
+               AND e.id<?4 AND e.role IN ('user','assistant')
+               AND (?5 IS NULL OR e.role<>'user' OR e.content<>?5)
                AND NOT EXISTS (
                  SELECT 1 FROM ansf_entry_edits changed
                  WHERE changed.session_id=e.session_id AND changed.original_entry_id=e.id
@@ -205,7 +215,7 @@ impl AnsfStore{
                )
              ORDER BY e.id,s.chunk_ordinal LIMIT ?3"
         )?;
-        let rows=stmt.query_map(params![session_id,embedding_model,(MAX_SCAN+1) as i64],|r|{
+        let rows=stmt.query_map(params![session_id,embedding_model,(MAX_SCAN+1) as i64,before_entry,exclude_user_text],|r|{
             Ok((r.get::<_,i64>(0)?,r.get::<_,i64>(1)?,r.get::<_,i64>(2)?,
                 r.get::<_,String>(3)?,r.get::<_,Vec<u8>>(4)?))
         })?;

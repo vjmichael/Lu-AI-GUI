@@ -63,7 +63,9 @@ export function SettingsWindow({onNavigate,active=true}={}){
   const [backends,setBackends]=useState([]);
   const [browserVisibility,setBrowserVisibility]=useState('automatic_hidden');
   const [browserRuntime,setBrowserRuntime]=useState(null);
-  const [memory,setMemory]=useState(null);
+  const [memoryChatId,setMemoryChatId]=useState('');
+  const [meaningRecall,setMeaningRecall]=useState(null);
+  const [memoryStatusRetry,setMemoryStatusRetry]=useState(0);
   const [observation,setObservation]=useState(null);
   const [appearance,setAppearance]=useState(null);
   const [busy,setBusy]=useState(false);
@@ -141,6 +143,42 @@ export function SettingsWindow({onNavigate,active=true}={}){
       .catch(error=>{if(live)setError(errorText(error));});
     return ()=>{live=false};
   },[profileModel]);
+  useEffect(()=>{
+    let alive=true;
+    setMeaningRecall(null);
+    if(!active||section!=='memory'||!memoryChatId)return ()=>{alive=false;};
+    void invoke('lu_m3_embedding_status',{chatId:memoryChatId})
+      .then(value=>{if(alive)setMeaningRecall(Boolean(value));})
+      .catch(()=>{if(alive)setMeaningRecall('unavailable');});
+    return ()=>{alive=false;};
+  },[active,section,memoryChatId,memoryStatusRetry]);
+  async function changeRelatedSearch(enable){
+    if(!memoryChatId||busy||typeof meaningRecall!=='boolean')return;
+    await act(enable?'Related-message search is on. Choose a conversation to prepare.':'Related-message search is off.',async()=>{
+      try{
+        if(enable){
+          const selected=await invoke('lu_m3_embedding_enable',{chatId:memoryChatId});
+          if(selected===null)return null;
+        }else await invoke('lu_m3_embedding_disable',{chatId:memoryChatId});
+        setMeaningRecall(enable);
+        return true;
+      }catch{
+        setMemoryStatusRetry(n=>n+1);
+        throw Error('Could not change related-message search. Check the local model and try again.');
+      }
+    });
+  }
+  async function prepareMemoryConversation(){
+    if(!memoryChatId||busy||meaningRecall!==true)return;
+    await act('Selected conversation checked. You can prepare more messages in another batch.',async()=>{
+      try{
+        await invoke('lu_m3_semantic_index',{chatId:memoryChatId,sourceChatId:memoryChatId,limit:12});
+        return true;
+      }catch{
+        throw Error('Could not prepare these messages. Try again with related-message search enabled.');
+      }
+    });
+  }
   async function saveModelProfile(){
     if(!profileSettings||!profileModel)return;
     await act('Model settings saved. Unload and load the model to apply them.',async()=>{
@@ -676,6 +714,27 @@ export function SettingsWindow({onNavigate,active=true}={}){
         </Section>}
         {section==='memory'&&<Section title="Memory">
           <p>Lu saves your conversations and can use relevant past messages to help you. Saved messages never give permission to access your files or the internet.</p>
+          <div className="nativeOption">
+            <strong>Related-message search</strong>
+            <p>Optionally use a local model to find saved messages by meaning. Nothing is sent online. Prepare only the conversations you choose; turn this on again after restarting Lu.</p>
+            <label className="nativeField">Conversation to prepare
+              <select value={memoryChatId} disabled={busy} onChange={e=>setMemoryChatId(e.target.value)}>
+                <option value="">Select conversation…</option>
+                {chats.map(c=><option key={c.chatId} value={c.chatId}>{c.title}</option>)}
+              </select>
+            </label>
+            {memoryChatId&&<>
+              <p role="status">{meaningRecall===true?'On':meaningRecall===false?'Off':meaningRecall==='unavailable'?'Unavailable':'Checking…'}</p>
+              {meaningRecall==='unavailable'?<button type="button" disabled={busy} onClick={()=>setMemoryStatusRetry(n=>n+1)}>Check again</button>:
+                <div className="nativeChoiceRow">
+                  {meaningRecall===false&&<button type="button" disabled={busy} onClick={()=>void changeRelatedSearch(true)}>Enable related-message search…</button>}
+                  {meaningRecall===true&&<>
+                    <button type="button" disabled={busy} onClick={()=>void prepareMemoryConversation()}>Prepare earlier messages</button>
+                    <button type="button" disabled={busy} onClick={()=>void changeRelatedSearch(false)}>Turn off</button>
+                  </>}
+                </div>}
+            </>}
+          </div>
           {onNavigate&&<button className="primaryButton" onClick={()=>onNavigate('history')}>Open History</button>}
         </Section>}
         {section==='privacy'&&<Section title="Privacy & Observe">

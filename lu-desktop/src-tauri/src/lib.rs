@@ -4598,15 +4598,14 @@ async fn lu_m3_embedding_enable(
         #[cfg(target_os="linux")]
         let (engine,embedding_engine_sha)=linux_engine_package::verify(&engine_dir)?;
         let accepted=app.dialog().message(format!(
-            "Load this local GGUF as Lu's independent semantic embedding model?\n\n\
-             {}\n\nNo conversation text leaves your computer. \
-             Lu will verify model/engine hashes, start a supervised CPU-only \
-             embedding worker and index only locally selected ANSF books. \
-             Original message entries and permissions are unchanged.",
+            "Use this local model to find related saved messages?\n\n\
+             {}\n\nNothing is sent online. Lu prepares only conversations you select. \
+             Related-message search stays enabled until Lu closes. \
+             Your original messages and permissions remain unchanged.",
             model.display()
-        )).title("Lu — Enable private semantic recall")
+        )).title("Lu — Related-message search")
          .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom(
-             "Enable local semantic model".into(),"Cancel".into()
+             "Enable search".into(),"Cancel".into()
          )).blocking_show();
         if !accepted{return Ok(None)}
         let mut model_file=File::open(&model)

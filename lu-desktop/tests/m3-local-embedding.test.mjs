@@ -46,3 +46,16 @@ test('user explicitly starts a local worker, indexes originals, and hybrid recal
   assert.match(pane,/lu_m3_embedding_disable/);
   assert.doesNotMatch(pane,/\b(setChatId|setHistory|setPrompt)\s*\(/);
 });
+test('related-message setup is reachable from ordinary Memory settings with explicit conversation selection',()=>{
+  const settings=read('../web/native_windows.jsx');
+  const section=settings.split("section==='memory'&&<Section title=\"Memory\">")[1]?.split("section==='privacy'")[0]||'';
+  assert.match(section,/Related-message search/);
+  assert.match(section,/value=\{memoryChatId\}/);
+  assert.match(section,/changeRelatedSearch\(true\)/);
+  assert.match(section,/prepareMemoryConversation\(\)/);
+  assert.match(section,/changeRelatedSearch\(false\)/);
+  assert.match(settings,/sourceChatId:memoryChatId,limit:12/);
+  assert.match(settings,/setMeaningRecall\(Boolean\(value\)\)/);
+  assert.doesNotMatch(section,/GGUF|ANSF|modelId|model_id|vector|hash|index/);
+  assert.match(host,/Lu — Related-message search/);
+});

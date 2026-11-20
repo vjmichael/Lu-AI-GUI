@@ -25,7 +25,10 @@ test('M3 vector and hybrid index are bounded and original-source-only',()=>{
   assert.match(core,/digest\(&entry.content\)!=sha/);
   assert.match(core,/old.revised_entry_id=e.id/);
   assert.match(host,/pub fn hybrid_recall_with_embedding/);
-  assert.match(host,/self\.known_source_for_turn\(active_chat,&source.source_id\)/);
+  assert.match(host,/self\.current_recall_source\(active_chat,&source.source_id\)/);
+  assert.match(host,/book\.read_current_entry\(source,canonical.entry_id\(\)\)/);
+  assert.match(core,/semantic_candidates_before/);
+  assert.match(core,/e.id<\?4/);
   assert.match(host,/trusted LOCAL embedding engine/i);
   assert.match(harness,/pub mod ansf_semantic/);
 });

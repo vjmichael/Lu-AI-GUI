@@ -405,6 +405,26 @@ impl AnsfStore {
         .map_err(Into::into)
     }
 
+    /// Reopen a selected implicit-recall source under the book lock, only
+    /// if it is still a current conversation revision. Explicit original
+    /// source navigation uses read_entry instead and remains immutable.
+    pub fn read_current_entry(&self,session_id:&str,entry_id:i64)->Result<Option<Entry>,AnsfError>{
+        if !valid_id(session_id)||entry_id<1{return Err(AnsfError::InvalidInput)}
+        let conn=self.conn.lock().map_err(|_|AnsfError::Locked)?;
+        conn.query_row(
+            "SELECT e.id,e.session_id,e.chapter_id,e.message_id,e.role,e.summary,e.content
+             FROM ansf_entries e WHERE e.session_id=?1 AND e.id=?2
+               AND e.role IN ('user','assistant')
+               AND NOT EXISTS (SELECT 1 FROM ansf_entry_edits changed
+                 WHERE changed.session_id=e.session_id AND changed.original_entry_id=e.id)
+               AND NOT EXISTS (SELECT 1 FROM ansf_entry_edits old JOIN ansf_entry_edits newer
+                 ON newer.session_id=old.session_id AND newer.original_entry_id=old.original_entry_id
+                 AND newer.revision_number>old.revision_number
+                 WHERE old.session_id=e.session_id AND old.revised_entry_id=e.id)",
+            params![session_id,entry_id],Self::map_entry
+        ).optional().map_err(Into::into)
+    }
+
     /// Efficient model-context source window. Uses the existing ANSF
     /// (session_id,id) index and never scans or materializes the full book.
     /// Assistant progress/cancelled partial text is not an entry. Use only

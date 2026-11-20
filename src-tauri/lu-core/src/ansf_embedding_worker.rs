@@ -207,6 +207,7 @@ impl LocalEmbeddingWorker{
             .arg("--api-key").arg(&config.api_key)
             .arg("--threads").arg(config.threads.to_string())
             .arg("--parallel").arg("1").arg("--n-gpu-layers").arg("0")
+            .arg("--ctx-size").arg((MAX_EMBEDDING_INPUT*2).to_string())
             .arg("--no-warmup")
             .current_dir(config.engine.parent()
                 .ok_or("Invalid embedding engine location")?)
