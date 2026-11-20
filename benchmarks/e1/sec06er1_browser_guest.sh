@@ -26,7 +26,7 @@ for file in /usr/bin/Xvfb /usr/bin/xauth /usr/bin/xkbcomp /usr/lib/lu/browser/ch
 install -o root -g root -m 0755 sec06er1_browser_renderer_observer.py /usr/libexec/lu/lu-sec06er1-browser-renderer-observer
 ln -s /usr/lib/lu/browser/xdotool /usr/local/bin/xdotool
 useradd -m -s /bin/bash luprobe
-printf 'luprobe ALL=(root) NOPASSWD: /usr/libexec/lu/lu-sec06c-launch-browser *, /usr/libexec/lu/lu-sec06er1-browser-renderer-observer *, /usr/bin/systemctl kill --kill-whom=main --signal=SIGKILL lu-sec06c-browser-*.service\n' > /etc/sudoers.d/lu-probe
+printf 'luprobe ALL=(root) NOPASSWD: /usr/libexec/lu/lu-sec06c-launch-browser *, /usr/libexec/lu/lu-sec06er1-browser-renderer-observer *, /usr/bin/systemctl kill --kill-whom=main --signal=SIGKILL lu-sec06c-browser-*.service, /usr/bin/systemctl kill --kill-whom=main --signal=SIGSTOP lu-sec06c-browser-*.service\n' > /etc/sudoers.d/lu-probe
 chmod 0440 /etc/sudoers.d/lu-probe; visudo -cf /etc/sudoers.d/lu-probe
 runuser -u luprobe -- xvfb-run -a -s '-screen 0 1280x800x24' /usr/lib/lu/browser/xdotool getdisplaygeometry
 runuser -u luprobe -- /usr/lib/lu/browser/chrome --version
