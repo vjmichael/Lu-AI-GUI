@@ -94,7 +94,11 @@ def load(pid):
     action(pid, 'Choose a model', timeout=90)
     action(pid, 'Load selected', timeout=30)
     worker = wait(lambda: model_worker(pid), 120, 'owned genuine inference worker')
-    wait(lambda: named(pid, 'Ready to chat'), 120, 'loaded model ready')
+    # Reopen the actual model menu. The enabled unload action is a native
+    # accessibility witness that the model has completed loading.
+    action(pid, 'Choose a model', timeout=120)
+    wait(lambda: named(pid, '⏏ Unload active model', actionable=True) or named(pid, 'Unload active model', actionable=True), 120, 'loaded model ready')
+    action(pid, 'Choose a model')
     return worker
 
 
@@ -141,14 +145,24 @@ def main():
             verify_report(stopped)
             verdict['phases']['stop']={'status':'PASS','elapsed_seconds':time.monotonic()-start,'verified_prefix':len(stopped[2]['results']),'same_worker_retained':model_worker(app.pid)==worker}
             capture(app.pid,a.out,'stopped')
-            # New opt-in selection after stopping must not inherit approval.
-            if model_worker(app.pid)==worker:
-                check_review(app.pid,'Cancel')
-                wait(lambda: named(app.pid, 'Check loaded model…', actionable=True), 15, 'new refusal returned idle')
-                require(journal(path)==stopped,'fresh refusal altered report')
-                verdict['phases']['fresh_refusal']='PASS'
-            else:
-                verdict['phases']['fresh_refusal']='NOT RUN: engine safely ejected after stop'
+            # Cold reopening an already stopped report must not replay it or
+            # automatically load a model. Explicitly reload and reject the new review.
+            app.terminate()
+            app.wait(timeout=15)
+            require(journal(path)==stopped, 'shutdown altered stopped report')
+            app = subprocess.Popen([str(exe)], env=env, stdin=subprocess.DEVNULL, stdout=log, stderr=log)
+            sample_gui.navigate(app.pid)
+            require(model_worker(app.pid) is None and journal(path)==stopped, 'restart replayed model check or loaded model')
+            verdict['phases']['cold_reopen_no_replay']='PASS'
+            action(app.pid, 'Chat')
+            reloaded = load(app.pid)
+            require(reloaded!=worker and journal(path)==stopped, 'explicit reload altered report or reused worker')
+            sample_gui.navigate(app.pid)
+            check_review(app.pid,'Cancel')
+            wait(lambda: named(app.pid, 'Check loaded model…', actionable=True), 15, 'new refusal returned idle')
+            require(journal(path)==stopped and model_worker(app.pid)==reloaded,'fresh refusal altered report or model')
+            verdict['phases']['fresh_refusal']='PASS'
+            capture(app.pid,a.out,'fresh-refusal')
             verdict['status']='PASS'
         except BaseException as e:
             verdict['error']=str(e);raise
