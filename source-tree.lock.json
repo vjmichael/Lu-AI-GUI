@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "6e833197e64c42e3b77e339d61f933953647eae8",
+  "sourceCommitBeforeLock": "95f557aed65c8b3ba6c21853a949f75dc83881b7",
   "trackedFileCount": 1979,
   "files": [
     {
@@ -13,11 +13,11 @@
     },
     {
       "path": ".github/ide-merge/ide-dev02-technical-batch.txt",
-      "blob": "b8e3c664209c59aa85f16512190d081f7038ef21"
+      "blob": "24e40ef153529a97f725207e986f93757f3a1c7d"
     },
     {
       "path": ".github/ide-merge/ide-merge-01-02-native-batch.txt",
-      "blob": "613dda757b83588cc7900742654a156d6351709e"
+      "blob": "5d355874e4aefe0107bc265f46f0dfd6ac9000d1"
     },
     {
       "path": ".github/pull_request_template.md",
@@ -1821,7 +1821,7 @@
     },
     {
       "path": "ide/app/fixtures/dev01_modern_linux_installed_atspi.py",
-      "blob": "4f54429ca16c666a7613f1ee1fb059d873fe697a"
+      "blob": "5983a3be344bcea6e498a8420ea2b9040ec9b3db"
     },
     {
       "path": "ide/app/fixtures/dev02_linux_installed_lsp_atspi.py",
@@ -1861,7 +1861,7 @@
     },
     {
       "path": "ide/app/fixtures/test_dev01_native_confirmation_scope.py",
-      "blob": "acfcd77984123f0a53770826e2bc408258b74b83"
+      "blob": "205b9cabc5f87c60c88543a7d0c65667bc1be446"
     },
     {
       "path": "ide/app/fixtures/test_dev035_jobs_accessibility_contract.py",
