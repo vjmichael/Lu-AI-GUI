@@ -39,15 +39,15 @@
 
 ### SEC-06F-VM — deferred Linux security matrix reconciliation (2026-11-19)
 
-**State: OPEN — exact source and browser runtime recovered, original hosted acceptance verified, remaining VM rerun NOT EXECUTED.** Owner direction: compile/link outside the VM; isolated Debian/QEMU only for privileged runtime tests. Preserve original SEC-06/C4 gates, distinct installed/physical acceptance, historical receipts at their own source identities. No unrelated IDE branch integration.
+**State: OPEN — exact source recovered, hosted acceptance verified, native power-loss/recovery, watchdog and retired admission VM functional reruns now PASS; full matrix remains OPEN.** Owner direction: compile/link outside the VM; isolated Debian/QEMU only for privileged runtime tests. Preserve original SEC-06/C4 gates, distinct installed/physical acceptance, historical receipts at their own source identities. No unrelated IDE branch integration.
 
 | Existing work | Reconciled disposition | Outstanding evidence |
 | --- | --- | --- |
 | SEC-06C-VM / delegated custody | Positive VM custody reported in original session; source restored | Reopen original VM proof and complete remaining required same-candidate cases |
-| SEC-06D-VM / SEC-06D-R1 | Original exact-branch ledger records two abrupt virtual power-cut cohorts PASS, including late receipt recovery; historical result, not a new rerun | Requalify at final candidate with independent host termination/reboot and durable receipt evidence |
-| SEC-06E-VM | Original watchdog/custody recovery reported PASS | Guardian stall, worker stall, exceptional startup/cleanup, browser-specific indefinite guardian stall, legacy admission checks remain |
+| SEC-06D-VM / SEC-06D-R1 | Original exact-branch ledger records two abrupt virtual power-cut cohorts PASS, including late receipt recovery; historical result, not a new rerun | Final-candidate functional requalification PASS with independent host termination/reboot and durable receipts; post-test clean shutdown capture incomplete |
+| SEC-06E-VM | Original watchdog/custody recovery reported PASS | Native guardian/worker stall and four historical retired admission refusal cases PASS; separate exceptional startup/cleanup, browser-specific indefinite guardian stall and legacy shared admission lifecycle remain |
 | SEC-06E-R1/R1-R1/R1-R2 | Final browser VM cohort PASS recorded at exact source; hosted four browser logs independently reopened and verified at frozen candidate | Original VM raw receipts, binary deployment and final consolidated VM rerun not recovered/executed |
-| SEC-06F-VM / R1 | OPEN — source recovery verified; remaining VM runtime inputs and matrix open | Restore or regenerate missing exact-candidate test ELF/scanner and host GUI closure outside VM, then consolidate privileged VM acceptance without weaker custody or replay checks |
+| SEC-06F-VM / R1 | OPEN — exact-source native runtime rebuilt, archived and functional VM rerun passes | Resolve outstanding matrix/clean shutdown capture and separate legacy shared admission lifecycle; no weaker custody or replay checks |
 
 #### SEC-06F-VM-R1 — exact source restoration and evidence preservation
 
@@ -61,7 +61,26 @@
 - `Lu-SEC-06E-R1-R2-Acceptance-Evidence.zip` — original browser/Linux/Windows/GGUF CI artifact ZIPs (14585439792, 14585918536, 14586224286, 14586118304) plus historical power-cut/browser VM ledger excerpts; no fabricated raw VM logs.
 - `Lu-SEC-06E-R1-R2-Recovery-Manifest.json` — exact SHA/tree, original artifact IDs and checksums, scope and outstanding inputs.
 
-**Remaining runtime handoff:** original compiled VM core-tests/scanner and exact host GUI runtime closure archive were not in uploaded CI artifacts. Original raw QEMU logs/receipts also not recovered. Shared Debian image, INFRA-VM restore kit and Linux GUI dependency pool available. Restore original binary/deployment bytes if obtainable; otherwise build the necessary exact-source test/runtime artifacts on native host outside guest from locked dependencies, record new hashes and rerun genuine acceptance rather than claiming identical old ELF. Do not rebuild prior source implementation or ask user for existing generic dependencies. Authenticate and replay only in disposable offline VM. Remaining current-candidate cold power-loss, interrupted receipt, guardian/worker stall and legacy admission refusal/cleanup acceptance, plus full matrix evidence reconciliation. No new CI dispatch, runtime test, code modification, installer, main source merge or release in this recovery pass. Keep R1 and full SEC-06F OPEN; no new task ID.
+**Runtime restoration and genuine final-candidate VM rerun (2026-11-19 Arizona / 2026-11-20 UTC):** clean detached checkout at ccc943911d1814336d5ed67fa839e9c7528e2b29. Rebuilt original Rust test ELF, reviewed scanner and two historical guardian refusal binaries using Rust 1.99.1 and locked offline Cargo inputs on the native host; no guest compilation. New binary hashes are recorded, not attributed to old compiled artifacts. Restored QEMU 10.0.13 and original Debian image from shared inputs, verified original base SHA-256, booted independent no-NIC disposable overlays and verified checksum-sealed read-only deployments. Initial firmware lookup failed before boot; repaired expected links to existing verified SeaBIOS files. Historical container refusal returned unavailable, not the required denial; subsequent genuine delegated VM check passed.
+
+| Current candidate functional cohort | Result |
+| --- | --- |
+| Actual abrupt QEMU termination after original guarded scanner witness | PASS (host child exit -9) |
+| Reboot same overlay; original receipt and spent-witness reconciliation; stale marker removal, exact old nonce replay denied | PASS |
+| Original Rust missing, late and normal interrupted-receipt recovery phases | PASS (guest exit 0) |
+| Original native scanner healthy guardian with stalled worker; independent systemd watchdog terminating stalled guardian; same-boot cleanup, unrelated process survival, replay denial and durable interruption | PASS (guest exit 0) |
+| Original retired same-UID guardian admission refusal in genuine delegated systemd guest, all four historical negative cases | PASS (guest exit 0); negative-only; no positive custody claimed from this |
+| Base disk unchanged, all three offline overlay integrity checks | PASS |
+| Clean shutdown of legacy guest using corrected serial-drain collector | PASS |
+| Post-test clean shutdown capture on first two guest runs | INCOMPLETE — host serial collector did not drain console during shutdown, timed out after observed functional exit 0; no clean poweroff claimed. Both images separately integrity checked. |
+
+**New persistent recovery artifacts — Library → Shared Development Toolchain → Debian** (all four uploads confirmed):
+- `Lu-SEC-06F-VM-R1-Acceptance-Evidence.zip` SHA-256 `63de9fd58aab2c5fd6ed5b1c7aead7d74d97df15f515d68c7ee9ef75d9654231`: original post-deployment console excerpts, test markers, deployment hashes, failed attempt/terminal scope, original and corrected host collector and overlay checks.
+- `Lu-SEC-06F-VM-R1-Linux-Native-Runtime.zip` SHA-256 `ee96dc5be68c40811c949b50b9cd13f9829581c7c9ec5f87cd0740943f6ebb6e`: verified rebuilt core-tests, scanner, guard and negative fixture, pinned scripts and fixtures; not release runtime.
+- `Lu-SEC-06F-VM-R1-Receipt.json` SHA-256 `f4bb4ce1438f9af98a52c0c7c5684713480509fc3b5e9e991321acbe18f1e84e`: machine-readable results at exact source.
+- `Lu-SEC-06F-VM-R1-SHA256SUMS`: archive and receipt digest list.
+
+**Remain OPEN:** repeat shutdown-qualified power-cut/watchdog cohorts using corrected collector if required by consolidated gate; legacy shared admission attribution/cleanup and spent-record retention beyond exact nonce denial and retired historical negative cases; browser-specific indefinite guardian stall, destructive startup/cleanup and other-domain crash boundaries; reconcile full original SEC-06F matrix and retain separate installed/physical acceptance gate. Prior VM raw receipts and exact host GUI closure not recovered; pinned browser candidate and shared Linux GUI dependency pool preserved. No production code change, new CI dispatch, main source merge, installer or release. No new task ID. Reuse preserved exact-source native runtime rather than recompiling inside VM.
 
 ### CORE-POLISH — pre-next-build practical-capability integration gate (owner directive, November 16, 2026)
 
