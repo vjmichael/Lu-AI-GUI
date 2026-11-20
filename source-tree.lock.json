@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "d88f9cb7004e1166af992c5a2464f07e72cd18dd",
-  "trackedFileCount": 1250,
+  "sourceCommitBeforeLock": "788b8c52832d8c6debe09587b83f762536aa6742",
+  "trackedFileCount": 1252,
   "files": [
     {
       "path": ".gitattributes",
@@ -932,6 +932,10 @@
       "blob": "e44ef424c0a61bfe5f3031a9c7152da1e94b7e0d"
     },
     {
+      "path": "docs/LU_CP12B_R6_STAGE_LIFECYCLE_20261120.md",
+      "blob": "4aa92d9d4c420482be43ed059ae6b0e7642b2680"
+    },
+    {
       "path": "docs/LU_CURRENT_PREVIEW_CPU_VULKAN_DUAL_ENGINE_20261109.md",
       "blob": "c1664658ded245a3df6041114e42587f49550200"
     },
@@ -941,7 +945,7 @@
     },
     {
       "path": "docs/LU_DEVELOPMENT_LEDGER.md",
-      "blob": "73f269f1acaca92a68ef1d7db9c15682e2298259"
+      "blob": "a7d30a26d0fc387e23ecd413fc8330a0ad6efe2c"
     },
     {
       "path": "docs/LU_E1_NATIVE_EVIDENCE_20261107.md",
@@ -1725,7 +1729,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/dx_ipc.rs",
-      "blob": "795974fb56ca1bb075386a3c14ea78f001cea3e9"
+      "blob": "e1c9248f199ce00baeb8e0a0b4e372262b1d863b"
     },
     {
       "path": "lu-desktop/src-tauri/src/dx_review.rs",
@@ -2934,6 +2938,10 @@
     {
       "path": "scripts/cp12br5r1-stage-qualification.py",
       "blob": "5be4b5b9b8073e1f8a9fafec7ac5ccbe810ce0d3"
+    },
+    {
+      "path": "scripts/cp12br6-stage-lifecycle-gui.py",
+      "blob": "14ac3b31b1a0c791e6a9ce0a12b98ae0bba3d819"
     },
     {
       "path": "scripts/install-lu-agent01l-native-fixture.sh",
