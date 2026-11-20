@@ -7,20 +7,28 @@ on:
   push:
     branches: [ide/group04d-native-inspection-20261110]
     paths: ['.github/workflows/ide-group04d-source.yml']
+  # Supplement the historical push/manual lane only on the reviewed integration PR.
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/ide-group04d-source.yml'
   workflow_dispatch:
 permissions:
   contents: read
 concurrency:
   group: ide-g04d-sourcedev-${{ github.ref }}
   cancel-in-progress: true
+env:
+  REVIEWED_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
 jobs:
   linux-native-source:
+    if: ${{ github.event_name != 'pull_request' || (github.event.pull_request.number == 236 && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'ide/integration-git-6c6d6e6f-to-main-20261113') }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -30,7 +38,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git rev-parse HEAD)" = "$REVIEWED_SOURCE_SHA"
           cargo fmt --manifest-path ide/host/Cargo.toml -- --check
           cargo fmt --manifest-path ide/supervisor/Cargo.toml -- --check
           cargo fmt --manifest-path ide/app/src-tauri/Cargo.toml -- --check
@@ -44,13 +52,115 @@ jobs:
           cargo check --manifest-path ide/supervisor/Cargo.toml --features dap-transport,linux-worker
           cargo check --release --manifest-path ide/supervisor/Cargo.toml --features dap-transport,linux-worker
           echo 'IDE_G04D_LINUX_SOURCE=PASS_NOT_KERNEL_OR_INSTALLED'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10.11'
+      - name: Attest successor checkout and pinned toolchain
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          if ((git rev-parse HEAD).Trim() -cne $env:REVIEWED_SOURCE_SHA -or $LASTEXITCODE -ne 0) { throw 'DENIED: reviewed successor mismatch' }
+          if ((rustc --version) -notmatch '^rustc 1\.99\.1(?:\s|$)') { throw 'DENIED: unexpected Rust toolchain' }
+          Write-Host 'Historical 02C candidate and parent are preserved as historical evidence, not claimed identical to this successor.'
+      - name: Original 02C source-only obligations on the reviewed successor (no LLVM build)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $PSNativeCommandUseErrorActionPreference=$false
+          Remove-Item Env:LU_IDE_D3_LINUX_SYMBOLIZER_SHA256 -ErrorAction SilentlyContinue
+          $failures=[System.Collections.Generic.List[string]]::new()
+          function Invoke-Checked([string]$exe,[string[]]$argv) {
+            $application=Get-Command $exe -CommandType Application -ErrorAction Stop | Select-Object -First 1
+            & $application.Source @argv
+            if ($LASTEXITCODE -ne 0) { throw "$exe exit $LASTEXITCODE" }
+          }
+          function Invoke-LuIdePreflightGroup([string]$name,[scriptblock]$body) {
+            Write-Host "=== $name ==="
+            try { & $body; Write-Host "SOURCE_PREFLIGHT_PASS=$name" }
+            catch { $failures.Add($name); Write-Host "SOURCE_PREFLIGHT_FAIL=$name : $($_.Exception.Message)" }
+          }
+          function Invoke-CargoCheck([string[]]$argv) { Invoke-Checked 'cargo' $argv }
+          # PowerShell aliases outrank functions. Attest command resolution
+          # before running any real check; never remove global aliases.
+          foreach ($name in @('Invoke-LuIdePreflightGroup','Invoke-Checked','Invoke-CargoCheck')) {
+            if ((Get-Command -Name $name -ErrorAction Stop).CommandType -ne [System.Management.Automation.CommandTypes]::Function) {
+              throw "DENIED: verification helper shadowed: $name"
+            }
+          }
+          # Verify native argument passing and failure detection without
+          # counting a synthetic result as an actual source gate.
+          Invoke-Checked 'python' @('-c','import sys; assert sys.argv[1:] == ["arg with spaces", "--test"]','arg with spaces','--test')
+          $observedFailure=$false
+          try { Invoke-Checked 'python' @('-c','import sys; sys.exit(17)') }
+          catch { if ($_.Exception.Message -ne 'python exit 17') { throw }; $observedFailure=$true }
+          if (!$observedFailure) { throw 'DENIED: native failure lost' }
+          Invoke-Checked 'python' @('-c','pass')
+          Write-Host 'SOURCE_PREFLIGHT_HELPER_SELFTEST=PASS'
+          foreach ($crate in @('ide/host','ide/supervisor','ide/sandbox','ide/app/src-tauri')) {
+            Invoke-LuIdePreflightGroup "fmt $crate" { Invoke-CargoCheck @('fmt','--manifest-path',"$crate/Cargo.toml",'--','--check') }
+          }
+          Invoke-LuIdePreflightGroup 'Pinned overlay Python' { Invoke-Checked 'python' @('-m','unittest','discover','-s','ide/llvm18_owner','-p','test_pinned_chrono_overlay.py','-v') }
+          foreach ($script in @('ide/llvm18_owner/Build-PinnedOwnerWindows.ps1','ide/llvm18_owner/Test-PinnedOwnerWindows.ps1','ide/llvm18_owner/Transfer-PinnedOwnerBundle.ps1','ide/app/fixtures/Test-DEV046D-PhysicalHumanConsent.ps1')) {
+            Invoke-LuIdePreflightGroup "PowerShell parser $script" {
+              $tokens=$null; $errors=$null
+              [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path -LiteralPath $script).Path,[ref]$tokens,[ref]$errors) | Out-Null
+              if ($errors.Count -ne 0) { $errors | ForEach-Object { Write-Host $_.ToString() }; throw 'parser failed' }
+            }
+          }
+          Invoke-LuIdePreflightGroup 'Host default tests' { Invoke-CargoCheck @('test','--manifest-path','ide/host/Cargo.toml','--lib') }
+          Invoke-LuIdePreflightGroup 'Supervisor DAP default suite' { Invoke-CargoCheck @('test','--manifest-path','ide/supervisor/Cargo.toml','--features','dap-transport','--lib') }
+          Invoke-LuIdePreflightGroup 'Original Node debugger and icon source tests' { Invoke-Checked 'node' @('--test','ide/app/tests/dev046d_installed_debugger_boundary.test.mjs','ide/app/tests/dev046d_native_operator_dialog.test.mjs','ide/app/tests/ide_icon_source_contract.test.mjs') }
+          Invoke-LuIdePreflightGroup 'Reviewed icon provenance' { Invoke-Checked 'python' @('ide/app/fixtures/verify_reviewed_ide_icons.py','--repo-root','.') }
+          if ($IsWindows) {
+            $win='dap-transport,protected-recovery-service'
+            $d5="$win,dev045d5-ci-event-owner"
+            $d6="$win,dev046c-ci-control,dev046d-native-dialog"
+            Invoke-LuIdePreflightGroup 'Windows D5 owner unit tests' { Invoke-CargoCheck @('test','--manifest-path','ide/supervisor/Cargo.toml','--features',$d5,'--lib','windows_event_owner') }
+            Invoke-LuIdePreflightGroup 'Windows D5 source compile' { Invoke-CargoCheck @('check','--manifest-path','ide/supervisor/Cargo.toml','--features',$d5,'--example','wo6_native_dap_acceptance') }
+            Invoke-LuIdePreflightGroup 'Windows release without owner' { Invoke-CargoCheck @('check','--release','--manifest-path','ide/supervisor/Cargo.toml','--features',$win) }
+            Invoke-LuIdePreflightGroup 'Windows historical WO6 host build' { Invoke-CargoCheck @('build','--manifest-path','ide/supervisor/Cargo.toml','--features',$win,'--bin','windows_recovery_service','--bin','windows_null_service_bootstrap','--example','wo6_native_dap_acceptance') }
+            Invoke-LuIdePreflightGroup 'Windows WO6 PDB source host build' { Invoke-CargoCheck @('build','--manifest-path','ide/supervisor/Cargo.toml','--features',"$win,dev045d4c-ci-oracle",'--bin','windows_recovery_service','--bin','windows_null_service_bootstrap','--example','wo6_native_dap_acceptance') }
+            foreach ($filter in @('windows_event_owner','windows_kernel_pc','debug_action_receipts','debug_control_dispatch')) {
+              Invoke-LuIdePreflightGroup "Windows D6 $filter" { Invoke-CargoCheck @('test','--manifest-path','ide/supervisor/Cargo.toml','--features',$d6,'--lib',$filter) }
+            }
+            Invoke-LuIdePreflightGroup 'Windows D6 host DAP tests' { Invoke-CargoCheck @('test','--manifest-path','ide/host/Cargo.toml','--features','dev046c-ci-control,dev045d4c-ci-oracle','--lib','dap_session') }
+            Invoke-LuIdePreflightGroup 'Windows locked frontend and real build' {
+              Invoke-Checked 'npm' @('ci','--ignore-scripts','--no-audit','--no-fund','--prefix','ide/app')
+              Invoke-Checked 'node' @('ide/app/scripts/build.mjs')
+              foreach ($file in @('ide/app/dist/index.html','ide/app/dist/assets/app.js')) { if (!(Test-Path -LiteralPath $file -PathType Leaf)) { throw "Missing frontend $file" } }
+            }
+            Invoke-LuIdePreflightGroup 'Windows developer Tauri dialog compiler' { Invoke-CargoCheck @('check','--manifest-path','ide/app/src-tauri/Cargo.toml','--features','dev046d-native-dialog') }
+            Invoke-LuIdePreflightGroup 'Windows restart audit compiler' { Invoke-CargoCheck @('check','--manifest-path','ide/supervisor/Cargo.toml','--features',$d6,'--example','dev046d_restart_receipt_audit') }
+            Invoke-LuIdePreflightGroup 'Windows original grouped owner and control host compiler' { Invoke-CargoCheck @('build','--manifest-path','ide/supervisor/Cargo.toml','--features',$d6,'--bin','windows_recovery_service','--bin','windows_null_service_bootstrap','--example','wo6_native_dap_acceptance') }
+            Invoke-LuIdePreflightGroup 'Windows release owner observation compiler' { Invoke-CargoCheck @('check','--release','--manifest-path','ide/supervisor/Cargo.toml','--features',"$win,fin04-release-owner-evidence") }
+          } else {
+            Invoke-LuIdePreflightGroup 'Linux fixed source breakpoint DAP suite' { Invoke-CargoCheck @('test','--manifest-path','ide/host/Cargo.toml','--features','dev045d3-ci-oracle','--lib','dap_session') }
+            Invoke-LuIdePreflightGroup 'Linux independent PC and bounded reader unit tests' { Invoke-CargoCheck @('test','--manifest-path','ide/supervisor/Cargo.toml','--features','linux-worker,dap-transport,dev045d3-ci-oracle','--lib','native_kernel_pc') }
+            Invoke-LuIdePreflightGroup 'Linux delegated host compiler' { Invoke-CargoCheck @('build','--manifest-path','ide/sandbox/Cargo.toml','--bin','linux_cgroup_prepare','--bin','linux_delegated_ci_wo6_dap_host','--bin','linux_delegated_ci_wo6_build_host') }
+            Invoke-LuIdePreflightGroup 'Linux fixed debugger host compiler' { Invoke-CargoCheck @('build','--manifest-path','ide/supervisor/Cargo.toml','--features','dap-transport,linux-worker','--example','wo6_native_dap_acceptance') }
+            Invoke-LuIdePreflightGroup 'Linux historical build host compiler' { Invoke-CargoCheck @('build','--manifest-path','ide/supervisor/Cargo.toml','--features','linux-worker','--example','wo6_linux_native_build_acceptance') }
+            Invoke-LuIdePreflightGroup 'Linux source-stop host compiler' { Invoke-CargoCheck @('build','--manifest-path','ide/supervisor/Cargo.toml','--features','linux-worker,dap-transport,dev045d3-ci-oracle','--example','wo6_linux_native_build_acceptance') }
+            Invoke-LuIdePreflightGroup 'Linux regular release compiler' { Invoke-CargoCheck @('check','--release','--manifest-path','ide/supervisor/Cargo.toml','--features','linux-worker,dap-transport') }
+          }
+          Invoke-LuIdePreflightGroup 'Exact tracked candidate unchanged' {
+            if ((git rev-parse HEAD).Trim() -cne $env:REVIEWED_SOURCE_SHA -or $LASTEXITCODE -ne 0) { throw 'HEAD changed' }
+            Invoke-Checked 'git' @('diff','--exit-code','HEAD','--')
+          }
+          Write-Host 'LLVM18_BUILD=NOT_RUN; NATIVE_OS_ACCEPTANCE=NOT_RUN'
+          if ($failures.Count -gt 0) { throw ('SOURCE_PREFLIGHT_FAILED: ' + ($failures -join '; ')) }
+          Write-Host 'SOURCE_PREFLIGHT=PASS_NOT_NATIVE_ACCEPTANCE'
+
   windows-native-source:
+    if: ${{ github.event_name != 'pull_request' || (github.event.pull_request.number == 236 && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'ide/integration-git-6c6d6e6f-to-main-20261113') }}
     runs-on: windows-2022
-    timeout-minutes: 65
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -63,7 +173,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference='Stop'
-          if ((git rev-parse HEAD).Trim() -ne $env:GITHUB_SHA) { throw 'DENIED: exact reviewed head changed' }
+          if ((git rev-parse HEAD).Trim() -ne $env:REVIEWED_SOURCE_SHA) { throw 'DENIED: exact reviewed head changed' }
           cargo fmt --manifest-path ide/host/Cargo.toml -- --check
           if ($LASTEXITCODE -ne 0) { throw 'DENIED: host Rustfmt failure' }
           cargo fmt --manifest-path ide/supervisor/Cargo.toml -- --check
@@ -98,3 +208,103 @@ jobs:
           cargo check --manifest-path ide/app/src-tauri/Cargo.toml --features dev046d-native-dialog
           if ($LASTEXITCODE -ne 0) { throw 'DENIED: dev native human modal desktop compiler failed' }
           echo 'IDE_G04D_WINDOWS_SOURCE=PASS_NOT_PHYSICAL_APPROVAL_OR_INSTALLED'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10.11'
+      - name: Attest successor checkout and pinned toolchain
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          if ((git rev-parse HEAD).Trim() -cne $env:REVIEWED_SOURCE_SHA -or $LASTEXITCODE -ne 0) { throw 'DENIED: reviewed successor mismatch' }
+          if ((rustc --version) -notmatch '^rustc 1\.99\.1(?:\s|$)') { throw 'DENIED: unexpected Rust toolchain' }
+          Write-Host 'Historical 02C candidate and parent are preserved as historical evidence, not claimed identical to this successor.'
+      - name: Original 02C source-only obligations on the reviewed successor (no LLVM build)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $PSNativeCommandUseErrorActionPreference=$false
+          Remove-Item Env:LU_IDE_D3_LINUX_SYMBOLIZER_SHA256 -ErrorAction SilentlyContinue
+          $failures=[System.Collections.Generic.List[string]]::new()
+          function Invoke-Checked([string]$exe,[string[]]$argv) {
+            $application=Get-Command $exe -CommandType Application -ErrorAction Stop | Select-Object -First 1
+            & $application.Source @argv
+            if ($LASTEXITCODE -ne 0) { throw "$exe exit $LASTEXITCODE" }
+          }
+          function Invoke-LuIdePreflightGroup([string]$name,[scriptblock]$body) {
+            Write-Host "=== $name ==="
+            try { & $body; Write-Host "SOURCE_PREFLIGHT_PASS=$name" }
+            catch { $failures.Add($name); Write-Host "SOURCE_PREFLIGHT_FAIL=$name : $($_.Exception.Message)" }
+          }
+          function Invoke-CargoCheck([string[]]$argv) { Invoke-Checked 'cargo' $argv }
+          # PowerShell aliases outrank functions. Attest command resolution
+          # before running any real check; never remove global aliases.
+          foreach ($name in @('Invoke-LuIdePreflightGroup','Invoke-Checked','Invoke-CargoCheck')) {
+            if ((Get-Command -Name $name -ErrorAction Stop).CommandType -ne [System.Management.Automation.CommandTypes]::Function) {
+              throw "DENIED: verification helper shadowed: $name"
+            }
+          }
+          # Verify native argument passing and failure detection without
+          # counting a synthetic result as an actual source gate.
+          Invoke-Checked 'python' @('-c','import sys; assert sys.argv[1:] == ["arg with spaces", "--test"]','arg with spaces','--test')
+          $observedFailure=$false
+          try { Invoke-Checked 'python' @('-c','import sys; sys.exit(17)') }
+          catch { if ($_.Exception.Message -ne 'python exit 17') { throw }; $observedFailure=$true }
+          if (!$observedFailure) { throw 'DENIED: native failure lost' }
+          Invoke-Checked 'python' @('-c','pass')
+          Write-Host 'SOURCE_PREFLIGHT_HELPER_SELFTEST=PASS'
+          foreach ($crate in @('ide/host','ide/supervisor','ide/sandbox','ide/app/src-tauri')) {
+            Invoke-LuIdePreflightGroup "fmt $crate" { Invoke-CargoCheck @('fmt','--manifest-path',"$crate/Cargo.toml",'--','--check') }
+          }
+          Invoke-LuIdePreflightGroup 'Pinned overlay Python' { Invoke-Checked 'python' @('-m','unittest','discover','-s','ide/llvm18_owner','-p','test_pinned_chrono_overlay.py','-v') }
+          foreach ($script in @('ide/llvm18_owner/Build-PinnedOwnerWindows.ps1','ide/llvm18_owner/Test-PinnedOwnerWindows.ps1','ide/llvm18_owner/Transfer-PinnedOwnerBundle.ps1','ide/app/fixtures/Test-DEV046D-PhysicalHumanConsent.ps1')) {
+            Invoke-LuIdePreflightGroup "PowerShell parser $script" {
+              $tokens=$null; $errors=$null
+              [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path -LiteralPath $script).Path,[ref]$tokens,[ref]$errors) | Out-Null
+              if ($errors.Count -ne 0) { $errors | ForEach-Object { Write-Host $_.ToString() }; throw 'parser failed' }
+            }
+          }
+          Invoke-LuIdePreflightGroup 'Host default tests' { Invoke-CargoCheck @('test','--manifest-path','ide/host/Cargo.toml','--lib') }
+          Invoke-LuIdePreflightGroup 'Supervisor DAP default suite' { Invoke-CargoCheck @('test','--manifest-path','ide/supervisor/Cargo.toml','--features','dap-transport','--lib') }
+          Invoke-LuIdePreflightGroup 'Original Node debugger and icon source tests' { Invoke-Checked 'node' @('--test','ide/app/tests/dev046d_installed_debugger_boundary.test.mjs','ide/app/tests/dev046d_native_operator_dialog.test.mjs','ide/app/tests/ide_icon_source_contract.test.mjs') }
+          Invoke-LuIdePreflightGroup 'Reviewed icon provenance' { Invoke-Checked 'python' @('ide/app/fixtures/verify_reviewed_ide_icons.py','--repo-root','.') }
+          if ($IsWindows) {
+            $win='dap-transport,protected-recovery-service'
+            $d5="$win,dev045d5-ci-event-owner"
+            $d6="$win,dev046c-ci-control,dev046d-native-dialog"
+            Invoke-LuIdePreflightGroup 'Windows D5 owner unit tests' { Invoke-CargoCheck @('test','--manifest-path','ide/supervisor/Cargo.toml','--features',$d5,'--lib','windows_event_owner') }
+            Invoke-LuIdePreflightGroup 'Windows D5 source compile' { Invoke-CargoCheck @('check','--manifest-path','ide/supervisor/Cargo.toml','--features',$d5,'--example','wo6_native_dap_acceptance') }
+            Invoke-LuIdePreflightGroup 'Windows release without owner' { Invoke-CargoCheck @('check','--release','--manifest-path','ide/supervisor/Cargo.toml','--features',$win) }
+            Invoke-LuIdePreflightGroup 'Windows historical WO6 host build' { Invoke-CargoCheck @('build','--manifest-path','ide/supervisor/Cargo.toml','--features',$win,'--bin','windows_recovery_service','--bin','windows_null_service_bootstrap','--example','wo6_native_dap_acceptance') }
+            Invoke-LuIdePreflightGroup 'Windows WO6 PDB source host build' { Invoke-CargoCheck @('build','--manifest-path','ide/supervisor/Cargo.toml','--features',"$win,dev045d4c-ci-oracle",'--bin','windows_recovery_service','--bin','windows_null_service_bootstrap','--example','wo6_native_dap_acceptance') }
+            foreach ($filter in @('windows_event_owner','windows_kernel_pc','debug_action_receipts','debug_control_dispatch')) {
+              Invoke-LuIdePreflightGroup "Windows D6 $filter" { Invoke-CargoCheck @('test','--manifest-path','ide/supervisor/Cargo.toml','--features',$d6,'--lib',$filter) }
+            }
+            Invoke-LuIdePreflightGroup 'Windows D6 host DAP tests' { Invoke-CargoCheck @('test','--manifest-path','ide/host/Cargo.toml','--features','dev046c-ci-control,dev045d4c-ci-oracle','--lib','dap_session') }
+            Invoke-LuIdePreflightGroup 'Windows locked frontend and real build' {
+              Invoke-Checked 'npm' @('ci','--ignore-scripts','--no-audit','--no-fund','--prefix','ide/app')
+              Invoke-Checked 'node' @('ide/app/scripts/build.mjs')
+              foreach ($file in @('ide/app/dist/index.html','ide/app/dist/assets/app.js')) { if (!(Test-Path -LiteralPath $file -PathType Leaf)) { throw "Missing frontend $file" } }
+            }
+            Invoke-LuIdePreflightGroup 'Windows developer Tauri dialog compiler' { Invoke-CargoCheck @('check','--manifest-path','ide/app/src-tauri/Cargo.toml','--features','dev046d-native-dialog') }
+            Invoke-LuIdePreflightGroup 'Windows restart audit compiler' { Invoke-CargoCheck @('check','--manifest-path','ide/supervisor/Cargo.toml','--features',$d6,'--example','dev046d_restart_receipt_audit') }
+            Invoke-LuIdePreflightGroup 'Windows original grouped owner and control host compiler' { Invoke-CargoCheck @('build','--manifest-path','ide/supervisor/Cargo.toml','--features',$d6,'--bin','windows_recovery_service','--bin','windows_null_service_bootstrap','--example','wo6_native_dap_acceptance') }
+            Invoke-LuIdePreflightGroup 'Windows release owner observation compiler' { Invoke-CargoCheck @('check','--release','--manifest-path','ide/supervisor/Cargo.toml','--features',"$win,fin04-release-owner-evidence") }
+          } else {
+            Invoke-LuIdePreflightGroup 'Linux fixed source breakpoint DAP suite' { Invoke-CargoCheck @('test','--manifest-path','ide/host/Cargo.toml','--features','dev045d3-ci-oracle','--lib','dap_session') }
+            Invoke-LuIdePreflightGroup 'Linux independent PC and bounded reader unit tests' { Invoke-CargoCheck @('test','--manifest-path','ide/supervisor/Cargo.toml','--features','linux-worker,dap-transport,dev045d3-ci-oracle','--lib','native_kernel_pc') }
+            Invoke-LuIdePreflightGroup 'Linux delegated host compiler' { Invoke-CargoCheck @('build','--manifest-path','ide/sandbox/Cargo.toml','--bin','linux_cgroup_prepare','--bin','linux_delegated_ci_wo6_dap_host','--bin','linux_delegated_ci_wo6_build_host') }
+            Invoke-LuIdePreflightGroup 'Linux fixed debugger host compiler' { Invoke-CargoCheck @('build','--manifest-path','ide/supervisor/Cargo.toml','--features','dap-transport,linux-worker','--example','wo6_native_dap_acceptance') }
+            Invoke-LuIdePreflightGroup 'Linux historical build host compiler' { Invoke-CargoCheck @('build','--manifest-path','ide/supervisor/Cargo.toml','--features','linux-worker','--example','wo6_linux_native_build_acceptance') }
+            Invoke-LuIdePreflightGroup 'Linux source-stop host compiler' { Invoke-CargoCheck @('build','--manifest-path','ide/supervisor/Cargo.toml','--features','linux-worker,dap-transport,dev045d3-ci-oracle','--example','wo6_linux_native_build_acceptance') }
+            Invoke-LuIdePreflightGroup 'Linux regular release compiler' { Invoke-CargoCheck @('check','--release','--manifest-path','ide/supervisor/Cargo.toml','--features','linux-worker,dap-transport') }
+          }
+          Invoke-LuIdePreflightGroup 'Exact tracked candidate unchanged' {
+            if ((git rev-parse HEAD).Trim() -cne $env:REVIEWED_SOURCE_SHA -or $LASTEXITCODE -ne 0) { throw 'HEAD changed' }
+            Invoke-Checked 'git' @('diff','--exit-code','HEAD','--')
+          }
+          Write-Host 'LLVM18_BUILD=NOT_RUN; NATIVE_OS_ACCEPTANCE=NOT_RUN'
+          if ($failures.Count -gt 0) { throw ('SOURCE_PREFLIGHT_FAILED: ' + ($failures -join '; ')) }
+          Write-Host 'SOURCE_PREFLIGHT=PASS_NOT_NATIVE_ACCEPTANCE'

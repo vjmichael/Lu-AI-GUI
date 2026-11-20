@@ -7,14 +7,22 @@ on:
     branches: [ide/group06a-git-repository-audit-20261110]
     paths:
       - '.github/workflows/ide-group06a-native.yml'
+  # Supplement the historical push/manual lane only on the reviewed integration PR.
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/ide-group06a-native.yml'
   workflow_dispatch:
 permissions:
   contents: read
 concurrency:
   group: ide-g06a-native-${{ github.ref }}
   cancel-in-progress: true
+env:
+  REVIEWED_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
 jobs:
   native-inventory:
+    if: ${{ github.event_name != 'pull_request' || (github.event.pull_request.number == 236 && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'ide/integration-git-6c6d6e6f-to-main-20261113') }}
     name: Exact SHA Rust host, Node boundary and Tauri / ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -25,16 +33,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
           fetch-depth: 0 # ancestry check requires the full local commit chain
       - name: Exact checked-out SHA
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git rev-parse HEAD)" = "$REVIEWED_SOURCE_SHA"
           git merge-base --is-ancestor 2f1509f641d0f526c8185601057940b449a66605 HEAD
-          echo "IDE_G06A_EXACT_SOURCE=$GITHUB_SHA"
+          echo "IDE_G06A_EXACT_SOURCE=$REVIEWED_SOURCE_SHA"
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: '1.99.1'
@@ -92,11 +100,11 @@ jobs:
         run: |
           mkdir -p .ide-g06a-receipts
           printf 'sha=%s\nos=%s\nrun=%s\ninstalled_operator=OPEN\nlinked_external_access=DENIED\ngit_mutations=NOT_EXPOSED\n' \
-            "$GITHUB_SHA" "$RUNNER_OS" "$GITHUB_RUN_ID" > .ide-g06a-receipts/native.txt
+            "$REVIEWED_SOURCE_SHA" "$RUNNER_OS" "$GITHUB_RUN_ID" > .ide-g06a-receipts/native.txt
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: ide-g06a-${{ matrix.os }}-${{ github.sha }}
+          name: ide-g06a-${{ matrix.os }}-${{ github.event.pull_request.head.sha || github.sha }}
           path: .ide-g06a-receipts/
           retention-days: 30
           if-no-files-found: error

@@ -26,20 +26,28 @@ on:
       - ide/llvm18_owner/Build-PinnedOwnerWindows.ps1
       - ide/llvm18_owner/test_pinned_chrono_overlay.py
       - ide/app/src-tauri/build.rs
+  # Supplement the historical push/manual lane only on the reviewed integration PR.
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/ide-fin04r1-exact-native.yml'
   workflow_dispatch:
 permissions:
   contents: read
 concurrency:
   group: fin04r1-exact-${{ github.ref }}
   cancel-in-progress: true
+env:
+  REVIEWED_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
 jobs:
   windows-compile:
+    if: ${{ github.event_name != 'pull_request' || (github.event.pull_request.number == 236 && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'ide/integration-git-6c6d6e6f-to-main-20261113') }}
     runs-on: windows-2022
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -61,7 +69,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference='Stop'
-          if ((git rev-parse HEAD).Trim() -ne '${{ github.sha }}') { throw 'FIN04R1_EXACT_SOURCE_HEAD_CHANGED' }
+          if ((git rev-parse HEAD).Trim() -ne '${{ github.event.pull_request.head.sha || github.sha }}') { throw 'FIN04R1_EXACT_SOURCE_HEAD_CHANGED' }
           node --test ide/app/tests/fin04r1_protected_pdb.test.mjs
           if ($LASTEXITCODE -ne 0) { throw 'FIN04R1_NEGATIVE_BOUNDARY_TEST_FAILED' }
           node --test ide/app/tests/fin04_release_owner_and_os_recovery.test.mjs
@@ -80,6 +88,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'FIN04R1_POSTCOMMAND_HOSTILE_TEST_FAILED' }
           cargo test --manifest-path ide/supervisor/Cargo.toml --features fin04-release-owner-evidence --lib debug_action_receipts
           if ($LASTEXITCODE -ne 0) { throw 'FIN04R1_ONE_USE_RESTART_TEST_FAILED' }
+          cargo test --manifest-path ide/supervisor/Cargo.toml --features fin04-release-owner-evidence --lib windows_event_owner
+          if ($LASTEXITCODE -ne 0) { throw 'FIN04R1_OWNER_RESTART_NEGATIVE_TEST_FAILED' }
           Write-Host 'FIN04R1_WINDOWS_COMPILER_AND_SOURCE_FIXTURES=PASS_NOT_KERNEL_OR_INSTALLED'
       - name: Complete exact-head Rust supervisor regression
         shell: pwsh
@@ -105,13 +115,14 @@ jobs:
           Write-Host 'FIN04R1_PHYSICAL_HUMAN_ACCEPTANCE=NOT_EXECUTED'
 
   windows-kernel:
+    if: ${{ github.event_name != 'pull_request' || (github.event.pull_request.number == 236 && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'ide/integration-git-6c6d6e6f-to-main-20261113') }}
     needs: windows-compile
     runs-on: windows-2022
     timeout-minutes: 180
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -126,7 +137,7 @@ jobs:
       - name: Lock exact source HEAD
         shell: pwsh
         run: |
-          if ((git rev-parse HEAD).Trim() -ne '${{ github.sha }}') { throw 'FIN04R1_NATIVE_EXACT_SOURCE_CHANGED' }
+          if ((git rev-parse HEAD).Trim() -ne '${{ github.event.pull_request.head.sha || github.sha }}') { throw 'FIN04R1_NATIVE_EXACT_SOURCE_CHANGED' }
       - name: Compile exact first-party LLVM18 owner-event and pinned symbolizer
         shell: pwsh
         run: |
@@ -160,7 +171,7 @@ jobs:
             $granted=$true
             & $bootstrap --verify-fixed-service
             if ($LASTEXITCODE -ne 0) { throw 'FIN04R1_SCM_LEASE_UNVERIFIED' }
-            & ide/llvm18_owner/Test-FIN04R1-ProtectedPdbWindows.ps1 -ExpectedSourceHead '${{ github.sha }}' -PinnedLldbBundle $env:LU_IDE_WO6_DAP_BUNDLE -PinnedCargoBundle $env:LU_IDE_D7_NATIVE_TOOLCHAIN -ProtectedScmServiceExecutable $service -EvidenceDirectory (Join-Path $env:RUNNER_TEMP 'fin04r1-native')
+            & ide/llvm18_owner/Test-FIN04R1-ProtectedPdbWindows.ps1 -ExpectedSourceHead '${{ github.event.pull_request.head.sha || github.sha }}' -PinnedLldbBundle $env:LU_IDE_WO6_DAP_BUNDLE -PinnedCargoBundle $env:LU_IDE_D7_NATIVE_TOOLCHAIN -ProtectedScmServiceExecutable $service -EvidenceDirectory (Join-Path $env:RUNNER_TEMP 'fin04r1-native')
             if ($LASTEXITCODE -ne 0) { throw 'FIN04R1_REAL_KERNEL_PDB_OWNER_RESTART_FAILED' }
           } finally {
             if ($granted) {
