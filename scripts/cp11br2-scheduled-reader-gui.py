@@ -26,11 +26,24 @@ def field(pid,name,text):
     require(node.get_component_iface().grab_focus(),'focus '+name)
     wait(lambda:node.get_state_set().contains(gui.Atspi.StateType.FOCUSED),5,'focus '+name)
     iface=node.get_editable_text_iface()
-    if iface:require(gui.Atspi.EditableText.set_text_contents(iface,text),'editable '+name)
+    if gui.Atspi.Text.get_text(node.get_text_iface(),0,-1)==text:return
+    if name=='Scheduled task prompt':
+        if gui.Atspi.Text.get_text(node.get_text_iface(),0,-1):
+            subprocess.run(['xdotool','key','--clearmodifiers','Home','shift+End','BackSpace'],check=True,timeout=5)
+            wait(lambda:gui.Atspi.Text.get_text(node.get_text_iface(),0,-1)=='',5,'empty prompt')
+        subprocess.run(['xdotool','type','--clearmodifiers','--delay','45','--',text],check=True,timeout=30)
+    elif name=='Approved note':
+        subprocess.run(['xdotool','key','--clearmodifiers','ctrl+a','BackSpace'],check=True,timeout=5)
+        for i,line in enumerate(text.split('\n')):
+            if i:subprocess.run(['xdotool','key','Return'],check=True,timeout=5)
+            subprocess.run(['xdotool','type','--clearmodifiers','--delay','50','--',line],check=True,timeout=15)
+    elif iface:require(gui.Atspi.EditableText.set_text_contents(iface,text),'editable '+name)
     else:
         subprocess.run(['xdotool','key','--clearmodifiers','ctrl+a','BackSpace'],check=True,timeout=5)
         subprocess.run(['xdotool','type','--clearmodifiers','--',text],check=True,timeout=15)
-    wait(lambda:gui.Atspi.Text.get_text(node.get_text_iface(),0,-1)==text,5,'exact '+name)
+    try:wait(lambda:gui.Atspi.Text.get_text(node.get_text_iface(),0,-1)==text,5,'exact '+name)
+    except RuntimeError:
+        print(name,repr(gui.Atspi.Text.get_text(node.get_text_iface(),0,-1)),flush=True);raise
 def review(pid,prompt,choice):
     label=wait(lambda:named(pid,TITLE),25,'native task review')
     wins=subprocess.check_output(['xdotool','search','--onlyvisible','--name','^'+TITLE+'$'],text=True,timeout=5).splitlines()
@@ -74,14 +87,15 @@ def verify(path,seq):
 def main():
     p=argparse.ArgumentParser(description=__doc__)
     for n in ('exe','model','fresh-data-home','out'):p.add_argument('--'+n,type=Path,required=True)
-    p.add_argument('--sha256',required=True);p.add_argument('--model-sha256',required=True);a=p.parse_args()
+    p.add_argument('--sha256',required=True);p.add_argument('--model-sha256',required=True);p.add_argument('--approval-only',action='store_true',help='fresh independent approval profile; refusal has separate evidence');a=p.parse_args()
     require(os.geteuid()!=0 and a.exe.stat().st_uid==0 and not a.exe.stat().st_mode&0o022 and bm.sha(a.exe)==a.sha256,'installed binary identity');require(bm.sha(a.model)==a.model_sha256,'model identity')
     home=a.fresh_data_home.resolve();root=home/'org.lu.desktop';folder=root/'lu-models';folder.mkdir(parents=True,exist_ok=False);shutil.copyfile(a.model,folder/a.model.name);require(bm.sha(folder/a.model.name)==a.model_sha256,'fixture copy')
     path=root/'lu-background-schedule.sqlite';a.out.mkdir(parents=True,exist_ok=False);env=dict(os.environ,XDG_DATA_HOME=str(home));receipt={'status':'INCOMPLETE','binary_sha256':a.sha256,'model_sha256':a.model_sha256,'phases':{}};app=None
     with (a.out/'native.log').open('wb') as log:
         try:
             app=subprocess.Popen([str(a.exe)],env=env,stdin=subprocess.DEVNULL,stdout=log,stderr=log);action(app.pid,'New Chat',timeout=90);worker=bm.load(app.pid);navigate(app.pid)
-            create(app.pid,path,REFUSED,False);receipt['phases']['refusal']='PASS'
+            if not a.approval_only:
+                create(app.pid,path,REFUSED,False);receipt['phases']['refusal']='PASS'
             row=create(app.pid,path,PROMPT,True);require(row['grant']['note']==NOTE and row['grant']['line']==2 and row['repeat_seconds']==60 and not row['runs'],'incorrect persisted scope');receipt['phases']['approval']='PASS'
             # Actual elapsed scheduled cadence; witness worker CPU advance before terminal.
             before=bm.ticks(worker);first=verify(path,1);require(bm.ticks(worker)>before and bm.model_worker(app.pid)==worker,'no genuine inference witness');receipt['phases']['first_verified_result']='PASS'
