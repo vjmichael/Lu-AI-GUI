@@ -1,0 +1,134 @@
+name: Lu CP-06E-R3-R1 native web and desktop consent
+on:
+  push:
+    branches: [lu/cp01-attachment-transaction-20261116]
+    paths: ['.github/workflows/lu-cp06er3-native-web.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: lu-cp06er2-consolidated
+  cancel-in-progress: false
+jobs:
+  native-web:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 85
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.16.0'
+      - name: Exact source and original source gates
+        run: |
+          set -euo pipefail
+          mkdir -p cp06er3-evidence
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          git rev-parse HEAD > cp06er3-evidence/source.txt
+          node scripts/verify-source-tree.mjs
+          node scripts/p0-sec06-consolidated.mjs --mode source --evidence cp06er3-evidence/source-receipts
+          node --test lu-desktop/tests/cp06er3-web-research.test.mjs
+          python3 -m py_compile scripts/cp06er3-native-web-gui.py
+      - name: Native desktop dependencies and reviewed distribution HTTPS executable
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libgtk-3-dev libssl-dev libxdo-dev patchelf pkg-config cmake protobuf-compiler gir1.2-atspi-2.0 python3-gi xvfb xauth dbus-x11 at-spi2-core xdotool iproute2 curl
+          test "$(id -u)" != 0
+          test -z "$(dpkg -V curl)"
+          dpkg-query -W -f='${Package} ${Version}\n' curl > cp06er3-evidence/curl-package.txt
+          test -f /usr/bin/curl && test ! -L /usr/bin/curl
+          sha256sum /usr/bin/curl > cp06er3-evidence/curl.sha256
+      - name: Build original reviewed CPU runtime and stage reviewed library closure
+        run: |
+          set -euo pipefail
+          git init "$RUNNER_TEMP/llama-source"
+          git -C "$RUNNER_TEMP/llama-source" remote add origin https://github.com/ggml-org/llama.cpp.git
+          git -C "$RUNNER_TEMP/llama-source" fetch --depth 1 origin 7fe450e19305b828c199d602c23a8337aaa1f03b
+          git -C "$RUNNER_TEMP/llama-source" checkout --detach 7fe450e19305b828c199d602c23a8337aaa1f03b
+          test "$(git -C "$RUNNER_TEMP/llama-source" rev-parse HEAD)" = 7fe450e19305b828c199d602c23a8337aaa1f03b
+          cmake -S "$RUNNER_TEMP/llama-source" -B "$RUNNER_TEMP/llama-build" -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON -DGGML_NATIVE=OFF -DGGML_OPENMP=OFF -DGGML_VULKAN=OFF -DLLAMA_CURL=OFF -DLLAMA_BUILD_UI=OFF -DLLAMA_USE_PREBUILT_UI=OFF -DLLAMA_BUILD_SERVER=ON -DLLAMA_BUILD_TESTS=OFF
+          cmake --build "$RUNNER_TEMP/llama-build" --target llama-server --parallel 3
+          python3 scripts/lu-cp05e3-stage-linux-engine.py --reviewed-build-bin "$RUNNER_TEMP/llama-build/bin" --output "$RUNNER_TEMP/reviewed-engine"
+          cp "$RUNNER_TEMP/reviewed-engine/pins.json" cp06er3-evidence/engine-pins.json
+          mkdir -p "$RUNNER_TEMP/model"
+          model="$RUNNER_TEMP/model/Qwen3-0.6B.Q4_K_M.gguf"
+          /usr/bin/curl -fL --proto '=https' --proto-redir '=https' --retry 3 --connect-timeout 30 --max-time 600 --max-filesize 600000000 'https://huggingface.co/QuantFactory/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B.Q4_K_M.gguf' -o "$model"
+          printf '%s  %s\n' 7af3fdf842f87b24672f8a7f1dd50404043f0bfb71093ff91c31d2b49df4631d "$model" | sha256sum -c -
+          sha256sum "$model" > cp06er3-evidence/model.sha256
+      - name: Compile genuine native desktop and create disposable native acceptance package
+        id: package
+        run: |
+          set -euo pipefail
+          export LU_RESEARCH_CURL_SHA256="$(sha256sum /usr/bin/curl | cut -d' ' -f1)"
+          export LU_LINUX_CPU_ENGINE_PINS="$(cat "$RUNNER_TEMP/reviewed-engine/pins.json")"
+          (cd lu-desktop && npm ci --ignore-scripts --no-audit --no-fund && npm run build && npm run check)
+          # Linux build uses the real staged Linux resources, never inert Windows engine placeholders.
+          config=lu-desktop/src-tauri/tauri.conf.json
+          trap 'git restore -- "$config"' EXIT
+          node -e 'const fs=require("fs");const p=process.argv[1];const c=JSON.parse(fs.readFileSync(p));c.bundle.resources={};fs.writeFileSync(p,JSON.stringify(c))' "$config"
+          cargo build --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --bin lu-desktop
+          candidate=lu-desktop/src-tauri/target/debug/lu-desktop
+          if test ! -x "$candidate"; then candidate=target/debug/lu-desktop; fi
+          test -x "$candidate"
+          stage="$RUNNER_TEMP/package"
+          mkdir -p "$stage/DEBIAN" "$stage/usr/bin" "$stage/usr/lib/Lu/lu-research"
+          install -m 0755 "$candidate" "$stage/usr/bin/lu-cp06er3-acceptance"
+          cp -r "$RUNNER_TEMP/reviewed-engine/lu-inference" "$stage/usr/lib/Lu/"
+          install -m 0755 /usr/bin/curl "$stage/usr/lib/Lu/lu-research/curl"
+          printf '%s\n' 'Package: lu-cp06er3-acceptance' 'Version: 0.1.0~alpha1' 'Architecture: amd64' 'Maintainer: Lu Native Acceptance <test@localhost>' 'Description: disposable native Lu web acceptance candidate' > "$stage/DEBIAN/control"
+          dpkg-deb --build --root-owner-group "$stage" "$RUNNER_TEMP/lu-cp06er3-acceptance.deb"
+          sha256sum "$candidate" "$RUNNER_TEMP/lu-cp06er3-acceptance.deb" > cp06er3-evidence/package.sha256
+          sudo dpkg -i "$RUNNER_TEMP/lu-cp06er3-acceptance.deb"
+          test "$(sha256sum /usr/bin/lu-cp06er3-acceptance | cut -d' ' -f1)" = "$(sha256sum "$candidate" | cut -d' ' -f1)"
+          test "$(sha256sum /usr/lib/Lu/lu-research/curl | cut -d' ' -f1)" = "$LU_RESEARCH_CURL_SHA256"
+          dpkg-query -W -f='${Status}\n' lu-cp06er3-acceptance | grep -Fx 'install ok installed'
+          git restore -- "$config"
+          node scripts/verify-source-tree.mjs
+      - name: Genuine GGUF public HTTPS and academic native registry dispatch
+        if: steps.package.outcome == 'success'
+        run: |
+          set -euo pipefail
+          export LU_CP06ER3_SERVER=/usr/lib/Lu/lu-inference/llama-server
+          export LU_CP06ER3_SERVER_SHA256="$(sha256sum "$LU_CP06ER3_SERVER" | cut -d' ' -f1)"
+          export LU_CP06ER3_GGUF="$RUNNER_TEMP/model/Qwen3-0.6B.Q4_K_M.gguf"
+          export LU_CP06ER3_GGUF_SHA256=7af3fdf842f87b24672f8a7f1dd50404043f0bfb71093ff91c31d2b49df4631d
+          export LU_CP06ER3_CURL=/usr/lib/Lu/lu-research/curl
+          export LU_CP06ER3_CURL_SHA256="$(sha256sum "$LU_CP06ER3_CURL" | cut -d' ' -f1)"
+          export LU_CP06ER3_EVIDENCE="$RUNNER_TEMP/public-core-audit"
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test model_web_research_live_turn cp06er3_genuine_public_web_live -- --ignored --exact --nocapture | tee cp06er3-evidence/public-core.log
+          grep -Fq 'CP06ER3 fetch expected_live=true model_and_dispatch=true expected_outcome=true replay_refused=true' cp06er3-evidence/public-core.log
+          grep -Fq 'CP06ER3 academic expected_live=true model_and_dispatch=true expected_outcome=true replay_refused=true' cp06er3-evidence/public-core.log
+      - name: Genuine installed ordinary Send, native approval and active public transfer cancellation
+        if: ${{ !cancelled() && steps.package.outcome == 'success' }}
+        run: |
+          set -euo pipefail
+          export XDG_DATA_HOME="$RUNNER_TEMP/lu-cp06er3-data" XDG_CONFIG_HOME="$RUNNER_TEMP/lu-cp06er3-config"
+          export NO_AT_BRIDGE=0 GDK_BACKEND=x11 GTK_MODULES=gail:atk-bridge
+          profile="$XDG_DATA_HOME/org.lu.desktop"
+          test ! -e "$profile"
+          mkdir -p "$profile/lu-models" "$XDG_CONFIG_HOME"
+          cp "$RUNNER_TEMP/model/Qwen3-0.6B.Q4_K_M.gguf" "$profile/lu-models/"
+          timeout 18m xvfb-run -a -s '-screen 0 1280x900x24' dbus-run-session -- /usr/bin/python3 scripts/cp06er3-native-web-gui.py --exe /usr/bin/lu-cp06er3-acceptance --curl /usr/lib/Lu/lu-research/curl --profile "$profile" --out "$RUNNER_TEMP/gui-receipt" | tee cp06er3-evidence/gui.log
+          grep -Fxq CP06ER3_NATIVE_GUI_PASS cp06er3-evidence/gui.log
+      - name: Preserve scoped native receipt even on incomplete fixtures
+        if: always()
+        run: |
+          mkdir -p cp06er3-evidence
+          if test -f "$RUNNER_TEMP/gui-receipt/receipt.json"; then cp "$RUNNER_TEMP/gui-receipt/receipt.json" cp06er3-evidence/gui-receipt.json; fi
+          git diff --exit-code -- ':!source-tree.lock.json'
+          node scripts/verify-source-tree.mjs
+          (cd cp06er3-evidence && find . -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS)
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lu-cp06er3-native-web-${{ github.sha }}
+          path: cp06er3-evidence/
+          if-no-files-found: warn
+          retention-days: 14

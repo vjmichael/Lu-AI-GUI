@@ -149,11 +149,25 @@ impl ModelToolCatalog {
     /// Validate the complete original input and keep the same typed codec.
     pub(crate) fn bind_current_input(&mut self, registry: &NativeToolRegistry,
         name: &str, fixed: Map<String, Value>) -> Result<(), ModelToolError> {
+        self.bind_current_input_for_effect(registry,name,fixed,ToolEffect::ReadWorkspace)
+    }
+
+    /// Only the two finite public HTTPS operations may bind a network input.
+    /// This is a schema projection, not a grant; the exact-call fence is mandatory.
+    pub(crate) fn bind_current_network_input(&mut self, registry: &NativeToolRegistry,
+        name: &str, fixed: Map<String, Value>) -> Result<(), ModelToolError> {
+        if !matches!(name,"lu_web_fetch"|"lu_web_academic_search") {
+            return Err(ModelToolError::InvalidArguments("unknown finite network read".into()));
+        }
+        self.bind_current_input_for_effect(registry,name,fixed,ToolEffect::NetworkRead)
+    }
+    fn bind_current_input_for_effect(&mut self, registry: &NativeToolRegistry,
+        name: &str, fixed: Map<String, Value>, effect: ToolEffect) -> Result<(), ModelToolError> {
         let previous = self.definitions.get(name).ok_or_else(|| ModelToolError::UnknownTool(name.into()))?;
         let descriptor = registry.tools().map_err(|_| ModelToolError::RegistryUnavailable)?
             .into_iter().find(|d| d.id == previous.native_tool_id)
             .ok_or_else(|| ModelToolError::NoNativeImplementation(previous.native_tool_id.clone()))?;
-        if descriptor.effect != ToolEffect::ReadWorkspace { return Err(ModelToolError::InvalidArguments("fixed input must be read-only".into())); }
+        if descriptor.effect != effect { return Err(ModelToolError::InvalidArguments("fixed input must match its read effect".into())); }
         let payload = previous.codec.encode(&fixed)?;
         if payload.type_url != descriptor.input_type_url { return Err(ModelToolError::TypeMismatch(descriptor.id)); }
         let definition = ModelToolDefinition {

@@ -52,13 +52,13 @@ fn reviewed_meta_class(id:&str)->Option<&'static str>{
         "lu.file_discovery.discover"|"lu.reader.read"|
         "lu.artifact.inspect"|"lu.background.status"|
         "lu.background_receipt.get"|"lu.web.browser.read"|
-        "lu.web.browser.interact"=>Some("foundational"),
+        "lu.web.browser.interact"|"lu.web.fetch"=>Some("foundational"),
         "lu.archive.list"|"lu.git.status"|"lu.git.log"|
         "lu.git.diff"|
         "lu.reviewed.git.head"|"lu.reviewed.git.status"|
         "lu.reviewed.git.branch"|"lu.reviewed.git.history"|
         "lu.reviewed.media.facts"|
-        "lu.validate.schema"|"lu.exec.check_env"=>Some("utility"),
+        "lu.validate.schema"|"lu.exec.check_env"|"lu.web.academic_search"=>Some("utility"),
         // An unreviewed tool remains unclassified rather than being promoted
         // by merely choosing a familiar module prefix.
         _=>None
@@ -198,6 +198,14 @@ fn project_pending(contracts:Vec<RegistrationContract>,runtime:RuntimeEvidence,
     }
     Ok(())
 }
+/// The caller has verified (or failed to verify) the installed research package.
+/// These descriptors are shared with the actual registrar, never active grants.
+pub fn discover_pending_web_research(runtime:RuntimeEvidence,allow_tools:bool)->Result<Vec<PendingCapabilityView>,CapabilityInventoryError>{
+    let mut out=Vec::new();
+    project_pending(crate::native_web_research::registration_contracts(),runtime,allow_tools,&mut out)?;
+    out.sort_by(|a,b|a.public_name.cmp(&b.public_name));Ok(out)
+}
+
 /// Describe scoped registrars that are actually reachable from ordinary Send.
 /// No callable JSON schemas are returned and no execution instance is opened.
 /// Capability selection, resource approval and live registration are distinct.

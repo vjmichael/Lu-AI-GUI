@@ -103,6 +103,7 @@ mod office_batch_desktop;
 mod file_transfer_desktop;
 mod file_trash_desktop;
 mod model_publication_desktop;
+mod model_web_research_desktop;
 mod wave2_recovery;
 use workspace_desktop::lu_workspace_ask_directory;
 use reviewed_app_desktop::{lu_reviewed_app_ask,lu_agent_run_reviewed_step};
@@ -5699,6 +5700,7 @@ async fn generate_internal(
             // any separately approved negotiated native read/utility lane.
             let no_negotiated_selection=if origin==GenerationOrigin::Human&&!plan_only&&images.is_empty()&&linked.is_empty()&&manifest.is_empty()&&
                 !contains_document_context(&prompt){
+                if let Some(answer)=model_web_research_desktop::try_model_web_research(&app,&state,&sid,&chat_id,&gid,&prompt,&ticket)?{return Ok(answer)}
                 if let Some(answer)=model_publication_desktop::try_model_background_start(&app,&state,&sid,&chat_id,&gid,&prompt,&ticket)?{return Ok(answer)}
                 if let Some(answer)=model_publication_desktop::try_model_background_control(&app,&state,&sid,&chat_id,&gid,&prompt,&ticket)?{return Ok(answer)}
                 if let Some(answer)=model_publication_desktop::try_model_background(&app,&state,&sid,&chat_id,&gid,&prompt,&ticket)?{return Ok(answer)}

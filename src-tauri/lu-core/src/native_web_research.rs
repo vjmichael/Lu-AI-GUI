@@ -8,7 +8,8 @@ use crate::{
     model::{expect_fields,ModelToolCatalog,ModelToolCodec,ModelToolDefinition,ModelToolError},
     registry::NativeToolRegistry,
     web_http_fetch::SecureHttpFetcher,
-    web_search_openalex::search_openalex,
+    web_search_openalex::{search_openalex,search_openalex_cancellable},
+    inference_host::Cancellation,
     wire::proto,
 };
 use prost::Message;
@@ -26,14 +27,13 @@ fn fail(code:&str,message:&str)->ToolFailure {
     ToolFailure::new(code,message,false)
 }
 fn valid_https_candidate(url:&str)->bool {
-    url.starts_with("https://") && url.len()<=2048 &&
-    !url.chars().any(char::is_control) && !url[8..].split('/').next()
-        .unwrap_or("").contains('@')
+    crate::web_http_fetch::validated_host(url).is_ok()&& !url.chars().any(char::is_whitespace)
 }
 #[derive(Clone)]
 struct ApprovedNetwork {
     binary:PathBuf,
     ca:Option<PathBuf>,
+    cancellation:Option<Cancellation>,
 }
 #[derive(Clone,Copy)]
 enum Operation {Fetch,Search}
@@ -61,13 +61,22 @@ impl NativeTool for WebTool {
                            !valid_https_candidate(&request.url) {
                             return Err(fail("BAD_INPUT","invalid HTTPS fetch request"));
                         }
-                        let page=fetcher.fetch(&request.url)
-                            .map_err(|_|fail("FETCH_DENIED","HTTPS fetch failed or was refused"))?;
-                        let text=String::from_utf8(page.bytes)
+                        let page=match &trusted.cancellation {
+                            Some(c)=>fetcher.fetch_cancellable(&request.url,c.atomic_flag()),
+                            None=>fetcher.fetch(&request.url),
+                        }.map_err(|_|fail("FETCH_DENIED","HTTPS fetch failed or was refused"))?;
+                        if page.http_status!=200||page.redirect_target.is_some(){
+                            return Err(fail("FETCH_STATUS","Only a successful direct HTTPS response is admitted"));
+                        }
+                        let mut text=String::from_utf8(page.bytes)
                             .map_err(|_|fail("CONTENT_NOT_TEXT","response is not UTF-8 text"))?;
+                        // The bounded current-turn model projection is an excerpt;
+                        // the digest remains that of the entire received response.
+                        let truncated=trusted.cancellation.is_some()&&text.len()>4096;
+                        if truncated {let mut end=4096;while !text.is_char_boundary(end){end-=1;}text.truncate(end);}
                         let result=proto::WebFetchResult {
                             source_url:page.canonical_url,http_status:u32::from(page.http_status),
-                            content:text,content_sha256:page.sha256,truncated:false,
+                            content:text,content_sha256:page.sha256,truncated,
                         };
                         Ok(ToolOutput{payload:ProtoPayload{
                             type_url:FETCH_OUT.into(),bytes:result.encode_to_vec()
@@ -82,8 +91,10 @@ impl NativeTool for WebTool {
                            !(1..=100).contains(&request.page) {
                             return Err(fail("BAD_INPUT","invalid academic search request"));
                         }
-                        let page=search_openalex(&fetcher,&request.query,request.page)
-                            .map_err(|_|fail("SEARCH_UNAVAILABLE","academic provider unavailable"))?;
+                        let page=match &trusted.cancellation {
+                            Some(c)=>search_openalex_cancellable(&fetcher,&request.query,request.page,c.atomic_flag()),
+                            None=>search_openalex(&fetcher,&request.query,request.page),
+                        }.map_err(|_|fail("SEARCH_UNAVAILABLE","academic provider unavailable"))?;
                         let result=proto::WebAcademicSearchResult {
                             leads:page.leads.into_iter().map(|l|proto::WebAcademicSearchLead{
                                 provider:l.provider,provider_id:l.provider_id,
@@ -117,6 +128,15 @@ impl ModelToolCodec for FetchCodec {
     fn decode(&self,result:&ProtoPayload)->Result<Value,ModelToolError>{
         let data=proto::WebFetchResult::decode(result.bytes.as_slice())
             .map_err(|_|ModelToolError::InvalidResult("bad fetch result".into()))?;
+        // On a complete response, independently rehash the UTF-8 bytes at
+        // the typed feedback boundary. An excerpt retains the full-response
+        // digest, but does not claim that its own bytes reproduce that digest.
+        use sha2::{Digest,Sha256};
+        if data.http_status!=200||!valid_https_candidate(&data.source_url)||data.content_sha256.len()!=64||
+            !data.content_sha256.bytes().all(|b|b.is_ascii_hexdigit()&&!b.is_ascii_uppercase())||
+            (!data.truncated&&format!("{:x}",Sha256::digest(data.content.as_bytes()))!=data.content_sha256){
+            return Err(ModelToolError::InvalidResult("invalid HTTPS response evidence".into()))
+        }
         Ok(json!({"source_url":data.source_url,"http_status":data.http_status,
             "content":data.content,"sha256":data.content_sha256,
             "truncated":data.truncated,"source_is_untrusted":true}))
@@ -147,13 +167,20 @@ impl ModelToolCodec for SearchCodec {
             .map_err(|_|ModelToolError::InvalidResult("bad search result".into()))?;
         if data.leads_verified {return Err(ModelToolError::InvalidResult(
             "search result cannot claim independent source verification".into()));}
-        Ok(json!({"leads":data.leads.into_iter().map(|l|json!({
-            "provider":l.provider,"provider_id":l.provider_id,
-            "doi":l.doi,"title":l.title,"authors":l.authors,
-            "catalog_url":l.catalog_url,"verified":false
-        })).collect::<Vec<_>>(),"page":data.page,"next_page":data.next_page,
-        "provider_response_sha256":data.observed_sha256,
-        "source_is_untrusted":true,"leads_verified":false}))
+        let total=data.leads.len();
+        let mut leads=Vec::new();let mut used=0usize;
+        for l in data.leads {
+            let lead=json!({"provider":l.provider,"provider_id":l.provider_id,
+                "doi":l.doi,"title":l.title,"authors":l.authors,
+                "catalog_url":l.catalog_url,"verified":false});
+            let len=lead.to_string().len();
+            if used.saturating_add(len)>6000 {break;}
+            used+=len;leads.push(lead);
+        }
+        Ok(json!({"shown_leads":leads.len(),"total_leads_on_page":total,
+            "leads_truncated":leads.len()!=total,"leads":leads,"page":data.page,"next_page":data.next_page,
+            "provider_response_sha256":data.observed_sha256,
+            "source_is_untrusted":true,"leads_verified":false}))
     }
 }
 pub fn register_web_research_tools(
@@ -162,6 +189,19 @@ pub fn register_web_research_tools(
     trusted_curl:&Path,
     host_ca_bundle:Option<&Path>,
 )->Result<(),String>{
+    register_web_research_tools_inner(registry,catalog,trusted_curl,host_ca_bundle,None)
+}
+
+pub(crate) fn register_cancellable_web_research_tools(
+    registry:&NativeToolRegistry,catalog:&mut ModelToolCatalog,trusted_curl:&Path,
+    cancellation:Cancellation,
+)->Result<(),String>{
+    register_web_research_tools_inner(registry,catalog,trusted_curl,None,Some(cancellation))
+}
+fn register_web_research_tools_inner(
+    registry:&NativeToolRegistry,catalog:&mut ModelToolCatalog,trusted_curl:&Path,
+    host_ca_bundle:Option<&Path>,cancellation:Option<Cancellation>,
+)->Result<(),String>{
     let binary=trusted_curl.canonicalize().map_err(|_|"curl executable unavailable")?;
     if !binary.is_file() {return Err("curl executable is not a file".into());}
     let ca=host_ca_bundle.map(|path|path.canonicalize()
@@ -169,38 +209,37 @@ pub fn register_web_research_tools(
     if ca.as_ref().is_some_and(|path|!path.is_file()) {
         return Err("CA bundle is not a file".into());
     }
-    let trusted=Arc::new(ApprovedNetwork{binary,ca});
+    let trusted=Arc::new(ApprovedNetwork{binary,ca,cancellation});
+    let mut contracts=registration_contracts().into_iter().map(|c|c.into_parts()).collect::<Vec<_>>();
+    let descriptors=contracts.iter().map(|(d,_)|d.clone()).collect::<Vec<_>>();
+    let implementations=descriptors.iter().map(|d|Arc::new(WebTool{
+        descriptor:d.clone(),trusted:Arc::clone(&trusted),operation:if d.id==FETCH{Operation::Fetch}else{Operation::Search},
+    }) as Arc<dyn NativeTool>).collect();
+    registry.register(ModuleManifest{
+        id:MODULE.into(),display_name:"Lu native web research".into(),
+        contract_version:CORE_CONTRACT_VERSION,kind:ModuleKind::Core,
+        tools:descriptors,panels:vec![],workflows:vec![],
+    },implementations).map_err(|e|format!("web registry refused: {e:?}"))?;
+    for (_,definition) in contracts.drain(..){catalog.insert(registry,definition).map_err(|e|format!("web catalog refused: {e:?}"))?;}
+    Ok(())
+}
+/// Exact descriptors/codecs without any executable, grant or network probe.
+pub(crate) fn registration_contracts()->Vec<crate::native_capability_inventory::RegistrationContract>{
     let descriptor=|id:&str,title:&str,input:&str,output:&str|ToolDescriptor{
         id:id.into(),display_name:title.into(),effect:ToolEffect::NetworkRead,
         input_type_url:input.into(),output_type_url:output.into(),
     };
-    let fetch=descriptor(FETCH,"Fetch bounded HTTPS text",FETCH_IN,FETCH_OUT);
-    let search=descriptor(SEARCH,"Discover academic publications",SEARCH_IN,SEARCH_OUT);
-    registry.register(ModuleManifest{
-        id:MODULE.into(),display_name:"Lu native web research".into(),
-        contract_version:CORE_CONTRACT_VERSION,kind:ModuleKind::Core,
-        tools:vec![fetch.clone(),search.clone()],
-        panels:vec![],workflows:vec![],
-    },vec![
-        Arc::new(WebTool{descriptor:fetch,trusted:Arc::clone(&trusted),operation:Operation::Fetch}),
-        Arc::new(WebTool{descriptor:search,trusted,operation:Operation::Search}),
-    ]).map_err(|e|format!("web registry refused: {e:?}"))?;
-    for (name,id,description,parameters,codec) in [
+    let definitions=[
       ("lu_web_fetch",FETCH,"Fetch read-only HTTPS text from an authorized public origin.",
         json!({"type":"object","properties":{"url":{"type":"string","maxLength":2048}},
-              "required":["url"],"additionalProperties":false}),Arc::new(FetchCodec) as Arc<dyn ModelToolCodec>),
+              "required":["url"],"additionalProperties":false}),Arc::new(FetchCodec) as Arc<dyn ModelToolCodec>,descriptor(FETCH,"Fetch bounded HTTPS text",FETCH_IN,FETCH_OUT)),
       ("lu_web_academic_search",SEARCH,"Find unverified DOI leads in academic catalogs.",
-        json!({"type":"object","properties":{
-            "query":{"type":"string","maxLength":512},
-            "page":{"type":"integer","minimum":1,"maximum":100}},
-            "required":["query"],"additionalProperties":false}),Arc::new(SearchCodec) as Arc<dyn ModelToolCodec>),
-    ] {
-        catalog.insert(registry,ModelToolDefinition{
-            name:name.into(),native_tool_id:id.into(),description:description.into(),
-            parameters,codec,
-        }).map_err(|e|format!("web catalog refused: {e:?}"))?;
-    }
-    Ok(())
+        json!({"type":"object","properties":{"query":{"type":"string","maxLength":512},"page":{"type":"integer","minimum":1,"maximum":100}},
+            "required":["query"],"additionalProperties":false}),Arc::new(SearchCodec) as Arc<dyn ModelToolCodec>,descriptor(SEARCH,"Discover academic publications",SEARCH_IN,SEARCH_OUT)),
+    ];
+    definitions.into_iter().map(|(name,id,description,parameters,codec,d)|crate::native_capability_inventory::RegistrationContract::new(d,ModelToolDefinition{
+        name:name.into(),native_tool_id:id.into(),description:description.into(),parameters,codec,
+    })).collect()
 }
 #[cfg(test)]
 mod tests {

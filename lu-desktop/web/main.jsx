@@ -867,7 +867,6 @@ function App() {
   const [replanOutlineByPlan,setReplanOutlineByPlan]=useState({});
   const [replanReasonByPlan,setReplanReasonByPlan]=useState({});
   const [toolProgressByChat,setToolProgressByChat]=useState({});
-  const [turnCapabilitiesByChat,setTurnCapabilitiesByChat]=useState({});
   const [toolHistoryBusy,setToolHistoryBusy]=useState(false);
   const [editReviewed, setEditReviewed] = useState({}); // UI only; native dialog grants authority
   const [editRecovery, setEditRecovery] = useState([]);
@@ -2349,7 +2348,7 @@ function App() {
   }
   useEffect(() => {
     let alive = true;
-    let stopQueued = () => {}, stopStart = () => {}, stopToken = () => {}, stopReadProposal = () => {}, stopWriteProposal = () => {}, stopEditProposal = () => {}, stopNativeAction = () => {}, stopToolProgress = () => {}, stopTurnCapabilities = () => {}, stopBackground = () => {}, stopFinished = () => {}, stopBrowserChallenge = () => {}, stopPlanAdmission = () => {}, stopAgentWitness = () => {}, stopTaskHandoff = () => {};
+    let stopQueued = () => {}, stopStart = () => {}, stopToken = () => {}, stopReadProposal = () => {}, stopWriteProposal = () => {}, stopEditProposal = () => {}, stopNativeAction = () => {}, stopToolProgress = () => {}, stopBackground = () => {}, stopFinished = () => {}, stopBrowserChallenge = () => {}, stopPlanAdmission = () => {}, stopAgentWitness = () => {}, stopTaskHandoff = () => {};
     (async () => {
       try {
         const [list] = await Promise.all([refreshChats(), refreshCatalog()]);
@@ -2413,11 +2412,6 @@ function App() {
         ...prev,[update.chatId]:update,
       }));
     }).then(fn=>{if(alive)stopToolProgress=fn;else fn();});
-    listen('lu-native-turn-capabilities',e=>{
-      const entry=e.payload;
-      if (!alive||!entry?.chatId||!entry?.generationId||!Array.isArray(entry.tools))return;
-      setTurnCapabilitiesByChat(prev=>({...prev,[entry.chatId]:entry}));
-    }).then(fn=>{if(alive)stopTurnCapabilities=fn;else fn();});
     listen('lu-agent-plan-admission',e=>{
       const result=e.payload;
       if(!alive||!result?.chatId)return;
@@ -2458,10 +2452,6 @@ function App() {
         if (prev[finishedChat]?.generationId!==generationId)return prev;
         const next={...prev};delete next[finishedChat];return next;
       });
-      setTurnCapabilitiesByChat(prev=>{
-        if (prev[finishedChat]?.generationId!==generationId)return prev;
-        const next={...prev};delete next[finishedChat];return next;
-      });
       setJobs(prev=>prev[finishedChat]?.generationId===generationId
         ?removeJob(prev,finishedChat):prev);
       // Native auto turns aren't initiated by a WebView invoke. Read their
@@ -2477,7 +2467,7 @@ function App() {
       setBackgroundTerminalNotice(e.payload);
       if (backgroundPaneOpen) void refreshBackgroundTasks();
     }).then(fn => { if (alive) stopBackground=fn; else fn(); });
-    return () => { alive = false; stopQueued(); stopStart(); stopToken(); stopReadProposal(); stopWriteProposal(); stopEditProposal(); stopNativeAction(); stopToolProgress(); stopTurnCapabilities(); stopBackground(); stopFinished(); stopBrowserChallenge(); stopPlanAdmission(); stopAgentWitness(); stopTaskHandoff(); };
+    return () => { alive = false; stopQueued(); stopStart(); stopToken(); stopReadProposal(); stopWriteProposal(); stopEditProposal(); stopNativeAction(); stopToolProgress(); stopBackground(); stopFinished(); stopBrowserChallenge(); stopPlanAdmission(); stopAgentWitness(); stopTaskHandoff(); };
   }, []);
   // A missing queued/start event or stream-index gap is recovered from the
   // native same-chat cursor. Do not fill missing bytes with guessed text.
@@ -4731,14 +4721,12 @@ function App() {
            : visibleJob.cancelling ? 'Lu · stopping'
            : toolProgressByChat[chatId]?.generationId===visibleJob.generationId
              ? toolProgressByChat[chatId]?.phase==='tool_started'
-               ? 'Lu · using approved native tool'
+               ? 'Lu · working on your request'
                : toolProgressByChat[chatId]?.phase==='tool_returned'
-                 ? 'Lu · checking tool result'
-                 : 'Lu · thinking with tools'
+                 ? 'Lu · reviewing the result'
+                 : 'Lu · thinking'
              : 'Lu · generating'}
           </span>{visibleStream ? <MessageText text={visibleStream}/> : <span className="spinner"/>}
-          {turnCapabilitiesByChat[chatId]?.generationId===visibleJob.generationId &&
-            <small>Using approved tools</small>}
         </div>}
       </div>
         {!atBottom && <button type="button" className="jumpLatest" onClick={jumpToLatest}

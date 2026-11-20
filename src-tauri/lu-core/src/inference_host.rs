@@ -47,6 +47,7 @@ pub struct Cancellation {
     flag: Arc<AtomicBool>,
 }
 impl Cancellation {
+    pub(crate) fn atomic_flag(&self) -> &AtomicBool { &self.flag }
     pub fn cancel(&self) {
         self.flag.store(true, Ordering::Release);
     }

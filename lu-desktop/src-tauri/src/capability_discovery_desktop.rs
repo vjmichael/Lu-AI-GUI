@@ -89,7 +89,10 @@ pub(crate) fn fresh_views(state:&DesktopState,prompt:&str)->Result<Vec<PendingCa
         evidence.pdf=candidate_present(reviewed_app_desktop::reviewed_specialist_binary(SpecialistKind::PdfInfo).is_ok());
         evidence.image=candidate_present(reviewed_app_desktop::reviewed_specialist_binary(SpecialistKind::ImageExif).is_ok());
     }
-    discover_ordinary_pending(&evidence).map_err(|_|"Capability discovery unavailable".into())
+    let mut views=discover_ordinary_pending(&evidence).map_err(|_|"Capability discovery unavailable")?;
+    let web_runtime=if evidence.allow_tools&&state.research.available(){RuntimeEvidence::PinnedPackagePresent}else if evidence.allow_tools{RuntimeEvidence::Missing}else{RuntimeEvidence::ProbeUnavailable};
+    views.extend(lu_core::native_capability_inventory::discover_pending_web_research(web_runtime,evidence.allow_tools).map_err(|_|"Web research discovery unavailable")?);
+    views.sort_by(|a,b|a.public_name.cmp(&b.public_name));Ok(views)
 }
 pub(crate) fn fresh_model_context(state:&DesktopState,prompt:&str)->String{
     match fresh_views(state,prompt){

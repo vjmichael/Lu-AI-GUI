@@ -111,13 +111,17 @@ const tests = [
   ['Wave 3 ordinary text can offer a native workspace picker without model permission or attachment instructions',
     coordinator.includes('workspace_desktop::explicit_read_workspace_request(prompt)') && host.includes('turn_coordinator::select(') &&
     host.includes('workspace_desktop::ask_workspace_for_chat(')],
-  ['Wave 3 tool discovery comes from the actual authorized native registry, never from model names',
-    ui.includes("listen('lu-native-turn-capabilities'") &&
-    ui.includes('Using approved tools') &&
-    workspaceHost.includes('turn.capabilities()')],
+  ['Wave 3 tool discovery uses the authorized native registry but does not expose its inventory in Chat',
+    !ui.includes("listen('lu-native-turn-capabilities'") &&
+    !ui.includes('Using approved tools') &&
+    !workspaceHost.includes('lu-native-turn-capabilities') &&
+    !readFileSync(new URL('../src-tauri/src/reviewed_app_desktop.rs', import.meta.url), 'utf8').includes('lu-native-turn-capabilities') &&
+    workspaceHost.includes('turn.capabilities()') &&
+    workspaceHost.includes('matches_live(candidate,&available)')],
   ['Wave 3 live tool status follows trusted dispatch checkpoints and stays chat-scoped',
     ui.includes("listen('lu-native-tool-progress'") &&
-    ui.includes('Lu · using approved native tool') &&
+    ui.includes('Lu · working on your request') &&
+    ui.includes('Lu · reviewing the result') &&
     host.includes('workspace_desktop::ask_workspace_for_chat(')],
   ['Wave 3 native tool evidence is a read-only, chat-scoped audit without model bytes',
     ui.includes("invoke('lu_tool_turn_history'") &&

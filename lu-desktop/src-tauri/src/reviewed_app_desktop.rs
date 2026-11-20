@@ -176,12 +176,7 @@ impl ToolAuthorizer for ReviewedDesktopPolicy{
         Ok(())
     }
 }
-#[derive(Clone,serde::Serialize)]
-#[serde(rename_all="camelCase")]
-struct ReviewedToolCapabilities{
-    chat_id:String,generation_id:String,
-    tools:Vec<lu_core::native_capability_inventory::NativeCapabilityView>,
-}
+
 fn hash_file(path:&Path,max_bytes:u64)->Result<String,String>{
     let meta=fs::symlink_metadata(path).map_err(|_|"Selected file unavailable")?;
     if !meta.is_file()||meta.file_type().is_symlink()
@@ -1078,9 +1073,7 @@ async fn reviewed_app_ask_internal(
             if let Some(choice)=chosen.as_ref(){
                 if available.len()!=1||!crate::capability_negotiation::matches_live(choice,&available){return Err("Selected reviewed capability changed after approval".into())}
             }
-            let _=emitted.emit("lu-native-turn-capabilities",ReviewedToolCapabilities{
-                chat_id:chat_id.clone(),generation_id:gid_run.clone(),tools:available,
-            });
+            // The actual admitted catalog is host/model-only, never a UI event.
             let audit=ModelTurnJournal::open(
                 &host.catalog_path.with_file_name("lu-reviewed-app-model-audit.sqlite")
             ).map_err(|_|"Reviewed model audit unavailable")?;

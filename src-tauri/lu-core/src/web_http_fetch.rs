@@ -150,6 +150,10 @@ impl SecureHttpFetcher<'_> {
             .map_err(|_|FetchError::ResolverFailed)?
             .map(|address|address.ip()).collect();
         let address=trusted_resolution(resolved)?;
+        // DNS resolution can outlive a cancelled turn. Never start curl after it.
+        if cancel.is_some_and(|c|c.load(Ordering::Acquire)){
+            return Err(FetchError::Cancelled);
+        }
         self.fetch_pinned(&canonical_url,&host,address,max_bytes,cancel)
     }
     /// Only follows independently observed HTTPS response redirects, never
@@ -236,6 +240,9 @@ impl SecureHttpFetcher<'_> {
         // curl's --max-filesize may rely on Content-Length. Enforce a
         // host-side streaming cap too, so chunked/unknown-size responses
         // cannot exhaust Lu's memory before curl returns.
+        if cancel.is_some_and(|c|c.load(Ordering::Acquire)){
+            return Err(FetchError::Cancelled);
+        }
         let mut child=cmd.stdout(Stdio::piped()).stderr(Stdio::null())
             .spawn().map_err(|_| FetchError::TransportFailed)?;
         let stdout=child.stdout.take().ok_or(FetchError::TransportFailed)?;
@@ -311,6 +318,45 @@ impl SecureHttpFetcher<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn cp06er3_cancelled_before_resolution_never_starts_transport() {
+        let cancellation=AtomicBool::new(true);
+        let fetcher=SecureHttpFetcher{curl_binary:Path::new("/nonexistent"),ca_bundle:None};
+        assert_eq!(fetcher.fetch_cancellable("https://example.org/", &cancellation).err(),Some(FetchError::Cancelled));
+        assert_eq!(fetcher.fetch_bounded_cancellable("https://api.openalex.org/works",1024,&cancellation).err(),Some(FetchError::Cancelled));
+    }
+    // Offline, fixed child-process fixture. This proves cancellation of the
+    // direct transport child after it starts, not live HTTPS or descendant custody.
+    #[cfg(target_os="linux")]
+    #[test]
+    fn cp06er3_started_transport_child_is_cancelled_and_reaped() {
+        use std::{fs,os::unix::fs::PermissionsExt,time::{SystemTime,UNIX_EPOCH}};
+        let root=std::env::temp_dir().join(format!("lu-web-cancel-{}-{}",std::process::id(),SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos()));
+        fs::create_dir(&root).unwrap();
+        struct Cleanup(std::path::PathBuf);
+        impl Drop for Cleanup {fn drop(&mut self){let _=std::fs::remove_dir_all(&self.0);}}
+        let _cleanup=Cleanup(root.clone());
+        let fixture=root.join("fixed-fixture");let marker=root.join("started");
+        let marker_literal=serde_json::to_string(marker.to_str().unwrap()).unwrap();
+        fs::write(&fixture,format!("#!/usr/bin/python3\nimport os, time\nwith open({marker_literal}, 'w') as f: f.write(str(os.getpid()))\nwhile True: time.sleep(0.05)\n")).unwrap();
+        fs::set_permissions(&fixture,fs::Permissions::from_mode(0o700)).unwrap();
+        let cancelled=AtomicBool::new(false);
+        let fetcher=SecureHttpFetcher{curl_binary:&fixture,ca_bundle:None};
+        let (result,pid)=thread::scope(|s|{
+            let worker=s.spawn(||fetcher.fetch_pinned("https://example.org/","example.org",Ipv4Addr::new(93,184,216,34),1024,Some(&cancelled)));
+            let deadline=Instant::now()+Duration::from_secs(5);
+            let pid=loop {
+                if let Ok(text)=fs::read_to_string(&marker){if let Ok(pid)=text.parse::<u32>(){break Some(pid)}}
+                if Instant::now()>=deadline{break None}
+                thread::sleep(Duration::from_millis(10));
+            };
+            cancelled.store(true,Ordering::Release);
+            (worker.join().unwrap(),pid)
+        });
+        let pid=pid.expect("fixture child must have started");
+        assert_eq!(result.err(),Some(FetchError::Cancelled));
+        assert!(!Path::new("/proc").join(pid.to_string()).exists(),"direct fixture child must be reaped");
+    }
     #[test]
     fn reject_local_unsafe_urls_and_credentials() {
         for url in ["http://example.org","https://127.0.0.1","https://localhost",

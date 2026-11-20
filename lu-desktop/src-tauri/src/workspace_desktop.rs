@@ -11,12 +11,7 @@ use lu_core::{
 };
 use std::sync::{Arc,Mutex};
 
-#[derive(Clone,serde::Serialize)]
-#[serde(rename_all="camelCase")]
-struct NativeToolCatalogEvent{
-    chat_id:String,generation_id:String,
-    tools:Vec<lu_core::native_capability_inventory::NativeCapabilityView>,
-}
+
 /// Bounded, canonical ANSF matches are optional task DATA. They do not
 /// broaden the native picker scope, turn grant or model-visible tool catalog.
 /// If a retrieved source cannot fit, omit it completely rather than truncate
@@ -849,9 +844,7 @@ fn execute_approved_read(event_app:AppHandle,host:Arc<DesktopState>,session_id:S
                 preferred.retain(|name|name!=&candidate.public_name);
                 preferred.insert(0,candidate.public_name.clone());
             }
-            let _=event_app.emit("lu-native-turn-capabilities",NativeToolCatalogEvent{
-                chat_id:chat_id.clone(),generation_id:gid.clone(),tools:available,
-            });
+            // The actual admitted catalog is host/model-only, never a UI event.
             let audit_name=if git_mode{
                 "lu-git-read-audit.sqlite"
             }else{

@@ -1121,7 +1121,7 @@ async fn execute_supervised_native_turn(
                 record_audit(journal,&conversation_id,&task_id,ModelAuditKind::Rejected,
                     "FINAL_NOT_EXACTLY_GROUNDED_IN_CURRENT_NATIVE_EVIDENCE",None)?;
                 lifecycle.continue_authorized(turn,services,false)?;
-                let answer=format!("{}{}",crate::evidence_grounding::FALLBACK_PREFIX,observation.text);
+                let answer=format!("{}{}",observation.fallback_prefix(),observation.text);
                 record_audit(journal,&conversation_id,&task_id,ModelAuditKind::EvidencePresentation,
                     &observation.receipt(false,&answer),None)?;
                 turn.halt();

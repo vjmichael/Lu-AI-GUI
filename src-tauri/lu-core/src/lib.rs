@@ -250,6 +250,7 @@ pub mod model_custody_turn;
 pub mod model_publication_turn;
 pub mod native_selected_archive_process;
 pub mod model_background_observation;
+pub mod model_web_research_turn;
 pub mod supervised_tool_generation;
 pub use policy::{CapabilityGrant, PolicyEngine, PolicyError};
 pub mod recovery;
