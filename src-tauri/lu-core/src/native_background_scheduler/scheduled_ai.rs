@@ -395,7 +395,8 @@ pub(super) fn initialize(db: &Connection) -> Result<(), SchedulerError> {
       CREATE TABLE IF NOT EXISTS lu_ai_reader_grants(schedule_id TEXT PRIMARY KEY, note TEXT NOT NULL,line INTEGER NOT NULL,sha256 TEXT NOT NULL,scope_sha256 TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS lu_ai_live_grants(schedule_id TEXT PRIMARY KEY,display TEXT NOT NULL,identity TEXT NOT NULL,line INTEGER NOT NULL,scope_sha256 TEXT NOT NULL,permission TEXT NOT NULL CHECK(permission IN ('APPROVED','REVIEW','REVOKED','ENDED')));
       CREATE TABLE IF NOT EXISTS lu_ai_reader_receipts(schedule_id TEXT NOT NULL,sequence INTEGER NOT NULL,sha256 TEXT NOT NULL,line INTEGER NOT NULL,verified_text TEXT NOT NULL,PRIMARY KEY(schedule_id,sequence));
-      CREATE TABLE IF NOT EXISTS lu_ai_diagnostic_progress(schedule_id TEXT NOT NULL,sequence INTEGER NOT NULL,phase INTEGER NOT NULL DEFAULT 0 CHECK(phase BETWEEN 0 AND 7),PRIMARY KEY(schedule_id,sequence));").map_err(db_error)?;
+      CREATE TABLE IF NOT EXISTS lu_ai_diagnostic_progress(schedule_id TEXT NOT NULL,sequence INTEGER NOT NULL,phase INTEGER NOT NULL DEFAULT 0 CHECK(phase BETWEEN 0 AND 7),PRIMARY KEY(schedule_id,sequence));
+      CREATE TABLE IF NOT EXISTS lu_ai_stop_witness(schedule_id TEXT NOT NULL,sequence INTEGER NOT NULL,reason TEXT NOT NULL CHECK(reason IN ('cancel','revoke')),PRIMARY KEY(schedule_id,sequence));").map_err(db_error)?;
     // A claimed occurrence is never replayed. Its cadence was already advanced
     // atomically at claim. The next future occurrence still has original consent.
     db.execute_batch("BEGIN IMMEDIATE;
@@ -694,16 +695,17 @@ impl BackgroundScheduler {
         let mut stmt=g.db.prepare("SELECT r.state, r.finished IS NOT NULL, length(r.output)>0,
             t.sequence IS NOT NULL, COALESCE(r.output=t.verified_text,0),
             (EXISTS(SELECT 1 FROM lu_ai_reader_grants f WHERE f.schedule_id=s.id) OR
-             EXISTS(SELECT 1 FROM lu_ai_live_grants l WHERE l.schedule_id=s.id)),r.sequence,d.phase
+             EXISTS(SELECT 1 FROM lu_ai_live_grants l WHERE l.schedule_id=s.id)),r.sequence,d.phase, w.reason
             FROM lu_ai_runs r JOIN lu_ai_schedules s ON s.id=r.schedule_id
             LEFT JOIN lu_ai_reader_receipts t ON t.schedule_id=r.schedule_id AND t.sequence=r.sequence
             LEFT JOIN lu_ai_diagnostic_progress d ON d.schedule_id=r.schedule_id AND d.sequence=r.sequence
+            LEFT JOIN lu_ai_stop_witness w ON w.schedule_id=r.schedule_id AND w.sequence=r.sequence
             ORDER BY r.started DESC,r.schedule_id,r.sequence DESC LIMIT 2049").map_err(db_error)?;
-        let rows=stmt.query_map([],|r|Ok((r.get::<_,String>(0)?,r.get::<_,bool>(1)?,r.get::<_,bool>(2)?,r.get::<_,bool>(3)?,r.get::<_,bool>(4)?,r.get::<_,bool>(5)?,r.get::<_,u64>(6)?,r.get::<_,Option<i64>>(7)?))).map_err(db_error)?;
+        let rows=stmt.query_map([],|r|Ok((r.get::<_,String>(0)?,r.get::<_,bool>(1)?,r.get::<_,bool>(2)?,r.get::<_,bool>(3)?,r.get::<_,bool>(4)?,r.get::<_,bool>(5)?,r.get::<_,u64>(6)?,r.get::<_,Option<i64>>(7)?,r.get::<_,Option<String>>(8)?))).map_err(db_error)?;
         let mut report=ScheduledDiagnosticSummary::default();
         for (i,row) in rows.enumerate(){
             if i>=2048{return Err(SchedulerError::Database)}
-            let (state,finished,has_output,has_reader,matches_reader,requires_reader,attempt,phase)=row.map_err(db_error)?;
+            let (state,finished,has_output,has_reader,matches_reader,requires_reader,attempt,phase,stop_reason)=row.map_err(db_error)?;
             let outcome=match (state.as_str(),finished,has_output,requires_reader,has_reader,matches_reader){
                 ("RUNNING",false,false,_,_,_)=>{report.running+=1;"running"},
                 ("COMPLETED",true,true,true,true,true)=>{report.reader_result_matches+=1;"source_match"},
@@ -719,6 +721,8 @@ impl BackgroundScheduler {
                     ("unavailable",_)=>"The saved result could not be confirmed.",
                     ("source_match",_)=>"The saved answer matches its original Reader receipt. This does not verify the source itself.",
                     ("saved",_)=>"A response was saved. Its accuracy was not checked.",
+                    ("stopped",_) if stop_reason.as_deref()==Some("revoke")=>"File permission was revoked while this attempt was active. Worker exit is not established by this record.",
+                    ("stopped",_) if stop_reason.as_deref()==Some("cancel")=>"The task was cancelled while this attempt was active. Worker exit is not established by this record.",
                     ("stopped",_)=>"Execution was stopped; worker exit is not established by this record.",
                     ("interrupted",_)=>"Execution was interrupted. The original occurrence was not replayed.",
                     ("failed",Some(7))=>"The model answer did not match the approved source receipt.",
@@ -906,6 +910,10 @@ impl BackgroundScheduler {
                 [id],
             )
             .map_err(db_error)?;
+            // Bind the reason only to the occurrence actually stopped by
+            // this authorized action, in the same transaction. A later grant
+            // revocation must not relabel historical stops or interruptions.
+            tx.execute("INSERT INTO lu_ai_stop_witness(schedule_id,sequence,reason) SELECT schedule_id,sequence,?2 FROM lu_ai_runs WHERE schedule_id=?1 AND state='RUNNING'",params![id,action]).map_err(db_error)?;
             tx.execute("UPDATE lu_ai_runs SET state='STOPPED',finished=MAX(started,?2),output='' WHERE schedule_id=?1 AND state='RUNNING'",params![id,now]).map_err(db_error)?;
         }
         tx.commit().map_err(db_error)?;
@@ -969,7 +977,7 @@ mod tests {
         assert!(s.record_ai_diagnostic_step("private-task","c-private-owner","m-private-model",next,ModelEntered).unwrap());
         s.control_ai("private-task","c-private-owner","cancel").unwrap();
         assert!(!s.record_ai_diagnostic_step("private-task","c-private-owner","m-private-model",next,ModelReturned).unwrap());
-        let stopped=s.ai_diagnostic_summary().unwrap();assert_eq!(stopped.recent[0].outcome,"stopped");
+        let stopped=s.ai_diagnostic_summary().unwrap();assert_eq!(stopped.recent[0].outcome,"stopped");assert!(stopped.recent[0].explanation.contains("task was cancelled"));
         assert_eq!(stopped.recent[0].checkpoint,"model_entered");
     }
     #[test]
@@ -1540,6 +1548,12 @@ mod tests {
         let runs = s.ai_runs("ai-1", "c-a").unwrap();
         assert_eq!(runs[0].state, "STOPPED");
         assert_eq!(runs[2].output, "OLD");
+        let report=s.ai_diagnostic_summary().unwrap();
+        let revoked=report.recent.iter().find(|r|r.attempt==3).unwrap();
+        assert_eq!(revoked.outcome,"stopped");
+        assert!(revoked.explanation.contains("permission was revoked"));
+        assert!(revoked.explanation.contains("Worker exit is not established"));
+        assert!(report.recent.iter().filter(|r|r.attempt!=3).all(|r|!r.explanation.contains("permission was revoked")));
         drop(s);
         std::fs::remove_dir_all(root).unwrap();
     }

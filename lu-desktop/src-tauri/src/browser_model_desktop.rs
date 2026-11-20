@@ -570,8 +570,7 @@ fn execute_browser_ticket(app:AppHandle,owner:Arc<DesktopState>,session_id:Strin
             if schemas.len()!=1{return Err("Browser read tool catalog invalid".into());}
             trace.point(Checkpoint::TaskAuthorized);
             // Public search is a host-authored proposal, not a model tool call.
-            // Retain incomplete evidence rather than invent a model dispatch.
-            if search.is_some(){trace.lost();}
+            // Its actual native dispatch is observed before the model enters.
             if choice.is_none(){let _=app.emit("lu-generation-start",GenerationEvent{
                 chat_id:chat_id.clone(),generation_id:gid.clone(),
                 phase:"running",position:0,
@@ -643,11 +642,11 @@ fn execute_browser_ticket(app:AppHandle,owner:Arc<DesktopState>,session_id:Strin
                         &allowed,&proposal.tool_name,&host_call,None,
                         &proposal.arguments_json
                     ).map_err(|_|"Browser model proposed an invalid read")?;
-                    if search.is_none(){trace.record(|t|t.tool_checkpoint(ToolDispatchCheckpoint::Entered));}
+                    trace.record(|t|if search.is_some(){t.host_tool_checkpoint(ToolDispatchCheckpoint::Entered)}else{t.tool_checkpoint(ToolDispatchCheckpoint::Entered)});
                     let dispatched=tauri::async_runtime::block_on(
                         registry.dispatch(invocation,policy.as_ref())
                     );
-                    if search.is_none(){trace.record(|t|t.tool_checkpoint(ToolDispatchCheckpoint::Returned));}
+                    trace.record(|t|if search.is_some(){t.host_tool_checkpoint(ToolDispatchCheckpoint::Returned)}else{t.tool_checkpoint(ToolDispatchCheckpoint::Returned)});
                     let response=catalog.decode_result(
                         &allowed,&proposal.tool_name,&dispatched
                     ).map_err(|_|"Native Browser response decoding failed")?;
@@ -748,7 +747,7 @@ fn execute_browser_ticket(app:AppHandle,owner:Arc<DesktopState>,session_id:Strin
                     }
                     // Exact typed response has an original durable observation
                     // (or a Reader receipt); this is not semantic verification.
-                    if search.is_none(){trace.record(|t|t.tool_checkpoint(ToolDispatchCheckpoint::FeedbackAudited));}
+                    trace.record(|t|if search.is_some(){t.host_tool_checkpoint(ToolDispatchCheckpoint::FeedbackAudited)}else{t.tool_checkpoint(ToolDispatchCheckpoint::FeedbackAudited)});
                     if recent.len()>6{recent.remove(0);}
                 }
             }

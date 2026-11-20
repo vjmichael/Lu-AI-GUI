@@ -1657,7 +1657,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/browser_model_desktop.rs",
-      "blob": "10bca65e67276f1033d7f4e7c973ec29e6df3714"
+      "blob": "bdb3f2174e4eaf50afb6f9111bb0d56b639a64d6"
     },
     {
       "path": "lu-desktop/src-tauri/src/capability_discovery_desktop.rs",
@@ -1669,7 +1669,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/causal_diagnostic.rs",
-      "blob": "63854746718e7a92a967ac72378756f8dd10338d"
+      "blob": "170c1a569de1f13959ca7ff2027a55acbf5e9095"
     },
     {
       "path": "lu-desktop/src-tauri/src/chat_message_interactions.rs",
@@ -2193,7 +2193,7 @@
     },
     {
       "path": "lu-desktop/tests/cp12ar2-route-schedule-diagnostics.test.mjs",
-      "blob": "57bfcf5e82716bd5e55eb900fa93ac762a65c972"
+      "blob": "d960938d227eb582754843d88ee5ae7d69608527"
     },
     {
       "path": "lu-desktop/tests/filesystem-discovery.test.mjs",
@@ -3801,7 +3801,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/native_background_scheduler/scheduled_ai.rs",
-      "blob": "f149a07837133171ee46fd4475350b80777a7b1c"
+      "blob": "1e1edca509682571dbd023bb95c611e042999b91"
     },
     {
       "path": "src-tauri/lu-core/src/native_background_status.rs",

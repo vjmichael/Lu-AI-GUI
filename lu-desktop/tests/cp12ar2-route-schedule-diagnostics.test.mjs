@@ -12,7 +12,9 @@ test('CP12AR2 negotiated and explicit native routes consume the exact original d
 });
 test('CP12AR2 traces real browser and supervised dispatch boundaries, not synthetic search proposals',()=>{
  const browser=read('../src-tauri/src/browser_model_desktop.rs'),reviewed=read('../src-tauri/src/reviewed_app_desktop.rs'),web=read('../src-tauri/src/model_web_research_desktop.rs');
- assert.match(browser,/if search.is_some\(\)\{trace.lost\(\);\}/);
+ assert.match(browser,/if search.is_some\(\)\{t.host_tool_checkpoint\(ToolDispatchCheckpoint::Entered\)\}/);
+ assert.match(browser,/if search.is_some\(\)\{trace.point\(Checkpoint::ModelEntered\);\}/);
+ assert.doesNotMatch(browser,/if search.is_some\(\)\{trace.lost\(\);\}/);
  assert.match(browser,/ToolDispatchCheckpoint::Entered[\s\S]*?registry.dispatch\(invocation,policy.as_ref\(\)\)[\s\S]*?ToolDispatchCheckpoint::Returned/);
  assert.match(browser,/record_browser_read\([\s\S]*?ToolDispatchCheckpoint::FeedbackAudited/);
  for(const route of [reviewed,web]){

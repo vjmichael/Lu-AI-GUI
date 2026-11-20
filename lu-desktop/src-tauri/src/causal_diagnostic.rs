@@ -103,7 +103,7 @@ impl CausalProgress {
             self.append(6,2,0); return true;
         }
         if self.failed || ORDER.get(self.cursor) != Some(&stage) ||
-            (stage==Checkpoint::ModelReturned && self.tool_phase!=0) {
+            (matches!(stage,Checkpoint::ModelEntered|Checkpoint::ModelReturned) && self.tool_phase!=0) {
             self.dropped = self.dropped.saturating_add(1);
             return false;
         }
@@ -130,8 +130,16 @@ impl CausalProgress {
     /// The actual dispatch boundary is not a typed result. Only the shared
     /// supervised loop can confirm a validated and durably audited envelope.
     pub fn tool_checkpoint(&mut self, point:lu_core::agent_tool_loop::ToolDispatchCheckpoint) {
+        self.tool_checkpoint_at(point,6);
+    }
+    /// Host-authored search calls occur after authority but before inference.
+    /// Never manufacture ModelEntered for a host-selected operation.
+    pub fn host_tool_checkpoint(&mut self, point:lu_core::agent_tool_loop::ToolDispatchCheckpoint) {
+        self.tool_checkpoint_at(point,5);
+    }
+    fn tool_checkpoint_at(&mut self,point:lu_core::agent_tool_loop::ToolDispatchCheckpoint,cursor:usize){
         use lu_core::agent_tool_loop::ToolDispatchCheckpoint::*;
-        if self.failed || self.cursor != 6 || !self.has_tool_authority() || self.observations.len()>=60 { self.mark_lost(); return; }
+        if self.failed || self.cursor != cursor || !self.has_tool_authority() || self.observations.len()>=60 { self.mark_lost(); return; }
         match (self.tool_phase,point) {
             (0,Entered)=>{self.append(14,1,0);self.tool_phase=1},
             (1,Returned)=>{self.append(15,1,0);self.tool_phase=2},
@@ -243,6 +251,22 @@ mod tests {
     }
     fn advance(t: &mut CausalProgress, stop: usize) {
         for stage in ORDER.iter().take(stop).skip(1) { assert!(t.observe(*stage)); }
+    }
+    #[test]
+    fn cp12ar2closeout_host_search_tool_is_observed_before_model_and_must_be_audited(){
+        use lu_core::agent_tool_loop::ToolDispatchCheckpoint::*;
+        let mut t=progress();advance(&mut t,5);
+        assert!(t.observe(Checkpoint::TaskAuthorized));
+        t.host_tool_checkpoint(Entered);t.host_tool_checkpoint(Returned);
+        assert!(!t.observe(Checkpoint::ModelEntered));
+        t.host_tool_checkpoint(FeedbackAudited);
+        assert!(t.observe(Checkpoint::ModelEntered));
+        assert!(t.observe(Checkpoint::ModelReturned));
+        assert_eq!(t.observations().iter().map(|e|e.stage).collect::<Vec<_>>(),vec![4,19,2,7,5,6,14,15,15,8,9]);
+        assert_eq!(t.dropped(),1);
+        let mut wrong=progress();advance(&mut wrong,5);assert!(wrong.observe(Checkpoint::TaskAuthorized));
+        wrong.tool_checkpoint(Entered);assert_eq!(wrong.dropped(),1);
+        assert!(!wrong.observations().iter().any(|e|e.stage==14));
     }
     #[test]
     fn host_completion_is_not_renderer_completion() {
