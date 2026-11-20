@@ -351,3 +351,412 @@ jobs:
           path: sec06c-browser-evidence/
           if-no-files-found: warn
           retention-days: 14
+
+  core01e-sec06-native:
+    name: CORE-01E independent SEC-06 (${{ matrix.mode }})
+    needs: exact-source
+    if: ${{ github.ref == 'refs/heads/lu/cp01-attachment-transaction-20261116' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            mode: linux
+          - os: windows-2025
+            mode: windows
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.16.0'
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+      - name: Verify immutable grouped-branch SEC-06 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          node scripts/verify-source-tree.mjs
+      - name: Native Linux system tool and desktop dependencies
+        if: matrix.mode == 'linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends protobuf-compiler pkg-config libssl-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libgtk-3-dev libxdo-dev patchelf ffmpeg
+      - name: Compile actual frontend and provision inert compiler resources
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p lu-desktop/src-tauri/resources/lu-inference
+          for f in llama-server.exe msvcp140.dll vcruntime140.dll vcruntime140_1.dll; do
+            test ! -f "lu-desktop/src-tauri/resources/lu-inference/$f"
+            printf 'SEC06_COMPILER_ONLY_NOT_ENGINE' > "lu-desktop/src-tauri/resources/lu-inference/$f"
+          done
+          (cd lu-desktop && npm ci --no-audit --no-fund && npm run build && npm run check)
+      - name: Pin real Linux Git executable for SEC-06 original Core regressions
+        if: matrix.mode == 'linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          # This is the same host-selected Git required by native_git_inspect.rs;
+          # model-supplied executables and PATH lookup inside the test are denied.
+          selected="$(command -v git)"
+          native="$(readlink -e -- "$selected")"
+          [[ "$native" = /* ]] && test -f "$native" && test -x "$native"
+          echo "LU_TOOLS03_TEST_GIT_PATH=$native" >> "$GITHUB_ENV"
+          echo 'SEC06_LINUX_TRUSTED_GIT_PINNED=1'
+      - name: Provision finite SEC-06C Git manager for the UNCHANGED original Linux journal test
+        if: matrix.mode == 'linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          # This is only the same immutable reviewed Git service proved by
+          # the separate original SEC06C root-owned Git job. It does NOT
+          # re-enable the retired same-UID guardian or alter hostile fixtures.
+          sudo install -d -o root -g root -m 0755 /usr/libexec/lu
+          sudo install -o root -g root -m 0755 scripts/lu-sec06c-owned-git-launcher.py /usr/libexec/lu/lu-sec06c-launch-git
+          sudo install -o root -g root -m 0755 scripts/lu-sec06c-owned-git-worker.py /usr/libexec/lu/lu-sec06c-owned-git-worker
+          sudo install -o root -g root -m 0755 scripts/lu-sec06c-owned-kernel-manager.py /usr/libexec/lu/lu-sec06c-owned-kernel-manager
+          printf '%s ALL=(root) NOPASSWD: /usr/libexec/lu/lu-sec06c-launch-git *\n' "$USER" | sudo tee /etc/sudoers.d/lu-sec06c-original-git >/dev/null
+          sudo chmod 0440 /etc/sudoers.d/lu-sec06c-original-git
+          sudo visudo -cf /etc/sudoers.d/lu-sec06c-original-git
+          sudo test "$(stat -c %u /usr/libexec/lu/lu-sec06c-owned-kernel-manager)" = 0
+          sudo test "$(stat -c %u /usr/libexec/lu/lu-sec06c-launch-git)" = 0
+          test "$(id -u)" -ne 0
+      - name: Pin real Windows Git executable for reviewed native worker
+        if: matrix.mode == 'windows'
+        shell: pwsh
+        run: |
+          $command=Get-Command git.exe -CommandType Application -ErrorAction Stop | Select-Object -First 1
+          if($null -eq $command){throw 'Native Git missing'}
+          $path=(Resolve-Path -LiteralPath $command.Source).ProviderPath
+          if(-not [System.IO.Path]::IsPathFullyQualified($path)){throw 'Untrusted relative Git'}
+          Add-Content -LiteralPath $env:GITHUB_ENV -Value "LU_TOOLS03_TEST_GIT_PATH=$path"
+      - name: Run independent SEC-06 including Linux ancestor-migration containment
+        shell: bash
+        env:
+          SEC06_MODE: ${{ matrix.mode }}
+          EXPECTED_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          mkdir -p sec06-native-evidence
+          if [[ "$SEC06_MODE" == "linux" ]]; then
+            # Only systemd provisions Delegate=yes. Original tests are nonroot.
+            python3 scripts/sec06-linux-delegated-runner.py --outer \
+              --expected-sha "$EXPECTED_SHA" --evidence sec06-native-evidence \
+              2>&1 | tee sec06-native-evidence/runner-console.log
+            test -s sec06-native-evidence/kernel-delegation.json
+          else
+            node scripts/p0-sec06-consolidated.mjs --mode "$SEC06_MODE" \
+              --evidence sec06-native-evidence 2>&1 | tee sec06-native-evidence/runner-console.log
+          fi
+          test -s "sec06-native-evidence/$SEC06_MODE.receipt.json"
+          echo 'SEC-06 evidence is provisional; no installation or release is approved.' >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lu-core01e-sec06-${{ matrix.mode }}-${{ github.sha }}
+          path: sec06-native-evidence/
+          retention-days: 14
+          if-no-files-found: warn
+
+  core01e-sec06c-os-owned-git:
+    name: SEC-06C original root-owned reviewed Git (Linux)
+    needs: exact-source
+    if: ${{ github.ref == 'refs/heads/lu/cp01-attachment-transaction-20261116' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 95
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.16.0'
+      - name: Pin original source and compile exact native integration
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          node scripts/verify-source-tree.mjs
+          python3 -m py_compile scripts/lu-sec06c-owned-git-launcher.py scripts/lu-sec06c-owned-git-worker.py scripts/lu-sec06c-owned-kernel-manager.py
+          cargo test --locked --manifest-path src-tauri/lu-win-worker-job/Cargo.toml --lib os_owned_git -- --nocapture
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib sec06c --no-run
+      - name: Provision fixed root-owned CI-only native broker boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          # This provisions ONE ephemeral native test VM. It does not install
+          # Lu, grant installer permission, or add a general sudo systemd-run.
+          sudo install -d -o root -g root -m 0755 /usr/libexec/lu
+          sudo install -o root -g root -m 0755 scripts/lu-sec06c-owned-git-launcher.py /usr/libexec/lu/lu-sec06c-launch-git
+          sudo install -o root -g root -m 0755 scripts/lu-sec06c-owned-git-worker.py /usr/libexec/lu/lu-sec06c-owned-git-worker
+          sudo install -o root -g root -m 0755 scripts/lu-sec06c-owned-kernel-manager.py /usr/libexec/lu/lu-sec06c-owned-kernel-manager
+          printf '%s ALL=(root) NOPASSWD: /usr/libexec/lu/lu-sec06c-launch-git *\n' "$USER" | sudo tee /etc/sudoers.d/lu-sec06c-ci >/dev/null
+          sudo chmod 0440 /etc/sudoers.d/lu-sec06c-ci
+          sudo visudo -cf /etc/sudoers.d/lu-sec06c-ci
+          sudo test "$(stat -c %u /usr/libexec/lu/lu-sec06c-launch-git)" = 0
+          sudo test "$(stat -c %u /usr/libexec/lu/lu-sec06c-owned-git-worker)" = 0
+          test "$(id -u)" -ne 0
+      - name: Execute original reviewed Git under systemd-owned kernel unit and reopen journal
+        shell: bash
+        env:
+          LU_SEC06C_BROKER_DEBUG: '1'
+        run: |
+          set -euo pipefail
+          mkdir -p sec06c-os-owned-evidence
+          test "$(git rev-parse HEAD)" = "${{ github.sha }}"
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib sec06c_root_owned_reviewed_git_worker_original_journal -- --ignored --nocapture 2>&1 | tee sec06c-os-owned-evidence/original-native.log
+          grep -Fq '1 passed; 0 failed' sec06c-os-owned-evidence/original-native.log
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib sec06c_root_owned_git_cancel_original_journal -- --ignored --nocapture 2>&1 | tee sec06c-os-owned-evidence/cancel-native.log
+          grep -Fq '1 passed; 0 failed' sec06c-os-owned-evidence/cancel-native.log
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib sec06c_owned_git_host_sigkill_recovery_original_journal -- --ignored --nocapture 2>&1 | tee sec06c-os-owned-evidence/crash-recovery-native.log
+          grep -Fq '1 passed; 0 failed' sec06c-os-owned-evidence/crash-recovery-native.log
+          echo 'OS-owned broker test is historical native evidence only; SEC-06C original adversarial matrix and independent SEC-06F remain mandatory.' >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lu-sec06c-root-owned-git-${{ github.sha }}
+          path: sec06c-os-owned-evidence/
+          retention-days: 14
+          if-no-files-found: warn
+
+  core01e-sec06c-os-owned-probes:
+    name: SEC-06C original root-owned finite media/metadata (Linux)
+    needs: exact-source
+    if: ${{ github.ref == 'refs/heads/lu/cp01-attachment-transaction-20261116' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 95
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.16.0'
+      - name: Verify exact source and compile finite read-only kernel probe integration
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.sha }}"
+          node scripts/verify-source-tree.mjs
+          python3 -m py_compile scripts/lu-sec06c-owned-probe-launcher.py scripts/lu-sec06c-owned-probe-worker.py scripts/lu-sec06c-owned-kernel-manager.py
+          cargo test --locked --manifest-path src-tauri/lu-win-worker-job/Cargo.toml --lib os_owned_probe -- --nocapture
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib sec06c --no-run
+      - name: Provision only reviewed finite probe binaries and fixed test-only OS broker
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get -qq update
+          sudo apt-get -y -qq install --no-install-recommends ffmpeg poppler-utils libimage-exiftool-perl
+          sudo install -d -o root -g root -m 0755 /usr/libexec/lu
+          sudo install -o root -g root -m 0755 scripts/lu-sec06c-owned-probe-launcher.py /usr/libexec/lu/lu-sec06c-launch-probe
+          sudo install -o root -g root -m 0755 scripts/lu-sec06c-owned-probe-worker.py /usr/libexec/lu/lu-sec06c-owned-probe-worker
+          sudo install -o root -g root -m 0755 scripts/lu-sec06c-owned-kernel-manager.py /usr/libexec/lu/lu-sec06c-owned-kernel-manager
+          printf '%s ALL=(root) NOPASSWD: /usr/libexec/lu/lu-sec06c-launch-probe *\n' "$USER" | sudo tee /etc/sudoers.d/lu-sec06c-probe-ci >/dev/null
+          sudo chmod 0440 /etc/sudoers.d/lu-sec06c-probe-ci
+          sudo visudo -cf /etc/sudoers.d/lu-sec06c-probe-ci
+          test "$(id -u)" -ne 0
+          for bin in ffmpeg ffprobe pdfinfo exiftool; do
+            path="$(readlink -e "$(command -v "$bin")")"
+            test -f "$path" && test "$(stat -c %u "$path")" = 0
+          done
+      - name: Run reviewed WAV MP4 PDF PNG finite OS-managed tasks and recovery
+        shell: bash
+        env:
+          LU_SEC06C_BROKER_DEBUG: '1'
+        run: |
+          set -euo pipefail
+          mkdir -p sec06c-probe-native-evidence
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib sec06c_root_owned_media_metadata_probes_original_journal -- --ignored --nocapture 2>&1 | tee sec06c-probe-native-evidence/native-probes.log
+          grep -Fq '1 passed; 0 failed' sec06c-probe-native-evidence/native-probes.log
+          echo 'FFprobe, PDFInfo and ExifTool finite original native execution is not release acceptance; independent hostile migration, process-custody and SEC-06F remain mandatory.' >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lu-sec06c-finite-probes-${{ github.sha }}
+          path: sec06c-probe-native-evidence/
+          retention-days: 14
+          if-no-files-found: warn
+
+  core01e-sec06c-os-owned-native:
+    name: SEC-06C original root-owned scanner archive and finite utility (Linux)
+    needs: exact-source
+    if: ${{ github.ref == 'refs/heads/lu/cp01-attachment-transaction-20261116' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 95
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.16.0'
+      - name: Compile actual native scanner version and fixed OS admission
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.sha }}"
+          node scripts/verify-source-tree.mjs
+          python3 -m py_compile scripts/lu-sec06c-owned-native-launcher.py scripts/lu-sec06c-owned-native-worker.py scripts/lu-sec06c-owned-kernel-manager.py
+          cargo test --locked --manifest-path src-tauri/lu-win-worker-job/Cargo.toml --lib os_owned_native -- --nocapture
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib sec06c --no-run
+          cargo build --locked --manifest-path lu-desktop/tests/native-file-scan/Cargo.toml --release
+          cargo build --locked --manifest-path src-tauri/lu-core/Cargo.toml --release --example e1_reviewed_version_worker
+      - name: Provision only first-party immutable finite scanner version and native OS manager
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo install -d -o root -g root -m 0755 /usr/libexec/lu
+          sudo install -o root -g root -m 0755 scripts/lu-sec06c-owned-native-launcher.py /usr/libexec/lu/lu-sec06c-launch-native
+          sudo install -o root -g root -m 0755 scripts/lu-sec06c-owned-native-worker.py /usr/libexec/lu/lu-sec06c-owned-native-worker
+          sudo install -o root -g root -m 0755 scripts/lu-sec06c-owned-kernel-manager.py /usr/libexec/lu/lu-sec06c-owned-kernel-manager
+          sudo install -o root -g root -m 0755 lu-desktop/tests/native-file-scan/target/release/lu-file-scan-worker-acceptance /usr/libexec/lu/lu-file-scan-worker-acceptance
+          sudo install -o root -g root -m 0755 src-tauri/lu-core/target/release/examples/e1_reviewed_version_worker /usr/libexec/lu/lu-e1-reviewed-version-worker
+          printf '%s ALL=(root) NOPASSWD: /usr/libexec/lu/lu-sec06c-launch-native *\n' "$USER" | sudo tee /etc/sudoers.d/lu-sec06c-native-ci >/dev/null
+          sudo chmod 0440 /etc/sudoers.d/lu-sec06c-native-ci
+          sudo visudo -cf /etc/sudoers.d/lu-sec06c-native-ci
+          test "$(id -u)" -ne 0
+      - name: Execute original nonroot scanner and fixed version under root-owned descendant containment
+        shell: bash
+        env:
+          LU_SEC06C_BROKER_DEBUG: '1'
+        run: |
+          set -euo pipefail
+          mkdir -p sec06c-native-evidence
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib sec06c_root_owned_scanner_utility_original_journal -- --ignored --nocapture 2>&1 | tee sec06c-native-evidence/original-scanner-utility.log
+          grep -Fq '1 passed; 0 failed' sec06c-native-evidence/original-scanner-utility.log
+          echo 'Scanner and version are a distinct finite OS-native gate; archive, browser, legacy guardian and unchanged hostile migration remain mandatory before SEC-06F closure.' >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lu-sec06c-native-scanner-utility-${{ github.sha }}
+          path: sec06c-native-evidence/
+          if-no-files-found: warn
+          retention-days: 14
+
+  core01e-sec06f-original-receipts:
+    name: SEC-06F original Windows/Linux/source receipt reconciliation only
+    needs:
+      - exact-source
+      - core01e-sec06-native
+      - core01e-sec06c-os-owned-git
+      - core01e-sec06c-os-owned-probes
+      - core01e-sec06c-os-owned-native
+      - browser-custody
+    if: ${{ always() && github.ref == 'refs/heads/lu/cp01-attachment-transaction-20261116' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.16.0'
+      - uses: actions/download-artifact@v4
+        continue-on-error: true # Absent original source receipt is BLOCKED, not substituted.
+        with:
+          name: lu-cp06er2-exact-source-${{ github.sha }}
+          path: sec06f-source/
+      - uses: actions/download-artifact@v4
+        continue-on-error: true # Missing native artifacts are recorded as BLOCKED.
+        with:
+          pattern: lu-core01e-sec06-*-${{ github.sha }}
+          path: sec06f-inbound/
+          merge-multiple: false
+      - uses: actions/download-artifact@v4
+        continue-on-error: true # Missing actual Chrome/Node logs block SEC-06F.
+        with:
+          pattern: lu-sec06er1-genuine-browser-${{ github.sha }}
+          path: sec06f-browser/
+          merge-multiple: false
+      - name: Independently inspect original SEC-06F source Windows Linux and all native broker results
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ github.sha }}
+          SEC06_GIT_JOB: ${{ needs.core01e-sec06c-os-owned-git.result }}
+          SEC06_PROBE_JOB: ${{ needs.core01e-sec06c-os-owned-probes.result }}
+          SEC06_REVIEWED_NATIVE_JOB: ${{ needs.core01e-sec06c-os-owned-native.result }}
+          SEC06_BROWSER_JOB: ${{ needs.browser-custody.result }}
+          SEC06_NATIVE_JOB: ${{ needs.core01e-sec06-native.result }}
+        run: |
+          set -euo pipefail
+          mkdir -p sec06f-evidence
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          node scripts/verify-source-tree.mjs
+          # A successful browser job alone is not its original evidence.
+          # Independently reopen the exact original Chrome/Node, Rust and
+          # host-SIGKILL stdout logs from THIS source-locked workflow.
+          browser="sec06f-browser/lu-sec06er1-genuine-browser-$EXPECTED_SHA"
+          browser_ok=1
+          for label in original-browser-kernel original-rust-browser-host original-browser-host-sigkill original-browser-guardian-loss original-browser-guardian-stall; do
+            test -s "$browser/$label.log" || { echo "SEC06F_ORIGINAL_BROWSER_LOG_MISSING=$label" >&2; browser_ok=0; continue; }
+            sha256sum "$browser/$label.log" >> sec06f-evidence/browser-original-log-sha256.txt
+          done
+          grep -Fq 'SEC06C_GENUINE_BROWSER_KERNEL_PASS=1' "$browser/original-browser-kernel.log" || browser_ok=0
+          grep -Fq 'SEC06C_ORIGINAL_RUST_BROWSER_KERNEL_PASS=1' "$browser/original-rust-browser-host.log" || browser_ok=0
+          grep -Fq 'SEC06C_BROWSER_ORIGINAL_HOST_SIGKILL_PASS=1' "$browser/original-browser-host-sigkill.log" || browser_ok=0
+          grep -Fq 'SEC06C_BROWSER_ORIGINAL_GUARDIAN_LOSS_FAIL_CLOSED_PASS=1' "$browser/original-browser-guardian-loss.log" || browser_ok=0
+          grep -Fq 'SEC06F_BROWSER_INDEPENDENT_WATCHDOG_STALL_PASS=1' "$browser/original-browser-guardian-stall.log" || browser_ok=0
+          # The native artifact verifier *always* returns 1 because no
+          # automatic owner-installed/release acceptance can be granted.
+          set +e
+          node scripts/p0-sec06-consolidated.mjs --mode verify \
+            --source "sec06f-source/sec06-source-receipts/source.receipt.json" \
+            --linux "sec06f-inbound/lu-core01e-sec06-linux-$EXPECTED_SHA/linux.receipt.json" \
+            --windows "sec06f-inbound/lu-core01e-sec06-windows-$EXPECTED_SHA/windows.receipt.json" \
+            > sec06f-evidence/original-review.json 2> sec06f-evidence/verifier-stderr.log
+          status=$?
+          set -e
+          test "$status" -eq 1 || { echo 'SEC06F_VERIFIER_RETURN_CHANGED=1' >&2; exit 1; }
+          export SEC06_BROWSER_LOGS_OK=$browser_ok
+          python3 - <<'PY'
+          import json,os,pathlib
+          summary=json.loads(pathlib.Path('sec06f-evidence/original-review.json').read_text())
+          expected=os.environ['EXPECTED_SHA']
+          assert os.environ['SEC06_BROWSER_LOGS_OK']=='1','SEC06F_ORIGINAL_BROWSER_LOG_BLOCKED'
+          assert summary['head']==expected,'SEC06F_EXACT_HEAD_CHANGED'
+          for target in ('source','linux','windows'):
+              assert summary['proofs'][target]['status']=='NATIVE_EVIDENCE_PRESENT_UNREVIEWED',(
+                  'SEC06F_ORIGINAL_LOG_OR_KERNEL_PROOF_BLOCKED',target,summary['proofs'][target])
+          for name in ('SEC06_GIT_JOB','SEC06_PROBE_JOB','SEC06_NATIVE_JOB',
+                       'SEC06_REVIEWED_NATIVE_JOB','SEC06_BROWSER_JOB'):
+              assert os.environ[name]=='success',('SEC06F_BROKER_OR_NATIVE_GATE_BLOCKED',name,os.environ[name])
+          assert summary['securityDecision']==(
+              'NATIVE_CASES_PRESENT_OWNER_INSTALLED_AND_INDEPENDENT_REVIEW_PENDING'
+          ),'SEC06F_SECURITY_DECISION_CHANGED'
+          print('SEC06F_EXACT_HEAD_NATIVE_RECEIPTS_PRESENT_UNREVIEWED=1')
+          print('SEC06F_OWNER_INSTALLED_AND_INDEPENDENT_REVIEW_REQUIRED=1')
+          PY
+          echo 'Native evidence remains UNREVIEWED; no owner installation, merge or release is permitted.' >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lu-sec06f-original-reconciliation-${{ github.sha }}
+          path: sec06f-evidence/
+          if-no-files-found: warn
+          retention-days: 14
