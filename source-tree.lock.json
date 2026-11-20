@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "42205de97beebbf7c2934eb993f5f05c6cd4498e",
-  "trackedFileCount": 1247,
+  "sourceCommitBeforeLock": "d88f9cb7004e1166af992c5a2464f07e72cd18dd",
+  "trackedFileCount": 1250,
   "files": [
     {
       "path": ".gitattributes",
@@ -924,6 +924,10 @@
       "blob": "4bcb901e25a9f10c6b45d4746104917807787746"
     },
     {
+      "path": "docs/LU_CP12B_R5_R1_MODEL_QUALIFICATION_20261120.md",
+      "blob": "a6f074f787bbb84132169f314a62d89068ea387c"
+    },
+    {
       "path": "docs/LU_CP12B_R5_STAGE_REVIEW_20261120.md",
       "blob": "e44ef424c0a61bfe5f3031a9c7152da1e94b7e0d"
     },
@@ -937,7 +941,7 @@
     },
     {
       "path": "docs/LU_DEVELOPMENT_LEDGER.md",
-      "blob": "687899609bf5833c71b443ab4da7842e5dcbf919"
+      "blob": "73f269f1acaca92a68ef1d7db9c15682e2298259"
     },
     {
       "path": "docs/LU_E1_NATIVE_EVIDENCE_20261107.md",
@@ -1733,7 +1737,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/dx_stage.rs",
-      "blob": "67a2da52262af1327cc88eb1092b84f34ead8b5e"
+      "blob": "dfd78204ebb6514a29077063408d7c4062de8340"
     },
     {
       "path": "lu-desktop/src-tauri/src/dx_windows_pipe.rs",
@@ -2922,6 +2926,14 @@
     {
       "path": "scripts/cp12br5-stage-review-gui.py",
       "blob": "395d85362c84abe53c0381c9c5086112bd1b596e"
+    },
+    {
+      "path": "scripts/cp12br5r1-stage-cases.json",
+      "blob": "a77d32f81b9b614ffd0220d106f34a50abbf5f3f"
+    },
+    {
+      "path": "scripts/cp12br5r1-stage-qualification.py",
+      "blob": "5be4b5b9b8073e1f8a9fafec7ac5ccbe810ce0d3"
     },
     {
       "path": "scripts/install-lu-agent01l-native-fixture.sh",
