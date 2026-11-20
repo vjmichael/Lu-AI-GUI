@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "68824253efbc941f023a7d875086054daf6713ee",
-  "trackedFileCount": 1207,
+  "sourceCommitBeforeLock": "be9c33621106cce8f09a5e84fa84d3896446e247",
+  "trackedFileCount": 1210,
   "files": [
     {
       "path": ".gitattributes",
@@ -896,6 +896,10 @@
       "blob": "ebc5b13fbf650d3a77baa21fa84a3f5ee07f34e7"
     },
     {
+      "path": "docs/LU_CP11B_R2_SCHEDULED_READER_20261120.md",
+      "blob": "900f3648066da8e4ebbe7f7e2e3a9f4e69303a87"
+    },
+    {
       "path": "docs/LU_CP11B_SCHEDULED_REMINDERS_20261120.md",
       "blob": "a6cc6b5d9f8d5ed40c27ae1e561ca0b61c03034b"
     },
@@ -1737,7 +1741,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/lib.rs",
-      "blob": "c41e0fba654c85b5e19d70956ce54d50c7d7e3c5"
+      "blob": "9fa677244ad35ee01b5624434c4f3518ee6bc4f5"
     },
     {
       "path": "lu-desktop/src-tauri/src/linked_attachment_file.rs",
@@ -1957,7 +1961,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/scheduled_ai.rs",
-      "blob": "15b724ec3a9447006563233d897844bbd106a3e5"
+      "blob": "f2ba23ce0317d220018811d26c87122a794c28c5"
     },
     {
       "path": "lu-desktop/src-tauri/src/scoped_read_intent.rs",
@@ -2170,6 +2174,10 @@
     {
       "path": "lu-desktop/tests/cp11br1-scheduled-ai.test.mjs",
       "blob": "89e05fa4973f1568a56454026563e1d0afe4ddea"
+    },
+    {
+      "path": "lu-desktop/tests/cp11br2-scheduled-reader.test.mjs",
+      "blob": "62deb68b7f288e955980dd44b2e240fc27fe3b88"
     },
     {
       "path": "lu-desktop/tests/filesystem-discovery.test.mjs",
@@ -2653,7 +2661,7 @@
     },
     {
       "path": "lu-desktop/web/scheduled_ai.jsx",
-      "blob": "110c4b05e1400cdea53a3593544eb3dd7586733c"
+      "blob": "b03821428734306e35b078243ec29b342e8cb7ea"
     },
     {
       "path": "lu-desktop/web/scheduled_reminders.jsx",
@@ -2762,6 +2770,10 @@
     {
       "path": "scripts/cp11b-reminders-gui.py",
       "blob": "86d5b852aa68043b2940d7f8baaeb058aaf5bda5"
+    },
+    {
+      "path": "scripts/cp11br2-scheduled-reader-gui.py",
+      "blob": "723d2e69eab3ca049a903a8540824fef8bb6ffc4"
     },
     {
       "path": "scripts/install-lu-agent01l-native-fixture.sh",
@@ -3741,7 +3753,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/native_background_scheduler.rs",
-      "blob": "46e84b084b65185d071fcfa4eb9c197ae63e4141"
+      "blob": "13e94df2a6ad873705fd2136f7266614fd7705a7"
     },
     {
       "path": "src-tauri/lu-core/src/native_background_scheduler/reminders.rs",
@@ -3749,7 +3761,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/native_background_scheduler/scheduled_ai.rs",
-      "blob": "072baafcd702ce7d2e29198ee9b7d99073b60906"
+      "blob": "50e57fd8ef8c72b245abc4a2ff55d506f3d24235"
     },
     {
       "path": "src-tauri/lu-core/src/native_background_status.rs",
