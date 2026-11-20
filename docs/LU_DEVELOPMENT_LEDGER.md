@@ -39,15 +39,15 @@
 
 ### SEC-06F-VM — deferred Linux security matrix reconciliation (2026-11-19)
 
-**State: OPEN — exact source recovered, hosted acceptance verified, native power-loss/recovery, watchdog and retired admission VM functional reruns now PASS; full matrix remains OPEN.** Owner direction: compile/link outside the VM; isolated Debian/QEMU only for privileged runtime tests. Preserve original SEC-06/C4 gates, distinct installed/physical acceptance, historical receipts at their own source identities. No unrelated IDE branch integration.
+**State: OPEN — exact source recovered, hosted acceptance verified, native power-loss/recovery, watchdog and retired admission VM functional reruns PASS including corrected clean-shutdown repeats; original full source gate has one unresolved assertion; full matrix remains OPEN.** Owner direction: compile/link outside the VM; isolated Debian/QEMU only for privileged runtime tests. Preserve original SEC-06/C4 gates, distinct installed/physical acceptance, historical receipts at their own source identities. No unrelated IDE branch integration.
 
 | Existing work | Reconciled disposition | Outstanding evidence |
 | --- | --- | --- |
 | SEC-06C-VM / delegated custody | Positive VM custody reported in original session; source restored | Reopen original VM proof and complete remaining required same-candidate cases |
-| SEC-06D-VM / SEC-06D-R1 | Original exact-branch ledger records two abrupt virtual power-cut cohorts PASS, including late receipt recovery; historical result, not a new rerun | Final-candidate functional requalification PASS with independent host termination/reboot and durable receipts; post-test clean shutdown capture incomplete |
+| SEC-06D-VM / SEC-06D-R1 | Original exact-branch ledger records two abrupt virtual power-cut cohorts PASS, including late receipt recovery; historical result, not a new rerun | Final-candidate functional requalification and clean-shutdown repeat PASS with independent host termination/reboot and durable receipts |
 | SEC-06E-VM | Original watchdog/custody recovery reported PASS | Native guardian/worker stall and four historical retired admission refusal cases PASS; separate exceptional startup/cleanup, browser-specific indefinite guardian stall and legacy shared admission lifecycle remain |
 | SEC-06E-R1/R1-R1/R1-R2 | Final browser VM cohort PASS recorded at exact source; hosted four browser logs independently reopened and verified at frozen candidate | Original VM raw receipts, binary deployment and final consolidated VM rerun not recovered/executed |
-| SEC-06F-VM / R1 | OPEN — exact-source native runtime rebuilt, archived and functional VM rerun passes | Resolve outstanding matrix/clean shutdown capture and separate legacy shared admission lifecycle; no weaker custody or replay checks |
+| SEC-06F-VM / R1 | OPEN — exact-source native runtime rebuilt, archived and functional VM rerun passes | Resolve outstanding source contract, browser watchdog and separate legacy shared admission lifecycle; no weaker custody or replay checks |
 
 #### SEC-06F-VM-R1 — exact source restoration and evidence preservation
 
@@ -81,6 +81,24 @@
 - `Lu-SEC-06F-VM-R1-SHA256SUMS`: archive and receipt digest list.
 
 **Remain OPEN:** repeat shutdown-qualified power-cut/watchdog cohorts using corrected collector if required by consolidated gate; legacy shared admission attribution/cleanup and spent-record retention beyond exact nonce denial and retired historical negative cases; browser-specific indefinite guardian stall, destructive startup/cleanup and other-domain crash boundaries; reconcile full original SEC-06F matrix and retain separate installed/physical acceptance gate. Prior VM raw receipts and exact host GUI closure not recovered; pinned browser candidate and shared Linux GUI dependency pool preserved. No production code change, new CI dispatch, main source merge, installer or release. No new task ID. Reuse preserved exact-source native runtime rather than recompiling inside VM.
+
+#### SEC-06F-VM-R1 — consolidated repeat and independent source-gate reconciliation (2026-11-19 Arizona / 2026-11-20 UTC)
+
+**Same frozen candidate `ccc943911d1814336d5ed67fa839e9c7528e2b29`: native VM repeat PASS including clean shutdown; full closeout OPEN.** Checked exact branch ref and reverified original 1,175-entry source lock, clean detached checkout, previously preserved R1 archives and all four native binary checksums. No recompile, no downloads, no production changes. Repeat deployment manifests byte-identical to the prior R1 cohorts; original Debian base SHA unchanged.
+
+| Repeat/independent check | Result |
+| --- | --- |
+| Actual independent abrupt cut, reboot of same overlay, old nonce denial, missing/late/normal receipt reconciliation | PASS, guest exit 0, clean post-recovery shutdown, QEMU exit 0 and offline image check PASS |
+| Native watchdog original healthy-guardian/worker-stall and stalled-guardian cohort, journal and same-boot reclaim | PASS, guest exit 0, clean shutdown, QEMU exit 0 and offline image check PASS |
+| Previous four retired guardian admission negative fixtures | Prior exact-candidate PASS preserved, not rerun here |
+| Original complete source-mode runner | 11/12 case groups PASS; security-contracts FAIL (84/85 Node tests). Original verifier explicitly BLOCKED_NATIVE_SECURITY |
+| Additional native task regressions and nonce/watchdog contracts | 25/25 and 6/6 PASS respectively; not substitutes for the complete source or independent kernel gates |
+
+**Confirmed source-contract drift:** original SEC-04 restart-fence test expects an older contiguous SQL predicate. Current transaction still fences original RUNNING and uncertain/reviewed PENDING tasks, additionally fencing PENDING/PAUSED native admissions. Actual native task regressions and original abrupt restart/receipt cases passed. Keep historical assertion failed pending narrow test repair that verifies the complete predicates and behavior; do not skip it or relabel original source mode. Five green hosted grouped jobs remain valid for their own scope; not a full SEC-06F receipt.
+
+**Remaining actual implementation gaps:** browser service has a fixed maximum runtime but no independent PID1 progress watchdog/heartbeat comparable to the native scanner; browser guardian SIGKILL qualification is not indefinite stalled-guardian qualification. Native/browser unit-specific runtime dirs and persistent spent records protect new admissions; no safe attribution/reclamation of ambiguous legacy shared markers or qualified spent-record retention/compaction. Preserve fail-closed denial, no blanket deletion. Git/probe finite runtime and other domain crash boundaries still need original full same-head evidence review. Separate physical installed owner acceptance remains mandatory. No complete Linux/Windows SEC-06 receipt reconciliation at this exact head; source-mode failure alone prevents full acceptance. Any production or assertion repair requires fresh frozen SHA and grouped requalification.
+
+**New persistent closeout evidence:** Library → Shared Development Toolchain → Debian, `Lu-SEC-06F-VM-R1-Closeout-Evidence.zip` SHA-256 `810e43870a7da80a74e883dde44631d0d76732763b3b274a2129e3bf9c8aad4d`, `Lu-SEC-06F-VM-R1-Closeout-Receipt.json` SHA-256 `93cea468b033d3eb2453d6634392f72d6fd88a36312b205a6983d2c91f2a6be3`, `Lu-SEC-06F-VM-R1-Closeout-SHA256SUMS`. Original repeat console after authenticated deployment, original source verdict, markers, exact deployment hashes, native regressions, source blob identities and collector preserved. Earlier shutdown capture incomplete remains historical, now superseded by independently complete repeats; do not rewrite prior receipts. No new CI, no source merge or release. Continue SEC-06F-VM-R1 on existing branch; repair confirmed browser heartbeat and source contract, qualify legacy lifecycle and remaining domain matrix before closing; no new task ID.
 
 ### CORE-POLISH — pre-next-build practical-capability integration gate (owner directive, November 16, 2026)
 
