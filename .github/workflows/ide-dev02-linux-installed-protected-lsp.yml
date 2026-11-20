@@ -35,7 +35,8 @@ jobs:
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "${{ github.sha }}"
           test "$(git rev-parse HEAD:ide/app/package-lock.json)" = "dfe4412bfacfc22ad1149f5213f4a26aa49b4067"
-          test "$(git rev-parse HEAD:ide/app/src-tauri/Cargo.lock)" = "87d0045a4be1c78651f080300aba71c14dbe1f30"
+          test "$(git rev-parse HEAD:ide/app/src-tauri/Cargo.lock)" = "ec7461e0a64a8fa121cffda7ecb74333c6f6686c"
+          python3 ide/packaging/verify_p06_candidate_lock.py --repo-root . --platform ubuntu-24.04 --ide-merge02-successor
           test -f /usr/bin/bwrap
           test ! -L /usr/bin/bwrap
           test "$(stat -c %u /usr/bin/bwrap)" = 0
@@ -85,7 +86,7 @@ jobs:
           cargo test --manifest-path ../host/Cargo.toml --all-targets --locked
           cargo test --manifest-path src-tauri/Cargo.toml --features native-lsp --lib --locked
           cargo fetch --manifest-path src-tauri/Cargo.toml --locked
-          python ../packaging/verify_p06_candidate_lock.py --repo-root ../.. --platform ubuntu-24.04
+          python ../packaging/verify_p06_candidate_lock.py --repo-root ../.. --platform ubuntu-24.04 --ide-merge02-successor
           python ../packaging/upstream_notice_receipt.py --repo-root ../.. \
             --source-sha "${{ github.sha }}" \
             --output src-tauri/upstream-notice-receipt.json

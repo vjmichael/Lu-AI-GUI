@@ -93,3 +93,13 @@ test('ordinary development CI keeps release manifest unapproved and only proves 
   for(const forbidden of ['continue-on-error: true','cargo test --exclude',
     'releaseApproved=true','skip-protected']) assert.ok(!sourceWorkflow.includes(forbidden),forbidden);
 });
+
+// Keep the existing protected Linux manual lane aligned with the independently
+// reviewed local dependency successor, without granting release authorization.
+test('Linux protected installed lane verifies the reviewed integration lock successor', () => {
+  const reviewed = JSON.parse(text('../../packaging/ide-merge02-reviewed-lock-successor.json'));
+  assert.ok(linuxWorkflow.includes(`test "$(git rev-parse HEAD:ide/app/src-tauri/Cargo.lock)" = "${reviewed.newCargoBlob}"`));
+  assert.equal(linuxWorkflow.split('--platform ubuntu-24.04 --ide-merge02-successor').length - 1, 2);
+  assert.ok(linuxWorkflow.includes('--bundle-root "$LU_IDE_REVIEWED_LSP_BUNDLE_ROOT" --release'));
+  assert.equal(reviewed.releaseApproved, false);
+});
