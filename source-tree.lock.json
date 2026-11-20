@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "d1220b1e3dfcd2053fc230ef7138c4abe11626c6",
+  "sourceCommitBeforeLock": "d81e8e06f209565e36b42337ae70f181410ee490",
   "trackedFileCount": 1978,
   "files": [
     {
@@ -4501,7 +4501,7 @@
     },
     {
       "path": "ide/supervisor/examples/ide05_native_uv_acceptance.rs",
-      "blob": "d4b442ca4ce9da09f32b605892192f68e3406c7f"
+      "blob": "ffbc92185a989c20edd8566caa8a4460bcb5ffd6"
     },
     {
       "path": "ide/supervisor/examples/ide08_native_vcpkg_acceptance.rs",
