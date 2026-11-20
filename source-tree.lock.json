@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "e9f1177f13c97320af9f958c546a6f10846fdfab",
+  "sourceCommitBeforeLock": "b0a8cdde35bd028ac35c2e90b078bb23dc3bb163",
   "trackedFileCount": 1236,
   "files": [
     {
@@ -1761,7 +1761,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/lib.rs",
-      "blob": "8810cb415eaf1dd80639f4ff854cc463d67c0af8"
+      "blob": "be29174c7545ce853b0d73a399b6326da1c5f574"
     },
     {
       "path": "lu-desktop/src-tauri/src/linked_attachment_file.rs",
@@ -2221,7 +2221,7 @@
     },
     {
       "path": "lu-desktop/tests/cp12br3-review.test.mjs",
-      "blob": "f679156f623e003658d174ed6e39e671f26da84a"
+      "blob": "8806f83bf8a0322b0974e8b81b31ece39f8411e4"
     },
     {
       "path": "lu-desktop/tests/dx-exchange-windows-check/Cargo.lock",
