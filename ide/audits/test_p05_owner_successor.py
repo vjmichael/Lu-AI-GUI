@@ -9,6 +9,7 @@ from verify_p05_owner_successor import (
     compare_38_with_separate_scoped_source_dispositions,
     verify_source_only_patch, project_reviewed_wo6_current_source,
     WO6_PATH, WO6_PRIOR_OWNER_BLOB, WO6_CURRENT_SOURCE_BLOB,
+    WO6_REVIEWED_TRANSFER_BLOB, WO6_ROOT_CHECK_PRIOR, WO6_ROOT_CHECK_CURRENT, original_blob_sha,
     CLANGD_PATH, CLANGD_PRIOR_BLOB, CLANGD_CURRENT_BLOB, project_checked_out_clangd_source,
     E2_SMOKE_PATH, E2_SMOKE_PRIOR_BLOB, E2_SMOKE_CURRENT_BLOB, project_checked_out_e2_smoke_source,
     P05_04J_DELTAS, project_reviewed_04j_workflows, project_checked_out_04j_source,
@@ -157,7 +158,16 @@ class ReviewedWo6CurrentSourceTests(unittest.TestCase):
         projected = project_reviewed_wo6_current_source(observed, prior, current)
         self.assertEqual(projected[WO6_PATH], WO6_PRIOR_OWNER_BLOB)
         self.assertEqual(observed[WO6_PATH], WO6_CURRENT_SOURCE_BLOB)
-        for wrong in (current + b"\n", current.replace(b"actions: read", b"actions: write")):
+        # The prior transfer-only version remains immutable but is no longer
+        # the admitted current workflow. Removing the ownership check or adding
+        # any unrelated tool/permission must fail closed.
+        self.assertEqual(current.count(WO6_ROOT_CHECK_CURRENT), 1)
+        old = current.replace(WO6_ROOT_CHECK_CURRENT, WO6_ROOT_CHECK_PRIOR, 1)
+        self.assertEqual(original_blob_sha(old), WO6_REVIEWED_TRANSFER_BLOB)
+        self.assertEqual(old, get_blob(WO6_REVIEWED_TRANSFER_BLOB))
+        for wrong in (current + b"\n", current.replace(b"actions: read", b"actions: write"),
+                      old, current.replace(b"/usr/bin/rustdoc; do", b"/usr/bin/rustdoc /usr/bin/python3; do"),
+                      current.replace(b'test "$(stat -c %u "$file")" = 0', b'true')):
             with self.assertRaisesRegex(Denied, "p05_wo6_current_source_blob_not_exact"):
                 project_reviewed_wo6_current_source(observed, prior, wrong)
         with self.assertRaisesRegex(Denied, "p05_wo6_current_source_blob_not_exact"):

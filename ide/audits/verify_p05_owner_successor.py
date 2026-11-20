@@ -196,7 +196,12 @@ def original_blob_sha(data: bytes) -> str:
 # transfer and Linux breakpoint test additions differ from that successor.
 WO6_PATH = ".github/workflows/ide-wo6-native-os-acceptance.yml"
 WO6_PRIOR_OWNER_BLOB = "ac7992aac3a9e17bda4d44d450bcd199d5a5d874"
-WO6_CURRENT_SOURCE_BLOB = "0c617c002bc86ccf702319d4515ebbb86bfe9262"
+WO6_REVIEWED_TRANSFER_BLOB = "0c617c002bc86ccf702319d4515ebbb86bfe9262"
+WO6_CURRENT_SOURCE_BLOB = "7a5cf9f9fdf2c206639c442ac2cdd5a35a0f6067"
+# The subsequent Linux toolchain repair adds rustdoc to the same existing
+# root-owned regular-file checks. No trigger, permission or test is removed.
+WO6_ROOT_CHECK_PRIOR = b"          for file in /usr/bin/bwrap /usr/bin/cargo /usr/bin/rustc; do\n"
+WO6_ROOT_CHECK_CURRENT = b"          for file in /usr/bin/bwrap /usr/bin/cargo /usr/bin/rustc /usr/bin/rustdoc; do\n"
 WO6_SOURCE_ONLY_DELTAS = (
     (b"      - 'ide/llvm18_owner/**'\n      - '.github/workflows/ide-dev04-5d5-owner-event-native.yml'\n", b""),
     (b"    # Reuse the exact-head pinned LLVM build rather than rebuilding it or\n    # pretending the runner's unmodified LLVM is AppContainer-compatible.\n    # Only this consumer job may read the source workflow's artifacts.\n    permissions:\n      contents: read\n      actions: read\n    timeout-minutes: 180\n", b"    timeout-minutes: 60\n"),
@@ -215,7 +220,11 @@ def project_reviewed_wo6_current_source(blobs, prior, current):
             or original_blob_sha(prior) != WO6_PRIOR_OWNER_BLOB
             or original_blob_sha(current) != WO6_CURRENT_SOURCE_BLOB):
         raise Denied("p05_wo6_current_source_blob_not_exact")
-    normalized = current
+    if current.count(WO6_ROOT_CHECK_CURRENT) != 1:
+        raise Denied("p05_wo6_rustdoc_root_check_delta_not_exact")
+    normalized = current.replace(WO6_ROOT_CHECK_CURRENT, WO6_ROOT_CHECK_PRIOR, 1)
+    if original_blob_sha(normalized) != WO6_REVIEWED_TRANSFER_BLOB:
+        raise Denied("p05_wo6_reviewed_transfer_blob_not_exact")
     for added, before in WO6_SOURCE_ONLY_DELTAS:
         if normalized.count(added) != 1:
             raise Denied("p05_wo6_current_source_delta_not_exact")

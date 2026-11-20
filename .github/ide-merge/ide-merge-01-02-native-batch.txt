@@ -11,3 +11,7 @@ IDE-LINUX-09-R5-R1 — single consolidated native acceptance admission.
 Published candidate: 2f3866df6911a075dd0cf89d3862934a01337fac
 Run existing exact-head native Git/desktop and DEV-01 installed graphical/recovery jobs.
 No release, main merge, protected execution approval, or technical LSP acceptance implied.
+
+IDE-MERGE-05B-R4-R2 / IDE-LINUX-09-R5-R2: reconcile exact WO6 rustdoc ownership source pin.
+Prior batch 44671104036: four success, two blocked by the same source provenance check.
+Repeat existing six-job matrix at the new locked head; no new scope or release authority.
