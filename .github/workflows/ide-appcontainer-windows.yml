@@ -1,0 +1,39 @@
+name: IDE Windows AppContainer Job Object admission
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'ide/sandbox/**'
+      - '.github/workflows/ide-appcontainer-windows.yml'
+      - 'ide/supervisor/**'
+  push:
+    paths:
+      - 'ide/sandbox/**'
+      - '.github/workflows/ide-appcontainer-windows.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  appcontainer:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Compile Windows AppContainer admission test
+        run: cargo build --manifest-path ide/sandbox/Cargo.toml --bin windows_appcontainer_probe --release
+      - name: Run zero-capability AppContainer Job Object test
+        run: cargo run --manifest-path ide/sandbox/Cargo.toml --bin windows_appcontainer_probe --release
+      - name: Check Rust formatting for all native OS probes
+        if: always()
+        run: cargo fmt --manifest-path ide/sandbox/Cargo.toml -- --check
+      - name: Verify no production IDE process launcher is exported
+        shell: pwsh
+        run: |
+          $commands = Get-Content ide/app/src-tauri/src/lib.rs -Raw
+          if ($commands -match 'ide_run_job|ide_launch_worker|ide_execute_job') {
+            throw 'An unverified GUI worker launch path was introduced'
+          }
+          Write-Host 'Native AppContainer probe is isolated from installed IDE'

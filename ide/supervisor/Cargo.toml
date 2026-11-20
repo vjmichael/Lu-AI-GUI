@@ -1,0 +1,46 @@
+[package]
+name = "lu-ide-execution-supervisor"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.88"
+publish = false
+license = "Apache-2.0"
+description = "Fail-closed durable execution control plane and feature-gated Linux native worker for Lu IDE"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+rand = "0.8"
+sha2 = "0.10"
+lu-ide-workspace = { path = "../host", optional = true }
+
+[features]
+default = []
+# E2 pipe/protocol gateway only; actual OS LSP launch remains gated.
+lsp-transport = ["dep:lu-ide-workspace"]
+# DAP reads only OS-attested stdio owned by a protected native supervisor.
+# This does not enable arbitrary adapter launch or debugger-run terminal.
+dap-transport = ["lsp-transport"]
+# Both OS workers are opt-in and not linked into the installed IDE.
+# Neither feature registers a Tauri command or an unrestricted execution API.
+linux-worker = []
+windows-worker = []
+# Explicit production opt-in; never use same-user D7C child as release authority.
+protected-recovery-service = ["windows-worker"]
+# Explicit compile-time opt-in for disposable native CI ONLY. This is not a
+# production worker feature and must not be inherited by Tauri/NSIS builds.
+ci-native-null-lease = ["windows-worker"]
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[target.'cfg(windows)'.dependencies]
+# Version-pinned capability filesystem: Windows handle-rooted child opens.
+cap-std = "=4.0.3"
+cap-fs-ext = "=4.0.3"
+windows-sys = { version = "0.61.2", features = [
+  "Win32_Foundation", "Win32_Security", "Win32_Security_Authorization",
+  "Win32_Security_Isolation", "Win32_Storage_FileSystem",
+  "Win32_System_Com", "Win32_System_JobObjects", "Win32_System_Threading",
+  "Win32_System_Pipes", "Win32_System_Services"
+] }

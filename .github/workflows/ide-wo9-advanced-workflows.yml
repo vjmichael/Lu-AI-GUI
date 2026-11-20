@@ -1,0 +1,102 @@
+name: IDE WO9 advanced workflows native Git and manifest review
+on:
+  pull_request:
+    paths:
+      - 'ide/host/**'
+      - 'ide/app/web/**'
+      - 'ide/app/src-tauri/src/lib.rs'
+      - 'ide/packaging/verify_wo9_release.py'
+      - 'ide/packaging/test_verify_wo9_release.py'
+      - 'ide/packaging/wo9-release-evidence.json'
+      - 'ide/docs/IDE_WORK_ORDER_09_ADVANCED_WORKFLOWS_20261107.md'
+      - '.github/workflows/ide-wo9-advanced-workflows.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  native-workflow-revision-guard:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2022]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Verify exact source under test
+        shell: bash
+        run: |
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+      - name: Native Rust Git/artifact source and native export tests
+        run: cargo test --manifest-path ide/host/Cargo.toml advanced_workflows -- --nocapture
+      - name: Reviewed one-file native Git mutation and conditional commit negative tests
+        run: cargo test --manifest-path ide/host/Cargo.toml reviewed_git -- --nocapture
+      - name: Durable multi-project dependency graph and crash recovery tests
+        run: cargo test --manifest-path ide/host/Cargo.toml workflow_orchestrator -- --nocapture
+      - name: Source stage is NOT installed package signing/release
+        shell: bash
+        run: |
+          echo 'WO9_NATIVE_LIBGIT2_AND_MANIFEST_TESTS_ONLY'
+          echo 'WO9_OS_INSTALLED_AND_PROTECTED_EXECUTION=NOT_ACCEPTED'
+  protected-workflow-native-feature-compile:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2022]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 65
+    env:
+      CARGO_INCREMENTAL: 0
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+      - name: Install Linux native Tauri WebKit dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev librsvg2-dev patchelf libssl-dev libgtk-3-dev
+      - name: Compile WO9-E through actual protected WO6 feature on native OS
+        run: cargo check --manifest-path ide/app/src-tauri/Cargo.toml --features native-build
+      - name: Evidence boundary
+        shell: bash
+        run: |
+          echo 'WO9_NATIVE_PROTECTED_INTEGRATION_COMPILED=PASS'
+          echo 'WO9_SIGNED_INSTALLED_CANCEL_OR_RECOVERY=NOT_VERIFIED'
+  desktop-workflow-ui:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify actual React Packages page and tests
+        working-directory: ide/app
+        run: |
+          npm install --ignore-scripts --no-audit --no-fund
+          npm run check
+      - name: Default-deny WO9 native release evidence and hostile signed claims
+        run: python3 -m unittest discover -s ide/packaging -p 'test_verify_wo9_release.py' -v
+      - name: Guard against executable workflow promotions
+        run: |
+          grep -q 'ready_for_release: false' ide/host/src/advanced_workflows.rs
+          grep -q 'package_created: false' ide/host/src/advanced_workflows.rs
+          grep -q 'source_fingerprint' ide/host/src/advanced_workflows.rs

@@ -1,0 +1,106 @@
+name: IDE WO8 signed installed protected cancellation and crash recovery (manual)
+on:
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: Exact approved WO8 source head, 40 hexadecimal chars
+        type: string
+        required: true
+      candidate_run_id:
+        description: Workflow run with independently reviewed signed WO7 candidate
+        type: string
+        required: true
+permissions:
+  contents: read
+  actions: read
+jobs:
+  native-recovery-witness:
+    runs-on: windows-2022
+    environment: lu-ide-native-e2e
+    timeout-minutes: 110
+    steps:
+      - name: Validate candidate and exact head selectors
+        shell: pwsh
+        env:
+          SOURCE: ${{ inputs.source_sha }}
+          RUN: ${{ inputs.candidate_run_id }}
+        run: |
+          if ($env:SOURCE -notmatch '^[0-9a-fA-F]{40}$' -or $env:RUN -notmatch '^[0-9]{1,20}$') {
+            throw 'DENIED: exact source SHA and numeric signed candidate run required'
+          }
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/download-artifact@v4
+        with:
+          name: lu-ide-wo7-candidate
+          path: candidate
+          run-id: ${{ inputs.candidate_run_id }}
+          github-token: ${{ github.token }}
+      - name: Native Authenticode and unmodified exact source preflight
+        shell: pwsh
+        env:
+          SOURCE: ${{ inputs.source_sha }}
+        run: |
+          $ErrorActionPreference='Stop'
+          if ((git rev-parse HEAD).Trim() -ine $env:SOURCE) { throw 'DENIED: source SHA mismatch' }
+          python ide/packaging/verify_wo7_candidate.py --manifest candidate/wo7-release.manifest.json --artifact-root candidate --source-sha $env:SOURCE
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: signed candidate invalid' }
+      - name: Real installed native cancellation/desktop crash/SCM crash/source-swap witness
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          Set-StrictMode -Version Latest
+          $m=Get-Content -LiteralPath candidate/wo7-release.manifest.json -Raw | ConvertFrom-Json
+          $candidate=(Resolve-Path candidate).Path
+          $installer=Join-Path $candidate $m.installer.path
+          $root=Join-Path $env:ProgramFiles 'Lu IDE'
+          $exe=Join-Path $root 'lu-ide-desktop.exe'
+          if (Test-Path -LiteralPath $root) { throw 'DENIED: existing install is not disposable' }
+          if (Get-Service LuIdeRecoveryBroker -ErrorAction SilentlyContinue) { throw 'DENIED: existing protected SCM service' }
+          $installed=$false
+          $removed=$false
+          try {
+            $installerProcess=Start-Process -FilePath $installer -ArgumentList '/S' -PassThru -Wait
+            if ($installerProcess.ExitCode -ne 0) { throw 'DENIED: signed installer failed' }
+            $installed=$true
+            if (!(Test-Path -LiteralPath $exe -PathType Leaf) -or
+                (Get-FileHash -Algorithm SHA256 -LiteralPath $exe).Hash -ine $m.desktop.sha256) {
+              throw 'DENIED: installed signed desktop is not pinned'
+            }
+            $src=Join-Path $env:RUNNER_TEMP ('wo8-recovery-'+$env:GITHUB_RUN_ID)
+            New-Item -ItemType Directory -Path (Join-Path $src 'src'),(Join-Path $src 'tests') -Force | Out-Null
+            [IO.File]::WriteAllText((Join-Path $src 'Cargo.toml'),"[package]`nname = `"wo8_recovery_fixture`"`nversion = `"0.1.0`"`nedition = `"2021`"`n")
+            [IO.File]::WriteAllText((Join-Path $src 'src/main.rs'),"fn main() { println!(`"wo8`"); }`n")
+            [IO.File]::WriteAllText((Join-Path $src 'main.rs'),"fn main() { println!(`"wo8`"); }`n")
+            [IO.File]::WriteAllText((Join-Path $src 'tests/slow.rs'),"#[test]`nfn slow_native_test() { std::thread::sleep(std::time::Duration::from_secs(90)); }`n")
+            & cargo generate-lockfile --manifest-path (Join-Path $src 'Cargo.toml') --offline
+            if ($LASTEXITCODE -ne 0) { throw 'DENIED: offline Cargo fixture lockfile not produced' }
+            & git -C $src init | Out-Null
+            & git -C $src add .
+            & git -C $src -c user.name='WO8 native disposable fixture' -c user.email='wo8@localhost.invalid' commit -m 'fixed slow native recovery fixture' | Out-Null
+            if ($LASTEXITCODE -ne 0) { throw 'DENIED: clean fixed fixture Git commit failed' }
+            foreach ($scenario in @('ProtectedCancellation','ProtectedHostCrash','ProtectedServiceCrash','ProtectedDebuggerCancellation','ProtectedTamperDenial')) {
+              Write-Host "WO8_REAL_NATIVE_RECOVERY_SCENARIO=$scenario"
+              & ide/app/fixtures/Test-Wo8NativeDesktopUI.ps1 -InstalledExecutable $exe -ExpectedSha256 $m.desktop.sha256 -FixtureRoot $src -Scenario $scenario
+              if (!$?) { throw "DENIED: exact native recovery scenario failed: $scenario" }
+            }
+            $uninstaller=@(Get-ChildItem -LiteralPath $root -File -Filter '*uninstall*.exe')
+            if ($uninstaller.Count -ne 1) { throw 'DENIED: exactly one verified NSIS uninstaller required' }
+            $uninstall=Start-Process -FilePath $uninstaller[0].FullName -ArgumentList '/S' -PassThru -Wait
+            if ($uninstall.ExitCode -ne 0 -or (Get-Service LuIdeRecoveryBroker -ErrorAction SilentlyContinue) -or
+                (Test-Path -LiteralPath $exe -PathType Leaf)) {
+              throw 'DENIED: protected service/uninstall cleanup unverified'
+            }
+            $removed=$true
+            Write-Host 'WO8_NATIVE_PROTECTED_CARGO_AND_DAP_CANCEL_HOST_CRASH_SCM_CRASH_SOURCE_SWAP=PASS'
+            Write-Host 'WO8_RELEASE_APPROVED=FALSE'
+          } finally {
+            if ($installed -and !$removed) {
+              Write-Warning 'Incomplete signed native protected test: no acceptance claim. Quarantine runner.'
+            }
+          }

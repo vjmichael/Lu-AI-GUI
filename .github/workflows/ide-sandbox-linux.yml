@@ -1,0 +1,43 @@
+name: IDE Linux sandbox admission
+
+on:
+  push:
+    branches: [ide/workspace-development]
+    paths:
+      - "ide/sandbox/**"
+      - ".github/workflows/ide-sandbox-linux.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ide-sandbox-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux-isolation-probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Record actual kernel and distribution
+        run: |
+          cat /etc/os-release
+          uname -a
+      - name: Rust 1.88 with rustfmt
+        run: |
+          rustup toolchain install 1.88.0 --profile minimal
+          rustup component add rustfmt --toolchain 1.88.0
+          rustup default 1.88.0
+      - name: Compile static sandbox-policy tests
+        run: cargo test --manifest-path ide/sandbox/Cargo.toml --all-targets
+      - name: Check Rust formatting
+        run: cargo fmt --manifest-path ide/sandbox/Cargo.toml -- --check
+      - name: Install distro isolation tools for test runner only
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y bubblewrap python3
+          bwrap --version
+      - name: Run real kernel namespace and adversarial isolation probes
+        run: cargo run --manifest-path ide/sandbox/Cargo.toml --bin probe

@@ -1,0 +1,106 @@
+name: IDE D7B pinned Windows toolchain and hostile OS tests
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'ide/supervisor/**'
+      - 'ide/sandbox/**'
+      - '.github/workflows/ide-d7b-native-acceptance.yml'
+  push:
+    branches: ['ide/wave-d7b-windows-acceptance-20261106']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: d7b-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  hostile-native:
+    runs-on: windows-2025
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+          components: rustfmt
+      - name: Compile native Windows worker
+        run: cargo check --manifest-path ide/supervisor/Cargo.toml --features windows-worker --all-targets
+      - name: Hostile filesystem and restart tests
+        run: cargo test --manifest-path ide/supervisor/Cargo.toml --features windows-worker -- --nocapture
+      - name: Build native Job descendant fixture
+        run: cargo build --manifest-path ide/sandbox/Cargo.toml --bin windows_probe --release
+      - name: Independently witness forced owner-crash and descendant exit
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          & ./ide/supervisor/fixtures/Test-IndependentJobCrash.ps1 -ProbeExe 'ide/sandbox/target/release/windows_probe.exe' -ReceiptPath (Join-Path $env:RUNNER_TEMP 'd7b-independent-crash-witness.json')
+          $data=Get-Content (Join-Path $env:RUNNER_TEMP 'd7b-independent-crash-witness.json') -Raw|ConvertFrom-Json
+          if ($data.observation -ne 'both_descendants_kernel_signaled' -or !$data.processHandlesOpenedBeforeCrash -or $data.children.Count -ne 2) { throw 'Native crash witness failed' }
+      - name: Require Rust format
+        if: always()
+        run: cargo fmt --manifest-path ide/supervisor/Cargo.toml -- --check
+      - name: Verify desktop execution stays disabled
+        shell: pwsh
+        run: |
+          $src=Get-Content ide/app/src-tauri/src/lib.rs -Raw
+          if ($src -match 'execute_windows_worker|ide_run_job|ide_launch_worker|ide_execute_job') { throw 'Unaccepted worker was exposed' }
+      - name: Upload independent OS witness only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: d7b-os-crash-witness
+          path: ${{ runner.temp }}/d7b-independent-crash-witness.json
+          if-no-files-found: ignore
+
+  pinned-offline-cargo:
+    env:
+      LU_IDE_D7_CI_ALLOW_EXACT_NUL: '1'
+    runs-on: windows-2022
+    timeout-minutes: 65
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+          components: rustfmt
+      - name: Construct a version-pinned offline Rust MSVC and SDK bundle
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          & ./ide/supervisor/fixtures/New-PinnedWindowsToolchain.ps1 -OutputRoot (Join-Path $env:RUNNER_TEMP 'lu-d7b-offline') -LockPath (Join-Path $env:RUNNER_TEMP 'lu-d7b-toolchain.lock.json') -RustVersion '1.99.1' -SdkVersion '10.0.26100.0' -VsVersionPrefix '17.14.' -MsvcVersionPrefix '14.44.'
+      - name: Check lock status and OS SDK identity
+        shell: pwsh
+        run: |
+          $lock=Get-Content $env:LU_IDE_D7_BUNDLE_LOCK -Raw|ConvertFrom-Json
+          if ($lock.windowsSdk -ne '10.0.26100.0' -or $lock.target -ne 'x86_64-pc-windows-msvc' -or $lock.reviewedPinMatched -or $lock.bundleSha256.Length -ne 64) { throw 'Untrusted or unsupported toolchain lock state' }
+      - name: Provision exact native broker binary for real offline Cargo admission
+        shell: pwsh
+        run: |
+          cargo build --manifest-path ide/supervisor/Cargo.toml --features windows-worker --bin windows_recovery_broker
+          if ($LASTEXITCODE -ne 0) { throw 'Independent recovery broker build failed' }
+          $broker=Join-Path $PWD 'ide/supervisor/target/debug/windows_recovery_broker.exe'
+          if (!(Test-Path -LiteralPath $broker)) { throw 'Pinned native broker absent' }
+          Add-Content -Path $env:GITHUB_ENV -Value "LU_IDE_D7_BROKER_EXE=$broker"
+      - name: Attempt genuine offline Cargo check within AppContainer supervisor
+        shell: pwsh
+        env:
+          LU_IDE_NATIVE_ACCEPTANCE_TRACE: '1'
+        run: |
+          cargo run --manifest-path ide/supervisor/Cargo.toml --example d7_windows_acceptance --features windows-worker,ci-native-null-lease
+          if ($LASTEXITCODE -ne 0) { throw 'Native AppContainer Cargo fixture denied or failed' }
+      - name: Inject native cancellation and verify ordered durable receipts
+        shell: pwsh
+        run: |
+          cargo run --manifest-path ide/supervisor/Cargo.toml --example d7_windows_acceptance --features windows-worker,ci-native-null-lease -- --cancel-native-worker
+          if ($LASTEXITCODE -ne 0) { throw 'Native AppContainer cancellation acceptance failed' }
+      - name: Save observed toolchain file lock outside worker
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: d7b-observed-toolchain-lock
+          path: ${{ runner.temp }}/lu-d7b-toolchain.lock.json
+          if-no-files-found: ignore

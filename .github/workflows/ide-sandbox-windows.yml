@@ -1,0 +1,39 @@
+name: IDE Windows worker-containment probes
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'ide/sandbox/**'
+      - 'ide/docs/IDE_WAVE_D_EXECUTION_BOUNDARY.md'
+      - '.github/workflows/ide-sandbox-windows.yml'
+  push:
+    paths:
+      - 'ide/sandbox/**'
+      - '.github/workflows/ide-sandbox-windows.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  windows-job-containment:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build isolated Windows Job Object probe
+        run: cargo build --manifest-path ide/sandbox/Cargo.toml --bin windows_probe --release
+      - name: Run fixed native containment probes
+        run: cargo run --manifest-path ide/sandbox/Cargo.toml --bin windows_probe --release
+      - name: Check probe formatting
+        if: always()
+        run: cargo fmt --manifest-path ide/sandbox/Cargo.toml -- --check
+      - name: Assert no IDE/Tauri worker integration
+        shell: pwsh
+        run: |
+          $native = Get-Content ide/app/src-tauri/src/lib.rs -Raw
+          if ($native -match 'run_worker|spawn_worker|execute_job') {
+            throw "Unexpected worker execution route in standalone desktop"
+          }
+          Write-Host "Probe-only binary; desktop worker not enabled"

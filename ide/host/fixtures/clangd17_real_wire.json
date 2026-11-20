@@ -1,0 +1,89 @@
+{
+  "schema": "lu.ide.e2.clangd-real-wire-fixture.v1",
+  "provenance": "Actual local clangd 17.0.0 JSON-RPC stdio smoke, 2026-11-06. Paths normalized. Independent test fixture, NOT a protected Wave D native worker or installed Lu IDE acceptance.",
+  "uri": "file:///src/main.c",
+  "initialText": "int addition(int a, int b) { return a + b; }\nint main(void) { return addition(1,2); }\n",
+  "changedText": "int addition(int a, int b) { return a + b; }\nint main(void) { return addi; }\n",
+  "messages": {
+    "diagnostics": {
+      "jsonrpc": "2.0",
+      "method": "textDocument/publishDiagnostics",
+      "params": {
+        "diagnostics": [],
+        "uri": "file:///src/main.c",
+        "version": 1
+      }
+    },
+    "hover": {
+      "id": 2,
+      "jsonrpc": "2.0",
+      "result": {
+        "contents": {
+          "kind": "plaintext",
+          "value": "function addition\n\n→ int\nParameters:\n- int a\n- int b\n\nint addition(int a, int b)"
+        },
+        "range": {
+          "start": {
+            "line": 1,
+            "character": 24
+          },
+          "end": {
+            "line": 1,
+            "character": 32
+          }
+        }
+      }
+    },
+    "definition": {
+      "id": 3,
+      "jsonrpc": "2.0",
+      "result": [
+        {
+          "range": {
+            "start": {
+              "line": 0,
+              "character": 4
+            },
+            "end": {
+              "line": 0,
+              "character": 12
+            }
+          },
+          "uri": "file:///src/main.c"
+        }
+      ]
+    },
+    "completion": {
+      "id": 4,
+      "jsonrpc": "2.0",
+      "result": {
+        "isIncomplete": false,
+        "items": [
+          {
+            "detail": "int",
+            "filterText": "addition",
+            "insertText": "addition",
+            "insertTextFormat": 1,
+            "kind": 3,
+            "label": " addition(int a, int b)",
+            "score": 2.73063063621521,
+            "sortText": "3fd13d59addition",
+            "textEdit": {
+              "newText": "addition",
+              "range": {
+                "start": {
+                  "line": 1,
+                  "character": 24
+                },
+                "end": {
+                  "line": 1,
+                  "character": 28
+                }
+              }
+            }
+          }
+        ]
+      }
+    }
+  }
+}
