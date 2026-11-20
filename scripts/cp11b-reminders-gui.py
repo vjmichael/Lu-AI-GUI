@@ -80,16 +80,40 @@ def navigate(pid):
     wait(lambda:named(pid,'Reminder text',actionable=True),20,'Reminders form')
 
 
-def card(pid,text):
-    node=wait(lambda:named(pid,'Reminder: '+text),25,'reminder card '+text)
-    return node
+def find_even_offscreen(pid,name,root=None):
+    found=[]
+    for node in nodes(root if root is not None else gui.Atspi.get_desktop(0)):
+        try:
+            if node.get_name()==name and gui.owned(node.get_process_id(),pid):found.append(node)
+        except Exception:pass
+    return found[0] if len(found)==1 else None
 
 
 def card_action(pid,text,label):
-    action(pid,label,card(pid,text),timeout=25)
+    name='Reminder: '+text
+    root=wait(lambda:find_even_offscreen(pid,name),20,'reminder card '+text)
+    button=wait(lambda:find_even_offscreen(pid,label,root),20,label)
+    try:
+        component=button.get_component_iface()
+        if component:component.scroll_to(gui.Atspi.ScrollType.ANYWHERE)
+    except Exception:pass
+    # WebKit may not expose an offscreen element as SHOWING until the human
+    # scroll surface actually moves. Scroll the visible reminders panel.
+    for _ in range(6):
+        root=find_even_offscreen(pid,name)
+        if root is not None and named(pid,label,root,True):break
+        subprocess.run(['xdotool','mousemove','900','750','click','5','click','5','click','5'],check=True,timeout=5)
+        time.sleep(.15)
+    else:
+        # Go to the top and retry in case the next card is above the viewport.
+        subprocess.run(['xdotool','mousemove','900','650','click','4','click','4','click','4','click','4','click','4','click','4','click','4','click','4'],check=True,timeout=5)
+        time.sleep(.25)
+    action(pid,label,wait(lambda:find_even_offscreen(pid,name),10,name),timeout=15)
 
 
 def new_form(pid,path,text,delay):
+    if not named(pid,'Reminder text',actionable=True):
+        subprocess.run(['xdotool','mousemove','900','650','click','4','click','4','click','4','click','4','click','4','click','4','click','4','click','4'],check=True,timeout=5)
     field(pid,'Reminder text',text)
     field(pid,'Reminder delay in minutes',str(delay))
     action(pid,'Review reminder…')
