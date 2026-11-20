@@ -22,8 +22,8 @@
     },
     {
       "path": "ide/app/src-tauri/build.rs",
-      "sha": "3bb3802f067a0150e01d232cef35e962948fac74",
-      "scope": "Prior formatter disposition; nonpunctuation lexical token counts unchanged; native acceptance pending; source-only, OS acceptance pending"
+      "sha": "ceaf9de911cddf87e6a93887fdbbcce68c723da0",
+      "scope": "FIN02 fixed Rustdoc identity and 64 MiB only for Cargo; root-owner and mode checks retained; runtime acceptance pending"
     },
     {
       "path": "ide/app/src-tauri/src/build_backend.rs",
@@ -102,8 +102,8 @@
     },
     {
       "path": "ide/packaging/audit_p05_reviewed_workflow_successor.py",
-      "sha": "4045a2f9605717cc482d0e0e06da53f558b3b285",
-      "scope": "04K exact prior two workflow projections; historical fingerprints and original tests retained"
+      "sha": "529ff4dbac31ab10501d70084a725422de13cf5e",
+      "scope": "R12 exact P03 additive source projection or its regression; historical pins and denial retained; OS acceptance pending"
     },
     {
       "path": "ide/packaging/b2_b4_installer_handoff.py",
@@ -139,6 +139,11 @@
       "path": "ide/packaging/p06_live_native_jobs.py",
       "sha": "2e708ac3d31902f4165c6acecd3f9cf1db82ab59",
       "scope": "R1-R3 read-only exact-attempt observation, explicit test-only two-job lane; no execution or release authority"
+    },
+    {
+      "path": "ide/packaging/prepare_fin02_runtime_pins.py",
+      "sha": "e1d5b42043d9fe387bab5027de096385f51a4d84",
+      "scope": "FIN02 matching fixed tool identity and exact Cargo size exception; regular root-owned tools only; OS acceptance pending"
     },
     {
       "path": "ide/packaging/python_semantic_native_benchmark.py",
@@ -177,8 +182,8 @@
     },
     {
       "path": "ide/packaging/test_p05_reviewed_workflow_successor.py",
-      "sha": "f0d71fa1bb5e0a7f31f30ca7d200a854187439bd",
-      "scope": "Historical workflow counting and successor rejection tests; source-only, OS acceptance pending"
+      "sha": "b34ddbbbb8179c5577e372543e8dd2500b00b73c",
+      "scope": "R12 exact P03 additive source projection or its regression; historical pins and denial retained; OS acceptance pending"
     },
     {
       "path": "ide/packaging/test_p05_semantic_reconciliation.py",
@@ -209,6 +214,11 @@
       "path": "ide/packaging/test_p06_technical_observation.py",
       "sha": "f6718d7fd6c91a1bd901296652be95896a7395df",
       "scope": "R3 manual technical observation exact attempt, SHA and negative regression"
+    },
+    {
+      "path": "ide/packaging/test_prepare_fin02_runtime_pins.py",
+      "sha": "960245e22ecf255b88e2779a9ba5768d17bc6924",
+      "scope": "Regression for Cargo-only byte bound, Rustdoc digest, symlink, mode and uid denial"
     },
     {
       "path": "ide/packaging/test_python_semantic_native_benchmark.py",
@@ -286,14 +296,44 @@
       "scope": "03B optimizes sha2 in debug; same dependency graph and one-use custody checks"
     },
     {
+      "path": "ide/supervisor/WORKER_ACCEPTANCE.md",
+      "sha": "e55be4b20345d72de3759148339d1ae7605fc106",
+      "scope": "Documentation-only parity with fixed digest-bound Rustdoc and GNU toolchain; no authorization"
+    },
+    {
+      "path": "ide/supervisor/examples/dev03_linux_runtime_acceptance.rs",
+      "sha": "1ae254bb5e1915c3db295b09cf59d81870525a81",
+      "scope": "Fixed feature-gated multilang fixture: normal, cancellation, interrupted recovery and journal replay; hosted evidence pending"
+    },
+    {
+      "path": "ide/supervisor/examples/ide05_native_uv_acceptance.rs",
+      "sha": "280620ca57b1ad5c921cb1b1af9f986f653ca610",
+      "scope": "R11 formatted fixed wheel fixture live-cancel witness; no change to runtime grant; acceptance pending"
+    },
+    {
+      "path": "ide/supervisor/examples/ide08_native_vcpkg_acceptance.rs",
+      "sha": "eca321d18d23fcfa6d412a73a18eb831da435a9c",
+      "scope": "R11 formatted fixed cache-only fixture verifies miss/cancel/recovery and immutable source; OS acceptance pending"
+    },
+    {
       "path": "ide/supervisor/examples/support/cancel_history.rs",
       "sha": "fba5177882a3ff039b042b94fbf76e882299f5e5",
       "scope": "03D WO6/D5 strict exact three-phase acceptance validator, negative wrong session/project/sequence checks; native tree evidence remains mandatory"
     },
     {
+      "path": "ide/supervisor/examples/wo6_linux_interrupted_recovery.rs",
+      "sha": "08a615bb342377786af23e6f98dfd2d48f6da9e8",
+      "scope": "Fixed disposable Cargo fixture requires actual Running, populated cgroup, host interruption, cleanup and replay denial"
+    },
+    {
       "path": "ide/supervisor/examples/wo6_linux_native_build_acceptance.rs",
       "sha": "d55910ee5106980f779e568cb214d77a1924de37",
       "scope": "03D acceptance-only strict three-phase cancellation receipt chain; real OS tree evidence still required; no runtime authority change"
+    },
+    {
+      "path": "ide/supervisor/examples/wo6_linux_rustdoc_admission.rs",
+      "sha": "0a0f42afe6a639058858de1beb38071845e1eb69",
+      "scope": "Feature-gated read-only production toolchain digest witness; no project launch"
     },
     {
       "path": "ide/supervisor/examples/wo6_native_dap_acceptance.rs",
@@ -306,14 +346,29 @@
       "scope": "CI-only diagnostic, no capability expansion"
     },
     {
+      "path": "ide/supervisor/fixtures/debug/dap_launch_contract.py",
+      "sha": "c0fee68885eee5a04ab2098332e250b0152314fd",
+      "scope": "Diagnostic-only fixed target allowlist, no caller args or terminal, bounded frame parser"
+    },
+    {
       "path": "ide/supervisor/fixtures/debug/probe_lldb_dap_launch.py",
-      "sha": "c9ee172e1fb2344a8f3b89c07c2360e0815c6697",
-      "scope": "CI-only diagnostic, no capability expansion"
+      "sha": "4bf4e62bf2b306309a76e1927f386ec53d9ddf05",
+      "scope": "Fixed launch target and bounded reject-on-invalid-frame diagnostic; no native stop attestation or execution authority"
     },
     {
       "path": "ide/supervisor/fixtures/debug/probe_windows_dap_initialize.py",
       "sha": "bfbecf11d42c830ed51fd011a9129fd595ab02a4",
       "scope": "CI-only diagnostic, no capability expansion"
+    },
+    {
+      "path": "ide/supervisor/fixtures/debug/test_dap_launch_contract.py",
+      "sha": "0713ca357d7b50217682ec4a6a30abd600ff1348",
+      "scope": "Diagnostic regressions for exact targets, fragmented/malformed frames, bounded JSON and rejection"
+    },
+    {
+      "path": "ide/supervisor/fixtures/debug/test_dap_native_source_contract.py",
+      "sha": "971035a8011369ba581c0f95832dc0ddc7af8883",
+      "scope": "Source-only fixed DAP launch, sealed workspace, custody ordering and redacted failure regression"
     },
     {
       "path": "ide/supervisor/fixtures/debug/test_probe_windows_dap_initialize.py",
@@ -346,6 +401,11 @@
       "scope": "03B debugger-only one-CPU affinity before LLDB spawn; independent delegated cgroup and pids.max retained"
     },
     {
+      "path": "ide/supervisor/src/linux_worker.rs",
+      "sha": "fab099d126704be520974f0820bc55ac204e563e",
+      "scope": "R11 formatted fixed Cargo size/hash and Rustdoc pin; bounded Node thread pools, offline vcpkg output paths; OS acceptance pending"
+    },
+    {
       "path": "ide/supervisor/src/lsp_transport.rs",
       "sha": "3690783eead1374d29fee8303ab3a165f493eac8",
       "scope": "03E D6C bounded authenticated owner continuation chain, unchanged one-use and OS/PDB gates; source-only, native Windows pending"
@@ -354,6 +414,11 @@
       "path": "ide/supervisor/src/native_kernel_pc.rs",
       "sha": "2739e6f18f56e21418bd2d9205280bf60dd283f8",
       "scope": "Bounded Linux task/tracer/register/cgroup/ELF verification and independent symbolization; source-only, OS acceptance pending"
+    },
+    {
+      "path": "ide/supervisor/src/snapshot.rs",
+      "sha": "cbb1a66869a7bcf9b1f19cb00cdde40232a1026b",
+      "scope": "Feature-and-Linux-gated vcpkg.json snapshot binding and tamper/online-recipe denial; native acceptance pending"
     },
     {
       "path": "ide/supervisor/src/windows_cap_tree.rs",

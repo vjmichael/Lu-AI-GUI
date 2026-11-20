@@ -256,7 +256,9 @@ wheels = [
             handle.request_cancel();
             false
         }))
-    } else { None };
+    } else {
+        None
+    };
     let stream = Arc::new(LiveOutput::default());
     let result = execute_linux_worker_with_output(
         &supervisor,
@@ -269,7 +271,10 @@ wheels = [
     )
     .map_err(|e| e.code())?;
     if let Some(witness) = witness {
-        if !witness.join().map_err(|_| "IDE055_LIVE_CANCEL_WITNESS_PANIC")? {
+        if !witness
+            .join()
+            .map_err(|_| "IDE055_LIVE_CANCEL_WITNESS_PANIC")?
+        {
             return Err("IDE055_LIVE_UV_START_NOT_OBSERVED".into());
         }
     }

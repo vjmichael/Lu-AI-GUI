@@ -10,9 +10,15 @@ from verify_p05_owner_successor import (
     verify_source_only_patch, project_reviewed_wo6_current_source,
     WO6_PATH, WO6_PRIOR_OWNER_BLOB, WO6_CURRENT_SOURCE_BLOB,
     WO6_REVIEWED_TRANSFER_BLOB, WO6_ROOT_CHECK_PRIOR, WO6_ROOT_CHECK_CURRENT, original_blob_sha,
+    WO6_ROOT_REVIEWED_BLOB, WO6_INTERRUPTED_BUILD_PRIOR, WO6_INTERRUPTED_BUILD_CURRENT,
+    WO6_INTERRUPTED_REVIEWED_BLOB, WO6_TIMEOUT_PRIOR, WO6_TIMEOUT_CURRENT,
+    WO6_INTERRUPTED_MODE_PRIOR, WO6_INTERRUPTED_MODE_CURRENT,
     CLANGD_PATH, CLANGD_PRIOR_BLOB, CLANGD_CURRENT_BLOB, project_checked_out_clangd_source,
     E2_SMOKE_PATH, E2_SMOKE_PRIOR_BLOB, E2_SMOKE_CURRENT_BLOB, project_checked_out_e2_smoke_source,
     P05_04J_DELTAS, project_reviewed_04j_workflows, project_checked_out_04j_source,
+    P03_R12_PATH, P03_R12_PRIOR, P03_R12_CURRENT, P03_R12_ADDED_STEP,
+    P03_R12_BUILD_CURRENT, P03_R12_BUILD_PRIOR,
+    project_reviewed_p03_source, project_checked_out_p03_source,
 )
 
 class OriginalAndOwnerSuccessor(unittest.TestCase):
@@ -162,11 +168,22 @@ class ReviewedWo6CurrentSourceTests(unittest.TestCase):
         # the admitted current workflow. Removing the ownership check or adding
         # any unrelated tool/permission must fail closed.
         self.assertEqual(current.count(WO6_ROOT_CHECK_CURRENT), 1)
-        old = current.replace(WO6_ROOT_CHECK_CURRENT, WO6_ROOT_CHECK_PRIOR, 1)
+        interrupted_reviewed = current.replace(WO6_TIMEOUT_CURRENT, WO6_TIMEOUT_PRIOR, 1)
+        self.assertEqual(original_blob_sha(interrupted_reviewed), WO6_INTERRUPTED_REVIEWED_BLOB)
+        self.assertEqual(interrupted_reviewed, get_blob(WO6_INTERRUPTED_REVIEWED_BLOB))
+        root_reviewed = interrupted_reviewed.replace(WO6_INTERRUPTED_BUILD_CURRENT, WO6_INTERRUPTED_BUILD_PRIOR, 1).replace(
+            WO6_INTERRUPTED_MODE_CURRENT, WO6_INTERRUPTED_MODE_PRIOR, 1)
+        self.assertEqual(original_blob_sha(root_reviewed), WO6_ROOT_REVIEWED_BLOB)
+        self.assertEqual(root_reviewed, get_blob(WO6_ROOT_REVIEWED_BLOB))
+        old = root_reviewed.replace(WO6_ROOT_CHECK_CURRENT, WO6_ROOT_CHECK_PRIOR, 1)
         self.assertEqual(original_blob_sha(old), WO6_REVIEWED_TRANSFER_BLOB)
         self.assertEqual(old, get_blob(WO6_REVIEWED_TRANSFER_BLOB))
         for wrong in (current + b"\n", current.replace(b"actions: read", b"actions: write"),
-                      old, current.replace(b"/usr/bin/rustdoc; do", b"/usr/bin/rustdoc /usr/bin/python3; do"),
+                      old, root_reviewed, interrupted_reviewed,
+                      current.replace(WO6_TIMEOUT_CURRENT, WO6_TIMEOUT_PRIOR),
+                      current.replace(WO6_INTERRUPTED_BUILD_CURRENT, WO6_INTERRUPTED_BUILD_PRIOR),
+                      current.replace(WO6_INTERRUPTED_MODE_CURRENT, WO6_INTERRUPTED_MODE_PRIOR),
+                      current.replace(b"/usr/bin/rustdoc; do", b"/usr/bin/rustdoc /usr/bin/python3; do"),
                       current.replace(b'test "$(stat -c %u "$file")" = 0', b'true')):
             with self.assertRaisesRegex(Denied, "p05_wo6_current_source_blob_not_exact"):
                 project_reviewed_wo6_current_source(observed, prior, wrong)
@@ -228,6 +245,34 @@ class Reviewed04JWorkflowTests(unittest.TestCase):
         missing = dict(self.observed); missing.pop(next(iter(missing)))
         with self.assertRaisesRegex(Denied, "p05_04j_current_workflow_not_exact"):
             project_reviewed_04j_workflows(missing, self.read_blob)
+
+
+class P03R12ProjectionTests(unittest.TestCase):
+    def setUp(self):
+        self.root = Path(__file__).resolve().parents[2]
+        self.blobs = {P03_R12_PATH: P03_R12_CURRENT}
+        def read(sha):
+            return subprocess.run(["git", "-C", str(self.root), "cat-file", "blob", sha],
+                                  check=True, timeout=20, capture_output=True).stdout
+        self.prior, self.current = read(P03_R12_PRIOR), read(P03_R12_CURRENT)
+
+    def test_exact_additive_source_restoration(self):
+        result = project_checked_out_p03_source(self.root, self.blobs)
+        self.assertEqual(result, {P03_R12_PATH: P03_R12_PRIOR})
+        self.assertEqual(self.blobs, {P03_R12_PATH: P03_R12_CURRENT})
+        self.assertEqual(self.current.replace(P03_R12_ADDED_STEP, b"", 1).replace(
+            P03_R12_BUILD_CURRENT, P03_R12_BUILD_PRIOR, 1), self.prior)
+
+    def test_mutated_trigger_permission_and_tests_denied(self):
+        for bad in (self.current+b"\n", self.current.replace(b"pull_request:", b"push:", 1),
+                    self.current.replace(P03_R12_ADDED_STEP, b"", 1),
+                    self.current.replace(P03_R12_BUILD_CURRENT, P03_R12_BUILD_PRIOR, 1)):
+            with self.subTest(blob=original_blob_sha(bad)), self.assertRaises(Denied):
+                project_reviewed_p03_source(self.blobs, self.prior, bad)
+        with self.assertRaises(Denied):
+            project_reviewed_p03_source({P03_R12_PATH: P03_R12_PRIOR}, self.prior, self.current)
+        with self.assertRaises(Denied):
+            project_reviewed_p03_source(self.blobs, self.prior+b"\n", self.current)
 
 
 if __name__=="__main__":

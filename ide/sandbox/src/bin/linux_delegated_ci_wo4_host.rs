@@ -51,9 +51,8 @@ fn run() -> Result<(), &'static str> {
         || !quota.stderr.is_empty()
         || !std::str::from_utf8(&quota.stdout).is_ok_and(|s| {
             s.lines().filter(|line| *line == POSITIVE).count() == 1
-                && s.lines().all(|line| {
-                    line == POSITIVE || line.starts_with("UNVERIFIED: ")
-                })
+                && s.lines()
+                    .all(|line| line == POSITIVE || line.starts_with("UNVERIFIED: "))
         })
     {
         return Err("original standalone quota readback not positively verified");

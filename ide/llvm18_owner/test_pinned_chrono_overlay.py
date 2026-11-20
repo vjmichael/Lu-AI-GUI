@@ -10,6 +10,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest import TestCase, main
 from unittest.mock import patch
+import re
 import apply_llvm18_owner_hook as overlay
 
 CPP = """#include "DebuggerThread.h"
@@ -117,6 +118,56 @@ class PinnedChronoOverlayTests(TestCase):
                 with self.assertRaisesRegex(RuntimeError,
                                             "upstream LLDB source anchor changed"):
                     overlay.apply(root)
+
+
+class ProducerConsumerContractTests(TestCase):
+    """Source-level scheduling and custody checks, not Windows native proof."""
+    def setUp(self):
+        root = Path(__file__).resolve().parents[2]
+        self.producer = (root / ".github/workflows/ide-dev04-5d5-owner-event-native.yml").read_text()
+        self.consumer = (root / ".github/workflows/ide-wo6-native-os-acceptance.yml").read_text()
+        self.transport = (root / "ide/llvm18_owner/Transfer-PinnedOwnerBundle.ps1").read_text()
+
+    @staticmethod
+    def pr_paths(text):
+        block = text.split("  pull_request:\n", 1)[1].split("  workflow_dispatch:", 1)[0]
+        return set(re.findall(r"(?m)^      - '([^']+)'$", block))
+
+    def test_all_consumer_paths_schedule_exact_head_producer(self):
+        self.assertTrue(self.pr_paths(self.consumer))
+        self.assertLessEqual(self.pr_paths(self.consumer), self.pr_paths(self.producer))
+        self.assertIn("ide/host/src/**", self.pr_paths(self.producer))
+        for text in (self.producer, self.consumer):
+            self.assertIn("ref: ${{ github.event.pull_request.head.sha || github.sha }}", text)
+            self.assertIn("  workflow_dispatch:", text)
+
+    def test_bounded_wait_has_producer_and_native_budget(self):
+        producer = int(re.search(r"(?m)^    timeout-minutes: (\d+)$", self.producer)[1])
+        consumer = int(re.search(r"(?m)^    timeout-minutes: (\d+)$", self.consumer)[1])
+        wait = int(re.search(r"AddMinutes\((\d+)\)", self.transport)[1])
+        self.assertLessEqual(producer, wait)
+        self.assertGreaterEqual(consumer - wait, 90)
+        self.assertLessEqual(consumer, 360)
+
+    def test_native_producer_order_and_no_substitute(self):
+        markers = (
+            "Fail fast on existing formatting and exact overlay contracts before LLVM",
+            "Stage exact reviewed offline Windows SDK and MSVC toolchain",
+            "Require a registered original Visual Studio 17.14 generator before LLVM",
+            "Compile real source-pinned LLVM18 DebuggerThread and produce hashed owner binary",
+            "Produce exact-head native bundle transport manifest (not acceptance)",
+            "Publish measured LLVM18 bundle for original WO6 native acceptance",
+            "Real SCM/AppContainer owner stop, PE/PDB, cancellation and journal restart",
+        )
+        order = [self.producer.index(m) for m in markers]
+        self.assertEqual(order, sorted(order))
+        self.assertIn("if-no-files-found: error", self.producer)
+        self.assertIn("Transfer-PinnedOwnerBundle.ps1 -Mode Receive", self.consumer)
+        self.assertIn("producer completed without verified candidate bundle", self.transport)
+        self.assertIn("bounded original-producer artifact wait expired", self.transport)
+        self.assertIn("$manifest.producerAttempt -cne [string]$producer.run_attempt", self.transport)
+        self.assertIn("Assert-Inventory $actual @($manifest.files)", self.transport)
+        self.assertIn("VERIFIED_NOT_KERNEL_ACCEPTANCE", self.transport)
 
 
 if __name__ == "__main__":

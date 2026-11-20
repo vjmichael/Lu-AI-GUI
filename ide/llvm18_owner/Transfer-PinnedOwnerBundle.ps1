@@ -128,7 +128,7 @@ if ($Mode -eq 'Export') {
 if ([string]::IsNullOrWhiteSpace($env:GH_TOKEN)) { throw 'DENIED: only consumer job read-only Actions token may fetch' }
 $branch=if ($env:GITHUB_EVENT_NAME -eq 'pull_request') { $env:GITHUB_HEAD_REF } else { $env:GITHUB_REF_NAME }
 $workflow='ide-dev04-5d5-owner-event-native.yml'
-$deadline=[DateTime]::UtcNow.AddMinutes(145)
+$deadline=[DateTime]::UtcNow.AddMinutes(190)
 $producer=$null
 $artifact=$null
 $round=0

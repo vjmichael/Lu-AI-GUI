@@ -28,7 +28,7 @@ jobs:
     permissions:
       contents: read
       actions: read
-    timeout-minutes: 180
+    timeout-minutes: 300
     steps:
       - uses: actions/checkout@v4
         with:

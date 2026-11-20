@@ -872,8 +872,7 @@ fn command_for(
             ]);
         }
         "js_tests" if runtime.is_some() => {
-            cmd.arg("/runtime/bin/node")
-                .args(NODE_TEST_ARGS);
+            cmd.arg("/runtime/bin/node").args(NODE_TEST_ARGS);
         }
         "cpp_cmake_build" if runtime.is_some() => {
             cmd.arg("/runtime/bin/cmake")

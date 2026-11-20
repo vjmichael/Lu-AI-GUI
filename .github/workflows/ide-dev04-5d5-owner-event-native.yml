@@ -5,6 +5,14 @@ on:
       # The Windows native gate runs cargo fmt --check over the host crate;
       # changes to its source must rerun the same original OS acceptance.
       - 'ide/host/src/**'
+      # WO6 consumes this exact-head artifact; every WO6 path must also
+      # schedule the producer (including fixed fixtures and UI-only changes).
+      - 'ide/supervisor/**'
+      - 'ide/sandbox/**'
+      - 'ide/app/src-tauri/src/build_backend.rs'
+      - 'ide/app/web/protected_job_lifecycle.js'
+      - 'ide/app/web/main.jsx'
+      - '.github/workflows/ide-wo6-native-os-acceptance.yml'
       - 'ide/llvm18_owner/**'
       - 'ide/supervisor/src/windows_event_owner.rs'
       - 'ide/supervisor/src/windows_lsp_worker.rs'

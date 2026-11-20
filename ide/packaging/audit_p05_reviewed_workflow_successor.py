@@ -21,7 +21,7 @@ from verify_p05_owner_successor import (
     verify_source_only_patch, project_checked_out_wo6_source,
     CLANGD_PATH, project_checked_out_clangd_source,
     E2_SMOKE_PATH, project_checked_out_e2_smoke_source,
-    project_checked_out_04j_source,
+    project_checked_out_04j_source, project_checked_out_p03_source,
 )
 
 HISTORICAL_INVENTORY_GIT_BLOB = "5299b1ca6981f341d2855f549e567b8c2747dc13"
@@ -191,6 +191,7 @@ def checkout(root):
     projected, prior_clangd = project_checked_out_clangd_source(root, projected)
     projected, prior_e2_smoke = project_checked_out_e2_smoke_source(root, projected)
     projected, prior_04j = project_checked_out_04j_source(root, projected)
+    projected = project_checked_out_p03_source(root, projected)
     compare_38_with_separate_scoped_source_dispositions(historical, projected, source_review)
     for path in SCOPED_SOURCE_ONLY:
         try:
@@ -206,6 +207,8 @@ def checkout(root):
     result = classify(inventory, projected)
     result["04jCurrentWorkflowDeltaVerified"] = True
     result["04jNativeAccepted"] = False
+    result["p03R12CurrentSourceVerified"] = True
+    result["p03R12NativeAccepted"] = False
     result["clangdCurrentSourceRepairVerified"] = True
     result["clangdNativeAccepted"] = False
     result["wo6CurrentSourceRepairVerified"] = True

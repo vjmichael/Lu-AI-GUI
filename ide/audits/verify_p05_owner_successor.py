@@ -197,7 +197,19 @@ def original_blob_sha(data: bytes) -> str:
 WO6_PATH = ".github/workflows/ide-wo6-native-os-acceptance.yml"
 WO6_PRIOR_OWNER_BLOB = "ac7992aac3a9e17bda4d44d450bcd199d5a5d874"
 WO6_REVIEWED_TRANSFER_BLOB = "0c617c002bc86ccf702319d4515ebbb86bfe9262"
-WO6_CURRENT_SOURCE_BLOB = "7a5cf9f9fdf2c206639c442ac2cdd5a35a0f6067"
+WO6_ROOT_REVIEWED_BLOB = "7a5cf9f9fdf2c206639c442ac2cdd5a35a0f6067"
+WO6_INTERRUPTED_REVIEWED_BLOB = "1d8a7cebc2fe6cd25a9b74f15a4327d17ce97a9d"
+WO6_CURRENT_SOURCE_BLOB = "1f054eedc21964f58afc1eeb1bc639a640e2d2ff"
+# R13 gives the same-head consumer a bounded producer wait and native test
+# budget. Only this exact job deadline changes; no authority or test changes.
+WO6_TIMEOUT_PRIOR = b"      actions: read\n    timeout-minutes: 180\n"
+WO6_TIMEOUT_CURRENT = b"      actions: read\n    timeout-minutes: 300\n"
+# Independently reviewed additional Linux interrupted-recovery obligation.
+# Normalize only these exact additive changes; retain all other predicates.
+WO6_INTERRUPTED_BUILD_PRIOR = b'          cargo build --manifest-path ide/supervisor/Cargo.toml --features linux-worker --example wo6_linux_native_build_acceptance\n'
+WO6_INTERRUPTED_BUILD_CURRENT = b'          cargo build --manifest-path ide/supervisor/Cargo.toml --features linux-worker --example wo6_linux_native_build_acceptance --example wo6_linux_interrupted_recovery\n'
+WO6_INTERRUPTED_MODE_PRIOR = b'          for mode in --check --test --build --project-debug --project-debug-cancel --cancel; do\n'
+WO6_INTERRUPTED_MODE_CURRENT = b'          for mode in --check --test --build --project-debug --project-debug-cancel --cancel --interrupted; do\n'
 # The subsequent Linux toolchain repair adds rustdoc to the same existing
 # root-owned regular-file checks. No trigger, permission or test is removed.
 WO6_ROOT_CHECK_PRIOR = b"          for file in /usr/bin/bwrap /usr/bin/cargo /usr/bin/rustc; do\n"
@@ -220,9 +232,21 @@ def project_reviewed_wo6_current_source(blobs, prior, current):
             or original_blob_sha(prior) != WO6_PRIOR_OWNER_BLOB
             or original_blob_sha(current) != WO6_CURRENT_SOURCE_BLOB):
         raise Denied("p05_wo6_current_source_blob_not_exact")
-    if current.count(WO6_ROOT_CHECK_CURRENT) != 1:
+    if current.count(WO6_TIMEOUT_CURRENT) != 1:
+        raise Denied("p05_wo6_r13_timeout_delta_not_exact")
+    normalized = current.replace(WO6_TIMEOUT_CURRENT, WO6_TIMEOUT_PRIOR, 1)
+    if original_blob_sha(normalized) != WO6_INTERRUPTED_REVIEWED_BLOB:
+        raise Denied("p05_wo6_r13_prior_blob_not_exact")
+    for added, before in ((WO6_INTERRUPTED_BUILD_CURRENT, WO6_INTERRUPTED_BUILD_PRIOR),
+                          (WO6_INTERRUPTED_MODE_CURRENT, WO6_INTERRUPTED_MODE_PRIOR)):
+        if normalized.count(added) != 1:
+            raise Denied("p05_wo6_interrupted_recovery_delta_not_exact")
+        normalized = normalized.replace(added, before, 1)
+    if original_blob_sha(normalized) != WO6_ROOT_REVIEWED_BLOB:
+        raise Denied("p05_wo6_root_reviewed_blob_not_exact")
+    if normalized.count(WO6_ROOT_CHECK_CURRENT) != 1:
         raise Denied("p05_wo6_rustdoc_root_check_delta_not_exact")
-    normalized = current.replace(WO6_ROOT_CHECK_CURRENT, WO6_ROOT_CHECK_PRIOR, 1)
+    normalized = normalized.replace(WO6_ROOT_CHECK_CURRENT, WO6_ROOT_CHECK_PRIOR, 1)
     if original_blob_sha(normalized) != WO6_REVIEWED_TRANSFER_BLOB:
         raise Denied("p05_wo6_reviewed_transfer_blob_not_exact")
     for added, before in WO6_SOURCE_ONLY_DELTAS:
@@ -350,6 +374,42 @@ def project_checked_out_04j_source(root, blobs):
     return project_reviewed_04j_workflows(blobs, read_blob)
 
 
+# R12: independently reviewed additive P03 regression obligations. Retain the
+# historical P05 pin and the exact owner-approved eight unchanged.
+P03_R12_PATH = '.github/workflows/ide-p03-native-security-checks.yml'
+P03_R12_PRIOR = 'aa567ec48ce084f5c698f77cdd07de381fa72221'
+P03_R12_CURRENT = '6a729a43f249b9b412052e4e5e7b180379af186c'
+P03_R12_ADDED_STEP = b'      - name: Restore original fixed debugger launch and OS source regressions\n        shell: bash\n        run: |\n          python ide/supervisor/fixtures/debug/test_dap_launch_contract.py\n          python ide/supervisor/fixtures/debug/test_dap_native_source_contract.py\n'
+P03_R12_BUILD_PRIOR = b'          cargo build --manifest-path ide/sandbox/Cargo.toml --bin linux_cgroup_prepare --bin linux_cgroup_native_witness --bin linux_delegated_ci_wo4_host\n'
+P03_R12_BUILD_CURRENT = b'          cargo build --manifest-path ide/sandbox/Cargo.toml --bin linux_cgroup_prepare --bin linux_cgroup_probe --bin linux_cgroup_native_witness --bin linux_delegated_ci_wo4_host\n'
+
+
+def project_reviewed_p03_source(blobs, prior, current):
+    if (blobs.get(P03_R12_PATH) != P03_R12_CURRENT
+            or original_blob_sha(prior) != P03_R12_PRIOR
+            or original_blob_sha(current) != P03_R12_CURRENT):
+        raise Denied("p05_p03_r12_exact_blob_required")
+    if (current.count(P03_R12_ADDED_STEP) != 1
+            or current.count(P03_R12_BUILD_CURRENT) != 1
+            or current.replace(P03_R12_ADDED_STEP, b"", 1).replace(
+                P03_R12_BUILD_CURRENT, P03_R12_BUILD_PRIOR, 1) != prior):
+        raise Denied("p05_p03_r12_delta_not_exact")
+    projected = dict(blobs)
+    projected[P03_R12_PATH] = P03_R12_PRIOR
+    return projected
+
+
+def project_checked_out_p03_source(root, blobs):
+    def read_blob(sha):
+        try:
+            return subprocess.run(["git", "-C", str(root), "cat-file", "blob", sha],
+                                  check=True, timeout=20, capture_output=True).stdout
+        except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+            raise Denied("p05_p03_r12_source_blob_unavailable") from exc
+    return project_reviewed_p03_source(
+        blobs, read_blob(P03_R12_PRIOR), read_blob(P03_R12_CURRENT))
+
+
 def compare_38_unchanged_and_replacements(baseline, current):
     if len(baseline) != 38 or set(baseline) != set(current):
         raise Denied("p05_expected_exact_38_original_workflows")
@@ -437,9 +497,12 @@ def verify(root: Path):
     projected, prior_clangd = project_checked_out_clangd_source(root, projected)
     projected, prior_e2_smoke = project_checked_out_e2_smoke_source(root, projected)
     projected, prior_04j = project_checked_out_04j_source(root, projected)
+    projected = project_checked_out_p03_source(root, projected)
     result=compare_38_with_separate_scoped_source_dispositions(original,projected,scoped)
     result["04jCurrentWorkflowDeltaVerified"] = True
     result["04jNativeAccepted"] = False
+    result["p03R12CurrentSourceVerified"] = True
+    result["p03R12NativeAccepted"] = False
     result["clangdCurrentSourceRepairVerified"] = True
     result["clangdNativeAccepted"] = False
     result["wo6CurrentSourceRepairVerified"] = True

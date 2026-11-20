@@ -37,6 +37,16 @@ class ReviewedCurrentNativeBoundaries(unittest.TestCase):
         with self.assertRaises(Denied):
             compare(self.review, {"ide/packaging/arbitrary.md": "a" * 40})
 
+    def test_only_exact_worker_acceptance_document_is_reviewable(self):
+        path = "ide/supervisor/WORKER_ACCEPTANCE.md"
+        self.review["files"][0]["path"] = path
+        self.assertEqual(compare(self.review, {path: "a" * 40}), 1)
+        with self.assertRaisesRegex(Denied, "blob_drift"):
+            compare(self.review, {path: "b" * 40})
+        self.review["files"][0]["path"] = "ide/supervisor/arbitrary.md"
+        with self.assertRaises(Denied):
+            compare(self.review, {"ide/supervisor/arbitrary.md": "a" * 40})
+
     def test_unknown_native_source_denied(self):
         self.observed["ide/supervisor/src/new_permission.rs"] = "b" * 40
         with self.assertRaisesRegex(Denied, "path_set_drift"):
