@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "df44e8a5049aeae80ff655fe030d2304d2c6dc85",
-  "trackedFileCount": 1242,
+  "sourceCommitBeforeLock": "0d2190c2fd7fbc6aacce8f1555b9be3ac4264f16",
+  "trackedFileCount": 1243,
   "files": [
     {
       "path": ".gitattributes",
@@ -920,6 +920,10 @@
       "blob": "8635bd62fbb3695da0ff67faa4f2a26b988ea9af"
     },
     {
+      "path": "docs/LU_CP12B_R4_R1_CRASH_RECOVERY_20261120.md",
+      "blob": "4bcb901e25a9f10c6b45d4746104917807787746"
+    },
+    {
       "path": "docs/LU_CURRENT_PREVIEW_CPU_VULKAN_DUAL_ENGINE_20261109.md",
       "blob": "c1664658ded245a3df6041114e42587f49550200"
     },
@@ -929,7 +933,7 @@
     },
     {
       "path": "docs/LU_DEVELOPMENT_LEDGER.md",
-      "blob": "d639e4e9e352bdf173f037d38fef02f436fa6e25"
+      "blob": "fb2aad98dccbd9afa56b5f8fe59af8a32384e2c8"
     },
     {
       "path": "docs/LU_E1_NATIVE_EVIDENCE_20261107.md",
@@ -2901,7 +2905,7 @@
     },
     {
       "path": "scripts/cp12br4r1-crash-recovery-gui.py",
-      "blob": "f0df865dc9dfe31bba67e3d885592d0396448f11"
+      "blob": "fde2f1e2e034a3ca5eb2e9d771cb0d2ad92a3625"
     },
     {
       "path": "scripts/install-lu-agent01l-native-fixture.sh",
