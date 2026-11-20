@@ -305,6 +305,11 @@ pub fn publish_input(
         "lu_ide_host_tests" => "ide/host/Cargo.toml",
         "python_pytest" if cfg!(feature = "multilang-worker") => "pyproject.toml",
         "uv_sync_offline" if cfg!(feature = "package-uv-worker") => "pyproject.toml",
+        "vcpkg_install_offline"
+            if cfg!(all(feature = "package-vcpkg-worker", target_os = "linux")) =>
+        {
+            "vcpkg.json"
+        }
         "js_tests" if cfg!(feature = "multilang-worker") => "package.json",
         "cpp_cmake_build" if cfg!(feature = "multilang-worker") => "CMakeLists.txt",
         _ => return Err(SnapshotError::InvalidName),
@@ -552,6 +557,51 @@ mod tests {
         fs::write(copied.root.join("Cargo.lock"), b"# changed").unwrap();
         assert!(verify_input(&copied).is_err());
         retire_input(copied).unwrap();
+        fs::remove_dir_all(project.parent().unwrap()).unwrap();
+    }
+    #[test]
+    fn fin05_vcpkg_snapshot_binds_only_the_fixed_manifest() {
+        let (project, stage) = fixture();
+        let enabled = cfg!(all(feature = "package-vcpkg-worker", target_os = "linux"));
+        let missing = publish_input(&project, &stage, "vcpkg_install_offline");
+        if enabled {
+            assert!(matches!(missing, Err(SnapshotError::InvalidSnapshot)));
+        } else {
+            assert!(matches!(missing, Err(SnapshotError::InvalidName)));
+        }
+        let manifest = br#"{"name":"lu-fixed-fixture","version-string":"1.0.0","dependencies":[]}"#;
+        fs::write(project.join("vcpkg.json"), manifest).unwrap();
+        if enabled {
+            let input = publish_input(&project, &stage, "vcpkg_install_offline").unwrap();
+            assert_eq!(input.seal.manifest_relative_path, "vcpkg.json");
+            assert_eq!(
+                input.seal.manifest_sha256,
+                format!("{:x}", Sha256::digest(manifest))
+            );
+            verify_input(&input).unwrap();
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                fs::set_permissions(
+                    input.root.join("vcpkg.json"),
+                    fs::Permissions::from_mode(0o600),
+                )
+                .unwrap();
+            }
+            fs::write(input.root.join("vcpkg.json"), b"{}").unwrap();
+            assert!(verify_input(&input).is_err());
+            assert_eq!(fs::read(project.join("vcpkg.json")).unwrap(), manifest);
+            retire_input(input).unwrap();
+        } else {
+            assert!(matches!(
+                publish_input(&project, &stage, "vcpkg_install_offline"),
+                Err(SnapshotError::InvalidName)
+            ));
+        }
+        assert!(matches!(
+            publish_input(&project, &stage, "vcpkg_install_online"),
+            Err(SnapshotError::InvalidName)
+        ));
         fs::remove_dir_all(project.parent().unwrap()).unwrap();
     }
     #[test]
