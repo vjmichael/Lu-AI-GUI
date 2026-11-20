@@ -192,11 +192,10 @@ class RelativeFileOpenScopeTests(unittest.TestCase):
 
 class ExistingTabNode:
     def __init__(self, name='Saved source tab main.rs', role='page tab',
-                 states=(1, 2, 3, 4), actions=('click',), succeeds=True,
-                 selects=True):
-        self.name, self.role, self.states, self.actions = name, role, set(states), actions
-        self.calls = self.scrolls = 0
-        self.succeeds, self.selects = succeeds, selects
+                 states=(1, 2, 3, 4), focusable=True, reports_focus=True):
+        self.name, self.role, self.states = name, role, set(states)
+        self.scrolls = self.focus_calls = 0
+        self.focusable, self.reports_focus = focusable, reports_focus
 
     def getRoleName(self):
         return self.role
@@ -205,29 +204,30 @@ class ExistingTabNode:
         return SimpleNamespace(contains=lambda flag: flag in self.states)
 
     def queryComponent(self):
-        return SimpleNamespace(scrollTo=self.scroll)
+        return SimpleNamespace(scrollTo=self.scroll, grabFocus=self.focus)
 
     def scroll(self, _):
         self.scrolls += 1
         self.states.add(2)
         return True
 
-    def queryAction(self):
-        return SimpleNamespace(nActions=len(self.actions),
-                               getName=lambda n: self.actions[n], doAction=self.run)
-
-    def run(self, n):
-        self.calls += 1
-        if self.succeeds and self.selects:
-            self.states.add(5)
-        return self.succeeds
+    def focus(self):
+        self.focus_calls += 1
+        if self.focusable and self.reports_focus:
+            self.states.add(6)
+        return self.focusable
 
 
 class ExistingSavedFixtureTabTests(unittest.TestCase):
-    def exercise(self, nodes, filename='main.rs', changed=False):
+    def jump(self, **kwargs):
+        return ExistingTabNode(name='Jump to open file', role='combo box', **kwargs)
+
+    def exercise(self, nodes, filename='main.rs', changed=False, selects=True):
         flags = SimpleNamespace(STATE_VISIBLE=1, STATE_SHOWING=2, STATE_ENABLED=3,
-                                STATE_SENSITIVE=4, STATE_SELECTED=5, SCROLL_ANYWHERE=0)
+                                STATE_SENSITIVE=4, STATE_SELECTED=5, STATE_FOCUSED=6,
+                                SCROLL_ANYWHERE=0)
         values = iter(('m', 's', 'm', 'changed' if changed else 's'))
+        self.keys = []
 
         def deny(reason):
             raise RuntimeError(reason)
@@ -238,58 +238,79 @@ class ExistingSavedFixtureTabTests(unittest.TestCase):
                     return
             deny(reason)
 
+        def key(value):
+            self.keys.append(value)
+            if selects:
+                for node in nodes:
+                    if node.name == 'Saved source tab main.rs':
+                        node.states.add(5)
+
         module = ast.parse(SOURCE.read_text(encoding='utf-8'))
         module.body = [node for node in module.body if isinstance(node, ast.FunctionDef)
                        and node.name == 'select_existing_saved_fixture_tab']
         self.assertEqual(len(module.body), 1)
-        ns = dict(native=SimpleNamespace(_native_source_editor_nodes=lambda: iter(nodes)),
+        ns = dict(native=SimpleNamespace(_native_source_editor_nodes=lambda: iter(nodes), key=key),
                   pyatspi=flags, SOURCE='m', SECOND='s', digest=lambda _: next(values),
                   deny=deny, wait_until=wait)
         exec(compile(module, str(SOURCE), 'exec'), ns)
         ns['select_existing_saved_fixture_tab'](filename)
 
-    def test_direct_action(self):
-        n = ExistingTabNode()
-        self.exercise([n])
-        self.assertEqual(n.calls, 1)
+    def test_verified_jump_focus_and_single_native_home(self):
+        jump = self.jump()
+        self.exercise([ExistingTabNode(), jump])
+        self.assertEqual((jump.focus_calls, self.keys), (1, ['Home']))
 
-    def test_selected_no_second_action(self):
-        n = ExistingTabNode(states=(1, 2, 3, 4, 5))
-        self.exercise([n])
-        self.assertEqual(n.calls, 0)
+    def test_selected_no_redundant_key(self):
+        self.exercise([ExistingTabNode(states=(1, 2, 3, 4, 5))])
+        self.assertEqual(self.keys, [])
 
-    def test_offscreen_revealed(self):
-        n = ExistingTabNode(states=(1, 3, 4))
-        self.exercise([n])
-        self.assertEqual((n.scrolls, n.calls), (1, 1))
-
-    def test_duplicate_and_wrong_controls_denied(self):
-        n = ExistingTabNode()
-        wrong = ExistingTabNode(name='Saved source tab not-main.rs')
-        wrongrole = ExistingTabNode(role='push button')
-        dirty = ExistingTabNode(name='Unsaved source tab main.rs')
-        disabled = ExistingTabNode(states=(1, 2, 3))
-        hidden = ExistingTabNode(states=(2, 3, 4))
-        for nodes in ([], [n, n], [wrong], [wrongrole], [dirty], [disabled], [hidden]):
-            with self.subTest(nodes=nodes), self.assertRaisesRegex(RuntimeError, 'not_ready'):
-                self.exercise(nodes)
-        self.assertEqual(n.calls, 0)
-
-    def test_bad_actions_denied(self):
-        for n in (ExistingTabNode(actions=()), ExistingTabNode(actions=('click', 'press')),
-                  ExistingTabNode(succeeds=False)):
-            with self.subTest(n=n), self.assertRaisesRegex(RuntimeError, 'action_denied'):
-                self.exercise([n])
-
-    def test_unselected_after_action_denied(self):
-        n = ExistingTabNode(selects=False)
+    def test_selected_second_only_waits_for_clean_state(self):
+        self.exercise([ExistingTabNode(name='Saved source tab second.rs', states=(1, 2, 3, 4, 5))],
+                      filename='second.rs')
+        self.assertEqual(self.keys, [])
         with self.assertRaisesRegex(RuntimeError, 'not_selected'):
-            self.exercise([n])
-        self.assertEqual(n.calls, 1)
+            self.exercise([ExistingTabNode(name='Saved source tab second.rs')], filename='second.rs')
+        self.assertEqual(self.keys, [])
+
+    def test_offscreen_jump_and_tab_revealed(self):
+        jump = self.jump(states=(1, 3, 4))
+        tab = ExistingTabNode(states=(1, 3, 4))
+        self.exercise([tab, jump])
+        self.assertEqual((tab.scrolls, jump.scrolls, self.keys), (1, 1, ['Home']))
+
+    def test_duplicate_and_wrong_tabs_denied(self):
+        n = ExistingTabNode()
+        for nodes in ([], [n, n], [ExistingTabNode(name='Saved source tab not-main.rs')],
+                      [ExistingTabNode(role='push button')], [ExistingTabNode(name='Unsaved source tab main.rs')],
+                      [ExistingTabNode(states=(1, 2, 3))], [ExistingTabNode(states=(2, 3, 4))]):
+            with self.subTest(nodes=nodes), self.assertRaisesRegex(RuntimeError, 'not_ready'):
+                self.exercise(nodes + [self.jump()])
+            self.assertEqual(self.keys, [])
+
+    def test_missing_duplicate_wrong_or_disabled_jump_denied(self):
+        n = ExistingTabNode()
+        j = self.jump()
+        for jumps in ([], [j, j], [ExistingTabNode(name='Jump to open file', role='push button')],
+                      [ExistingTabNode(name='Other jump', role='combo box')], [self.jump(states=(1, 2, 3))]):
+            with self.subTest(jumps=jumps), self.assertRaisesRegex(RuntimeError, 'not_focusable'):
+                self.exercise([n] + jumps)
+            self.assertEqual(self.keys, [])
+
+    def test_denied_or_unverified_focus_never_sends_key(self):
+        for jump, error in ((self.jump(focusable=False), 'not_focusable'),
+                            (self.jump(reports_focus=False), 'focus_not_verified')):
+            with self.subTest(jump=jump), self.assertRaisesRegex(RuntimeError, error):
+                self.exercise([ExistingTabNode(), jump])
+            self.assertEqual(self.keys, [])
+
+    def test_unselected_after_home_denied(self):
+        with self.assertRaisesRegex(RuntimeError, 'not_selected'):
+            self.exercise([ExistingTabNode(), self.jump()], selects=False)
+        self.assertEqual(self.keys, ['Home'])
 
     def test_disk_change_denied(self):
         with self.assertRaisesRegex(RuntimeError, 'changed_fixture_source'):
-            self.exercise([ExistingTabNode()], changed=True)
+            self.exercise([ExistingTabNode(), self.jump()], changed=True)
 
     def test_foreign_path_denied(self):
         with self.assertRaisesRegex(RuntimeError, 'invalid_existing'):

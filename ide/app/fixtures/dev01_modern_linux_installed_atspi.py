@@ -449,18 +449,19 @@ def open_exact_relative_fixture_file(filename):
 
 
 def select_existing_saved_fixture_tab(filename):
-    # An already-open buffer must be selected via its actual native tab.
-    # Disk readback can precede React's Save receipt/clean-tab update.
+    # The native tab role need not expose a reliable AT-SPI click action.
+    # main.rs is the first opened fixture tab; exercise the real editor's
+    # Jump to open file Home shortcut, never an inferred selection.
     if filename not in ('main.rs', 'second.rs'):
         deny('invalid_existing_fixture_tab')
     before = (digest(SOURCE), digest(SECOND))
 
-    def exact_saved_tab():
+    def exact_control(name, roles):
         matches = []
         for node in native._native_source_editor_nodes():
             try:
-                if ((node.name or '').strip() == 'Saved source tab ' + filename
-                        and node.getRoleName().casefold() in ('tab', 'page tab')
+                if ((node.name or '').strip() == name
+                        and node.getRoleName().casefold() in roles
                         and node.getState().contains(pyatspi.STATE_VISIBLE)):
                     matches.append(node)
             except Exception:
@@ -474,34 +475,61 @@ def select_existing_saved_fixture_tab(filename):
             return None
         return node
 
-    def select_once():
-        node = exact_saved_tab()
-        if node is None:
-            return False
-        state = node.getState()
-        if not state.contains(pyatspi.STATE_SHOWING):
-            try:
-                node.queryComponent().scrollTo(pyatspi.SCROLL_ANYWHERE)
-            except Exception:
-                pass
-            return False
-        if state.contains(pyatspi.STATE_SELECTED):
-            return True
-        action = node.queryAction()
-        choices = [index for index in range(action.nActions)
-                   if action.getName(index).casefold() in ('click', 'press', 'activate')]
-        if len(choices) != 1 or not action.doAction(choices[0]):
-            deny('existing_saved_tab_native_action_denied')
-        return True
+    def exact_saved_tab():
+        return exact_control('Saved source tab ' + filename, ('tab', 'page tab'))
 
-    wait_until(select_once, 'existing_saved_tab_not_ready_' + filename)
+    def exact_jump():
+        return exact_control('Jump to open file', ('combo box', 'combobox'))
+
+    def showing(node):
+        return node.getState().contains(pyatspi.STATE_SHOWING)
+
+    def reveal(node):
+        try:
+            node.queryComponent().scrollTo(pyatspi.SCROLL_ANYWHERE)
+        except Exception:
+            pass
 
     def selected():
         node = exact_saved_tab()
-        return node is not None and all(node.getState().contains(flag) for flag in (
-            pyatspi.STATE_SHOWING, pyatspi.STATE_SELECTED))
+        if node is None or not node.getState().contains(pyatspi.STATE_SELECTED):
+            return False
+        if not showing(node):
+            reveal(node)
+            return False
+        return True
 
-    wait_until(selected, 'existing_saved_tab_not_selected_' + filename)
+    # second.rs was just saved as the primary pane: wait for its exact
+    # clean selected state rather than sending a redundant navigation key.
+    if filename == 'second.rs':
+        wait_until(selected, 'existing_saved_tab_not_selected_' + filename)
+    else:
+        wait_until(lambda: exact_saved_tab() is not None,
+                   'existing_saved_tab_not_ready_' + filename)
+        if not selected():
+            def focus_jump():
+                node = exact_jump()
+                if node is None:
+                    return False
+                if not showing(node):
+                    reveal(node)
+                    return False
+                try:
+                    return bool(node.queryComponent().grabFocus())
+                except Exception:
+                    return False
+
+            def jump_focused():
+                node = exact_jump()
+                return (node is not None and showing(node)
+                        and node.getState().contains(pyatspi.STATE_FOCUSED))
+
+            wait_until(focus_jump, 'existing_tab_jump_not_focusable')
+            wait_until(jump_focused, 'existing_tab_jump_focus_not_verified')
+            if exact_saved_tab() is None or not jump_focused():
+                deny('existing_tab_jump_identity_changed')
+            native.key('Home')
+        wait_until(selected, 'existing_saved_tab_not_selected_' + filename)
     if (digest(SOURCE), digest(SECOND)) != before:
         deny('existing_tab_selection_changed_fixture_source')
 
