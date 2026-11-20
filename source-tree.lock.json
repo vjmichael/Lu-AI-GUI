@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "be9c33621106cce8f09a5e84fa84d3896446e247",
-  "trackedFileCount": 1210,
+  "sourceCommitBeforeLock": "be5aa918b1f9809f94306a44746f8feedda11067",
+  "trackedFileCount": 1211,
   "files": [
     {
       "path": ".gitattributes",
@@ -897,7 +897,7 @@
     },
     {
       "path": "docs/LU_CP11B_R2_SCHEDULED_READER_20261120.md",
-      "blob": "900f3648066da8e4ebbe7f7e2e3a9f4e69303a87"
+      "blob": "3357469b4bcbd593c7100d0c88c2dd4a3bcedc89"
     },
     {
       "path": "docs/LU_CP11B_SCHEDULED_REMINDERS_20261120.md",
@@ -913,7 +913,7 @@
     },
     {
       "path": "docs/LU_DEVELOPMENT_LEDGER.md",
-      "blob": "f27e849630c99f13ebc0558259aef73eedf92f14"
+      "blob": "fa0e05acc5735f89205b707345737c283ea8bcaf"
     },
     {
       "path": "docs/LU_E1_NATIVE_EVIDENCE_20261107.md",
@@ -2773,7 +2773,11 @@
     },
     {
       "path": "scripts/cp11br2-scheduled-reader-gui.py",
-      "blob": "723d2e69eab3ca049a903a8540824fef8bb6ffc4"
+      "blob": "1c48aededd7973effb0365b267289e54143bb319"
+    },
+    {
+      "path": "scripts/cp11br2-scheduled-reader-recovery-gui.py",
+      "blob": "194e60c35080cd27a684cc588cc22cf705bc298f"
     },
     {
       "path": "scripts/install-lu-agent01l-native-fixture.sh",
