@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "a54587f2192ccc349880cf6bcdee92dbe9c2d8d7",
-  "trackedFileCount": 1185,
+  "sourceCommitBeforeLock": "46da4a2ff5b641208e02c5d17f40813870d3ed7f",
+  "trackedFileCount": 1186,
   "files": [
     {
       "path": ".gitattributes",
@@ -868,6 +868,10 @@
       "blob": "9b47d5c61c28bedf5fd39863b4f4d6b18371a2df"
     },
     {
+      "path": "docs/LU_CP06M_ORDINARY_MEMORY_20261120.md",
+      "blob": "ead78e2503a93e03d8d90cdbb442df93a71e46d3"
+    },
+    {
       "path": "docs/LU_CURRENT_PREVIEW_CPU_VULKAN_DUAL_ENGINE_20261109.md",
       "blob": "c1664658ded245a3df6041114e42587f49550200"
     },
@@ -1577,7 +1581,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/ansf_chat_store.rs",
-      "blob": "619573f37d1e4433773dc7b91b5d9c822e0079b8"
+      "blob": "4eee01bdf4bf730fc32b4ccaa8f970281f48f396"
     },
     {
       "path": "lu-desktop/src-tauri/src/ansf_migration.rs",
@@ -1621,7 +1625,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/capability_negotiation.rs",
-      "blob": "54d38e8fa6b4cd192b0b952a7a3c011f69321cd0"
+      "blob": "79d610f2bef851dc74b7c43eec1e106db34b45e5"
     },
     {
       "path": "lu-desktop/src-tauri/src/causal_diagnostic.rs",
@@ -1701,7 +1705,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/lib.rs",
-      "blob": "7dacaa2d9e8e3cf347c7147ead4a1a660d4e1eab"
+      "blob": "ce2d39fca6da826c3146c5d749fd935d85f0f2a3"
     },
     {
       "path": "lu-desktop/src-tauri/src/linked_attachment_file.rs",
@@ -1725,7 +1729,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/memory_desktop.rs",
-      "blob": "a16394dbde3ea35253eb546ca3caaefccc686c05"
+      "blob": "5774c9e767a050a19d7a4229f6b7d06db03282ca"
     },
     {
       "path": "lu-desktop/src-tauri/src/memory_loop03_goal_gate.rs",
@@ -1941,7 +1945,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/workspace_desktop.rs",
-      "blob": "202180340decdb4601d7be182cf400ce95d34b40"
+      "blob": "e2546338397ec81963ffafc27206632279b9ed1a"
     },
     {
       "path": "lu-desktop/src-tauri/src/write_proposal.rs",
@@ -2133,11 +2137,11 @@
     },
     {
       "path": "lu-desktop/tests/m2-ansf-memory.test.mjs",
-      "blob": "2fc03003b0ffd25a487e65a91de1b2b9ddeb6c73"
+      "blob": "468e9de874bcfd35f162d991fa59268bf1912587"
     },
     {
       "path": "lu-desktop/tests/m3-ansf-recall.test.mjs",
-      "blob": "e5b1315f6f2a8efb54695b1f7a427ba71d8e7794"
+      "blob": "60bb5928a240a986f31244fcc0ff8db267d9f556"
     },
     {
       "path": "lu-desktop/tests/m3-asset-resume.test.mjs",
@@ -2169,7 +2173,7 @@
     },
     {
       "path": "lu-desktop/tests/m3-semantic-contract.test.mjs",
-      "blob": "f8104bce61c20421429eb960a47bc46dda2ba578"
+      "blob": "cd76be7a968d18ca8f090135c5e61a46d0790a65"
     },
     {
       "path": "lu-desktop/tests/m3-windowed-chat.test.mjs",
@@ -2193,7 +2197,7 @@
     },
     {
       "path": "lu-desktop/tests/memory-loop01-agent-handoff.test.mjs",
-      "blob": "76e152477c7b63e610e848609bfafca221efd7fc"
+      "blob": "6e5f1a1999d5ff3dc74645787d9955df9e2e4d27"
     },
     {
       "path": "lu-desktop/tests/memory-loop02-real-qwen-contract.test.mjs",
@@ -3177,7 +3181,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/ansf.rs",
-      "blob": "08410026d1b55b3cb52f33abb83f8678841a17b1"
+      "blob": "c5f9b5df7ab41287b49044115aaeb7c2aa972c62"
     },
     {
       "path": "src-tauri/lu-core/src/ansf_artifact_links.rs",
@@ -3229,7 +3233,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/ansf_semantic.rs",
-      "blob": "60571b1a9e423b2757b4267ca2fb4ac47575f72a"
+      "blob": "0db0f9f54a0b4fcba2d3845542e62925ffaa902c"
     },
     {
       "path": "src-tauri/lu-core/src/ansf_source_ids.rs",
