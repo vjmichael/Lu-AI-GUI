@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "1114285198deba70243eb71a447a82e90814d3ab",
-  "trackedFileCount": 1221,
+  "sourceCommitBeforeLock": "506020aa0c05e3f501603de04f84a7239fc7b846",
+  "trackedFileCount": 1224,
   "files": [
     {
       "path": ".gitattributes",
@@ -917,7 +917,7 @@
     },
     {
       "path": "docs/LU_DEVELOPMENT_LEDGER.md",
-      "blob": "a5584b70479f6628a1a34bbadda6ca9e3eb5542a"
+      "blob": "29451051816772494924a6fd56db2103b86c68ef"
     },
     {
       "path": "docs/LU_E1_NATIVE_EVIDENCE_20261107.md",
@@ -1545,11 +1545,11 @@
     },
     {
       "path": "lu-desktop/src-tauri/Cargo.lock",
-      "blob": "b75fc4c55f7d3bff5162be27b2c0835d3085f8df"
+      "blob": "a3571e4d609ffa3d7743e71d47c1fd37d2158661"
     },
     {
       "path": "lu-desktop/src-tauri/Cargo.toml",
-      "blob": "b3fe41a21a56ba9fca039ffdb2b8de2dfebe02c9"
+      "blob": "6d0eb0418fe4e26a3c9cb272b955c3ae413307a4"
     },
     {
       "path": "lu-desktop/src-tauri/build.rs",
@@ -1693,11 +1693,15 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/diagnostic_archive.rs",
-      "blob": "77e4d61c50c1ce12a5f7e67ae99a157e33a3dbfd"
+      "blob": "3759ccc12aff6d6581eeeee2c0ee12309af16e68"
     },
     {
       "path": "lu-desktop/src-tauri/src/document_create_desktop.rs",
       "blob": "93d76f0eac641c3b9b2da99e25ad9d3c60295ba5"
+    },
+    {
+      "path": "lu-desktop/src-tauri/src/dx_ipc.rs",
+      "blob": "ef2bfd9233a1c36c7abc20a329cb805740e0dd2b"
     },
     {
       "path": "lu-desktop/src-tauri/src/edit_proposal.rs",
@@ -1745,7 +1749,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/lib.rs",
-      "blob": "1ddb0938fabf1bb267ee352e8d0d3d65863bdb6a"
+      "blob": "810e562f424c6fada5685eb1f405742de014f6e2"
     },
     {
       "path": "lu-desktop/src-tauri/src/linked_attachment_file.rs",
@@ -2198,6 +2202,10 @@
     {
       "path": "lu-desktop/tests/cp12ar2r1-diagnostic-reliability.test.mjs",
       "blob": "fd4be701b40fa1b688233b364679c47dc69e3b08"
+    },
+    {
+      "path": "lu-desktop/tests/cp12b-local-diagnostic-exchange.test.mjs",
+      "blob": "309116c2e487bd43c092c85934fd9faedb39b85d"
     },
     {
       "path": "lu-desktop/tests/filesystem-discovery.test.mjs",
@@ -2661,7 +2669,7 @@
     },
     {
       "path": "lu-desktop/web/native_windows.jsx",
-      "blob": "c661f45cea700a126eb9d289fade20a53d5d9a3e"
+      "blob": "92d9a62bf453ec31e7c0413f2869c38fd65e93cc"
     },
     {
       "path": "lu-desktop/web/response_view.mjs",
@@ -2818,6 +2826,10 @@
     {
       "path": "scripts/cp12ar2-scheduled-diagnostics-gui.py",
       "blob": "aef32851a968f368216883bb8c8e79c774c98038"
+    },
+    {
+      "path": "scripts/cp12b-local-diagnostic-exchange-gui.py",
+      "blob": "60e82d381f87cc2572b9e2932f1fb7aca03d202b"
     },
     {
       "path": "scripts/install-lu-agent01l-native-fixture.sh",
