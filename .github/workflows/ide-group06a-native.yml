@@ -12,6 +12,11 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/ide-group06a-native.yml'
+      - 'ide/host/src/git_refs_health.rs'
+      - 'ide/host/src/git_inventory.rs'
+      - 'ide/host/src/git_file_history.rs'
+      - 'ide/app/tests/g06a_git_repository_inventory.test.mjs'
+      - 'ide/app/web/main.jsx'
   workflow_dispatch:
 permissions:
   contents: read

@@ -81,6 +81,11 @@
       "scope": "03D WO6 fixed Windows native suffix only; absolute path, traversal, control, no-debug-args guards preserved; regression tests; OS acceptance pending"
     },
     {
+      "path": "ide/host/src/git_refs_health.rs",
+      "scope": "G06A07 read-only Git recovery-state classification and operator visibility; no execution or mutation grant, source-only",
+      "sha": "e7769d797a42b5f69c9c635aecb18a9c441f9969"
+    },
+    {
       "path": "ide/host/src/git_reviewed_stash_save.rs",
       "sha": "f1d54aaee76acca98c53fa405d959eceb9ee1b0c",
       "scope": "FIN03 recovery source reviewed, native OS admission pending"
@@ -337,7 +342,7 @@
     },
     {
       "path": "ide/supervisor/examples/wo6_native_dap_acceptance.rs",
-      "sha": "7108698d1d2e3c5f986ec65bf5b81929ba173137",
+      "sha": "3776ad28f967235f732ee4b2dadb6c7b5a988159",
       "scope": "03E D6C bounded authenticated owner continuation chain, unchanged one-use and OS/PDB gates; source-only, native Windows pending"
     },
     {
@@ -377,7 +382,7 @@
     },
     {
       "path": "ide/supervisor/src/dap_transport.rs",
-      "sha": "805c30c4ac28a7c8c0e9eeee25cc861b0190159d",
+      "sha": "65de6652084c4a9a105d1ee95dd87da1be800ed1",
       "scope": "03E D6C bounded authenticated owner continuation chain, unchanged one-use and OS/PDB gates; source-only, native Windows pending"
     },
     {
@@ -392,7 +397,7 @@
     },
     {
       "path": "ide/supervisor/src/lib.rs",
-      "sha": "055a7045c3aa474a6adf5f1abdd485a54d4f5d95",
+      "sha": "b10383b49ff6343c3dc851a462f9facebef39a72",
       "scope": "Strict historical persisted owner receipt parsing; no authority expansion; source-only, OS acceptance pending"
     },
     {
@@ -427,7 +432,7 @@
     },
     {
       "path": "ide/supervisor/src/windows_event_owner.rs",
-      "sha": "72c58fa2610a71156ab6bdba9f8fae3764d43ef0",
+      "sha": "616bed4e4bad727859269619eae4912f22ce5c68",
       "scope": "03E D6C bounded authenticated owner continuation chain, unchanged one-use and OS/PDB gates; source-only, native Windows pending"
     },
     {
@@ -447,7 +452,7 @@
     },
     {
       "path": "ide/supervisor/src/windows_lsp_worker.rs",
-      "sha": "3a3ec763da193989e7f14a2ed509039cfb256351",
+      "sha": "a04bd5b7a8fd913f3558c6de4ef0e343cfc6d7c6",
       "scope": "03E D6C bounded authenticated owner continuation chain, unchanged one-use and OS/PDB gates; source-only, native Windows pending"
     }
   ]

@@ -834,6 +834,17 @@ impl Supervisor {
                         && match entry.body.phase {
                             JobPhase::Completed | JobPhase::Failed => {
                                 entry.body.evidence_code == "reaped_process_tree_bounded_outputs"
+                                    || entry
+                                        .body
+                                        .evidence_code
+                                        .strip_prefix("tree_reaped_published_sha256_")
+                                        .is_some_and(|hash| {
+                                            hash.len() == 64
+                                                && hash.bytes().all(|byte| {
+                                                    byte.is_ascii_hexdigit()
+                                                        && !byte.is_ascii_uppercase()
+                                                })
+                                        })
                             }
                             JobPhase::Cancelled => matches!(
                                 (entry.body.outcome_code.as_str(), entry.body.evidence_code.as_str()),

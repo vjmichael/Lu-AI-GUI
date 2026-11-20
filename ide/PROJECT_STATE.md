@@ -1445,3 +1445,10 @@ post-command execution proof and interrupted-action kernel fixtures
 are open. FIN-02 deferred. Details:
 `docs/IDE_FIN04R1_PROTECTED_PDB_AND_NATIVE_ACCEPTANCE_20261112.md`.
 No CI, merge or release.
+
+## R16C-R2 — Residual source qualification candidate (2026-11-20)
+
+- R15-R2 original exact head `dbdddfc2dcfa5d953b8e5d080a94ccd3133668c5`: all-event 67/67 SUCCESS, including protected Windows clangd; hosted acceptance only, not physical/production release approval.
+- New unmerged source candidate: G06A07 read-only Git recovery status and no-replay tests; FIN-04R1 historical 14 negative regressions (native SCM, AppContainer, protected PDB, continuation/restart); dedicated G06A/G04D/FIN04 exact-head native workflows prepared. Physical operator/installed acceptance remains open.
+- The GitHub CI queued-action maintenance branch is operational cleanup only, not a Lu IDE product feature, and remains outside this convergence scope.
+- Current source-review gates: original B4/B5 source baseline retained with separate current blob review; no source audit substitutes for actual OS execution. Source lock must be regenerated for final post-review commit. No user approval, merge, signed release or physical validation is inferred from hosted CI.

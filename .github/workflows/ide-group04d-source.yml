@@ -12,6 +12,12 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/ide-group04d-source.yml'
+      - 'ide/host/**'
+      - 'ide/supervisor/**'
+      - 'ide/llvm18_owner/**'
+      - 'ide/app/src-tauri/**'
+      - 'ide/app/tests/ide_group04d_native_inspection.test.mjs'
+      - 'ide/app/fixtures/Test-DEV046D-PhysicalHumanConsent.ps1'
   workflow_dispatch:
 permissions:
   contents: read

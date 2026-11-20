@@ -31,6 +31,13 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/ide-fin04r1-exact-native.yml'
+      - 'ide/supervisor/**'
+      - 'ide/llvm18_owner/**'
+      - 'ide/app/tests/fin04r1_protected_pdb.test.mjs'
+      - 'ide/app/tests/fin04_release_owner_and_os_recovery.test.mjs'
+      - 'ide/app/fixtures/Test-FIN04R1-PhysicalProtectedPdbReview.ps1'
+      - 'ide/app/src-tauri/src/debug_backend.rs'
+      - 'ide/app/web/project_debug_authority.js'
   workflow_dispatch:
 permissions:
   contents: read
