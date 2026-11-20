@@ -6,3 +6,8 @@ P05 saved-text project search must reuse modern Quick Open private
 .lu-ide-* and casefolded generated-folder denial, including .lu-ide-trash.
 Retain original 4-job matrix, preserve installed/physical release gates.
 This marker selects ONE final source SHA for grouped Windows/Linux CI.
+
+IDE-LINUX-09-R5-R1 — single consolidated native acceptance admission.
+Published candidate: 2f3866df6911a075dd0cf89d3862934a01337fac
+Run existing exact-head native Git/desktop and DEV-01 installed graphical/recovery jobs.
+No release, main merge, protected execution approval, or technical LSP acceptance implied.
