@@ -105,6 +105,9 @@ fn substantive_read_digest(data: &Value) -> Option<String> {
 pub enum ToolDispatchCheckpoint {
     Entered,
     Returned,
+    /// Strictly validated native feedback durably written to the original audit.
+    /// This is not a claim that the operation succeeded.
+    FeedbackAudited,
 }
 
 #[derive(Debug, Clone, PartialEq)]

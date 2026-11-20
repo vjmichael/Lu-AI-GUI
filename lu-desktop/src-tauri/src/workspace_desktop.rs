@@ -29,7 +29,7 @@ fn add_scoped_ansf_task_data(base:String,memory:&str)->String{
     format!("{base}{label}{memory}")
 }
 
-use crate::turn_authority::PersistedHumanTurn;
+use crate::{turn_authority::PersistedHumanTurn,causal_diagnostic::NativeDiagnosticTrace};
 /// CP-03C: original human intent and native-approved directory capability.
 /// No model, ambient root reopening, implicit tool grant or permission replay.
 pub(crate) async fn cpu_search_workspace_for_chat(
@@ -661,6 +661,7 @@ async fn ask_scoped_read_for_chat(
     app:AppHandle,state:Arc<DesktopState>,session_id:String,
     chat_id:String,prompt:String,git_mode:bool,
 )->Result<Option<String>,String>{
+    let trace=NativeDiagnosticTrace::new(&state);
     if prompt.trim().is_empty()||prompt.len()>8*1024 {
         return Err("Workspace question must be 1–8192 bytes".into())
     }
@@ -669,7 +670,8 @@ async fn ask_scoped_read_for_chat(
     if status.session_id.as_deref()!=Some(session_id.as_str()){
         return Err("Loaded model session changed".into())
     }
-    let Some(approved_workspace)=choose_read_workspace(&app,&state,&session_id,&chat_id,&prompt,git_mode,false).await? else{return Ok(None)};
+    trace.point(CausalCheckpoint::SessionReady);
+    let Some(approved_workspace)=choose_read_workspace(&app,&state,&session_id,&chat_id,&prompt,git_mode,false).await? else{trace.decline();return Ok(None)};
     let root=approved_workspace.root.clone();
     let git_executable=if git_mode{Some(trusted_git_executable()?)}else{None};
     // OS picker is the authority source; reject symlinks and Windows reparse.
@@ -680,6 +682,7 @@ async fn ask_scoped_read_for_chat(
     let (ticket,position)=state.generation_queue
         .enqueue_with_class_committing(&session_id,&chat_id,&generation_id,TurnClass::Foreground,
             ||state.chats.append_user_with_turn_id(&chat_id,&generation_id,&prompt))?;
+    trace.point(CausalCheckpoint::UserSaved);
     let cancellation=Cancellation::default();
     let current_step=Arc::new(Mutex::new(None));
     state.reader_generations.lock()
@@ -701,9 +704,11 @@ async fn ask_scoped_read_for_chat(
     let outcome=tauri::async_runtime::spawn_blocking(move||{
         let answer=(||->Result<String,String>{
             ticket.wait_for_slot()?;
+            trace.point(CausalCheckpoint::WorkerEntered);
             execute_approved_read(event_app.clone(),Arc::clone(&host),session_id,chat_id.clone(),gid.clone(),prompt,
-                approved_workspace,git_executable,&ticket,&cancellation,&current_step,None)
+                approved_workspace,git_executable,&ticket,&cancellation,&current_step,None,&trace)
         })();
+        if answer.is_err(){trace.incomplete(ticket.cancelled()||cancellation.is_cancelled());}
         if answer.as_ref().err().is_some_and(|e|e.contains("Cancelled")){
             let _=host.chats.cancel(&chat_id,&gid);
         }
@@ -729,21 +734,22 @@ async fn ask_scoped_read_for_chat(
 pub(crate) fn execute_negotiated_read(app:&AppHandle,state:&Arc<DesktopState>,session:&str,chat:&str,gid:&str,
     prompt:&str,ticket:&generation_queue::Ticket,cancel:&Cancellation,current_step:&Arc<Mutex<Option<String>>>,
     choice:&crate::capability_negotiation::ReadCandidate)->Result<String,String>{
+    let trace=NativeDiagnosticTrace::new(state);
     if ticket.cancelled()||cancel.is_cancelled(){return Err("Cancelled capability selection".into())}
     let verifier=PersistedHumanTurn::current_chat(&state.chats,chat,gid,prompt);
     if !verifier.verify_user_turn(chat,gid){return Err("Original human turn changed".into())}
-    let approved=tauri::async_runtime::block_on(choose_read_workspace(app,state,session,chat,prompt,choice.git,true))?
-        .ok_or("Cancelled native resource selection")?;
+    let Some(approved)=tauri::async_runtime::block_on(choose_read_workspace(app,state,session,chat,prompt,choice.git,true))? else {trace.decline();return Err("Cancelled native resource selection".into())};
     if ticket.cancelled()||cancel.is_cancelled(){return Err("Cancelled native resource selection".into())}
     if !verifier.verify_user_turn(chat,gid){return Err("Original human turn changed".into())}
     let git=if choice.git{Some(trusted_git_executable()?)}else{None};
     if !is_real_directory(&approved.root){return Err("Selected workspace is not a regular directory".into())}
-    execute_approved_read(app.clone(),Arc::clone(state),session.into(),chat.into(),gid.into(),prompt.into(),approved,git,ticket,cancel,current_step,Some(choice))
+    let result=execute_approved_read(app.clone(),Arc::clone(state),session.into(),chat.into(),gid.into(),prompt.into(),approved,git,ticket,cancel,current_step,Some(choice),&trace);
+    if result.is_err(){trace.incomplete(ticket.cancelled()||cancel.is_cancelled());}result
 }
 #[allow(clippy::too_many_arguments)]
 fn execute_approved_read(event_app:AppHandle,host:Arc<DesktopState>,session_id:String,chat_id:String,gid:String,prompt:String,
     approved_workspace:ApprovedWorkspace,git_executable:Option<PathBuf>,ticket:&generation_queue::Ticket,
-    cancellation:&Cancellation,current_step:&Arc<Mutex<Option<String>>>,selected:Option<&crate::capability_negotiation::ReadCandidate>)->Result<String,String>{
+    cancellation:&Cancellation,current_step:&Arc<Mutex<Option<String>>>,selected:Option<&crate::capability_negotiation::ReadCandidate>,trace:&NativeDiagnosticTrace)->Result<String,String>{
     let root=approved_workspace.root.clone();
     let git_mode=git_executable.is_some();
     let exact=crate::capability_negotiation::exact_workspace_read(&prompt)?;
@@ -768,6 +774,11 @@ fn execute_approved_read(event_app:AppHandle,host:Arc<DesktopState>,session_id:S
             let verifier=if selected.is_some(){PersistedHumanTurn::current_chat(&host.chats,&chat_id,&gid,&prompt)}
                 else{PersistedHumanTurn::queued_chat(&host.chats,&chat_id,&gid,&prompt)};
             if !verifier.verify_user_turn(&chat_id,&gid){return Err("Workspace original human request changed".into())}
+            if selected.is_some(){
+                trace.point(CausalCheckpoint::SessionReady);trace.point(CausalCheckpoint::UserSaved);
+                if ticket.verify_active_foreground(&session_id,&chat_id,&gid).is_ok(){trace.point(CausalCheckpoint::WorkerEntered)}else{trace.lost()}
+            }
+            trace.point(CausalCheckpoint::SavedAttested);
             let mut turn=if planned{
                 if let Some(directory)=approved_workspace.pinned_directory()?{
                     WorkspaceReadTurnSession::new_planned_with_approved_directory(&verifier,&chat_id,&gid,&gid,directory,&prompt)
@@ -836,6 +847,7 @@ fn execute_approved_read(event_app:AppHandle,host:Arc<DesktopState>,session_id:S
             if available.is_empty()||available.iter().any(|t|t.effect!="read_workspace"){
                 return Err("No safe read-only native tool registered".into())
             }
+            trace.point(CausalCheckpoint::TaskAuthorized);
             // P03 preferences are computed only from the persisted exact
             // current human request and the already admitted read-only set.
             // Never interpret source text as a routing instruction or grant.
@@ -876,13 +888,15 @@ fn execute_approved_read(event_app:AppHandle,host:Arc<DesktopState>,session_id:S
                 let remembered=host.chats.authenticated_memory_context_for_turn(&chat_id,&gid,&prompt,None)?;
                 add_scoped_ansf_task_data(user_prompt,&remembered)
             };
-            let observe=progress.dispatch_observer();
+            let progress_observer=progress.dispatch_observer();
+            let observe=|point|{progress_observer(point);trace.record(|t|t.tool_checkpoint(point));};
+            trace.point(CausalCheckpoint::ModelEntered);
             let result=tauri::async_runtime::block_on(turn.run_journaled_observed(
                 &user_prompt,&mut model,&cancellation,&journal,&observe,
-            )).map_err(|e|if planned{
-                if cancellation.is_cancelled()||ticket.cancelled(){"Cancelled workspace generation".into()}
-                else{"The requested inspection or comparison could not be completed. I cannot confirm the result for every requested file.".into()}
-            }else{format!("Workspace tool turn: {e:?}")})?;
+            )).map_err(|e|{let message=trace.model_error(&e);if planned&&!cancellation.is_cancelled()&&!ticket.cancelled(){
+                "The requested inspection or comparison could not be completed. I cannot confirm the result for every requested file.".into()
+            }else{message.to_owned()}})?;
+            trace.point(CausalCheckpoint::ModelReturned);
             if cancellation.is_cancelled()||ticket.cancelled(){
                 return Err("Cancelled workspace generation".into())
             }
@@ -895,6 +909,7 @@ fn execute_approved_read(event_app:AppHandle,host:Arc<DesktopState>,session_id:S
                 host.chats.complete(&chat_id,&gid)?;
                 Ok(())
             })?;
+            trace.saved_response(&host.chats,&chat_id,&gid,&result.answer,false);
             Ok(result.answer)
 }
 

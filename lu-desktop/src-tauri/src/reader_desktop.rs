@@ -18,7 +18,7 @@ pub(crate) struct ReaderRunControl{
     pub current_step:Arc<Mutex<Option<String>>>,
     pub session_id:String,
 }
-use crate::turn_authority::PersistedHumanTurn;
+use crate::{turn_authority::PersistedHumanTurn,causal_diagnostic::NativeDiagnosticTrace};
 /// Shared OS-picker admission, usable by normal attachment and experimental
 /// tool-turn flow. It never follows a path supplied by a model or WebView.
 /// The opaque identity and version are derived from a freshly native-picked,
@@ -176,6 +176,7 @@ pub(crate) async fn ask_reader_for_chat(
     app:AppHandle,state:Arc<DesktopState>,session_id:String,
     chat_id:String,prompt:String,
 )->Result<Option<String>,String>{
+    let trace=NativeDiagnosticTrace::new(&state);
     if prompt.trim().is_empty()||prompt.len()>8*1024{
         return Err("Reader question must be 1–8192 bytes".into())
     }
@@ -185,6 +186,7 @@ pub(crate) async fn ask_reader_for_chat(
     if runtime.session_id.as_deref()!=Some(session_id.as_str()){
         return Err("Loaded model session changed".into())
     }
+    trace.point(CausalCheckpoint::SessionReady);
     let pick_app=app.clone();
     let exact=explicit_reader_file_path(&prompt).map(PathBuf::from);
     let approved=tauri::async_runtime::spawn_blocking(move||match exact{
@@ -192,11 +194,12 @@ pub(crate) async fn ask_reader_for_chat(
         None=>pick_reader_verified(&pick_app,8*1024*1024),
     })
         .await.map_err(|_|"Reader picker unavailable")??;
-    let Some(picked)=approved else{return Ok(None)};
+    let Some(picked)=approved else{trace.decline();return Ok(None)};
     let generation_id=next_id("g-");
     let (ticket,position)=state.generation_queue
         .enqueue_with_class_committing(&session_id,&chat_id,&generation_id,TurnClass::Foreground,
             ||state.chats.append_reader_user(&chat_id,&generation_id,&prompt))?;
+    trace.point(CausalCheckpoint::UserSaved);
     let cancellation=Cancellation::default();
     let current_step=Arc::new(Mutex::new(None));
     state.reader_generations.lock()
@@ -216,9 +219,11 @@ pub(crate) async fn ask_reader_for_chat(
     let outcome=tauri::async_runtime::spawn_blocking(move||{
         let answer=(||->Result<String,String>{
             ticket.wait_for_slot()?;
+            trace.point(CausalCheckpoint::WorkerEntered);
             execute_approved_reader(&event_app,&host,session_id,chat_id.clone(),gid.clone(),prompt,
-                picked,&ticket,&cancellation,&current_step,false)
+                picked,&ticket,&cancellation,&current_step,false,&trace)
         })();
+        if answer.is_err(){trace.incomplete(ticket.cancelled()||cancellation.is_cancelled());}
         if answer.as_ref().err().is_some_and(|e|e.contains("Cancelled")){
             let _=host.chats.cancel(&chat_id,&gid);
         }
@@ -240,6 +245,7 @@ pub(crate) async fn ask_reader_for_chat(
 /// the existing authenticated ordinary Send ticket and cancellation registry.
 pub(crate) fn execute_negotiated_reader(app:&AppHandle,host:&Arc<DesktopState>,session:&str,chat:&str,gid:&str,prompt:&str,
     ticket:&generation_queue::Ticket,cancellation:&Cancellation,current_step:&Arc<Mutex<Option<String>>>)->Result<String,String>{
+    let trace=NativeDiagnosticTrace::new(host);
     let verifier=PersistedHumanTurn::current_chat(&host.chats,chat,gid,prompt);
     let checkpoint=||{
         if ticket.cancelled()||cancellation.is_cancelled(){return Err("Cancelled Reader selection".to_owned())}
@@ -248,16 +254,20 @@ pub(crate) fn execute_negotiated_reader(app:&AppHandle,host:&Arc<DesktopState>,s
         Ok(())
     };
     checkpoint()?;
-    let path=pick_reader_path(app)?.ok_or("Cancelled Reader document selection")?;
+    trace.point(CausalCheckpoint::SessionReady);
+    trace.point(CausalCheckpoint::UserSaved);
+    if ticket.verify_active_foreground(session,chat,gid).is_ok(){trace.point(CausalCheckpoint::WorkerEntered);}else{trace.lost();}
+    let Some(path)=pick_reader_path(app)? else {trace.decline();return Err("Cancelled Reader document selection".into())};
     checkpoint()?;
     // Reuse CP-03's held-original identity verification, not a path reopen.
     let picked=read_exact_reader_with_consent(&path,|_|true)?.ok_or("Cancelled Reader document selection")?;
     checkpoint()?;
-    execute_approved_reader(app,host,session.into(),chat.into(),gid.into(),prompt.into(),picked,ticket,cancellation,current_step,true)
+    let result=execute_approved_reader(app,host,session.into(),chat.into(),gid.into(),prompt.into(),picked,ticket,cancellation,current_step,true,&trace);
+    if result.is_err(){trace.incomplete(ticket.cancelled()||cancellation.is_cancelled());}result
 }
 #[allow(clippy::too_many_arguments)]
 fn execute_approved_reader(event_app:&AppHandle,host:&Arc<DesktopState>,session_id:String,chat_id:String,gid:String,prompt:String,
-    picked:PickedReaderEvidence,ticket:&generation_queue::Ticket,cancellation:&Cancellation,current_step:&Arc<Mutex<Option<String>>>,negotiated:bool)->Result<String,String>{
+    picked:PickedReaderEvidence,ticket:&generation_queue::Ticket,cancellation:&Cancellation,current_step:&Arc<Mutex<Option<String>>>,negotiated:bool,trace:&NativeDiagnosticTrace)->Result<String,String>{
     let PickedReaderEvidence{filename,bytes,source_id,source_epoch}=picked;
     // Model receives a deliberately boring virtual path. The OS location and
     // even the original filename are never a model-selectable pathname.
@@ -288,6 +298,7 @@ fn execute_approved_reader(event_app:&AppHandle,host:&Arc<DesktopState>,session_
             let verifier=if negotiated{PersistedHumanTurn::current_chat(&host.chats,&chat_id,&gid,&prompt)}
                 else{PersistedHumanTurn::queued_reader(&host.chats,&chat_id,&gid,&prompt)};
             if !verifier.verify_user_turn(&chat_id,&gid){return Err("Original Reader request changed".into())}
+            trace.point(CausalCheckpoint::SavedAttested);
             let mut reader_turn=ReaderTurnSession::new(
                 &verifier,&chat_id,&gid,&gid,&virtual_filename,bytes,
             ).map_err(|e|format!("Reader turn admission: {e:?}"))?;
@@ -298,6 +309,7 @@ fn execute_approved_reader(event_app:&AppHandle,host:&Arc<DesktopState>,session_
             if available.len()!=1||available[0].public_name!="lu_reader_read"||available[0].native_tool_id!="lu.reader.read"||available[0].effect!="read_workspace"{
                 return Err("Reader live capability no longer matches selection".into())
             }
+            trace.point(CausalCheckpoint::TaskAuthorized);
             let journal=ModelTurnJournal::open(
                 &host.catalog_path.with_file_name("lu-reader-turn-audit.sqlite"))
                 .map_err(|e|format!("Reader audit unavailable: {e:?}"))?;
@@ -313,11 +325,14 @@ fn execute_approved_reader(event_app:&AppHandle,host:&Arc<DesktopState>,session_
                 phase:"running",position:0,
             });}
             let reader_prompt=if exact_excerpt{verified_excerpt_prompt(&prompt)}else{reader_model_prompt(&virtual_filename,reuse,&prompt)};
-            let observe=progress.dispatch_observer();
+            let progress_observer=progress.dispatch_observer();
+            let observe=|point|{progress_observer(point);trace.record(|t|t.tool_checkpoint(point));};
+            trace.point(CausalCheckpoint::ModelEntered);
             let result=tauri::async_runtime::block_on(
                 reader_turn.run_journaled_observed(
                     &reader_prompt,&mut model,&cancellation,&journal,&observe))
-                .map_err(|e|format!("Reader tool turn: {e:?}"))?;
+                .map_err(|e|trace.model_error(&e).to_owned())?;
+            trace.point(CausalCheckpoint::ModelReturned);
             if cancellation.is_cancelled()||ticket.cancelled(){
                 return Err("Cancelled Reader generation".into())
             }
@@ -343,6 +358,9 @@ fn execute_approved_reader(event_app:&AppHandle,host:&Arc<DesktopState>,session_
                 host.chats.complete(&chat_id,&gid)?;
                 Ok(())
             })?;
+            // Independently read the ORIGINAL saved completion. This is not
+            // a renderer paint witness or an accuracy claim.
+            trace.saved_response(&host.chats,&chat_id,&gid,&answer,!negotiated);
             // Only a completed native Reader run with an actual successful
             // tool call may seed future metadata-only re-identification.
             host.source_reuse.remember_verified(

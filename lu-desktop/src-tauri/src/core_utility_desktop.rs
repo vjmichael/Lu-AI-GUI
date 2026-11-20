@@ -15,7 +15,7 @@ use lu_core::{
 use std::sync::{Arc,Mutex};
 
 
-use crate::turn_authority::PersistedHumanTurn;
+use crate::{turn_authority::PersistedHumanTurn,causal_diagnostic::NativeDiagnosticTrace};
 /// Deliberately small task classifier, not a generative planner. A positive
 /// result selects ONE read-only tool and one exact source value, not a grant.
 pub(crate) fn explicit_core_utility_request(text:&str)->Option<CoreUtilityRequest>{
@@ -85,6 +85,7 @@ pub(crate) async fn ask_utility_for_chat(
     app:AppHandle,state:Arc<DesktopState>,session_id:String,
     chat_id:String,prompt:String,request:CoreUtilityRequest,
 )->Result<String,String>{
+    let trace=NativeDiagnosticTrace::new(&state);
     // Recompute from the SAME original human bytes. No frontend-selected
     // utility ID or privately constructed request is authoritative.
     let canonical=explicit_core_utility_request(&prompt)
@@ -103,10 +104,12 @@ pub(crate) async fn ask_utility_for_chat(
     if initial.session_id.as_deref()!=Some(session_id.as_str()){
         return Err("Core utility model session changed".into())
     }
+    trace.point(CausalCheckpoint::SessionReady);
     let gid=next_id("g-");
     let (ticket,position)=state.generation_queue
         .enqueue_with_class_committing(&session_id,&chat_id,&gid,TurnClass::Foreground,
             ||state.chats.append_user_with_turn_id(&chat_id,&gid,&prompt))?;
+    trace.point(CausalCheckpoint::UserSaved);
     let cancellation=Cancellation::default();
     let current_step=Arc::new(Mutex::new(None));
     state.reader_generations.lock()
@@ -125,6 +128,7 @@ pub(crate) async fn ask_utility_for_chat(
     let outcome=tauri::async_runtime::spawn_blocking(move||{
         let work=(||->Result<String,String>{
             ticket.wait_for_slot()?;
+            trace.point(CausalCheckpoint::WorkerEntered);
             if ticket.cancelled()||cancellation.is_cancelled(){
                 return Err("Cancelled utility turn".into())
             }
@@ -134,8 +138,9 @@ pub(crate) async fn ask_utility_for_chat(
                 current.model_ref!=initial.model_ref{
                 return Err("Core utility model changed while queued".into())
             }
-            execute_approved_utility(&event_app,&host,session_id,chat_id.clone(),gid.clone(),prompt,canonical,&ticket,&cancellation,&current_step,None)
+            execute_approved_utility(&event_app,&host,session_id,chat_id.clone(),gid.clone(),prompt,canonical,&ticket,&cancellation,&current_step,None,&trace)
         })();
+        if work.is_err(){trace.incomplete(ticket.cancelled()||cancellation.is_cancelled());}
         if let Err(error)=&work{
             if error.contains("Cancelled"){
                 let _=host.chats.cancel(&chat_id,&gid);
@@ -163,13 +168,15 @@ pub(crate) async fn ask_utility_for_chat(
 /// human message, queue ticket, arbitrary PATH, or model-supplied arguments.
 pub(crate) fn execute_negotiated_utility(app:&AppHandle,host:&Arc<DesktopState>,session:&str,chat:&str,gid:&str,prompt:&str,
     ticket:&generation_queue::Ticket,cancellation:&Cancellation,current_step:&Arc<Mutex<Option<String>>>,choice:&crate::capability_negotiation::ReadCandidate)->Result<String,String>{
+    let trace=NativeDiagnosticTrace::new(host);
     let request=negotiable_core_utility_request(prompt).ok_or("No exact original utility input")?;
     if utility_native_id(&request)!=choice.native_tool_id{return Err("Selected utility differs from original human input".into())}
-    execute_approved_utility(app,host,session.into(),chat.into(),gid.into(),prompt.into(),request,ticket,cancellation,current_step,Some(choice))
+    let result=execute_approved_utility(app,host,session.into(),chat.into(),gid.into(),prompt.into(),request,ticket,cancellation,current_step,Some(choice),&trace);
+    if result.is_err(){trace.incomplete(ticket.cancelled()||cancellation.is_cancelled());}result
 }
 #[allow(clippy::too_many_arguments)]
 fn execute_approved_utility(event_app:&AppHandle,host:&Arc<DesktopState>,session_id:String,chat_id:String,gid:String,prompt:String,
-    canonical:CoreUtilityRequest,ticket:&generation_queue::Ticket,cancellation:&Cancellation,current_step:&Arc<Mutex<Option<String>>>,selected:Option<&crate::capability_negotiation::ReadCandidate>)->Result<String,String>{
+    canonical:CoreUtilityRequest,ticket:&generation_queue::Ticket,cancellation:&Cancellation,current_step:&Arc<Mutex<Option<String>>>,selected:Option<&crate::capability_negotiation::ReadCandidate>,trace:&NativeDiagnosticTrace)->Result<String,String>{
             if ticket.cancelled()||cancellation.is_cancelled(){return Err("Cancelled utility turn".into())}
             let current=host.supervisor.status().map_err(|_|"Core utility model unavailable")?;
             if current.session_id.as_deref()!=Some(session_id.as_str()){return Err("Core utility model changed".into())}
@@ -177,6 +184,11 @@ fn execute_approved_utility(event_app:&AppHandle,host:&Arc<DesktopState>,session
             if !verifier.verify_user_turn(&chat_id,&gid){
                 return Err("Core utility original current turn no longer authenticated".into())
             }
+            if selected.is_some(){
+                trace.point(CausalCheckpoint::SessionReady);trace.point(CausalCheckpoint::UserSaved);
+                if ticket.verify_active_foreground(&session_id,&chat_id,&gid).is_ok(){trace.point(CausalCheckpoint::WorkerEntered)}else{trace.lost()}
+            }
+            trace.point(CausalCheckpoint::SavedAttested);
             // Grants exist only after a saved exact human turn and expire
             // automatically at end of the one supervised model/tool session.
             let mut turn=CoreUtilityTurn::new(
@@ -193,6 +205,7 @@ fn execute_approved_utility(event_app:&AppHandle,host:&Arc<DesktopState>,session
             if !matches!(label,"lu_validate_schema"|"lu_check_env"){
                 return Err("Core utility model schema was widened".into())
             }
+            trace.point(CausalCheckpoint::TaskAuthorized);
             let model_prompt=utility_model_prompt(label,&prompt);
             let audit=ModelTurnJournal::open(
                 &host.catalog_path.with_file_name("lu-core-utility-model-audit.sqlite")
@@ -208,11 +221,14 @@ fn execute_approved_utility(event_app:&AppHandle,host:&Arc<DesktopState>,session
                 chat_id:chat_id.clone(),generation_id:gid.clone(),
                 phase:"running",position:0,
             });}
-            let dispatch=progress.dispatch_observer();
+            let progress_observer=progress.dispatch_observer();
+            let dispatch=|point|{progress_observer(point);trace.record(|t|t.tool_checkpoint(point));};
+            trace.point(CausalCheckpoint::ModelEntered);
             let result=tauri::async_runtime::block_on(
                 turn.run_journaled_observed(&model_prompt,&mut model,
                     &cancellation,&audit,&dispatch)
-            ).map_err(|e|format!("Core utility native turn failed: {e:?}"))?;
+            ).map_err(|e|trace.model_error(&e).to_owned())?;
+            trace.point(CausalCheckpoint::ModelReturned);
             if cancellation.is_cancelled()||ticket.cancelled(){
                 return Err("Cancelled utility turn after model feedback".into())
             }
@@ -224,6 +240,7 @@ fn execute_approved_utility(event_app:&AppHandle,host:&Arc<DesktopState>,session
                 host.chats.append_progress(&chat_id,&gid,&result.answer)?;
                 host.chats.complete(&chat_id,&gid)
             })?;
+            trace.saved_response(&host.chats,&chat_id,&gid,&result.answer,false);
             Ok(result.answer)
 }
 

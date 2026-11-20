@@ -1,7 +1,7 @@
 //! CP-01E: per-invocation host observations for the existing DX v2 protocol.
 //! This is an adapter, not an authorization or recovery journal. No content,
 //! paths, conversation IDs, model output, or exception strings are collected.
-use std::time::Instant;
+use std::{time::Instant,sync::{Arc,Mutex}};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(i32)]
@@ -11,6 +11,7 @@ pub(crate) enum Checkpoint {
     UserSaved = 2,
     WorkerEntered = 7,
     SavedAttested = 5,
+    TaskAuthorized = 6,
     ModelEntered = 8,
     ModelReturned = 9,
     AssistantSaved = 12,
@@ -41,13 +42,17 @@ pub(crate) struct CausalProgress {
     observations: Vec<Observation>,
     dropped: u32,
     failed: bool,
+    // Cursor for the original CP-01 checkpoints; additional tool observations
+    // never advance it. 0=idle, 1=dispatch entered, 2=returned but not audited.
+    cursor: usize,
+    tool_phase: u8,
 }
 
 impl CausalProgress {
     pub fn new(trace_ref: String, started: Instant) -> Self {
         let mut trace = Self {
             trace_ref, started, observations: Vec::with_capacity(ORDER.len()),
-            dropped: 0, failed: false,
+            dropped: 0, failed: false, cursor: 1, tool_phase: 0,
         };
         // The trusted native wrapper minted the reference at its entry.
         trace.observations.push(Observation {
@@ -63,10 +68,14 @@ impl CausalProgress {
     pub fn mark_lost(&mut self) { self.dropped = self.dropped.saturating_add(1); }
     pub fn terminal(&self) -> bool {
         self.failed || self.observations.last().is_some_and(|e|
-            e.stage == Checkpoint::AssistantRendered as i32)
+            e.stage == Checkpoint::AssistantRendered as i32 ||
+            (e.stage == Checkpoint::AssistantSaved as i32 && self.has_tool_authority()))
     }
 
+    fn has_tool_authority(&self)->bool { self.observations.iter().any(|e|e.stage==6) }
+
     fn append(&mut self, stage: i32, outcome: i32, failure_code: i32) {
+        if self.observations.len() >= 64 { self.mark_lost(); return; }
         let elapsed_ms = self.started.elapsed().as_millis().min(u64::MAX as u128) as u64;
         self.observations.push(Observation { stage, outcome, failure_code, elapsed_ms });
     }
@@ -79,26 +88,50 @@ impl CausalProgress {
             self.observations.iter().any(|e| e.stage == stage as i32) {
             return true;
         }
-        if self.failed || ORDER.get(self.observations.len()) != Some(&stage) {
+        if stage == Checkpoint::TaskAuthorized {
+            if self.failed || self.cursor != 5 || self.has_tool_authority() { self.mark_lost(); return false; }
+            self.append(6,2,0); return true;
+        }
+        if self.failed || ORDER.get(self.cursor) != Some(&stage) ||
+            (stage==Checkpoint::ModelReturned && self.tool_phase!=0) {
             self.dropped = self.dropped.saturating_add(1);
             return false;
         }
         let outcome = if matches!(stage, Checkpoint::WorkerEntered | Checkpoint::ModelEntered) { 1 } else { 2 };
         self.append(stage as i32, outcome, 0);
+        self.cursor += 1;
         true
     }
 
     /// Only call at an actual error return from the original model dispatch.
     /// The cause remains unknown; this is not proof a worker exited.
     pub fn model_failed(&mut self) {
-        if self.failed || ORDER.get(self.observations.len()) != Some(&Checkpoint::ModelReturned) {
+        self.model_failed_with(1);
+    }
+    pub fn model_failed_with(&mut self, code:i32) {
+        if self.failed || ORDER.get(self.cursor) != Some(&Checkpoint::ModelReturned) {
             self.dropped = self.dropped.saturating_add(1);
             return;
         }
-        self.append(Checkpoint::ModelReturned as i32, 3, 1);
+        self.append(Checkpoint::ModelReturned as i32, if code==9 {4}else{3}, code);
         self.failed = true;
     }
 
+    /// The actual dispatch boundary is not a typed result. Only the shared
+    /// supervised loop can confirm a validated and durably audited envelope.
+    pub fn tool_checkpoint(&mut self, point:lu_core::agent_tool_loop::ToolDispatchCheckpoint) {
+        use lu_core::agent_tool_loop::ToolDispatchCheckpoint::*;
+        if self.failed || self.cursor != 6 || !self.has_tool_authority() || self.observations.len()>=60 { self.mark_lost(); return; }
+        match (self.tool_phase,point) {
+            (0,Entered)=>{self.append(14,1,0);self.tool_phase=1},
+            (1,Returned)=>{self.append(15,1,0);self.tool_phase=2},
+            (2,FeedbackAudited)=>{self.append(15,2,0);self.tool_phase=0},
+            _=>self.mark_lost(),
+        }
+    }
+    pub fn human_declined(&mut self) {
+        if !self.failed { self.append(20,3,3); self.failed=true; }
+    }
     /// A canonical refusal proves that the original nonce was fenced, but
     /// not which earlier native admission check failed.
     pub fn refused(&mut self) {
@@ -110,13 +143,57 @@ impl CausalProgress {
     /// Generic failure/cancellation with no independently observed cause.
     /// Mark evidence incomplete; never infer worker termination or rollback.
     pub fn finish_incomplete(&mut self, cancelled: bool) {
-        if self.failed { return; }
+        if self.terminal() { return; }
         self.dropped = self.dropped.saturating_add(1);
         self.append(21, if cancelled { 4 } else { 3 }, if cancelled { 9 } else { 1 });
         self.failed = true;
     }
 }
 
+/// The original native transaction uses the existing DX journal. A
+/// dropped observation can only reduce assurance, never change tool authority.
+pub(crate) struct NativeDiagnosticTrace {
+    trace:Mutex<CausalProgress>,
+    archive:Option<Arc<crate::diagnostic_archive::DiagnosticArchive>>,
+}
+impl NativeDiagnosticTrace {
+    pub fn new(host:&crate::DesktopState)->Self {
+        let this=Self{trace:Mutex::new(CausalProgress::new(crate::next_id(""),std::time::Instant::now())),archive:host.perf01.archive()};
+        this.record(|_|{});this
+    }
+    pub fn record(&self,apply:impl FnOnce(&mut CausalProgress)) {
+        if let Ok(mut trace)=self.trace.lock(){
+            apply(&mut trace);
+            if let Some(archive)=&self.archive{if !archive.persist(&trace){trace.mark_lost();}}
+        }
+    }
+    pub fn point(&self,point:Checkpoint){self.record(|t|{t.observe(point);});}
+    pub fn decline(&self){self.record(|t|t.human_declined());}
+    pub fn lost(&self){self.record(|t|t.mark_lost());}
+    pub fn incomplete(&self,cancelled:bool){self.record(|t|t.finish_incomplete(cancelled));}
+    pub fn saved_response(&self,chats:&crate::chat_store::ChatStore,chat:&str,gid:&str,answer:&str,reader:bool){
+        if chats.require(chat).ok().and_then(|book|book.diagnostic_native_response_matches(chat,gid,answer,reader).ok())==Some(true){self.point(Checkpoint::AssistantSaved)}else{self.lost()}
+    }
+    pub fn model_error(&self,error:&lu_core::supervised_tool_generation::NativeGenerationError)->&'static str{
+        let (code,message)=native_failure(error);
+        self.record(|t|t.model_failed_with(code));message
+    }
+}
+impl Drop for NativeDiagnosticTrace {
+    fn drop(&mut self){self.record(|t|t.finish_incomplete(false));}
+}
+fn native_failure(error:&lu_core::supervised_tool_generation::NativeGenerationError)->(i32,&'static str){
+    use lu_core::supervised_tool_generation::native_generation_failure_class;
+    match native_generation_failure_class(error){
+        "cancelled"=>(9,"Cancelled inspection. Check the conversation before retrying."),
+        "authority_rejected"|"policy_denied"=>(3,"The requested access was not authorized. Review the selected permission."),
+        "inference_failed"=>(1,"The loaded model could not finish the inspection. Check the model and try again."),
+        "journal_failed"=>(4,"Lu could not confirm a saved inspection record. Check the conversation and available storage."),
+        "task_deadline"=>(8,"The inspection reached its time limit. Try a smaller request."),
+        "model_reply_rejected"|"json_regeneration_exhausted"|"required_observation_missing"|"tool_contract_rejected"|"inference_event_invalid"=>(10,"Lu could not verify the model's inspection response. Try a clearer request or another model."),
+        _=>(1,"The inspection did not complete. Check the conversation before trying again."),
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::*;

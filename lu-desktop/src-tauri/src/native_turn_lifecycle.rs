@@ -41,6 +41,7 @@ impl NativeTurnProgress {
     pub(crate) fn dispatch_observer(&self) -> impl Fn(ToolDispatchCheckpoint)+Send+Sync+'static {
         let owned=self.clone();
         move |checkpoint| {
+            if checkpoint==ToolDispatchCheckpoint::FeedbackAudited{return}
             let phase=dispatch_phase(&owned.active_step,checkpoint);
             owned.emit(phase);
         }
@@ -56,7 +57,7 @@ fn dispatch_phase(active:&Mutex<Option<String>>, checkpoint:ToolDispatchCheckpoi
     set_step(active,None);
     match checkpoint {
         ToolDispatchCheckpoint::Entered=>Phase::ToolStarted,
-        ToolDispatchCheckpoint::Returned=>Phase::ToolReturned,
+        ToolDispatchCheckpoint::Returned|ToolDispatchCheckpoint::FeedbackAudited=>Phase::ToolReturned,
     }
 }
 

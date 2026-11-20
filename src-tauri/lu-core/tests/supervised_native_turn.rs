@@ -255,6 +255,7 @@ async fn model_output_from_supervisor_dispatches_real_protobuf_tool_and_continue
         vec![
             ToolDispatchCheckpoint::Entered,
             ToolDispatchCheckpoint::Returned,
+            ToolDispatchCheckpoint::FeedbackAudited,
         ]
     );
     assert_eq!(result.tool_calls, 1);

@@ -742,6 +742,7 @@ struct TurnLifecycle<'a> {
     journal: Option<&'a ModelTurnJournal>,
     conversation: &'a str,
     task: &'a str,
+    observer: Option<&'a (dyn Fn(ToolDispatchCheckpoint) + Send + Sync)>,
 }
 impl TurnLifecycle<'_> {
     fn check(&self, after_dispatch: bool) -> Result<(), NativeGenerationError> {
@@ -806,6 +807,9 @@ impl TurnLifecycle<'_> {
         ).map_err(|_| NativeGenerationError::InvalidInferenceEvent)?);
         record_audit(self.journal, self.conversation, self.task,
             ModelAuditKind::ToolFeedback, &feedback, None)?;
+        if self.journal.is_some() {
+            if let Some(observe)=self.observer { observe(ToolDispatchCheckpoint::FeedbackAudited); }
+        }
         stop_on_policy_denial(&data, self.journal, self.conversation, self.task, turn)?;
         records.push(NativeTurnRecord::ToolFeedback(data));
         self.continue_authorized(turn, services, true)?;
@@ -876,7 +880,7 @@ async fn execute_supervised_native_turn(
     let conversation_id = conversation_id.to_owned();
     let task_id = task_id.to_owned();
     let lifecycle = TurnLifecycle { started: Instant::now(), cancel, journal,
-        conversation: &conversation_id, task: &task_id };
+        conversation: &conversation_id, task: &task_id, observer };
     let catalog = services.catalog;
     let registry = services.registry;
     let authority = services.authority;
@@ -1414,10 +1418,10 @@ mod failure_class_tests {
     fn deadline_is_cumulative_and_cancellation_takes_precedence() {
         let cancel = Cancellation::default();
         let live = TurnLifecycle { started: Instant::now(), cancel: &cancel,
-            journal: None, conversation: "c", task: "t" };
+            journal: None, conversation: "c", task: "t", observer: None };
         assert_eq!(live.check(false), Ok(()));
         let elapsed = TurnLifecycle { started: Instant::now() - MAX_LU_FOREGROUND_TASK_DURATION,
-            cancel: &cancel, journal: None, conversation: "c", task: "t" };
+            cancel: &cancel, journal: None, conversation: "c", task: "t", observer: None };
         assert_eq!(elapsed.check(false), Err(NativeGenerationError::TaskDeadline));
         assert_eq!(elapsed.check(true), Err(NativeGenerationError::TaskDeadline));
         cancel.cancel();

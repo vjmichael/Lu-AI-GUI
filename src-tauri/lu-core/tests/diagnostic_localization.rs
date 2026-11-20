@@ -381,3 +381,18 @@ fn current_transaction_model_failure_and_lost_evidence_are_not_success() {
     assert_eq!(localize_transactional_turn(&trace).unwrap().evidence_strength,
         EvidenceStrength::InsufficientEvidence);
 }
+
+#[test]
+fn prior_tool_return_does_not_confirm_second_unfinished_dispatch() {
+    let mut trace=all_success();
+    trace.events.truncate(9);
+    for (stage,outcome) in [(14,1),(15,1),(15,2),(14,1),(15,1)] {
+        let seq=trace.events.len() as u64+1;
+        trace.events.push(proto::DiagnosticEvent{sequence:seq,parent_sequence:seq-1,stage,outcome,
+            elapsed_millis:seq*10,clock_domain:2,failure_code:0,attempt:1,clock_epoch:1});
+    }
+    let finding=localize_normal_turn(&trace).unwrap();
+    assert_eq!(finding.fault_region,"native_tool");
+    assert_eq!(finding.first_unconfirmed,"tool_dispatch_returned");
+    assert_ne!(finding.evidence_strength,EvidenceStrength::Complete);
+}

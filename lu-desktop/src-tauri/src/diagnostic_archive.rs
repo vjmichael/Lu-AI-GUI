@@ -27,6 +27,8 @@ pub(crate) struct DiagnosticArchive{conn:Mutex<Connection>}
 pub(crate) struct ArchivedFinding{
     recording_state:&'static str,
     finding:DiagnosticFinding,
+    explanation:&'static str,
+    suggestion:&'static str,
 }
 #[derive(Serialize)]
 #[serde(rename_all="camelCase")]
@@ -161,7 +163,8 @@ impl DiagnosticArchive{
         for row in rows{
             let Ok((key,body,state))=row else{unavailable_records+=1;continue};
             let Ok(mut trace)=decode_diagnostic_trace(&body) else{unavailable_records+=1;continue};
-            let terminal=trace.events.last().is_some_and(|e|e.stage==13||matches!(e.outcome,3..=5));
+            let terminal=trace.events.last().is_some_and(|e|e.stage==13||matches!(e.outcome,3..=5)||
+                (e.stage==12 && trace.events.iter().any(|v|v.stage==6&&v.outcome==2)));
             if trace.trace_ref!=key||!matches!(state.as_str(),"sealed"|"live"|"recovered")||
                 (state=="sealed")!=terminal{
                 unavailable_records+=1;continue
@@ -172,7 +175,7 @@ impl DiagnosticArchive{
                 _=>{trace.dropped_events=trace.dropped_events.saturating_add(1);"live_incomplete"}
             };
             match localize_transactional_turn(&trace){
-                Ok(finding)=>findings.push(ArchivedFinding{recording_state,finding}),
+                Ok(finding)=>{let (explanation,suggestion)=plain_finding(&finding);findings.push(ArchivedFinding{recording_state,finding,explanation,suggestion})},
                 Err(_)=>unavailable_records+=1,
             }
         }
@@ -182,12 +185,55 @@ impl DiagnosticArchive{
             active_check:checked.ok().flatten(),active_check_unavailable})
     }
 }
+/// Only fixed host vocabulary; never echo exception text, filenames or IDs.
+fn plain_finding(f:&DiagnosticFinding)->(&'static str,&'static str){
+    use lu_core::diagnostic_localization::EvidenceStrength::*;
+    if f.evidence_strength==InsufficientEvidence{return ("Lu could not confirm where the request stopped.","Check the conversation before trying again. No automatic retry was made.")}
+    if f.evidence_strength==Complete{return ("Lu confirmed the response was saved and reported displayed.","No action needed for delivery. This does not verify the answer's accuracy.")}
+    match (f.failure_code,f.fault_region,f.confirmed_until) {
+        ("authority_denied",_,_) => ("The request was not authorized.","Review the requested permission if you want to try again."),
+        ("cancelled",_,_) => ("The request was stopped.","Check the saved conversation before retrying."),
+        ("backend_unavailable",_,_) => ("The loaded model could not complete the request.","Check that the model is loaded and available."),
+        ("protocol",_,_) => ("Lu could not verify the model's structured response.","Try a clearer request or a model that supports the operation."),
+        ("persistence",_,_) => ("Lu could not confirm a required saved record.","Check the conversation and available storage before trying again."),
+        ("timeout",_,_) => ("The request reached its time limit.","Try a smaller request."),
+        (_,"native_tool",_) => ("Lu could not confirm a complete tool response.","Check the selected resource and permissions before trying again."),
+        (_,_,"assistant_saved") => ("Lu confirmed the response was saved, but not that it appeared on screen.","Reopen the conversation to check the saved response."),
+        (_,"model_runtime",_) => ("The model did not complete the request.","Check the loaded model and try a smaller request."),
+        _ => ("Lu could not confirm the next step of the request.","Check the conversation before trying again."),
+    }
+}
 #[cfg(test)]
 mod tests{
     use super::*;
     use crate::causal_diagnostic::Checkpoint;
     use std::time::Instant;
     fn trace(ref_id:&str)->CausalProgress{CausalProgress::new(ref_id.to_owned(),Instant::now())}
+    #[test]
+    fn reader_trace_distinguishes_dispatch_feedback_saved_response_and_display(){
+        use lu_core::agent_tool_loop::ToolDispatchCheckpoint::*;
+        use lu_core::diagnostic_localization::EvidenceStrength;
+        let archive=DiagnosticArchive::open(Path::new(":memory:")).unwrap();
+        let mut t=trace("0123456789abcdef0123456789abcdef");
+        for stage in [Checkpoint::SessionReady,Checkpoint::UserSaved,Checkpoint::WorkerEntered,Checkpoint::SavedAttested,Checkpoint::TaskAuthorized,Checkpoint::ModelEntered]{assert!(t.observe(stage));}
+        t.tool_checkpoint(Entered);t.tool_checkpoint(Returned);
+        assert!(archive.persist(&t));
+        let r=archive.report().unwrap();
+        assert_eq!(r.findings[0].finding.fault_region,"native_tool");
+        assert_eq!(r.findings[0].finding.evidence_strength,EvidenceStrength::InsufficientEvidence);
+        t.tool_checkpoint(FeedbackAudited);
+        assert!(t.observe(Checkpoint::ModelReturned));
+        assert!(t.observe(Checkpoint::AssistantSaved));
+        assert!(archive.persist(&t));
+        let r=archive.report().unwrap();
+        assert_eq!(r.findings[0].recording_state,"sealed");
+        assert_eq!(r.findings[0].finding.confirmed_until,"assistant_saved");
+        assert_eq!(r.findings[0].finding.evidence_strength,EvidenceStrength::BoundedToNextStage);
+        assert!(r.findings[0].explanation.contains("not that it appeared"));
+        let mut refused=trace("fedcba9876543210fedcba9876543210");refused.human_declined();assert!(archive.persist(&refused));
+        let r=archive.report().unwrap();assert_eq!(r.findings[0].finding.failure_code,"authority_denied");
+        assert!(r.findings[0].explanation.contains("not authorized"));
+    }
     #[test]
     fn recovery_never_promotes_open_trace_and_rejects_stale_write(){
         let path=std::env::temp_dir().join(format!("lu-cp01-dx-{}-{}.sqlite",std::process::id(),rand::random::<u64>()));

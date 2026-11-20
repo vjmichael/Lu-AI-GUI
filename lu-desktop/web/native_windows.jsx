@@ -135,6 +135,7 @@ export function SettingsWindow({onNavigate,active=true}={}){
   const [meaningRecall,setMeaningRecall]=useState(null);
   const [memoryStatusRetry,setMemoryStatusRetry]=useState(0);
   const [observation,setObservation]=useState(null);
+  const [troubleshooting,setTroubleshooting]=useState(null);
   const [appearance,setAppearance]=useState(null);
   const [busy,setBusy]=useState(false);
   const [error,setError]=useState('');
@@ -810,6 +811,17 @@ export function SettingsWindow({onNavigate,active=true}={}){
           <div className="nativeOption">
             <strong>Troubleshooting</strong>
             <p>Lu keeps a small local record of response progress and failure categories without saving conversation text or images in that record. Nothing is uploaded.</p>
+            <button type="button" disabled={busy} onClick={()=>void act('Local troubleshooting report ready.',async()=>{
+              setTroubleshooting(null);
+              const report=await invoke('lu_cp01_diagnostic_report');
+              if(report!==null)setTroubleshooting(report);
+              return report;
+            })}>Review recent response issues…</button>
+            {troubleshooting&&<div role="status">
+              {troubleshooting.findings?.length===0&&<p>No recent response records are available.</p>}
+              {troubleshooting.findings?.slice(0,8).map((item,index)=><div key={index}><strong>{item.explanation}</strong><p>{item.suggestion}</p></div>)}
+              {troubleshooting.unavailableRecords>0&&<p>Some records could not be confirmed.</p>}
+            </div>}
             <button type="button" disabled={busy} onClick={()=>void act('Troubleshooting report copied. Share only if you choose.',async()=>{
               const report=await invoke('lu_cp01_diagnostic_report');
               if(report===null)return null;

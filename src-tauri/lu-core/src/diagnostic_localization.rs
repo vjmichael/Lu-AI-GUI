@@ -335,11 +335,14 @@ fn localize_path(
         (14, 15, "native_tool", "inspect_typed_tool_result"),
         (16, 17, "worker_recovery", "check_worker_exit_and_journal"),
     ] {
-        if events.iter().any(|event| event.stage == started)
-            && !events
-                .iter()
-                .any(|event| event.stage == terminal && event.outcome == 2)
-        {
+        let unmatched = events.iter().filter(|event|event.stage==started).any(|entry|{
+            let next=events.iter().find(|event|event.stage==started && event.sequence>entry.sequence)
+                .map(|event|event.sequence).unwrap_or(u64::MAX);
+            !events.iter().any(|event|event.stage==terminal && event.outcome==2 &&
+                event.sequence>entry.sequence && event.sequence<next &&
+                has_ancestor(event,entry.sequence,&events))
+        });
+        if unmatched {
             return Ok(DiagnosticFinding {
                 schema: "lu.dx.finding.v1",
                 attempt,

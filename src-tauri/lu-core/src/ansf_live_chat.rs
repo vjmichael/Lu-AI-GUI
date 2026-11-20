@@ -699,6 +699,29 @@ impl AnsfStore{
             params![session_id,turn_id],|r|r.get(0)
         ).optional().map_err(Into::into)
     }
+    /// Passive diagnostic readback only. The original host event, exact final
+    /// reply and completion marker must agree; this never creates authority.
+    pub fn diagnostic_native_response_matches(&self,session_id:&str,turn_id:&str,
+        expected:&str,reader:bool)->Result<bool,AnsfError>{
+        if !valid_session(session_id)||!opaque(turn_id,"g-")||expected.is_empty(){return Ok(false)}
+        let conn=self.conn.lock().map_err(|_|AnsfError::Locked)?;
+        let matched:bool=conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM ansf_visible_chat d
+              JOIN ansf_live_chat_events e ON e.seq=d.latest_event_seq
+                AND e.session_id=d.session_id AND e.generation_id=d.generation_id
+              WHERE d.session_id=?1 AND d.generation_id=?2 AND d.role='assistant'
+                AND d.status='final' AND e.kind='assistant_progress' AND e.origin='host' AND e.text=?3
+                AND EXISTS(SELECT 1 FROM ansf_live_chat_events u WHERE u.session_id=d.session_id
+                  AND u.origin='host' AND u.seq<d.first_seq AND
+                  ((?4 AND u.kind='reader_user' AND u.generation_id=?2) OR
+                   (NOT ?4 AND u.kind='user' AND u.user_turn_id=?2 AND u.source_entry_id IS NOT NULL)))
+                AND EXISTS(SELECT 1 FROM ansf_live_chat_events c WHERE c.session_id=d.session_id
+                  AND c.generation_id=?2 AND c.kind='assistant_completed' AND c.origin='host' AND c.seq>e.seq)
+                AND NOT EXISTS(SELECT 1 FROM ansf_live_chat_events x WHERE x.session_id=d.session_id
+                  AND x.generation_id=?2 AND x.kind='assistant_cancelled'))",
+            params![session_id,turn_id,expected,reader],|r|r.get(0))?;
+        Ok(matched)
+    }
     /// Indexed latest human-origin authenticated user turn. No imported,
     /// unauthenticated or Reader event ever appears in this result.
     /// MEMORY-LOOP-02: select only earlier host-authenticated human turns
@@ -999,5 +1022,13 @@ mod tests{
             "c-reader",&format!("g-{:032x}",3)).unwrap().is_none());
         assert!(store.append_host_chat_event("c-reader",&event(2,
             LiveKind::ReaderUser,"Different",None,Some(3))).is_err());
+        let gid=format!("g-{:032x}",3);
+        store.append_host_chat_event("c-reader",&event(3,LiveKind::AssistantProgress,"original",None,Some(3))).unwrap();
+        assert!(!store.diagnostic_native_response_matches("c-reader",&gid,"original",true).unwrap());
+        store.append_host_chat_event("c-reader",&event(4,LiveKind::AssistantCompleted,"",None,Some(3))).unwrap();
+        assert!(store.diagnostic_native_response_matches("c-reader",&gid,"original",true).unwrap());
+        assert!(!store.diagnostic_native_response_matches("c-reader",&gid,"other",true).unwrap());
+        assert!(!store.diagnostic_native_response_matches("c-reader",&gid,"original",false).unwrap());
+        assert!(!store.diagnostic_native_response_matches("c-reader",&format!("g-{:032x}",4),"original",true).unwrap());
     }
 }
