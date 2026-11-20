@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "fbcd834a29ecfe4fd9cc61b69a7e599ca9da5a38",
-  "trackedFileCount": 1215,
+  "sourceCommitBeforeLock": "4051ea87eb08f1181efaafff4e45ad8bc685cb9b",
+  "trackedFileCount": 1216,
   "files": [
     {
       "path": ".gitattributes",
@@ -917,7 +917,7 @@
     },
     {
       "path": "docs/LU_DEVELOPMENT_LEDGER.md",
-      "blob": "e4d1d5a23e7424479149ec681e1f6a83c2601c68"
+      "blob": "01a7f82a1bd077e3aaccadca7119cf8e0e89a1f7"
     },
     {
       "path": "docs/LU_E1_NATIVE_EVIDENCE_20261107.md",
@@ -1669,7 +1669,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/causal_diagnostic.rs",
-      "blob": "19a2afcac854b0456007d93721d28fdf073daeb2"
+      "blob": "7814c25f35b41b3b5b18b05f91eb8af49db0f9bc"
     },
     {
       "path": "lu-desktop/src-tauri/src/chat_message_interactions.rs",
@@ -1685,7 +1685,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/core_utility_desktop.rs",
-      "blob": "78822a71da0d16a0e43f2e0f7bd0ed33d6bfb0ae"
+      "blob": "3fda3f7dc46cfb1560b378812513fc342864e37c"
     },
     {
       "path": "lu-desktop/src-tauri/src/cp06a_reachability_tests.rs",
@@ -1693,7 +1693,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/diagnostic_archive.rs",
-      "blob": "3886dce65fe888c4277ae2d45d20adc17922f8e5"
+      "blob": "6e0b95e585cf03cf4a2849b884bc8bebdbc01a4b"
     },
     {
       "path": "lu-desktop/src-tauri/src/document_create_desktop.rs",
@@ -1829,7 +1829,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/native_turn_lifecycle.rs",
-      "blob": "0aa8b75fb561af1d2a24207e6461a9cec94ac9ca"
+      "blob": "ff79dc110ff83588195e905121ac6ac0a0877600"
     },
     {
       "path": "lu-desktop/src-tauri/src/observe_desktop.rs",
@@ -1933,7 +1933,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/reader_desktop.rs",
-      "blob": "e16dcbe61f501aecd11e5020fc75636bb5d00a1b"
+      "blob": "09192688942c3d17739bf3f20caa17b2a9fc9987"
     },
     {
       "path": "lu-desktop/src-tauri/src/research_desktop.rs",
@@ -1993,7 +1993,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/workspace_desktop.rs",
-      "blob": "e2546338397ec81963ffafc27206632279b9ed1a"
+      "blob": "f81b35ffd7996f1fc26fc6e99f5181592e7f8e48"
     },
     {
       "path": "lu-desktop/src-tauri/src/write_proposal.rs",
@@ -2649,7 +2649,7 @@
     },
     {
       "path": "lu-desktop/web/native_windows.jsx",
-      "blob": "35695e7458c5d2fa5b0be7cb4d95a76d86ca57d4"
+      "blob": "9d15e51a2ec3b55299acee8a91906d56afbaa6b4"
     },
     {
       "path": "lu-desktop/web/response_view.mjs",
@@ -2789,11 +2789,15 @@
     },
     {
       "path": "scripts/cp11br3-changing-file-gui.py",
-      "blob": "f5d6d80a379ccf0cc41e7bffb5dde8fe5963c9b0"
+      "blob": "3e5a25991fca5d008fbf5b6a733b051348519427"
     },
     {
       "path": "scripts/cp11br3-closeout-resume-gui.py",
       "blob": "9beac606f36a710d5abf2c3ca7b68440371dca02"
+    },
+    {
+      "path": "scripts/cp12a-native-diagnostics-gui.py",
+      "blob": "c15df98dc7251d584ab086ff08bc11a10a5853f4"
     },
     {
       "path": "scripts/install-lu-agent01l-native-fixture.sh",
@@ -3281,7 +3285,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/agent_tool_loop.rs",
-      "blob": "71c7e094e937a4f1eade0b2f688678f08d60146b"
+      "blob": "bc36371a0e0b00af7ae6efb2d4f5bc04376904bc"
     },
     {
       "path": "src-tauri/lu-core/src/ai_operations.rs",
@@ -3333,7 +3337,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/ansf_live_chat.rs",
-      "blob": "2823277c0dd7fd69691c37d9429d8df88a3d6183"
+      "blob": "c476e5d32ba736dfc27d63d2672f586704cc42b3"
     },
     {
       "path": "src-tauri/lu-core/src/ansf_revisions.rs",
@@ -3497,7 +3501,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/diagnostic_localization.rs",
-      "blob": "408d7ba312de6aaebda509bde00483c9a0e6a6e0"
+      "blob": "134300065867aaba9eed993c2bf4a524819950c5"
     },
     {
       "path": "src-tauri/lu-core/src/document_preferences.rs",
@@ -4149,7 +4153,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/supervised_tool_generation.rs",
-      "blob": "d34eb7eca384939b68b31e5ff04e4bebbcf6dc9d"
+      "blob": "4280bac961b57735b258dd04640ea50d9e339e55"
     },
     {
       "path": "src-tauri/lu-core/src/tasks.rs",
@@ -4393,7 +4397,7 @@
     },
     {
       "path": "src-tauri/lu-core/tests/diagnostic_localization.rs",
-      "blob": "e814aa698fd88cb1dacc6b7795a271b73fd86c77"
+      "blob": "089e52c509198537e94f75ef01612804084ded2f"
     },
     {
       "path": "src-tauri/lu-core/tests/document_preferences.rs",
@@ -4721,7 +4725,7 @@
     },
     {
       "path": "src-tauri/lu-core/tests/supervised_native_turn.rs",
-      "blob": "3b0687c3e5adc8fb05c4485961ba5446b23ac294"
+      "blob": "6128fb2f69a7d391ca34a2a6422e1643f83c5669"
     },
     {
       "path": "src-tauri/lu-core/tests/supervisor_dynamic_catalog.rs",
