@@ -242,7 +242,7 @@
     },
     {
       "path": "ide/packaging/test_verify_technical_lsp_install.py",
-      "sha": "a308a188e0ce1ed7cb99bedb14e038d48ddd1143",
+      "sha": "2fcb753a04ae0523bfe11d7629be21471474e9db",
       "scope": "R3 hostile installed resource byte and independent archive reconstruction tests"
     },
     {
@@ -277,7 +277,7 @@
     },
     {
       "path": "ide/packaging/verify_technical_lsp_install.py",
-      "sha": "e8cc254cfa1841f82b6fca1e4c1c6e7b342fe3b8",
+      "sha": "0e8071c51d3918a3884d111dcb44f3e8d5334f5d",
       "scope": "R3 read-only staged and installed resource verification from pinned archives; no provider execution"
     },
     {

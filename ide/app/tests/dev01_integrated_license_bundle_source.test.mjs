@@ -120,3 +120,14 @@ test('dirty tab layout requires genuine native metadata-only confirmation before
   assert.match(text('../fixtures/Test-Wo8NativeDesktopUI.ps1'),/Confirm-NativeOneUseDialog 'Remember tab layout' 'Remember navigation'/);
   assert.match(text('../fixtures/dev01_modern_linux_installed_atspi.py'),/expected_title="Lu IDE · Remember tab layout", caption="Remember navigation"/);
 });
+
+// Accessible names describe the actual result state; no fabricated success.
+test('source action and stale saved-search notifications have accessible state labels', () => {
+  const web=text('../web/main.jsx');
+  const banner=web.split('{problem && <div className="errorMsg appError"')[1].split('{isWorkbench')[0];
+  assert.match(banner,/problem\.startsWith\('Source action not verified:'\)/);
+  assert.match(banner,/problem\.startsWith\('Cannot open that saved search hit:'\)\) \? problem/);
+  assert.match(banner,/hint\.startsWith\('Source action completed:'\) \? hint/);
+  assert.match(banner,/\{problem\}/);
+  assert.match(banner,/\{hint\}/);
+});

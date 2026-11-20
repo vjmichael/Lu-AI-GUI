@@ -5,6 +5,7 @@ The independently staged, SHA-pinned original archive tree is the reference,
 not a receipt read from the installation being verified.
 """
 import argparse
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -39,6 +40,31 @@ def plain(path, directory=False, root_owned=False):
     if root_owned:
         require(info.st_uid == 0 and not info.st_mode & 0o022, 'installed bytes not root owned/read-only to others')
     return info
+
+
+# Tauri's NSIS bundler writes a fixed, same-length marker while packaging,
+# then restores the original compiled binary. Only that exact byte delta is
+# admissible; never normalize arbitrary executable bytes or ignore a mismatch.
+NSIS_UNBUNDLED_MARKER = b'__TAURI_BUNDLE_TYPE_VAR_UNK'
+NSIS_INSTALLED_MARKER = b'__TAURI_BUNDLE_TYPE_VAR_NSS'
+
+
+def verify_nsis_desktop_identity(built, installed, expected_sha):
+    require(re.fullmatch('[0-9a-fA-F]{64}', expected_sha) is not None,
+            'invalid expected installed desktop digest')
+    built_info, installed_info = plain(built), plain(installed)
+    require(0 < built_info.st_size == installed_info.st_size <= 512 * 1024 * 1024,
+            'installed desktop size differs from build or exceeds bound')
+    original, observed = built.read_bytes(), installed.read_bytes()
+    require(len(original) == len(observed) == built_info.st_size and
+            original.startswith(b'MZ') and observed.startswith(b'MZ'),
+            'desktop executable changed during read or is not PE')
+    require(original.count(NSIS_UNBUNDLED_MARKER) == 1,
+            'expected unique Tauri unbundled marker missing or ambiguous')
+    expected = original.replace(NSIS_UNBUNDLED_MARKER, NSIS_INSTALLED_MARKER, 1)
+    require(observed == expected, 'installed executable differs outside exact NSIS bundle marker')
+    require(hashlib.sha256(observed).hexdigest() == expected_sha.lower(),
+            'installed desktop identity changed before UI admission')
 
 
 def file_inventory(root, root_owned=False):
@@ -156,6 +182,7 @@ def main():
     group = p.add_mutually_exclusive_group(required=True)
     group.add_argument('--deb-package')
     group.add_argument('--windows-root', type=Path)
+    p.add_argument('--windows-desktop-sha')
     a = p.parse_args()
     try:
         require(os.environ.get('GITHUB_ACTIONS') == 'true' and os.environ.get('RUNNER_TEMP'), 'disposable hosted CI only')
@@ -165,6 +192,13 @@ def main():
             require(path.resolve().is_relative_to(runner) and not path.is_symlink(), 'foreign staging reference')
         root, legal, owned = installed_root(a.deb_package, a.windows_root)
         require(owned == a.platform.startswith('linux'), 'wrong native platform')
+        if owned:
+            require(a.windows_desktop_sha is None, 'unexpected Windows executable identity')
+        else:
+            require(a.windows_desktop_sha is not None, 'missing Windows executable identity')
+            built = Path(__file__).resolve().parents[1] / 'app/src-tauri/target/release/lu-ide-desktop.exe'
+            verify_nsis_desktop_identity(built, a.windows_root / 'lu-ide-desktop.exe', a.windows_desktop_sha)
+            print('DEV02_TECHNICAL_NSIS_EXACT_BUILD_BUNDLE_MARKER_VERIFIED=PASS')
         manifests = Path(__file__).parent
         count = verify_from_archives(a.reference, root, strict_json(manifests/'lsp_upstream_archive_candidates_20261108.json'),
                                  strict_json(manifests/'lsp_original_upstream_notices_20261108.json'),

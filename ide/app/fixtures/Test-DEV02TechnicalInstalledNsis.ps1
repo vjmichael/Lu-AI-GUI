@@ -20,13 +20,14 @@ $exe=Join-Path $install 'lu-ide-desktop.exe'
 try {
   $p=Start-Process -FilePath $setup -ArgumentList @('/S',('/D='+$install)) -Wait -PassThru
   if ($p.ExitCode -ne 0 -or !(Test-Path -LiteralPath $exe -PathType Leaf)) { throw 'Real NSIS installation failed' }
-  & python ide/packaging/verify_technical_lsp_install.py --reference $Reference --archives (Join-Path $env:RUNNER_TEMP 'dev02-technical-archives') --original-notices (Join-Path $env:RUNNER_TEMP 'dev02-technical-notices') --platform windows-x86_64 --source-sha $SourceSha --windows-root $install
+  $sha=(Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash
+  & python ide/packaging/verify_technical_lsp_install.py --reference $Reference --archives (Join-Path $env:RUNNER_TEMP 'dev02-technical-archives') --original-notices (Join-Path $env:RUNNER_TEMP 'dev02-technical-notices') --platform windows-x86_64 --source-sha $SourceSha --windows-root $install --windows-desktop-sha $sha
   if ($LASTEXITCODE -ne 0) { throw 'Installed resource verification failed' }
   if (@(Get-ChildItem -LiteralPath $install -Recurse -File -Filter windows_recovery_service.exe).Count -ne 0) { throw 'Unexpected recovery service in technical install' }
   if (@(Get-Process -Name clangd,rust-analyzer,ruff,lldb-dap -ErrorAction SilentlyContinue).Count -ne 0) { throw 'Unexpected provider process baseline' }
-  $sha=(Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash
-  $built=Join-Path (Get-Location) 'ide/app/src-tauri/target/release/lu-ide-desktop.exe'
-  if ((Get-FileHash -LiteralPath $built -Algorithm SHA256).Hash -cne $sha) { throw 'Installed executable differs from exact build' }
+  # The independently verified exact NSIS-transformed desktop hash is
+  # retained for the native UI witness; no installed-only hash acceptance.
+  if ((Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash -cne $sha) { throw 'Installed executable changed after verification' }
   & 'ide/app/fixtures/Test-Wo8NativeDesktopUI.ps1' -InstalledExecutable $exe -ExpectedSha256 $sha -Scenario ProjectReadOnly -FixtureRoot $fixture
   if (!$? -or (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash -cne $before) { throw 'Native read-only UI failed' }
   if (@(Get-Process -Name clangd,rust-analyzer,ruff,lldb-dap -ErrorAction SilentlyContinue).Count -ne 0) { throw 'Unexpected provider process' }

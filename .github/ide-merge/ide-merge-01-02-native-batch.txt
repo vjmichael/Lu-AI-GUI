@@ -19,3 +19,6 @@ Repeat existing six-job matrix at the new locked head; no new scope or release a
 IDE-MERGE-05B-R4-R4: grouped residual installed editor + technical resource acceptance.
 Prior batch 44673277215 completed 6/6 on dd46fce3c1203d10e2989d3e63ca00cf9af019cf.
 Repeat six original jobs and the separately bounded technical-only matrix at this locked successor; no protected execution or release grants.
+
+IDE-MERGE-05B-R4-R5: two observed installed acceptance failures; exact accessibility notification and NSIS bundle identity repair.
+Prior exact SHA 6/8; repeat both existing matrices for unchanged-head acceptance, no new approval or release authority.

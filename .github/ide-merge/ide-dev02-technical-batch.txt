@@ -1,2 +1,5 @@
 IDE-MERGE-05B-R4-R4: dedicated technical-only installed LSP matrix.
 No provider execution, signing, release authority or main merge.
+
+IDE-MERGE-05B-R4-R5: two observed installed acceptance failures; exact accessibility notification and NSIS bundle identity repair.
+Prior exact SHA 6/8; repeat both existing matrices for unchanged-head acceptance, no new approval or release authority.

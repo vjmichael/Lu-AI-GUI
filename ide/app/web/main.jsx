@@ -7600,7 +7600,9 @@ function App() {
       {problem && <div className="errorMsg appError" role="alert"
         aria-label={problem.startsWith('File changed on disk.')
           ? 'File changed on disk. Unsaved edits preserved' :
-            problem.startsWith('Open-file budget') ? problem : undefined}
+            problem.startsWith('Open-file budget') ? problem :
+            (problem.startsWith('Source action not verified:') ||
+             problem.startsWith('Cannot open that saved search hit:')) ? problem : undefined}
         aria-describedby="ide-visible-error-message">
         <span id="ide-visible-error-message">{problem}</span>
         <button type="button" onClick={() => setProblem('')}>Dismiss</button></div>}
@@ -7608,7 +7610,8 @@ function App() {
         (hint.startsWith('Saved ') ? ' saveConfirmation' :
           hint.startsWith('Proposal staged') ? ' stageConfirmation' : '')}
         role="status" aria-label={hint.startsWith('Recovered private checkpoint into unsaved editor only.') ||
-          hint==='Awaiting native confirmation for the exact staged Git file.' ? hint : undefined}>
+          hint==='Awaiting native confirmation for the exact staged Git file.' ||
+          hint.startsWith('Source action completed:') ? hint : undefined}>
         <span className="noticeContent">{hint}</span>
         <button type="button" className="noticeDismiss" aria-label="Dismiss notification"
           onClick={() => setHint('')}>×</button>

@@ -8,7 +8,8 @@ import unittest
 
 import test_stage_complete_native_lsp_candidate as original_tests
 from stage_complete_native_lsp_candidate import candidate
-from verify_technical_lsp_install import verify_resources, verify_from_archives, RECEIPT, MARKER, WARNING, strict_json
+from verify_technical_lsp_install import (verify_resources, verify_from_archives, RECEIPT, MARKER, WARNING, strict_json,
+    verify_nsis_desktop_identity, NSIS_UNBUNDLED_MARKER, NSIS_INSTALLED_MARKER)
 
 
 class TechnicalInstalledResourceTests(unittest.TestCase):
@@ -88,5 +89,45 @@ class TechnicalInstalledResourceTests(unittest.TestCase):
         r['providers']['clangd']['archiveSha256']='0'*64
         for path in (self.ref,self.installed): (path/RECEIPT).write_text(json.dumps(r))
         with self.assertRaises(ValueError): self.verify()
+
+class NsisDesktopIdentityTests(unittest.TestCase):
+    def setUp(self):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        self.built = Path(temp.name) / 'built.exe'
+        self.installed = Path(temp.name) / 'installed.exe'
+        self.original = b'MZ' + b'fixed-prefix' + NSIS_UNBUNDLED_MARKER + b'fixed-suffix'
+        self.expected = self.original.replace(NSIS_UNBUNDLED_MARKER, NSIS_INSTALLED_MARKER, 1)
+        self.built.write_bytes(self.original)
+        self.installed.write_bytes(self.expected)
+    def verify(self, expected_sha=None):
+        return verify_nsis_desktop_identity(self.built, self.installed,
+            expected_sha or hashlib.sha256(self.installed.read_bytes()).hexdigest())
+    def test_only_exact_nsis_marker_change_passes(self):
+        self.verify()
+    def test_other_byte_change_denied_even_with_matching_digest(self):
+        self.installed.write_bytes(self.expected.replace(b'fixed-suffix', b'fixed-SUFFIX'))
+        with self.assertRaisesRegex(ValueError, 'outside exact NSIS bundle marker'): self.verify()
+    def test_missing_or_wrong_bundle_marker_denied(self):
+        for data in (self.original, self.expected.replace(NSIS_INSTALLED_MARKER, b'__TAURI_BUNDLE_TYPE_VAR_MSI')):
+            with self.subTest(data=data):
+                self.installed.write_bytes(data)
+                with self.assertRaises(ValueError): self.verify()
+    def test_ambiguous_original_marker_denied(self):
+        self.built.write_bytes(self.original + NSIS_UNBUNDLED_MARKER)
+        self.installed.write_bytes(self.expected + NSIS_UNBUNDLED_MARKER)
+        with self.assertRaisesRegex(ValueError, 'unique Tauri'): self.verify()
+    def test_installed_hash_drift_denied(self):
+        with self.assertRaisesRegex(ValueError, 'identity changed'): self.verify('0'*64)
+    def test_size_change_denied(self):
+        self.installed.write_bytes(self.expected+b'extra')
+        with self.assertRaisesRegex(ValueError, 'size differs'): self.verify()
+    def test_linked_executable_denied(self):
+        target = self.installed.with_suffix('.real')
+        self.installed.rename(target)
+        try: self.installed.symlink_to(target)
+        except OSError: self.skipTest('native symlink privilege unavailable')
+        with self.assertRaisesRegex(ValueError, 'linked or special'): self.verify()
+
 
 if __name__=='__main__': unittest.main()
