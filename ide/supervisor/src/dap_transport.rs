@@ -102,26 +102,11 @@ impl DapGateway {
         slide: u64,
         rip: u64,
     ) -> Result<serde_json::Value, SupervisorError> {
-        if self.session.phase() != DapPhase::Stopped
-            || self
-                .session
-                .source_candidate()
-                .and_then(|f| f.instruction_address)
-                != Some(rip)
-            || self.supervisor.inspect()?.iter().all(|job| {
-                job.job_id != self.job_id
-                    || job.plan_sha256 != self.plan_sha256
-                    || job.phase != JobPhase::Running
-                    || job.requires_reconciliation
-            })
-        {
-            return Err(SupervisorError::NoContainment);
+        if !self.release_pdb_context_valid(rip) {
+            return self.quarantine();
         }
-        let result = self
-            .process
-            .as_mut()
-            .ok_or(SupervisorError::NoContainment)?
-            .read_protected_pe_pdb(
+        let result = match self.process.as_mut() {
+            Some(process) => process.read_protected_pe_pdb(
                 binary,
                 pdb,
                 binary_sha256,
@@ -129,18 +114,36 @@ impl DapGateway {
                 bundle_sha256,
                 slide,
                 rip,
-            )?;
-        if self.session.phase() != DapPhase::Stopped
-            || self
-                .session
-                .source_candidate()
-                .and_then(|f| f.instruction_address)
-                != Some(rip)
-        {
-            return Err(SupervisorError::NoContainment);
+            ),
+            None => Err(SupervisorError::NoContainment),
+        };
+        let result = match result {
+            Ok(value) => value,
+            Err(_) => return self.quarantine(),
+        };
+        if !self.release_pdb_context_valid(rip) {
+            return self.quarantine();
         }
         Ok(result)
     }
+    #[cfg(all(windows, feature = "fin04-release-owner-evidence"))]
+    fn release_pdb_context_valid(&self, rip: u64) -> bool {
+        self.session.phase() == DapPhase::Stopped
+            && self
+                .session
+                .source_candidate()
+                .and_then(|f| f.instruction_address)
+                == Some(rip)
+            && self.supervisor.inspect().is_ok_and(|jobs| {
+                jobs.iter().any(|job| {
+                    job.job_id == self.job_id
+                        && job.plan_sha256 == self.plan_sha256
+                        && job.phase == JobPhase::Running
+                        && !job.requires_reconciliation
+                })
+            })
+    }
+
     /// Read-only OS evidence from the *owned* native Job. A module hit is
     /// never a verified stopped x64 thread context or a PDB line-table pass.
     #[cfg(windows)]

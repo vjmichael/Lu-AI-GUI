@@ -760,7 +760,7 @@ impl RestrictedLspProcess for WindowsLspProcess {
     ) -> Result<serde_json::Value, SupervisorError> {
         use sha2::{Digest, Sha256};
         use std::path::Component;
-        use windows_sys::Win32::System::Threading::GetExitCodeProcess;
+        use windows_sys::Win32::System::Threading::{GetExitCodeProcess, GetProcessId};
         const MAX_OUTPUT: usize = 8192;
         let bad = || SupervisorError::NoContainment;
         if !self.lease.alive()
@@ -859,6 +859,12 @@ impl RestrictedLspProcess for WindowsLspProcess {
             false,
         )?;
         if owner_channel.is_some() {
+            return Err(bad());
+        }
+        // The specific suspended reader, not merely a nonempty Job, must
+        // independently appear in the original Job before executing.
+        let child_pid = unsafe { GetProcessId(child.0) };
+        if !crate::windows_kernel_pc::job_has_member(self.job.handle.0, child_pid)? {
             return Err(bad());
         }
         drop(stdin); // fixed command needs no interactive input or DAP pipe

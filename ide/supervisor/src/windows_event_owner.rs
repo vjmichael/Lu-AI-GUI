@@ -98,6 +98,7 @@ pub(crate) struct OwnerEventLedger {
     next_sequence: u64,
     active: Option<OwnerEvent>,
     revoked: bool,
+    continuation_wait_claimed: Option<u64>,
     #[cfg(all(debug_assertions, feature = "dev046c-ci-control"))]
     completed: std::collections::VecDeque<OwnerEvent>,
 }
@@ -152,6 +153,21 @@ impl OwnerEventLedger {
         }
         Ok(())
     }
+    // Only the one observed live stop can begin this terminal wait.
+    // Claim before polling so failure cannot mint a second acknowledgement.
+    fn claim_terminal_continue_wait(&mut self, sequence: u64) -> Result<(), SupervisorError> {
+        if self.continuation_wait_claimed.is_some()
+            || self.revoked
+            || !self.active.as_ref().is_some_and(|event| {
+                event.kind == RECEIVED && event.seq == sequence
+            })
+        {
+            return Err(denied());
+        }
+        self.continuation_wait_claimed = Some(sequence);
+        Ok(())
+    }
+
     #[cfg(all(debug_assertions, feature = "dev046c-ci-control"))]
     fn step_advance(
         &self,
@@ -503,6 +519,7 @@ impl OwnerSideband {
         sequence: u64,
     ) -> Result<(), SupervisorError> {
         use std::sync::mpsc::RecvTimeoutError;
+        self.ledger.claim_terminal_continue_wait(sequence)?;
         let until = std::time::Instant::now() + std::time::Duration::from_secs(3);
         loop {
             if self.ledger.revoked
@@ -582,6 +599,21 @@ mod tests {
         assert_eq!(out.len(), SIZE);
         out
     }
+    #[test]
+    fn terminal_continue_wait_is_claimed_once_even_on_failure() {
+        let mut ledger = OwnerEventLedger::default();
+        assert!(ledger.claim_terminal_continue_wait(1).is_err());
+        ledger.observe(record(1, RECEIVED)).unwrap();
+        assert!(ledger.claim_terminal_continue_wait(2).is_err());
+        ledger.claim_terminal_continue_wait(1).unwrap();
+        let mut failed = record(1, CONTINUED);
+        failed.continue_status = 2;
+        assert!(ledger.observe(failed).is_err());
+        assert!(ledger.claim_terminal_continue_wait(1).is_err());
+        ledger.observe(record(1, CONTINUED)).unwrap();
+        assert!(ledger.claim_terminal_continue_wait(1).is_err());
+    }
+
     #[test]
     fn genuine_received_then_continue_revokes_exact_owner_stop() {
         let nonce = [0x5a; 16];

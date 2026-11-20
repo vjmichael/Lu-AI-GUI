@@ -753,6 +753,17 @@ impl Supervisor {
         }
         let text = std::str::from_utf8(&content).map_err(|_| SupervisorError::JournalCorrupt)?;
         crate::windows_event_owner::verify_persisted_owner_receipt(text, job_id, seq)?;
+        let original_plan = text.lines().nth(2).ok_or(SupervisorError::JournalCorrupt)?;
+        let original_running = text.lines().nth(3).ok_or(SupervisorError::JournalCorrupt)?;
+        let history = self.receipt_history(job_id)?;
+        if !history.iter().any(|entry| {
+            entry.entry_hash == original_running
+                && entry.body.phase == JobPhase::Running
+                && entry.body.job_id == job_id
+                && entry.body.plan_sha256 == original_plan
+        }) {
+            return Err(SupervisorError::JournalCorrupt);
+        }
         Ok(())
     }
     /// Reopen an individual source-debug action journal after a real Job
@@ -814,17 +825,28 @@ impl Supervisor {
                 .iter()
                 .find(|job| job.job_id == action.job_id && job.plan_sha256 == action.plan_sha256)
                 .ok_or(SupervisorError::JournalCorrupt)?;
-            if action.requires_native_os_cleanup
-                && (native.requires_reconciliation
-                    || !matches!(
-                        native.phase,
-                        JobPhase::Completed
-                            | JobPhase::Cancelled
-                            | JobPhase::Denied
-                            | JobPhase::Failed
-                    ))
-            {
-                cleanup.push(action.job_id);
+            if action.requires_native_os_cleanup {
+                let terminal = self.receipt_history(&action.job_id)?;
+                let trusted = terminal.last().is_some_and(|entry| {
+                    entry.body.job_id == action.job_id
+                        && entry.body.plan_sha256 == action.plan_sha256
+                        && entry.body.phase == native.phase
+                        && match entry.body.phase {
+                            JobPhase::Completed | JobPhase::Failed => {
+                                entry.body.evidence_code == "reaped_process_tree_bounded_outputs"
+                            }
+                            JobPhase::Cancelled => matches!(
+                                (entry.body.outcome_code.as_str(), entry.body.evidence_code.as_str()),
+                                ("os_tree_termination_verified", "native_supervisor_tree_kill_evidence")
+                                    | ("os_orphan_cleanup_verified", "explicit_host_reconciliation")
+                                    | ("native_cancel_service_release_verified", "tree_empty_and_independent_service_ack")
+                            ),
+                            _ => false,
+                        }
+                });
+                if native.requires_reconciliation || !trusted {
+                    cleanup.push(action.job_id);
+                }
             }
         }
         cleanup.sort();
