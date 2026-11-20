@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "d217d35a49a9100b1ffd8ea812cdd5b689db4c44",
-  "trackedFileCount": 1192,
+  "sourceCommitBeforeLock": "b975b9dc54b687b47a758d4b7f7292bb42c1591d",
+  "trackedFileCount": 1195,
   "files": [
     {
       "path": ".gitattributes",
@@ -1553,7 +1553,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/active_checks.rs",
-      "blob": "508391dfdba2a5111372e966bc612f934d6d1f4c"
+      "blob": "3a225e4f92361aa0dd0c2ce46249bef1a69fe54a"
     },
     {
       "path": "lu-desktop/src-tauri/src/agent_memory_handoff.rs",
@@ -1669,7 +1669,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/diagnostic_archive.rs",
-      "blob": "d53e8708ee435f45241db9c5d84122e9194fb98f"
+      "blob": "96da1083a9e35f3f68869d056b0aed7905a6add2"
     },
     {
       "path": "lu-desktop/src-tauri/src/document_create_desktop.rs",
@@ -1701,7 +1701,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/generation_queue.rs",
-      "blob": "1a5ebe6937bdbe12871b9017cfa085104554116b"
+      "blob": "364318f56db5b13b4615592132a7d43028c1be54"
     },
     {
       "path": "lu-desktop/src-tauri/src/host_clock.rs",
@@ -1721,7 +1721,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/lib.rs",
-      "blob": "7f1e63d849ee30962f4bc83a408873a16c79257f"
+      "blob": "cc7ce82bac0c736735a5637d723da28ced161cc8"
     },
     {
       "path": "lu-desktop/src-tauri/src/linked_attachment_file.rs",
@@ -1762,6 +1762,10 @@
     {
       "path": "lu-desktop/src-tauri/src/memory_loop03c_reviewed_worker_tests.rs",
       "blob": "752dbfd8ad2dfa13ff5350ceed368e89448f56aa"
+    },
+    {
+      "path": "lu-desktop/src-tauri/src/model_benchmark.rs",
+      "blob": "6fb2fb6481c28fee318ded16c5a760545481598c"
     },
     {
       "path": "lu-desktop/src-tauri/src/model_file_effect_handoff.rs",
@@ -2134,6 +2138,10 @@
     {
       "path": "lu-desktop/tests/cp11a-local-checks.test.mjs",
       "blob": "2cc267b1134252c61387c540e277736fd3eefdaa"
+    },
+    {
+      "path": "lu-desktop/tests/cp11a-model-benchmark.test.mjs",
+      "blob": "bba24e53a8d4d6d366b1f58d420d283cec96fd83"
     },
     {
       "path": "lu-desktop/tests/filesystem-discovery.test.mjs",
@@ -2597,7 +2605,7 @@
     },
     {
       "path": "lu-desktop/web/native_windows.jsx",
-      "blob": "aec4a94e0793b34fb4603c6e04aa628e212d834e"
+      "blob": "640b6e250df81b64016f205a4671b6d54581e741"
     },
     {
       "path": "lu-desktop/web/response_view.mjs",
@@ -2706,6 +2714,10 @@
     {
       "path": "scripts/cp06er3-native-web-gui.py",
       "blob": "2fa4cd31e41c339005681cb1cab825289485241d"
+    },
+    {
+      "path": "scripts/cp11a-model-benchmark-gui.py",
+      "blob": "569a633869d8afbf6ba73c904e2ca5f9514691b1"
     },
     {
       "path": "scripts/cp11a-native-checks-gui.py",

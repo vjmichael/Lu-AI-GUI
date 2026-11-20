@@ -18,11 +18,12 @@ const RUN_LIMIT: Duration = Duration::from_secs(30);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all="snake_case")]
-pub(crate) enum CheckKind { Reading, SavedHistory, SearchSpeed, DocumentWindows, SearchScale }
+pub(crate) enum CheckKind { Reading, SavedHistory, SearchSpeed, DocumentWindows, SearchScale, ModelExtract, ModelArithmetic, ModelHistory }
+pub(crate) const MODEL_CHECKS:[CheckKind;3]=[CheckKind::ModelExtract,CheckKind::ModelArithmetic,CheckKind::ModelHistory];
 const LEGACY_CHECKS: [CheckKind; 3] = [CheckKind::Reading, CheckKind::SavedHistory, CheckKind::SearchSpeed];
 const CHECKS: [CheckKind; 5] = [CheckKind::Reading, CheckKind::SavedHistory, CheckKind::SearchSpeed, CheckKind::DocumentWindows, CheckKind::SearchScale];
 impl CheckKind {
-    fn expected(self)->u32 { match self { Self::Reading=>3, Self::SavedHistory=>4, Self::SearchSpeed=>QUERIES, Self::DocumentWindows=>WINDOW_QUERIES, Self::SearchScale=>SCALE_QUERIES } }
+    fn expected(self)->u32 { match self { Self::Reading=>3, Self::SavedHistory=>4, Self::SearchSpeed=>QUERIES, Self::DocumentWindows=>WINDOW_QUERIES, Self::SearchScale=>SCALE_QUERIES,Self::ModelExtract|Self::ModelArithmetic|Self::ModelHistory=>1 } }
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all="snake_case")]
@@ -33,27 +34,29 @@ impl CheckState {
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all="snake_case")]
-pub(crate) enum CheckReason { UserStopped, ChatBusy, TimeLimit, WorkspaceUnavailable, CleanupUnavailable, CheckFailed }
+pub(crate) enum CheckReason { UserStopped, ChatBusy, TimeLimit, WorkspaceUnavailable, CleanupUnavailable, CheckFailed, ModelUnavailable }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all="camelCase",deny_unknown_fields)]
-pub(crate) struct CheckResult { pub kind:CheckKind, pub passed:bool, pub verified_operations:u32, pub elapsed_micros:u64 }
+pub(crate) struct CheckResult { pub kind:CheckKind, pub passed:bool, pub verified_operations:u32, pub elapsed_micros:u64, #[serde(default,skip_serializing_if="Option::is_none")] pub inference:Option<crate::model_benchmark::InferenceMetrics> }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all="camelCase",deny_unknown_fields)]
-pub(crate) struct CheckBody { pub results:Vec<CheckResult>, pub reason:Option<CheckReason>, #[serde(default)] pub expanded:bool }
-impl Default for CheckBody { fn default()->Self { Self { results:Vec::new(),reason:None,expanded:true } } }
+pub(crate) struct CheckBody { pub results:Vec<CheckResult>, pub reason:Option<CheckReason>, #[serde(default)] pub expanded:bool, #[serde(default,skip_serializing_if="std::ops::Not::not")] pub model_suite:bool }
+impl Default for CheckBody { fn default()->Self { Self { results:Vec::new(),reason:None,expanded:true,model_suite:false } } }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all="camelCase")]
 pub(crate) struct CheckReport { pub state:CheckState, #[serde(flatten)] pub body:CheckBody }
 impl CheckReport {
     pub fn valid(&self)->bool {
-        let suite:&[CheckKind]=if self.body.expanded { &CHECKS } else { &LEGACY_CHECKS };
+        let suite:&[CheckKind]=if self.body.model_suite { &MODEL_CHECKS } else if self.body.expanded { &CHECKS } else { &LEGACY_CHECKS };
+        if self.body.model_suite&&!self.body.expanded{return false}
         if self.body.results.len()>suite.len() || self.body.results.iter().zip(suite).enumerate().any(|(i,(r,k))|
-            r.kind!=*k || r.verified_operations!=if r.passed {k.expected()}else{0} || (!r.passed && i+1!=self.body.results.len())) { return false }
+            r.kind!=*k || r.verified_operations!=if r.passed {k.expected()}else{0} || (!self.body.model_suite && !r.passed && i+1!=self.body.results.len()) ||
+            if self.body.model_suite {r.inference.as_ref().is_none_or(|m|!m.valid(r.elapsed_micros)||(r.passed&&m.output_bytes==0))} else {r.inference.is_some()}) { return false }
         let all_pass=self.body.results.len()==suite.len()&&self.body.results.iter().all(|r|r.passed);
         match self.state {
             CheckState::Running=>self.body.reason.is_none(),
             CheckState::Complete=>all_pass&&self.body.reason.is_none(),
-            CheckState::Attention=>matches!(self.body.reason,Some(CheckReason::CheckFailed|CheckReason::WorkspaceUnavailable|CheckReason::CleanupUnavailable)),
+            CheckState::Attention=>matches!(self.body.reason,Some(CheckReason::CheckFailed|CheckReason::WorkspaceUnavailable|CheckReason::CleanupUnavailable|CheckReason::ModelUnavailable)),
             CheckState::Stopped=>matches!(self.body.reason,Some(CheckReason::UserStopped|CheckReason::ChatBusy|CheckReason::TimeLimit)),
             CheckState::Interrupted=>self.body.reason.is_none(),
         }
@@ -88,20 +91,24 @@ impl CheckController {
         if !active {if let Some(r)=&mut report {if r.state==CheckState::Running {r.state=CheckState::Interrupted;}}}
         Ok(CheckStatus{active,report})
     }
-    pub fn run(&self, archive:&DiagnosticArchive, consent:impl FnOnce()->bool, user_busy:impl Fn()->bool)->Result<Option<CheckReport>,String>{
+    pub fn run(&self, archive:&DiagnosticArchive, consent:impl FnOnce()->bool, user_busy:impl Fn()->bool+Sync)->Result<Option<CheckReport>,String>{
+        self.run_suite(archive,consent,user_busy,false,|stop,publish|run_checks(&self.root,stop,publish))
+    }
+    pub(crate) fn run_suite(&self, archive:&DiagnosticArchive, consent:impl FnOnce()->bool,user_busy:impl Fn()->bool+Sync,model_suite:bool,
+        execute:impl FnOnce(&(dyn Fn()->Option<CheckReason>+Sync),&mut dyn FnMut(&CheckBody)->Result<(),String>)->Result<CheckReport,String>)->Result<Option<CheckReport>,String>{
         let reservation=self.reserve()?;
         if user_busy(){return Err("Finish your current conversation before running a check".into())}
         if !consent()||reservation.cancel.load(Ordering::Acquire){return Ok(None)}
         if user_busy(){return Err("Finish your current conversation before running a check".into())}
         let id=crate::next_id("check-");
-        archive.begin_active_check(&id)?;
+        archive.begin_check_suite(&id,model_suite)?;
         let started=Instant::now();
         let stop=|| {
             if reservation.cancel.load(Ordering::Acquire){Some(CheckReason::UserStopped)}
             else if user_busy(){Some(CheckReason::ChatBusy)}
-            else if started.elapsed()>=RUN_LIMIT{Some(CheckReason::TimeLimit)}else{None}
+            else if started.elapsed()>=if model_suite {Duration::from_secs(120)} else {RUN_LIMIT}{Some(CheckReason::TimeLimit)}else{None}
         };
-        let result=run_checks(&self.root, &stop, |body|archive.write_active_check(&id,CheckState::Running,body));
+        let result=execute(&stop, &mut |body|archive.write_active_check(&id,CheckState::Running,body));
         let report=match result {Ok(report)=>report,Err(e)=>{
             let _=archive.interrupt_active_check(&id);return Err(e)
         }};
@@ -109,7 +116,7 @@ impl CheckController {
         // verdict. Serialize final publication with Stop and shutdown.
         let mut gate=self.gate.lock().map_err(|_|"Local checks unavailable")?;
         let mut report=report;
-        if reservation.cancel.load(Ordering::Acquire)&&report.state==CheckState::Complete {
+        if reservation.cancel.load(Ordering::Acquire)&&(report.state==CheckState::Complete||(model_suite&&report.state==CheckState::Attention)) {
             report.state=CheckState::Stopped; report.body.reason=Some(CheckReason::UserStopped);
         }
         if let Err(e)=archive.write_active_check(&id,report.state,&report.body){let _=archive.interrupt_active_check(&id);return Err(e)}
@@ -151,10 +158,10 @@ impl Scratch {
     }
 }
 impl Drop for Scratch { fn drop(&mut self){if !self.cleaned{let _=self.cleanup();}} }
-fn finish(body:CheckBody,state:CheckState,reason:Option<CheckReason>)->CheckReport {
+pub(crate) fn finish(body:CheckBody,state:CheckState,reason:Option<CheckReason>)->CheckReport {
     CheckReport{state,body:CheckBody{reason,..body}}
 }
-fn run_checks(root:&Path,stop:&impl Fn()->Option<CheckReason>,mut publish:impl FnMut(&CheckBody)->Result<(),String>)->Result<CheckReport,String>{
+fn run_checks(root:&Path,stop:&(impl Fn()->Option<CheckReason>+?Sized),mut publish:impl FnMut(&CheckBody)->Result<(),String>)->Result<CheckReport,String>{
     let mut body=CheckBody::default();
     if let Some(reason)=stop(){return Ok(finish(body,CheckState::Stopped,Some(reason)))}
     let mut scratch=match Scratch::new(root){Ok(s)=>s,Err(_)=>return Ok(finish(body,CheckState::Attention,Some(CheckReason::WorkspaceUnavailable)))};
@@ -169,11 +176,12 @@ fn run_checks(root:&Path,stop:&impl Fn()->Option<CheckReason>,mut publish:impl F
             CheckKind::SearchSpeed=>search_check(&work,stop),
             CheckKind::DocumentWindows=>document_windows_check(stop),
             CheckKind::SearchScale=>search_scale_check(&work,stop),
+            _=>Err(()),
         };
         let elapsed_micros=before.elapsed().as_micros().min(u64::MAX as u128) as u64;
         if let Some(r)=stop(){reason=Some(r);break}
         let passed=checked.is_ok();
-        body.results.push(CheckResult{kind,passed,verified_operations:if passed{kind.expected()}else{0},elapsed_micros});
+        body.results.push(CheckResult{kind,passed,verified_operations:if passed{kind.expected()}else{0},elapsed_micros,inference:None});
         publish(&body)?;
         // Later search checks require the successfully created fixture.
         if !passed{reason=Some(CheckReason::CheckFailed);break}
@@ -211,7 +219,7 @@ fn history_check(path:&Path)->Result<(),()> {
     if store.read_entry("check-b",original).map_err(|_|())?.is_some(){return Err(())}
     Ok(())
 }
-fn search_check(path:&Path,stop:&impl Fn()->Option<CheckReason>)->Result<(),()> {
+fn search_check(path:&Path,stop:&(impl Fn()->Option<CheckReason>+?Sized))->Result<(),()> {
     let store=AnsfStore::open(path).map_err(|_|())?;
     // Small fixed workload; includes bounded fixture construction and query
     // validation. Do not call this a model, paired or system-wide benchmark.
@@ -230,7 +238,7 @@ fn search_check(path:&Path,stop:&impl Fn()->Option<CheckReason>)->Result<(),()> 
 }
 
 // Fixed sample corpus and independent expected character windows. No user data.
-fn document_windows_check(stop:&impl Fn()->Option<CheckReason>)->Result<(),()> {
+fn document_windows_check(stop:&(impl Fn()->Option<CheckReason>+?Sized))->Result<(),()> {
     let pattern="a—漢🙂";
     let text=pattern.repeat(8192);
     let expected:Vec<char>=text.chars().collect();
@@ -243,7 +251,7 @@ fn document_windows_check(stop:&impl Fn()->Option<CheckReason>)->Result<(),()> {
     }
     Ok(())
 }
-fn search_scale_check(path:&Path,stop:&impl Fn()->Option<CheckReason>)->Result<(),()> {
+fn search_scale_check(path:&Path,stop:&(impl Fn()->Option<CheckReason>+?Sized))->Result<(),()> {
     let store=AnsfStore::open(path).map_err(|_|())?;
     store.create_session("check-scale","test","Scaled sample").map_err(|_|())?;
     store.start_chapter("check-scale","Sample").map_err(|_|())?;
@@ -360,7 +368,7 @@ mod tests {
         drop(archive);std::fs::remove_dir_all(root).unwrap();
     }
     #[test] fn cp11a_legacy_report_not_promoted_and_invalid_prefix_refused() {
-        let results=LEGACY_CHECKS.iter().map(|kind|CheckResult{kind:*kind,passed:true,verified_operations:kind.expected(),elapsed_micros:1}).collect::<Vec<_>>();
+        let results=LEGACY_CHECKS.iter().map(|kind|CheckResult{kind:*kind,passed:true,verified_operations:kind.expected(),elapsed_micros:1,inference:None}).collect::<Vec<_>>();
         let old=serde_json::json!({"results":results,"reason":null});
         let mut report=CheckReport{state:CheckState::Complete,body:serde_json::from_value(old).unwrap()};
         assert!(report.valid());assert!(!report.body.expanded);

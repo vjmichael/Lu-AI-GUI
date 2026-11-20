@@ -26,6 +26,7 @@ mod turn_authority;
 mod perf01_telemetry;
 mod causal_diagnostic;
 mod active_checks;
+mod model_benchmark;
 mod diagnostic_archive;
 use causal_diagnostic::Checkpoint as CausalCheckpoint;
 mod vision_context;
@@ -2137,6 +2138,24 @@ async fn lu_run_local_checks(app:AppHandle,caller:tauri::WebviewWindow,
     },||owner.generation_queue.has_foreground_jobs()||
         lu_core::native_resource_pressure::available_ram().is_none_or(|m|m<256)))
         .await.map_err(|_|"Local checks did not finish")?
+}
+/// Separately approved fixed benchmark of the already loaded model only.
+#[tauri::command]
+async fn lu_run_model_checks(app:AppHandle,caller:tauri::WebviewWindow,
+    state:State<'_,Arc<DesktopState>>)->Result<Option<active_checks::CheckReport>,String>{
+    if !matches!(caller.label(),"main"|"settings"){return Ok(None)}
+    let owner=Arc::clone(state.inner());let archive=owner.perf01.archive().ok_or("Local checks unavailable")?;
+    tauri::async_runtime::spawn_blocking(move||{
+        let snapshot=owner.supervisor.status().map_err(|_|"Model unavailable")?;
+        if snapshot.phase!=lu_core::inference_host::EnginePhase::Ready||snapshot.pid.is_none(){return Err("Load a model before checking it".into())}
+        owner.active_checks.run_suite(&archive,||app.dialog().message("Test the currently loaded local model with three short sample tasks? The answers are checked against known results. This measures response time and sampled memory. No personal conversations, online access, downloads or repairs. You can stop at any time; new conversation work takes priority. The latest check report is replaced.")
+            .title("Lu — Check model").buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom("Check model".into(),"Cancel".into())).blocking_show(),
+            ||lu_core::native_resource_pressure::available_ram().is_none_or(|m|m<256),true,|stop,publish|{
+                // Serialize native model replacement with the already-approved benchmark.
+                let _fence=owner.model_profile_admission.try_lock().map_err(|_|"Model is changing")?;
+                model_benchmark::run(&owner.supervisor,&owner.generation_queue,&snapshot,stop,publish)
+            })
+    }).await.map_err(|_|"Model check did not finish")?
 }
 #[tauri::command]
 fn lu_local_check_status(caller:tauri::WebviewWindow,state:State<'_,Arc<DesktopState>>)->Result<active_checks::CheckStatus,String>{
@@ -4521,6 +4540,7 @@ async fn lu_unload_model(
 ) -> Result<(), String> {
     let state = Arc::clone(state.inner());
     tauri::async_runtime::spawn_blocking(move || {
+        let _fence=state.model_profile_admission.try_lock().map_err(|_|"Finish or stop the current model check first")?;
         if state.generation_queue.has_jobs() {
             return Err("Finish or cancel queued generations before unloading the model".into());
         }
@@ -9983,6 +10003,7 @@ pub fn run() {
             lu_cp01_reply_observed,
             lu_cp01_diagnostic_report,
             lu_run_local_checks,
+            lu_run_model_checks,
             lu_local_check_status,
             lu_stop_local_checks,
             project_discovery_desktop::lu_project_discover,

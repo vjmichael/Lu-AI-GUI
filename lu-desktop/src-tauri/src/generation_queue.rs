@@ -33,6 +33,7 @@ pub enum TurnClass { Foreground, Background }
 #[derive(Default)]
 struct State {
     closing: bool,
+    benchmark: bool,
     foreground_waiting: VecDeque<String>,
     background_waiting: VecDeque<String>,
     active: Option<String>,
@@ -111,11 +112,26 @@ pub(crate) struct ShutdownTurn {
 }
 
 /// Owns its place in the queue; releases the slot on every exit path.
+pub(crate) struct BenchmarkLease { queue: Arc<GenerationQueue> }
+impl Drop for BenchmarkLease {
+    fn drop(&mut self) { if let Ok(mut state)=self.queue.state.lock(){state.benchmark=false;self.queue.ready.notify_all();} }
+}
+impl BenchmarkLease {
+    pub(crate) fn yield_requested(&self)->bool {self.queue.state.lock().map_or(true,|s|s.closing||!s.jobs.is_empty())}
+}
 pub struct Ticket {
     queue: Arc<GenerationQueue>,
     id: String,
 }
 impl GenerationQueue {
+    // One idle-only, host-owned benchmark reservation. No synthetic chat or
+    // scheduler job is created. Real queued work requests immediate yield.
+    pub(crate) fn try_benchmark(self:&Arc<Self>)->Result<BenchmarkLease,String>{
+        let mut s=self.state.lock().map_err(|_|"Model unavailable")?;
+        if s.closing||s.benchmark||!s.jobs.is_empty(){return Err("Lu is busy".into())}
+        s.benchmark=true;Ok(BenchmarkLease{queue:self.clone()})
+    }
+
     pub fn enqueue(
         self: &Arc<Self>,
         session_id: &str,
@@ -316,7 +332,7 @@ impl GenerationQueue {
     /// Include queued and active human work; fail closed on lock poisoning.
     pub fn has_foreground_jobs(&self) -> bool {
         self.state.lock()
-            .map(|state| state.jobs.iter().any(|(id,job)|
+            .map(|state| state.benchmark || state.jobs.iter().any(|(id,job)|
                 job.class == TurnClass::Foreground
                 && (!job.cancelled || state.active.as_deref()==Some(id.as_str()))))
             .unwrap_or(true)
@@ -370,7 +386,7 @@ impl GenerationQueue {
     pub fn has_jobs(&self) -> bool {
         self.state
             .lock()
-            .map(|x| !x.jobs.is_empty())
+            .map(|x| x.benchmark || !x.jobs.is_empty())
             .unwrap_or(true)
     }
     fn finish(&self, generation_id: &str) {
@@ -401,7 +417,7 @@ impl Ticket {
             if job.cancelled {
                 return Err("Cancelled while queued".into());
             }
-            if state.active.is_none() && state.next_ready() == Some(self.id.as_str()) {
+            if !state.benchmark && state.active.is_none() && state.next_ready() == Some(self.id.as_str()) {
                 let class = job.class;
                 let removed = match class {
                     TurnClass::Foreground => state.foreground_waiting.pop_front(),

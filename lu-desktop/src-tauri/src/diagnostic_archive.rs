@@ -106,7 +106,10 @@ impl DiagnosticArchive{
     // Only the trusted one-shot check controller may write this latest local
     // report. It contains fixed categories/counts, not conversation evidence.
     pub fn begin_active_check(&self,id:&str)->Result<(),String>{
-        let body=serde_json::to_string(&CheckBody::default()).map_err(|_|"Check report unavailable")?;
+        self.begin_check_suite(id,false)
+    }
+    pub fn begin_check_suite(&self,id:&str,model_suite:bool)->Result<(),String>{
+        let body=serde_json::to_string(&CheckBody{model_suite,..CheckBody::default()}).map_err(|_|"Check report unavailable")?;
         self.with_active_check(|conn|{
             let rows=conn.execute("INSERT INTO active_check(slot,run_id,state,body) VALUES(1,?1,'running',?2)
                 ON CONFLICT(slot) DO UPDATE SET run_id=excluded.run_id,state='running',body=excluded.body
@@ -119,7 +122,7 @@ impl DiagnosticArchive{
         if !report.valid(){return Err("Check report could not be confirmed".into())}
         self.with_active_check(|conn|{
             let old=Self::read_active_check(conn)?.ok_or("Check report could not be confirmed")?;
-            if old.state!=CheckState::Running||old.body.expanded!=body.expanded||!body.results.starts_with(&old.body.results){return Err("Check report could not be confirmed".into())}
+            if old.state!=CheckState::Running||old.body.expanded!=body.expanded||old.body.model_suite!=body.model_suite||!body.results.starts_with(&old.body.results){return Err("Check report could not be confirmed".into())}
             let body=serde_json::to_string(body).map_err(|_|"Check report unavailable")?;
             let rows=conn.execute("UPDATE active_check SET state=?1,body=?2 WHERE slot=1 AND run_id=?3 AND state='running'",
                 params![state.label(),body,id]).map_err(|_|"Check report unavailable")?;
@@ -228,7 +231,7 @@ mod tests{
         let reader=Connection::open_with_flags(&path,OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
         reader.execute_batch("BEGIN").unwrap();
         assert_eq!(reader.query_row("SELECT state FROM active_check WHERE slot=1",[],|r|r.get::<_,String>(0)).unwrap(),"running");
-        let body=CheckBody{results:vec![CheckResult{kind:CheckKind::Reading,passed:true,verified_operations:3,elapsed_micros:1}],..CheckBody::default()};
+        let body=CheckBody{results:vec![CheckResult{kind:CheckKind::Reading,passed:true,verified_operations:3,elapsed_micros:1,inference:None}],..CheckBody::default()};
         std::thread::scope(|scope|{
             let (ready_tx,ready_rx)=mpsc::channel();
             let (done_tx,done_rx)=mpsc::channel();
