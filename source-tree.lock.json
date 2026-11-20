@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "1b710006217da5b94f22a959dbc7ba3262b1a709",
+  "sourceCommitBeforeLock": "6e833197e64c42e3b77e339d61f933953647eae8",
   "trackedFileCount": 1979,
   "files": [
     {
@@ -13,11 +13,11 @@
     },
     {
       "path": ".github/ide-merge/ide-dev02-technical-batch.txt",
-      "blob": "88b48da68ac03ce9e37ca872d35b0dbee28a8418"
+      "blob": "b8e3c664209c59aa85f16512190d081f7038ef21"
     },
     {
       "path": ".github/ide-merge/ide-merge-01-02-native-batch.txt",
-      "blob": "631c8e0ccb432d88a995b7db0c66e273d81cafeb"
+      "blob": "613dda757b83588cc7900742654a156d6351709e"
     },
     {
       "path": ".github/pull_request_template.md",
@@ -1749,7 +1749,7 @@
     },
     {
       "path": "ide/app/fixtures/Test-DEV02TechnicalInstalledNsis.ps1",
-      "blob": "21c78ad423e52238dee29d8b14673c1e4014749c"
+      "blob": "9a9bd966abbeb4908394a516b34a416f4224fce5"
     },
     {
       "path": "ide/app/fixtures/Test-DEV046D-PhysicalHumanConsent.ps1",
@@ -2065,7 +2065,7 @@
     },
     {
       "path": "ide/app/tests/dev01_integrated_license_bundle_source.test.mjs",
-      "blob": "fdc9f5e863a3862ec69a050c600ffb2f904fd823"
+      "blob": "c6cc3f305b96575c43cbd0a6575815da91c41a0c"
     },
     {
       "path": "ide/app/tests/dev02_project_problems.test.mjs",
@@ -2537,7 +2537,7 @@
     },
     {
       "path": "ide/app/web/main.jsx",
-      "blob": "997ab541b07c50257a8a4585ddd078bf03bb4a4c"
+      "blob": "f3473dccd17ad44c99f62659d27a240db2140bcc"
     },
     {
       "path": "ide/app/web/native_build_output.js",
@@ -2613,7 +2613,7 @@
     },
     {
       "path": "ide/ci/merge02-reviewed-native-boundaries.json",
-      "blob": "4e9c31b1668b20b972a3f32396badf7834589eb8"
+      "blob": "780abb4890740fb3beaae673afcf88d8aaef2c0e"
     },
     {
       "path": "ide/ci/test_verify_reviewed_native_boundaries.py",
@@ -4101,7 +4101,7 @@
     },
     {
       "path": "ide/packaging/test_verify_technical_lsp_install.py",
-      "blob": "a308a188e0ce1ed7cb99bedb14e038d48ddd1143"
+      "blob": "2fcb753a04ae0523bfe11d7629be21471474e9db"
     },
     {
       "path": "ide/packaging/test_verify_wo7_candidate.py",
@@ -4301,7 +4301,7 @@
     },
     {
       "path": "ide/packaging/verify_technical_lsp_install.py",
-      "blob": "e8cc254cfa1841f82b6fca1e4c1c6e7b342fe3b8"
+      "blob": "0e8071c51d3918a3884d111dcb44f3e8d5334f5d"
     },
     {
       "path": "ide/packaging/verify_wo7_candidate.py",
