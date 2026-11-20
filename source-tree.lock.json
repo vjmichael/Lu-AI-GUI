@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "2d1a12b1deb779cf71dbbdeef2673c9acd934311",
-  "trackedFileCount": 1214,
+  "sourceCommitBeforeLock": "fbcd834a29ecfe4fd9cc61b69a7e599ca9da5a38",
+  "trackedFileCount": 1215,
   "files": [
     {
       "path": ".gitattributes",
@@ -901,7 +901,7 @@
     },
     {
       "path": "docs/LU_CP11B_R3_CHANGING_FILE_20261120.md",
-      "blob": "d38c21754b872fbe7428f715a73b6ca71c3f44cd"
+      "blob": "4d08a2cd7ea8c284ae49085ef039edbfbc4a4a2f"
     },
     {
       "path": "docs/LU_CP11B_SCHEDULED_REMINDERS_20261120.md",
@@ -917,7 +917,7 @@
     },
     {
       "path": "docs/LU_DEVELOPMENT_LEDGER.md",
-      "blob": "4a21876339a859c074bd45c9f42591c3b5517850"
+      "blob": "e4d1d5a23e7424479149ec681e1f6a83c2601c68"
     },
     {
       "path": "docs/LU_E1_NATIVE_EVIDENCE_20261107.md",
@@ -2789,7 +2789,11 @@
     },
     {
       "path": "scripts/cp11br3-changing-file-gui.py",
-      "blob": "e5a2e76ad9c90856a08b92f1e59cd551731e177f"
+      "blob": "f5d6d80a379ccf0cc41e7bffb5dde8fe5963c9b0"
+    },
+    {
+      "path": "scripts/cp11br3-closeout-resume-gui.py",
+      "blob": "9beac606f36a710d5abf2c3ca7b68440371dca02"
     },
     {
       "path": "scripts/install-lu-agent01l-native-fixture.sh",
