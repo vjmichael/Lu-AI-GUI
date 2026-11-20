@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "65984038434426ea21b263751f99a6c5ad15aaa0",
+  "sourceCommitBeforeLock": "c9424c994f6bfc178a9a2633b0228b83f8738136",
   "trackedFileCount": 1262,
   "files": [
     {
@@ -2289,7 +2289,7 @@
     },
     {
       "path": "lu-desktop/tests/cp12br7r2-publication-contract.test.mjs",
-      "blob": "b67f9288db4dc4a8f92aa780fa4f5106546320fd"
+      "blob": "ec9b7498ae7ae70764fba44ecd931dca4a88fded"
     },
     {
       "path": "lu-desktop/tests/dx-exchange-windows-check/Cargo.lock",
@@ -2981,7 +2981,7 @@
     },
     {
       "path": "scripts/cp12br7r2-publish-exact-source.ps1",
-      "blob": "d02254148a8a79bc75ea25f93640db4ef87a909a"
+      "blob": "6e338fe841005d89f97cc8b7a57226395b4eea54"
     },
     {
       "path": "scripts/install-lu-agent01l-native-fixture.sh",

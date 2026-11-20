@@ -24,4 +24,7 @@ test('R7-R2 publication refuses mismatch, occupied ref, force and remote check b
   ]) assert.ok(pub.includes(token),token);
   assert.doesNotMatch(pub,/--force|force-with-lease|credential\.helper|\$env:GITHUB_TOKEN|gh auth login/i);
   assert.match(pub,/if \(-not \$Publish\)/);
+  assert.match(pub,/function Invoke-GitStrict/);
+  assert.match(pub,/Get-Command git -CommandType Application/);
+  assert.doesNotMatch(pub,/function Git\(/);
 });

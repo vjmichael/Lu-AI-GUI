@@ -13,12 +13,14 @@ $remote = "https://github.com/$repo.git"
 function Assert-Exit([string]$step) {
   if ($LASTEXITCODE -ne 0) { throw "$step exited $LASTEXITCODE" }
 }
-function Git([string[]]$arguments) {
-  $output = & git @arguments
+function Invoke-GitStrict([string[]]$arguments) {
+  $output = & $script:GitExecutable @arguments
   Assert-Exit 'git'
   return $output
 }
-if (-not (Get-Command git -ErrorAction SilentlyContinue)) { throw 'git is required' }
+$gitCmd = Get-Command git -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+if (-not $gitCmd) { throw 'git is required' }
+$script:GitExecutable = $gitCmd.Source
 if (-not (Get-Command node -ErrorAction SilentlyContinue)) { throw 'Node.js is required for the exact-source lock verifier' }
 $BundlePath = (Resolve-Path -LiteralPath $BundlePath).Path
 $ManifestPath = (Resolve-Path -LiteralPath $ManifestPath).Path
@@ -40,14 +42,14 @@ $tempRoot = Join-Path ([IO.Path]::GetTempPath()) ('lu-cp12br7r2-' + [Guid]::NewG
 $checkout = Join-Path $tempRoot 'source'
 New-Item -ItemType Directory -Path $tempRoot | Out-Null
 try {
-  Git @('clone', '--quiet', '--no-checkout', '--', $BundlePath, $checkout) | Out-Null
-  Git @('-C', $checkout, 'checkout', '--quiet', '--detach', $sha) | Out-Null
-  $actualSha = [string](Git @('-C', $checkout, 'rev-parse', 'HEAD'))
-  $actualTree = [string](Git @('-C', $checkout, 'rev-parse', 'HEAD^{tree}'))
+  Invoke-GitStrict @('clone', '--quiet', '--no-checkout', '--', $BundlePath, $checkout) | Out-Null
+  Invoke-GitStrict @('-C', $checkout, 'checkout', '--quiet', '--detach', $sha) | Out-Null
+  $actualSha = [string](Invoke-GitStrict @('-C', $checkout, 'rev-parse', 'HEAD'))
+  $actualTree = [string](Invoke-GitStrict @('-C', $checkout, 'rev-parse', 'HEAD^{tree}'))
   if ($actualSha.Trim() -cne $sha -or $actualTree.Trim() -cne $tree) { throw 'Exact local commit or Git tree mismatch' }
-  $entries = @(Git @('-C', $checkout, 'ls-files'))
+  $entries = @(Invoke-GitStrict @('-C', $checkout, 'ls-files'))
   if (($entries.Count - 1) -ne $trackedCount) { throw 'Tracked inventory count mismatch' }
-  if (@(Git @('-C', $checkout, 'status', '--porcelain')).Count -ne 0) { throw 'Restored checkout is dirty' }
+  if (@(Invoke-GitStrict @('-C', $checkout, 'status', '--porcelain')).Count -ne 0) { throw 'Restored checkout is dirty' }
   Push-Location $checkout
   try {
     & node scripts/verify-source-tree.mjs
@@ -59,7 +61,7 @@ try {
     Write-Output 'REMOTE_PUBLICATION=NOT_ATTEMPTED (preflight; use -Publish only in an authenticated Git environment)'
     return
   }
-  $remoteLine = @(& git -C $checkout ls-remote --heads $remote "refs/heads/$branch")
+  $remoteLine = @(& $script:GitExecutable -C $checkout ls-remote --heads $remote "refs/heads/$branch")
   Assert-Exit 'remote branch discovery'
   $remoteLine = @($remoteLine | Where-Object { $_ })
   if ($remoteLine.Count -gt 1) { throw 'Multiple remote branch matches; refusal' }
@@ -68,10 +70,10 @@ try {
     if ($existing -cne $sha) { throw "Remote branch unexpectedly exists at $existing; no overwrite or force-push allowed" }
     Write-Output "REMOTE_ALREADY_MATCHED=$sha"
   } else {
-    & git -C $checkout push --porcelain $remote "${sha}:refs/heads/$branch"
+    & $script:GitExecutable -C $checkout push --porcelain $remote "${sha}:refs/heads/$branch"
     Assert-Exit 'Git push of exact original commit'
   }
-  $readback = @(& git -C $checkout ls-remote --heads $remote "refs/heads/$branch")
+  $readback = @(& $script:GitExecutable -C $checkout ls-remote --heads $remote "refs/heads/$branch")
   Assert-Exit 'remote readback'
   if ($readback.Count -ne 1 -or (($readback[0] -split '\s+')[0] -cne $sha)) { throw 'Remote SHA readback did not match' }
   Write-Output "REMOTE_SOURCE_VERIFIED=$sha"
