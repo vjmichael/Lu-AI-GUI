@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "62c4dbbe24317099edbf4a180c7e6991461a36c7",
+  "sourceCommitBeforeLock": "d217d35a49a9100b1ffd8ea812cdd5b689db4c44",
   "trackedFileCount": 1192,
   "files": [
     {
@@ -881,7 +881,7 @@
     },
     {
       "path": "docs/LU_CP11A_R1_ACCEPTANCE_20261120.md",
-      "blob": "b2ffe2450a9b1e308cf804bd1a71a94a04bb5359"
+      "blob": "c738a919997468860dc66d9f0e593fac553767f7"
     },
     {
       "path": "docs/LU_CURRENT_PREVIEW_CPU_VULKAN_DUAL_ENGINE_20261109.md",
