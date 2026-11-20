@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "d81e8e06f209565e36b42337ae70f181410ee490",
+  "sourceCommitBeforeLock": "67277a62548cad6f2585398fb2ac4f24143880cb",
   "trackedFileCount": 1978,
   "files": [
     {
@@ -105,7 +105,7 @@
     },
     {
       "path": ".github/workflows/ide-dev02-linux-installed-protected-lsp.yml",
-      "blob": "83510d2b636bc63f83e96b9fc85084805f1ac5be"
+      "blob": "6b3f81f9f008eadbbdffa56a7427f2ff2fcb205a"
     },
     {
       "path": ".github/workflows/ide-dev02-native-closure-smoke.yml",
@@ -2073,7 +2073,7 @@
     },
     {
       "path": "ide/app/tests/dev02_protected_installed_workflows_contract.test.mjs",
-      "blob": "9d86b9bcb8053f6b47c82d61fa92aa539d8578d8"
+      "blob": "b567b640861857cca2afe407300b187d7791e2a5"
     },
     {
       "path": "ide/app/tests/dev02_protected_multilang_contract.test.mjs",
