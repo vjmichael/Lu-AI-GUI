@@ -60,7 +60,7 @@ def check_review(pid, choice):
             text.append(node.get_name() or '')
             iface = node.get_text_iface()
             if iface:
-                text.append(iface.get_text(0, -1))
+                text.append(gui.Atspi.Text.get_text(iface, 0, -1))
         except Exception:
             continue
     disclosure = ' '.join(' '.join(text).split())
@@ -95,6 +95,16 @@ def navigate(pid):
     if not named(pid, 'Run checks…', actionable=True) and not named(pid,'Stop', actionable=True):
         action(pid, 'Privacy & Observe')
     wait(lambda: named(pid,'Run checks…',actionable=True) or named(pid,'Stop',actionable=True),30,'check panel')
+
+
+def send_chat(pid,prompt):
+    node=wait(lambda:named(pid,'Message Lu',actionable=True),30,'ordinary composer')
+    component=node.get_component_iface()
+    require(component and component.grab_focus(),'composer focus refused')
+    wait(lambda:node.get_state_set().contains(gui.Atspi.StateType.FOCUSED),5,'composer focus')
+    subprocess.run(['xdotool','type','--clearmodifiers','--',prompt],check=True,timeout=12)
+    wait(lambda:gui.Atspi.Text.get_text(node.get_text_iface(),0,-1)==prompt,5,'exact composer text')
+    action(pid,'Send')
 
 
 def ticks(worker):
@@ -201,8 +211,8 @@ def main():
             check_review(app.pid,'Check model')
             active=active_inference(path,second[0],worker)
             action(app.pid,'Chat')
-            prompt='Please write the single word blue. /no_think'
-            gui.send(app.pid,prompt)
+            prompt='Say blue and nothing else. /no_think'
+            send_chat(app.pid,prompt)
             start=time.monotonic()
             yielded=observed(path,lambda r:r[0]==active[0] and r[1]=='stopped' and r[2]['reason']=='chat_busy','benchmark yielded to conversation',45)
             verify_report(yielded)

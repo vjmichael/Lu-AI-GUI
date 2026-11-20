@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "a3124d8e3b0d05df2cc546221c07ad133e91a918",
-  "trackedFileCount": 1196,
+  "sourceCommitBeforeLock": "b57b49b082e071ba223a65eae53591bce97bb174",
+  "trackedFileCount": 1197,
   "files": [
     {
       "path": ".gitattributes",
@@ -888,6 +888,10 @@
       "blob": "a044849a0711e93cd661c5cbb16b38e1a4754941"
     },
     {
+      "path": "docs/LU_CP11A_R2_R1_ACCEPTANCE_20261120.md",
+      "blob": "33067efa2219175adb00910e1638439fc5fb284b"
+    },
+    {
       "path": "docs/LU_CURRENT_PREVIEW_CPU_VULKAN_DUAL_ENGINE_20261109.md",
       "blob": "c1664658ded245a3df6041114e42587f49550200"
     },
@@ -897,7 +901,7 @@
     },
     {
       "path": "docs/LU_DEVELOPMENT_LEDGER.md",
-      "blob": "9e0cd15bed85aa8ad4a12a64367ad125f6e98c9d"
+      "blob": "10dbd8766f69a9ff06d1431eed15a3dd9eef22f6"
     },
     {
       "path": "docs/LU_E1_NATIVE_EVIDENCE_20261107.md",
@@ -2721,7 +2725,7 @@
     },
     {
       "path": "scripts/cp11a-model-benchmark-gui.py",
-      "blob": "158b204262fc3766dc14a1ddf8a8d9383da66904"
+      "blob": "f1054c1e058182ffe3abab0e9761605cb808df09"
     },
     {
       "path": "scripts/cp11a-native-checks-gui.py",
