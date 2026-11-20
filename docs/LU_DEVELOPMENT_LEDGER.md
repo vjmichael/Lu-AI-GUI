@@ -2,6 +2,29 @@
 
 > **START HERE for Lu project status.** This file on **`main`** is the authoritative *development index*, not a guarantee that draft code is merged, installed, or accepted. See [CHANGELOG.md](../CHANGELOG.md) for accepted milestones and [v1.0 design](LU_V1_0_DESIGN_RECONCILIATION_20261103.md) for requirements. Historical branch-local task logs and conversations are evidence, **not competing current status boards**.
 
+### IDE-LINUX-07-R1 — consolidated protected Python, Node and CMake laboratory acceptance (2026-11-19)
+
+**State: CLOSED for the original scoped Debian/QEMU laboratory acceptance.** Exact locally tested source `956d60849499d7bd96ec5bbc0319c4f9c9a1c22d`; 1,977 tracked source entries independently verified. Preserved the original native container compilation / isolated offline guest privileged-runtime routing, reviewed worker authorization, read-only snapshots, resource quotas and recovery checks.
+
+| Runtime / test | Normal | Cancellation | Interrupted-worker recovery |
+| --- | --- | --- | --- |
+| Node 22.16.0 | PASS | PASS | PASS |
+| Python 3.13.5 / pytest 8.4.1 | PASS | PASS | PASS |
+| CMake 4.4.5 / Ninja 1.13.0 / Clang 23.1.5 | PASS | PASS | PASS |
+
+**Genuine consolidated acceptance:** all 5,772 read-only payload file hashes matched; 9/9 original fixed protected execution modes passed on the same local source candidate, with actual fixture-start observation, source preservation, terminal journal re-open, quarantine/reconciliation and replay rejection in the interrupted modes. Guest exit 0, clean poweroff, base disk unchanged and overlay integrity check passed. No production project builds in QEMU; only original fixed runtime fixtures. Node startup quota regression resolved by previously prepared fixed concurrency reduction without loosening the existing kernel task limit.
+
+**Dependencies and repairs:** four Python Debian archives match the prior authenticated trixie index; five wheel files match exact uploaded PyPI release metadata (independent publisher-signature/redistribution approval not asserted). CMake, Ninja and reconstructed three-part LLVM release archive match the existing source lock. Linux CMake provisioner now admits only the pinned compiler/linker/resource files required by the fixed C/C++ profile, uses bounded native zstd decompression, accounts for regular alias copies in the unchanged 3 GiB extraction budget, and verifies the official exact LLVM 23.1.5 license (Git blob fa6ac540007032cbd0ec772a1c72e6cb5527a4fe, byte-identical retained license). Native 91/91 supervisor and 12/12 packaging tests passed; native C and C++ configure/build/CTest smoke passed (two tests); protected guest uses the original fixed C fixture. Before this repair the broad LLVM extraction exceeded the existing 3 GiB limit, and the optional Python zstandard module was unavailable; both blockers reconciled without extending worker privileges. Debian's relocated Python candidate uses only its sealed relative site-packages path.
+
+**Laboratory runtime tree SHA-256 pins (not production release approval):**
+- Node: `cd2a91d40ee176e4b3f6814f425782fc35b1c69e11f568bcbfd4dd26c375fc81` (2 files).
+- Python: `3a9ea2547866554f5fb6f0f21f46baec670a04d7c6d7ac53eb6cd5a7885494b1` (1,064 files).
+- CMake: `ac93429f01c877a438be514832df0370b694fc43142c0976142baf34e8512d7f` (4,582 files, 938,979,611 bytes).
+
+**Repository distinction:** existing [draft IDE PR #236](https://github.com/vjmichael/Lu-AI-GUI/pull/236) remains the sole integration path; observed published head `e066faf9cf866163c65bc43d7a7efa3093cde810`. Local qualified source and tests are preserved in the R1 checkpoint (Git bundle relative to `e066faf9cf866163c65bc43d7a7efa3093cde810`). This documentation-only update is not source publication, mainline merge, installed/physical acceptance, redistribution approval or consolidated GitHub CI acceptance. Preserve independent installed Linux/Ubuntu-specific and physical Windows gates and pending IDE-MERGE-05B-R4 adjudication.
+
+**Next existing ledger task:** IDE-LINUX-08 — qualify the pinned uv and vcpkg offline package workers, cancellation, durable recovery, positive cache and cache-miss denial. IDE-LINUX-09 installed desktop/LSP and IDE-LINUX-10 consolidated Linux acceptance remain open.
+
 ### IDE-LINUX-05–07 — authenticated laboratory recovery and multilang closeout checkpoint (2026-11-19)
 
 **Scope:** native Debian builds; offline isolated Debian/QEMU only for privileged runtime acceptance. No installed-product or physical acceptance inferred. Existing draft [IDE PR #236](https://github.com/vjmichael/Lu-AI-GUI/pull/236) remains the single integration path (last observed published head `e066faf9cf866163c65bc43d7a7efa3093cde810`). The local source lineage is ahead of that head; publication of this ledger does not publish or merge the source.
