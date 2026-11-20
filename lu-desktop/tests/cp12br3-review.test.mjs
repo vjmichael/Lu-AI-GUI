@@ -5,7 +5,7 @@ test('collaborative review has separate native approval and no renderer-supplied
  const a=host.slice(host.indexOf('async fn lu_dx_review_share('),host.indexOf('async fn lu_dx_review_receive('));
  const b=host.slice(host.indexOf('async fn lu_dx_review_receive('),host.indexOf('fn lu_dx_stop_review('));
  assert.ok(a.indexOf('.blocking_show()')<a.indexOf('archive.report()'));assert.ok(a.indexOf('dx_review::run')<a.indexOf('start_review(finding)'));
- assert.ok(b.indexOf('.blocking_show()')<b.indexOf('dx_ipc::receive_review'));assert.match(b,/peer\.summary\.clone\(\)/);assert.match(b,/local\.finding!=peer\.finding/);
+ assert.ok(b.indexOf('.blocking_show()')<b.indexOf('dx_ipc::receive_review'));assert.match(b,/peer\.summary\.clone\(\)/);assert.match(b,/local\.finding!=peer\.finding/);assert.match(a,/notify\.emit\("lu-model-catalog-changed"/);assert.match(b,/notify\.emit\("lu-model-catalog-changed"/);
  assert.match(review,/reserve_generation_with_history\(sid,&gid,&rid,&prompt,TOKENS,&\[\]\)/);assert.match(review,/ReviewedSummary::checked\(summary,&text\)/);assert.doesNotMatch(review,/ToolCall|load_model|TcpStream/);
 });
 test('review uses separate invitation protocol and opt-in UI',()=>{

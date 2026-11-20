@@ -2177,7 +2177,8 @@ async fn lu_dx_review_share(app:AppHandle,caller:tauri::WebviewWindow,state:Stat
     if !matches!(caller.label(),"main"|"settings"){return Ok(None)}
     if !dx_ipc::review_supported(){return Err("Collaborative review is unavailable on this platform.".into())}
     let owner=Arc::clone(state.inner());
-    tauri::async_runtime::spawn_blocking(move||{
+    let notify=app.clone();
+    let result=tauri::async_runtime::spawn_blocking(move||{
         let review=owner.diagnostic_review.begin()?;
         let snapshot=dx_review::ready(&owner)?;
         if owner.diagnostic_exchange.active(){return Err("Stop the current invitation first.".into())}
@@ -2188,7 +2189,10 @@ async fn lu_dx_review_share(app:AppHandle,caller:tauri::WebviewWindow,state:Stat
         let summary=archive.report()?.exchange_summary();
         let finding=dx_review::run(&owner,&review,&snapshot,summary)?;
         review.publish(||owner.diagnostic_exchange.start_review(finding).map(Some))
-    }).await.map_err(|_|"Review did not finish")?
+    }).await.map_err(|_|"Review did not finish");
+    // Refresh the ordinary model controls only after the native review lease is gone.
+    let _=notify.emit("lu-model-catalog-changed",());
+    result?
 }
 #[tauri::command]
 async fn lu_dx_review_receive(app:AppHandle,caller:tauri::WebviewWindow,state:State<'_,Arc<DesktopState>>,code:String)->Result<Option<dx_ipc::ReviewedSummary>,String>{
@@ -2196,7 +2200,8 @@ async fn lu_dx_review_receive(app:AppHandle,caller:tauri::WebviewWindow,state:St
     if !dx_ipc::review_supported(){return Err("Collaborative review is unavailable on this platform.".into())}
     if code.len()!=101||!code.starts_with("lu2-"){return Err("Invalid review invitation.".into())}
     let owner=Arc::clone(state.inner());
-    tauri::async_runtime::spawn_blocking(move||{
+    let notify=app.clone();
+    let result=tauri::async_runtime::spawn_blocking(move||{
         let review=owner.diagnostic_review.begin()?;
         let snapshot=dx_review::ready(&owner)?;
         if !app.dialog().message("Accept a one-time reviewed troubleshooting summary and ask your currently loaded local model to classify the same five counts independently? The model will not see the other model's answer. No conversations, files, tools or repairs are authorized. The invitation is consumed on receipt, even if this review fails. A review can take up to 35 seconds.")
@@ -2206,7 +2211,10 @@ async fn lu_dx_review_receive(app:AppHandle,caller:tauri::WebviewWindow,state:St
         let local=dx_review::run(&owner,&review,&snapshot,peer.summary.clone())?;
         if local.finding!=peer.finding{return Err("The reviewed findings do not agree.".into())}
         review.publish(||Ok(Some(local)))
-    }).await.map_err(|_|"Review did not finish")?
+    }).await.map_err(|_|"Review did not finish");
+    // Refresh the ordinary model controls only after the native review lease is gone.
+    let _=notify.emit("lu-model-catalog-changed",());
+    result?
 }
 #[tauri::command]
 fn lu_dx_stop_review(caller:tauri::WebviewWindow,state:State<'_,Arc<DesktopState>>)->bool{
