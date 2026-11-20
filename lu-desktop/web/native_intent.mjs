@@ -73,6 +73,20 @@ export function isHostCpuChatCountsQuestion(value){
 
 /** Presentation only. Keep the native explicit-no-tools veto in the shared
  * parity fixture; a positive UI affordance never authorizes native dispatch. */
+export function isHostReminderRequest(value){
+  if(typeof value!=='string')return false;
+  const s=value.trim(), bytes=v=>new TextEncoder().encode(v).length;
+  if(bytes(s)>600||s.includes('<|')||s.toLowerCase().includes('[attached text file:')||/[\p{Cc}\u202a-\u202e\u2066-\u2069]/u.test(s))return false;
+  const match=s.match(/^remind me (in|every) (.+?) to (.+)$/i);
+  if(!match)return false;
+  const parts=match[2].trim().split(/ +/), recurring=match[1].toLowerCase()==='every';
+  let n,unit;
+  if(parts.length===1&&recurring){n=1;unit=parts[0];}
+  else if(parts.length===2&&/^\d{1,5}$/.test(parts[0])){n=Number(parts[0]);unit=parts[1];}
+  else return false;
+  const multiplier=({minute:1,minutes:1,hour:60,hours:60,day:1440,days:1440,week:10080,weeks:10080})[unit.toLowerCase()];
+  return n*multiplier>=1&&n*multiplier<=10080&&match[3].trim()===match[3]&&bytes(match[3])<=512;
+}
 export function isModelFreeSendQuestion(value){
   if(typeof value!=='string')return false;
   const lower=value.toLowerCase();
@@ -80,6 +94,6 @@ export function isModelFreeSendQuestion(value){
       "do not use tools","don't use tools","do not call tools","don't call tools",
       "without specialists","without any specialists","do not use specialists",
       "never call a tool"].some(term=>lower.includes(term)))return false;
-  return isHostCurrentTimeQuestion(value)||isHostCpuChatLookup(value)||
+  return isHostReminderRequest(value)||isHostCurrentTimeQuestion(value)||isHostCpuChatLookup(value)||
     isHostModelStatusQuestion(value)||isHostCpuWorkspaceLookup(value)||isHostCpuChatCountsQuestion(value);
 }

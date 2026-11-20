@@ -18,6 +18,9 @@ use crate::{
     tasks::{TaskState,TaskStore},
 };
 
+mod reminders;
+pub use reminders::{ReminderDraft, ReminderView, parse_reminder_request, validate_reminder};
+
 const MAX_QUEUE:usize=128;
 const MAX_VIEW:usize=100;
 const MAX_PRIORITY:u8=2;
@@ -449,6 +452,7 @@ impl BackgroundScheduler{
               event TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
            );"
         ).map_err(db_error)?;
+        reminders::initialize(&db)?;
         // A crash cannot restore lost in-memory executable/path authority.
         // The original TaskStore independently marks prior RUNNING as
         // INTERRUPTED; these queue rows are NOT replayed on startup.

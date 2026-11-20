@@ -1460,6 +1460,13 @@ fn start_background_watchdog(app:AppHandle,state:Arc<DesktopState>){
                 admission.defer_new_background,
                 ||state.generation_queue.has_foreground_jobs(),
             );
+            // Inert reminders use the same durable scheduler, but never reserve
+            // inference or a process. Due events are atomic with recurrence.
+            if state.background_scheduler.tick_reminders_at(
+                lu_core::native_background_scheduler::now_unix()
+            ).is_ok_and(|count|count>0){
+                let _=app.emit("lu-reminders-changed",());
+            }
             // The existing watchdog also expires Lu-only observation leases.
             state.observe.tick();
             if let Ok(events)=state.background_tasks.pending_terminal_notices_after(
@@ -5238,6 +5245,25 @@ async fn lu_generate_impl(
         return generate_internal(app,Arc::clone(state.inner()),session_id,chat_id,
             prompt,image_refs,max_new_tokens,GenerationOrigin::Human,true,None,None,Vec::new()).await
       }
+      TurnRoute::CpuReminder(draft)=>{
+        let owner=Arc::clone(state.inner());
+        return tauri::async_runtime::spawn_blocking(move||{
+            owner.chats.history_window(&chat_id,None,"older",1)?;
+            if owner.generation_queue.scoped_job_active(&chat_id)?.is_some(){return Err("Finish the current conversation reply before scheduling a reminder".into())}
+            let gid=next_id("g-");
+            owner.chats.append_user_with_turn_id(&chat_id,&gid,&prompt)?;
+            let result=review_and_schedule_reminder(&app,&owner,&chat_id,draft,Some((&gid,&prompt)));
+            let answer=match result{
+                Ok(Some(_))=>"Reminder scheduled. You can view, pause or cancel it in Tasks → Reminders.",
+                Ok(None)=>"Reminder not scheduled. You declined the review.",
+                Err(_)=>"Could not confirm the reminder. Check Tasks → Reminders before trying again.",
+            }.to_owned();
+            owner.chats.append_progress(&chat_id,&gid,&answer).map_err(|_|"Check Tasks → Reminders before retrying; the conversation receipt could not be saved")?;
+            owner.chats.complete(&chat_id,&gid).map_err(|_|"Check Tasks → Reminders before retrying; the conversation receipt could not be completed")?;
+            let _=app.emit("lu-generation-finish",GenerationEvent{chat_id:chat_id.clone(),generation_id:gid,phase:"finished",position:0});
+            Ok(answer)
+        }).await.map_err(|_|"Reminder review was interrupted. Check Tasks → Reminders before retrying")?;
+      }
       TurnRoute::CpuWorkspace(needle)=>{
         return workspace_desktop::cpu_search_workspace_for_chat(
             app,Arc::clone(state.inner()),session_id,chat_id,prompt,needle
@@ -6717,6 +6743,74 @@ struct BackgroundGuardianView {
     active_model_generation_class:Option<String>,
     oldest_background_wait_ms:Option<u64>,
 }
+/// Scheduled reminders are inert, app-local notices, not model prompts.
+/// The original conversation comes from the native conversation index.
+#[tauri::command]
+fn lu_scheduled_reminders(state:State<'_,Arc<DesktopState>>)
+    ->Result<Vec<lu_core::native_background_scheduler::ReminderView>,String>{
+    let (chats,_)=state.chats.list()?;
+    let owners=chats.into_iter().map(|c|c.chat_id).collect::<std::collections::HashSet<_>>();
+    let rows=state.background_scheduler.reminders().map_err(|_|"Could not read reminders")?;
+    Ok(rows.into_iter().filter(|r|owners.contains(&r.workspace_id)).collect())
+}
+
+/// Shared exact native review, for either the task form or an original chat
+/// request. Stored messages and model output never call this function.
+fn review_and_schedule_reminder(app:&AppHandle,owner:&DesktopState,chat_id:&str,
+    draft:lu_core::native_background_scheduler::ReminderDraft,original_turn:Option<(&str,&str)>)
+    ->Result<Option<String>,String>{
+    let (chats,_)=owner.chats.list()?;
+    let chat=chats.into_iter().find(|c|c.chat_id==chat_id).ok_or("Choose a saved conversation")?;
+    let delay_minutes=draft.delay_minutes;
+    let repeat_minutes=draft.repeat_minutes;
+    let delay=u64::from(delay_minutes)*60;
+    let repeat=repeat_minutes.map(|n|u64::from(n)*60);
+    lu_core::native_background_scheduler::validate_reminder(&draft.text,delay,repeat)
+        .map_err(|_|"Enter a short reminder and an interval between one minute and one week")?;
+    let owner_title=chat.title.chars().filter(|c|!c.is_control() && !matches!(c,'\u{202a}'..='\u{202e}'|'\u{2066}'..='\u{2069}')).take(100).collect::<String>();
+    let message=format!("Reminder: {}\n\nConversation: {owner_title}\nFirst reminder: {delay_minutes} minute(s) after approval.\nRepeat: {}.\n\nLu must be open to show it. Missed reminders appear when Lu is reopened. This never runs AI, tools, or network requests.",
+        draft.text,repeat_minutes.map_or("Once".into(),|r|format!("Every {r} minute(s)")));
+    if !app.dialog().message(message).title("Lu — Approve reminder")
+        .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom("Schedule reminder".into(),"Decline".into())).blocking_show(){return Ok(None)}
+    // Recheck owner and, for Chat, the exact original human turn after
+    // consent. A changed original is never silently promoted.
+    owner.chats.history_window(chat_id,None,"older",1)?;
+    if let Some((turn,text))=original_turn{
+        if owner.chats.latest_authenticated_user_turn_id(chat_id).as_deref()!=Some(turn)
+            || owner.chats.trusted_user_turn_text(chat_id,turn).as_deref()!=Some(text){
+            return Err("The original reminder request changed. Please review again.".into())
+        }
+    }
+    let id=next_id("reminder-");
+    owner.background_scheduler.create_reminder(&id,chat_id,&draft.text,delay,repeat)
+        .map_err(|e|match e{
+            lu_core::native_background_scheduler::SchedulerError::QueueFull=>"Reminder limit reached".to_owned(),
+            _=>"Could not save reminder".to_owned(),
+        })?;
+    let _=app.emit("lu-reminders-changed",());
+    Ok(Some(id))
+}
+
+#[tauri::command]
+async fn lu_schedule_reminder(app:AppHandle,state:State<'_,Arc<DesktopState>>,
+    chat_id:String,text:String,delay_minutes:u32,repeat_minutes:Option<u32>)
+    ->Result<Option<String>,String>{
+    let owner=Arc::clone(state.inner());
+    tauri::async_runtime::spawn_blocking(move||review_and_schedule_reminder(&app,&owner,&chat_id,
+        lu_core::native_background_scheduler::ReminderDraft{text,delay_minutes,repeat_minutes},None))
+        .await.map_err(|_|"Reminder approval unavailable")?
+}
+
+#[tauri::command]
+fn lu_control_reminder(app:AppHandle,state:State<'_,Arc<DesktopState>>,
+    chat_id:String,reminder_id:String,action:String,seen_count:Option<u64>)->Result<(),String>{
+    state.chats.history_window(&chat_id,None,"older",1)?;
+    state.background_scheduler.control_reminder(&reminder_id,&chat_id,&action,seen_count)
+        .map_err(|_|"The reminder changed. Refresh and try again.")?;
+    let _=app.emit("lu-reminders-changed",());
+    Ok(())
+}
+
 /// Native file-picker admission. The model never selects the executable,
 /// file path or task ID, and the same Lu installation performs the scan as
 /// a separately supervised process without loading any AI model.
@@ -10245,6 +10339,9 @@ pub fn run() {
             lu_m3_task_effects,
             lu_m3_link_applied_effect,
             lu_background_tasks,
+            lu_scheduled_reminders,
+            lu_schedule_reminder,
+            lu_control_reminder,
             lu_background_guardian_status,
             lu_background_queue_control,
             lu_background_reapprove,

@@ -25,6 +25,7 @@ import {parseHumanReplanOutline,humanReplanDefaultOutline,REPLAN_REASONS} from '
 import {SettingsWindow,ModelLibraryWindow} from './native_windows.jsx';
 import {isModelFreeSendQuestion} from './native_intent.mjs';
 import {TaskBoardWindow} from './task_board.jsx';
+import {ScheduledReminders,useScheduledReminders} from './scheduled_reminders.jsx';
 import {LU_TABS,HistoryTab,friendlyError,formatTaskState,taskName} from './unified_tabs.jsx';
 
 function MessageText({text, role='assistant'}) {
@@ -689,6 +690,7 @@ function App() {
   const [activeTab,setActiveTab]=useState('chat');
   const [visitedTabs,setVisitedTabs]=useState(['chat']);
   const [taskView,setTaskView]=useState('background');
+  const reminders=useScheduledReminders();
   function openTab(tab){
     if(!LU_TABS.some(([id])=>id===tab))return;
     if(activeTab==='chat'&&tab!=='chat'&&transcriptRef.current){
@@ -4529,7 +4531,7 @@ function App() {
   </div>;
   return <div className="luTabShell">
     <nav className="luTopTabs" aria-label="Lu navigation">
-      {LU_TABS.map(([id,label])=><button type="button" key={id} aria-current={activeTab===id?'page':undefined} className={id==='settings'?'quietSettings':''} title={label} aria-label={label} onClick={()=>openTab(id)}>{id==='settings'?'⚙ Settings':label}{id==='tasks'&&backgroundTerminalNotice?' •':''}</button>)}
+      {LU_TABS.map(([id,label])=><button type="button" key={id} aria-current={activeTab===id?'page':undefined} className={id==='settings'?'quietSettings':''} title={label} aria-label={label} onClick={()=>openTab(id)}>{id==='settings'?'⚙ Settings':label}{id==='tasks'&&(backgroundTerminalNotice||reminders.unread)?' •':''}</button>)}
     </nav>
     <div hidden={activeTab!=='chat'} className={'shell' + (dragActive ? ' appDragActive' : '')}
     onDragEnter={handleAppDrag}
@@ -4570,6 +4572,7 @@ function App() {
       </div>
     </aside>
     <main className="workspace">
+      {reminders.unread>0 && <button type="button" className="backgroundGlobalNotice" onClick={()=>{openTab('tasks');setTaskView('reminders');}}>Reminders due ({reminders.unread})</button>}
       {backgroundTerminalNotice && <button type="button"
         className="backgroundGlobalNotice"
         onClick={()=>{openTab('tasks');setBackgroundFilter('all');}}>
@@ -6835,8 +6838,8 @@ function App() {
     {visitedTabs.includes('settings')&&<section className="luTabPage" hidden={activeTab!=='settings'}><SettingsWindow onNavigate={openTab} active={activeTab==='settings'}/></section>}
     {visitedTabs.includes('models')&&<section className="luTabPage" hidden={activeTab!=='models'}><ModelLibraryWindow onNavigate={openTab} active={activeTab==='models'}/></section>}
     {visitedTabs.includes('tasks')&&<section className="luTabPage taskTabPage" hidden={activeTab!=='tasks'}>
-      <div className="taskTabNavigation"><button type="button" aria-pressed={taskView==='background'} onClick={()=>setTaskView('background')}>Background work</button><button type="button" aria-pressed={taskView==='projects'} onClick={()=>setTaskView('projects')}>Project plans</button></div>
-      {taskView==='projects'?<TaskBoardWindow onNavigate={openTab}/>:<section className="backgroundPane tabTasks" aria-label="Background Tasks">
+      <div className="taskTabNavigation"><button type="button" aria-pressed={taskView==='background'} onClick={()=>setTaskView('background')}>Background work</button><button type="button" aria-pressed={taskView==='projects'} onClick={()=>setTaskView('projects')}>Project plans</button><button type="button" aria-pressed={taskView==='reminders'} onClick={()=>setTaskView('reminders')}>Reminders{reminders.unread?' ('+reminders.unread+')':''}</button></div>
+      {taskView==='projects'?<TaskBoardWindow onNavigate={openTab}/>:taskView==='reminders'?<ScheduledReminders reminders={reminders} chats={chats} chatId={chatId} onOpenChat={openHistoryChat}/>:<section className="backgroundPane tabTasks" aria-label="Background Tasks">
         <header className="backgroundPaneHeader">
           <div><h2>Background Tasks</h2><small>Manage running, queued and completed work.</small></div>
         </header>

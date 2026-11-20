@@ -15,6 +15,7 @@ pub(crate) enum TurnRoute {
     CpuModelStatus,
     CpuChatLiteral(String),
     CpuClock,
+    CpuReminder(lu_core::native_background_scheduler::ReminderDraft),
     Browser(String),
     Git,
     Reader { exact: bool },
@@ -81,6 +82,9 @@ pub(crate) fn select(prompt:&str, image_refs:&[String], max_new_tokens:u32,
     }
     let reviewed=!workspace&&!images;
     if reviewed{
+        if let Some(draft)=lu_core::native_background_scheduler::parse_reminder_request(prompt){return Ok(TurnRoute::CpuReminder(draft))}
+    }
+    if reviewed{
         if let Some(search)=browser_model_desktop::public_search_intent(prompt)?{
             return Ok(TurnRoute::Browser(search.origin.into()))
         }
@@ -125,6 +129,7 @@ mod tests{
             Ok(TurnRoute::CpuModelStatus)=>"cpu-status".into(),
             Ok(TurnRoute::CpuChatLiteral(q))=>format!("cpu-chat:{q}"),
             Ok(TurnRoute::CpuClock)=>"cpu-clock".into(),
+            Ok(TurnRoute::CpuReminder(_))=>"cpu-reminder".into(),
             Ok(TurnRoute::Browser(o))=>format!("browser:{o}"),
             Ok(TurnRoute::Git)=>"git".into(),
             Ok(TurnRoute::Reader{exact:true})=>"reader-exact".into(),
@@ -146,6 +151,16 @@ mod tests{
             assert_eq!(parity_signature(select(prompt,&["img-1".into()],512,SendMode::Ordinary)),"model","{prompt}");
             assert_eq!(parity_signature(select(&format!("{prompt}\n[Attached text file: source]"),&[],512,SendMode::Ordinary)),"model","{prompt}");
         }
+    }
+    #[test]
+    fn cp11b_reminder_route_is_original_text_only(){
+        let prompt="Remind me every day to review notes";
+        assert!(matches!(route(prompt),TurnRoute::CpuReminder(draft) if draft.repeat_minutes==Some(1440)));
+        assert!(matches!(select(prompt,&["img-1".into()],512,SendMode::Ordinary).unwrap(),TurnRoute::Model));
+        assert!(matches!(route(&format!("{prompt}\n[Attached text file: original]")),TurnRoute::Model));
+        assert!(matches!(route("Remind me in 1 minute to review without tools"),TurnRoute::Model));
+        assert!(!matches!(route("Remind me tomorrow to call home"),TurnRoute::CpuReminder(_)));
+        assert!(!matches!(route("How to remind me in 1 minute to read"),TurnRoute::CpuReminder(_)));
     }
     #[test]
     fn legacy_rpc_mode_adapter_preserves_only_exclusive_explicit_modes(){

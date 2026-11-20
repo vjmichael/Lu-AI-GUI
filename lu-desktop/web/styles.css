@@ -690,3 +690,11 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .submissionNotice{display:flex;flex-wrap:wrap;gap:8px;align-items:center;font-size:.9rem;padding:8px 0}
 
 .linkedAttachmentArea{margin-top:8px}.linkedAttachment{color:inherit;cursor:pointer;text-align:left}.linkedAttachment small{color:#ffd8c2}.linkedAttachmentFailure{font-size:12px;color:#ffd8c2;margin:6px 0}.linkedAttachmentPreview{margin-top:8px;border:1px solid #516e8a;border-radius:8px;padding:10px}.linkedAttachmentPreview header{display:flex;align-items:center;justify-content:space-between;gap:10px}.linkedAttachmentPreview pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:310px;overflow:auto}.linkedAttachmentPreview img{max-width:100%;max-height:310px;object-fit:contain}
+
+/* Scheduled reminders — ordinary local user tasks. */
+.scheduledReminders{width:min(780px,100%);align-self:center;padding:24px;box-sizing:border-box;display:flex;flex-direction:column;gap:14px;overflow:auto;min-height:0;}
+.scheduledReminders header h2{margin:0 0 6px;}.scheduledReminders header p{margin:0;opacity:.8;}
+.reminderForm{display:flex;flex-direction:column;gap:12px;padding:16px;border:1px solid var(--border,#555);border-radius:10px;}
+.reminderForm label{display:flex;flex-direction:column;gap:6px;min-width:0;}.reminderForm input,.reminderForm select{font:inherit;padding:8px;max-width:100%;box-sizing:border-box;}
+.reminderTiming{display:grid;grid-template-columns:1fr 1fr;gap:12px;}.reminderForm small{line-height:1.5;}.reminderForm .primaryButton{align-self:flex-start;}
+.scheduledReminders .backgroundTaskHeading strong{overflow-wrap:anywhere;}.scheduledReminders .nativeChoiceRow{flex-wrap:wrap;}
