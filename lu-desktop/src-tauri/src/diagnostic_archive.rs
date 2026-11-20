@@ -272,6 +272,26 @@ mod tests{
         assert!(r.findings[0].explanation.contains("not authorized"));
     }
     #[test]
+    fn cp12br1_extended_local_report_projects_only_five_counts() {
+        let archive=DiagnosticArchive::open(Path::new(":memory:")).unwrap();
+        let mut denied=trace("fedcba9876543210fedcba9876543210");
+        denied.human_declined();assert!(archive.persist(&denied));
+        let live=trace("0123456789abcdef0123456789abcdef");assert!(archive.persist(&live));
+        let corrupt=trace("11111111111111111111111111111111");assert!(archive.persist(&corrupt));
+        archive.conn.lock().unwrap().execute("UPDATE dx_trace SET body=x'FF' WHERE trace_ref=?1",["11111111111111111111111111111111"]).unwrap();
+        let mut extended=archive.report().unwrap().with_scheduled_runs(Ok(lu_core::native_background_scheduler::ScheduledDiagnosticSummary{running:2,reader_result_matches:7,failed:4,..Default::default()}));
+        extended.active_check=Some(CheckReport{state:CheckState::Complete,body:CheckBody::default()});
+        // Deliberately plant test canaries in richer fields. They must never
+        // influence the allowlisted projection even if future report text changes.
+        extended.findings[0].explanation="CP12BR1-SYNTHETIC-PRIVATE-CANARY";
+        let local=serde_json::to_string(&extended).unwrap();
+        assert!(local.contains("CP12BR1-SYNTHETIC-PRIVATE-CANARY"));
+        assert!(local.contains("scheduledRuns"));
+        assert!(local.contains("activeCheck"));
+        let payload=extended.exchange_summary();
+        assert_eq!(serde_json::to_value(payload).unwrap(),serde_json::json!({"complete":0,"observedFailure":1,"bounded":0,"incomplete":1,"unavailable":1}));
+    }
+    #[test]
     fn recovery_never_promotes_open_trace_and_rejects_stale_write(){
         let path=std::env::temp_dir().join(format!("lu-cp01-dx-{}-{}.sqlite",std::process::id(),rand::random::<u64>()));
         let archive=DiagnosticArchive::open(&path).unwrap();

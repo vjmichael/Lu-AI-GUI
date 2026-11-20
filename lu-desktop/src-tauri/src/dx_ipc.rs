@@ -523,6 +523,37 @@ mod linux {
             assert!(c.start(summary()).is_err());
         }
         #[test]
+        fn cp12br1_incompatible_diagnostic_version_and_oversized_frame_leave_invitation_unconsumed() {
+            let c = Controller::default();
+            let code = c.start(summary()).unwrap();
+            let key = unhex::<32>(code.split('-').nth(2).unwrap()).unwrap();
+            let stop = AtomicBool::new(false);
+            for (version, dx_version) in [(0, DX_VERSION), (VERSION, 1), (VERSION, DX_VERSION + 1)] {
+                let mut req = request(&key, vec![9; 32]);
+                req.version = version;
+                req.dx_version = dx_version;
+                req.mac.clear();
+                req.mac = mac(&key, b"lu.dx.request.v1\0", &req.encode_to_vec()).to_vec();
+                let mut s = UnixStream::connect(endpoint(&code).join("s")).unwrap();
+                s.set_nonblocking(true).unwrap();
+                let end = Instant::now() + FRAME;
+                write(&mut s, req.encode_to_vec(), &stop, end).unwrap();
+                assert!(read(&mut s, &stop, end).is_err());
+                let mut rsp = response(&key, vec![9; 32], summary());
+                rsp.version = version;
+                rsp.dx_version = dx_version;
+                rsp.mac.clear();
+                rsp.mac = mac(&key, b"lu.dx.response.v1\0", &rsp.encode_to_vec()).to_vec();
+                assert!(auth_response(&key, &[9; 32], &rsp.encode_to_vec()).is_none());
+            }
+            let mut stream = UnixStream::connect(endpoint(&code).join("s")).unwrap();
+            stream.write_all(&((MAX+1) as u32).to_be_bytes()).unwrap();
+            stream.set_nonblocking(true).unwrap();
+            assert!(read(&mut stream, &stop, Instant::now() + FRAME).is_err());
+            assert_eq!(receive(&code).unwrap(), summary());
+            c.stop();
+        }
+        #[test]
         fn response_tampering_and_nonce() {
             let k = [5; 32];
             let n = vec![2; 32];
@@ -669,4 +700,19 @@ impl Controller {
 #[cfg(not(target_os = "linux"))]
 pub(crate) fn receive(_: &str) -> Result<Summary, String> {
     Err("Local sharing is not available on this platform.".into())
+}
+
+#[cfg(all(test, target_os = "windows"))]
+mod windows_disabled_tests {
+    use super::*;
+    #[test]
+    fn cp12br1_windows_transport_is_unavailable_without_explicit_qualification() {
+        let controller=Controller::default();
+        let summary=Summary{complete:0,observed_failure:0,bounded:0,incomplete:0,unavailable:0};
+        assert!(!controller.active());
+        assert!(controller.start(summary).is_err());
+        assert!(receive("untrusted invitation").is_err());
+        assert!(!controller.stop());
+        controller.shutdown();
+    }
 }
