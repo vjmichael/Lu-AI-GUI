@@ -1,5 +1,7 @@
 #!/bin/bash
 set -euo pipefail
+mode=${1:-all}
+case "$mode" in all|normal-only|stall-only) ;; *) exit 2;; esac
 cd /mnt/deploy; sha256sum -c SHA256SUMS
 [[ $(cat /proc/1/comm) == systemd && $(findmnt -n -o FSTYPE /sys/fs/cgroup) == cgroup2 && $(ls /sys/class/net) == lo ]]
 mkdir -p /tmp/host-browser-runtime
@@ -32,11 +34,11 @@ runuser -u luprobe -- xvfb-run -a -s '-screen 0 1280x800x24' /usr/lib/lu/browser
 runuser -u luprobe -- /usr/lib/lu/browser/chrome --version
 runuser -u luprobe -- /usr/lib/lu/browser/node --version
 echo SEC06ER1_R1_GUEST_PINNED_RUNTIME_PREFLIGHT_PASS
-if [[ ${1:-all} == normal-only ]]; then
+if [[ $mode == normal-only ]]; then
  runuser -u luprobe -- env LU_SEC06C_BROKER_DEBUG=1 xvfb-run -a -s '-screen 0 1280x800x24' python3 /mnt/deploy/sec06c_browser_real_native.py --bundle /usr/lib/lu/browser --launcher /usr/libexec/lu/lu-sec06c-launch-browser
  exit 0
 fi
-if [[ ${1:-all} == stall-only ]]; then
+if [[ $mode == stall-only ]]; then
  runuser -u luprobe -- env LU_SEC06C_BROKER_DEBUG=1 xvfb-run -a -s '-screen 0 1280x800x24' python3 /mnt/deploy/sec06c_browser_guardian_loss.py --stall --bundle /usr/lib/lu/browser --launcher /usr/libexec/lu/lu-sec06c-launch-browser
  exit 0
 fi

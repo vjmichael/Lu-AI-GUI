@@ -29,6 +29,10 @@ jobs:
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           node scripts/verify-source-tree.mjs
           mkdir -p "$RUNNER_TEMP/source"
+          node scripts/p0-sec06-consolidated.mjs --mode source --evidence "$RUNNER_TEMP/source/sec06-source-receipts"
+          python3 scripts/test-sec06e-native-watchdog.py
+          python3 scripts/test-sec06e-browser-admission.py
+          python3 scripts/test-sec06f-legacy-retention.py
           git bundle create "$RUNNER_TEMP/source/LuCore-$GITHUB_SHA.bundle" HEAD
           git bundle verify "$RUNNER_TEMP/source/LuCore-$GITHUB_SHA.bundle"
           git rev-parse HEAD > "$RUNNER_TEMP/source/COMMIT"
