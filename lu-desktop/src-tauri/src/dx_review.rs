@@ -32,7 +32,7 @@ impl Drop for ReviewLease<'_>{fn drop(&mut self){if let Ok(mut a)=self.control.a
 struct Done<'a>(&'a AtomicBool);
 impl Drop for Done<'_>{fn drop(&mut self){self.0.store(true,Ordering::Release);}}
 fn prompt(s:&Summary)->String{
-    format!("Classify this troubleshooting summary. Observed failures: {}. Uncertain records: {}. Unavailable records: {}. Partially confirmed: {}. Confirmed deliveries: {}.\nChoose the FIRST applicable rule in this order: F if observed failures > 0; U if uncertain or unavailable > 0; P if partially confirmed > 0; D if confirmed deliveries > 0; N if all counts are zero. Return exactly one letter F, U, P, D or N. No explanation. /no_think",s.observed_failure,s.incomplete,s.unavailable,s.bounded,s.complete)
+    format!("Read this diagnostic report and select the most important finding.\nFailed: {}\nUncertain: {}\nUnavailable: {}\nPartial: {}\nDelivered: {}\n\nRules, in order:\nIf Failed is nonzero, answer FAILURE. Otherwise, if Uncertain or Unavailable is nonzero, answer UNCERTAIN. Otherwise, if Partial is nonzero, answer PARTIAL. Otherwise, if Delivered is nonzero, answer DELIVERED. Otherwise answer EMPTY.\nAnswer with only the corresponding word. /no_think",s.observed_failure,s.incomplete,s.unavailable,s.bounded,s.complete)
 }
 pub(crate) fn ready(owner:&DesktopState)->Result<SupervisorStatus,String>{
     let s=owner.supervisor.status().map_err(|_|"Model unavailable")?;
@@ -89,11 +89,11 @@ mod tests{
     use super::*;use crate::dx_ipc::Finding;
     #[test]fn cp12br3_finite_evidence_rules(){
         let mut s=Summary{complete:0,observed_failure:0,bounded:0,incomplete:0,unavailable:0};
-        for (field,letter,kind) in [(0,"N",Finding::Empty),(1,"D",Finding::Delivered),(2,"P",Finding::Partial),(3,"U",Finding::Uncertain),(4,"F",Finding::Failure)]{
+        for (field,letter,kind) in [(0,"EMPTY",Finding::Empty),(1,"DELIVERED",Finding::Delivered),(2,"PARTIAL",Finding::Partial),(3,"UNCERTAIN",Finding::Uncertain),(4,"FAILURE",Finding::Failure)]{
             match field{1=>s.complete=1,2=>s.bounded=1,3=>s.unavailable=1,4=>s.observed_failure=1,_=>()}
             assert_eq!(ReviewedSummary::checked(s.clone(),letter).unwrap().finding,kind);
             assert!(ReviewedSummary::checked(s.clone(),"F or D").is_none());
-            for invalid in ["N","D","P","U","F"].into_iter().filter(|x|*x!=letter){assert!(ReviewedSummary::checked(s.clone(),invalid).is_none());}
+            for invalid in ["EMPTY","DELIVERED","PARTIAL","UNCERTAIN","FAILURE"].into_iter().filter(|x|*x!=letter){assert!(ReviewedSummary::checked(s.clone(),invalid).is_none());}
         }
         s.complete=65;assert!(Finding::expected(&s).is_none());
     }

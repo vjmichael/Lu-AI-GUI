@@ -48,8 +48,8 @@ impl Finding {
         else { Self::Empty })
     }
     pub(crate) fn parse(answer: &str) -> Option<Self> {
-        match answer.trim() { "F" => Some(Self::Failure), "U" => Some(Self::Uncertain),
-            "P" => Some(Self::Partial), "D" => Some(Self::Delivered), "N" => Some(Self::Empty), _ => None }
+        match answer.trim() { "FAILURE" => Some(Self::Failure), "UNCERTAIN" => Some(Self::Uncertain),
+            "PARTIAL" => Some(Self::Partial), "DELIVERED" => Some(Self::Delivered), "EMPTY" => Some(Self::Empty), _ => None }
     }
     fn from_wire(n:u32) -> Option<Self> { match n { 1=>Some(Self::Failure),2=>Some(Self::Uncertain),3=>Some(Self::Partial),4=>Some(Self::Delivered),5=>Some(Self::Empty),_=>None } }
 }
@@ -183,7 +183,7 @@ mod protocol {
     }
     pub(super) fn auth_request_for(key:&[u8;32],b:&[u8],version:u32)->Option<Request>{
         let r: Request = canonical(b)?;
-        if r.version != version
+        if !matches!(version, VERSION | REVIEW_VERSION) || r.version != version
             || r.dx_version != DX_VERSION
             || r.nonce.len() != 32
             || r.mac.len() != 32
@@ -199,7 +199,7 @@ mod protocol {
     }
     pub(super) fn auth_response_for(key:&[u8;32],nonce:&[u8],b:&[u8],version:u32)->Option<(Summary,u32)>{
         let r: Response = canonical(b)?;
-        if r.version != version
+        if !matches!(version, VERSION | REVIEW_VERSION) || r.version != version
             || r.dx_version != DX_VERSION
             || r.nonce != nonce
             || r.mac.len() != 32
@@ -540,11 +540,27 @@ mod linux {
             path(&unhex::<16>(code.split('-').nth(1).unwrap()).unwrap())
         }
         #[test]
+        fn cp12br3_original_response_encoding_is_byte_identical(){
+            #[derive(Clone,PartialEq,Message)]
+            struct OldResponse {
+                #[prost(uint32,tag="1")] version:u32,
+                #[prost(uint32,tag="2")] dx_version:u32,
+                #[prost(bytes="vec",tag="3")] nonce:Vec<u8>,
+                #[prost(message,optional,tag="4")] summary:Option<Summary>,
+                #[prost(bytes="vec",tag="5")] mac:Vec<u8>,
+            }
+            let key=[4;32];let nonce=vec![3;32];let s=summary();
+            let mut old=OldResponse{version:VERSION,dx_version:DX_VERSION,nonce:nonce.clone(),summary:Some(s.clone()),mac:vec![]};
+            old.mac=mac(&key,b"lu.dx.response.v1\0",&old.encode_to_vec()).to_vec();
+            assert_eq!(old.encode_to_vec(),response(&key,nonce.clone(),s.clone()).encode_to_vec());
+            assert_eq!(auth_response(&key,&nonce,&old.encode_to_vec()),Some(s));
+        }
+        #[test]
         fn cp12br3_review_versions_and_independent_validation(){
             let c=Controller::default();let s=summary();
-            assert!(ReviewedSummary::checked(s.clone(),"D").is_none());
-            assert!(ReviewedSummary::checked(s.clone(),"F with explanation").is_none());
-            let review=ReviewedSummary::checked(s.clone(),"F").unwrap();
+            assert!(ReviewedSummary::checked(s.clone(),"DELIVERED").is_none());
+            assert!(ReviewedSummary::checked(s.clone(),"FAILURE with explanation").is_none());
+            let review=ReviewedSummary::checked(s.clone(),"FAILURE").unwrap();
             let code=c.start_review(review).unwrap();assert!(code.starts_with("lu2-"));
             assert!(receive(&code).is_err());
             let wrong=format!("lu1{}",&code[3..]);assert!(receive(&wrong).is_err());

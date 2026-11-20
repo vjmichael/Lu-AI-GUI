@@ -153,7 +153,7 @@ function LocalDiagnosticExchange({active}){
       <p role="status">{sharing?'Sharing is on for one use or up to two minutes.':'Sharing is off.'}</p>
       {!sharing?<button type="button" disabled={busy} onClick={()=>void perform(async()=>{const invitation=await invoke('lu_dx_share');if(invitation){setCode(invitation);setSharing(true);}})}>Create sharing invitation…</button>:<>
         {code&&<button type="button" disabled={busy} onClick={()=>void perform(async()=>{await navigator.clipboard.writeText(code);setMessage('Invitation copied. Give it only to your other Lu session.');})}>Copy invitation</button>}
-        <button type="button" onClick={()=>void perform(async()=>{await invoke('lu_dx_stop_share');setSharing(false);setCode('');setMessage('Sharing stopped. Already received summaries cannot be recalled.');})}>Stop sharing</button>
+        <button type="button" onClick={()=>void invoke('lu_dx_stop_share').then(()=>{setSharing(false);setCode('');setMessage('Sharing stopped. Already received summaries cannot be recalled.');}).catch(e=>setMessage(errorText(e)))}>Stop sharing</button>
       </>}
       {reviewSupported&&!sharing&&<button type="button" disabled={busy} onClick={()=>void review(async()=>{const invitation=await invoke('lu_dx_review_share');if(invitation){setCode(invitation);setSharing(true);setMessage('A checked review invitation is ready.');}})}>Review and share with loaded model…</button>}
       {reviewing&&<button type="button" onClick={()=>void invoke('lu_dx_stop_review').catch(e=>setMessage(errorText(e)))}>Stop review</button>}
