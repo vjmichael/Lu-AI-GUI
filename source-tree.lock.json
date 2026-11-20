@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "5f0f0f8e65efccf5db809630bd0d237b1de24693",
+  "sourceCommitBeforeLock": "aef64f877bc2857742ce7c85460f799f4ffc331a",
   "trackedFileCount": 1982,
   "files": [
     {
@@ -277,7 +277,7 @@
     },
     {
       "path": ".github/workflows/ide-fin04r1-exact-native.yml",
-      "blob": "6f4bf3ff41acd9eea869d701a0799125aa4e3d65"
+      "blob": "fd3259aaa830851d5cbc1a6fd7fc6f4f6edb39f1"
     },
     {
       "path": ".github/workflows/ide-group02-installed-consolidated.yml",
@@ -293,11 +293,11 @@
     },
     {
       "path": ".github/workflows/ide-group04d-source.yml",
-      "blob": "08c1e1eeb4a7b71e31707d4377764412d9a1556a"
+      "blob": "3e714d46421e8cd23576b899bef6ae4d0c8d85f9"
     },
     {
       "path": ".github/workflows/ide-group06a-native.yml",
-      "blob": "19ba1e3280880a9bc48005c7572a94b8f8d3f1aa"
+      "blob": "970eaa04e02e6868d4f0e29a6d40d81ec5c5bc06"
     },
     {
       "path": ".github/workflows/ide-group06b-native.yml",
@@ -1705,7 +1705,7 @@
     },
     {
       "path": "ide/PROJECT_STATE.md",
-      "blob": "e0e79378b9646b53fd058cf966ff85aeb94d917e"
+      "blob": "fe14f6337bcbd07cf31455479b06447fe442462e"
     },
     {
       "path": "ide/README.md",
@@ -1757,7 +1757,7 @@
     },
     {
       "path": "ide/app/fixtures/Test-FIN04R1-PhysicalProtectedPdbReview.ps1",
-      "blob": "b3eaae7369b205ad216bf404fc5443986f2e4749"
+      "blob": "e3e012eb325c204dabd8b85f39b6708691b6c31c"
     },
     {
       "path": "ide/app/fixtures/Test-G06A-PhysicalLinuxGitInventory.sh",
@@ -2197,7 +2197,7 @@
     },
     {
       "path": "ide/app/tests/fin04r1_protected_pdb.test.mjs",
-      "blob": "fb711bef42e6a819a102bd8047d185599fc013fa"
+      "blob": "d24dd4616d8407b200534b4f09811d3b40021c49"
     },
     {
       "path": "ide/app/tests/fin05_offline_vcpkg_worker.test.mjs",
@@ -2217,7 +2217,7 @@
     },
     {
       "path": "ide/app/tests/g06a_git_repository_inventory.test.mjs",
-      "blob": "f96903ff22398e94a5053264bb6a6cd35921103e"
+      "blob": "dc8ea983e858737618d5830b8f3958d941cacd09"
     },
     {
       "path": "ide/app/tests/g06b_protected_partial_stage.test.mjs",
@@ -2537,7 +2537,7 @@
     },
     {
       "path": "ide/app/web/main.jsx",
-      "blob": "f3473dccd17ad44c99f62659d27a240db2140bcc"
+      "blob": "fce4638e28fcb66f9fd3df9ca9b97a9643d6d9d4"
     },
     {
       "path": "ide/app/web/native_build_output.js",
@@ -2613,7 +2613,7 @@
     },
     {
       "path": "ide/ci/merge02-reviewed-native-boundaries.json",
-      "blob": "f1a806989f76c59067187352ddb728a574473de4"
+      "blob": "411335f5f069c2b468d8eaada96373c1cdd58aea"
     },
     {
       "path": "ide/ci/test_verify_reviewed_native_boundaries.py",
@@ -3385,7 +3385,7 @@
     },
     {
       "path": "ide/host/src/git_refs_health.rs",
-      "blob": "958080217ba96606df09fde141ae8eec365a4052"
+      "blob": "e7769d797a42b5f69c9c635aecb18a9c441f9969"
     },
     {
       "path": "ide/host/src/git_replay_quarantine.rs",
@@ -3665,7 +3665,7 @@
     },
     {
       "path": "ide/llvm18_owner/Test-FIN04R1-ProtectedPdbWindows.ps1",
-      "blob": "84a88cb6e28656bb651e060c2f7815d7d8ab04f8"
+      "blob": "4488164d2dd3ca163a8bcb6054aac5a418d018ae"
     },
     {
       "path": "ide/llvm18_owner/Test-PinnedOwnerWindows.ps1",
@@ -4529,7 +4529,7 @@
     },
     {
       "path": "ide/supervisor/examples/wo6_native_dap_acceptance.rs",
-      "blob": "7108698d1d2e3c5f986ec65bf5b81929ba173137"
+      "blob": "3776ad28f967235f732ee4b2dadb6c7b5a988159"
     },
     {
       "path": "ide/supervisor/fixtures/Install-ProtectedRecoveryService.ps1",
@@ -4653,7 +4653,7 @@
     },
     {
       "path": "ide/supervisor/src/dap_transport.rs",
-      "blob": "805c30c4ac28a7c8c0e9eeee25cc861b0190159d"
+      "blob": "65de6652084c4a9a105d1ee95dd87da1be800ed1"
     },
     {
       "path": "ide/supervisor/src/debug_action_receipts.rs",
@@ -4693,7 +4693,7 @@
     },
     {
       "path": "ide/supervisor/src/lib.rs",
-      "blob": "055a7045c3aa474a6adf5f1abdd485a54d4f5d95"
+      "blob": "b10383b49ff6343c3dc851a462f9facebef39a72"
     },
     {
       "path": "ide/supervisor/src/linux_lsp_worker.rs",
@@ -4745,7 +4745,7 @@
     },
     {
       "path": "ide/supervisor/src/windows_event_owner.rs",
-      "blob": "72c58fa2610a71156ab6bdba9f8fae3764d43ef0"
+      "blob": "616bed4e4bad727859269619eae4912f22ce5c68"
     },
     {
       "path": "ide/supervisor/src/windows_fin04w2_c2_host.rs",
@@ -4797,7 +4797,7 @@
     },
     {
       "path": "ide/supervisor/src/windows_lsp_worker.rs",
-      "blob": "3a3ec763da193989e7f14a2ed509039cfb256351"
+      "blob": "a04bd5b7a8fd913f3558c6de4ef0e343cfc6d7c6"
     },
     {
       "path": "ide/supervisor/src/windows_null_device.rs",
