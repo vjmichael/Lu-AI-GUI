@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "8f0758723880fe19e196c27e229660b1c3684564",
+  "sourceCommitBeforeLock": "68824253efbc941f023a7d875086054daf6713ee",
   "trackedFileCount": 1207,
   "files": [
     {
@@ -893,7 +893,7 @@
     },
     {
       "path": "docs/LU_CP11B_R1_SCHEDULED_AI_20261120.md",
-      "blob": "2dab75241a0b0d87727bc721bf2e2c98f2491560"
+      "blob": "ebc5b13fbf650d3a77baa21fa84a3f5ee07f34e7"
     },
     {
       "path": "docs/LU_CP11B_SCHEDULED_REMINDERS_20261120.md",
@@ -909,7 +909,7 @@
     },
     {
       "path": "docs/LU_DEVELOPMENT_LEDGER.md",
-      "blob": "84b37ad614724f4bbe4bda2d4573ebe6160bd45a"
+      "blob": "f27e849630c99f13ebc0558259aef73eedf92f14"
     },
     {
       "path": "docs/LU_E1_NATIVE_EVIDENCE_20261107.md",
