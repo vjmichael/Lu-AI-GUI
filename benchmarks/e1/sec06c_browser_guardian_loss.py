@@ -66,7 +66,7 @@ def find_exact_root_manager(unit_dir,nonce):
             match.append(pid)
     if len(match)!=1:reject("not exactly one original root-owned kernel browser manager")
     return match[0]
-def original_manager_loss(bundle,launcher):
+def original_manager_loss(bundle,launcher,stall=False):
     if sys.platform!="linux" or UID==0 or not os.getenv("DISPLAY"):
         reject("requires real unprivileged Xvfb Linux test")
     with tempfile.TemporaryDirectory(prefix="lu-sec06c-browser-guardian-loss-") as directory:
@@ -111,11 +111,36 @@ def original_manager_loss(bundle,launcher):
             # CI-host root acts only on the specific already-created service
             # identity established by the original nonce and /proc. The
             # production app has NO arbitrary systemctl/kill permission.
+            if stall:
+                def property_value(name):
+                    return subprocess.check_output(["/usr/bin/systemctl","show",unit.name,"--property="+name,"--value"],text=True,timeout=10).strip()
+                expected={"Type":"notify","NotifyAccess":"main","WatchdogUSec":"20s","WatchdogSignal":"9","KillMode":"control-group"}
+                for key,value in expected.items():
+                    if property_value(key)!=value:reject("original independent watchdog service property missing")
+                last=int(property_value("WatchdogTimestampMonotonic"))
+                deadline=time.monotonic()+10
+                while time.monotonic()<deadline:
+                    if int(property_value("WatchdogTimestampMonotonic"))>last>0:break
+                    time.sleep(.1)
+                else:reject("healthy original browser guardian heartbeat did not advance")
+            attack_signal="SIGSTOP" if stall else "SIGKILL"
             killing=subprocess.run(["sudo","-n","/usr/bin/systemctl","kill",
-                "--kill-whom=main","--signal=SIGKILL",unit.name],
+                "--kill-whom=main","--signal="+attack_signal,unit.name],
                 capture_output=True,text=True,timeout=15)
             if killing.returncode!=0:
-                reject("CI failed to SIGKILL exact root manager: "+killing.stderr[:600])
+                reject("CI failed to interrupt exact root manager: "+killing.stderr[:600])
+            if stall:
+                # The independent observer never resumes or kills the manager.
+                # Only PID1 can terminate the stalled service.
+                deadline=time.monotonic()+5
+                while time.monotonic()<deadline:
+                    if pathlib.Path(f"/proc/{manager}/status").read_text().split("State:",1)[1].lstrip().startswith("T"):break
+                    time.sleep(.03)
+                else:reject("original manager stall never observed")
+                if not live(control.pid):reject("control exited before watchdog")
+                until_signalled(manager,fds[0],time.monotonic()+40)
+                props=subprocess.run(["/usr/bin/systemctl","show",unit.name,"--property=Result","--value"],capture_output=True,text=True,timeout=10)
+                if props.returncode!=0 or props.stdout.strip()!="watchdog":reject("PID1 watchdog termination not independently verified")
             if not signalled(fds[0]):
                 deadline=time.monotonic()+10
                 until_signalled(manager,fds[0],deadline)
@@ -148,8 +173,10 @@ def original_manager_loss(bundle,launcher):
             if control.poll() is not None:
                 reject("unrelated process was not preserved through completed cleanup")
             print("SEC06E_R1_BROWSER_SAME_BOOT_RECLAIM_AND_REPLAY_DENIED_PASS",flush=True)
-            print("SEC06C_BROWSER_ORIGINAL_GUARDIAN_LOSS_FAIL_CLOSED_PASS=1 "
-                "original_root_manager_sigkill=1 distinct_chromium_node_pidfds=1 "
+            if stall:print("SEC06F_BROWSER_INDEPENDENT_WATCHDOG_STALL_PASS=1",flush=True)
+            print("SEC06C_BROWSER_ORIGINAL_GUARDIAN_LOSS_FAIL_CLOSED_PASS=1 "+
+                ("original_root_manager_watchdog=1 " if stall else "original_root_manager_sigkill=1 ")+
+                "distinct_chromium_node_pidfds=1 "
                 "systemd_control_group_reaped=1 false_receipt_denied=1 "
                 "stale_authority_replay_denied=1 unrelated_process_survived=1",
                 flush=True)
@@ -167,10 +194,11 @@ def main():
     p=argparse.ArgumentParser(allow_abbrev=False)
     p.add_argument("--bundle",required=True)
     p.add_argument("--launcher",required=True)
+    p.add_argument("--stall",action="store_true")
     a=p.parse_args()
     return original_manager_loss(
         pathlib.Path(a.bundle).resolve(strict=True),
-        pathlib.Path(a.launcher).resolve(strict=True))
+        pathlib.Path(a.launcher).resolve(strict=True),a.stall)
 if __name__=="__main__":
     try:sys.exit(main())
     except Exception as e:

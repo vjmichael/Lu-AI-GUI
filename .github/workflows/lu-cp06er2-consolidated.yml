@@ -328,6 +328,18 @@ jobs:
               2>&1 | tee sec06c-browser-evidence/original-browser-guardian-loss.log
           grep -Fq 'SEC06C_BROWSER_ORIGINAL_GUARDIAN_LOSS_FAIL_CLOSED_PASS=1' sec06c-browser-evidence/original-browser-guardian-loss.log
           grep -Fq 'SEC06E_R1_BROWSER_SAME_BOOT_RECLAIM_AND_REPLAY_DENIED_PASS' sec06c-browser-evidence/original-browser-guardian-loss.log
+      - name: Stall the original browser guardian and require independent PID1 watchdog termination
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p sec06c-browser-evidence
+          xvfb-run -a -s "-screen 0 1280x800x24" \
+            python3 benchmarks/e1/sec06c_browser_guardian_loss.py --stall \
+              --bundle /usr/lib/lu/browser \
+              --launcher /usr/libexec/lu/lu-sec06c-launch-browser \
+              2>&1 | tee sec06c-browser-evidence/original-browser-guardian-stall.log
+          grep -Fq 'SEC06F_BROWSER_INDEPENDENT_WATCHDOG_STALL_PASS=1' sec06c-browser-evidence/original-browser-guardian-stall.log
       - uses: actions/upload-artifact@v4
         if: always()
         with:

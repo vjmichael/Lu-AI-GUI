@@ -131,7 +131,10 @@ const desktopUI=load('../web/main.jsx');
 test('SEC-04 original uncertain PENDING and RUNNING states remain fenced on restart',()=>{
   assert.match(sec04Core,/WHERE task_id=\?1 AND state='PAUSED'\s+AND NOT EXISTS/);
   assert.match(sec04Core,/if matches!\(to,TaskState::Running\|TaskState::Completed/);
-  assert.match(sec04Core,/WHERE state='RUNNING' OR \(state='PENDING' AND EXISTS\(/);
+  // Match both the interruption event and state update independently, including
+  // the newer admitted PENDING/PAUSED fence. Do not weaken the old predicates.
+  const fence=/WHERE state='RUNNING' OR \(state IN \('PENDING','PAUSED'\) AND EXISTS\(\s*SELECT 1 FROM lu_task_linux_os_owned_native_admission a WHERE a.task_id=lu_tasks.task_id\)\) OR \(state='PENDING' AND EXISTS\(\s*SELECT 1 FROM lu_task_custody_uncertainty u\s*WHERE u.task_id=lu_tasks.task_id\) OR state='PENDING' AND EXISTS\(\s*SELECT 1 FROM lu_task_reviewed_scan_origin o WHERE o.task_id=lu_tasks.task_id\)\)/g;
+  assert.equal([...sec04Core.matchAll(fence)].length,2,'both transactional recovery statements must retain every fence');
   assert.match(sec04Core,/pub fn security_recovery_rows\(/);
   assert.match(sec04Core,/An old interruption record is never a credential to restart work/);
   assert.match(sec04Core,/LEFT JOIN lu_task_custody_uncertainty/);

@@ -12,6 +12,7 @@ import os
 import pathlib
 import pwd
 import re
+import runpy
 import stat
 import subprocess
 import sys
@@ -138,12 +139,16 @@ def run(a):
     if not unprivileged_xauthority_path(a.xauthority):
         deny("untrusted lexical X11 user cookie path")
     directory(RUN);directory(RECEIPTS)
+    runpy.run_path(str(KERNEL),run_name="lu_legacy_denial_primitives")["require_unspent_legacy_nonce"](a.nonce)
     if (RUN/(a.nonce+".go")).exists() or (RECEIPTS/(a.nonce+".receipt")).exists():
         deny("one-use browser nonce already consumed")
     consume_original_nonce(a,uid)
     unit="lu-sec06c-browser-"+a.nonce+".service"
     cmd=[str(SYSTEMD),"--system","--quiet","--wait","--pipe",
-        "--no-ask-password","--service-type=exec","--unit="+unit,
+        "--no-ask-password","--service-type=notify","--unit="+unit,
+        "--property=NotifyAccess=main","--property=WatchdogSec=20s",
+        "--property=WatchdogSignal=SIGKILL","--property=TimeoutStartSec=90s",
+        "--property=TimeoutStopSec=5s","--property=SendSIGKILL=yes",
         "--property=User=root","--property=Delegate=yes",
         "--property=KillMode=control-group","--property=NoNewPrivileges=yes",
         "--property=RuntimeDirectory=lu-sec06c-browser-"+a.nonce,

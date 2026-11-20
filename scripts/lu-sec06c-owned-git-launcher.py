@@ -14,6 +14,7 @@ import pathlib
 import pwd
 import select
 import re
+import runpy
 import stat
 import subprocess
 import sys
@@ -180,6 +181,7 @@ def run(args):
         deny("reviewed Git repository not enrolled")
     root_owned_dir(READY)
     root_owned_dir(RECEIPTS)
+    runpy.run_path(str(MANAGER),run_name="lu_legacy_denial_primitives")["require_unspent_legacy_nonce"](args.nonce)
     receipt=RECEIPTS/(args.nonce+".receipt")
     go=READY/(args.nonce+".go")
     if receipt.exists() or go.exists():

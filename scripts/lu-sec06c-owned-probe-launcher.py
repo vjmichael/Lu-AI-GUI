@@ -14,6 +14,7 @@ import os
 import pathlib
 import pwd
 import re
+import runpy
 import select
 import stat
 import subprocess
@@ -158,6 +159,7 @@ def run(args):
     binary=pinned_binary(args.binary,args.binary_sha,args.kind)
     resource=approved_resource(args.file,args.kind,args.resource_sha)
     secure_directory(APPROVAL);secure_directory(RECEIPTS)
+    runpy.run_path(str(MANAGER),run_name="lu_legacy_denial_primitives")["require_unspent_legacy_nonce"](args.nonce)
     receipt=RECEIPTS/(args.nonce+".receipt")
     go=APPROVAL/(args.nonce+".go")
     if receipt.exists() or go.exists():

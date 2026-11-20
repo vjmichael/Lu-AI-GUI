@@ -571,7 +571,10 @@ test('SEC06C browser puts Chrome, Node and setsid descendants under one root-own
   for(const value of ['--property=User=root','--property=Delegate=yes',
       '--property=KillMode=control-group','--property=NoNewPrivileges=yes',
       '--property=AmbientCapabilities=CAP_SETUID','--property=TasksMax=512',
-      '--property=MemoryMax=4294967296']){
+      '--property=MemoryMax=4294967296','--service-type=notify',
+      '--property=NotifyAccess=main','--property=WatchdogSec=20s',
+      '--property=WatchdogSignal=SIGKILL','--property=TimeoutStartSec=90s',
+      '--property=TimeoutStopSec=5s','--property=SendSIGKILL=yes']){
     assert.ok(launcher.includes(value),'missing fixed browser systemd property '+value);
   }
   assert.match(launcher,/p\.mkdir\(mode=0o755,parents=True,exist_ok=True\)/);
@@ -582,6 +585,11 @@ test('SEC06C browser puts Chrome, Node and setsid descendants under one root-own
   assert.match(manager,/--attack-leaf/);
   assert.match(manager,/SEC06C_BROWSER_ORIGINAL_ANCESTOR_MIGRATION_NOT_DENIED/);
   assert.match(manager,/parse_pair\(frame,a\.nonce,leaf\)/);
+  assert.match(manager,/watchdog=k\["NativeGuardianWatchdog"\]\(\)/);
+  assert.ok(manager.indexOf('cpid,npid=parse_pair(')<manager.indexOf('watchdog.ready()'));
+  assert.ok(manager.indexOf('watchdog.ready()')<manager.indexOf('emit(sys.stdout.fileno(),frame)'));
+  assert.match(manager,/watchdog\.tick\(\)\s+ready,_,_=select\.select/);
+  assert.match(manager,/env=\{"PATH":"\/usr\/bin:\/bin","LC_ALL":"C","HOME":user\.pw_dir\}/);
   assert.match(manager,/for pid in \(cpid,npid\)/);
   assert.match(manager,/for label,fd in \(\("chromium",cfd\),\("node",nfd\)\)/);
   assert.match(manager,/watcher\.poll\(0\)/);
@@ -761,4 +769,23 @@ test('SEC06C genuine GGUF test provisions only finite root-owned Git and probe b
   assert.match(workflow,/sudo visudo -cf \/etc\/sudoers.d\/lu-sec06c-gguf-git-ci/);
   assert.match(workflow,/sudo visudo -cf \/etc\/sudoers.d\/lu-sec06c-gguf-probe-ci/);
   assert.doesNotMatch(workflow,/NOPASSWD: ALL/);
+});
+
+test('SEC06F shared legacy admission records deny across domains without granting custody or destructive cleanup',()=>{
+  const path=(p)=>readFileSync(join(root,p),'utf8');
+  for(const domain of ['native','browser','git','probe']){
+    const launcher=path(`scripts/lu-sec06c-owned-${domain}-launcher.py`);
+    assert.match(launcher,/runpy\.run_path\(str\((?:MANAGER|KERNEL)\),run_name="lu_legacy_denial_primitives"\)\["require_unspent_legacy_nonce"\]/);
+    assert.ok(launcher.indexOf('require_unspent_legacy_nonce')<launcher.indexOf('--service-type='));
+  }
+  const manager=path('scripts/lu-sec06c-owned-kernel-manager.py');
+  const legacy=manager.slice(manager.indexOf('def entry_present('),manager.indexOf('def service_runtime_dir('));
+  assert.match(legacy,/path\.lstat\(\)/);
+  assert.match(legacy,/os\.O_EXCL\|os\.O_NOFOLLOW/);
+  assert.match(legacy,/os\.fsync\(/);
+  assert.match(legacy,/LU_SEC06F_LEGACY_DENIAL_V1/);
+  assert.doesNotMatch(legacy,/\.unlink\(|os\.unlink\(|\.rmdir\(|KERNEL_EMPTY/);
+  const admin=path('scripts/lu-sec06f-retain-legacy-admissions.py');
+  assert.match(admin,/os\.geteuid\(\)!=0 or len\(sys\.argv\)!=1/);
+  assert.match(admin,/retain_legacy_markers/);
 });

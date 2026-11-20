@@ -36,12 +36,18 @@ if [[ ${1:-all} == normal-only ]]; then
  runuser -u luprobe -- env LU_SEC06C_BROKER_DEBUG=1 xvfb-run -a -s '-screen 0 1280x800x24' python3 /mnt/deploy/sec06c_browser_real_native.py --bundle /usr/lib/lu/browser --launcher /usr/libexec/lu/lu-sec06c-launch-browser
  exit 0
 fi
+if [[ ${1:-all} == stall-only ]]; then
+ runuser -u luprobe -- env LU_SEC06C_BROKER_DEBUG=1 xvfb-run -a -s '-screen 0 1280x800x24' python3 /mnt/deploy/sec06c_browser_guardian_loss.py --stall --bundle /usr/lib/lu/browser --launcher /usr/libexec/lu/lu-sec06c-launch-browser
+ exit 0
+fi
 set +e
 failed=0
 for fixture in sec06c_browser_real_native.py sec06c_browser_host_crash.py sec06c_browser_guardian_loss.py; do
  runuser -u luprobe -- env LU_SEC06C_BROKER_DEBUG=1 xvfb-run -a -s '-screen 0 1280x800x24' python3 "/mnt/deploy/$fixture" --bundle /usr/lib/lu/browser --launcher /usr/libexec/lu/lu-sec06c-launch-browser
  rc=$?; echo "SEC06ER1_R1_FIXTURE_RESULT $fixture $rc"; if [[ $rc != 0 ]]; then failed=1; fi
 done
+runuser -u luprobe -- env LU_SEC06C_BROKER_DEBUG=1 xvfb-run -a -s '-screen 0 1280x800x24' python3 /mnt/deploy/sec06c_browser_guardian_loss.py --stall --bundle /usr/lib/lu/browser --launcher /usr/libexec/lu/lu-sec06c-launch-browser
+rc=$?; echo "SEC06F_BROWSER_WATCHDOG_FIXTURE_RESULT $rc"; if [[ $rc != 0 ]]; then failed=1; fi
 runuser -u luprobe -- env LU_SEC06C_BROWSER_REVIEWED_BUNDLE=/usr/lib/lu/browser LU_SEC06C_BROKER_DEBUG=1 xvfb-run -a -s '-screen 0 1280x800x24' /usr/libexec/lu/core-tests --ignored --nocapture sec06c_real_linux_browser_original_grant_handoff_and_durable_recovery
 rc=$?; echo "SEC06ER1_R1_RUST_RESULT $rc"; if [[ $rc != 0 ]]; then failed=1; fi
 exit "$failed"

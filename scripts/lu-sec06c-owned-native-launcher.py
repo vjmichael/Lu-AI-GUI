@@ -12,6 +12,7 @@ import os
 import pathlib
 import pwd
 import re
+import runpy
 import stat
 import subprocess
 import sys
@@ -154,6 +155,7 @@ def run(opts):
     if not finite(opts.kind,opts.arg) or digest(opts.binary,opts.arg)!=opts.args_sha:
         deny("not one of finite reviewed native argument contracts")
     root_dir(RUN_DIR);root_dir(RECEIPTS)
+    runpy.run_path(str(MANAGER),run_name="lu_legacy_denial_primitives")["require_unspent_legacy_nonce"](opts.nonce)
     receipt=RECEIPTS/(opts.nonce+".receipt")
     if receipt.exists() or (RUN_DIR/(opts.nonce+".go")).exists():
         deny("original one-use native nonce replay")

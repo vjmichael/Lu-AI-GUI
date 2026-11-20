@@ -171,6 +171,8 @@ def main_run(a):
         refuse("root manager lacks genuine CAP_SETUID/CAP_SETGID")
     argv=fixed_browser_contract(a)
     parent,unit=k["first_party_unit"](a.nonce,"browser")
+    watchdog=k["NativeGuardianWatchdog"]()
+    k["require_unspent_legacy_nonce"](a.nonce)
     owned_dir(APPROVAL);owned_dir(RECEIPTS)
     receipt=RECEIPTS/(a.nonce+".receipt")
     go=k["service_runtime_dir"](a.nonce,"browser")/(a.nonce+".go")
@@ -209,6 +211,7 @@ def main_run(a):
             cfd=os.pidfd_open(cpid)
             nfd=os.pidfd_open(npid)
             try:
+                watchdog.ready()
                 emit(sys.stdout.fileno(),frame)
                 incoming=bytearray();outgoing=bytearray()
                 deadline=time.monotonic()+3700
@@ -227,6 +230,8 @@ def main_run(a):
                     for pid in (cpid,npid):
                         if pathlib.Path(f"/proc/{pid}/cgroup").read_text().strip()!=expected:
                             refuse("original browser process escaped kernel leaf")
+                    # Heartbeat follows verified original custody, never a timer thread.
+                    watchdog.tick()
                     ready,_,_=select.select(
                         [sys.stdin.buffer,child.stdout],[],[],.035)
                     if sys.stdin.buffer in ready:

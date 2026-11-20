@@ -32,6 +32,7 @@ APPROVAL=pathlib.Path("/run/lu-sec06c")
 GIT_RECEIPTS=pathlib.Path("/var/lib/lu-sec06c/receipts")
 PROBE_RECEIPTS=pathlib.Path("/var/lib/lu-sec06c/probe-receipts")
 NATIVE_RECEIPTS=pathlib.Path("/var/lib/lu-sec06c/native-receipts")
+LEGACY_DENIALS=pathlib.Path("/var/lib/lu-sec06c/legacy-denials")
 CGROUP=pathlib.Path("/sys/fs/cgroup")
 ID=re.compile(r"^[A-Za-z0-9_-]{1,128}$")
 HEX32=re.compile(r"^[a-f0-9]{32}$")
@@ -85,6 +86,90 @@ def checked_root_dir(path):
     info=path.lstat()
     if not stat.S_ISDIR(info.st_mode) or info.st_uid!=0 or info.st_mode&0o022:
         refuse("root approval or receipt directory mutable")
+
+def entry_present(path):
+    # A malformed or dangling entry still denies; only confirmed absence
+    # permits admission. Never follow a legacy marker or denial symlink.
+    try:path.lstat();return True
+    except FileNotFoundError:return False
+
+
+def legacy_denial_directory():
+    # Use only fixed root directories. Validate ancestors before creating
+    # anything so an upgrade cannot redirect writes through a symlink.
+    for folder in (LEGACY_DENIALS.parent.parent.parent,
+                   LEGACY_DENIALS.parent.parent,
+                   LEGACY_DENIALS.parent,LEGACY_DENIALS):
+        checked_root_dir(folder)
+    return LEGACY_DENIALS
+
+
+def preserve_legacy_marker(nonce):
+    """Retain a denial-only witness from a shared marker of unknown origin.
+
+    No authority, receipt, domain attribution or positive completion is
+    inferred. Neither source marker nor existing tombstone is modified.
+    """
+    if not HEX32.fullmatch(nonce):refuse("invalid legacy admission identity")
+    checked_root_dir(APPROVAL.parent)
+    checked_root_dir(APPROVAL)
+    directory=legacy_denial_directory()
+    path=directory/(nonce+".denied")
+    if entry_present(path):return True
+    if not entry_present(APPROVAL/(nonce+".go")):return False
+    try:
+        fd=os.open(path,os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o644)
+    except FileExistsError:return True
+    with os.fdopen(fd,"w",encoding="ascii") as out:
+        out.write("LU_SEC06F_LEGACY_DENIAL_V1\nNONCE="+nonce+"\n")
+        out.flush();os.fsync(out.fileno())
+    for folder in (directory,directory.parent,directory.parent.parent):
+        fd=os.open(folder,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW)
+        try:os.fsync(fd)
+        finally:os.close(fd)
+    return True
+
+
+def require_unspent_legacy_nonce(nonce):
+    if preserve_legacy_marker(nonce):refuse("legacy shared admission retained for denial only")
+
+
+def sync_legacy_denial(nonce):
+    directory=legacy_denial_directory()
+    fd=os.open(directory/(nonce+".denied"),os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK)
+    try:
+        info=os.fstat(fd)
+        if not stat.S_ISREG(info.st_mode) or info.st_uid!=0 or info.st_mode&0o022 or info.st_nlink!=1:
+            refuse("unsafe retained legacy denial; maintenance blocked")
+        os.fsync(fd)
+    finally:os.close(fd)
+    for folder in (directory,directory.parent,directory.parent.parent):
+        fd=os.open(folder,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW)
+        try:os.fsync(fd)
+        finally:os.close(fd)
+
+
+def retain_legacy_markers():
+    """Administrative pre-reboot preservation; does not delete live markers.
+
+    No caller-selected path or cleanup argument. Fail if the bounded scan
+    cannot cover every entry. An operator must quiesce admission before a
+    completed sweep and reboot; existing ambiguous records remain denied.
+    """
+    if os.geteuid()!=0:refuse("legacy retention requires root maintenance")
+    checked_root_dir(APPROVAL.parent);checked_root_dir(APPROVAL)
+    count=0;examined=0
+    with os.scandir(APPROVAL) as entries:
+        for entry in entries:
+            examined+=1
+            if examined>65536:refuse("legacy preservation scan incomplete")
+            if re.fullmatch(r"[a-f0-9]{32}\.go",entry.name):
+                nonce=entry.name[:-3]
+                if not preserve_legacy_marker(nonce):refuse("legacy marker changed during maintenance")
+                sync_legacy_denial(nonce)
+                count+=1
+    return count
+
 
 def service_runtime_dir(nonce,domain):
     # PID1 creates/removes this fixed unit-specific directory. Never recreate
@@ -460,6 +545,7 @@ def run(args):
         GIT_RECEIPTS if args.domain=="git" else
         PROBE_RECEIPTS if args.domain=="probe" else NATIVE_RECEIPTS)
     checked_root_dir(receipts)
+    require_unspent_legacy_nonce(args.nonce)
     receipt=receipts/(args.nonce+".receipt")
     go=(service_runtime_dir(args.nonce,"native") if args.domain=="native" else APPROVAL)/(args.nonce+".go")
     if receipt.exists() or go.exists():
