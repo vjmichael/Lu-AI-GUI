@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "ecc5b992f7759825f7ec03f9f6aed78dcc0f8584",
-  "trackedFileCount": 1187,
+  "sourceCommitBeforeLock": "45941e7bf888bbffc212278f530561f848016786",
+  "trackedFileCount": 1190,
   "files": [
     {
       "path": ".gitattributes",
@@ -876,6 +876,10 @@
       "blob": "ead78e2503a93e03d8d90cdbb442df93a71e46d3"
     },
     {
+      "path": "docs/LU_CP11A_LOCAL_CHECKS_20261120.md",
+      "blob": "bfee5736f1109a8db225c093a195efba4ce0000b"
+    },
+    {
       "path": "docs/LU_CURRENT_PREVIEW_CPU_VULKAN_DUAL_ENGINE_20261109.md",
       "blob": "c1664658ded245a3df6041114e42587f49550200"
     },
@@ -1544,6 +1548,10 @@
       "blob": "8d41a727200fdc4b0daf4eb65368e4658da04ef5"
     },
     {
+      "path": "lu-desktop/src-tauri/src/active_checks.rs",
+      "blob": "6ab1147812dc86c810fa2e7a2f58b31a517758f4"
+    },
+    {
       "path": "lu-desktop/src-tauri/src/agent_memory_handoff.rs",
       "blob": "8781ad378995f6bfa410385f9fa16291f984f6ab"
     },
@@ -1657,7 +1665,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/diagnostic_archive.rs",
-      "blob": "d99e52c6da707241eb27b62eea251d3882955666"
+      "blob": "b17ea966843c7f3244665850554ce0317e608ba6"
     },
     {
       "path": "lu-desktop/src-tauri/src/document_create_desktop.rs",
@@ -1709,7 +1717,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/lib.rs",
-      "blob": "1e38f7385c1e0d36ba7ccdede4664ec60ab79210"
+      "blob": "a3d938e682a2ebe710c910d498fc1c804b6cad54"
     },
     {
       "path": "lu-desktop/src-tauri/src/linked_attachment_file.rs",
@@ -2118,6 +2126,10 @@
     {
       "path": "lu-desktop/tests/cp06er3-web-research.test.mjs",
       "blob": "a35b6bc70f08ce38402ddea88957d2bd436e8774"
+    },
+    {
+      "path": "lu-desktop/tests/cp11a-local-checks.test.mjs",
+      "blob": "cb8eb483c19d881c9d311b30fba92461b40a02e2"
     },
     {
       "path": "lu-desktop/tests/filesystem-discovery.test.mjs",
@@ -2581,7 +2593,7 @@
     },
     {
       "path": "lu-desktop/web/native_windows.jsx",
-      "blob": "9221b90eafd7fdf1635f6dd14e6e618f4f7b5bf6"
+      "blob": "2d2cfe394161ab1e6b8933a88d9f9de7767a4392"
     },
     {
       "path": "lu-desktop/web/response_view.mjs",
