@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "bcddc292b7d71556852035e234cc87390c0c66ee",
-  "trackedFileCount": 1978,
+  "sourceCommitBeforeLock": "1b710006217da5b94f22a959dbc7ba3262b1a709",
+  "trackedFileCount": 1979,
   "files": [
     {
       "path": ".gitattributes",
@@ -12,8 +12,12 @@
       "blob": "bb44b64f1e698dfcbd618be7cc2a447735297317"
     },
     {
+      "path": ".github/ide-merge/ide-dev02-technical-batch.txt",
+      "blob": "88b48da68ac03ce9e37ca872d35b0dbee28a8418"
+    },
+    {
       "path": ".github/ide-merge/ide-merge-01-02-native-batch.txt",
-      "blob": "1e985d6fb6ce51027917b8bd502124541b68b343"
+      "blob": "631c8e0ccb432d88a995b7db0c66e273d81cafeb"
     },
     {
       "path": ".github/pull_request_template.md",
@@ -133,7 +137,7 @@
     },
     {
       "path": ".github/workflows/ide-dev02-technical-installed-lsp.yml",
-      "blob": "b950f54a4c60fdb3b22c58d61d7fee23b21cb130"
+      "blob": "e4dbd01bf09cf77ca6b69274df85f4c4b26fd50c"
     },
     {
       "path": ".github/workflows/ide-dev02-upstream-native-asset-intake.yml",
@@ -1801,7 +1805,7 @@
     },
     {
       "path": "ide/app/fixtures/Test-Wo8NativeDesktopUI.ps1",
-      "blob": "72dee268e0cb896866dd42435a1a281372cdfb96"
+      "blob": "8bf0d4398b15806cc4440b0df6b079e326253c49"
     },
     {
       "path": "ide/app/fixtures/b2_linux_installed_draft_atspi.py",
@@ -1817,7 +1821,7 @@
     },
     {
       "path": "ide/app/fixtures/dev01_modern_linux_installed_atspi.py",
-      "blob": "9ce78e4c6ddbf1bd1ef3ed58a52dbf0db38d28bc"
+      "blob": "4f54429ca16c666a7613f1ee1fb059d873fe697a"
     },
     {
       "path": "ide/app/fixtures/dev02_linux_installed_lsp_atspi.py",
@@ -2301,7 +2305,7 @@
     },
     {
       "path": "ide/app/tests/int01_project_navigation.test.mjs",
-      "blob": "0e64c019e11f00d89b8c7e7054a6a76d2c0bce0d"
+      "blob": "9de4f60e18aa6cff01eb95ac4dde853fa7b12916"
     },
     {
       "path": "ide/app/tests/int01_workspace_lifecycle.test.mjs",
@@ -2533,7 +2537,7 @@
     },
     {
       "path": "ide/app/web/main.jsx",
-      "blob": "6d4cf84711e437ecf040829b86aad91dec6660c5"
+      "blob": "997ab541b07c50257a8a4585ddd078bf03bb4a4c"
     },
     {
       "path": "ide/app/web/native_build_output.js",
@@ -2557,7 +2561,7 @@
     },
     {
       "path": "ide/app/web/quick_open_view.js",
-      "blob": "82396c9176b5f1d560e2da0471fe3331ad9054ee"
+      "blob": "b1980bff68068e95e67e289d42ba4ed0fe8dec37"
     },
     {
       "path": "ide/app/web/reviewed_adapters.js",
@@ -2609,7 +2613,7 @@
     },
     {
       "path": "ide/ci/merge02-reviewed-native-boundaries.json",
-      "blob": "e2be6b8f1964c42a134cd25a0e7630f874778be2"
+      "blob": "4e9c31b1668b20b972a3f32396badf7834589eb8"
     },
     {
       "path": "ide/ci/test_verify_reviewed_native_boundaries.py",
@@ -3733,7 +3737,7 @@
     },
     {
       "path": "ide/packaging/ide-05b-r3-outside-cohort.json",
-      "blob": "69f54b4c4b263c29c74c975316d25b6799ed8fb3"
+      "blob": "90e56a2c0769f68ac7a647f965c35e5efd294d71"
     },
     {
       "path": "ide/packaging/ide-merge02-reviewed-lock-successor.json",
@@ -3829,7 +3833,7 @@
     },
     {
       "path": "ide/packaging/p06_live_native_jobs.py",
-      "blob": "ae40c83f9e195cc62e6ebda6dbf2bd56aac380e5"
+      "blob": "2e708ac3d31902f4165c6acecd3f9cf1db82ab59"
     },
     {
       "path": "ide/packaging/p06_shipping_content.py",
@@ -3921,7 +3925,7 @@
     },
     {
       "path": "ide/packaging/test_ide_05b_r3_workflow_dispositions.py",
-      "blob": "e700075b3d847b00c50b38afbf885e3353c2b9dc"
+      "blob": "d8dccd6cbaa34fb8666c8ed58cf3756b15f4f3b7"
     },
     {
       "path": "ide/packaging/test_ide_merge02c_native_locks.py",
@@ -4005,7 +4009,7 @@
     },
     {
       "path": "ide/packaging/test_p06_technical_observation.py",
-      "blob": "42fce53129ec7a7fd6fa6cfc822a5d2f0408e27b"
+      "blob": "f6718d7fd6c91a1bd901296652be95896a7395df"
     },
     {
       "path": "ide/packaging/test_p06_wo8_lock_wiring.py",
