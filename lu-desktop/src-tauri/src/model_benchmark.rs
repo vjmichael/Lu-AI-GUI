@@ -1,6 +1,6 @@
 //! CP-11A-R2: fixed synthetic text-only benchmark of the current admitted model.
 //! No tools, real conversation context, model loading, downloads or replay.
-use crate::{active_checks::{CheckBody,CheckKind,CheckReason,CheckReport,CheckResult,CheckState,MODEL_CHECKS,finish},generation_queue::GenerationQueue,engine_memory};
+use crate::{active_checks::{CheckBody,CheckKind,CheckReason,CheckReport,CheckResult,CheckState,MODEL_CHECKS,MODEL_SUITE_VERSION,finish},generation_queue::GenerationQueue,engine_memory};
 use lu_core::{inference_bridge::BridgeError,inference_host::EnginePhase,inference_supervisor::{SupervisorStatus,TrustedInferenceSupervisor},inference_wire::decode_frame,persistent_llama_backend::PersistentLlamaBackend,wire::proto};
 use serde::{Deserialize,Serialize};
 use std::{sync::{Arc,atomic::{AtomicBool,Ordering}},time::{Duration,Instant}};
@@ -45,6 +45,9 @@ fn sample(kind:CheckKind)->Case {
         CheckKind::ModelExtract=>Case{prompt:"Sample inventory: Cedar has code LIMA-471. Birch has code VELA-208. What is Birch's code? Reply with the code only. /no_think",expected:"VELA-208".into(),history:vec![]},
         CheckKind::ModelArithmetic=>Case{prompt:"A sample shop has 17 boxes with 8 items each. It sells 19 items. How many remain? Reply only with the integer. /no_think",expected:(17*8-19).to_string(),history:vec![]},
         CheckKind::ModelHistory=>Case{prompt:"What is the current sample delivery city? Reply only with the city. /no_think",expected:"Oslo".into(),history:vec![proto::InferenceChatTurn{role:"user".into(),text:"The sample delivery city is Rome.".into()},proto::InferenceChatTurn{role:"assistant".into(),text:"Understood.".into()},proto::InferenceChatTurn{role:"user".into(),text:"Correction: the delivery city is Oslo, not Rome.".into()},proto::InferenceChatTurn{role:"assistant".into(),text:"I have noted the correction.".into()}]},
+        CheckKind::ModelOrder=>Case{prompt:"Sort these sample numbers from smallest to largest: 9, 2, 7, 1. Reply with the four numbers separated by commas and no spaces. /no_think",expected:"1,2,7,9".into(),history:vec![]},
+        CheckKind::ModelUnicode=>Case{prompt:"Sample labels: Zürich = Z17; 東京 = T42; Lima = L07. Which code belongs to 東京? Reply only with the code. /no_think",expected:"T42".into(),history:vec![]},
+        CheckKind::ModelConstraints=>Case{prompt:"Sample items: blue cup costs 4; red plate costs 7; green bowl costs 5. Select the most expensive item below 7. Reply only with its color. /no_think",expected:"green".into(),history:vec![]},
         _=>unreachable!("fixed benchmark cases only"),
     }
 }
@@ -117,19 +120,23 @@ fn run_case(supervisor:&TrustedInferenceSupervisor<PersistentLlamaBackend>,snaps
 }
 pub(crate) fn run(supervisor:&TrustedInferenceSupervisor<PersistentLlamaBackend>,queue:&Arc<GenerationQueue>,snapshot:&SupervisorStatus,
     stop:&(dyn Fn()->Option<CheckReason>+Sync),publish:&mut dyn FnMut(&CheckBody)->Result<(),String>)->Result<CheckReport,String>{
-    let mut body=CheckBody{model_suite:true,..CheckBody::default()};
+    let mut body=CheckBody{model_suite:true,model_suite_version:MODEL_SUITE_VERSION,..CheckBody::default()};
     if let Some(reason)=stop(){return Ok(stopped(body,reason))}
     let lease=match queue.try_benchmark(){Ok(l)=>l,Err(_)=>return Ok(stopped(body,CheckReason::ChatBusy))};
-    let stop=||stop().or_else(||lease.yield_requested().then_some(CheckReason::ChatBusy));
+    // A conversation arrival cannot hard-cancel the engine: the backend
+    // may eject its worker on cancellation. Yield at the next bounded case
+    // boundary, preserving the ready session and prioritizing the queued chat.
+    // Explicit Stop, pressure and timeout still cancel in-flight generation.
+    let boundary_stop=||stop().or_else(||lease.yield_requested().then_some(CheckReason::ChatBusy));
     for kind in MODEL_CHECKS {
-        if let Some(reason)=stop(){return Ok(stopped(body,reason))}
-        match run_case(supervisor,snapshot,kind,&stop){
+        if let Some(reason)=boundary_stop(){return Ok(stopped(body,reason))}
+        match run_case(supervisor,snapshot,kind,stop){
             Ok(result)=>{body.results.push(result);publish(&body)?;},
             Err(Some(reason))=>return Ok(stopped(body,reason)),
             Err(None)=>return Ok(attention(body)),
         }
     }
-    if let Some(reason)=stop(){return Ok(stopped(body,reason))}
+    if let Some(reason)=boundary_stop(){return Ok(stopped(body,reason))}
     if body.results.iter().all(|r|r.passed){Ok(finish(body,CheckState::Complete,None))}
     else{Ok(finish(body,CheckState::Attention,Some(CheckReason::CheckFailed)))}
 }
@@ -140,10 +147,19 @@ mod tests{
     #[test]fn metric_validation_and_failure_are_distinct(){
         let mut m=InferenceMetrics{first_output_micros:Some(22),output_bytes:4,output_pieces:2,sampled_peak_ram_bytes:Some(1000),ram_samples:2,engine_cpu_micros:Some(60)};
         assert!(m.valid(100));m.output_pieces=5;assert!(!m.valid(100));m.output_pieces=2;m.first_output_micros=Some(101);assert!(!m.valid(100));m.first_output_micros=Some(22);m.ram_samples=0;assert!(!m.valid(100));
-        m.ram_samples=2;let mut body=CheckBody{model_suite:true,..CheckBody::default()};
+        m.ram_samples=2;let mut body=CheckBody{model_suite:true,model_suite_version:MODEL_SUITE_VERSION,..CheckBody::default()};
         body.results=MODEL_CHECKS.iter().map(|k|CheckResult{kind:*k,passed:false,verified_operations:0,elapsed_micros:100,inference:Some(m.clone())}).collect();
         assert!(finish(body.clone(),CheckState::Attention,Some(CheckReason::CheckFailed)).valid());assert!(!finish(body.clone(),CheckState::Complete,None).valid());
         body.model_suite=false;assert!(!finish(body,CheckState::Running,None).valid());
+    }
+    #[test]fn old_three_case_reports_remain_readable_but_cannot_claim_new_suite(){
+        let m=InferenceMetrics{first_output_micros:Some(1),output_bytes:1,output_pieces:1,sampled_peak_ram_bytes:None,ram_samples:0,engine_cpu_micros:None};
+        let mut b=CheckBody{model_suite:true,..CheckBody::default()};
+        b.results=MODEL_CHECKS[..3].iter().map(|k|CheckResult{kind:*k,passed:true,verified_operations:1,elapsed_micros:2,inference:Some(m.clone())}).collect();
+        assert!(finish(b.clone(),CheckState::Complete,None).valid());
+        b.model_suite_version=MODEL_SUITE_VERSION;assert!(!finish(b.clone(),CheckState::Complete,None).valid());
+        assert!(finish(b.clone(),CheckState::Interrupted,None).valid());
+        b.model_suite_version=99;assert!(!finish(b,CheckState::Interrupted,None).valid());
     }
     #[test]fn lease_yields_to_real_queue(){let q=Arc::new(GenerationQueue::default());let l=q.try_benchmark().unwrap();assert!(q.has_jobs());assert!(q.try_benchmark().is_err());let (ticket,_)=q.enqueue("s-one","chat-one","g-one").unwrap();assert!(l.yield_requested());drop(l);ticket.wait_for_slot().unwrap();drop(ticket);assert!(q.try_benchmark().is_ok());}
 }

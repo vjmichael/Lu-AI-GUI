@@ -2148,7 +2148,7 @@ async fn lu_run_model_checks(app:AppHandle,caller:tauri::WebviewWindow,
     tauri::async_runtime::spawn_blocking(move||{
         let snapshot=owner.supervisor.status().map_err(|_|"Model unavailable")?;
         if snapshot.phase!=lu_core::inference_host::EnginePhase::Ready||snapshot.pid.is_none(){return Err("Load a model before checking it".into())}
-        owner.active_checks.run_suite(&archive,||app.dialog().message("Test the currently loaded local model with three short sample tasks? The answers are checked against known results. This measures response time and sampled memory. No personal conversations, online access, downloads or repairs. You can stop at any time; new conversation work takes priority. The latest check report is replaced.")
+        owner.active_checks.run_suite(&archive,||app.dialog().message("Test the currently loaded local model with six short sample tasks? The answers are checked against known results. This measures response time and sampled memory. No personal conversations, online access, downloads or repairs. You can stop at any time; new conversation work takes priority after the current bounded sample finishes (up to 35 seconds). The latest check report is replaced.")
             .title("Lu — Check model").buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom("Check model".into(),"Cancel".into())).blocking_show(),
             ||lu_core::native_resource_pressure::available_ram().is_none_or(|m|m<256),true,|stop,publish|{
                 // Serialize native model replacement with the already-approved benchmark.

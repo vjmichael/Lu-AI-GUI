@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "636f43f054e3cdf05459eddeaf7af28e76dfe6bc",
+  "sourceCommitBeforeLock": "a3124d8e3b0d05df2cc546221c07ad133e91a918",
   "trackedFileCount": 1196,
   "files": [
     {
@@ -1557,7 +1557,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/active_checks.rs",
-      "blob": "3a225e4f92361aa0dd0c2ce46249bef1a69fe54a"
+      "blob": "77cafba64f2c8507f9791364688d3cde9fd00a56"
     },
     {
       "path": "lu-desktop/src-tauri/src/agent_memory_handoff.rs",
@@ -1673,7 +1673,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/diagnostic_archive.rs",
-      "blob": "96da1083a9e35f3f68869d056b0aed7905a6add2"
+      "blob": "3886dce65fe888c4277ae2d45d20adc17922f8e5"
     },
     {
       "path": "lu-desktop/src-tauri/src/document_create_desktop.rs",
@@ -1725,7 +1725,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/lib.rs",
-      "blob": "cc7ce82bac0c736735a5637d723da28ced161cc8"
+      "blob": "ffde849f07d9f967f42d27e04f223e77a8f958c8"
     },
     {
       "path": "lu-desktop/src-tauri/src/linked_attachment_file.rs",
@@ -1769,7 +1769,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/model_benchmark.rs",
-      "blob": "6fb2fb6481c28fee318ded16c5a760545481598c"
+      "blob": "d690c71ca3d1e2c686f14a080d66ea87cf35dc2b"
     },
     {
       "path": "lu-desktop/src-tauri/src/model_file_effect_handoff.rs",
@@ -2145,7 +2145,7 @@
     },
     {
       "path": "lu-desktop/tests/cp11a-model-benchmark.test.mjs",
-      "blob": "bba24e53a8d4d6d366b1f58d420d283cec96fd83"
+      "blob": "69e2a7b216c3e130ed9b057031330f2d835db229"
     },
     {
       "path": "lu-desktop/tests/filesystem-discovery.test.mjs",
@@ -2609,7 +2609,7 @@
     },
     {
       "path": "lu-desktop/web/native_windows.jsx",
-      "blob": "640b6e250df81b64016f205a4671b6d54581e741"
+      "blob": "35695e7458c5d2fa5b0be7cb4d95a76d86ca57d4"
     },
     {
       "path": "lu-desktop/web/response_view.mjs",
@@ -2721,7 +2721,7 @@
     },
     {
       "path": "scripts/cp11a-model-benchmark-gui.py",
-      "blob": "add6f445b2796863135da65401e2c420dec07463"
+      "blob": "158b204262fc3766dc14a1ddf8a8d9383da66904"
     },
     {
       "path": "scripts/cp11a-native-checks-gui.py",

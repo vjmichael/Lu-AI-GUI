@@ -18,12 +18,15 @@ const RUN_LIMIT: Duration = Duration::from_secs(30);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all="snake_case")]
-pub(crate) enum CheckKind { Reading, SavedHistory, SearchSpeed, DocumentWindows, SearchScale, ModelExtract, ModelArithmetic, ModelHistory }
-pub(crate) const MODEL_CHECKS:[CheckKind;3]=[CheckKind::ModelExtract,CheckKind::ModelArithmetic,CheckKind::ModelHistory];
+pub(crate) enum CheckKind { Reading, SavedHistory, SearchSpeed, DocumentWindows, SearchScale, ModelExtract, ModelArithmetic, ModelHistory, ModelOrder, ModelUnicode, ModelConstraints }
+const LEGACY_MODEL_CHECKS:[CheckKind;3]=[CheckKind::ModelExtract,CheckKind::ModelArithmetic,CheckKind::ModelHistory];
+pub(crate) const MODEL_CHECKS:[CheckKind;6]=[CheckKind::ModelExtract,CheckKind::ModelArithmetic,CheckKind::ModelHistory,CheckKind::ModelOrder,CheckKind::ModelUnicode,CheckKind::ModelConstraints];
+pub(crate) const MODEL_SUITE_VERSION:u8=2;
+fn zero(v:&u8)->bool{*v==0}
 const LEGACY_CHECKS: [CheckKind; 3] = [CheckKind::Reading, CheckKind::SavedHistory, CheckKind::SearchSpeed];
 const CHECKS: [CheckKind; 5] = [CheckKind::Reading, CheckKind::SavedHistory, CheckKind::SearchSpeed, CheckKind::DocumentWindows, CheckKind::SearchScale];
 impl CheckKind {
-    fn expected(self)->u32 { match self { Self::Reading=>3, Self::SavedHistory=>4, Self::SearchSpeed=>QUERIES, Self::DocumentWindows=>WINDOW_QUERIES, Self::SearchScale=>SCALE_QUERIES,Self::ModelExtract|Self::ModelArithmetic|Self::ModelHistory=>1 } }
+    fn expected(self)->u32 { match self { Self::Reading=>3, Self::SavedHistory=>4, Self::SearchSpeed=>QUERIES, Self::DocumentWindows=>WINDOW_QUERIES, Self::SearchScale=>SCALE_QUERIES,Self::ModelExtract|Self::ModelArithmetic|Self::ModelHistory|Self::ModelOrder|Self::ModelUnicode|Self::ModelConstraints=>1 } }
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all="snake_case")]
@@ -40,14 +43,14 @@ pub(crate) enum CheckReason { UserStopped, ChatBusy, TimeLimit, WorkspaceUnavail
 pub(crate) struct CheckResult { pub kind:CheckKind, pub passed:bool, pub verified_operations:u32, pub elapsed_micros:u64, #[serde(default,skip_serializing_if="Option::is_none")] pub inference:Option<crate::model_benchmark::InferenceMetrics> }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all="camelCase",deny_unknown_fields)]
-pub(crate) struct CheckBody { pub results:Vec<CheckResult>, pub reason:Option<CheckReason>, #[serde(default)] pub expanded:bool, #[serde(default,skip_serializing_if="std::ops::Not::not")] pub model_suite:bool }
-impl Default for CheckBody { fn default()->Self { Self { results:Vec::new(),reason:None,expanded:true,model_suite:false } } }
+pub(crate) struct CheckBody { pub results:Vec<CheckResult>, pub reason:Option<CheckReason>, #[serde(default)] pub expanded:bool, #[serde(default,skip_serializing_if="std::ops::Not::not")] pub model_suite:bool, #[serde(default,skip_serializing_if="zero")] pub model_suite_version:u8 }
+impl Default for CheckBody { fn default()->Self { Self { results:Vec::new(),reason:None,expanded:true,model_suite:false,model_suite_version:0 } } }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all="camelCase")]
 pub(crate) struct CheckReport { pub state:CheckState, #[serde(flatten)] pub body:CheckBody }
 impl CheckReport {
     pub fn valid(&self)->bool {
-        let suite:&[CheckKind]=if self.body.model_suite { &MODEL_CHECKS } else if self.body.expanded { &CHECKS } else { &LEGACY_CHECKS };
+        let suite:&[CheckKind]=match (self.body.model_suite,self.body.model_suite_version,self.body.expanded) { (true,0,true)=>&LEGACY_MODEL_CHECKS,(true,MODEL_SUITE_VERSION,true)=>&MODEL_CHECKS,(false,0,true)=>&CHECKS,(false,0,false)=>&LEGACY_CHECKS,_=>return false };
         if self.body.model_suite&&!self.body.expanded{return false}
         if self.body.results.len()>suite.len() || self.body.results.iter().zip(suite).enumerate().any(|(i,(r,k))|
             r.kind!=*k || r.verified_operations!=if r.passed {k.expected()}else{0} || (!self.body.model_suite && !r.passed && i+1!=self.body.results.len()) ||
@@ -106,7 +109,7 @@ impl CheckController {
         let stop=|| {
             if reservation.cancel.load(Ordering::Acquire){Some(CheckReason::UserStopped)}
             else if user_busy(){Some(CheckReason::ChatBusy)}
-            else if started.elapsed()>=if model_suite {Duration::from_secs(120)} else {RUN_LIMIT}{Some(CheckReason::TimeLimit)}else{None}
+            else if started.elapsed()>=if model_suite {Duration::from_secs(240)} else {RUN_LIMIT}{Some(CheckReason::TimeLimit)}else{None}
         };
         let result=execute(&stop, &mut |body|archive.write_active_check(&id,CheckState::Running,body));
         let report=match result {Ok(report)=>report,Err(e)=>{

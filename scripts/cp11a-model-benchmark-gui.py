@@ -9,6 +9,8 @@ import json
 import os
 from pathlib import Path
 import shutil
+import sqlite3
+import signal
 import subprocess
 import time
 
@@ -19,7 +21,7 @@ gui = sample_gui.gui
 require, wait, action, named, nodes = gui.require, gui.wait, gui.action, gui.named, gui.nodes
 journal, observed = sample_gui.journal, sample_gui.observed
 TITLE = 'Lu — Check model'
-KINDS = ['model_extract', 'model_arithmetic', 'model_history']
+KINDS = ['model_extract', 'model_arithmetic', 'model_history', 'model_order', 'model_unicode', 'model_constraints']
 
 
 def sha(path):
@@ -62,14 +64,14 @@ def check_review(pid, choice):
         except Exception:
             continue
     disclosure = ' '.join(' '.join(text).split())
-    for phrase in ('currently loaded local model', 'three short sample tasks', 'known results', 'No personal conversations', 'new conversation work takes priority'):
+    for phrase in ('currently loaded local model', 'six short sample tasks', 'known results', 'No personal conversations', 'new conversation work takes priority'):
         require(phrase in disclosure, 'missing disclosure: ' + phrase)
     action(pid, choice, dialog)
 
 
 def verify_report(row, full=False):
     body = row[2]
-    require(body.get('modelSuite') is True and body['expanded'], 'incorrect suite')
+    require(body.get('modelSuite') is True and body['expanded'] and body.get('modelSuiteVersion') == 2, 'incorrect suite')
     results = body['results']
     require([r['kind'] for r in results] == KINDS[:len(results)], 'invalid result order')
     for result in results:
@@ -82,6 +84,57 @@ def verify_report(row, full=False):
         require(len(results) == len(KINDS), 'missing terminal model results')
         require(row[1] == ('complete' if all(r['passed'] for r in results) else 'attention'), 'inconsistent quality verdict')
     return results
+
+
+def navigate(pid):
+    if named(pid, 'Run checks…', actionable=True) or named(pid, 'Stop', actionable=True):
+        return
+    action(pid, 'Settings', timeout=90)
+    # Settings retains its subsection when switching tabs. Avoid clicking an
+    # ambiguous heading/button pair if the actual panel is already visible.
+    if not named(pid, 'Run checks…', actionable=True) and not named(pid,'Stop', actionable=True):
+        action(pid, 'Privacy & Observe')
+    wait(lambda: named(pid,'Run checks…',actionable=True) or named(pid,'Stop',actionable=True),30,'check panel')
+
+
+def ticks(worker):
+    identity = gui.proc_identity(worker[0])
+    if not identity or identity[1] != worker[1]:
+        return None
+    try:
+        stat = Path(f'/proc/{worker[0]}/stat').read_text().rsplit(')',1)[1].split()
+        return int(stat[11])+int(stat[12])
+    except (OSError, ValueError, IndexError):
+        return None
+
+
+def active_inference(path, old_run, worker):
+    row = observed(path,lambda r:r[0]!=old_run and r[1]=='running','new running model check')
+    before=ticks(worker)
+    require(before is not None,'original worker absent')
+    def active():
+        current=journal(path); now=ticks(worker)
+        return current if current and current[0]==row[0] and current[1]=='running' and now is not None and now>before else None
+    return wait(active,10,'live worker CPU advancement during check')
+
+
+def completed_chat(root, prompt):
+    for db in (root/'ansf'/'books').glob('*.sqlite'):
+        try:
+            with sqlite3.connect(db.as_uri()+'?mode=ro',uri=True,timeout=.05) as con:
+                row=con.execute("""SELECT length(e.text) FROM ansf_live_chat_events u
+                  JOIN ansf_visible_chat d ON d.session_id=u.session_id AND d.generation_id=u.user_turn_id
+                  JOIN ansf_live_chat_events e ON e.seq=d.latest_event_seq
+                  WHERE u.text=? AND u.kind='user' AND u.origin='host' AND u.source_entry_id IS NOT NULL
+                    AND d.role='assistant' AND d.status='final' AND e.kind='assistant_progress' AND e.origin='host'
+                    AND length(e.text)>0 AND EXISTS(SELECT 1 FROM ansf_live_chat_events c WHERE c.session_id=u.session_id
+                       AND c.generation_id=u.user_turn_id AND c.kind='assistant_completed' AND c.origin='host')
+                    AND NOT EXISTS(SELECT 1 FROM ansf_live_chat_events x WHERE x.session_id=u.session_id
+                       AND x.generation_id=u.user_turn_id AND x.kind='assistant_cancelled')""",(prompt,)).fetchone()
+                if row: return row[0]
+        except sqlite3.OperationalError:
+            continue
+    return None
 
 
 def capture(pid, out, phase):
@@ -125,20 +178,59 @@ def main():
         try:
             app = subprocess.Popen([str(exe)], env=env, stdin=subprocess.DEVNULL, stdout=log, stderr=log)
             worker = load(app.pid)
-            sample_gui.navigate(app.pid)
+            navigate(app.pid)
             require(journal(path) is None, 'startup initiated a check')
             check_review(app.pid, 'Cancel')
             wait(lambda: named(app.pid, 'Check loaded model…', actionable=True), 15, 'refusal returned idle')
             require(journal(path) is None and model_worker(app.pid) == worker, 'refusal produced effects')
             verdict['phases']['refusal'] = 'PASS'
             check_review(app.pid, 'Check model')
-            first = observed(path, lambda r:r[1] in ('complete', 'attention'), 'first completed model suite', 130)
+            first = observed(path, lambda r:r[1] in ('complete', 'attention'), 'first completed model suite', 245)
             results = verify_report(first, full=True)
             require(model_worker(app.pid)==worker, 'benchmark replaced model worker')
             verdict['phases']['approved'] = {'status':'PASS','quality_correct':sum(r['passed'] for r in results),'quality_total':len(results),'measurements':results}
             capture(app.pid,a.out,'approved')
             check_review(app.pid,'Check model')
-            running = observed(path,lambda r:r[0]!=first[0] and r[1]=='running','running model check')
+            second = observed(path,lambda r:r[0]!=first[0] and r[1] in ('complete','attention'),'repeat completed suite',245)
+            repeated=verify_report(second,full=True)
+            require(model_worker(app.pid)==worker,'repeat changed loaded worker')
+            verdict['phases']['repeat']={'status':'PASS','measurements':repeated,'same_outcomes':[x['passed'] for x in results]==[x['passed'] for x in repeated]}
+            # Submit a real human message from Chat while worker CPU is
+            # advancing on a separate benchmark. Read the real terminal ANSF
+            # event, not just a GUI spinner or queue reservation.
+            check_review(app.pid,'Check model')
+            active=active_inference(path,second[0],worker)
+            action(app.pid,'Chat')
+            prompt='Please write the single word blue. /no_think'
+            gui.send(app.pid,prompt)
+            start=time.monotonic()
+            yielded=observed(path,lambda r:r[0]==active[0] and r[1]=='stopped' and r[2]['reason']=='chat_busy','benchmark yielded to conversation',45)
+            verify_report(yielded)
+            require(len(yielded[2]['results'])<len(KINDS),'benchmark did not yield')
+            answer_bytes=wait(lambda:completed_chat(root,prompt),120,'authenticated completed ordinary chat')
+            require(model_worker(app.pid)==worker,'chat priority ejected or replaced worker')
+            verdict['phases']['priority']={'status':'PASS','elapsed_seconds':time.monotonic()-start,'verified_prefix':len(yielded[2]['results']),'same_worker':True,'ordinary_chat_nonempty':answer_bytes>0}
+            navigate(app.pid)
+            check_review(app.pid,'Check model')
+            running=active_inference(path,yielded[0],worker)
+            # Actual ungraceful process kill during witnessed engine activity.
+            app.kill();app.wait(15)
+            require(journal(path) is not None and journal(path)[0]==running[0] and journal(path)[1]=='running','abrupt interruption was not durable running state')
+            wait(lambda:gui.proc_identity(worker[0]) is None or gui.proc_identity(worker[0])[1]!=worker[1],30,'interrupted worker exited')
+            app=subprocess.Popen([str(exe)],env=env,stdin=subprocess.DEVNULL,stdout=log,stderr=log)
+            navigate(app.pid)
+            interrupted=observed(path,lambda r:r[0]==running[0] and r[1]=='interrupted','cold interruption reconciliation',30)
+            verify_report(interrupted)
+            require(model_worker(app.pid) is None,'restart replayed inference')
+            require(interrupted[2]['results'][:len(running[2]['results'])]==running[2]['results'],'lost verified results')
+            verdict['phases']['abrupt_recovery']={'status':'PASS','verified_prefix':len(interrupted[2]['results']),'no_replay':True,'worker_exited':True}
+            action(app.pid,'Chat');worker=load(app.pid);navigate(app.pid)
+            check_review(app.pid,'Cancel')
+            wait(lambda:named(app.pid,'Check loaded model…',actionable=True),15,'fresh refusal after crash')
+            require(journal(path)==interrupted,'fresh refusal altered interrupted report')
+            verdict['phases']['fresh_refusal_after_crash']='PASS'
+            check_review(app.pid,'Check model')
+            running = observed(path,lambda r:r[0]!=interrupted[0] and r[1]=='running','running model check')
             start=time.monotonic();action(app.pid,'Stop',timeout=4)
             stopped = observed(path,lambda r:r[0]==running[0] and r[1]=='stopped','durable stop',40)
             require(stopped[2]['reason']=='user_stopped' and len(stopped[2]['results'])<len(KINDS),'stop did not prevent unfinished credit')
@@ -151,13 +243,13 @@ def main():
             app.wait(timeout=15)
             require(journal(path)==stopped, 'shutdown altered stopped report')
             app = subprocess.Popen([str(exe)], env=env, stdin=subprocess.DEVNULL, stdout=log, stderr=log)
-            sample_gui.navigate(app.pid)
+            navigate(app.pid)
             require(model_worker(app.pid) is None and journal(path)==stopped, 'restart replayed model check or loaded model')
             verdict['phases']['cold_reopen_no_replay']='PASS'
             action(app.pid, 'Chat')
             reloaded = load(app.pid)
             require(reloaded!=worker and journal(path)==stopped, 'explicit reload altered report or reused worker')
-            sample_gui.navigate(app.pid)
+            navigate(app.pid)
             check_review(app.pid,'Cancel')
             wait(lambda: named(app.pid, 'Check loaded model…', actionable=True), 15, 'new refusal returned idle')
             require(journal(path)==stopped and model_worker(app.pid)==reloaded,'fresh refusal altered report or model')

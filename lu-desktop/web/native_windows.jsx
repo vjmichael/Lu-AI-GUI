@@ -56,7 +56,7 @@ function Readiness({value}){
 const bytesGiB=value=>Number.isFinite(value)&&value>=0?(value/1073741824).toFixed(2)+' GiB':'Not measured';
 // The local check suite is not a model tool or a preference granting authority.
 // No runs are started on mount or restart. Poll only while visiting this panel.
-const CHECK_LABELS={reading:'Reading sample documents',saved_history:'Saving and reopening sample history',search_speed:'Sample history search',document_windows:'Reading longer sample documents',search_scale:'Larger sample history search',model_extract:'Reading a sample fact',model_arithmetic:'Solving a sample calculation',model_history:'Using a corrected sample detail'};
+const CHECK_LABELS={reading:'Reading sample documents',saved_history:'Saving and reopening sample history',search_speed:'Sample history search',document_windows:'Reading longer sample documents',search_scale:'Larger sample history search',model_extract:'Reading a sample fact',model_arithmetic:'Solving a sample calculation',model_history:'Using a corrected sample detail',model_order:'Ordering sample numbers',model_unicode:'Reading multilingual sample labels',model_constraints:'Selecting a sample item within limits'};
 const CHECK_STATUS={running:'Checking…',complete:'All checks in this report passed.',attention:'A check needs attention.',stopped:'Checks stopped. Only finished checks are shown.',interrupted:'Last check was interrupted. Unfinished checks were not verified. You can approve a fresh check; earlier sample files are preserved.'};
 const CHECK_GUIDANCE={user_stopped:'You can run a fresh check when ready.',chat_busy:'Lu became busy or resources were unavailable. Try again when idle.',time_limit:'The check reached its time limit.',workspace_unavailable:'No fresh temporary check workspace is available. Previously retained files were not changed.',cleanup_unavailable:'The temporary sample data could not be fully removed. No real conversations were changed.',model_unavailable:'The loaded model did not return a verified result. Load a model and try again when ready.',check_failed:'An expected result could not be confirmed. You can prepare a local troubleshooting report.'};
 function LocalChecks({active}){
@@ -104,12 +104,12 @@ function LocalChecks({active}){
       <button type="button" disabled={running||status===null} onClick={()=>void startModel()}>Check loaded model…</button>
       {running&&<button type="button" disabled={stopping} onClick={()=>void stop()}>{stopping?'Stopping…':'Stop'}</button>}
     </div>
-    <p>Optional model check: test three sample answers, speed and memory using the currently loaded model. No model is loaded automatically.</p>
+    <p>Optional model check: test six sample answers, speed and memory using the currently loaded model. No model is loaded automatically.</p>
     <p role="status">{running?(stopping?'Stopping…':'Checking or waiting for approval…'):report?CHECK_STATUS[report.state]||'Result unavailable.':status?'No checks run yet.':'Local checks unavailable.'}</p>
     {error&&<p role="alert">{error}</p>}
     {report&&<div className="nativeOptionList">
       {report.modelSuite&&<p>Latest loaded-model check. Fixed sample tasks only; not a general intelligence or model comparison score.</p>}
-      {!report.expanded&&<p>This report used the earlier three-check suite.</p>}
+      {(!report.expanded||(report.modelSuite&&!report.modelSuiteVersion))&&<p>This report used the earlier three-check suite.</p>}
       {report.results.map(result=><div key={result.kind}>
         <strong>{CHECK_LABELS[result.kind]||'Local check'}</strong> — {result.passed?'Passed':'Needs attention'}
         {result.inference&&<p>Response: {(result.elapsedMicros/1000).toFixed(0)} ms; first output: {result.inference.firstOutputMicros==null?'Not measured':(result.inference.firstOutputMicros/1000).toFixed(0)+' ms'}; output: {result.inference.outputBytes} bytes ({result.elapsedMicros>0?(result.inference.outputBytes*1000000/result.elapsedMicros).toFixed(1):'Not measured'} bytes/s); engine CPU time: {result.inference.engineCpuMicros==null?'Not measured':(result.inference.engineCpuMicros/1000).toFixed(0)+' ms'}; sampled peak working memory: {result.inference.sampledPeakRamBytes==null?'Not measured':bytesGiB(result.inference.sampledPeakRamBytes)}. Includes the loaded model.</p>}

@@ -18,3 +18,11 @@ test('fixed synthetic samples use the real supervisor with host scoring and obse
   assert.match(model,/supervisor.cancel\(sid,&gid/);assert.match(model,/CASE_LIMIT/);assert.match(model,/lease.yield_requested/);
   assert.match(queue,/!state.benchmark && state.active.is_none\(\)/);assert.match(ui,/not a general intelligence/);assert.match(ui,/Not measured/);
 });
+
+test('chat priority yields at a bounded case boundary without hard cancelling the chat engine',()=>{
+  assert.match(model,/boundary_stop=\|\|stop\(\)\.or_else\(\|\|lease.yield_requested/);
+  assert.match(model,/run_case\(supervisor,snapshot,kind,stop\)/);
+  assert.match(model,/if let Some\(reason\)=boundary_stop\(\)/);
+  assert.match(native,/six short sample tasks/);
+  assert.match(ui,/test six sample answers/);
+});
