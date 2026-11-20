@@ -1,8 +1,11 @@
 name: IDE DEV-02.5 genuine technical-only installed native LSP resources
-# Separate technical acceptance lane: existing PR #236 or reviewed manual run.
-# No push trigger, signing/redistribution,
+# Separate technical acceptance lane: existing PR #236, reviewed manual run,
+# or this dedicated integration batch marker. No ordinary source push, signing/redistribution,
 # no native-lsp runtime feature in this installer, no provider execution.
 on:
+  push:
+    branches: [ide/integration-git-6c6d6e6f-to-main-20261113]
+    paths: ['.github/ide-merge/ide-dev02-technical-batch.txt']
   pull_request:
     branches: [main]
     paths:
@@ -27,7 +30,8 @@ jobs:
   technical-installed:
     if: >-
       (github.event_name == 'pull_request' && github.event.pull_request.number == 236 && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'ide/integration-git-6c6d6e6f-to-main-20261113') ||
-      (github.event_name == 'workflow_dispatch' && github.ref_name == 'ide/integration-git-6c6d6e6f-to-main-20261113')
+      (github.event_name == 'workflow_dispatch' && github.ref_name == 'ide/integration-git-6c6d6e6f-to-main-20261113') ||
+      (github.event_name == 'push' && github.repository == 'vjmichael/Lu-AI-GUI' && github.ref == 'refs/heads/ide/integration-git-6c6d6e6f-to-main-20261113')
     name: technical-installed / ${{ matrix.os }} / ${{ matrix.platform }} / ${{ matrix.bundle }}
     strategy:
       fail-fast: false
@@ -42,7 +46,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 135
     env:
-      SOURCE_SHA: ${{ github.event.pull_request.head.sha || inputs.expected_source_sha }}
+      SOURCE_SHA: ${{ github.event_name == 'push' && github.sha || github.event.pull_request.head.sha || inputs.expected_source_sha }}
       CARGO_INCREMENTAL: '0'
     steps:
       - uses: actions/checkout@v4

@@ -435,7 +435,7 @@ function Focus-ExactNativeControl([string]$label,[string]$kind='') {
   Deny ('exact_native_focus_unverified_'+$label.Replace(' ','_'))
 }
 function Click([string]$label) {
-  $reviewToolbar=$label -cin @('Move file','Trash file','Restore file','Toggle split editor','Confirm separate local commit (no push)')
+  $reviewToolbar=$label -cin @('New file','New folder','Move file','Trash file','Restore file','Toggle split editor','Confirm separate local commit (no push)')
   if ($reviewToolbar) {
     # UIA Invoke is not guaranteed for Chromium disclosure/toggle buttons.
     # Use exactly one real OS pointer action, with a verified hit on the
@@ -2005,6 +2005,87 @@ try {
       Require 'Quick Open filename results'
       Require 'src-23/file-035.rs'
       Write-Host 'DEV01_MODERN_WINDOWS_QUICK_OPEN_OS_UIA=PASS'
+      # Real native keyboard focus and activation, not a synthetic result open.
+      function Dev01-WaitKeyboardFocus([string]$label, [string]$kind) {
+        $limit=(Get-Date).AddSeconds(12)
+        do {
+          try {
+            $item=Find-Control $label $kind 2 -Exact
+            $actual=[System.Windows.Automation.AutomationElement]::FocusedElement
+            if ($item.Current.Name -ceq $label -and $item.Current.IsEnabled -and
+                !$item.Current.IsOffscreen -and
+                [P04NativeWebViewWindows]::GetForegroundWindow() -eq $proc.MainWindowHandle -and
+                ($item.Current.HasKeyboardFocus -or ($actual -and $actual.Equals($item)))) { return }
+          } catch {}
+          Start-Sleep -Milliseconds 150
+        } while ((Get-Date) -lt $limit)
+        Deny 'dev01_quick_open_native_keyboard_focus_missing'
+      }
+      [System.Windows.Forms.SendKeys]::SendWait('^p')
+      Dev01-WaitKeyboardFocus 'Quick Open filename search' 'Edit'
+      Dev01-Input 'Quick Open filename search' 'src-23/file-03'
+      [System.Windows.Forms.SendKeys]::SendWait('{ENTER}')
+      $firstResult='src-23/file-030.rs'
+      $secondResult='src-23/file-031.rs'
+      Require $firstResult
+      Require $secondResult
+      $quickOpenPath=Join-Path $fixed $firstResult
+      $quickOpenSha=(Get-FileHash -LiteralPath $quickOpenPath -Algorithm SHA256).Hash
+      [System.Windows.Forms.SendKeys]::SendWait('{DOWN}')
+      Dev01-WaitKeyboardFocus $firstResult 'Button'
+      [System.Windows.Forms.SendKeys]::SendWait('{DOWN}')
+      Dev01-WaitKeyboardFocus $secondResult 'Button'
+      [System.Windows.Forms.SendKeys]::SendWait('{UP}')
+      Dev01-WaitKeyboardFocus $firstResult 'Button'
+      [System.Windows.Forms.SendKeys]::SendWait('{ENTER}')
+      Require ('Saved source tab '+$firstResult)
+      if ((Get-FileHash -LiteralPath $quickOpenPath -Algorithm SHA256).Hash -ne $quickOpenSha) {
+        Deny 'dev01_quick_open_keyboard_changed_source'
+      }
+      Click ('Close '+$firstResult)
+      Click 'main.rs'
+      Write-Host 'DEV01_MODERN_WINDOWS_QUICK_OPEN_KEYBOARD=PASS'
+      $searchFile=Join-Path $fixed 'r4r4-search.rs'
+      $createdDir=Join-Path $fixed 'r4r4-created'
+      if ((Test-Path -LiteralPath $searchFile) -or (Test-Path -LiteralPath $createdDir)) { Deny 'non_pristine_residual_editor_fixture' }
+      Click 'New folder'
+      Dev01-Input 'Source action path or new name' 'r4r4-created'
+      Click 'Review and apply'
+      Require 'Source action completed: new folder'
+      if (!(Test-Path -LiteralPath $createdDir -PathType Container) -or (Get-Item -LiteralPath $createdDir).LinkType) { Deny 'native_folder_creation_not_observed' }
+      Click 'New file'
+      Dev01-Input 'Source action path or new name' 'r4r4-search.rs'
+      Click 'Review and apply'
+      Require 'Source action completed: new file'
+      if (!(Test-Path -LiteralPath $searchFile -PathType Leaf) -or (Get-Item -LiteralPath $searchFile).LinkType -or (Get-Item -LiteralPath $searchFile).Length -ne 0) { Deny 'native_created_file_not_empty' }
+      [IO.File]::WriteAllText($searchFile,"// IDE_R4R4_SEARCH_ORIGINAL`n")
+      $searchBefore=(Get-FileHash -LiteralPath $searchFile -Algorithm SHA256).Hash
+      Click 'New file'
+      Dev01-Input 'Source action path or new name' 'R4R4-SEARCH.rs'
+      Click 'Review and apply'
+      Require 'SOURCE_TARGET_ALREADY_EXISTS'
+      if ((Get-FileHash -LiteralPath $searchFile -Algorithm SHA256).Hash -cne $searchBefore) { Deny 'case_alias_creation_changed_source' }
+      Click 'Cancel'
+      Write-Host 'DEV01_MODERN_WINDOWS_CREATE_FILE_FOLDER_NO_CLOBBER=PASS'
+      Click 'Find in project'
+      Dev01-Input 'Search project text' 'IDE_R4R4_SEARCH_ORIGINAL'
+      Click 'Search project'
+      $hit='r4r4-search.rs:1:4'
+      [void](Find-Control $hit 'Button' 30)
+      [IO.File]::WriteAllText($searchFile,"// IDE_R4R4_SEARCH_ORIGINAL_CHANGED`n")
+      $searchChanged=(Get-FileHash -LiteralPath $searchFile -Algorithm SHA256).Hash
+      if ($searchChanged -ceq $searchBefore) { Deny 'external_search_fixture_revision_not_changed' }
+      Click $hit
+      Require 'FILE_CHANGED_ON_DISK: search again'
+      if ((Get-FileHash -LiteralPath $searchFile -Algorithm SHA256).Hash -cne $searchChanged) { Deny 'stale_search_changed_external_bytes' }
+      Click 'Search project'
+      [void](Find-Control $hit 'Button' 30)
+      Click $hit
+      Require 'Saved source tab r4r4-search.rs'
+      if ((Get-FileHash -LiteralPath $searchFile -Algorithm SHA256).Hash -cne $searchChanged) { Deny 'fresh_search_changed_external_bytes' }
+      Click 'Close r4r4-search.rs'
+      Click 'main.rs'
+      Write-Host 'DEV01_MODERN_WINDOWS_STALE_SEARCH_DENIED_FRESH_NAVIGATION=PASS'
       $original=Join-Path $fixed 'move-me.rs'
       $renamed=Join-Path $fixed 'renamed.rs'
       if (!(Test-Path $original) -or (Test-Path $renamed)) { Deny 'dev01_bad_source_fixture' }
@@ -2153,6 +2234,22 @@ try {
       Write-Host 'B4_REAL_INSTALLED_WINDOWS_TWO_DISTINCT_CODEMIRROR_PANES=PASS'
       Write-Host 'B4_REAL_INSTALLED_WINDOWS_EXPLICIT_SECONDARY_AND_FOCUSED_PRIMARY_SAVE=PASS'
     }
+    function Dev01-SessionReference {
+      [System.Windows.Forms.Clipboard]::Clear()
+      [void](Focus-ExactNativeControl 'Copy draft reference' 'Button')
+      [System.Windows.Forms.SendKeys]::SendWait(' ')
+      $limit=(Get-Date).AddSeconds(20)
+      while ((Get-Date) -lt $limit) {
+        Start-Sleep -Milliseconds 350
+        if (![System.Windows.Forms.Clipboard]::ContainsText()) { continue }
+        $value=[System.Windows.Forms.Clipboard]::GetText()
+        if (!$value.StartsWith('ide-buffer:v1 ')) { continue }
+        if ($value -cnotmatch ' path="main\.rs" buffer=([a-zA-Z0-9-]{8,128}) revision=([0-9]+) baseDisk=([a-f0-9]{64}) draftSha256=([a-f0-9]{64}) ' -or
+            !$value.EndsWith(' lifetime=session-only') -or $value.Contains('DEV01_MODERN_UNSAVED_PRIVATE_AFTER_KILL')) { Deny 'session_clipboard_reference_invalid_or_disclosing' }
+        return [pscustomobject]@{buffer=$Matches[1]; revision=[long]$Matches[2]; base=$Matches[3]; digest=$Matches[4]}
+      }
+      Deny 'fresh_session_clipboard_reference_missing'
+    }
     if ($Scenario -eq 'Dev01Modern') {
       # After the real two-editor native focus/Save witness above, checkpoint
       # another unsaved edit into OS-private app data before hard process kill.
@@ -2168,6 +2265,25 @@ try {
       if ((Get-FileHash $source -Algorithm SHA256).Hash -ne $beforeDraft) {
         Deny 'dev01_implicit_save_before_kill'
       }
+      Start-Sleep -Milliseconds 800
+      $firstRef=Dev01-SessionReference
+      if ($firstRef.base -ine $beforeDraft -or $firstRef.digest -ieq $beforeDraft) { Deny 'session_reference_not_exact_unsaved_base' }
+      [void](Focus-ExactNativeControl 'Source editor text · First editor: main.rs')
+      [System.Windows.Forms.SendKeys]::SendWait('^{END}x')
+      Start-Sleep -Milliseconds 800
+      $changedRef=Dev01-SessionReference
+      [void](Focus-ExactNativeControl 'Source editor text · First editor: main.rs')
+      [System.Windows.Forms.SendKeys]::SendWait('^z')
+      Start-Sleep -Milliseconds 800
+      $undoRef=Dev01-SessionReference
+      if ($firstRef.buffer -cne $changedRef.buffer -or $firstRef.buffer -cne $undoRef.buffer -or
+          $firstRef.revision -ge $changedRef.revision -or $changedRef.revision -ge $undoRef.revision -or
+          $firstRef.digest -ceq $changedRef.digest -or $firstRef.digest -cne $undoRef.digest -or
+          $undoRef.base -ine $beforeDraft -or (Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash -cne $beforeDraft) { Deny 'session_reference_undo_lifecycle_not_verified' }
+      $sessionEvidence=$fixed+'-r4r4-session.json'
+      if (Test-Path -LiteralPath $sessionEvidence) { Deny 'stale_session_evidence' }
+      $undoRef | ConvertTo-Json -Compress | Set-Content -LiteralPath $sessionEvidence -Encoding UTF8
+      Write-Host 'DEV01_MODERN_WINDOWS_SESSION_REFERENCE_UNDO=PASS'
       [System.Windows.Forms.Clipboard]::Clear()
       Click 'Preserve draft + copy durable reference'
       $copy=''
@@ -2206,6 +2322,13 @@ try {
       if ([IO.File]::ReadAllText($source).Contains('DEV01_MODERN_UNSAVED_PRIVATE_AFTER_KILL')) {
         Deny 'dev01_recovery_implicitly_saved'
       }
+      $sessionEvidence=$fixed+'-r4r4-session.json'
+      if (!(Test-Path -LiteralPath $sessionEvidence -PathType Leaf) -or (Get-Item -LiteralPath $sessionEvidence).LinkType -or (Get-Item -LiteralPath $sessionEvidence).Length -gt 1024) { Deny 'missing_or_invalid_session_evidence' }
+      $previousRef=Get-Content -LiteralPath $sessionEvidence -Raw | ConvertFrom-Json
+      [void](Focus-ExactNativeControl 'Source editor text · First editor: main.rs')
+      [System.Windows.Forms.SendKeys]::SendWait('^{END}')
+      $recoveredRef=Dev01-SessionReference
+      if ($recoveredRef.buffer -ceq $previousRef.buffer -or $recoveredRef.base -cne $previousRef.base -or $recoveredRef.digest -cne $previousRef.digest) { Deny 'restarted_session_draft_identity_not_distinct' }
       Click 'Save · Ctrl+S'
       $limit=(Get-Date).AddSeconds(25)
       while ((Get-Date) -lt $limit -and
@@ -2215,6 +2338,14 @@ try {
       if (![IO.File]::ReadAllText($source).Contains('DEV01_MODERN_UNSAVED_PRIVATE_AFTER_KILL')) {
         Deny 'dev01_recovered_draft_not_explicitly_saved'
       }
+      Require 'Saved source tab main.rs'
+      [void](Focus-ExactNativeControl 'Source editor text · First editor: main.rs')
+      [System.Windows.Forms.SendKeys]::SendWait('^{END}')
+      $savedRef=Dev01-SessionReference
+      $diskSha=(Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash
+      if ($savedRef.base -ine $diskSha -or $savedRef.digest -ine $diskSha) { Deny 'explicit_save_reference_not_rebased' }
+      Remove-Item -LiteralPath $sessionEvidence
+      Write-Host 'DEV01_MODERN_WINDOWS_SESSION_REFERENCE_RESTART_SAVE_REBASE=PASS'
       Write-Host 'DEV01_MODERN_WINDOWS_INSTALLED_HARD_KILL_RESTART_DRAFT=PASS'
     }
     if ($Scenario -eq 'ExternalConflict') {

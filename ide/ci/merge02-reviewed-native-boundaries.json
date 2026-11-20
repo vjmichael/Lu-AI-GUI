@@ -117,7 +117,7 @@
     },
     {
       "path": "ide/packaging/ide-05b-r3-outside-cohort.json",
-      "sha": "69f54b4c4b263c29c74c975316d25b6799ed8fb3",
+      "sha": "90e56a2c0769f68ac7a647f965c35e5efd294d71",
       "scope": "R3 review-only exact workflow inventory, no dispatch or retirement authorization"
     },
     {
@@ -137,7 +137,7 @@
     },
     {
       "path": "ide/packaging/p06_live_native_jobs.py",
-      "sha": "ae40c83f9e195cc62e6ebda6dbf2bd56aac380e5",
+      "sha": "2e708ac3d31902f4165c6acecd3f9cf1db82ab59",
       "scope": "R1-R3 read-only exact-attempt observation, explicit test-only two-job lane; no execution or release authority"
     },
     {
@@ -162,7 +162,7 @@
     },
     {
       "path": "ide/packaging/test_ide_05b_r3_workflow_dispositions.py",
-      "sha": "e700075b3d847b00c50b38afbf885e3353c2b9dc",
+      "sha": "d8dccd6cbaa34fb8666c8ed58cf3756b15f4f3b7",
       "scope": "R3 exact workflow inventory and default-deny source tests"
     },
     {
@@ -207,7 +207,7 @@
     },
     {
       "path": "ide/packaging/test_p06_technical_observation.py",
-      "sha": "42fce53129ec7a7fd6fa6cfc822a5d2f0408e27b",
+      "sha": "f6718d7fd6c91a1bd901296652be95896a7395df",
       "scope": "R3 manual technical observation exact attempt, SHA and negative regression"
     },
     {

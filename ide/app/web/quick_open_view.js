@@ -73,3 +73,16 @@ export function checkedDirectoryPage(raw,projectId,relativeDir,after) {
     throw Error('INT01E_DIRECTORY_CURSOR_MISMATCH');
   return raw;
 }
+
+// Navigate only enabled result buttons, without opening a file or transferring
+// an authority. Enter remains the focused button's native activation.
+export function focusQuickOpenResult(container, origin, key) {
+  if (key!=='ArrowDown'&&key!=='ArrowUp') return false;
+  const buttons=Array.from(container?.querySelectorAll('button[data-quick-open-hit]:not(:disabled)')||[]);
+  if (!buttons.length) return false;
+  const index=buttons.indexOf(origin);
+  const next=index<0 ? (key==='ArrowDown'?0:buttons.length-1) :
+    Math.max(0,Math.min(buttons.length-1,index+(key==='ArrowDown'?1:-1)));
+  buttons[next].focus();
+  return true;
+}

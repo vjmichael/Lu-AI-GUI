@@ -48,7 +48,9 @@ TECHNICAL_BRANCH = "ide/integration-git-6c6d6e6f-to-main-20261113"
 def _technical_event(run):
     if run.get("head_branch") != TECHNICAL_BRANCH:
         return False
-    if run.get("event") == "workflow_dispatch":
+    if run.get("event") in ("workflow_dispatch", "push"):
+        # Push admission is limited by the dedicated technical batch marker in
+        # the exact workflow, and _eligible also binds both repository identities.
         return True
     if run.get("event") != "pull_request":
         return False

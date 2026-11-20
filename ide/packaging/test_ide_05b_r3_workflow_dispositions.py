@@ -25,7 +25,10 @@ class DispositionTests(unittest.TestCase):
         self.assertIn('pull_request:',trigger)
         self.assertIn('github.event.pull_request.number == 236',source)
         self.assertIn('github.event.pull_request.head.ref',source)
-        self.assertNotIn('push:',trigger)
+        self.assertEqual(trigger.split('  pull_request:',1)[0].strip(),
+            "push:\n    branches: [ide/integration-git-6c6d6e6f-to-main-20261113]\n    paths: ['.github/ide-merge/ide-dev02-technical-batch.txt']")
+        self.assertIn("github.event_name == 'push' && github.repository == 'vjmichael/Lu-AI-GUI' && github.ref == 'refs/heads/ide/integration-git-6c6d6e6f-to-main-20261113'",source)
+        self.assertIn("github.event_name == 'push' && github.sha || github.event.pull_request.head.sha || inputs.expected_source_sha",source)
         self.assertIn('name: technical-installed / ${{ matrix.os }} / ${{ matrix.platform }} / ${{ matrix.bundle }}',source)
         self.assertEqual(len(TECHNICAL_GATE[2]),2)
         self.assertIn('git diff --exit-code HEAD --',source)

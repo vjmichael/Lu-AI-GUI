@@ -15,3 +15,7 @@ No release, main merge, protected execution approval, or technical LSP acceptanc
 IDE-MERGE-05B-R4-R2 / IDE-LINUX-09-R5-R2: reconcile exact WO6 rustdoc ownership source pin.
 Prior batch 44671104036: four success, two blocked by the same source provenance check.
 Repeat existing six-job matrix at the new locked head; no new scope or release authority.
+
+IDE-MERGE-05B-R4-R4: grouped residual installed editor + technical resource acceptance.
+Prior batch 44673277215 completed 6/6 on dd46fce3c1203d10e2989d3e63ca00cf9af019cf.
+Repeat six original jobs and the separately bounded technical-only matrix at this locked successor; no protected execution or release grants.

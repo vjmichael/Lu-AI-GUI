@@ -29,6 +29,14 @@ class TechnicalObservationTests(unittest.TestCase):
         r=run(TECHNICAL_WORKFLOW,ident=999);r['event']='workflow_dispatch'; r['head_branch']=TECHNICAL_BRANCH
         self.assertEqual(assess(OTHER,[r],lambda *_:self.fail('foreign jobs read'))['technicalInstalledObservation']['state'],'missing')
 
+    def test_only_exact_batch_branch_push_eligible(self):
+        runs,jobs=self.fixture(); r=run(TECHNICAL_WORKFLOW,ident=999); r['event']='push'; r['head_branch']=TECHNICAL_BRANCH; runs.append(r); jobs[999]=good_jobs(TECHNICAL_GATE,ident=999)
+        v=assess(SHA,runs,lambda i,a:jobs[i]); self.assertTrue(v['automaticAndTechnicalInstallationSuccessful']); self.assertFalse(v['protectedExecutionAccepted']); self.assertFalse(v['releaseApproved'])
+        for key,value in [('head_branch','other-branch'),('head_repository',{'full_name':'foreign/repo'}),('head_sha',OTHER)]:
+            old=r[key]; r[key]=value
+            v=assess(SHA,runs,lambda i,a:jobs[i]); self.assertEqual(v['technicalInstalledObservation']['state'],'missing')
+            r[key]=old
+
     def test_only_exact_existing_pr_eligible(self):
         runs,jobs=self.fixture(); r=run(TECHNICAL_WORKFLOW,ident=999); r['event']='pull_request'; r['head_branch']=TECHNICAL_BRANCH; r['pull_requests']=[{'number':236}]; runs.append(r); jobs[999]=good_jobs(TECHNICAL_GATE,ident=999)
         self.assertTrue(assess(SHA,runs,lambda i,a:jobs[i])['automaticAndTechnicalInstallationSuccessful'])

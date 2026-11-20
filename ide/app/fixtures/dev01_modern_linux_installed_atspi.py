@@ -8,6 +8,7 @@ automatic post-crash recovery claim. Missing UI/OS evidence fails closed.
 """
 import hashlib
 import os
+import re
 from pathlib import Path
 import subprocess
 import sys
@@ -262,6 +263,91 @@ def modern_file_operations(proc):
     native.accessible("src-23/file-035.rs", seconds=15)
     print("DEV01_MODERN_LINUX_BOUNDED_QUICK_OPEN_REAL_UI=PASS", flush=True)
 
+    # Historical keyboard navigation: assert genuine AT-SPI focus after
+    # each real OS key, then native editor admission and unchanged bytes.
+    def focused(label, role):
+        node = native.accessible(label, role, seconds=2)
+        return (node.name == label and
+                node.getState().contains(pyatspi.STATE_FOCUSED))
+
+    native.key("ctrl+p")
+    wait_until(lambda: focused("Quick Open filename search", None),
+               "quick_open_ctrl_p_focus_missing")
+    enter("Quick Open filename search", "src-23/file-03")
+    native.key("Return")
+    first = "src-23/file-030.rs"
+    second = "src-23/file-031.rs"
+    native.accessible(first, "button", seconds=35)
+    native.accessible(second, "button", seconds=15)
+    original = digest(ROOT / first)
+    native.key("Down")
+    wait_until(lambda: focused(first, "button"), "quick_open_first_focus_missing")
+    native.key("Down")
+    wait_until(lambda: focused(second, "button"), "quick_open_second_focus_missing")
+    native.key("Up")
+    wait_until(lambda: focused(first, "button"), "quick_open_reverse_focus_missing")
+    native.key("Return")
+    native.accessible("Saved source tab " + first, "tab", seconds=20)
+    if digest(ROOT / first) != original:
+        deny("quick_open_keyboard_changed_source")
+    native.activate("Close " + first, "button")
+    native.activate_exact_source_file("main.rs")
+    print("DEV01_MODERN_LINUX_QUICK_OPEN_KEYBOARD=PASS", flush=True)
+
+    # One real exclusive file/folder creation, case-alias denial and a
+    # stale saved-search result after independent external file mutation.
+    search_file = ROOT / "r4r4-search.rs"
+    created_dir = ROOT / "r4r4-created"
+    if search_file.exists() or created_dir.exists():
+        deny("non_pristine_residual_editor_fixture")
+    native.activate("New folder", "button")
+    enter("Source action path or new name", created_dir.name)
+    native.activate("Review and apply")
+    wait_until(lambda: created_dir.is_dir() and not created_dir.is_symlink(),
+               "native_folder_creation_not_observed")
+    native.accessible("Source action completed: new folder")
+    native.activate("New file", "button")
+    enter("Source action path or new name", search_file.name)
+    native.activate("Review and apply")
+    wait_until(lambda: search_file.is_file() and not search_file.is_symlink(),
+               "native_file_creation_not_observed")
+    native.accessible("Source action completed: new file")
+    if search_file.read_bytes() != b"":
+        deny("native_created_file_not_empty")
+    search_file.write_bytes(b"// IDE_R4R4_SEARCH_ORIGINAL\n")
+    original_search = digest(search_file)
+    native.activate("New file", "button")
+    enter("Source action path or new name", "R4R4-SEARCH.rs")
+    native.activate("Review and apply")
+    native.accessible("SOURCE_TARGET_ALREADY_EXISTS")
+    if digest(search_file) != original_search or (ROOT / "R4R4-SEARCH.rs").exists():
+        deny("case_alias_creation_changed_source")
+    native.activate("Cancel", "button")
+    print("DEV01_MODERN_LINUX_CREATE_FILE_FOLDER_NO_CLOBBER=PASS", flush=True)
+
+    native.activate("Find in project", "button")
+    enter("Search project text", "IDE_R4R4_SEARCH_ORIGINAL")
+    native.activate("Search project", "button")
+    hit = "r4r4-search.rs:1:4"
+    native.accessible(hit, "button", seconds=30)
+    search_file.write_bytes(b"// IDE_R4R4_SEARCH_ORIGINAL_CHANGED\n")
+    changed = digest(search_file)
+    if changed == original_search:
+        deny("external_search_fixture_revision_not_changed")
+    native.activate(hit, "button")
+    native.accessible("FILE_CHANGED_ON_DISK: search again", seconds=20)
+    if digest(search_file) != changed:
+        deny("stale_search_changed_external_bytes")
+    native.activate("Search project", "button")
+    native.accessible(hit, "button", seconds=30)
+    native.activate(hit, "button")
+    native.accessible("Saved source tab r4r4-search.rs", "tab", seconds=20)
+    if digest(search_file) != changed:
+        deny("fresh_search_changed_external_bytes")
+    native.activate("Close r4r4-search.rs", "button")
+    native.activate_exact_source_file("main.rs")
+    print("DEV01_MODERN_LINUX_STALE_SEARCH_DENIED_FRESH_NAVIGATION=PASS", flush=True)
+
     before = digest(TO_MOVE)
     native.activate("Move file")
     enter("Source action path or new name", "move-me.rs")
@@ -307,6 +393,29 @@ def modern_file_operations(proc):
     print("DEV01_MODERN_LINUX_MOVE_TRASH_RESTORE_NO_CLOBBER=PASS", flush=True)
 
 
+def session_reference():
+    # Clear the OS clipboard first: a previous reference cannot forge success.
+    subprocess.run(["xclip", "-selection", "clipboard", "-in"],
+                   input=b"r4r4-fresh-clipboard", stdout=subprocess.DEVNULL,
+                   stderr=subprocess.DEVNULL, check=True, timeout=5)
+    native.activate("Copy draft reference", "button")
+    for _ in range(35):
+        try:
+            value = subprocess.check_output(
+                ["xclip", "-selection", "clipboard", "-out"],
+                text=True, timeout=4, stderr=subprocess.DEVNULL)
+        except (OSError, subprocess.TimeoutExpired, subprocess.CalledProcessError):
+            time.sleep(0.35)
+            continue
+        if value.startswith("ide-buffer:v1 "):
+            match = re.search(r' path="main\.rs" buffer=([a-zA-Z0-9-]{8,128}) revision=([0-9]+) baseDisk=([a-f0-9]{64}) draftSha256=([a-f0-9]{64}) ', value)
+            if not match or not value.endswith(" lifetime=session-only") or DRAFT in value:
+                deny("session_clipboard_reference_invalid_or_disclosing")
+            return (match[1], int(match[2]), match[3], match[4])
+        time.sleep(0.35)
+    deny("fresh_session_clipboard_reference_missing")
+
+
 def modern_split_and_private_checkpoint(proc):
     main_before, second_before = digest(SOURCE), digest(SECOND)
     native.activate_exact_source_file("second.rs")
@@ -350,6 +459,25 @@ def modern_split_and_private_checkpoint(proc):
     native.type_text("// " + DRAFT)
     if digest(SOURCE) != original:
         deny("unsaved_draft_written_before_explicit_save")
+    time.sleep(0.8)
+    first_ref = session_reference()
+    if first_ref[2] != original or first_ref[3] == original:
+        deny("session_reference_not_exact_unsaved_base")
+    native.focus_editor()
+    native.key("ctrl+End")
+    native.type_text("x")
+    time.sleep(0.8)
+    changed_ref = session_reference()
+    native.focus_editor()
+    native.key("ctrl+z")
+    time.sleep(0.8)
+    undo_ref = session_reference()
+    if not (first_ref[0] == changed_ref[0] == undo_ref[0]
+            and first_ref[1] < changed_ref[1] < undo_ref[1]
+            and first_ref[3] != changed_ref[3] and undo_ref[3] == first_ref[3]
+            and undo_ref[2] == original and digest(SOURCE) == original):
+        deny("session_reference_undo_lifecycle_not_verified")
+    print("DEV01_MODERN_LINUX_SESSION_REFERENCE_UNDO=PASS", flush=True)
     native.activate("Preserve draft + copy durable reference")
     clipboard = ""
     for _ in range(35):
@@ -374,6 +502,7 @@ def modern_split_and_private_checkpoint(proc):
     if digest(SOURCE) != original:
         deny("private_checkpoint_or_tab_layout_wrote_original")
     print("DEV01_MODERN_LINUX_PRE_KILL_PRIVATE_CHECKPOINT=PASS", flush=True)
+    return undo_ref
 
 
 def main():
@@ -383,7 +512,7 @@ def main():
         native.select_native_folder()
         native.editor_project()
         modern_file_operations(first)
-        modern_split_and_private_checkpoint(first)
+        previous_ref = modern_split_and_private_checkpoint(first)
     finally:
         # Deliberate hard OS process death, not a graceful editor shutdown.
         if first.poll() is None:
@@ -400,9 +529,21 @@ def main():
         native.accessible("Recovered private checkpoint into unsaved editor only", seconds=20)
         if DRAFT in SOURCE.read_text(encoding="utf-8"):
             deny("restart_recovery_implicitly_wrote_source")
+        native.focus_editor()
+        native.key("ctrl+End")
+        recovered_ref = session_reference()
+        if recovered_ref[0] == previous_ref[0] or recovered_ref[2:] != previous_ref[2:]:
+            deny("restarted_session_draft_identity_not_distinct")
         native.activate("Save · Ctrl+S")
         wait_until(lambda: DRAFT in SOURCE.read_text(encoding="utf-8"),
                    "recovered_draft_explicit_save_missing")
+        native.accessible("Saved source tab main.rs", "tab", seconds=20)
+        native.focus_editor()
+        native.key("ctrl+End")
+        saved_ref = session_reference()
+        if saved_ref[2] != digest(SOURCE) or saved_ref[3] != digest(SOURCE):
+            deny("explicit_save_reference_not_rebased")
+        print("DEV01_MODERN_LINUX_SESSION_REFERENCE_RESTART_SAVE_REBASE=PASS", flush=True)
         print("DEV01_MODERN_LINUX_KILL_RESTART_PRIVATE_RECOVERY=PASS", flush=True)
         print("DEV01_MODERN_LINUX_INSTALLED_FOUR_FEATURES=PASS", flush=True)
     finally:

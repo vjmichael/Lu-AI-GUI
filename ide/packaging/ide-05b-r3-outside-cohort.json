@@ -116,7 +116,7 @@
     },
     {
       "workflow": ".github/workflows/ide-dev02-linux-installed-protected-lsp.yml",
-      "gitBlob": "83510d2b636bc63f83e96b9fc85084805f1ac5be",
+      "gitBlob": "6b3f81f9f008eadbbdffa56a7427f2ff2fcb205a",
       "workflowName": "IDE DEV-02 protected installed Linux language services",
       "triggerKinds": [
         "workflow_dispatch"
@@ -125,7 +125,7 @@
         "genuine-installed-linux-protected-lsp"
       ],
       "disposition": "separate_authorized_manual",
-      "contractToRetain": "Real reviewed root-owned providers, delegated cgroup and GTK consent; requires enrolled runner and reviewed assets",
+      "contractToRetain": "Real reviewed root-owned providers, delegated cgroup and GTK consent; requires enrolled runner and reviewed assets; exact current reviewed P06 successor lock only",
       "relatedObservedCohortPaths": [
         ".github/workflows/ide-e2-native-lsp.yml"
       ],
@@ -531,7 +531,7 @@
     },
     {
       "workflow": ".github/workflows/ide-group04-native.yml",
-      "gitBlob": "e36b1eded9d68031d26e305f34e3e28903a99045",
+      "gitBlob": "881b7b4f4e35eb9874b261270c27a5d993184dbc",
       "workflowName": "IDE Group 4 exact-head native Build Test and LLDB (NOT installed)",
       "triggerKinds": [
         "push",
@@ -544,7 +544,7 @@
         "windows-pinned-llvm18-native"
       ],
       "disposition": "protected_contract_reconcile",
-      "contractToRetain": "Four native debugger/build/LLVM owner lanes, compare original full steps and owner receipts",
+      "contractToRetain": "Four native debugger/build/LLVM owner lanes, compare original full steps and owner receipts; added rustdoc to original root-owned tool checks",
       "relatedObservedCohortPaths": [
         ".github/workflows/ide-wo6-native-os-acceptance.yml",
         ".github/workflows/ide-dev04-5d5-owner-event-native.yml"
@@ -965,17 +965,18 @@
     },
     {
       "workflow": ".github/workflows/ide-dev02-technical-installed-lsp.yml",
-      "gitBlob": "b950f54a4c60fdb3b22c58d61d7fee23b21cb130",
+      "gitBlob": "e4dbd01bf09cf77ca6b69274df85f4c4b26fd50c",
       "workflowName": "IDE DEV-02.5 genuine technical-only installed native LSP resources",
       "triggerKinds": [
+        "push",
         "pull_request",
         "workflow_dispatch"
       ],
       "jobKeys": [
         "technical-installed"
       ],
-      "disposition": "new_required_existing_pr_or_manual_technical_install",
-      "contractToRetain": "Historical #137 actual NSIS/Debian with original pinned resources, independent byte readback, real OS registration and uninstall. Worker-disabled desktop; separately gated protected execution. Narrow PR #236 event permits first acceptance before default-branch merge; no push dispatch.",
+      "disposition": "new_required_existing_pr_manual_or_dedicated_batch_technical_install",
+      "contractToRetain": "Historical #137 actual NSIS/Debian with original pinned resources, independent byte readback, real OS registration and uninstall. Worker-disabled desktop; separately gated protected execution. Narrow PR #236/manual and exact integration-branch dedicated batch marker admission; no ordinary push, protected execution or release approval.",
       "relatedObservedCohortPaths": [
         ".github/workflows/ide-dev02-disposable-native-test-payload.yml",
         ".github/workflows/ide-dev02-full-native-resource-candidate.yml"

@@ -9,7 +9,7 @@ import { planProjectPaneSelection, planProjectSwitchView,
 import { captureLiveEditorIntent, stillCurrentEditorIntent,
   reconcileSavedEditorTab } from './editor_live_write.js';
 import { planCleanBackgroundTabClosure } from './editor_clean_tab_reclamation.js';
-import { checkedQuickOpenResult, checkedDirectoryPage } from './quick_open_view.js';
+import { checkedQuickOpenResult, checkedDirectoryPage, focusQuickOpenResult } from './quick_open_view.js';
 import { rememberedWorkspaceFromTabs, checkedRememberedWorkspace } from './workspace_layout.js';
 import { checkedPrivateDraftHead, planRestartReconciliation } from './editor_restart_reconciliation.js';
 import { diskAuditTargets, classifyDiskAudit,
@@ -208,6 +208,7 @@ function App() {
   const [relativeOpenPath, setRelativeOpenPath] = useState('');
   const [quickOpenQuery, setQuickOpenQuery] = useState('');
   const quickOpenInputRef = useRef(null);
+  const quickOpenResultsRef = useRef(null);
   const [quickOpenFocusRequest,setQuickOpenFocusRequest] = useState(0);
   const [quickOpenResults, setQuickOpenResults] = useState(null);
   const [quickOpenBusy, setQuickOpenBusy] = useState(false);
@@ -6528,6 +6529,22 @@ function App() {
     }
   }
 
+  function clearQuickOpenResults() {
+    quickOpenSerial.current+=1;
+    quickOpenBusyRef.current=false;
+    setQuickOpenBusy(false);
+    setQuickOpenResults(null);
+  }
+
+  function navigateQuickOpenResults(event) {
+    if (quickOpenBusyRef.current || explorerIoTicket.current ||
+        workspaceTransitionRef.current || workspaceLayoutOp.current ||
+        !quickOpenResults || quickOpenResults.projectId!==activeProjectIdRef.current) return;
+    if (focusQuickOpenResult(quickOpenResultsRef.current,event.target,event.key)) {
+      event.preventDefault();
+    }
+  }
+
   async function openQuickOpenMatch(hit) {
     if (!activeProject?.projectId || !quickOpenResults ||
         quickOpenResults.projectId!==activeProject.projectId ||
@@ -11367,12 +11384,10 @@ function App() {
                 maxLength={128} value={quickOpenQuery}
                 onKeyDown={event=>{
                   if(event.key==='Escape'){
-                    quickOpenSerial.current+=1;
-                    quickOpenBusyRef.current=false;
-                    setQuickOpenBusy(false);
-                    setQuickOpenResults(null);
+                    event.preventDefault();
+                    clearQuickOpenResults();
                     quickOpenInputRef.current?.blur();
-                  }
+                  } else navigateQuickOpenResults(event);
                 }}
                 placeholder="Quick Open: filename or path"
                 onChange={event=>{
@@ -11390,8 +11405,14 @@ function App() {
               </button>
             </form>
             {quickOpenResults?.projectId===activeProject?.projectId &&
-              <section className="sourceQuickOpenResults"
-                aria-label="Quick Open filename results">
+              <section className="sourceQuickOpenResults" ref={quickOpenResultsRef}
+                aria-label="Quick Open filename results" onKeyDown={event=>{
+                  if (event.key==='Escape') {
+                    event.preventDefault();
+                    clearQuickOpenResults();
+                    quickOpenInputRef.current?.focus();
+                  } else navigateQuickOpenResults(event);
+                }}>
                 <p role="status">{quickOpenResults.matches.length} filename match(es)
                   {' · '}{quickOpenResults.entriesExamined} entries examined
                   {' · '}{quickOpenResults.directoriesExamined} directories.
@@ -11399,7 +11420,7 @@ function App() {
                     ' Partial scan/results; narrow the filename for better coverage.'}
                 </p>
                 {quickOpenResults.matches.map(hit=>
-                  <button type="button" className="fileRow"
+                  <button type="button" className="fileRow" data-quick-open-hit
                     key={hit.relativePath} title={hit.relativePath}
                     disabled={explorerPending || !!workspaceTransitionRef.current ||
                       hit.size>512*1024}

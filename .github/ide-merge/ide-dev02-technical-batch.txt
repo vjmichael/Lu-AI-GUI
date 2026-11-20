@@ -1,0 +1,2 @@
+IDE-MERGE-05B-R4-R4: dedicated technical-only installed LSP matrix.
+No provider execution, signing, release authority or main merge.
