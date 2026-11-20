@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "bd90f7cbd2bf187d561dbe3074192f93026bfa0e",
-  "trackedFileCount": 1234,
+  "sourceCommitBeforeLock": "a39e2f5b7817ae9ab5ec5b501704da35ec1322dd",
+  "trackedFileCount": 1236,
   "files": [
     {
       "path": ".gitattributes",
@@ -1705,7 +1705,11 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/dx_ipc.rs",
-      "blob": "e6ca74bfa8cd6fb211f1b6cc74d2d7225c1d54ed"
+      "blob": "1f94fa8bd58da9274ac82daa103bbc784f3aa3ca"
+    },
+    {
+      "path": "lu-desktop/src-tauri/src/dx_review.rs",
+      "blob": "a4e5ac4ad23987e0d4931e31911e5589bca9cfe3"
     },
     {
       "path": "lu-desktop/src-tauri/src/dx_windows_pipe.rs",
@@ -1757,7 +1761,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/lib.rs",
-      "blob": "56e4ddb7b65844b620eb3bd1b0862c7fe343e123"
+      "blob": "8810cb415eaf1dd80639f4ff854cc463d67c0af8"
     },
     {
       "path": "lu-desktop/src-tauri/src/linked_attachment_file.rs",
@@ -2214,6 +2218,10 @@
     {
       "path": "lu-desktop/tests/cp12b-local-diagnostic-exchange.test.mjs",
       "blob": "cca0951581a1d143dfb4955cd04378cb4b7cb26b"
+    },
+    {
+      "path": "lu-desktop/tests/cp12br3-review.test.mjs",
+      "blob": "f679156f623e003658d174ed6e39e671f26da84a"
     },
     {
       "path": "lu-desktop/tests/dx-exchange-windows-check/Cargo.lock",
@@ -2689,7 +2697,7 @@
     },
     {
       "path": "lu-desktop/web/native_windows.jsx",
-      "blob": "92d9a62bf453ec31e7c0413f2869c38fd65e93cc"
+      "blob": "aca3dc1aa146f4018c1566c9eaa42f7a522df073"
     },
     {
       "path": "lu-desktop/web/response_view.mjs",
