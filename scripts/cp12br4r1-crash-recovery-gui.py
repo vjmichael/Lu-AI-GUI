@@ -62,8 +62,10 @@ def main():
     def stopped(pid):
         wait(lambda:named(pid,'Stop review') is None and named(pid,CREATE,actionable=True),35,'review settled')
         require(named(pid,'Clear review',actionable=True) is None and named(pid,'Copy invitation',actionable=True) is None,'cancelled result published')
+    def scroll(pid):
+        focus(pid);subprocess.run(['xdotool','mousemove','1050','850','click','--repeat','8','5'],check=True,timeout=8);time.sleep(.5)
     def no_result(pid,label):
-        stopped(pid);time.sleep(.5);capture(label);mark(label,'PASS_NO_RESULT_VISUAL_STATUS_REVIEW_REQUIRED')
+        stopped(pid);scroll(pid);require(named(pid,'Clear review',actionable=True) is None,'review result visible after refusal');capture(label);mark(label,'PASS_NO_RESULT_VISUAL_STATUS_REVIEW_REQUIRED')
     def explicit_model_recovery(pid,worker,label):
         # The inference supervisor may reap its worker to enforce cancellation.
         # Never silently re-run or load: witness the idle state, then use the
@@ -96,7 +98,7 @@ def main():
         holder.stdin.write(code.encode());holder.stdin.close();holders.append(holder);time.sleep(.3)
     def fresh_review(pid,worker,ep):
         before=bm.ticks(worker);receive(pid);wait(lambda:not ep.exists(),20,'one-use admission')
-        wait(lambda:named(pid,'Clear review',actionable=True),50,'verified two-model result');require(bm.ticks(worker)>before,'receiver real model execution');capture('fresh-two-model');action(pid,'Clear review')
+        scroll(pid);wait(lambda:named(pid,'Clear review',actionable=True),50,'verified two-model result');require(bm.ticks(worker)>before,'receiver real model execution');capture('fresh-two-model');action(pid,'Clear review')
     def attempts(path):
         # Read-only observation; never change durable admission or clocks.
         db=path.parent/'llama-start-attempts.sqlite'
