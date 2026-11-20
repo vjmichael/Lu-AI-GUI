@@ -5297,7 +5297,7 @@ async fn lu_generate_impl(
       }
       TurnRoute::CpuWorkspace(needle)=>{
         return workspace_desktop::cpu_search_workspace_for_chat(
-            app,Arc::clone(state.inner()),session_id,chat_id,prompt,needle
+            app,Arc::clone(state.inner()),session_id,chat_id,prompt,needle,cp01_trace
         ).await;
       }
       TurnRoute::CpuChatCounts=>{
@@ -5305,6 +5305,7 @@ async fn lu_generate_impl(
             return Err("Invalid bounded CPU chat-count request".into())
         }
         let host=Arc::clone(state.inner());
+        let trace=causal_diagnostic::NativeDiagnosticTrace::cpu(&host,cp01_trace,false);
         let current=host.supervisor.status()
             .map_err(|_|"Native model status unavailable")?;
         let loaded=current.session_id.is_some();
@@ -5314,11 +5315,20 @@ async fn lu_generate_impl(
             return Err("Model session changed before CPU indexed count".into())
         }
         let began=std::time::Instant::now();
+        trace.point(CausalCheckpoint::SessionReady);
         return tauri::async_runtime::spawn_blocking(move||{
+            let result_of_turn=(||->Result<String,String>{
+            trace.point(CausalCheckpoint::WorkerEntered);
             host.chats.history_window(&chat_id,None,"older",1)?;
+            trace.point(CausalCheckpoint::CpuEntered);
             let result=perf01_router::count_current_chat(&host.chats,&chat_id)?;
+            trace.point(CausalCheckpoint::CpuReturned);
             let gid=next_id("g-");
             host.chats.append_user_with_turn_id(&chat_id,&gid,&prompt)?;
+            trace.point(CausalCheckpoint::UserSaved);
+            if host.chats.trusted_user_turn_text(&chat_id,&gid).as_deref()==Some(prompt.as_str()){
+                trace.point(CausalCheckpoint::SavedAttested);
+            }else{trace.lost();}
             let _=app.emit("lu-generation-queued",GenerationEvent{
                 chat_id:chat_id.clone(),generation_id:gid.clone(),
                 phase:"queued",position:0
@@ -5329,6 +5339,7 @@ async fn lu_generate_impl(
             });
             host.chats.append_progress(&chat_id,&gid,&result.answer)?;
             host.chats.complete(&chat_id,&gid)?;
+            trace.saved_response(&host,&chat_id,&gid,&result.answer,false);
             let _=host.perf01.record(perf01_telemetry::cpu_receipt(
                 &chat_id,&gid,"INDEXED_CURRENT_CHAT_COUNTS",began,
                 loaded,None,Some(result.scanned_entries),
@@ -5339,6 +5350,9 @@ async fn lu_generate_impl(
                 phase:"finished",position:0
             });
             Ok(result.answer)
+            })();
+            if result_of_turn.is_err(){trace.native_error(false);}
+            result_of_turn
         }).await.map_err(|_|"CPU indexed count worker interrupted")?;
       }
       TurnRoute::CpuModelStatus=>{
@@ -5346,6 +5360,7 @@ async fn lu_generate_impl(
             return Err("Invalid CPU model status request limits".into())
         }
         let owner=Arc::clone(state.inner());
+        let trace=causal_diagnostic::NativeDiagnosticTrace::cpu(&owner,cp01_trace,false);
         let current=owner.supervisor.status()
             .map_err(|_|"Native model status unavailable")?;
         let expected_session=current.session_id.clone();
@@ -5359,8 +5374,12 @@ async fn lu_generate_impl(
             return Err("Model session changed before CPU status observation".into())
         }
         let began=std::time::Instant::now();
+        trace.point(CausalCheckpoint::SessionReady);
         return tauri::async_runtime::spawn_blocking(move||{
+            let result_of_turn=(||->Result<String,String>{
+            trace.point(CausalCheckpoint::WorkerEntered);
             owner.chats.history_window(&chat_id,None,"older",1)?;
+            trace.point(CausalCheckpoint::CpuEntered);
             let now=owner.supervisor.status()
                 .map_err(|_|"Native model status unavailable")?;
             if now.session_id!=expected_session||now.model_ref!=expected_model{
@@ -5372,8 +5391,13 @@ async fn lu_generate_impl(
                 now.session_id.is_some(),
                 now.model_ref.as_deref().unwrap_or("none")
             );
+            trace.point(CausalCheckpoint::CpuReturned);
             let gid=next_id("g-");
             owner.chats.append_user_with_turn_id(&chat_id,&gid,&prompt)?;
+            trace.point(CausalCheckpoint::UserSaved);
+            if owner.chats.trusted_user_turn_text(&chat_id,&gid).as_deref()==Some(prompt.as_str()){
+                trace.point(CausalCheckpoint::SavedAttested);
+            }else{trace.lost();}
             let _=app.emit("lu-generation-queued",GenerationEvent{
                 chat_id:chat_id.clone(),generation_id:gid.clone(),
                 phase:"queued",position:0
@@ -5384,6 +5408,7 @@ async fn lu_generate_impl(
             });
             owner.chats.append_progress(&chat_id,&gid,&answer)?;
             owner.chats.complete(&chat_id,&gid)?;
+            trace.saved_response(&owner,&chat_id,&gid,&answer,false);
             let _=owner.perf01.record(perf01_telemetry::cpu_receipt(
                 &chat_id,&gid,"NATIVE_MODEL_STATUS",began,
                 expected_session.is_some(),None,None,None,"COMPLETED"
@@ -5393,6 +5418,9 @@ async fn lu_generate_impl(
                 phase:"finished",position:0
             });
             Ok(answer)
+            })();
+            if result_of_turn.is_err(){trace.native_error(false);}
+            result_of_turn
         }).await.map_err(|_|"CPU model status worker interrupted")?;
       }
       TurnRoute::CpuChatLiteral(needle)=>{
@@ -5400,6 +5428,7 @@ async fn lu_generate_impl(
             return Err("Invalid CPU retrieval output limit".into())
         }
         let owner=Arc::clone(state.inner());
+        let trace=causal_diagnostic::NativeDiagnosticTrace::cpu(&owner,cp01_trace,false);
         let current=owner.supervisor.status()
             .map_err(|_|"Native model/session status unavailable")?;
         let model_loaded=current.session_id.is_some();
@@ -5412,16 +5441,25 @@ async fn lu_generate_impl(
             return Err("Model session changed before CPU retrieval".into())
         }
         let began=std::time::Instant::now();
+        trace.point(CausalCheckpoint::SessionReady);
         return tauri::async_runtime::spawn_blocking(move||{
+            let result_of_turn=(||->Result<String,String>{
+            trace.point(CausalCheckpoint::WorkerEntered);
             // Verify ANSF ownership and scan originals BEFORE appending
             // this request, so the query cannot self-match.
             owner.chats.history_window(&chat_id,None,"older",1)?;
+            trace.point(CausalCheckpoint::CpuEntered);
             let original=perf01_router::search_current_chat(
                 &owner.chats,&chat_id,&needle
             )?;
+            trace.point(CausalCheckpoint::CpuReturned);
             let gid=next_id("g-");
             let answer=original.answer;
             owner.chats.append_user_with_turn_id(&chat_id,&gid,&prompt)?;
+            trace.point(CausalCheckpoint::UserSaved);
+            if owner.chats.trusted_user_turn_text(&chat_id,&gid).as_deref()==Some(prompt.as_str()){
+                trace.point(CausalCheckpoint::SavedAttested);
+            }else{trace.lost();}
             let _=app.emit("lu-generation-queued",GenerationEvent{
                 chat_id:chat_id.clone(),generation_id:gid.clone(),
                 phase:"queued",position:0
@@ -5432,6 +5470,7 @@ async fn lu_generate_impl(
             });
             owner.chats.append_progress(&chat_id,&gid,&answer)?;
             owner.chats.complete(&chat_id,&gid)?;
+            trace.saved_response(&owner,&chat_id,&gid,&answer,false);
             let receipt=perf01_telemetry::cpu_receipt(
                 &chat_id,&gid,"EXACT_CURRENT_CHAT_LITERAL",began,
                 model_loaded,Some(original.scanned_bytes),
@@ -5444,6 +5483,9 @@ async fn lu_generate_impl(
                 phase:"finished",position:0
             });
             Ok(answer)
+            })();
+            if result_of_turn.is_err(){trace.native_error(false);}
+            result_of_turn
         }).await.map_err(|_|"CPU retrieval worker interrupted")?;
       }
       TurnRoute::CpuClock=>{
@@ -5451,6 +5493,7 @@ async fn lu_generate_impl(
             return Err("Invalid current-time request limits".into());
         }
         let owner=Arc::clone(state.inner());
+        let trace=causal_diagnostic::NativeDiagnosticTrace::cpu(&owner,cp01_trace,false);
         let perf_start=std::time::Instant::now();
         // This CPU-only host utility is valid without any GGUF model. If
         // there IS a model session, it must still match exactly; a stale
@@ -5466,11 +5509,20 @@ async fn lu_generate_impl(
         if !model_identity_matches{
             return Err("Model session changed before native clock observation".into());
         }
+        trace.point(CausalCheckpoint::SessionReady);
         return tauri::async_runtime::spawn_blocking(move||{
+            let result_of_turn=(||->Result<String,String>{
+            trace.point(CausalCheckpoint::WorkerEntered);
             owner.chats.history(&chat_id)?;
             let gid=next_id("g-");
+            trace.point(CausalCheckpoint::CpuEntered);
             let answer=host_clock::fresh_local_clock_answer();
+            trace.point(CausalCheckpoint::CpuReturned);
             owner.chats.append_user_with_turn_id(&chat_id,&gid,&prompt)?;
+            trace.point(CausalCheckpoint::UserSaved);
+            if owner.chats.trusted_user_turn_text(&chat_id,&gid).as_deref()==Some(prompt.as_str()){
+                trace.point(CausalCheckpoint::SavedAttested);
+            }else{trace.lost();}
             let _=app.emit("lu-generation-queued",GenerationEvent{
                 chat_id:chat_id.clone(),generation_id:gid.clone(),
                 phase:"queued",position:0
@@ -5481,6 +5533,7 @@ async fn lu_generate_impl(
             });
             owner.chats.append_progress(&chat_id,&gid,&answer)?;
             owner.chats.complete(&chat_id,&gid)?;
+            trace.saved_response(&owner,&chat_id,&gid,&answer,false);
             let _=owner.perf01.record(perf01_telemetry::cpu_receipt(
                 &chat_id,&gid,"NATIVE_OS_CLOCK",perf_start,
                 model_loaded,None,None,None,"COMPLETED"
@@ -5490,6 +5543,9 @@ async fn lu_generate_impl(
                 position:0
             });
             Ok(answer)
+            })();
+            if result_of_turn.is_err(){trace.native_error(false);}
+            result_of_turn
         }).await.map_err(|_|"Native current-time utility interrupted")?;
       }
       TurnRoute::Browser(origin)=>{

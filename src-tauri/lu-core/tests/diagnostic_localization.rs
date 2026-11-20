@@ -396,3 +396,30 @@ fn prior_tool_return_does_not_confirm_second_unfinished_dispatch() {
     assert_eq!(finding.first_unconfirmed,"tool_dispatch_returned");
     assert_ne!(finding.evidence_strength,EvidenceStrength::Complete);
 }
+
+#[test]
+fn cp12ar2r1_cpu_path_is_not_inference_and_requires_exact_delivery() {
+    use lu_core::diagnostic_localization::localize_transactional_turn;
+    fn route(stages:&[i32])->proto::DiagnosticTrace {
+        let mut trace=all_success();
+        trace.events=stages.iter().enumerate().map(|(i,&stage)|proto::DiagnosticEvent{
+            sequence:i as u64+1,parent_sequence:i as u64,stage,outcome:if matches!(stage,4|7|23){1}else{2},
+            elapsed_millis:i as u64,clock_domain:2,failure_code:0,attempt:1,clock_epoch:1,
+        }).collect();trace
+    }
+    let cpu=[4,22,19,7,23,24,2,5,12,10,11,13];
+    let approved=[4,25,19,2,7,5,6,23,24,12,10,11,13];
+    for stages in [&cpu[..],&approved[..]] {
+        assert_eq!(localize_transactional_turn(&route(stages)).unwrap().evidence_strength,EvidenceStrength::Complete);
+        let partial=localize_transactional_turn(&route(&stages[..stages.len()-3])).unwrap();
+        assert_eq!(partial.confirmed_until,"assistant_saved");
+        assert_eq!(partial.first_unconfirmed,"native_ipc_returned");
+        assert_eq!(partial.evidence_strength,EvidenceStrength::BoundedToNextStage);
+    }
+    let mixed=route(&[4,22,19,7,23,8,9,24,2,5,12,10,11,13]);
+    assert_eq!(localize_transactional_turn(&mixed).unwrap().evidence_strength,EvidenceStrength::InsufficientEvidence);
+    let unapproved=route(&[4,25,19,2,7,5,23,24,12,10,11,13]);
+    assert_eq!(localize_transactional_turn(&unapproved).unwrap().evidence_strength,EvidenceStrength::InsufficientEvidence);
+    let unfinished=route(&[4,22,19,7,23]);
+    assert_eq!(localize_transactional_turn(&unfinished).unwrap().first_unconfirmed,"cpu_execution_returned");
+}

@@ -402,6 +402,25 @@ mod integrated_reader_tests{
         std::env::temp_dir().join(name)
     }
     #[tokio::test]
+    async fn cp12ar2r1_workspace_schema_exhaustion_is_terminal_not_a_dispatch(){
+        use crate::model_turn_journal::ModelAuditKind as K;
+        use std::sync::atomic::{AtomicUsize,Ordering};
+        let base=directory();let _=std::fs::remove_dir_all(&base);let root=base.join("approved");std::fs::create_dir_all(&root).unwrap();std::fs::write(root.join("original.txt"),b"source").unwrap();
+        let task="task-schema-rejected";
+        let mut lane=WorkspaceReadTurnSession::new_root_listing(&OriginalTurn,"c-source","g-human",task,&root).unwrap();
+        let journal=ModelTurnJournal::open(&base.join("audit.sqlite")).unwrap();
+        let bad=r#"{"kind":"tool","name":"lu_files_list_directory","arguments":{"path":"child"}}"#;
+        let mut model=Scripted{replies:VecDeque::from([bad.into(),bad.into(),bad.into()])};
+        let count=AtomicUsize::new(0);let observer=|_:ToolDispatchCheckpoint|{count.fetch_add(1,Ordering::SeqCst);};
+        let error=lane.run_journaled_observed("List the files in the selected folder",&mut model,&Cancellation::default(),&journal,&observer).await.unwrap_err();
+        assert_eq!(crate::supervised_tool_generation::native_generation_failure_class(&error),"json_regeneration_exhausted");
+        assert_eq!(count.load(Ordering::SeqCst),0);assert_eq!(lane.turn.step_count(),0);
+        let origin=BoundCallOrigin{conversation_id:"c-source".into(),user_turn_id:"g-human".into(),task_id:task.into()};assert!(lane.authority.permitted_tool_ids(&origin).unwrap().is_empty());
+        let rows=journal.events_for("c-source",task).unwrap();assert_eq!(rows.iter().filter(|e|e.kind==K::Rejected).count(),3);assert!(rows.iter().any(|e|e.kind==K::GenerationFailure));assert!(rows.iter().all(|e|e.kind!=K::FinalAnswer));
+        assert!(rows.iter().filter(|e|e.kind==K::ToolFeedback).all(|e|e.payload.contains("lu_boundary")));
+        drop(lane);drop(journal);let reopened=ModelTurnJournal::open(&base.join("audit.sqlite")).unwrap();assert_eq!(rows,reopened.events_for("c-source",task).unwrap());drop(reopened);std::fs::remove_dir_all(base).unwrap();
+    }
+    #[tokio::test]
     async fn cp06cr2_required_source_order_payload_and_final_coverage(){
         use crate::model_turn_journal::ModelAuditKind as K;
         let base=directory();let _=std::fs::remove_dir_all(&base);let root=base.join("approved");std::fs::create_dir_all(&root).unwrap();std::fs::write(root.join("A.txt"),b"123456789").unwrap();std::fs::write(root.join("B.txt"),b"123").unwrap();std::fs::write(root.join("other.txt"),b"wrong").unwrap();

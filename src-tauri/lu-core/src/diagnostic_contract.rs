@@ -59,7 +59,7 @@ pub fn validate_diagnostic_trace(
     let mut clocks: BTreeMap<(i32, u32, u32), u64> = BTreeMap::new();
     let mut last_epochs: BTreeMap<(i32, u32), u32> = BTreeMap::new();
     for event in &trace.events {
-        if !(1..=21).contains(&event.stage)
+        if !(1..=25).contains(&event.stage)
             || !(1..=5).contains(&event.outcome)
             || !(1..=3).contains(&event.clock_domain)
             || !(0..=11).contains(&event.failure_code)

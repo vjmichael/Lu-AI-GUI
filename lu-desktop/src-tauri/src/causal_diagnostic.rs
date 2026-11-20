@@ -18,6 +18,10 @@ pub(crate) enum Checkpoint {
     ReplyObserved = 10,
     StreamClosed = 11,
     AssistantRendered = 13,
+    CpuRouteSelected = 22,
+    CpuEntered = 23,
+    CpuReturned = 24,
+    CpuApprovedRouteSelected = 25,
 }
 
 const ORDER: &[Checkpoint] = &[
@@ -25,6 +29,21 @@ const ORDER: &[Checkpoint] = &[
     Checkpoint::WorkerEntered, Checkpoint::SavedAttested, Checkpoint::ModelEntered,
     Checkpoint::ModelReturned, Checkpoint::AssistantSaved, Checkpoint::ReplyObserved,
     Checkpoint::StreamClosed, Checkpoint::AssistantRendered,
+];
+
+// Counts and literal searches must happen before saving the new request so
+// the request itself cannot alter the result. Preserve that causal ordering.
+const CPU_ORDER: &[Checkpoint] = &[
+    Checkpoint::NativeReceived, Checkpoint::CpuRouteSelected, Checkpoint::SessionReady,
+    Checkpoint::WorkerEntered, Checkpoint::CpuEntered, Checkpoint::CpuReturned,
+    Checkpoint::UserSaved, Checkpoint::SavedAttested, Checkpoint::AssistantSaved,
+    Checkpoint::ReplyObserved, Checkpoint::StreamClosed, Checkpoint::AssistantRendered,
+];
+const CPU_APPROVED_ORDER: &[Checkpoint] = &[
+    Checkpoint::NativeReceived, Checkpoint::CpuApprovedRouteSelected, Checkpoint::SessionReady,
+    Checkpoint::UserSaved, Checkpoint::WorkerEntered, Checkpoint::SavedAttested,
+    Checkpoint::TaskAuthorized, Checkpoint::CpuEntered, Checkpoint::CpuReturned, Checkpoint::AssistantSaved,
+    Checkpoint::ReplyObserved, Checkpoint::StreamClosed, Checkpoint::AssistantRendered,
 ];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -47,13 +66,15 @@ pub(crate) struct CausalProgress {
     cursor: usize,
     tool_phase: u8,
     await_delivery: bool,
+    cpu: bool,
+    cpu_approved: bool,
 }
 
 impl CausalProgress {
     pub fn new(trace_ref: String, started: Instant) -> Self {
         let mut trace = Self {
             trace_ref, started, observations: Vec::with_capacity(ORDER.len()),
-            dropped: 0, failed: false, cursor: 1, tool_phase: 0, await_delivery:false,
+            dropped: 0, failed: false, cursor: 1, tool_phase: 0, await_delivery:false, cpu:false,cpu_approved:false,
         };
         // The trusted native wrapper minted the reference at its entry.
         trace.observations.push(Observation {
@@ -63,6 +84,14 @@ impl CausalProgress {
         trace
     }
 
+    pub fn new_cpu(trace_ref:String,started:Instant,approved:bool)->Self {
+        let mut trace=Self::new(trace_ref,started);
+        trace.cpu=true;
+        trace.cpu_approved=approved;
+        trace.observe(if approved{Checkpoint::CpuApprovedRouteSelected}else{Checkpoint::CpuRouteSelected});
+        trace
+    }
+    fn order(&self)->&'static [Checkpoint]{if self.cpu_approved{CPU_APPROVED_ORDER}else if self.cpu{CPU_ORDER}else{ORDER}}
     pub fn trace_ref(&self) -> &str { &self.trace_ref }
     pub fn observations(&self) -> &[Observation] { &self.observations }
     pub fn dropped(&self) -> u32 { self.dropped }
@@ -74,7 +103,7 @@ impl CausalProgress {
     }
 
     pub fn awaiting_delivery(mut self)->Self { self.await_delivery=true; self }
-    pub fn saved(&self)->bool { !self.failed && self.cursor>=8 && self.observations.iter().any(|e|e.stage==12&&e.outcome==2) }
+    pub fn saved(&self)->bool { !self.failed && self.observations.iter().any(|e|e.stage==12&&e.outcome==2) }
     pub fn reply_seen(&self)->bool { self.observations.iter().any(|e|e.stage==10&&e.outcome==2) }
     /// A real queue/control cancellation proves the request was fenced, not
     /// worker exit or rollback. Avoid synthesizing either downstream event.
@@ -98,16 +127,16 @@ impl CausalProgress {
             self.observations.iter().any(|e| e.stage == stage as i32) {
             return true;
         }
-        if stage == Checkpoint::TaskAuthorized {
-            if self.failed || self.cursor != 5 || self.has_tool_authority() { self.mark_lost(); return false; }
+        if stage == Checkpoint::TaskAuthorized && !self.cpu_approved {
+            if self.cpu || self.failed || self.order().get(self.cursor)!=Some(&Checkpoint::ModelEntered) || self.has_tool_authority() { self.mark_lost(); return false; }
             self.append(6,2,0); return true;
         }
-        if self.failed || ORDER.get(self.cursor) != Some(&stage) ||
+        if self.failed || self.order().get(self.cursor) != Some(&stage) ||
             (matches!(stage,Checkpoint::ModelEntered|Checkpoint::ModelReturned) && self.tool_phase!=0) {
             self.dropped = self.dropped.saturating_add(1);
             return false;
         }
-        let outcome = if matches!(stage, Checkpoint::WorkerEntered | Checkpoint::ModelEntered) { 1 } else { 2 };
+        let outcome = if matches!(stage, Checkpoint::WorkerEntered | Checkpoint::ModelEntered | Checkpoint::CpuEntered) { 1 } else { 2 };
         self.append(stage as i32, outcome, 0);
         self.cursor += 1;
         true
@@ -119,7 +148,7 @@ impl CausalProgress {
         self.model_failed_with(1);
     }
     pub fn model_failed_with(&mut self, code:i32) {
-        if self.failed || ORDER.get(self.cursor) != Some(&Checkpoint::ModelReturned) {
+        if self.failed || self.order().get(self.cursor) != Some(&Checkpoint::ModelReturned) {
             self.dropped = self.dropped.saturating_add(1);
             return;
         }
@@ -139,7 +168,7 @@ impl CausalProgress {
     }
     fn tool_checkpoint_at(&mut self,point:lu_core::agent_tool_loop::ToolDispatchCheckpoint,cursor:usize){
         use lu_core::agent_tool_loop::ToolDispatchCheckpoint::*;
-        if self.failed || self.cursor != cursor || !self.has_tool_authority() || self.observations.len()>=60 { self.mark_lost(); return; }
+        if self.cpu || self.failed || self.cursor != cursor || !self.has_tool_authority() || self.observations.len()>=60 { self.mark_lost(); return; }
         match (self.tool_phase,point) {
             (0,Entered)=>{self.append(14,1,0);self.tool_phase=1},
             (1,Returned)=>{self.append(15,1,0);self.tool_phase=2},
@@ -158,6 +187,11 @@ impl CausalProgress {
         self.failed = true;
     }
 
+    /// An actual native Result::Err was observed, but the specific cause is
+    /// unknown. Unlike a lost/interrupted trace, this is a terminal event.
+    pub fn native_failed(&mut self) {
+        if !self.terminal()&&!self.saved(){self.append(21,3,1);self.failed=true;}
+    }
     /// Generic failure/cancellation with no independently observed cause.
     /// Mark evidence incomplete; never infer worker termination or rollback.
     pub fn finish_incomplete(&mut self, cancelled: bool) {
@@ -185,6 +219,13 @@ impl NativeDiagnosticTrace {
         let (reference,started)=context.unwrap_or_else(||(crate::next_id(""),Instant::now()));
         let trace=CausalProgress::new(reference,started);
         let trace=if correlated{trace.awaiting_delivery()}else{trace};
+        let this=Self{trace:Mutex::new(trace),archive:host.perf01.archive(),correlated,inherited_prefix:false};
+        this.record(|_|{});this
+    }
+    pub fn cpu(host:&crate::DesktopState,context:Option<(String,Instant)>,approved:bool)->Self{
+        let correlated=context.is_some();
+        let (reference,started)=context.unwrap_or_else(||(crate::next_id(""),Instant::now()));
+        let trace=CausalProgress::new_cpu(reference,started,approved).awaiting_delivery();
         let this=Self{trace:Mutex::new(trace),archive:host.perf01.archive(),correlated,inherited_prefix:false};
         this.record(|_|{});this
     }
@@ -223,6 +264,7 @@ impl NativeDiagnosticTrace {
             }
         }else{self.lost()}
     }
+    pub fn native_error(&self,cancelled:bool){self.record(|t|if cancelled{t.observed_cancel()}else{t.native_failed()});}
     pub fn model_error(&self,error:&lu_core::supervised_tool_generation::NativeGenerationError)->&'static str{
         let (code,message)=native_failure(error);
         self.record(|t|t.model_failed_with(code));message
@@ -239,7 +281,7 @@ fn native_failure(error:&lu_core::supervised_tool_generation::NativeGenerationEr
         "inference_failed"=>(1,"The loaded model could not finish the inspection. Check the model and try again."),
         "journal_failed"=>(4,"Lu could not confirm a saved inspection record. Check the conversation and available storage."),
         "task_deadline"=>(8,"The inspection reached its time limit. Try a smaller request."),
-        "model_reply_rejected"|"json_regeneration_exhausted"|"required_observation_missing"|"tool_contract_rejected"|"inference_event_invalid"=>(10,"Lu could not verify the model's inspection response. Try a clearer request or another model."),
+        "model_reply_rejected"|"json_regeneration_exhausted"|"required_observation_missing"|"tool_contract_rejected"|"inference_event_invalid"|"tool_no_forward_progress"|"tool_step_limit"|"turn_state_rejected"|"token_loop"|"completion_missing"=>(10,"Lu could not verify the model's inspection response. Try a clearer request or another model."),
         _=>(1,"The inspection did not complete. Check the conversation before trying again."),
     }
 }
@@ -251,6 +293,41 @@ mod tests {
     }
     fn advance(t: &mut CausalProgress, stop: usize) {
         for stage in ORDER.iter().take(stop).skip(1) { assert!(t.observe(*stage)); }
+    }
+    #[test]
+    fn cp12ar2r1_cpu_paths_are_distinct_from_model_and_preserve_commit_order(){
+        use lu_core::diagnostic_localization::{localize_transactional_turn,EvidenceStrength};
+        for (approved,order) in [(false,CPU_ORDER),(true,CPU_APPROVED_ORDER)]{
+            let mut t=CausalProgress::new_cpu("0123456789abcdef0123456789abcdef".into(),Instant::now(),approved).awaiting_delivery();
+            for stage in order.iter().skip(2).take(order.len()-5){assert!(t.observe(*stage),"{stage:?}");}
+            assert!(t.saved());assert!(!t.terminal());assert_eq!(t.dropped(),0);
+            assert!(!t.observations().iter().any(|e|matches!(e.stage,8|9|14|15)));
+            let before=localize_transactional_turn(&crate::diagnostic_archive::wire_trace(&t)).unwrap();
+            assert_eq!(before.confirmed_until,"assistant_saved");
+            assert_ne!(before.evidence_strength,EvidenceStrength::Complete);
+            for stage in [Checkpoint::ReplyObserved,Checkpoint::StreamClosed,Checkpoint::AssistantRendered]{assert!(t.observe(stage));}
+            assert!(t.terminal());
+            assert_eq!(localize_transactional_turn(&crate::diagnostic_archive::wire_trace(&t)).unwrap().evidence_strength,EvidenceStrength::Complete);
+        }
+        let mut forged=CausalProgress::new_cpu("0123456789abcdef0123456789abcdef".into(),Instant::now(),false);
+        assert!(!forged.observe(Checkpoint::ModelEntered));
+        assert_eq!(forged.dropped(),1);
+    }
+    #[test]
+    fn cp12ar2r1_workspace_observed_errors_do_not_become_dropped_or_cancelled(){
+        use lu_core::diagnostic_localization::{localize_transactional_turn,EvidenceStrength};
+        use lu_core::supervised_tool_generation::NativeGenerationError;
+        let mut t=progress();advance(&mut t,6); // ModelEntered
+        let (code,_)=native_failure(&NativeGenerationError::ModelReplyStructure("json_regeneration_exhausted"));
+        assert_eq!(code,10);t.model_failed_with(code);t.native_failed();t.finish_incomplete(false);
+        assert_eq!(t.dropped(),0);assert!(t.terminal());
+        let result=localize_transactional_turn(&crate::diagnostic_archive::wire_trace(&t)).unwrap();
+        assert_eq!(result.failure_code,"protocol");assert_eq!(result.evidence_strength,EvidenceStrength::ObservedFailure);
+        let mut before=progress();advance(&mut before,5);before.native_failed();before.finish_incomplete(false);
+        let result=localize_transactional_turn(&crate::diagnostic_archive::wire_trace(&before)).unwrap();
+        assert_eq!(result.failure_code,"unknown");assert_eq!(result.first_unconfirmed,"native_turn_failed");assert_eq!(result.evidence_strength,EvidenceStrength::ObservedFailure);
+        let mut lost=progress();advance(&mut lost,6);lost.finish_incomplete(false);
+        assert_eq!(localize_transactional_turn(&crate::diagnostic_archive::wire_trace(&lost)).unwrap().evidence_strength,EvidenceStrength::InsufficientEvidence);
     }
     #[test]
     fn cp12ar2closeout_host_search_tool_is_observed_before_model_and_must_be_audited(){

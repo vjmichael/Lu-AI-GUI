@@ -34,8 +34,10 @@ use crate::{turn_authority::PersistedHumanTurn,causal_diagnostic::NativeDiagnost
 /// No model, ambient root reopening, implicit tool grant or permission replay.
 pub(crate) async fn cpu_search_workspace_for_chat(
     app:AppHandle,state:Arc<DesktopState>,session_id:String,
-    chat_id:String,prompt:String,literal:String,
+    chat_id:String,prompt:String,literal:String,diagnostic:Option<(String,std::time::Instant)>,
 )->Result<String,String>{
+    let trace=Arc::new(NativeDiagnosticTrace::cpu(&state,diagnostic,true));
+    let result=async {
     if !matches!(perf01_router::classify(&prompt,false,false),
         perf01_router::Route::ApprovedWorkspaceLiteral(ref q) if q==&literal){
         return Err("CPU workspace search requires explicit original human intent".into());
@@ -51,7 +53,9 @@ pub(crate) async fn cpu_search_workspace_for_chat(
     if initial_mismatch {
         return Err("Model session changed before workspace selection".into());
     }
+    trace.point(CausalCheckpoint::SessionReady);
     let Some(approved)=choose_read_workspace(&app,&state,&session_id,&chat_id,&prompt,false,false).await? else{
+        trace.decline();
         return Err("Workspace selection cancelled; no access granted".into())
     };
     let after=state.supervisor.status()
@@ -67,6 +71,7 @@ pub(crate) async fn cpu_search_workspace_for_chat(
         &session_id,&chat_id,&gid,generation_queue::TurnClass::Foreground,
         ||state.chats.append_user_with_turn_id(&chat_id,&gid,&prompt).map(|_|())
     )?;
+    trace.point(CausalCheckpoint::UserSaved);
     let cancellation=Cancellation::default();
     state.reader_generations.lock().map_err(|_|"CPU cancellation registry unavailable")?.insert(
         gid.clone(),ReaderRunControl{cancellation:cancellation.clone(),current_step:Arc::new(Mutex::new(None)),session_id:session_id.clone()});
@@ -74,9 +79,11 @@ pub(crate) async fn cpu_search_workspace_for_chat(
         chat_id:chat_id.clone(),generation_id:gid.clone(),phase:"queued",position
     });
     let host=Arc::clone(&state);
+    let trace=Arc::clone(&trace);
     tauri::async_runtime::spawn_blocking(move||{
       let answer=(||->Result<String,String>{
         ticket.wait_for_slot()?;
+        trace.point(CausalCheckpoint::WorkerEntered);
         if ticket.cancelled()||cancellation.is_cancelled(){return Err("Cancelled CPU workspace search".into())}
         approved.verify()?;
         let now=host.supervisor.status()
@@ -90,10 +97,16 @@ pub(crate) async fn cpu_search_workspace_for_chat(
         });
         let verifier=PersistedHumanTurn::queued_chat(&host.chats,&chat_id,&gid,&prompt);
         if !verifier.verify_user_turn(&chat_id,&gid){return Err("Original human request unavailable".into())}
+        trace.point(CausalCheckpoint::SavedAttested);
+        trace.point(CausalCheckpoint::TaskAuthorized);
+        trace.point(CausalCheckpoint::CpuEntered);
         let scan=approved.pinned_directory().and_then(|handle|handle.ok_or("Approved directory handle unavailable".into()))
             .and_then(|directory|lu_core::native_file_extra::search_approved_directory_cpu_cancellable(directory,&literal,
                 ||ticket.cancelled()||cancellation.is_cancelled()).map_err(|problem|problem.code));
         if ticket.cancelled()||cancellation.is_cancelled(){return Err("Cancelled CPU workspace search".into())}
+        // An actual scan refusal is not a completed CPU computation. Keep
+        // the human-visible refusal, but mark the trace as failed.
+        if scan.is_ok(){trace.point(CausalCheckpoint::CpuReturned);}else{trace.native_error(false);}
         let (answer,bytes,entries,complete,terminal)=match scan{
             Ok(report)=>{
                 let clean=|s:&str|{
@@ -136,18 +149,23 @@ pub(crate) async fn cpu_search_workspace_for_chat(
             host.chats.complete(&chat_id,&gid)?;
             Ok(())
         })?;
+        if terminal!="FAILED"{trace.saved_response(&host,&chat_id,&gid,&answer,false);}
         let _=host.perf01.record(perf01_telemetry::cpu_receipt(
             &chat_id,&gid,"APPROVED_WORKSPACE_LITERAL",began,
             loaded,bytes,entries,complete,terminal
         ));
         Ok(answer)
       })();
+      if answer.is_err(){trace.native_error(ticket.cancelled()||cancellation.is_cancelled());}
       let phase=match &answer{Ok(_)=>"completed",Err(e) if e.contains("Cancelled")=>"cancelled",Err(_)=>"failed"};
       if phase!="completed"{let _=host.chats.cancel(&chat_id,&gid);}
       let _=host.reader_generations.lock().map(|mut all|all.remove(&gid));
       let _=app.emit("lu-generation-finish",GenerationEvent{chat_id:chat_id.clone(),generation_id:gid,phase,position:0});
       answer
     }).await.map_err(|_|"Native CPU workspace scan interrupted")?
+    }.await;
+    if result.is_err(){trace.native_error(false);}
+    result
 }
 
 #[derive(Debug,Clone,PartialEq,Eq)]
@@ -661,7 +679,8 @@ async fn ask_scoped_read_for_chat(
     app:AppHandle,state:Arc<DesktopState>,session_id:String,
     chat_id:String,prompt:String,git_mode:bool,diagnostic:Option<(String,std::time::Instant)>,
 )->Result<Option<String>,String>{
-    let trace=NativeDiagnosticTrace::correlated(&state,diagnostic);
+    let trace=Arc::new(NativeDiagnosticTrace::correlated(&state,diagnostic));
+    let result=async {
     if prompt.trim().is_empty()||prompt.len()>8*1024 {
         return Err("Workspace question must be 1–8192 bytes".into())
     }
@@ -701,6 +720,7 @@ async fn ask_scoped_read_for_chat(
     let host=Arc::clone(&state);
     let event_app=app.clone();
     let gid=generation_id.clone();
+    let trace=Arc::clone(&trace);
     let outcome=tauri::async_runtime::spawn_blocking(move||{
         let answer=(||->Result<String,String>{
             ticket.wait_for_slot()?;
@@ -708,7 +728,7 @@ async fn ask_scoped_read_for_chat(
             execute_approved_read(event_app.clone(),Arc::clone(&host),session_id,chat_id.clone(),gid.clone(),prompt,
                 approved_workspace,git_executable,&ticket,&cancellation,&current_step,None,&trace)
         })();
-        if answer.is_err(){trace.incomplete(ticket.cancelled()||cancellation.is_cancelled());}
+        if answer.is_err(){trace.native_error(ticket.cancelled()||cancellation.is_cancelled());}
         if answer.as_ref().err().is_some_and(|e|e.contains("Cancelled")){
             let _=host.chats.cancel(&chat_id,&gid);
         }
@@ -725,6 +745,9 @@ async fn ask_scoped_read_for_chat(
         answer
     }).await.map_err(|_|"Workspace generation worker unavailable")?;
     outcome.map(Some)
+    }.await;
+    if result.is_err(){trace.native_error(false);}
+    result
 }
 
 /// The normal Send negotiation owns an existing queue ticket and human event.
@@ -735,6 +758,7 @@ pub(crate) fn execute_negotiated_read(app:&AppHandle,state:&Arc<DesktopState>,se
     prompt:&str,ticket:&generation_queue::Ticket,cancel:&Cancellation,current_step:&Arc<Mutex<Option<String>>>,
     choice:&crate::capability_negotiation::ReadCandidate,parent:Option<crate::causal_diagnostic::CausalProgress>)->Result<String,String>{
     let trace=NativeDiagnosticTrace::from_parent(state,parent);
+    let result=(||->Result<String,String>{
     if ticket.cancelled()||cancel.is_cancelled(){return Err("Cancelled capability selection".into())}
     let verifier=PersistedHumanTurn::current_chat(&state.chats,chat,gid,prompt);
     if !verifier.verify_user_turn(chat,gid){return Err("Original human turn changed".into())}
@@ -743,8 +767,9 @@ pub(crate) fn execute_negotiated_read(app:&AppHandle,state:&Arc<DesktopState>,se
     if !verifier.verify_user_turn(chat,gid){return Err("Original human turn changed".into())}
     let git=if choice.git{Some(trusted_git_executable()?)}else{None};
     if !is_real_directory(&approved.root){return Err("Selected workspace is not a regular directory".into())}
-    let result=execute_approved_read(app.clone(),Arc::clone(state),session.into(),chat.into(),gid.into(),prompt.into(),approved,git,ticket,cancel,current_step,Some(choice),&trace);
-    if result.is_err(){trace.incomplete(ticket.cancelled()||cancel.is_cancelled());}result
+    execute_approved_read(app.clone(),Arc::clone(state),session.into(),chat.into(),gid.into(),prompt.into(),approved,git,ticket,cancel,current_step,Some(choice),&trace)
+    })();
+    if result.is_err(){trace.native_error(ticket.cancelled()||cancel.is_cancelled());}result
 }
 #[allow(clippy::too_many_arguments)]
 fn execute_approved_read(event_app:AppHandle,host:Arc<DesktopState>,session_id:String,chat_id:String,gid:String,prompt:String,
@@ -896,13 +921,15 @@ fn execute_approved_read(event_app:AppHandle,host:Arc<DesktopState>,session_id:S
             )).map_err(|e|{let message=trace.model_error(&e);if planned&&!cancellation.is_cancelled()&&!ticket.cancelled(){
                 "The requested inspection or comparison could not be completed. I cannot confirm the result for every requested file.".into()
             }else{message.to_owned()}})?;
-            trace.point(CausalCheckpoint::ModelReturned);
             if cancellation.is_cancelled()||ticket.cancelled(){
+                trace.native_error(true);
                 return Err("Cancelled workspace generation".into())
             }
             if result.tool_calls==0 {
+                trace.record(|t|t.model_failed_with(10));
                 return Err("Workspace model did not use an approved inspection tool".into())
             }
+            trace.point(CausalCheckpoint::ModelReturned);
             ticket.commit_completed(&session_id,||{
                 if !verifier.verify_user_turn(&chat_id,&gid){return Err("Workspace original human request changed before completion".into())}
                 host.chats.append_progress(&chat_id,&gid,&result.answer)?;

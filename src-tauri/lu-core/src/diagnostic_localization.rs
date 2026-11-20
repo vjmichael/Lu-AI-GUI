@@ -149,7 +149,7 @@ fn confirms_stage(event: &proto::DiagnosticEvent) -> bool {
     // Entered proves arrival at a stage, not successful completion of the
     // enclosing operation. Durability/authority/return/render stages require
     // a separately observed successful outcome.
-    event.outcome == 2 || (event.outcome == 1 && matches!(event.stage, 1 | 3 | 4 | 7 | 8 | 14 | 16))
+    event.outcome == 2 || (event.outcome == 1 && matches!(event.stage, 1 | 3 | 4 | 7 | 8 | 14 | 16 | 23))
 }
 
 fn stage_detail(stage: i32) -> StageSpec {
@@ -190,12 +190,17 @@ fn stage_detail(stage: i32) -> StageSpec {
             region: "worker_recovery",
             probe: "check_worker_exit_and_journal",
         },
-        20 | 21 => StageSpec {
+        20 => StageSpec {
             value: stage,
             label: "native_turn_rejected",
             region: "host_authority",
             probe: "inspect_host_denial_class",
         },
+        21 => StageSpec { value:stage,label:"native_turn_failed",region:"native_host",probe:"inspect_native_command_receipt" },
+        22 => StageSpec { value:stage,label:"cpu_route_selected",region:"native_host",probe:"inspect_native_command_receipt" },
+        23 => StageSpec { value:stage,label:"cpu_execution_entered",region:"native_host",probe:"inspect_native_command_receipt" },
+        25 => StageSpec { value:stage,label:"cpu_approved_route_selected",region:"native_host",probe:"inspect_native_command_receipt" },
+        24 => StageSpec { value:stage,label:"cpu_execution_returned",region:"native_host",probe:"verify_native_result" },
         _ => StageSpec {
             value: stage,
             label: "unknown",
@@ -248,9 +253,20 @@ pub fn localize_normal_turn(
 pub fn localize_transactional_turn(
     trace: &proto::DiagnosticTrace,
 ) -> Result<DiagnosticFinding, DiagnosticWireError> {
-    let path: Vec<_> = [4, 19, 2, 7, 5, 8, 9, 12, 10, 11, 13]
-        .into_iter().map(stage_detail).collect();
-    localize_path(trace, &path)
+    let attempt=trace.events.last().map(|event|event.attempt).unwrap_or(1);
+    let pre_read=trace.events.iter().any(|e|e.attempt==attempt&&e.stage==22);
+    let approved=trace.events.iter().any(|e|e.attempt==attempt&&e.stage==25);
+    let cpu=pre_read||approved;
+    let order: &[i32]=if approved{&[4,25,19,2,7,5,6,23,24,12,10,11,13]}else if pre_read{&[4,22,19,7,23,24,2,5,12,10,11,13]}else{&[4, 19, 2, 7, 5, 8, 9, 12, 10, 11, 13]};
+    let path:Vec<_>=order.iter().copied().map(stage_detail).collect();
+    let mut finding=localize_path(trace,&path)?;
+    // Mixed model/CPU markers cannot prove either execution path.
+    if (pre_read&&approved)||trace.events.iter().any(|e|e.attempt==attempt && if cpu{
+        matches!(e.stage,8|9|14|15)||(!approved&&e.stage==6)
+    }else{matches!(e.stage,23|24)}){
+        finding.evidence_strength=EvidenceStrength::InsufficientEvidence;
+    }
+    Ok(finding)
 }
 
 fn localize_path(

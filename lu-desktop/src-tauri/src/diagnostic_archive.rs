@@ -69,42 +69,62 @@ impl DiagnosticArchive{
         ).map_err(|_|"Diagnostic storage unavailable")?;
         Ok(Self{conn:Mutex::new(conn)})
     }
-    /// Best-effort write outside the scheduler/conversation transaction.
-    /// Never invoked from the per-token callback.
+    /// Bounded checkpoint publication outside scheduler/conversation transactions.
+    /// No per-token writes. Retry only SQLite busy/locked or the local mutex;
+    /// release the connection between attempts, preserving zero-wait readers.
     pub fn persist(&self,source:&CausalProgress)->bool{
         let trace=wire_trace(source);
         let Ok(body)=encode_diagnostic_trace(&trace) else{return false};
-        let Ok(mut conn)=self.conn.try_lock() else{return false};
-        let Ok(tx)=conn.transaction() else{return false};
-        let prior=tx.query_row("SELECT body,state FROM dx_trace WHERE trace_ref=?1",
-            [&trace.trace_ref],|r|Ok((r.get::<_,Vec<u8>>(0)?,r.get::<_,String>(1)?))).optional();
         let state=if source.terminal(){"sealed"}else{"live"};
-        match prior{
-            Ok(Some((previous,old_state)))=>{
-                if previous==body && old_state==state{return true}
-                if old_state!="live"{return false}
-                let Ok(old)=decode_diagnostic_trace(&previous) else{return false};
-                if old.trace_ref!=trace.trace_ref||old.dropped_events>trace.dropped_events||
-                    !trace.events.starts_with(&old.events){return false}
-                if tx.execute("UPDATE dx_trace SET body=?1,state=?2 WHERE trace_ref=?3",
-                    params![body,state,trace.trace_ref]).is_err(){return false}
-            },
-            Ok(None)=>{
-                if tx.execute("INSERT INTO dx_trace(trace_ref,body,state) VALUES(?1,?2,?3)",
-                    params![trace.trace_ref,body,state]).is_err(){return false}
-            },
-            Err(_)=>return false,
+        let started=std::time::Instant::now();
+        let budget=Duration::from_millis(250);
+        loop {
+            match self.conn.try_lock(){
+                Ok(mut conn)=>match Self::persist_once(&mut conn,&trace,&body,state){
+                    Ok(accepted)=>return accepted,
+                    Err(rusqlite::Error::SqliteFailure(err,_)) if matches!(err.code,
+                        rusqlite::ErrorCode::DatabaseBusy|rusqlite::ErrorCode::DatabaseLocked)=>{},
+                    Err(_)=>return false,
+                },
+                Err(std::sync::TryLockError::WouldBlock)=>{},
+                Err(std::sync::TryLockError::Poisoned(_))=>return false,
+            }
+            let remaining=budget.saturating_sub(started.elapsed());
+            if remaining.is_zero(){return false}
+            std::thread::sleep(Duration::from_millis(5).min(remaining));
         }
-        if tx.execute("DELETE FROM dx_trace WHERE ordinal NOT IN
-            (SELECT ordinal FROM dx_trace ORDER BY ordinal DESC LIMIT ?1)",
-            [MAX_TRACES as i64]).is_err(){return false}
-        tx.commit().is_ok()
     }
-    // Active, explicitly approved checks may briefly wait for an independent
-    // read-only journal observer. Keep passive trace writes nonblocking:
-    // the mutex excludes them while the bounded timeout is active, and reset
-    // it on every result path before releasing the connection. Sustained
-    // contention remains a failure, never a fabricated completed report.
+    fn persist_once(conn:&mut Connection,trace:&proto::DiagnosticTrace,body:&[u8],state:&str)->rusqlite::Result<bool>{
+        // Acquire the writer reservation before reading the prior version.
+        // A failed commit rolls back before the next attempt, so every retry
+        // rechecks monotonicity/recovery/sealing against the durable row.
+        let tx=conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        let prior=tx.query_row("SELECT body,state FROM dx_trace WHERE trace_ref=?1",
+            [&trace.trace_ref],|r|Ok((r.get::<_,Vec<u8>>(0)?,r.get::<_,String>(1)?))).optional()?;
+        match prior{
+            Some((previous,old_state))=>{
+                if previous==body && old_state==state{return Ok(true)}
+                if old_state!="live"{return Ok(false)}
+                let Ok(old)=decode_diagnostic_trace(&previous) else{return Ok(false)};
+                if old.trace_ref!=trace.trace_ref||old.dropped_events>trace.dropped_events||
+                    !trace.events.starts_with(&old.events){return Ok(false)}
+                if tx.execute("UPDATE dx_trace SET body=?1,state=?2 WHERE trace_ref=?3",
+                    params![body,state,trace.trace_ref])?!=1{return Ok(false)}
+            },
+            None=>{
+                if tx.execute("INSERT INTO dx_trace(trace_ref,body,state) VALUES(?1,?2,?3)",
+                    params![trace.trace_ref,body,state])?!=1{return Ok(false)}
+            },
+        }
+        tx.execute("DELETE FROM dx_trace WHERE ordinal NOT IN
+            (SELECT ordinal FROM dx_trace ORDER BY ordinal DESC LIMIT ?1)",
+            [MAX_TRACES as i64])?;
+        tx.commit()?;
+        Ok(true)
+    }
+    // Active, explicitly approved checks retain their existing brief wait.
+    // Passive checkpoint retry uses zero-wait transactions and releases the
+    // mutex between attempts; sustained contention is still a failure.
     fn with_active_check<T>(&self,action:impl FnOnce(&Connection)->Result<T,String>)->Result<T,String>{
         let conn=self.conn.lock().map_err(|_|"Check report unavailable")?;
         conn.busy_timeout(Duration::from_millis(250)).map_err(|_|"Check report unavailable")?;
@@ -292,6 +312,48 @@ mod tests{
         let r=archive.report().unwrap();
         assert_eq!(r.findings.len(),MAX_TRACES-1);
         assert_eq!(r.unavailable_records,1);
+    }
+    #[test]
+    fn cp12ar2r1_checkpoint_retries_read_contention_without_losing_prefix(){
+        use rusqlite::OpenFlags;
+        use std::sync::mpsc;
+        let path=std::env::temp_dir().join(format!("lu-dx-contention-{}-{}.sqlite",std::process::id(),rand::random::<u64>()));
+        let archive=DiagnosticArchive::open(&path).unwrap();
+        let mut t=trace("0123456789abcdef0123456789abcdef");assert!(archive.persist(&t));
+        let reader=Connection::open_with_flags(&path,OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
+        reader.execute_batch("BEGIN").unwrap();
+        assert_eq!(reader.query_row("SELECT count(*) FROM dx_trace",[],|r|r.get::<_,u32>(0)).unwrap(),1);
+        assert!(t.observe(Checkpoint::SessionReady));
+        std::thread::scope(|scope|{
+            let (started_tx,started_rx)=mpsc::channel();let (done_tx,done_rx)=mpsc::channel();
+            let (archive,t)=(&archive,&t);
+            scope.spawn(move||{started_tx.send(()).unwrap();done_tx.send(archive.persist(t)).unwrap();});
+            started_rx.recv().unwrap();
+            let early=done_rx.recv_timeout(Duration::from_millis(40));
+            reader.execute_batch("COMMIT").unwrap();
+            assert!(matches!(early,Err(mpsc::RecvTimeoutError::Timeout)),"{early:?}");
+            assert!(done_rx.recv_timeout(Duration::from_secs(2)).unwrap());
+        });
+        let body:Vec<u8>=reader.query_row("SELECT body FROM dx_trace",[],|r|r.get(0)).unwrap();
+        assert_eq!(decode_diagnostic_trace(&body).unwrap(),wire_trace(&t));
+        assert_eq!(archive.conn.lock().unwrap().query_row("PRAGMA busy_timeout",[],|r|r.get::<_,u32>(0)).unwrap(),0);
+        drop(reader);drop(archive);std::fs::remove_file(path).unwrap();
+    }
+    #[test]
+    fn cp12ar2r1_sustained_contention_never_commits_a_false_completion(){
+        use rusqlite::OpenFlags;
+        let path=std::env::temp_dir().join(format!("lu-dx-blocked-{}-{}.sqlite",std::process::id(),rand::random::<u64>()));
+        let archive=DiagnosticArchive::open(&path).unwrap();let mut t=trace("0123456789abcdef0123456789abcdef");assert!(archive.persist(&t));
+        let original=wire_trace(&t);
+        let reader=Connection::open_with_flags(&path,OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();reader.execute_batch("BEGIN").unwrap();
+        assert_eq!(reader.query_row("SELECT count(*) FROM dx_trace",[],|r|r.get::<_,u32>(0)).unwrap(),1);
+        t.native_failed();let began=Instant::now();assert!(!archive.persist(&t));
+        assert!(began.elapsed()<Duration::from_secs(2));
+        reader.execute_batch("COMMIT").unwrap();
+        let body:Vec<u8>=reader.query_row("SELECT body FROM dx_trace",[],|r|r.get(0)).unwrap();assert_eq!(decode_diagnostic_trace(&body).unwrap(),original);
+        t.mark_lost();assert!(archive.persist(&t));
+        let r=archive.report().unwrap();assert_eq!(r.findings[0].finding.evidence_strength,lu_core::diagnostic_localization::EvidenceStrength::InsufficientEvidence);
+        drop(reader);drop(archive);std::fs::remove_file(path).unwrap();
     }
     #[test]
     fn cp11a_readonly_witness_does_not_interrupt_active_publication(){
