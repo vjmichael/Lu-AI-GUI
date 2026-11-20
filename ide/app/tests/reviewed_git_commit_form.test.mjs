@@ -65,3 +65,27 @@ test('reviewed commit receipt must match exact staged source, scope, parent and 
     assert.equal(matchesReviewedCommitReceipt(stage,{...receipt,[field]:value}),false,field);
   assert.equal(matchesReviewedCommitReceipt(stage,null),false);
 });
+
+test('WO9 installed one-use Git dialogs bind a full native title witness without WebView authority',()=>{
+  const host=readFileSync(new URL('../src-tauri/src/lib.rs',import.meta.url),'utf8');
+  const fixture=readFileSync(new URL('../fixtures/Test-Wo8NativeDesktopUI.ps1',import.meta.url),'utf8');
+  const stage=host.split('async fn ide_git_stage_reviewed(')[1].split('async fn ide_git_commit_reviewed(')[0];
+  const commit=host.split('async fn ide_git_commit_reviewed(')[1].split('/// WO9-A/B:')[0];
+  assert.ok(stage.includes('Lu IDE · One-file Git stage · SHA-256 {}'));
+  assert.ok(stage.includes('current.worktree_sha256'));
+  assert.ok(commit.includes('Sha256::digest(message.as_bytes())'));
+  assert.ok(commit.includes('Lu IDE · Confirm local Git commit · Message SHA-256 {}'));
+  assert.ok(stage.includes('.parent(&owner)'));
+  assert.ok(commit.includes('.parent(&owner)'));
+  assert.ok(stage.indexOf('if !allow')<stage.indexOf('registry.stage_reviewed_git_file'));
+  assert.ok(commit.indexOf('if !allow')<commit.indexOf('registry.commit_reviewed_git_file'));
+  assert.ok(fixture.includes('function Native-Wo9TitleWitness'));
+  assert.ok(fixture.includes("if ($expectedMessage -cnotmatch '^[0-9a-f]{64}$')"));
+  assert.ok(fixture.includes('SHA256]::HashData'));
+  assert.ok(fixture.includes('$_.Current.Name -ceq $exactOwnedTitle'));
+  assert.ok(fixture.includes('$name -cne $exactOwnedTitle'));
+  assert.ok(fixture.includes('IsOwnedConsentWindow($hwnd,$expectedOwnerHwnd'));
+  assert.ok(fixture.includes('Test-NativeConsentMessage $texts $expectedMessage'));
+  assert.ok(fixture.includes('nativeTitleWitnessMatches'));
+  assert.ok(fixture.includes('$matches.Count -ne 1'));
+});

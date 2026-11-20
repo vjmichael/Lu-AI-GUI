@@ -690,6 +690,24 @@ function Get-NativeConsentText($win,$desc) {
   }
   return $texts.ToArray()
 }
+# Exact native OS title witnesses: Windows TaskDialog body text is not
+# consistently exposed through UIA or WM_GETTEXT. This checks a complete
+# independently calculated digest in the genuine owned popup, never WebView text.
+function Native-Wo9TitleWitness([string]$titleFragment,[string]$expectedMessage) {
+  if ($titleFragment -ceq 'One-file Git stage') {
+    if ($expectedMessage -cnotmatch '^[0-9a-f]{64}$') { Deny 'wo9_stage_witness_invalid' }
+    return ('Lu IDE · One-file Git stage · SHA-256 '+$expectedMessage)
+  }
+  if ($titleFragment -ceq 'Confirm local Git commit') {
+    if ([string]::IsNullOrWhiteSpace($expectedMessage) -or $expectedMessage.Length -gt 1200) {
+      Deny 'wo9_commit_witness_invalid'
+    }
+    $messageSha256=[Convert]::ToHexString([Security.Cryptography.SHA256]::HashData(
+      [Text.Encoding]::UTF8.GetBytes($expectedMessage))).ToLowerInvariant()
+    return ('Lu IDE · Confirm local Git commit · Message SHA-256 '+$messageSha256)
+  }
+  Deny 'wo9_unexpected_native_witness_contract'
+}
 function Confirm-NativeOneUseDialog([string]$titleFragment,[string]$approvalCaption,[string]$expectedMessage='', [IntPtr]$expectedOwnerHwnd=[IntPtr]::Zero) {
   # Real WO9 Windows TaskDialog: exact caption exposes UIA Text/Pane, not Button.
   # Only interact with a separate OS popup owned by this installed process.
@@ -698,6 +716,11 @@ function Confirm-NativeOneUseDialog([string]$titleFragment,[string]$approvalCapt
   $ownedRoots=0; $titleMatches=0; $buttonMatches=0
   $matchedTextPane=0; $unusableNativePopup=0; $unusableBounds=0
   $unavailableNativeAction=0; $messageMatches=0; $messageMissing=0; $nativeMessageMatches=0; $ambiguousControls=0
+  $nativeTitleWitnessMatches=0
+  $exactOwnedTitle=''
+  if ($expectedOwnerHwnd -ne [IntPtr]::Zero) {
+    $exactOwnedTitle=Native-Wo9TitleWitness $titleFragment $expectedMessage
+  }
   while ((Get-Date) -lt $deadline) {
     if ($expectedOwnerHwnd -ne [IntPtr]::Zero) {
       # WO9: the installed popup was visible as a nested UIA Window, but
@@ -713,7 +736,7 @@ function Confirm-NativeOneUseDialog([string]$titleFragment,[string]$approvalCapt
         } catch {}
       }
       $roots=@($roots | Where-Object {
-        try {$_.Current.Name -ceq ('Lu IDE · '+$titleFragment)} catch {$false}
+        try {$_.Current.Name -ceq $exactOwnedTitle} catch {$false}
       })
       if ($roots.Count -ne 1) {Start-Sleep -Milliseconds 350; continue}
     } else {
@@ -733,7 +756,7 @@ function Confirm-NativeOneUseDialog([string]$titleFragment,[string]$approvalCapt
         $hwnd=[IntPtr]::new([int64]$win.Current.NativeWindowHandle)
         if ($expectedOwnerHwnd -ne [IntPtr]::Zero) {
           if (![P04NativeWebViewWindows]::IsOwnedConsentWindow($hwnd,$expectedOwnerHwnd,[uint32]$proc.Id) -or
-              $name -cne ('Lu IDE · '+$titleFragment)) {
+              $name -cne $exactOwnedTitle) {
             $unusableNativePopup++; continue
           }
         } elseif ($hwnd -eq [IntPtr]::Zero -or $hwnd -eq $proc.MainWindowHandle) {
@@ -753,6 +776,15 @@ function Confirm-NativeOneUseDialog([string]$titleFragment,[string]$approvalCapt
             $nativeTexts=@([P04NativeWebViewWindows]::OwnedConsentChildText($hwnd,$expectedOwnerHwnd,[uint32]$proc.Id))
             $matched=Test-NativeConsentMessage $nativeTexts $expectedMessage
             if ($matched) {$nativeMessageMatches++}
+          }
+          # A native title bearing the full exact digest can witness this
+          # approval even if TaskDialog's body cannot be read by UIA.
+          # The owner, process, exact title and visible approval control
+          # are still independently verified; no partial hash is accepted.
+          if (!$matched -and $expectedOwnerHwnd -ne [IntPtr]::Zero -and
+              $name -ceq $exactOwnedTitle) {
+            $matched=$true
+            $nativeTitleWitnessMatches++
           }
           # Non-hash prose can be split over UIA nodes in legacy dialogs;
           # preserve the original visible-text path without joining a SHA.
@@ -843,7 +875,9 @@ function Confirm-NativeOneUseDialog([string]$titleFragment,[string]$approvalCapt
     ';unusable_bounds_'+$unusableBounds+
     ';native_action_unavailable_'+$unavailableNativeAction+
     ';message_matches_'+$messageMatches+';message_missing_'+$messageMissing+
-    ';native_message_matches_'+$nativeMessageMatches+';ambiguous_controls_'+$ambiguousControls)
+    ';native_message_matches_'+$nativeMessageMatches+
+    ';native_title_witness_matches_'+$nativeTitleWitnessMatches+
+    ';ambiguous_controls_'+$ambiguousControls)
   Deny 'real_native_consent_dialog_not_observed'
 }
 try {

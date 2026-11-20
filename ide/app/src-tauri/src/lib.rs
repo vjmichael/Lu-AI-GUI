@@ -760,7 +760,10 @@ async fn ide_git_stage_reviewed(
         let allow = app.dialog().message(format!(
             "Stage only this reviewed file?\n{}\nSHA-256 {}\nNo hooks, Git CLI, or remote operations.",
             current.relative_path, current.worktree_sha256
-        )).title("Lu IDE · One-file Git stage")
+        )).title(format!(
+            "Lu IDE · One-file Git stage · SHA-256 {}",
+            current.worktree_sha256,
+        ))
           .parent(&owner)
           .buttons(MessageDialogButtons::OkCancelCustom(
               "Stage reviewed bytes".into(), "Cancel".into())).blocking_show();
@@ -778,15 +781,20 @@ async fn ide_git_commit_reviewed(
     author_name: String,
     author_email: String,
 ) -> Result<lu_ide_workspace::reviewed_git::ReviewedCommitReceipt, String> {
+    use sha2::Digest;
     use tauri_plugin_dialog::MessageDialogButtons;
     let registry = Arc::clone(state.inner());
     tauri::async_runtime::spawn_blocking(move || {
         let owner = app.get_webview_window("main")
             .ok_or_else(|| "WO9_GIT_COMMIT_OWNER_UNAVAILABLE".to_owned())?;
+        let message_sha256 = format!("{:x}", sha2::Sha256::digest(message.as_bytes()));
         let allow = app.dialog().message(format!(
             "Create one local Git commit?\nFile: {}\nStaged SHA-256: {}\nMessage: {}\nNo Git hooks or push.",
             stage.relative_path, stage.source_sha256, message
-        )).title("Lu IDE · Confirm local Git commit")
+        )).title(format!(
+            "Lu IDE · Confirm local Git commit · Message SHA-256 {}",
+            message_sha256,
+        ))
           .parent(&owner)
           .buttons(MessageDialogButtons::OkCancelCustom(
               "Commit exact staged file".into(), "Cancel".into())).blocking_show();
