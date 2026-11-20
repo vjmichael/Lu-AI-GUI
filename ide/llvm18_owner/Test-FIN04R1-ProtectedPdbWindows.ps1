@@ -74,6 +74,10 @@ $exe=(Resolve-Path -LiteralPath $exe).Path
 AssertNative 'real_AppContainer_Job_PDB_owner_continue_restart_failed' {
   & $exe --project-debug-protected-pdb
 }
+# Independent protected reader cancellation and durable original Job cleanup.
+AssertNative 'real_AppContainer_Job_protected_PDB_cancel_reap_restart_failed' {
+  & $exe --project-debug-protected-pdb-cancel
+}
 $hash=(Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash.ToLowerInvariant()
 New-Item -Path $EvidenceDirectory -ItemType Directory -Force | Out-Null
 $result=[ordered]@{
@@ -87,6 +91,8 @@ $result=[ordered]@{
   separateProtectedPePdbReaderPassed=$true
   originalOwnerContinuePassed=$true
   originalKernelJobRestartAuditPassed=$true
+  protectedPdbCancellationJobReapingAndRestartPassed=$true
+  abnormalWorkerDeathAfterProtectedPdbAccepted=$false
   postCommandProductionStepAndBreakpointPassed=$false
   productionOneUseControlsAccepted=$false
   physicalInstalledHumanAcceptancePassed=$false

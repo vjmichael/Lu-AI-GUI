@@ -265,7 +265,6 @@ mod protected {
             && (verify_owner_event
                 || verify_independent_pdb
                 || crash_owner
-                || cancel_project
                 || ci_control.is_some())
         {
             return Err(
@@ -1160,6 +1159,10 @@ mod protected {
         #[cfg(windows)]
         if args.as_slice() == ["--project-debug-protected-pdb"] {
             return run_windows_project_debug(false, true, true, false, false, false, None, true);
+        }
+        #[cfg(windows)]
+        if args.as_slice() == ["--project-debug-protected-pdb-cancel"] {
+            return run_windows_project_debug(true, true, true, false, false, false, None, true);
         }
         #[cfg(windows)]
         if args.as_slice() == ["--project-debug-cancel"] {

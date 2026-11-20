@@ -54,6 +54,19 @@ if ($pin.schema -ne 'lu.ide.fin04.first-party-lldb-owner.v1' -or
 }
 $actual=(Get-FileHash -LiteralPath (Join-Path $bundle 'bin/lldb-dap.exe') -Algorithm SHA256).Hash
 if ($actual -ine $pin.lldbDapExeSha256){Deny 'installed_first_party_LLDB_mismatch'}
+$progress=Join-Path $bundle 'provenance/ProgressEvent.h'
+if (!(Test-Path -LiteralPath $progress -PathType Leaf)){
+  Deny 'installed_pinned_LLVM_chrono_header_missing'
+}
+if ($pin.patchedProgressEventHeaderSha256 -notmatch '^[0-9a-fA-F]{64}$' -or
+    (Get-FileHash -LiteralPath $progress -Algorithm SHA256).Hash -ine $pin.patchedProgressEventHeaderSha256){
+  Deny 'installed_LLVM_chrono_header_provenance_changed'
+}
+$progressText=Get-Content -LiteralPath $progress -Raw
+if (!$progressText.Contains('#include <chrono>') -or
+    !$progressText.Contains('std::chrono::system_clock::now()')){
+  Deny 'installed_pinned_LLVM_chrono_fix_absent'
+}
 $profile=[IO.Path]::GetFullPath($ProfileDirectory)
 $journal=Join-Path $profile 'debug-fixture-receipts.jsonl'
 if (!(Test-Path -LiteralPath $journal -PathType Leaf)){Deny 'original_debug_journal_absent'}
@@ -106,6 +119,7 @@ if ($owners.Count -lt 1){Deny 'original_first_party_owner_receipt_missing'}
 if (Test-Path -LiteralPath (Join-Path $profile 'fin04-unsafe-execution-authority')){
   Deny 'unexpected_executable_authority'
 }
+$originalActionHash=(Get-FileHash -LiteralPath $new[0].FullName -Algorithm SHA256).Hash
 $restarted=$false
 if ($RequireRestart -or $Scenario -eq 'RestartNoReplay'){
   Write-Host 'Close the real Lu IDE and manually relaunch the SAME installed executable.'
@@ -122,6 +136,9 @@ if ($RequireRestart -or $Scenario -eq 'RestartNoReplay'){
     Deny 'restarted_installed_binary_changed'
   }
   $newHash=(Get-FileHash -LiteralPath $new[0].FullName -Algorithm SHA256).Hash
+  if ($newHash -ine $originalActionHash){
+    Deny 'restart_mutated_original_one_use_action_receipts'
+  }
   if (@(Get-ChildItem -LiteralPath $profile -Filter 'lu-debug-action-*.ndjson' -File).Count -ne ($before.Count+1)){
     Deny 'restart_replayed_or_recreated_an_action'
   }
@@ -136,7 +153,7 @@ $record=[ordered]@{
   bundleLldbSha256=$actual.ToLowerInvariant()
   originalDebugJournalSha256=$originalJournalHash.ToLowerInvariant()
   originalActionId=$identity
-  originalActionFileSha256=(Get-FileHash -LiteralPath $new[0].FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+  originalActionFileSha256=$originalActionHash.ToLowerInvariant()
   originalOwnerReceiptCount=$owners.Count
   scenario=$Scenario
   terminalActionPhase=$end
