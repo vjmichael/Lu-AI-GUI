@@ -53,6 +53,23 @@ impl ArchiveReport {
         }} s
     }
 
+    /// Only fixed stage/count aggregates from validated archive findings.
+    pub fn exchange_stages(&self)->crate::dx_ipc::stage::StageEvidence {
+        use crate::dx_ipc::stage::{StageEvidence,StageCount,stage_id};
+        use lu_core::diagnostic_localization::EvidenceStrength::*;
+        let mut counts=[(0u32,0u32);27];
+        for f in &self.findings {
+            let i=stage_id(f.finding.first_unconfirmed);
+            match f.finding.evidence_strength {
+                ObservedFailure=>counts[i].0+=1,
+                BoundedToNextStage=>counts[i].1+=1,
+                _=>{}, // never localize uncertain, conflicting, live or recovered evidence
+            }
+        }
+        StageEvidence{stages:counts.into_iter().enumerate().filter_map(|(stage,(observed,bounded))|
+            (observed!=0||bounded!=0).then_some(StageCount{stage:stage as u32,observed,bounded})).collect()}
+    }
+
     pub fn with_scheduled_runs(mut self,summary:Result<lu_core::native_background_scheduler::ScheduledDiagnosticSummary,lu_core::native_background_scheduler::SchedulerError>)->Self {
         self.scheduled_runs_unavailable=summary.is_err();self.scheduled_runs=summary.ok();self
     }
@@ -290,6 +307,25 @@ mod tests{
         assert!(local.contains("activeCheck"));
         let payload=extended.exchange_summary();
         assert_eq!(serde_json::to_value(payload).unwrap(),serde_json::json!({"complete":0,"observedFailure":1,"bounded":0,"incomplete":1,"unavailable":1}));
+    }
+    #[test]
+    fn cp12br5_stage_projection_from_real_archive_localizer(){
+        let archive=DiagnosticArchive::open(Path::new(":memory:")).unwrap();
+        let mut refused=trace("fedcba9876543210fedcba9876543210");refused.human_declined();assert!(archive.persist(&refused));
+        let mut failed=trace("11111111111111111111111111111111");
+        for stage in [Checkpoint::SessionReady,Checkpoint::UserSaved,Checkpoint::WorkerEntered,Checkpoint::SavedAttested,Checkpoint::ModelEntered]{assert!(failed.observe(stage));}
+        failed.model_failed();assert!(archive.persist(&failed));
+        let live=trace("0123456789abcdef0123456789abcdef");assert!(archive.persist(&live));
+        let corrupt=trace("22222222222222222222222222222222");assert!(archive.persist(&corrupt));
+        archive.conn.lock().unwrap().execute("UPDATE dx_trace SET body=x'FF' WHERE trace_ref=?1",["22222222222222222222222222222222"]).unwrap();
+        let mut report=archive.report().unwrap();report.findings[0].explanation="PRIVATE-CANARY";
+        let summary=report.exchange_summary();let stages=report.exchange_stages();
+        assert_eq!(summary.observed_failure,2);assert_eq!(summary.incomplete,1);assert_eq!(summary.unavailable,1);
+        assert_eq!(stages.stages.iter().map(|r|(r.stage,r.observed,r.bounded)).collect::<Vec<_>>(),vec![(9,1,0),(20,1,0)]);
+        assert_eq!(stages.expected(&summary),Some(101));
+        let value=serde_json::to_string(&stages).unwrap();assert!(!value.contains("PRIVATE-CANARY"));assert!(!value.contains("trace"));assert!(!value.contains("failureCode"));
+        // Missing records never disappear when localizing particular stages.
+        assert!(stages.valid(&summary));
     }
     #[test]
     fn recovery_never_promotes_open_trace_and_rejects_stale_write(){

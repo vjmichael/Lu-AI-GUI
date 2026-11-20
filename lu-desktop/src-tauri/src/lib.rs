@@ -2221,6 +2221,45 @@ fn lu_dx_stop_review(caller:tauri::WebviewWindow,state:State<'_,Arc<DesktopState
     if !matches!(caller.label(),"main"|"settings"){return false}
     state.diagnostic_review.stop()
 }
+/// CP-12B-R5: separately consented stage review; no renderer evidence.
+#[tauri::command]
+async fn lu_dx_stage_share(app:AppHandle,caller:tauri::WebviewWindow,state:State<'_,Arc<DesktopState>>)->Result<Option<String>,String>{
+    if !matches!(caller.label(),"main"|"settings"){return Ok(None)}
+    if !dx_ipc::review_supported(){return Err("Stage review is unavailable on this platform.".into())}
+    let owner=Arc::clone(state.inner());let notify=app.clone();
+    let result=tauri::async_runtime::spawn_blocking(move||{
+        let review=owner.diagnostic_review.begin()?;
+        let snapshot=dx_review::ready(&owner)?;
+        if owner.diagnostic_exchange.active(){return Err("Stop the current invitation first.".into())}
+        if !app.dialog().message("Share a one-time stage review with another Lu on this computer? Your loaded model will review up to 64 recent records using only outcome counts and counts of observed stops or failures and unconfirmed steps at named checkpoints. No individual traces, timings, conversations, files, model identities or tool access. A review can take up to 35 seconds; the invitation expires after two minutes or one use. No repairs are performed.")
+        .title("Lu — Review and share stages").buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom("Review and share".into(),"Cancel".into())).blocking_show(){return Ok(None)}
+        if review.stopped(){return Err("Review stopped.".into())}
+        let archive=owner.perf01.archive().ok_or("Local diagnostics unavailable")?;
+        let report=archive.report()?;
+        let finding=dx_review::run_stages(&owner,&review,&snapshot,report.exchange_summary(),report.exchange_stages())?;
+        review.publish(||owner.diagnostic_exchange.start_stage_review(finding).map(Some))
+    }).await.map_err(|_|"Stage review did not finish");
+    let _=notify.emit("lu-model-catalog-changed",());result?
+}
+#[tauri::command]
+async fn lu_dx_stage_receive(app:AppHandle,caller:tauri::WebviewWindow,state:State<'_,Arc<DesktopState>>,code:String)->Result<Option<dx_ipc::stage::ReviewedStages>,String>{
+    if !matches!(caller.label(),"main"|"settings"){return Ok(None)}
+    if !dx_ipc::review_supported(){return Err("Stage review is unavailable on this platform.".into())}
+    if code.len()!=101||!code.starts_with("lu3-"){return Err("Invalid stage review invitation.".into())}
+    let owner=Arc::clone(state.inner());let notify=app.clone();
+    let result=tauri::async_runtime::spawn_blocking(move||{
+        let review=owner.diagnostic_review.begin()?;
+        let snapshot=dx_review::ready(&owner)?;
+        if !app.dialog().message("Accept a one-time stage review? Your loaded model will independently classify the same bounded outcome and checkpoint counts. It will not see the other model's answer. No individual traces, timings, conversations, files, tools or repairs are authorized. The invitation is consumed on receipt, even if this review fails. A review can take up to 35 seconds.")
+        .title("Lu — Review received stages").buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom("Receive and review".into(),"Cancel".into())).blocking_show(){return Ok(None)}
+        if review.stopped(){return Err("Review stopped.".into())}
+        let peer=dx_ipc::receive_stage_review_cancellable(&code,review.stop_signal())?;
+        let local=dx_review::run_stages(&owner,&review,&snapshot,peer.summary.clone(),peer.evidence.clone())?;
+        if local.verdict!=peer.verdict{return Err("The stage findings do not agree.".into())}
+        review.publish(||Ok(Some(local)))
+    }).await.map_err(|_|"Stage review did not finish");
+    let _=notify.emit("lu-model-catalog-changed",());result?
+}
 /// CP-11A: one fixed local health-check suite, always fresh native consent.
 /// No parameters, model registration, shell, user file access or network.
 #[tauri::command]
@@ -10352,6 +10391,7 @@ pub fn run() {
             lu_cp01_diagnostic_report,
             lu_dx_share, lu_dx_receive, lu_dx_share_active, lu_dx_stop_share, lu_dx_supported,
             lu_dx_review_supported, lu_dx_review_share, lu_dx_review_receive, lu_dx_stop_review,
+            lu_dx_stage_share, lu_dx_stage_receive,
             lu_run_local_checks,
             lu_run_model_checks,
             lu_local_check_status,

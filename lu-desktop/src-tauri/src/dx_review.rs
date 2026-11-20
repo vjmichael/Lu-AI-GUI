@@ -1,5 +1,4 @@
-//! CP-12B-R3: independent approved model classifications of one count-only
-//! snapshot. No chat history, general tool router, or model load.
+//! CP-12B: independent approved model classifications of bounded snapshots. No chat history, general tool router, or model load.
 use crate::{dx_ipc::{ReviewedSummary, Summary}, DesktopState};
 use lu_core::{inference_bridge::BridgeError,inference_host::EnginePhase,inference_supervisor::SupervisorStatus,inference_wire::decode_frame,wire::proto};
 use std::{sync::atomic::{AtomicBool,Ordering},time::{Duration,Instant}};
@@ -21,6 +20,15 @@ pub(crate) fn ready(owner:&DesktopState)->Result<SupervisorStatus,String>{
 /// The model never sees the peer's proposed finding or peer-generated strings.
 pub(crate) fn run(owner:&DesktopState,review:&ReviewLease<'_>,snapshot:&SupervisorStatus,summary:Summary)->Result<ReviewedSummary,String>{
     if !summary.valid(){return Err("Diagnostic summary is invalid.".into())}
+    let text=infer(owner,review,snapshot,prompt(&summary))?;
+    ReviewedSummary::checked(summary,&text).ok_or_else(||"The model's finding did not match the evidence. No unverified finding was accepted.".into())
+}
+pub(crate) fn run_stages(owner:&DesktopState,review:&ReviewLease<'_>,snapshot:&SupervisorStatus,summary:Summary,evidence:crate::dx_ipc::stage::StageEvidence)->Result<crate::dx_ipc::stage::ReviewedStages,String>{
+    if !evidence.valid(&summary){return Err("Stage evidence is invalid.".into())}
+    let text=infer(owner,review,snapshot,evidence.prompt(&summary))?;
+    crate::dx_ipc::stage::ReviewedStages::checked(summary,evidence,&text).ok_or_else(||"The model's stage finding did not match the evidence. No unverified finding was accepted.".into())
+}
+fn infer(owner:&DesktopState,review:&ReviewLease<'_>,snapshot:&SupervisorStatus,prompt:String)->Result<String,String>{
     let _fence=owner.model_profile_admission.try_lock().map_err(|_|"Model is changing")?;
     let queue=owner.generation_queue.try_benchmark()?;
     if review.stopped()||queue.yield_requested()||!owner.supervisor.status().is_ok_and(|s|s==*snapshot){return Err("Review stopped or model changed.".into())}
@@ -28,7 +36,7 @@ pub(crate) fn run(owner:&DesktopState,review:&ReviewLease<'_>,snapshot:&Supervis
     if pressure(){return Err("Not enough memory to review now.".into())}
     let supervisor=&owner.supervisor;
     let sid=snapshot.session_id.as_deref().ok_or("Model unavailable")?;
-    let gid=crate::next_id("dx-review-");let rid=crate::next_id("req-");let prompt=prompt(&summary);
+    let gid=crate::next_id("dx-review-");let rid=crate::next_id("req-");
     supervisor.reserve_generation_with_history(sid,&gid,&rid,&prompt,TOKENS,&[]).map_err(|_|"Review could not start")?;
     let deadline=Instant::now()+LIMIT;let done=AtomicBool::new(false);
     let mut text=String::new();let mut pieces=0u32;let mut terminal=false;
@@ -62,7 +70,7 @@ pub(crate) fn run(owner:&DesktopState,review:&ReviewLease<'_>,snapshot:&Supervis
     });
     if stopped||review.stopped()||queue.yield_requested()||Instant::now()>=deadline{return Err("Review stopped; no finding was accepted.".into())}
     if outcome.is_err()||!terminal||!owner.supervisor.status().is_ok_and(|s|s==*snapshot){return Err("The model review did not finish.".into())}
-    ReviewedSummary::checked(summary,&text).ok_or_else(||"The model's finding did not match the evidence. No unverified finding was accepted.".into())
+    Ok(text)
 }
 #[cfg(test)]
 mod tests{

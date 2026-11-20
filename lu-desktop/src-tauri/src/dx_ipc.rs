@@ -1,9 +1,13 @@
 //! CP-12B: approved single-use local diagnostic snapshot, no live archive or tool access.
 use prost::Message;
 use serde::Serialize;
+#[path="dx_stage.rs"]
+pub(crate) mod stage;
+use stage::{StageEvidence,ReviewedStages};
 const VERSION: u32 = 1;
 const DX_VERSION: u32 = 2;
 const REVIEW_VERSION: u32 = 2;
+const STAGE_VERSION: u32 = 3;
 #[derive(Clone, PartialEq, Message, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct Summary {
@@ -88,6 +92,8 @@ struct Response {
     // Zero on v1; v2 is a distinct, explicitly selected collaboration.
     #[prost(uint32, tag = "6")]
     finding: u32,
+    #[prost(message, optional, tag = "7")]
+    stages: Option<StageEvidence>,
 }
 #[cfg(any(
     target_os = "linux",
@@ -163,6 +169,9 @@ mod protocol {
         response_for(key,nonce,summary,VERSION,0)
     }
     pub(super) fn response_for(key:&[u8;32],nonce:Vec<u8>,summary:Summary,version:u32,finding:u32)->Response {
+        response_full(key,nonce,summary,version,finding,None)
+    }
+    pub(super) fn response_full(key:&[u8;32],nonce:Vec<u8>,summary:Summary,version:u32,finding:u32,stages:Option<StageEvidence>)->Response {
         let mut r = Response {
             version,
             dx_version: DX_VERSION,
@@ -170,6 +179,7 @@ mod protocol {
             summary: Some(summary),
             mac: vec![],
             finding,
+            stages,
         };
         r.mac = mac(key, b"lu.dx.response.v1\0", &r.encode_to_vec()).to_vec();
         r
@@ -183,7 +193,7 @@ mod protocol {
     }
     pub(super) fn auth_request_for(key:&[u8;32],b:&[u8],version:u32)->Option<Request>{
         let r: Request = canonical(b)?;
-        if !matches!(version, VERSION | REVIEW_VERSION) || r.version != version
+        if !matches!(version, VERSION | REVIEW_VERSION | STAGE_VERSION) || r.version != version
             || r.dx_version != DX_VERSION
             || r.nonce.len() != 32
             || r.mac.len() != 32
@@ -198,8 +208,12 @@ mod protocol {
         (finding==0).then_some(summary)
     }
     pub(super) fn auth_response_for(key:&[u8;32],nonce:&[u8],b:&[u8],version:u32)->Option<(Summary,u32)>{
+        let (summary,finding,stages)=auth_response_full(key,nonce,b,version)?;
+        stages.is_none().then_some((summary,finding))
+    }
+    pub(super) fn auth_response_full(key:&[u8;32],nonce:&[u8],b:&[u8],version:u32)->Option<(Summary,u32,Option<StageEvidence>)>{
         let r: Response = canonical(b)?;
-        if !matches!(version, VERSION | REVIEW_VERSION) || r.version != version
+        if !matches!(version, VERSION | REVIEW_VERSION | STAGE_VERSION) || r.version != version
             || r.dx_version != DX_VERSION
             || r.nonce != nonce
             || r.mac.len() != 32
@@ -210,9 +224,14 @@ mod protocol {
         if !s.valid() {
             return None;
         }
-        if (version==VERSION && r.finding!=0) || (version==REVIEW_VERSION && Finding::from_wire(r.finding)!=Finding::expected(&s)) { return None; }
-        let e = response_for(key, nonce.to_vec(), s.clone(),version,r.finding);
-        bool::from(r.mac.ct_eq(&e.mac)).then_some((s,r.finding))
+        match version {
+            VERSION if r.finding==0 && r.stages.is_none()=>{},
+            REVIEW_VERSION if r.stages.is_none() && Finding::from_wire(r.finding)==Finding::expected(&s)=>{},
+            STAGE_VERSION if r.stages.as_ref().is_some_and(|e|e.expected(&s)==Some(r.finding))=>{},
+            _=>return None,
+        }
+        let e = response_full(key, nonce.to_vec(), s.clone(),version,r.finding,r.stages.clone());
+        bool::from(r.mac.ct_eq(&e.mac)).then_some((s,r.finding,r.stages))
     }
 }
 #[cfg(target_os = "linux")]
@@ -393,13 +412,17 @@ mod linux {
                 .map_err(|_| "Local sharing unavailable".into())
         }
         fn start_inner(&self, summary: Summary, ttl: Duration) -> io::Result<String> {
-            self.start_version(summary,ttl,VERSION,0)
+            self.start_version(summary,ttl,VERSION,0,None)
         }
         pub(crate) fn start_review(&self, review:ReviewedSummary)->Result<String,String>{
             if Finding::expected(&review.summary)!=Some(review.finding){return Err("Unverified finding".into())}
-            self.start_version(review.summary,TTL,REVIEW_VERSION,review.finding as u32).map_err(|_|"Local sharing unavailable".into())
+            self.start_version(review.summary,TTL,REVIEW_VERSION,review.finding as u32,None).map_err(|_|"Local sharing unavailable".into())
         }
-        fn start_version(&self,summary:Summary,ttl:Duration,version:u32,finding:u32)->io::Result<String>{
+        pub(crate) fn start_stage_review(&self, review:ReviewedStages)->Result<String,String>{
+            if !review.valid(){return Err("Unverified stage finding".into())}
+            self.start_version(review.summary,TTL,STAGE_VERSION,review.verdict,Some(review.evidence)).map_err(|_|"Local sharing unavailable".into())
+        }
+        fn start_version(&self,summary:Summary,ttl:Duration,version:u32,finding:u32,stages:Option<StageEvidence>)->io::Result<String>{
             let mut lock = self
                 .session
                 .lock()
@@ -455,7 +478,7 @@ mod linux {
                                 };
                                 let _ = write(
                                     &mut s,
-                                    response_for(&key, r.nonce, summary.clone(),version,finding).encode_to_vec(),
+                                    response_full(&key, r.nonce, summary.clone(),version,finding,stages.clone()).encode_to_vec(),
                                     &w,
                                     end,
                                 );
@@ -480,20 +503,27 @@ mod linux {
             .map_err(|_| "The invitation is invalid, expired, incompatible or unavailable.".into())
     }
     fn receive_inner(code: &str) -> io::Result<Summary> {
-        receive_version(code,VERSION,&AtomicBool::new(false)).map(|(s,_)|s)
+        receive_version(code,VERSION,&AtomicBool::new(false)).map(|(s,_,_)|s)
     }
     #[cfg(test)]
     fn receive_review(code:&str)->Result<ReviewedSummary,String>{
         receive_review_cancellable(code,&AtomicBool::new(false))
     }
     pub(crate) fn receive_review_cancellable(code:&str,stop:&AtomicBool)->Result<ReviewedSummary,String>{
-        let (summary,n)=receive_version(code,REVIEW_VERSION,stop).map_err(|_|{
+        let (summary,n,_)=receive_version(code,REVIEW_VERSION,stop).map_err(|_|{
             if stop.load(Ordering::Acquire) { "Review stopped; an already consumed invitation cannot be recalled." }
             else { "The review invitation is invalid, expired, incompatible or unavailable." }
         })?;
         Ok(ReviewedSummary{summary,finding:Finding::from_wire(n).ok_or("Unverified peer finding")?})
     }
-    fn receive_version(code:&str,version:u32,stop:&AtomicBool)->io::Result<(Summary,u32)>{
+    pub(crate) fn receive_stage_review_cancellable(code:&str,stop:&AtomicBool)->Result<ReviewedStages,String>{
+        let (summary,verdict,evidence)=receive_version(code,STAGE_VERSION,stop).map_err(|_|{
+            if stop.load(Ordering::Acquire){"Review stopped; an already consumed invitation cannot be recalled."}
+            else{"The stage review invitation is invalid, expired, incompatible or unavailable."}
+        })?;
+        Ok(ReviewedStages{summary,verdict,evidence:evidence.ok_or("Unverified stage evidence")?})
+    }
+    fn receive_version(code:&str,version:u32,stop:&AtomicBool)->io::Result<(Summary,u32,Option<StageEvidence>)>{
         let bad = || io::Error::from(io::ErrorKind::InvalidData);
         let end = Instant::now() + FRAME;
         expired(stop,end)?;
@@ -501,7 +531,7 @@ mod linux {
             return Err(bad());
         }
         let mut parts = code.split('-');
-        if parts.next() != Some(if version==VERSION {"lu1"}else{"lu2"}) {
+        if parts.next() != Some(match version{VERSION=>"lu1",REVIEW_VERSION=>"lu2",STAGE_VERSION=>"lu3",_=>return Err(bad())}) {
             return Err(bad());
         }
         let id = unhex::<16>(parts.next().ok_or_else(bad)?).ok_or_else(bad)?;
@@ -531,7 +561,7 @@ mod linux {
             stop,
             end,
         )?;
-        let result=auth_response_for(&key, &nonce, &read(&mut s, stop, end)?,version).ok_or_else(bad)?;
+        let result=auth_response_full(&key, &nonce, &read(&mut s, stop, end)?,version).ok_or_else(bad)?;
         expired(stop,end)?;
         Ok(result)
     }
@@ -584,6 +614,45 @@ mod linux {
             let mut good=response_for(&key,nonce.clone(),s,REVIEW_VERSION,Finding::Failure as u32);
             assert!(auth_response_for(&key,&nonce,&good.encode_to_vec(),REVIEW_VERSION).is_some());
             good.finding=2;assert!(auth_response_for(&key,&nonce,&good.encode_to_vec(),REVIEW_VERSION).is_none());
+        }
+        #[test]
+        fn cp12br5_stage_transport_version_consistency_and_replay(){
+            use stage::{StageCount,StageEvidence,ReviewedStages};
+            let s=Summary{complete:1,observed_failure:1,bounded:0,incomplete:0,unavailable:0};
+            let evidence=StageEvidence{stages:vec![StageCount{stage:20,observed:1,bounded:0}]};
+            let make=||ReviewedStages::checked(s.clone(),evidence.clone(),"REFUSED").unwrap();
+            let c=Controller::default();let code=c.start_stage_review(make()).unwrap();
+            assert!(code.starts_with("lu3-"));assert!(receive(&code).is_err());assert!(receive_review(&code).is_err());
+            let wrong=format!("lu2{}",&code[3..]);assert!(receive_review(&wrong).is_err());assert!(c.active());
+            let stop=AtomicBool::new(true);assert!(receive_stage_review_cancellable(&code,&stop).is_err());assert!(c.active());
+            stop.store(false,Ordering::Release);
+            let r=receive_stage_review_cancellable(&code,&stop).unwrap();assert_eq!(r.summary,s);assert_eq!(r.evidence,evidence);assert_eq!(r.verdict,20);
+            c.stop();assert!(receive_stage_review_cancellable(&code,&stop).is_err());
+            let revoked=c.start_stage_review(make()).unwrap();assert!(c.stop());assert!(receive_stage_review_cancellable(&revoked,&stop).is_err());
+            let invalid=ReviewedStages{verdict:9,..make()};assert!(c.start_stage_review(invalid).is_err());
+        }
+        #[test]
+        fn cp12br5_stage_frame_bounds_and_authenticated_tamper_refusal(){
+            use stage::{StageCount,StageEvidence};
+            let s=Summary{complete:0,observed_failure:1,bounded:1,incomplete:0,unavailable:0};
+            let evidence=StageEvidence{stages:vec![StageCount{stage:9,observed:1,bounded:0},StageCount{stage:20,observed:0,bounded:1}]};
+            let key=[5;32];let nonce=vec![6;32];
+            let frame=|version,verdict,stages|response_full(&key,nonce.clone(),s.clone(),version,verdict,stages);
+            let good=frame(STAGE_VERSION,102,Some(evidence.clone()));
+            assert!(auth_response_full(&key,&nonce,&good.encode_to_vec(),STAGE_VERSION).is_some());
+            assert!(auth_response_full(&[4;32],&nonce,&good.encode_to_vec(),STAGE_VERSION).is_none());
+            assert!(auth_response_full(&key,&[8;32],&good.encode_to_vec(),STAGE_VERSION).is_none());
+            for bad in [frame(STAGE_VERSION,9,Some(evidence.clone())),frame(STAGE_VERSION,102,None),frame(REVIEW_VERSION,1,Some(evidence.clone())),frame(VERSION,0,Some(evidence.clone()))]{
+                assert!(auth_response_full(&key,&nonce,&bad.encode_to_vec(),bad.version).is_none());
+            }
+            let mut altered=good.clone();altered.stages.as_mut().unwrap().stages[0].stage=8;
+            assert!(auth_response_full(&key,&nonce,&altered.encode_to_vec(),STAGE_VERSION).is_none());
+            let mut contradictory=evidence;contradictory.stages[0].observed=2;
+            assert!(auth_response_full(&key,&nonce,&frame(STAGE_VERSION,102,Some(contradictory)).encode_to_vec(),STAGE_VERSION).is_none());
+            let s=Summary{complete:0,observed_failure:26,bounded:26,incomplete:0,unavailable:0};
+            let e=StageEvidence{stages:(1..=26).map(|stage|StageCount{stage,observed:1,bounded:1}).collect()};
+            assert!(e.valid(&s));let max=response_full(&key,nonce.clone(),s,STAGE_VERSION,101,Some(e));assert!(max.encoded_len()<MAX);
+            assert!(auth_response_full(&key,&nonce,&max.encode_to_vec(),STAGE_VERSION).is_some());
         }
         #[test]
         fn cp12br4_cancel_before_receive_preserves_unconsumed_invitation() {
@@ -897,11 +966,16 @@ mod linux {
     }
 }
 #[cfg(target_os = "linux")]
-pub(crate) use linux::{receive, receive_review_cancellable, Controller};
+pub(crate) use linux::{receive, receive_review_cancellable, receive_stage_review_cancellable, Controller};
 #[cfg(not(target_os="linux"))]
 pub(crate) fn receive_review_cancellable(_: &str,_:&std::sync::atomic::AtomicBool)->Result<ReviewedSummary,String>{Err("Collaborative review is not available on this platform.".into())}
 #[cfg(not(target_os="linux"))]
-impl Controller { pub(crate) fn start_review(&self,_:ReviewedSummary)->Result<String,String>{Err("Collaborative review is not available on this platform.".into())} }
+impl Controller {
+    pub(crate) fn start_review(&self,_:ReviewedSummary)->Result<String,String>{Err("Collaborative review is not available on this platform.".into())}
+    pub(crate) fn start_stage_review(&self,_:ReviewedStages)->Result<String,String>{Err("Collaborative review is not available on this platform.".into())}
+}
+#[cfg(not(target_os="linux"))]
+pub(crate) fn receive_stage_review_cancellable(_: &str,_:&std::sync::atomic::AtomicBool)->Result<ReviewedStages,String>{Err("Collaborative review is not available on this platform.".into())}
 pub(crate) const fn review_supported()->bool{cfg!(target_os="linux")}
 #[cfg(all(target_os = "windows", feature = "windows_dx_eval"))]
 #[path = "dx_windows_pipe.rs"]
