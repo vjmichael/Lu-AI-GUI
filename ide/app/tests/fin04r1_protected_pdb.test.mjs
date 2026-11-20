@@ -8,6 +8,10 @@ const root=new URL('../../',new URL('../',import.meta.url));
 const read=p=>readFileSync(new URL(p,root),'utf8');
 const worker=read('ide/supervisor/src/windows_lsp_worker.rs');
 const source=read('ide/supervisor/src/windows_stopped_line_oracle.rs');
+const originalJob=read('ide/supervisor/src/windows_worker.rs');
+const scm=read('ide/supervisor/src/windows_service_client.rs');
+const scmSecurity=read('ide/supervisor/src/windows_service_security.rs');
+
 const gate=read('ide/supervisor/src/dap_transport.rs');
 const transport=read('ide/supervisor/src/lsp_transport.rs');
 const controls=read('ide/supervisor/src/debug_control_dispatch.rs');
@@ -83,4 +87,24 @@ test('unknown interrupted results remain non-replay and distinct from physical h
  assert.match(desktop,/post_command_result_independently_verified:\s*false/);
  assert.match(desktop,/global_marker_cleared:\s*false/);
  assert.match(desktop,/installed_app_accepted:\s*false/);
+});
+
+test('original SCM + AppContainer + kernel Job chain has no host or renderer fallback',()=>{
+ assert.match(originalJob,/JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE/);
+ assert.match(originalJob,/JOB_OBJECT_LIMIT_ACTIVE_PROCESS/);
+ assert.match(originalJob,/JOB_OBJECT_LIMIT_JOB_MEMORY/);
+ assert.match(originalJob,/ActiveProcessLimit\s*=\s*plan\.process_limit/);
+ assert.match(worker,/PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES/);
+ assert.match(worker,/PROC_THREAD_ATTRIBUTE_JOB_LIST_VALUE/);
+ assert.match(worker,/PROC_THREAD_ATTRIBUTE_HANDLE_LIST_VALUE/);
+ assert.match(worker,/verify_suspended_appcontainer_token/);
+ assert.match(worker,/let mut child_handles = vec!\[child_stdin\.0, child_stdout\.0, stderr\.0\]/);
+ assert.match(worker,/spawn_contained_stdio\([\s\S]*?&self\._profile,\s*&self\.job,\s*&tool/);
+ assert.match(scm,/security::authenticate_service_server/);
+ assert.match(worker,/let mut lease = BrokerLease::begin/); // admitted by native worker
+ assert.match(scm,/pub fn grant_null\(/);
+ assert.match(scm,/pub fn release_empty\(/);
+ assert.match(scmSecurity,/GetNamedPipeClientProcessId/);
+ assert.match(scmSecurity,/ImpersonateNamedPipeClient/);
+ assert.match(scmSecurity,/QueryFullProcessImageNameW/);
 });
