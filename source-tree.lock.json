@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "b6c967609778ecc1c7929084f94ec5c98787a3ad",
-  "trackedFileCount": 1979,
+  "sourceCommitBeforeLock": "78b69e246c9da11b6e457ccadfdf1675a85f5a7a",
+  "trackedFileCount": 1982,
   "files": [
     {
       "path": ".gitattributes",
@@ -13,11 +13,11 @@
     },
     {
       "path": ".github/ide-merge/ide-dev02-technical-batch.txt",
-      "blob": "d0a0ef2208ee3a72478c470b4c44bc51f3b359ac"
+      "blob": "e6114cb1248bfd759f363837014404628c65f83a"
     },
     {
       "path": ".github/ide-merge/ide-merge-01-02-native-batch.txt",
-      "blob": "79f3349a7868a1f273e0df7c4e4141e119ac87e4"
+      "blob": "3258887f8b77a33c838399560ad41ec9e13c01f8"
     },
     {
       "path": ".github/pull_request_template.md",
@@ -341,7 +341,7 @@
     },
     {
       "path": ".github/workflows/ide-p03-native-security-checks.yml",
-      "blob": "aa567ec48ce084f5c698f77cdd07de381fa72221"
+      "blob": "6a729a43f249b9b412052e4e5e7b180379af186c"
     },
     {
       "path": ".github/workflows/ide-p04-linux-upgrade.yml",
@@ -409,7 +409,7 @@
     },
     {
       "path": ".github/workflows/ide-wo6-native-os-acceptance.yml",
-      "blob": "7a5cf9f9fdf2c206639c442ac2cdd5a35a0f6067"
+      "blob": "1d8a7cebc2fe6cd25a9b74f15a4327d17ce97a9d"
     },
     {
       "path": ".github/workflows/ide-wo7-installed-acceptance.yml",
@@ -1185,7 +1185,7 @@
     },
     {
       "path": "docs/LU_DEVELOPMENT_LEDGER.md",
-      "blob": "3fd16ffe9fa5a36c417f67515382120841b2ce96"
+      "blob": "51c54d6e6811f3ca86ba8f01448adb6f65cf1771"
     },
     {
       "path": "docs/LU_E1_NATIVE_EVIDENCE_20261107.md",
@@ -4401,7 +4401,7 @@
     },
     {
       "path": "ide/sandbox/src/bin/linux_cgroup_probe.rs",
-      "blob": "57aada2e6d6fb453a2912e003f0624109ddcebf1"
+      "blob": "45649cec5c0e419010a471533dd6f34d0744aaad"
     },
     {
       "path": "ide/sandbox/src/bin/linux_delegated_ci_ide05_host.rs",
@@ -4413,11 +4413,11 @@
     },
     {
       "path": "ide/sandbox/src/bin/linux_delegated_ci_wo4_host.rs",
-      "blob": "6ec3800e6e58080fa838e6d9d4adf46c793799f4"
+      "blob": "e534ce529982bbbae648cc40867683abcf8f1d04"
     },
     {
       "path": "ide/sandbox/src/bin/linux_delegated_ci_wo6_build_host.rs",
-      "blob": "cc93ca781e852c6d178dae31b339314fc87d1f3c"
+      "blob": "ccc27d1eef21de87f4e0a22dafb776a3f263144d"
     },
     {
       "path": "ide/sandbox/src/bin/linux_delegated_ci_wo6_dap_host.rs",
@@ -4564,6 +4564,10 @@
       "blob": "246f2ce3ad5ebc13b5152b85a637793f72ab5c9c"
     },
     {
+      "path": "ide/supervisor/fixtures/debug/dap_launch_contract.py",
+      "blob": "c0fee68885eee5a04ab2098332e250b0152314fd"
+    },
+    {
       "path": "ide/supervisor/fixtures/debug/dev045d4b_win_event_observer.c",
       "blob": "aca4df14a0cd346dd397149a2c1310fe5df0e547"
     },
@@ -4577,11 +4581,19 @@
     },
     {
       "path": "ide/supervisor/fixtures/debug/probe_lldb_dap_launch.py",
-      "blob": "c9ee172e1fb2344a8f3b89c07c2360e0815c6697"
+      "blob": "4bf4e62bf2b306309a76e1927f386ec53d9ddf05"
     },
     {
       "path": "ide/supervisor/fixtures/debug/probe_windows_dap_initialize.py",
       "blob": "bfbecf11d42c830ed51fd011a9129fd595ab02a4"
+    },
+    {
+      "path": "ide/supervisor/fixtures/debug/test_dap_launch_contract.py",
+      "blob": "0713ca357d7b50217682ec4a6a30abd600ff1348"
+    },
+    {
+      "path": "ide/supervisor/fixtures/debug/test_dap_native_source_contract.py",
+      "blob": "971035a8011369ba581c0f95832dc0ddc7af8883"
     },
     {
       "path": "ide/supervisor/fixtures/debug/test_probe_windows_dap_initialize.py",
