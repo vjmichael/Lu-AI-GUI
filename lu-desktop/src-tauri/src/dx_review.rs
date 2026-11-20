@@ -2,33 +2,13 @@
 //! snapshot. No chat history, general tool router, or model load.
 use crate::{dx_ipc::{ReviewedSummary, Summary}, DesktopState};
 use lu_core::{inference_bridge::BridgeError,inference_host::EnginePhase,inference_supervisor::SupervisorStatus,inference_wire::decode_frame,wire::proto};
-use std::{sync::{Arc,Mutex,atomic::{AtomicBool,Ordering}},time::{Duration,Instant}};
+use std::{sync::atomic::{AtomicBool,Ordering},time::{Duration,Instant}};
 const LIMIT:Duration=Duration::from_secs(35);
 const TOKENS:u32=64;
 const MAX_BYTES:usize=4096;
-#[derive(Default)]
-pub(crate) struct ReviewControl{active:Mutex<Option<Arc<AtomicBool>>>,closed:AtomicBool}
-pub(crate) struct ReviewLease<'a>{control:&'a ReviewControl,stop:Arc<AtomicBool>}
-impl ReviewControl{
-    pub(crate) fn begin(&self)->Result<ReviewLease<'_>,String>{
-        let mut active=self.active.lock().map_err(|_|"Review unavailable")?;
-        if self.closed.load(Ordering::Acquire)||active.is_some(){return Err("A review is already running or unavailable.".into())}
-        let stop=Arc::new(AtomicBool::new(false));*active=Some(stop.clone());Ok(ReviewLease{control:self,stop})
-    }
-    pub(crate) fn stop(&self)->bool{
-        self.active.lock().ok().and_then(|a|a.as_ref().map(|s|!s.swap(true,Ordering::AcqRel))).unwrap_or(false)
-    }
-    pub(crate) fn shutdown(&self){self.closed.store(true,Ordering::Release);self.stop();}
-}
-impl ReviewLease<'_>{
-    pub(crate) fn stopped(&self)->bool{self.stop.load(Ordering::Acquire)||self.control.closed.load(Ordering::Acquire)}
-    // Serialize publication with cancellation; stop cannot be overtaken by a late invitation.
-    pub(crate) fn publish<T>(&self, f:impl FnOnce()->Result<T,String>)->Result<T,String>{
-        let active=self.control.active.lock().map_err(|_|"Review unavailable")?;
-        if self.stopped()||!active.as_ref().is_some_and(|s|Arc::ptr_eq(s,&self.stop)){return Err("Review stopped.".into())} f()
-    }
-}
-impl Drop for ReviewLease<'_>{fn drop(&mut self){if let Ok(mut a)=self.control.active.lock(){if a.as_ref().is_some_and(|s|Arc::ptr_eq(s,&self.stop)){*a=None;}}}}
+#[path = "dx_review_control.rs"]
+mod control;
+pub(crate) use control::{ReviewControl, ReviewLease};
 struct Done<'a>(&'a AtomicBool);
 impl Drop for Done<'_>{fn drop(&mut self){self.0.store(true,Ordering::Release);}}
 fn prompt(s:&Summary)->String{
@@ -55,7 +35,7 @@ pub(crate) fn run(owner:&DesktopState,review:&ReviewLease<'_>,snapshot:&Supervis
     let (outcome,stopped)=std::thread::scope(|scope|{
         let monitor=scope.spawn(||loop{
             if done.load(Ordering::Acquire){break false}
-            if review.stopped()||pressure()||Instant::now()>=deadline{
+            if review.stopped()||queue.yield_requested()||pressure()||Instant::now()>=deadline{
                 let _=supervisor.cancel(sid,&gid,&crate::next_id("req-"));break true
             }
             std::thread::sleep(Duration::from_millis(25));
@@ -97,7 +77,5 @@ mod tests{
         }
         s.complete=65;assert!(Finding::expected(&s).is_none());
     }
-    #[test]fn cp12br3_cancellation_and_admission_are_fenced(){
-        let c=ReviewControl::default();let r=c.begin().unwrap();assert!(c.begin().is_err());assert!(r.publish(||Ok(42)).is_ok());assert!(c.stop());assert!(r.publish::<()>(||panic!("late publication")).is_err());drop(r);let r=c.begin().unwrap();c.shutdown();assert!(r.stopped());drop(r);assert!(c.begin().is_err());
-    }
+
 }

@@ -2207,7 +2207,7 @@ async fn lu_dx_review_receive(app:AppHandle,caller:tauri::WebviewWindow,state:St
         if !app.dialog().message("Accept a one-time reviewed troubleshooting summary and ask your currently loaded local model to classify the same five counts independently? The model will not see the other model's answer. No conversations, files, tools or repairs are authorized. The invitation is consumed on receipt, even if this review fails. A review can take up to 35 seconds.")
         .title("Lu — Review received summary").buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom("Receive and review".into(),"Cancel".into())).blocking_show(){return Ok(None)}
         if review.stopped(){return Err("Review stopped.".into())}
-        let peer=dx_ipc::receive_review(&code)?;
+        let peer=dx_ipc::receive_review_cancellable(&code,review.stop_signal())?;
         let local=dx_review::run(&owner,&review,&snapshot,peer.summary.clone())?;
         if local.finding!=peer.finding{return Err("The reviewed findings do not agree.".into())}
         review.publish(||Ok(Some(local)))

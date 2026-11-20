@@ -9,5 +9,5 @@ test('collaborative review has separate native approval and no renderer-supplied
  assert.match(review,/reserve_generation_with_history\(sid,&gid,&rid,&prompt,TOKENS,&\[\]\)/);assert.match(review,/ReviewedSummary::checked\(summary,&text\)/);assert.doesNotMatch(review,/ToolCall|load_model|TcpStream/);
 });
 test('review uses separate invitation protocol and opt-in UI',()=>{
- assert.match(ipc,/const REVIEW_VERSION: u32 = 2/);assert.match(ipc,/auth_request_for\(&key/);assert.match(ipc,/Finding::expected/);assert.match(ui,/onClick=.*invoke\('lu_dx_review_share'\)/);assert.match(ui,/onClick=.*invoke\('lu_dx_review_receive'/);assert.match(ui,/onClick=.*invoke\('lu_dx_stop_review'\)/);assert.match(ui,/No root cause or answer accuracy/);
+ assert.match(ipc,/const REVIEW_VERSION: u32 = 2/);assert.match(ipc,/auth_request_for\(&key/);assert.match(ipc,/Finding::expected/);assert.match(ui,/onClick=.*invoke\('lu_dx_review_share'\)/);assert.match(ui,/onClick=.*invoke\('lu_dx_review_receive'/);assert.match(ui,/onClick=\{\(\)=>void stopReview\(\)\}/);assert.match(ui,/const accepted=await invoke\('lu_dx_stop_review'\)/);assert.match(ui,/No root cause or answer accuracy/);
 });

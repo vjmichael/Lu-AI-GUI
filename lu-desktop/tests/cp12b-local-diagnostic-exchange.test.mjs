@@ -21,7 +21,7 @@ test('exchange is a fixed count-only snapshot without live archive or tool inter
 test('Settings invitation only on click, explicit copy and stop, masked input',()=>{
  const view=ui.slice(ui.indexOf('function LocalDiagnosticExchange'),ui.indexOf('export function SettingsWindow'));
  assert.match(view,/onClick=.*invoke\('lu_dx_share'\)/);
- assert.match(view,/onClick=.*invoke\('lu_dx_stop_share'\)/);
+ assert.match(view,/onClick=\{\(\)=>void stopSharing\(\)\}/);assert.match(view,/await invoke\('lu_dx_stop_share'\)/);
  assert.match(view,/onClick=.*navigator\.clipboard\.writeText\(code\)/);
  assert.match(view,/type="password"/);assert.doesNotMatch(view,/localStorage|sessionStorage/);
 });

@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "sourceCommitBeforeLock": "9e715f6dec6f8cbef6be53fe4cad52c97cd7662a",
-  "trackedFileCount": 1238,
+  "trackedFileCount": 1240,
   "files": [
     {
       "path": ".gitattributes",
@@ -1709,11 +1709,15 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/dx_ipc.rs",
-      "blob": "e89faae386322b937a0080a1b4de694f43ac843e"
+      "blob": "95d921faf28a8cc7db17bcec4ed1cbc533c431fb"
     },
     {
       "path": "lu-desktop/src-tauri/src/dx_review.rs",
-      "blob": "b230f92ce3dfc013af36ef698c87e58b06d4602f"
+      "blob": "71c7cd2c705d72a4d9a557a3aae3db9919091382"
+    },
+    {
+      "path": "lu-desktop/src-tauri/src/dx_review_control.rs",
+      "blob": "b218667b6af78a925cced3c1d20c4933cbba0c86"
     },
     {
       "path": "lu-desktop/src-tauri/src/dx_windows_pipe.rs",
@@ -1765,7 +1769,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/lib.rs",
-      "blob": "be29174c7545ce853b0d73a399b6326da1c5f574"
+      "blob": "dd8bbbf65a5c744627eef1c9f4fe909a9e5f3313"
     },
     {
       "path": "lu-desktop/src-tauri/src/linked_attachment_file.rs",
@@ -2221,11 +2225,11 @@
     },
     {
       "path": "lu-desktop/tests/cp12b-local-diagnostic-exchange.test.mjs",
-      "blob": "cca0951581a1d143dfb4955cd04378cb4b7cb26b"
+      "blob": "51ab81758c1b765ad9c175d66ea255889e16f2d5"
     },
     {
       "path": "lu-desktop/tests/cp12br3-review.test.mjs",
-      "blob": "8806f83bf8a0322b0974e8b81b31ece39f8411e4"
+      "blob": "1506b7cbd3eae6f4c5c98a39de55a6509eb1fe38"
     },
     {
       "path": "lu-desktop/tests/dx-exchange-windows-check/Cargo.lock",
@@ -2701,7 +2705,7 @@
     },
     {
       "path": "lu-desktop/web/native_windows.jsx",
-      "blob": "38795b9b4776f4b435dc5bc7f8acd86bae8a8596"
+      "blob": "4540c84c5c1a9f289c254c6b156eb89540a5920f"
     },
     {
       "path": "lu-desktop/web/response_view.mjs",
@@ -2886,6 +2890,10 @@
     {
       "path": "scripts/cp12br3-two-model-review-gui.py",
       "blob": "51c1259f55c61942f61b6aa7c1641808b8db7d51"
+    },
+    {
+      "path": "scripts/cp12br4-review-lifecycle-gui.py",
+      "blob": "35c314b0cc067b3e66d887a22b5ae57f249127d3"
     },
     {
       "path": "scripts/install-lu-agent01l-native-fixture.sh",

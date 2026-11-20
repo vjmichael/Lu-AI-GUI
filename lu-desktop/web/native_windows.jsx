@@ -1,4 +1,4 @@
-import React,{useEffect,useState} from 'react';
+import React,{useEffect,useRef,useState} from 'react';
 import {invoke} from '@tauri-apps/api/core';
 import {emit} from '@tauri-apps/api/event';
 import {CHAT_APPEARANCE_PRESETS,safeAppearance} from './message_interactions.mjs';
@@ -135,31 +135,37 @@ function LocalDiagnosticExchange({active}){
   const [result,setResult]=useState(null);
   const [busy,setBusy]=useState(false);
   const [message,setMessage]=useState('');
+  const operation=useRef(false);
+  const shareEpoch=useRef(0);
+  const stopping=useRef(false);
+  const [stopPending,setStopPending]=useState(false);
   useEffect(()=>{let live=true;
     void invoke('lu_dx_supported').then(v=>{if(live)setSupported(v)}).catch(()=>{});
     void invoke('lu_dx_review_supported').then(v=>{if(live)setReviewSupported(v)}).catch(()=>{});
     return ()=>{live=false};
   },[]);
   useEffect(()=>{if(!active||!supported)return undefined;let live=true;let pending=false;
-    const check=async()=>{if(pending)return; pending=true;try{const v=await invoke('lu_dx_share_active');if(live){setSharing(v);if(!v)setCode('');}}catch{if(live){setSharing(false);setCode('');}}finally{pending=false}};
+    const check=async()=>{if(pending||operation.current||stopping.current)return; pending=true;const epoch=shareEpoch.current;try{const v=await invoke('lu_dx_share_active');if(live&&epoch===shareEpoch.current&&!operation.current&&!stopping.current){setSharing(v);if(!v)setCode('');}}catch{if(live&&epoch===shareEpoch.current&&!operation.current&&!stopping.current){setSharing(false);setCode('');}}finally{pending=false}};
     void check();const timer=setInterval(check,1000);return ()=>{live=false;clearInterval(timer)};
   },[active,supported]);
-  async function perform(fn){if(busy)return;setBusy(true);setMessage('');try{await fn()}catch(e){setMessage(errorText(e))}finally{setBusy(false)}}
+  async function perform(fn){if(operation.current||stopping.current)return;operation.current=true;++shareEpoch.current;setBusy(true);setMessage('');try{await fn()}catch(e){setMessage(errorText(e))}finally{operation.current=false;++shareEpoch.current;setBusy(false)}}
   async function review(fn){await perform(async()=>{setReviewing(true);try{await fn()}finally{setReviewing(false)}})}
+  async function stopReview(){if(stopping.current||!operation.current)return;stopping.current=true;setStopPending(true);try{const accepted=await invoke('lu_dx_stop_review');if(accepted)setMessage('Stopping review. Any invitation already consumed cannot be recalled.');}catch(e){setMessage(errorText(e))}finally{stopping.current=false;setStopPending(false)}}
+  async function stopSharing(){if(stopping.current)return;stopping.current=true;++shareEpoch.current;setStopPending(true);try{await invoke('lu_dx_stop_share');setSharing(false);setCode('');setMessage('Sharing stopped. Already received summaries cannot be recalled.');}catch(e){setMessage(errorText(e))}finally{stopping.current=false;++shareEpoch.current;setStopPending(false)}}
   const guidance={failure:'An execution failure was observed. Review the local troubleshooting report for the affected step.',uncertain:'Some records are uncertain or unavailable. Collect more local evidence before drawing a conclusion.',partial:'Some steps are only partially confirmed. Check the next unconfirmed step locally.',delivered:'The available records confirm response delivery. This does not establish answer accuracy.',empty:'No recent evidence is available. Run a local check or use Lu before reviewing.'};
   return <div className="nativeOption"><strong>Share troubleshooting with another Lu</strong>
     <p>Share only a one-time summary of recent response outcomes with another Lu on this computer. No conversations, files, model names or tool access.</p>
     {!supported?<p>Local sharing is not available on this platform.</p>:<>
       <p role="status">{sharing?'Sharing is on for one use or up to two minutes.':'Sharing is off.'}</p>
-      {!sharing?<button type="button" disabled={busy} onClick={()=>void perform(async()=>{const invitation=await invoke('lu_dx_share');if(invitation){setCode(invitation);setSharing(true);}})}>Create sharing invitation…</button>:<>
-        {code&&<button type="button" disabled={busy} onClick={()=>void perform(async()=>{await navigator.clipboard.writeText(code);setMessage('Invitation copied. Give it only to your other Lu session.');})}>Copy invitation</button>}
-        <button type="button" onClick={()=>void invoke('lu_dx_stop_share').then(()=>{setSharing(false);setCode('');setMessage('Sharing stopped. Already received summaries cannot be recalled.');}).catch(e=>setMessage(errorText(e)))}>Stop sharing</button>
+      {!sharing?<button type="button" disabled={busy||stopPending} onClick={()=>void perform(async()=>{const invitation=await invoke('lu_dx_share');if(invitation){setCode(invitation);setSharing(true);}})}>Create sharing invitation…</button>:<>
+        {code&&<button type="button" disabled={busy||stopPending} onClick={()=>void perform(async()=>{await navigator.clipboard.writeText(code);setMessage('Invitation copied. Give it only to your other Lu session.');})}>Copy invitation</button>}
+        <button type="button" disabled={stopPending} onClick={()=>void stopSharing()}>Stop sharing</button>
       </>}
-      {reviewSupported&&!sharing&&<button type="button" disabled={busy} onClick={()=>void review(async()=>{const invitation=await invoke('lu_dx_review_share');if(invitation){setCode(invitation);setSharing(true);setMessage('A checked review invitation is ready.');}})}>Review and share with loaded model…</button>}
-      {reviewing&&<button type="button" onClick={()=>void invoke('lu_dx_stop_review').catch(e=>setMessage(errorText(e)))}>Stop review</button>}
+      {reviewSupported&&!sharing&&<button type="button" disabled={busy||stopPending} onClick={()=>void review(async()=>{const invitation=await invoke('lu_dx_review_share');if(invitation){setCode(invitation);setSharing(true);setMessage('A checked review invitation is ready.');}})}>Review and share with loaded model…</button>}
+      {reviewing&&<button type="button" disabled={stopPending} onClick={()=>void stopReview()}>Stop review</button>}
       <label className="nativeField">Invitation from another Lu<input type="password" autoComplete="off" value={incoming} maxLength={101} onChange={e=>setIncoming(e.target.value)} disabled={busy}/></label>
-      <button type="button" disabled={busy||incoming.length!==101||!incoming.startsWith('lu1-')} onClick={()=>void perform(async()=>{setResult(null);setReviewResult(null);const invitation=incoming;setIncoming('');const summary=await invoke('lu_dx_receive',{code:invitation});if(summary)setResult(summary);})}>Receive summary…</button>
-      {reviewSupported&&<button type="button" disabled={busy||incoming.length!==101||!incoming.startsWith('lu2-')} onClick={()=>void review(async()=>{setResult(null);setReviewResult(null);const invitation=incoming;setIncoming('');const verified=await invoke('lu_dx_review_receive',{code:invitation});if(verified)setReviewResult(verified);})}>Receive and review with loaded model…</button>}
+      <button type="button" disabled={busy||stopPending||incoming.length!==101||!incoming.startsWith('lu1-')} onClick={()=>void perform(async()=>{setResult(null);setReviewResult(null);const invitation=incoming;setIncoming('');const summary=await invoke('lu_dx_receive',{code:invitation});if(summary)setResult(summary);})}>Receive summary…</button>
+      {reviewSupported&&<button type="button" disabled={busy||stopPending||incoming.length!==101||!incoming.startsWith('lu2-')} onClick={()=>void review(async()=>{setResult(null);setReviewResult(null);const invitation=incoming;setIncoming('');const verified=await invoke('lu_dx_review_receive',{code:invitation});if(verified)setReviewResult(verified);})}>Receive and review with loaded model…</button>}
       {reviewResult&&<div role="status"><strong>Two-model troubleshooting review</strong><p>{reviewResult.summary.complete} confirmed deliveries; {reviewResult.summary.observedFailure} observed failures; {reviewResult.summary.bounded} partially confirmed; {reviewResult.summary.incomplete} uncertain; {reviewResult.summary.unavailable} unavailable.</p><p>Both findings match the checked counts.</p><p>{guidance[reviewResult.finding]}</p><p>No root cause or answer accuracy is established; no repairs were made.</p><button type="button" onClick={()=>setReviewResult(null)}>Clear review</button></div>}
       {result&&<div role="status"><strong>Received troubleshooting summary</strong><p>{result.complete} confirmed deliveries; {result.observedFailure} observed failures; {result.bounded} partially confirmed; {result.incomplete} uncertain; {result.unavailable} unavailable.</p><p>This is delivery evidence, not proof of answer accuracy.</p><button type="button" onClick={()=>setResult(null)}>Clear summary</button></div>}
       {message&&<p role="status">{message}</p>}

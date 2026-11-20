@@ -480,14 +480,23 @@ mod linux {
             .map_err(|_| "The invitation is invalid, expired, incompatible or unavailable.".into())
     }
     fn receive_inner(code: &str) -> io::Result<Summary> {
-        receive_version(code,VERSION).map(|(s,_)|s)
+        receive_version(code,VERSION,&AtomicBool::new(false)).map(|(s,_)|s)
     }
-    pub(crate) fn receive_review(code:&str)->Result<ReviewedSummary,String>{
-        let (summary,n)=receive_version(code,REVIEW_VERSION).map_err(|_|"The review invitation is invalid, expired, incompatible or unavailable.")?;
+    #[cfg(test)]
+    fn receive_review(code:&str)->Result<ReviewedSummary,String>{
+        receive_review_cancellable(code,&AtomicBool::new(false))
+    }
+    pub(crate) fn receive_review_cancellable(code:&str,stop:&AtomicBool)->Result<ReviewedSummary,String>{
+        let (summary,n)=receive_version(code,REVIEW_VERSION,stop).map_err(|_|{
+            if stop.load(Ordering::Acquire) { "Review stopped; an already consumed invitation cannot be recalled." }
+            else { "The review invitation is invalid, expired, incompatible or unavailable." }
+        })?;
         Ok(ReviewedSummary{summary,finding:Finding::from_wire(n).ok_or("Unverified peer finding")?})
     }
-    fn receive_version(code:&str,version:u32)->io::Result<(Summary,u32)>{
+    fn receive_version(code:&str,version:u32,stop:&AtomicBool)->io::Result<(Summary,u32)>{
         let bad = || io::Error::from(io::ErrorKind::InvalidData);
+        let end = Instant::now() + FRAME;
+        expired(stop,end)?;
         if code.len() != 101 || !tmp_ok() {
             return Err(bad());
         }
@@ -505,8 +514,10 @@ mod linux {
         if !private_dir(&dir) || !private_socket(&p) {
             return Err(bad());
         }
+        expired(stop,end)?;
         let socket = socket2::Socket::new(socket2::Domain::UNIX, socket2::Type::STREAM, None)?;
-        socket.connect_timeout(&socket2::SockAddr::unix(&p)?, FRAME)?;
+        socket.connect_timeout(&socket2::SockAddr::unix(&p)?, end.saturating_duration_since(Instant::now()))?;
+        expired(stop,end)?;
         let fd: std::os::fd::OwnedFd = socket.into();
         let mut s = UnixStream::from(fd);
         if !peer(&s) {
@@ -514,15 +525,15 @@ mod linux {
         }
         s.set_nonblocking(true)?;
         let nonce = random::<32>()?.to_vec();
-        let stop = AtomicBool::new(false);
-        let end = Instant::now() + FRAME;
         write(
             &mut s,
             request_for(&key, nonce.clone(),version).encode_to_vec(),
-            &stop,
+            stop,
             end,
         )?;
-        auth_response_for(&key, &nonce, &read(&mut s, &stop, end)?,version).ok_or_else(bad)
+        let result=auth_response_for(&key, &nonce, &read(&mut s, stop, end)?,version).ok_or_else(bad)?;
+        expired(stop,end)?;
+        Ok(result)
     }
     #[cfg(test)]
     mod tests {
@@ -573,6 +584,104 @@ mod linux {
             let mut good=response_for(&key,nonce.clone(),s,REVIEW_VERSION,Finding::Failure as u32);
             assert!(auth_response_for(&key,&nonce,&good.encode_to_vec(),REVIEW_VERSION).is_some());
             good.finding=2;assert!(auth_response_for(&key,&nonce,&good.encode_to_vec(),REVIEW_VERSION).is_none());
+        }
+        #[test]
+        fn cp12br4_cancel_before_receive_preserves_unconsumed_invitation() {
+            let c=Controller::default();
+            let code=c.start_review(ReviewedSummary::checked(summary(),"FAILURE").unwrap()).unwrap();
+            let stop=AtomicBool::new(true);
+            assert!(receive_review_cancellable(&code,&stop).is_err());
+            assert!(c.active());
+            assert_eq!(receive_review(&code).unwrap().summary,summary());
+            c.stop(); assert!(receive_review(&code).is_err());
+        }
+        #[test]
+        fn cp12br4_cancel_during_authenticated_response_wait() {
+            // Deliberately delayed response on a real private same-account socket.
+            // Test only the production receiver: no synthetic model/desktop claim.
+            let id=random::<16>().unwrap(); let key=random::<32>().unwrap();
+            let dir=path(&id); fs::DirBuilder::new().mode(0o700).create(&dir).unwrap();
+            let mut ep=Endpoint{dir_id:identity(&dir).unwrap(),dir,socket_id:None};
+            let p=ep.dir.join("s"); let listener=UnixListener::bind(&p).unwrap();
+            ep.socket_id=Some(identity(&p).unwrap());
+            fs::set_permissions(&p,fs::Permissions::from_mode(0o600)).unwrap();
+            let code=format!("lu2-{}-{}",hex(&id),hex(&key));
+            let stop=AtomicBool::new(false); let (tx,rx)=std::sync::mpsc::channel();
+            thread::scope(|scope| {
+                let receive=scope.spawn(||receive_review_cancellable(&code,&stop));
+                let worker=scope.spawn(move ||{
+                    listener.set_nonblocking(true).unwrap();
+                    let end=Instant::now()+FRAME;
+                    let mut stream=loop{match listener.accept(){Ok((s,_))=>break s,Err(e) if e.kind()==io::ErrorKind::WouldBlock && Instant::now()<end=>thread::sleep(TICK),Err(e)=>panic!("{e}")}};
+                    assert!(peer(&stream));stream.set_nonblocking(true).unwrap();
+                    let running=AtomicBool::new(false);
+                    let request=read(&mut stream,&running,end).unwrap();
+                    assert!(auth_request_for(&key,&request,REVIEW_VERSION).is_some());
+                    tx.send(()).unwrap();
+                    // Retain socket until receiver closes; no response delivered.
+                    let mut b=[0]; loop{match stream.read(&mut b){Ok(0)=>break,Err(e) if e.kind()==io::ErrorKind::WouldBlock && Instant::now()<end=>thread::sleep(TICK),v=>panic!("unexpected receiver state: {v:?}")}}
+                });
+                rx.recv_timeout(FRAME).unwrap(); let at=Instant::now();stop.store(true,Ordering::Release);
+                assert!(receive.join().unwrap().is_err());assert!(at.elapsed()<Duration::from_secs(1));
+                worker.join().unwrap();
+            });
+        }
+        #[test]
+        fn cp12br4_revoked_review_and_protocol_rotation() {
+            let c=Controller::default();
+            let make=||ReviewedSummary::checked(summary(),"FAILURE").unwrap();
+            let old=c.start_review(make()).unwrap();
+            let mut stream=UnixStream::connect(endpoint(&old).join("s")).unwrap();
+            stream.write_all(&[0]).unwrap();
+            assert!(c.stop()); assert!(!endpoint(&old).exists());
+            assert!(receive_review(&old).is_err());
+            let fresh=c.start_review(make()).unwrap(); assert_ne!(old,fresh);
+            // A plain v1 code cannot be used to obtain v2 evidence.
+            assert!(receive(&format!("lu1{}",&fresh[3..])).is_err());
+            assert_eq!(receive_review(&fresh).unwrap().summary,summary());
+            c.stop(); assert!(receive_review(&fresh).is_err());
+        }
+        #[test]
+        fn cp12br4_review_different_account_denied() {
+            use std::os::unix::process::CommandExt;
+            // Explicitly require a privileged laboratory launcher for this
+            // witness instead of reporting an unexecuted UID check as PASS.
+            if uid()!=0 { eprintln!("R4_UID_WITNESS_NOT_EXECUTED"); return; }
+            let c=Controller::default(); let code=c.start_review(ReviewedSummary::checked(summary(),"FAILURE").unwrap()).unwrap();
+            let result=child("dx_ipc::linux::tests::cp12br4_child_wrong_uid")
+                .env("LU_DX_TEST_CODE",&code).uid(65534).gid(65534).output().unwrap();
+            assert!(result.status.success(),"alternate UID review witness failed");
+            assert_eq!(receive_review(&code).unwrap().summary,summary()); c.stop();
+            eprintln!("R4_UID_WITNESS_EXECUTED");
+        }
+        #[test]
+        #[ignore = "parent subprocess entry"]
+        fn cp12br4_child_wrong_uid() {
+            assert_eq!(std::env::var("LU_DX_TEST_CHILD").as_deref(),Ok("1"));
+            assert_eq!(uid(),65534); let code=std::env::var("LU_DX_TEST_CODE").unwrap();
+            assert_eq!(UnixStream::connect(endpoint(&code).join("s")).unwrap_err().kind(),io::ErrorKind::PermissionDenied);
+            assert!(receive_review(&code).is_err());
+        }
+        #[test]
+        fn cp12br4_abrupt_review_sender_exit_rejects_stale_invitation() {
+            use std::{io::BufRead,process::Stdio};
+            let mut process=child("dx_ipc::linux::tests::cp12br4_child_sender").stdout(Stdio::piped()).spawn().unwrap();
+            let stdout=process.stdout.take().unwrap();let (tx,rx)=std::sync::mpsc::channel();
+            let reader=thread::spawn(move||{for l in io::BufReader::new(stdout).lines().map_while(Result::ok){if let Some(code)=l.strip_prefix("INVITE:"){let _=tx.send(code.to_owned());break}}});
+            let ready=rx.recv_timeout(Duration::from_secs(5));let _=process.kill();let status=process.wait().unwrap();let _=reader.join();
+            assert!(!status.success());let old=ready.expect("review sender not ready");
+            assert!(receive_review(&old).is_err());let path=endpoint(&old);assert!(path.is_dir());
+            fs::remove_file(path.join("s")).unwrap();fs::remove_dir(path).unwrap();
+            let c=Controller::default();assert!(!c.active());
+            let fresh=c.start_review(ReviewedSummary::checked(summary(),"FAILURE").unwrap()).unwrap();
+            assert_ne!(old,fresh);assert!(receive_review(&old).is_err());assert_eq!(receive_review(&fresh).unwrap().summary,summary());c.stop();
+        }
+        #[test]
+        #[ignore = "parent subprocess entry"]
+        fn cp12br4_child_sender() {
+            assert_eq!(std::env::var("LU_DX_TEST_CHILD").as_deref(),Ok("1"));
+            let c=Controller::default();let code=c.start_review(ReviewedSummary::checked(summary(),"FAILURE").unwrap()).unwrap();
+            println!("INVITE:{code}");io::stdout().flush().unwrap();thread::sleep(Duration::from_secs(30));
         }
         #[test]
         fn native_roundtrip_single_use() {
@@ -788,9 +897,9 @@ mod linux {
     }
 }
 #[cfg(target_os = "linux")]
-pub(crate) use linux::{receive, receive_review, Controller};
+pub(crate) use linux::{receive, receive_review_cancellable, Controller};
 #[cfg(not(target_os="linux"))]
-pub(crate) fn receive_review(_: &str)->Result<ReviewedSummary,String>{Err("Collaborative review is not available on this platform.".into())}
+pub(crate) fn receive_review_cancellable(_: &str,_:&std::sync::atomic::AtomicBool)->Result<ReviewedSummary,String>{Err("Collaborative review is not available on this platform.".into())}
 #[cfg(not(target_os="linux"))]
 impl Controller { pub(crate) fn start_review(&self,_:ReviewedSummary)->Result<String,String>{Err("Collaborative review is not available on this platform.".into())} }
 pub(crate) const fn review_supported()->bool{cfg!(target_os="linux")}
