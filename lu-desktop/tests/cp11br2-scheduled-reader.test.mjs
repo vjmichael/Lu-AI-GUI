@@ -1,0 +1,11 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {readFileSync as read} from 'node:fs';
+const ui=read(new URL('../web/scheduled_ai.jsx',import.meta.url),'utf8');
+const host=read(new URL('../src-tauri/src/lib.rs',import.meta.url),'utf8');
+const runner=read(new URL('../src-tauri/src/scheduled_ai.rs',import.meta.url),'utf8');
+const scheduler=read(new URL('../../src-tauri/lu-core/src/native_background_scheduler/scheduled_ai.rs',import.meta.url),'utf8');
+test('note is optional and exact consent precedes durable grant',()=>{assert.match(ui,/\[useNote,setUseNote\]=useState\(false\)/);assert.match(ui,/readerNote:useNote\?note:null/);assert.match(host,/Exact note:\\n\{note\}/);assert.match(host,/blocking_show\(\).*return Ok\(None\)/);assert.match(host,/create_ai_reader_schedule/);});
+test('bounded genuine model request and independently checked Reader output',()=>{assert.match(runner,/exactly READ/);assert.match(runner,/execute_ai_reader/);assert.match(runner,/answer\.trim\(\) != receipt\.verified_text/);assert.match(runner,/let deadline = Instant::now\(\) \+ LIMIT/);assert.match(scheduler,/native_reader::read_plain_text_window/);assert.match(scheduler,/expected\.as_deref\(\) != Some\(output\)/);});
+test('result UI distinguishes verified source from completed model answer',()=>{assert.match(ui,/Verified answer from approved note/);assert.match(ui,/Source read verified; answer not verified/);assert.doesNotMatch(ui,/dangerouslySetInnerHTML/);});
+test('immutable grant and occurrence receipt are atomically bounded',()=>{assert.match(scheduler,/INSERT INTO lu_ai_reader_grants/);assert.match(scheduler,/INSERT INTO lu_ai_reader_receipts/);assert.match(scheduler,/PRIMARY KEY\(schedule_id,sequence\)/);assert.match(scheduler,/s\.workspace_id=\?2 AND s\.model_ref=\?3/);});

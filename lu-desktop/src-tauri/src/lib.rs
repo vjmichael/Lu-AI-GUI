@@ -6814,9 +6814,9 @@ fn lu_control_reminder(app:AppHandle,state:State<'_,Arc<DesktopState>>,
 }
 
 /// Explicit Tasks-form authority only. The frontend never supplies a model ID
-/// or a tool grant: consent binds the actual ready catalog selection.
+/// or a grant: native consent binds the actual ready catalog selection and optional exact note.
 #[tauri::command]
-async fn lu_schedule_ai(app:AppHandle,state:State<'_,Arc<DesktopState>>,chat_id:String,prompt:String,delay_minutes:u32,repeat_minutes:Option<u32>)->Result<Option<String>,String>{
+async fn lu_schedule_ai(app:AppHandle,state:State<'_,Arc<DesktopState>>,chat_id:String,prompt:String,delay_minutes:u32,repeat_minutes:Option<u32>,reader_note:Option<String>,reader_line:Option<u32>)->Result<Option<String>,String>{
     let owner=Arc::clone(state.inner());
     tauri::async_runtime::spawn_blocking(move||{
         let (chats,_)=owner.chats.list()?;
@@ -6828,11 +6828,17 @@ async fn lu_schedule_ai(app:AppHandle,state:State<'_,Arc<DesktopState>>,chat_id:
         let delay=u64::from(delay_minutes)*60;let repeat=repeat_minutes.map(|r|u64::from(r)*60);
         lu_core::native_background_scheduler::validate_ai_schedule(&prompt,model,delay,repeat).map_err(|_|"Use a short single-line task and a delay from one minute to one week")?;
         let safe=|s:&str|s.chars().filter(|c|!c.is_control()&&!matches!(c,'\u{202a}'..='\u{202e}'|'\u{2066}'..='\u{2069}')).take(160).collect::<String>();
-        let disclosure=format!("Task: {prompt}\n\nConversation: {}\nModel: {}\nStart: {delay_minutes} minute(s) after approval. Repeat: {}.\n\nOnly runs while Lu is open and this model is loaded and idle. No chat history, tools, files or internet. Missed repeats are combined; interrupted attempts are never replayed. Each run is limited to 128 tokens and 35 seconds. Up to 32 attempts are retained per schedule. Cancel stops the current attempt and future runs; it may unload the model.",safe(&chat.title),safe(&filename),repeat_minutes.map_or("Once".into(),|r|format!("Every {r} minute(s)")));
+        let reader=match (reader_note.as_deref(),reader_line){
+            (None,None)=>None,
+            (Some(note),Some(line))=>{lu_core::native_background_scheduler::validate_ai_reader(note,line).map_err(|_|"Use a short note and select a nonempty line (160 bytes maximum)")?;Some((note,line))},
+            _=>return Err("Choose a complete note and line".into()),
+        };
+        let details=match reader{None=>"No chat history, tools, files or internet. Each run is limited to 128 tokens and 35 seconds.".to_owned(),Some((note,line))=>format!("Approved source: pasted note only; line {line}. The model may request this one line once per occurrence. All note text will be retained locally with the task. No other tools, files, chat history or internet. The final answer must match the selected line. Shared 35-second limit across both model steps.\n\nExact note:\n{note}\n\nEnd of note.")};
+        let disclosure=format!("Task: {prompt}\n\nConversation: {}\nModel: {}\nStart: {delay_minutes} minute(s) after approval. Repeat: {}.\n\nOnly runs while Lu is open and this model is loaded and idle. {details} Missed repeats are combined; interrupted attempts are never replayed. Up to 32 attempts are retained per schedule. Cancel stops the current attempt and future runs; it may unload the model.",safe(&chat.title),safe(&filename),repeat_minutes.map_or("Once".into(),|r|format!("Every {r} minute(s)")));
         if !app.dialog().message(disclosure).title("Lu — Approve scheduled AI task").buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom("Schedule task".into(),"Decline".into())).blocking_show(){return Ok(None)}
         owner.chats.history_window(&chat_id,None,"older",1)?;
         if !owner.supervisor.status().is_ok_and(|s|s==snapshot){return Err("The loaded model changed. Review again.".into())}
-        let id=next_id("ai-task-");owner.background_scheduler.create_ai_schedule(&id,&chat_id,&prompt,model,delay,repeat).map_err(|_|"Could not save task; check the schedule limit")?;
+        let id=next_id("ai-task-");match reader{Some((note,line))=>owner.background_scheduler.create_ai_reader_schedule(&id,&chat_id,&prompt,model,delay,repeat,note,line),None=>owner.background_scheduler.create_ai_schedule(&id,&chat_id,&prompt,model,delay,repeat)}.map_err(|_|"Could not save task; check the schedule limit")?;
         let _=app.emit("lu-scheduled-ai-changed",());Ok(Some(id))
     }).await.map_err(|_|"Task approval unavailable")?
 }
