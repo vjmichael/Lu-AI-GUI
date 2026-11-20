@@ -28,3 +28,22 @@ test('results distinguish interruptions and bounded sample performance; no autom
   assert.match(controller,/store.search_current_messages/);assert.match(controller,/rows.len\(\)!=1/);
   assert.match(controller,/active_check_report\(\)/);assert.doesNotMatch(ui.slice(ui.indexOf('function LocalChecks'),ui.indexOf('export function SettingsWindow')),/run_id|SHA-256|repair now|tool registry/i);
 });
+test('expanded suite preserves legacy verdict and only uses newly reserved scratch slots',()=>{
+  assert.match(controller,/LEGACY_CHECKS/);
+  assert.match(controller,/SCRATCH_SLOTS: \[&str; 4\]/);
+  assert.match(controller,/AlreadyExists=>continue/);
+  assert.match(controller,/const SCALE_ROWS: u32 = 1024/);
+  assert.match(controller,/const SCALE_QUERIES: u32 = 64/);
+  assert.match(controller,/document_windows_check\(stop\)/);
+  assert.match(archive,/old.body.expanded!=body.expanded/);
+  assert.match(ui,/This report used the earlier three-check suite/);
+  assert.match(ui,/Prepared and reopened 1,024 sample messages/);
+  assert.match(ui,/if\(!await invoke\('lu_stop_local_checks'\)\)/);
+});
+test('installed acceptance requires native accessibility actions and independent read-only journal',()=>{
+  const gate=read('../../scripts/cp11a-native-checks-gui.py');
+  assert.match(gate,/mode=ro/); assert.match(gate,/action\(app.pid, 'Stop'/);
+  assert.match(gate,/app.kill\(\); app.wait/);assert.match(gate,/automatic replay/);
+  assert.match(gate,/fresh check changed retained interrupted workspace/);
+  assert.doesNotMatch(gate,/invoke\(|UPDATE active_check|INSERT INTO active_check/);
+});

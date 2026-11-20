@@ -2131,7 +2131,7 @@ async fn lu_run_local_checks(app:AppHandle,caller:tauri::WebviewWindow,
     let owner=Arc::clone(state.inner());
     let archive=owner.perf01.archive().ok_or("Local checks unavailable")?;
     tauri::async_runtime::spawn_blocking(move||owner.active_checks.run(&archive,||{
-        app.dialog().message("Check Lu locally using sample documents and conversations? This checks reading, saved history and a small search workload. No personal conversations or files are tested. Nothing is sent online, no model is loaded, and no repairs are made. You can stop between checks.")
+        app.dialog().message("Check Lu locally using sample documents and conversations? This checks reading, saved history and two sample search workloads. No personal conversations or files are tested. Nothing is sent online, no model is loaded, and no repairs are made. If a previous check was interrupted, its temporary data is preserved and a fresh check uses a separate workspace. You can stop between checks.")
             .title("Lu — Check Lu")
             .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom("Run checks".into(),"Cancel".into())).blocking_show()
     },||owner.generation_queue.has_foreground_jobs()||

@@ -7,16 +7,22 @@ use serde::{Deserialize, Serialize};
 use std::{path::{Path, PathBuf}, sync::{Arc, Mutex, atomic::{AtomicBool, Ordering}}, time::{Duration, Instant}};
 
 const SCRATCH: &str = "lu-check-work";
+// Fixed bounded slots; never open, move or delete an abandoned directory.
+const SCRATCH_SLOTS: [&str; 4] = [SCRATCH, "lu-check-work-2", "lu-check-work-3", "lu-check-work-4"];
 const ROWS: u32 = 128;
 const QUERIES: u32 = 16;
+const SCALE_ROWS: u32 = 1024;
+const SCALE_QUERIES: u32 = 64;
+const WINDOW_QUERIES: u32 = 16;
 const RUN_LIMIT: Duration = Duration::from_secs(30);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all="snake_case")]
-pub(crate) enum CheckKind { Reading, SavedHistory, SearchSpeed }
-const CHECKS: [CheckKind; 3] = [CheckKind::Reading, CheckKind::SavedHistory, CheckKind::SearchSpeed];
+pub(crate) enum CheckKind { Reading, SavedHistory, SearchSpeed, DocumentWindows, SearchScale }
+const LEGACY_CHECKS: [CheckKind; 3] = [CheckKind::Reading, CheckKind::SavedHistory, CheckKind::SearchSpeed];
+const CHECKS: [CheckKind; 5] = [CheckKind::Reading, CheckKind::SavedHistory, CheckKind::SearchSpeed, CheckKind::DocumentWindows, CheckKind::SearchScale];
 impl CheckKind {
-    fn expected(self)->u32 { match self { Self::Reading=>3, Self::SavedHistory=>4, Self::SearchSpeed=>QUERIES } }
+    fn expected(self)->u32 { match self { Self::Reading=>3, Self::SavedHistory=>4, Self::SearchSpeed=>QUERIES, Self::DocumentWindows=>WINDOW_QUERIES, Self::SearchScale=>SCALE_QUERIES } }
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all="snake_case")]
@@ -31,17 +37,19 @@ pub(crate) enum CheckReason { UserStopped, ChatBusy, TimeLimit, WorkspaceUnavail
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all="camelCase",deny_unknown_fields)]
 pub(crate) struct CheckResult { pub kind:CheckKind, pub passed:bool, pub verified_operations:u32, pub elapsed_micros:u64 }
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all="camelCase",deny_unknown_fields)]
-pub(crate) struct CheckBody { pub results:Vec<CheckResult>, pub reason:Option<CheckReason> }
+pub(crate) struct CheckBody { pub results:Vec<CheckResult>, pub reason:Option<CheckReason>, #[serde(default)] pub expanded:bool }
+impl Default for CheckBody { fn default()->Self { Self { results:Vec::new(),reason:None,expanded:true } } }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all="camelCase")]
 pub(crate) struct CheckReport { pub state:CheckState, #[serde(flatten)] pub body:CheckBody }
 impl CheckReport {
     pub fn valid(&self)->bool {
-        if self.body.results.len()>CHECKS.len() || self.body.results.iter().zip(CHECKS).any(|(r,k)|
-            r.kind!=k || r.verified_operations!=if r.passed {k.expected()}else{0}) { return false }
-        let all_pass=self.body.results.len()==CHECKS.len()&&self.body.results.iter().all(|r|r.passed);
+        let suite:&[CheckKind]=if self.body.expanded { &CHECKS } else { &LEGACY_CHECKS };
+        if self.body.results.len()>suite.len() || self.body.results.iter().zip(suite).enumerate().any(|(i,(r,k))|
+            r.kind!=*k || r.verified_operations!=if r.passed {k.expected()}else{0} || (!r.passed && i+1!=self.body.results.len())) { return false }
+        let all_pass=self.body.results.len()==suite.len()&&self.body.results.iter().all(|r|r.passed);
         match self.state {
             CheckState::Running=>self.body.reason.is_none(),
             CheckState::Complete=>all_pass&&self.body.reason.is_none(),
@@ -113,18 +121,26 @@ impl CheckController {
     }
 }
 
-// A fixed, exclusively created disposable workspace, never the actual chat
+// A bounded set of exclusively created disposable workspaces, never the actual chat
 // database. Do not reuse or delete a pre-existing directory. Only explicitly
 // named files created by this run are removed (no recursive deletion).
 struct Scratch { path:PathBuf, dir:cap_std::fs::Dir, cleaned:bool }
 impl Scratch {
     fn new(root:&Path)->Result<Self,()> {
-        let path=root.join(SCRATCH);
         let mut builder=std::fs::DirBuilder::new();
         #[cfg(unix)] {use std::os::unix::fs::DirBuilderExt;builder.mode(0o700);}
-        builder.create(&path).map_err(|_|())?;
-        let dir=cap_std::fs::Dir::open_ambient_dir(&path,cap_std::ambient_authority()).map_err(|_|())?;
-        Ok(Self{path,dir,cleaned:false})
+        for name in SCRATCH_SLOTS {
+            let path=root.join(name);
+            match builder.create(&path) {
+                Ok(())=>{
+                    let dir=cap_std::fs::Dir::open_ambient_dir(&path,cap_std::ambient_authority()).map_err(|_|())?;
+                    return Ok(Self{path,dir,cleaned:false})
+                },
+                Err(e) if e.kind()==std::io::ErrorKind::AlreadyExists=>continue,
+                Err(_)=>return Err(()),
+            }
+        }
+        Err(())
     }
     fn cleanup(&mut self)->Result<(),()> {
         for name in ["history.sqlite","history.sqlite-wal","history.sqlite-shm","history.sqlite-journal"] {
@@ -151,6 +167,8 @@ fn run_checks(root:&Path,stop:&impl Fn()->Option<CheckReason>,mut publish:impl F
             CheckKind::Reading=>reader_check(),
             CheckKind::SavedHistory=>history_check(&work),
             CheckKind::SearchSpeed=>search_check(&work,stop),
+            CheckKind::DocumentWindows=>document_windows_check(stop),
+            CheckKind::SearchScale=>search_scale_check(&work,stop),
         };
         let elapsed_micros=before.elapsed().as_micros().min(u64::MAX as u128) as u64;
         if let Some(r)=stop(){reason=Some(r);break}
@@ -211,6 +229,40 @@ fn search_check(path:&Path,stop:&impl Fn()->Option<CheckReason>)->Result<(),()> 
     Ok(())
 }
 
+// Fixed sample corpus and independent expected character windows. No user data.
+fn document_windows_check(stop:&impl Fn()->Option<CheckReason>)->Result<(),()> {
+    let pattern="a—漢🙂";
+    let text=pattern.repeat(8192);
+    let expected:Vec<char>=text.chars().collect();
+    for i in 0..WINDOW_QUERIES as usize {
+        if stop().is_some(){return Err(())}
+        let start=i*2047;
+        let end=(start+257).min(expected.len());
+        let window=native_reader::read_plain_text_window("sample.txt",text.as_bytes(),start,257,false).map_err(|_|())?.ok_or(())?;
+        if window.total_chars!=expected.len()||window.text!=expected[start..end].iter().collect::<String>(){return Err(())}
+    }
+    Ok(())
+}
+fn search_scale_check(path:&Path,stop:&impl Fn()->Option<CheckReason>)->Result<(),()> {
+    let store=AnsfStore::open(path).map_err(|_|())?;
+    store.create_session("check-scale","test","Scaled sample").map_err(|_|())?;
+    store.start_chapter("check-scale","Sample").map_err(|_|())?;
+    for i in 0..SCALE_ROWS {
+        if stop().is_some(){return Err(())}
+        let id=format!("scaled{i:04}"); let text=format!("scaled retrieval sample {id}");
+        store.append_entry("check-scale",&id,EntryRole::User,&text,&text).map_err(|_|())?;
+    }
+    drop(store);
+    let store=AnsfStore::open(path).map_err(|_|())?;
+    for i in 0..SCALE_QUERIES {
+        if stop().is_some(){return Err(())}
+        let id=format!("scaled{:04}",i*16+7); let text=format!("scaled retrieval sample {id}");
+        let rows=store.search_current_messages("check-scale",&id,2).map_err(|_|())?;
+        if rows.len()!=1||rows[0].message_id!=id||rows[0].content!=text{return Err(())}
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -223,7 +275,7 @@ mod tests {
         assert!(c.status(&archive).unwrap().report.is_none());
         let report=c.run(&archive,||true,||false).unwrap().unwrap();
         assert_eq!(report.state,CheckState::Complete);assert!(report.valid());
-        assert_eq!(report.body.results.iter().map(|r|r.verified_operations).collect::<Vec<_>>(),vec![3,4,16]);
+        assert_eq!(report.body.results.iter().map(|r|r.verified_operations).collect::<Vec<_>>(),vec![3,4,16,16,64]);
         println!("CHECK_REPORT {}",serde_json::to_string(&report).unwrap());
         let support=serde_json::to_value(archive.report().unwrap()).unwrap();
         assert_eq!(support["activeCheck"],serde_json::to_value(&report).unwrap());
@@ -246,9 +298,35 @@ mod tests {
         }).unwrap();assert_eq!(report.state,CheckState::Stopped);assert_eq!(report.body.results.len(),1);
         assert!(!root.join(SCRATCH).exists());std::fs::remove_dir(root).unwrap();
     }
+    #[test] fn cp11a_controller_stop_during_native_work_is_durable() {
+        let root=root();let path=root.join("trace.sqlite");let a=DiagnosticArchive::open(&path).unwrap();let c=CheckController::new(&root);
+        std::thread::scope(|scope|{
+            let run=scope.spawn(||c.run(&a,||true,||false));
+            let deadline=Instant::now()+Duration::from_secs(10);
+            loop {
+                if let Some(r)=a.active_check_report().unwrap(){
+                    if r.state==CheckState::Running&&r.body.results.len()>=3&&r.body.results.len()<CHECKS.len(){break}
+                    assert_eq!(r.state,CheckState::Running,"native run ended before cancellation witness");
+                }
+                assert!(Instant::now()<deadline,"native cancellation witness timed out");
+                std::thread::sleep(Duration::from_millis(5));
+            }
+            let stopped_at=Instant::now();assert!(c.stop());
+            let report=run.join().unwrap().unwrap().unwrap();
+            assert_eq!(report.state,CheckState::Stopped);assert_eq!(report.body.reason,Some(CheckReason::UserStopped));
+            assert!(report.body.results.len()<CHECKS.len());assert!(report.valid());assert!(stopped_at.elapsed()<Duration::from_secs(5));
+            assert!(!c.active());assert!(!c.stop());assert_eq!(a.active_check_report().unwrap(),Some(report));
+        });
+        drop(a);let reopened=DiagnosticArchive::open(&path).unwrap();assert_eq!(reopened.active_check_report().unwrap().unwrap().state,CheckState::Stopped);
+        assert!(!root.join(SCRATCH).exists());drop(reopened);std::fs::remove_dir_all(root).unwrap();
+    }
     #[test] fn cp11a_existing_workspace_is_not_touched() {
         let root=root();let work=root.join(SCRATCH);std::fs::create_dir(&work).unwrap();std::fs::write(work.join("history.sqlite"),b"original").unwrap();
+        let r=run_checks(&root,&||None,|_|Ok(())).unwrap();assert_eq!(r.state,CheckState::Complete);
+        assert_eq!(std::fs::read(work.join("history.sqlite")).unwrap(),b"original");
+        for slot in &SCRATCH_SLOTS[1..]{std::fs::create_dir(root.join(slot)).unwrap();}
         let r=run_checks(&root,&||None,|_|panic!("no fixture allowed")).unwrap();assert_eq!(r.state,CheckState::Attention);
+        assert_eq!(r.body.reason,Some(CheckReason::WorkspaceUnavailable));
         assert_eq!(std::fs::read(work.join("history.sqlite")).unwrap(),b"original");std::fs::remove_dir_all(root).unwrap();
     }
     #[test] fn cp11a_restart_interrupted_and_invalid_report_refused() {
@@ -276,7 +354,19 @@ mod tests {
         assert!(root.join(SCRATCH).exists());
         assert!(c.run(&archive,||false,||false).unwrap().is_none());
         assert_eq!(archive.active_check_report().unwrap(),Some(report));
+        let fresh=c.run(&archive,||true,||false).unwrap().unwrap();
+        assert_eq!(fresh.state,CheckState::Complete);assert!(root.join(SCRATCH).exists());
+        assert!(!root.join(SCRATCH_SLOTS[1]).exists());
         drop(archive);std::fs::remove_dir_all(root).unwrap();
+    }
+    #[test] fn cp11a_legacy_report_not_promoted_and_invalid_prefix_refused() {
+        let results=LEGACY_CHECKS.iter().map(|kind|CheckResult{kind:*kind,passed:true,verified_operations:kind.expected(),elapsed_micros:1}).collect::<Vec<_>>();
+        let old=serde_json::json!({"results":results,"reason":null});
+        let mut report=CheckReport{state:CheckState::Complete,body:serde_json::from_value(old).unwrap()};
+        assert!(report.valid());assert!(!report.body.expanded);
+        report.body.expanded=true;assert!(!report.valid());
+        report.state=CheckState::Running;assert!(report.valid());
+        report.body.results[0].passed=false;report.body.results[0].verified_operations=0;assert!(!report.valid());
     }
     #[test] #[ignore="subprocess-only interruption fixture"] fn cp11a_crash_child(){
         let root=PathBuf::from(std::env::var_os("LU_CP11A_TEST_ROOT").expect("disposable fixture root"));

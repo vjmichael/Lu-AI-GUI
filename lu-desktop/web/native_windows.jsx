@@ -56,9 +56,9 @@ function Readiness({value}){
 const bytesGiB=value=>Number.isFinite(value)&&value>=0?(value/1073741824).toFixed(2)+' GiB':'Not measured';
 // The local check suite is not a model tool or a preference granting authority.
 // No runs are started on mount or restart. Poll only while visiting this panel.
-const CHECK_LABELS={reading:'Reading sample documents',saved_history:'Saving and reopening sample history',search_speed:'Sample history search'};
-const CHECK_STATUS={running:'Checking…',complete:'All three checks passed.',attention:'A check needs attention.',stopped:'Checks stopped. Only finished checks are shown.',interrupted:'Last check was interrupted. Unfinished checks were not verified.'};
-const CHECK_GUIDANCE={user_stopped:'You can run a fresh check when ready.',chat_busy:'Lu became busy or resources were unavailable. Try again when idle.',time_limit:'The check reached its time limit.',workspace_unavailable:'A temporary check workspace is unavailable. No existing files were changed.',cleanup_unavailable:'The temporary sample data could not be fully removed. No real conversations were changed.',check_failed:'An expected result could not be confirmed. You can prepare a local troubleshooting report.'};
+const CHECK_LABELS={reading:'Reading sample documents',saved_history:'Saving and reopening sample history',search_speed:'Sample history search',document_windows:'Reading longer sample documents',search_scale:'Larger sample history search'};
+const CHECK_STATUS={running:'Checking…',complete:'All checks in this report passed.',attention:'A check needs attention.',stopped:'Checks stopped. Only finished checks are shown.',interrupted:'Last check was interrupted. Unfinished checks were not verified. You can approve a fresh check; earlier sample files are preserved.'};
+const CHECK_GUIDANCE={user_stopped:'You can run a fresh check when ready.',chat_busy:'Lu became busy or resources were unavailable. Try again when idle.',time_limit:'The check reached its time limit.',workspace_unavailable:'No fresh temporary check workspace is available. Previously retained files were not changed.',cleanup_unavailable:'The temporary sample data could not be fully removed. No real conversations were changed.',check_failed:'An expected result could not be confirmed. You can prepare a local troubleshooting report.'};
 function LocalChecks({active}){
   const [status,setStatus]=useState(null);
   const [pending,setPending]=useState(false);
@@ -85,7 +85,7 @@ function LocalChecks({active}){
   }
   async function stop(){
     setStopping(true);
-    try{await invoke('lu_stop_local_checks');}
+    try{if(!await invoke('lu_stop_local_checks')){setStopping(false);setStatus(await invoke('lu_local_check_status'));}}
     catch{setStopping(false);setError('Could not request a stop.');}
   }
   const running=pending||Boolean(status?.active),report=status?.report;
@@ -99,9 +99,12 @@ function LocalChecks({active}){
     <p role="status">{running?(stopping?'Stopping…':'Checking or waiting for approval…'):report?CHECK_STATUS[report.state]||'Result unavailable.':status?'No checks run yet.':'Local checks unavailable.'}</p>
     {error&&<p role="alert">{error}</p>}
     {report&&<div className="nativeOptionList">
+      {!report.expanded&&<p>This report used the earlier three-check suite.</p>}
       {report.results.map(result=><div key={result.kind}>
         <strong>{CHECK_LABELS[result.kind]||'Local check'}</strong> — {result.passed?'Passed':'Needs attention'}
         {result.kind==='search_speed'&&result.passed&&<p>Prepared 128 sample messages and verified {result.verifiedOperations} searches in {(result.elapsedMicros/1000).toFixed(1)} ms. This is a small local workload, not a model benchmark.</p>}
+        {result.kind==='document_windows'&&result.passed&&<p>Verified {result.verifiedOperations} character windows in {(result.elapsedMicros/1000).toFixed(1)} ms.</p>}
+        {result.kind==='search_scale'&&result.passed&&<p>Prepared and reopened 1,024 sample messages and verified {result.verifiedOperations} searches in {(result.elapsedMicros/1000).toFixed(1)} ms. Includes preparation and verification, not a model benchmark.</p>}
       </div>)}
       {report.reason&&<p>{CHECK_GUIDANCE[report.reason]||'The check did not finish.'}</p>}
     </div>}

@@ -106,7 +106,7 @@ impl DiagnosticArchive{
         if !report.valid(){return Err("Check report could not be confirmed".into())}
         let conn=self.conn.lock().map_err(|_|"Check report unavailable")?;
         let old=Self::read_active_check(&conn)?.ok_or("Check report could not be confirmed")?;
-        if old.state!=CheckState::Running||!body.results.starts_with(&old.body.results){return Err("Check report could not be confirmed".into())}
+        if old.state!=CheckState::Running||old.body.expanded!=body.expanded||!body.results.starts_with(&old.body.results){return Err("Check report could not be confirmed".into())}
         let body=serde_json::to_string(body).map_err(|_|"Check report unavailable")?;
         let rows=conn.execute("UPDATE active_check SET state=?1,body=?2 WHERE slot=1 AND run_id=?3 AND state='running'",
             params![state.label(),body,id]).map_err(|_|"Check report unavailable")?;
