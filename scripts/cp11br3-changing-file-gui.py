@@ -43,16 +43,32 @@ def review(pid,title,choice,phrases):
 def picker(pid,path):
     # GTK native file chooser; verify focus belongs to actual app before typing.
     def chooser():
+        result=subprocess.run(['xdotool','search','--onlyvisible','--name','^Open File$'],capture_output=True,text=True,timeout=5)
+        wins=result.stdout.splitlines()
+        if len(wins)!=1:return None
+        wid=wins[0]
+        if int(subprocess.check_output(['xdotool','getwindowpid',wid],text=True,timeout=5))!=pid:return None
+        return wid
+    window=wait(chooser,30,'actual native file chooser')
+    subprocess.run(['xdotool','windowactivate','--sync',window],check=True,timeout=5)
+    require(subprocess.check_output(['xdotool','getactivewindow'],text=True,timeout=5).strip()==window,'file chooser focus')
+    # A focused chooser location entry is required; GTK may initially have the
+    # WebKit select popup's keyboard grab, so dismiss that before typing.
+    time.sleep(.8)
+    def entry():
         for n in nodes(gui.Atspi.get_desktop(0)):
             try:
-                if n.get_process_id()==pid and n.get_role_name() in ('file chooser','dialog') and n.get_state_set().contains(gui.Atspi.StateType.SHOWING):
-                    if any(child.get_name() in ('Open','Select','Choose') and child.get_role_name()=='push button' for child in nodes(n)):return n
+                if n.get_process_id()==pid and n.get_role_name() in ('text','entry') and n.get_state_set().contains(gui.Atspi.StateType.FOCUSED) and n.get_editable_text_iface():return n
             except Exception:pass
-    wait(chooser,30,'actual native file chooser')
-    window=subprocess.check_output(['xdotool','getactivewindow'],text=True,timeout=5).strip();require(int(subprocess.check_output(['xdotool','getwindowpid',window],text=True,timeout=5))==pid,'file chooser owner')
-    subprocess.run(['xdotool','key','--clearmodifiers','ctrl+l'],check=True,timeout=5);time.sleep(.3)
-    subprocess.run(['xdotool','type','--clearmodifiers','--delay','15','--',str(path)],check=True,timeout=20)
+    subprocess.run(['xdotool','key','--clearmodifiers','ctrl+l'],check=True,timeout=5)
+    e=wait(entry,8,'focused chooser location entry')
+    require(e.get_editable_text_iface().set_text_contents(str(path)),'setting native chooser location')
+    require(gui.Atspi.Text.get_text(e.get_text_iface(),0,-1)==str(path),'exact picker location')
     subprocess.run(['xdotool','key','Return'],check=True,timeout=5)
+    time.sleep(.5)
+    if chooser():
+        n=named(pid,'Open',actionable=True)
+        if n:action(pid,'Open')
 
 def verify(path,seq,source):
     def terminal():
