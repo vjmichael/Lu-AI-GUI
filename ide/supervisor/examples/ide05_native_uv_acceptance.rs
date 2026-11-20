@@ -36,6 +36,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = env::args().skip(1).collect::<Vec<_>>();
     if args.as_slice() != ["--offline-miss"]
         && args.as_slice() != ["--cancel"]
+        && args.as_slice() != ["--live-cancel"]
         && args.as_slice() != ["--positive"]
         && args.as_slice() != ["--crash-after-running"]
         && args.as_slice() != ["--recover"]
@@ -45,7 +46,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let crash = args.as_slice() == ["--crash-after-running"];
     let recover = args.as_slice() == ["--recover"];
     let cancel_before_launch = args.as_slice() == ["--cancel"];
-    let positive = args.as_slice() == ["--positive"];
+    let live_cancel = args.as_slice() == ["--live-cancel"];
+    let positive = args.as_slice() == ["--positive"] || live_cancel;
     if (positive || crash || recover) && !cfg!(feature = "ide055-ci-wheelhouse") {
         return Err("IDE055_CI_WHEELHOUSE_FEATURE_REQUIRED".into());
     }
@@ -237,6 +239,24 @@ wheels = [
         // package download. This is not a human cancel button acceptance.
         cancellation.request_cancel();
     }
+    // Fixed CI wheel fixture only: observe the actual child-created
+    // virtualenv marker before requesting cancellation.
+    let witness = if live_cancel {
+        let handle = cancellation.clone_handle();
+        let marker = output.join(&prepared.job_id).join(".venv/pyvenv.cfg");
+        Some(std::thread::spawn(move || {
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(40);
+            while std::time::Instant::now() < deadline {
+                if marker.is_file() {
+                    handle.request_cancel();
+                    return true;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(1));
+            }
+            handle.request_cancel();
+            false
+        }))
+    } else { None };
     let stream = Arc::new(LiveOutput::default());
     let result = execute_linux_worker_with_output(
         &supervisor,
@@ -248,6 +268,11 @@ wheels = [
         Some(Arc::clone(&stream)),
     )
     .map_err(|e| e.code())?;
+    if let Some(witness) = witness {
+        if !witness.join().map_err(|_| "IDE055_LIVE_CANCEL_WITNESS_PANIC")? {
+            return Err("IDE055_LIVE_UV_START_NOT_OBSERVED".into());
+        }
+    }
     if !cancel_before_launch && !positive {
         let page = stream.page(0);
         let diagnostic = page
@@ -276,7 +301,7 @@ wheels = [
     // Task 4 CI-only positive case: expose a bounded native diagnostic from
     // the *fixed synthetic* package when uv exits nonzero. Never turn this
     // diagnostic into an execution receipt or expose general project stderr.
-    if positive && result.exit_code != Some(0) {
+    if positive && !live_cancel && result.exit_code != Some(0) {
         let diagnostic = stream
             .page(0)
             .chunks
@@ -292,7 +317,7 @@ wheels = [
             diagnostic.chars().take(1000).collect::<String>().replace('\n', " ")
         );
     }
-    let expected = if cancel_before_launch {
+    let expected = if cancel_before_launch || live_cancel {
         JobPhase::Cancelled
     } else if positive {
         JobPhase::Completed
@@ -301,15 +326,15 @@ wheels = [
     };
     if result.summary.phase != expected
         || result.summary.requires_reconciliation
-        || (positive && result.exit_code != Some(0))
+        || (positive && !live_cancel && result.exit_code != Some(0))
         || (!positive && !cancel_before_launch && result.exit_code == Some(0))
         || result.output_limit_hit
-        || !result.summary.execution_verified && !cancel_before_launch
+        || !result.summary.execution_verified && !cancel_before_launch && !live_cancel
     {
         return Err("IDE055_REAL_UV_OS_TERMINATION_OR_CANCELLATION_NOT_VERIFIED".into());
     }
     verify_input(&input).map_err(|_| "IDE055_FROZEN_INPUT_MUTATED")?;
-    if positive {
+    if positive && !live_cancel {
         let wheel = std::path::Path::new(
             "/opt/lu-ide/runtimes/uv_sync_offline/wheelhouse/ide05_demo-1.0.0-py3-none-any.whl",
         );
@@ -359,7 +384,9 @@ wheels = [
         terminal={}; runtime={}; native_exit={:?}; source_preserved=true; \
         restart_not_authorized=true; CI_SYNTHETIC_CONSENT_NOT_HUMAN=true; \
         INSTALLED_DEPENDENCIES_UNVERIFIED=true",
-        if cancel_before_launch {
+        if live_cancel {
+            "live_cancel"
+        } else if cancel_before_launch {
             "cancel"
         } else if positive {
             "positive"
