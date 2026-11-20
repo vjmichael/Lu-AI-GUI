@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "b91b4433bd33da3d03dfe7749aefb2c09809203b",
+  "sourceCommitBeforeLock": "1114285198deba70243eb71a447a82e90814d3ab",
   "trackedFileCount": 1221,
   "files": [
     {
@@ -917,7 +917,7 @@
     },
     {
       "path": "docs/LU_DEVELOPMENT_LEDGER.md",
-      "blob": "1db0d58992d473a089829bc6a6442aa603482bff"
+      "blob": "a5584b70479f6628a1a34bbadda6ca9e3eb5542a"
     },
     {
       "path": "docs/LU_E1_NATIVE_EVIDENCE_20261107.md",
