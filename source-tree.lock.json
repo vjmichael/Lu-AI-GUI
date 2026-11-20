@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "78b69e246c9da11b6e457ccadfdf1675a85f5a7a",
+  "sourceCommitBeforeLock": "5f0f0f8e65efccf5db809630bd0d237b1de24693",
   "trackedFileCount": 1982,
   "files": [
     {
@@ -241,7 +241,7 @@
     },
     {
       "path": ".github/workflows/ide-dev04-5d5-owner-event-native.yml",
-      "blob": "2f3f3e85402daa5a7df41df45b1c00ae33b44454"
+      "blob": "b8581d947a03c5e05214dd9b60f0f992275c6354"
     },
     {
       "path": ".github/workflows/ide-dev05-consolidated-native.yml",
@@ -409,7 +409,7 @@
     },
     {
       "path": ".github/workflows/ide-wo6-native-os-acceptance.yml",
-      "blob": "1d8a7cebc2fe6cd25a9b74f15a4327d17ce97a9d"
+      "blob": "1f054eedc21964f58afc1eeb1bc639a640e2d2ff"
     },
     {
       "path": ".github/workflows/ide-wo7-installed-acceptance.yml",
@@ -1185,7 +1185,7 @@
     },
     {
       "path": "docs/LU_DEVELOPMENT_LEDGER.md",
-      "blob": "51c54d6e6811f3ca86ba8f01448adb6f65cf1771"
+      "blob": "0086c8b195a59a2cc7c924e81ac78360b9a36480"
     },
     {
       "path": "docs/LU_E1_NATIVE_EVIDENCE_20261107.md",
@@ -2605,23 +2605,23 @@
     },
     {
       "path": "ide/audits/test_p05_owner_successor.py",
-      "blob": "fbb13ec4b944af9c6dd7fda09b8c2ee680251199"
+      "blob": "25353b839c087cbb19ed79e581ccf5769185f99b"
     },
     {
       "path": "ide/audits/verify_p05_owner_successor.py",
-      "blob": "720c6b3890e1c2136cead9ef16b5b5d79ea3bd4c"
+      "blob": "605b647217ce06617bd74728df73db00a74ed9c5"
     },
     {
       "path": "ide/ci/merge02-reviewed-native-boundaries.json",
-      "blob": "780abb4890740fb3beaae673afcf88d8aaef2c0e"
+      "blob": "f1a806989f76c59067187352ddb728a574473de4"
     },
     {
       "path": "ide/ci/test_verify_reviewed_native_boundaries.py",
-      "blob": "4e31e9db503f130255c050bb09fc0bb78f681faf"
+      "blob": "30eb011e406bbd7f385c3ea8fef0f6a535dc3cbe"
     },
     {
       "path": "ide/ci/verify_reviewed_native_boundaries.py",
-      "blob": "552591d3128dc3f2fb883247d4b4d4c187374112"
+      "blob": "88474817ca95ff985ca4392bed9af92e5f485da2"
     },
     {
       "path": "ide/docs/ADR_0001_STANDALONE_APP_AND_LU_BRIDGE.md",
@@ -3673,7 +3673,7 @@
     },
     {
       "path": "ide/llvm18_owner/Transfer-PinnedOwnerBundle.ps1",
-      "blob": "785cef7c65c436fb0822a4277f9f8a8209b37e89"
+      "blob": "d52a41e667e65720657bd5574cbaa5a75a12e2c7"
     },
     {
       "path": "ide/llvm18_owner/apply_clangd20_windows_startup.py",
@@ -3689,7 +3689,7 @@
     },
     {
       "path": "ide/llvm18_owner/test_pinned_chrono_overlay.py",
-      "blob": "c3a6e66fb12afe08ead80d8006ac758bf75c6a86"
+      "blob": "bba26fe89848e841c8ae630d324fad655db35973"
     },
     {
       "path": "ide/packaging/Build-Wo7ReviewedNsis.ps1",
@@ -3717,7 +3717,7 @@
     },
     {
       "path": "ide/packaging/audit_p05_reviewed_workflow_successor.py",
-      "blob": "4045a2f9605717cc482d0e0e06da53f558b3b285"
+      "blob": "529ff4dbac31ab10501d70084a725422de13cf5e"
     },
     {
       "path": "ide/packaging/b2_b4_installer_handoff.py",
@@ -3949,7 +3949,7 @@
     },
     {
       "path": "ide/packaging/test_p05_reviewed_workflow_successor.py",
-      "blob": "f0d71fa1bb5e0a7f31f30ca7d200a854187439bd"
+      "blob": "b34ddbbbb8179c5577e372543e8dd2500b00b73c"
     },
     {
       "path": "ide/packaging/test_p05_semantic_reconciliation.py",
@@ -4413,7 +4413,7 @@
     },
     {
       "path": "ide/sandbox/src/bin/linux_delegated_ci_wo4_host.rs",
-      "blob": "e534ce529982bbbae648cc40867683abcf8f1d04"
+      "blob": "99abaebbbc10b29aa72667055fd634b3d61f3860"
     },
     {
       "path": "ide/sandbox/src/bin/linux_delegated_ci_wo6_build_host.rs",
@@ -4505,11 +4505,11 @@
     },
     {
       "path": "ide/supervisor/examples/ide05_native_uv_acceptance.rs",
-      "blob": "ffbc92185a989c20edd8566caa8a4460bcb5ffd6"
+      "blob": "280620ca57b1ad5c921cb1b1af9f986f653ca610"
     },
     {
       "path": "ide/supervisor/examples/ide08_native_vcpkg_acceptance.rs",
-      "blob": "e87ac3ece23c5b2bf9998fa4a2ec2fcd96c4bd66"
+      "blob": "eca321d18d23fcfa6d412a73a18eb831da435a9c"
     },
     {
       "path": "ide/supervisor/examples/support/cancel_history.rs",
@@ -4701,7 +4701,7 @@
     },
     {
       "path": "ide/supervisor/src/linux_worker.rs",
-      "blob": "4c02cc0c448e7a0e0adf31f38c49c7bb669d8d2a"
+      "blob": "fab099d126704be520974f0820bc55ac204e563e"
     },
     {
       "path": "ide/supervisor/src/live_output.rs",
@@ -5977,11 +5977,11 @@
     },
     {
       "path": "scripts/core01-verify-scope.mjs",
-      "blob": "1b8a5b92e4b29851335023d2dc448095f1397c1f"
+      "blob": "b7b65f27d553200fa4212b228fd13e21f4ea9d84"
     },
     {
       "path": "scripts/core01-verify-scope.test.mjs",
-      "blob": "637ffdcbdaa3a7e3722ed0954c38af66558ec966"
+      "blob": "f247f7f8bc4c2d475170318098619b3ec11f1afb"
     },
     {
       "path": "scripts/core01f-acceptance-reconcile.mjs",
