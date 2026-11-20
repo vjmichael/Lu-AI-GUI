@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "4c8c770a436555ebf8dc319c0ea8cbcbf3355688",
-  "trackedFileCount": 1977,
+  "sourceCommitBeforeLock": "258468f5067b1af525c710dfd0e43fa4ed9896ad",
+  "trackedFileCount": 1978,
   "files": [
     {
       "path": ".gitattributes",
@@ -2197,7 +2197,7 @@
     },
     {
       "path": "ide/app/tests/fin05_offline_vcpkg_worker.test.mjs",
-      "blob": "b218375352f1c0bc64d79228a59e8032b7c29fb7"
+      "blob": "a24f71ee525e59339af31d4f7f776bd2f57ed08f"
     },
     {
       "path": "ide/app/tests/fin06_guided_workflow.test.mjs",
@@ -4504,6 +4504,10 @@
       "blob": "d4b442ca4ce9da09f32b605892192f68e3406c7f"
     },
     {
+      "path": "ide/supervisor/examples/ide08_native_vcpkg_acceptance.rs",
+      "blob": "e87ac3ece23c5b2bf9998fa4a2ec2fcd96c4bd66"
+    },
+    {
       "path": "ide/supervisor/examples/support/cancel_history.rs",
       "blob": "fba5177882a3ff039b042b94fbf76e882299f5e5"
     },
@@ -4681,7 +4685,7 @@
     },
     {
       "path": "ide/supervisor/src/linux_worker.rs",
-      "blob": "61832a137cf632acd5d9080791db06e65187e6e3"
+      "blob": "4c02cc0c448e7a0e0adf31f38c49c7bb669d8d2a"
     },
     {
       "path": "ide/supervisor/src/live_output.rs",
