@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "d065c0d518a7925672e01b4eee8bd0fe2eb70529",
+  "sourceCommitBeforeLock": "27a2e528fa76b03a386b209a05cbf2f7a070d0dd",
   "trackedFileCount": 1202,
   "files": [
     {
@@ -893,7 +893,7 @@
     },
     {
       "path": "docs/LU_CP11B_SCHEDULED_REMINDERS_20261120.md",
-      "blob": "9777c17bace78becd3b014b5e48e4b31bc01c36b"
+      "blob": "a6cc6b5d9f8d5ed40c27ae1e561ca0b61c03034b"
     },
     {
       "path": "docs/LU_CURRENT_PREVIEW_CPU_VULKAN_DUAL_ENGINE_20261109.md",
@@ -905,7 +905,7 @@
     },
     {
       "path": "docs/LU_DEVELOPMENT_LEDGER.md",
-      "blob": "10dbd8766f69a9ff06d1431eed15a3dd9eef22f6"
+      "blob": "204fd46b1783ce438b517b3c381476fe550e460c"
     },
     {
       "path": "docs/LU_E1_NATIVE_EVIDENCE_20261107.md",
