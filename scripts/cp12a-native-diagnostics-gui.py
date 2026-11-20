@@ -45,7 +45,7 @@ def saved(root,prompt):
     for p in (root/'ansf'/'books').glob('*.sqlite'):
         try:
             with sqlite3.connect(p.as_uri()+'?mode=ro',uri=True,timeout=.1) as c:
-                row=c.execute("""SELECT e.text FROM ansf_live_chat_events u JOIN ansf_visible_chat d ON d.session_id=u.session_id AND d.generation_id=u.user_turn_id JOIN ansf_live_chat_events e ON e.seq=d.latest_event_seq WHERE u.text=? AND u.kind='reader_user' AND u.origin='host' AND d.role='assistant' AND d.status='final' AND e.kind='assistant_progress' AND e.origin='host' AND EXISTS(SELECT 1 FROM ansf_live_chat_events c WHERE c.session_id=u.session_id AND c.generation_id=u.user_turn_id AND c.kind='assistant_completed' AND c.origin='host')""",(prompt,)).fetchone()
+                row=c.execute("""SELECT e.text FROM ansf_live_chat_events u JOIN ansf_visible_chat d ON d.session_id=u.session_id AND d.generation_id=u.generation_id JOIN ansf_live_chat_events e ON e.seq=d.latest_event_seq WHERE u.text=? AND u.kind='reader_user' AND u.origin='host' AND d.role='assistant' AND d.status='final' AND e.kind='assistant_progress' AND e.origin='host' AND EXISTS(SELECT 1 FROM ansf_live_chat_events c WHERE c.session_id=u.session_id AND c.generation_id=u.user_turn_id AND c.kind='assistant_completed' AND c.origin='host')""",(prompt,)).fetchone()
                 if row:return row[0]
         except sqlite3.OperationalError:continue
     return None
