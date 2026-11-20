@@ -127,6 +127,15 @@ const MAX_TOOL_BINARY: u64 = 32 * 1024 * 1024;
 // executable. Only the fixed system Cargo path needs a larger hash budget.
 // Other executables, exact digests, and root-owned admission are unchanged.
 const MAX_CARGO_BINARY: u64 = 64 * 1024 * 1024;
+// Node's test runner spawns a child interpreter. Both processes need V8 and
+// libuv threads; serialize files and reduce the runtime pools instead of
+// relaxing the existing kernel task quota. No caller-selected arguments.
+const NODE_TEST_ARGS: &[&str] = &[
+    "--v8-pool-size=1",
+    "--test",
+    "--test-concurrency=1",
+    "--test-reporter=tap",
+];
 const TOTAL_LOG_BUFFER: usize = 64 * 1024;
 const MAX_OUTPUT_FILES: usize = 6_000;
 const MAX_ARTIFACT_BYTES: u64 = 256 * 1024 * 1024;
@@ -690,6 +699,9 @@ fn command_for(
             .arg("--setenv")
             .arg("TMPDIR")
             .arg("/tmp");
+        if bundle.profile == crate::runtime_bundles::RuntimeProfile::NodeTests {
+            cmd.arg("--setenv").arg("UV_THREADPOOL_SIZE").arg("1");
+        }
     }
     if plan.recipe_id == "uv_sync_offline" {
         // Source tree and lock are immutable at /workspace; all writable
@@ -809,7 +821,7 @@ fn command_for(
                 }
                 "js_tests" => {
                     cmd.arg("/runtime/bin/node")
-                        .args(["--test", "--test-reporter=tap"])
+                        .args(NODE_TEST_ARGS)
                         .arg(format!("--test-name-pattern=^{name}$"))
                         .arg(format!("/workspace/{path}"));
                 }
@@ -845,7 +857,7 @@ fn command_for(
         }
         "js_tests" if runtime.is_some() => {
             cmd.arg("/runtime/bin/node")
-                .args(["--test", "--test-reporter=tap"]);
+                .args(NODE_TEST_ARGS);
         }
         "cpp_cmake_build" if runtime.is_some() => {
             cmd.arg("/runtime/bin/cmake")
