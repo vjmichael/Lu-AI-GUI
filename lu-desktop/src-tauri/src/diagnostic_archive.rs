@@ -2,6 +2,7 @@
 //! No prompts, responses, image bytes, user/chat/model IDs, paths, raw errors,
 //! or authorization material. Recovery is diagnostic, NOT authority.
 use crate::causal_diagnostic::CausalProgress;
+use crate::active_checks::{CheckBody,CheckReport,CheckState};
 use lu_core::{diagnostic_contract::{self,encode_diagnostic_trace,decode_diagnostic_trace},
     diagnostic_localization::{localize_transactional_turn,DiagnosticFinding},wire::proto};
 use rusqlite::{Connection,OptionalExtension,params};
@@ -33,6 +34,9 @@ pub(crate) struct ArchiveReport{
     schema:&'static str,
     findings:Vec<ArchivedFinding>,
     unavailable_records:usize,
+    // Additive local-check summary under the existing explicit native consent.
+    active_check:Option<CheckReport>,
+    active_check_unavailable:bool,
 }
 impl DiagnosticArchive{
     // Called only after process-exclusive DesktopOwner acquisition.
@@ -47,7 +51,12 @@ impl DiagnosticArchive{
                body BLOB NOT NULL CHECK(length(body)>0 AND length(body)<=8192),
                state TEXT NOT NULL CHECK(state IN ('live','sealed','recovered'))
              );
-             UPDATE dx_trace SET state='recovered' WHERE state='live';"
+             UPDATE dx_trace SET state='recovered' WHERE state='live';
+             CREATE TABLE IF NOT EXISTS active_check(
+                slot INTEGER PRIMARY KEY CHECK(slot=1), run_id TEXT NOT NULL,
+                state TEXT NOT NULL CHECK(state IN ('running','complete','attention','stopped','interrupted')),
+                body TEXT NOT NULL CHECK(length(body)<=4096));
+             UPDATE active_check SET state='interrupted' WHERE state='running';"
         ).map_err(|_|"Diagnostic storage unavailable")?;
         Ok(Self{conn:Mutex::new(conn)})
     }
@@ -82,6 +91,45 @@ impl DiagnosticArchive{
             [MAX_TRACES as i64]).is_err(){return false}
         tx.commit().is_ok()
     }
+    // Only the trusted one-shot check controller may write this latest local
+    // report. It contains fixed categories/counts, not conversation evidence.
+    pub fn begin_active_check(&self,id:&str)->Result<(),String>{
+        let body=serde_json::to_string(&CheckBody::default()).map_err(|_|"Check report unavailable")?;
+        let conn=self.conn.lock().map_err(|_|"Check report unavailable")?;
+        let rows=conn.execute("INSERT INTO active_check(slot,run_id,state,body) VALUES(1,?1,'running',?2)
+            ON CONFLICT(slot) DO UPDATE SET run_id=excluded.run_id,state='running',body=excluded.body
+            WHERE active_check.state<>'running'",params![id,body]).map_err(|_|"Check report unavailable")?;
+        if rows!=1{return Err("A previous check has not been reconciled".into())} Ok(())
+    }
+    pub fn write_active_check(&self,id:&str,state:CheckState,body:&CheckBody)->Result<(),String>{
+        let report=CheckReport{state,body:body.clone()};
+        if !report.valid(){return Err("Check report could not be confirmed".into())}
+        let conn=self.conn.lock().map_err(|_|"Check report unavailable")?;
+        let old=Self::read_active_check(&conn)?.ok_or("Check report could not be confirmed")?;
+        if old.state!=CheckState::Running||!body.results.starts_with(&old.body.results){return Err("Check report could not be confirmed".into())}
+        let body=serde_json::to_string(body).map_err(|_|"Check report unavailable")?;
+        let rows=conn.execute("UPDATE active_check SET state=?1,body=?2 WHERE slot=1 AND run_id=?3 AND state='running'",
+            params![state.label(),body,id]).map_err(|_|"Check report unavailable")?;
+        if rows!=1{return Err("Check report could not be confirmed".into())} Ok(())
+    }
+    pub fn interrupt_active_check(&self,id:&str)->Result<(),String>{
+        let conn=self.conn.lock().map_err(|_|"Check report unavailable")?;
+        conn.execute("UPDATE active_check SET state='interrupted' WHERE slot=1 AND run_id=?1 AND state='running'",[id])
+            .map_err(|_|"Check report unavailable")?;Ok(())
+    }
+    pub fn active_check_report(&self)->Result<Option<CheckReport>,String>{
+        let conn=self.conn.lock().map_err(|_|"Check report unavailable")?;
+        Self::read_active_check(&conn)
+    }
+    fn read_active_check(conn:&Connection)->Result<Option<CheckReport>,String>{
+        let row:Option<(String,Option<String>)>=conn.query_row("SELECT state,CASE WHEN length(body)<=4096 THEN body END FROM active_check WHERE slot=1",[],|r|Ok((r.get(0)?,r.get(1)?)))
+            .optional().map_err(|_|"Check report unavailable")?;
+        let Some((state,body))=row else{return Ok(None)};
+        let state=CheckState::parse(&state).ok_or("Check report could not be confirmed")?;
+        let body=serde_json::from_str(&body.ok_or("Check report could not be confirmed")?).map_err(|_|"Check report could not be confirmed")?;
+        let report=CheckReport{state,body};
+        if !report.valid(){return Err("Check report could not be confirmed".into())} Ok(Some(report))
+    }
     /// Require explicit native consent before exposing the report.
     /// Fixed-vocabulary findings only; never export stored trace references.
     pub fn report(&self)->Result<ArchiveReport,String>{
@@ -111,7 +159,10 @@ impl DiagnosticArchive{
                 Err(_)=>unavailable_records+=1,
             }
         }
-        Ok(ArchiveReport{schema:"lu.dx.cp01.local-report.v1",findings,unavailable_records})
+        let checked=Self::read_active_check(&conn);
+        let active_check_unavailable=checked.is_err();
+        Ok(ArchiveReport{schema:"lu.dx.cp01.local-report.v1",findings,unavailable_records,
+            active_check:checked.ok().flatten(),active_check_unavailable})
     }
 }
 #[cfg(test)]
@@ -152,4 +203,13 @@ mod tests{
         assert_eq!(r.findings.len(),MAX_TRACES-1);
         assert_eq!(r.unavailable_records,1);
     }
+    #[test]
+    fn cp11a_invalid_active_report_does_not_invent_success(){
+        let archive=DiagnosticArchive::open(Path::new(":memory:")).unwrap();
+        archive.begin_active_check("check-invalid").unwrap();
+        archive.conn.lock().unwrap().execute("UPDATE active_check SET state='complete',body='{}'",[]).unwrap();
+        assert!(archive.active_check_report().is_err());
+        let report=archive.report().unwrap();assert!(report.active_check.is_none());assert!(report.active_check_unavailable);
+    }
+
 }

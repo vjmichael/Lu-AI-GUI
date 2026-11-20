@@ -25,6 +25,7 @@ mod capability_negotiation;
 mod turn_authority;
 mod perf01_telemetry;
 mod causal_diagnostic;
+mod active_checks;
 mod diagnostic_archive;
 use causal_diagnostic::Checkpoint as CausalCheckpoint;
 mod vision_context;
@@ -760,6 +761,7 @@ struct DesktopState {
     model_profile_admission: Mutex<()>,
     chats: ChatStore,
     perf01: perf01_telemetry::PerfLedger,
+    active_checks: active_checks::CheckController,
     operational_assets: lu_core::operational_asset_ledger::OperationalAssetLedger,
     continuity: lu_core::continuity::ContinuityStore,
     reviewed_memory_recovery: Vec<reviewed_memory_evidence::ReviewedMemoryRecoveryView>,
@@ -1346,6 +1348,7 @@ impl DesktopState {
             inference_profiles,
             model_profile_admission:Mutex::new(()),
             chats,
+            active_checks: active_checks::CheckController::new(&root),
             perf01:perf01_telemetry::PerfLedger::with_archive(
                 diagnostic_archive::DiagnosticArchive::open(&root.join("lu-dx-traces.sqlite"))
                     .ok().map(Arc::new)
@@ -2111,13 +2114,39 @@ async fn lu_cp01_diagnostic_report(app:AppHandle,caller:tauri::WebviewWindow,
     let archive=state.perf01.archive().ok_or("Local response diagnostics unavailable")?;
     tauri::async_runtime::spawn_blocking(move||{
         let approved=app.dialog().message(
-            "Prepare a local troubleshooting report? It contains only bounded response checkpoints, timing and failure categories, not conversations, images, model names or file paths. Nothing is sent anywhere."
+            "Prepare a local troubleshooting report? It contains only bounded response checkpoints, timing, failure categories and the latest local sample-check results, not conversations, images, model names or file paths. Nothing is sent anywhere."
         ).title("Lu — Troubleshooting")
          .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom(
              "Prepare report".into(),"Cancel".into())).blocking_show();
         if !approved{return Ok(None)}
         archive.report().map(Some)
     }).await.map_err(|_|"Troubleshooting report unavailable")?
+}
+/// CP-11A: one fixed local health-check suite, always fresh native consent.
+/// No parameters, model registration, shell, user file access or network.
+#[tauri::command]
+async fn lu_run_local_checks(app:AppHandle,caller:tauri::WebviewWindow,
+    state:State<'_,Arc<DesktopState>>)->Result<Option<active_checks::CheckReport>,String>{
+    if !matches!(caller.label(),"main"|"settings"){return Ok(None)}
+    let owner=Arc::clone(state.inner());
+    let archive=owner.perf01.archive().ok_or("Local checks unavailable")?;
+    tauri::async_runtime::spawn_blocking(move||owner.active_checks.run(&archive,||{
+        app.dialog().message("Check Lu locally using sample documents and conversations? This checks reading, saved history and a small search workload. No personal conversations or files are tested. Nothing is sent online, no model is loaded, and no repairs are made. You can stop between checks.")
+            .title("Lu — Check Lu")
+            .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom("Run checks".into(),"Cancel".into())).blocking_show()
+    },||owner.generation_queue.has_foreground_jobs()||
+        lu_core::native_resource_pressure::available_ram().is_none_or(|m|m<256)))
+        .await.map_err(|_|"Local checks did not finish")?
+}
+#[tauri::command]
+fn lu_local_check_status(caller:tauri::WebviewWindow,state:State<'_,Arc<DesktopState>>)->Result<active_checks::CheckStatus,String>{
+    if !matches!(caller.label(),"main"|"settings"){return Err("Local checks unavailable".into())}
+    let archive=state.perf01.archive().ok_or("Local checks unavailable")?;
+    state.active_checks.status(&archive)
+}
+#[tauri::command]
+fn lu_stop_local_checks(caller:tauri::WebviewWindow,state:State<'_,Arc<DesktopState>>)->bool{
+    matches!(caller.label(),"main"|"settings")&&state.active_checks.stop()
 }
 /// Restore exact saved original-file links into an EMPTY draft with
 /// fresh link identities only. No copies, inference, permission replay,
@@ -9953,6 +9982,9 @@ pub fn run() {
             lu_perf01_recent,
             lu_cp01_reply_observed,
             lu_cp01_diagnostic_report,
+            lu_run_local_checks,
+            lu_local_check_status,
+            lu_stop_local_checks,
             project_discovery_desktop::lu_project_discover,
             project_evidence_desktop::lu_project_evidence_graph,
             project_status_desktop::lu_project_classify,
@@ -10222,6 +10254,7 @@ pub fn run() {
             // must fence the original queue and reconcile its saved turns.
             if matches!(event, tauri::RunEvent::Exit) {
                 if let Some(state) = app.try_state::<Arc<DesktopState>>() {
+                    state.active_checks.shutdown();
                     let pending=match state.generation_queue.begin_shutdown(){
                         Ok(turns)=>turns,
                         Err(_) => {
@@ -10254,7 +10287,7 @@ pub fn run() {
                     // period to retain partial text and record cancellation.
                     // A released ticket or killed process cannot erase the
                     // immutable host-owned shutdown snapshot.
-                    while state.generation_queue.has_jobs() && std::time::Instant::now()<deadline {
+                    while (state.generation_queue.has_jobs() || state.active_checks.active()) && std::time::Instant::now()<deadline {
                         std::thread::sleep(std::time::Duration::from_millis(50));
                     }
                     for turn in pending{

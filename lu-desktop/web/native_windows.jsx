@@ -54,6 +54,60 @@ function Readiness({value}){
   return <span className="nativeReadiness">{value||'Not independently verified'}</span>;
 }
 const bytesGiB=value=>Number.isFinite(value)&&value>=0?(value/1073741824).toFixed(2)+' GiB':'Not measured';
+// The local check suite is not a model tool or a preference granting authority.
+// No runs are started on mount or restart. Poll only while visiting this panel.
+const CHECK_LABELS={reading:'Reading sample documents',saved_history:'Saving and reopening sample history',search_speed:'Sample history search'};
+const CHECK_STATUS={running:'Checking…',complete:'All three checks passed.',attention:'A check needs attention.',stopped:'Checks stopped. Only finished checks are shown.',interrupted:'Last check was interrupted. Unfinished checks were not verified.'};
+const CHECK_GUIDANCE={user_stopped:'You can run a fresh check when ready.',chat_busy:'Lu became busy or resources were unavailable. Try again when idle.',time_limit:'The check reached its time limit.',workspace_unavailable:'A temporary check workspace is unavailable. No existing files were changed.',cleanup_unavailable:'The temporary sample data could not be fully removed. No real conversations were changed.',check_failed:'An expected result could not be confirmed. You can prepare a local troubleshooting report.'};
+function LocalChecks({active}){
+  const [status,setStatus]=useState(null);
+  const [pending,setPending]=useState(false);
+  const [stopping,setStopping]=useState(false);
+  const [error,setError]=useState('');
+  useEffect(()=>{
+    if(!active)return;
+    let live=true,inFlight=false;
+    const refresh=async()=>{
+      if(inFlight)return;inFlight=true;
+      try{const next=await invoke('lu_local_check_status');if(live)setStatus(next);}
+      catch{if(live)setStatus(null);}
+      finally{inFlight=false;}
+    };
+    void refresh();const timer=setInterval(refresh,750);
+    return()=>{live=false;clearInterval(timer);};
+  },[active]);
+  async function start(){
+    if(pending||status?.active)return;
+    setPending(true);setStopping(false);setError('');
+    try{await invoke('lu_run_local_checks');setStatus(await invoke('lu_local_check_status'));}
+    catch{setError('Lu could not finish the local check. Try again when Lu is idle.');}
+    finally{setPending(false);setStopping(false);}
+  }
+  async function stop(){
+    setStopping(true);
+    try{await invoke('lu_stop_local_checks');}
+    catch{setStopping(false);setError('Could not request a stop.');}
+  }
+  const running=pending||Boolean(status?.active),report=status?.report;
+  return <div className="nativeOption" aria-label="Check Lu">
+    <strong>Check Lu</strong>
+    <p>Run a small local check on sample documents and history. No personal files, internet access or automatic repairs. Checks only run when you ask.</p>
+    <div className="nativeChoiceRow">
+      <button type="button" disabled={running||status===null} onClick={()=>void start()}>Run checks…</button>
+      {running&&<button type="button" disabled={stopping} onClick={()=>void stop()}>{stopping?'Stopping…':'Stop'}</button>}
+    </div>
+    <p role="status">{running?(stopping?'Stopping…':'Checking or waiting for approval…'):report?CHECK_STATUS[report.state]||'Result unavailable.':status?'No checks run yet.':'Local checks unavailable.'}</p>
+    {error&&<p role="alert">{error}</p>}
+    {report&&<div className="nativeOptionList">
+      {report.results.map(result=><div key={result.kind}>
+        <strong>{CHECK_LABELS[result.kind]||'Local check'}</strong> — {result.passed?'Passed':'Needs attention'}
+        {result.kind==='search_speed'&&result.passed&&<p>Prepared 128 sample messages and verified {result.verifiedOperations} searches in {(result.elapsedMicros/1000).toFixed(1)} ms. This is a small local workload, not a model benchmark.</p>}
+      </div>)}
+      {report.reason&&<p>{CHECK_GUIDANCE[report.reason]||'The check did not finish.'}</p>}
+    </div>}
+  </div>;
+}
+
 
 export function SettingsWindow({onNavigate,active=true}={}){
   const [section,setSection]=useState('general');
@@ -738,6 +792,7 @@ export function SettingsWindow({onNavigate,active=true}={}){
           {onNavigate&&<button className="primaryButton" onClick={()=>onNavigate('history')}>Open History</button>}
         </Section>}
         {section==='privacy'&&<Section title="Privacy & Observe">
+          <LocalChecks active={active}/>
           <div className="nativeOption">
             <strong>Troubleshooting</strong>
             <p>Lu keeps a small local record of response progress and failure categories without saving conversation text or images in that record. Nothing is uploaded.</p>
