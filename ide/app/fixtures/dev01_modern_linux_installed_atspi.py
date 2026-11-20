@@ -390,6 +390,7 @@ def modern_file_operations(proc):
     wait_until(lambda: RENAMED.is_file(), "native_restore_not_persisted")
     if digest(RENAMED) != before:
         deny("restored_source_not_original_bytes")
+    native.accessible("Source action completed: restore", seconds=20)
     print("DEV01_MODERN_LINUX_MOVE_TRASH_RESTORE_NO_CLOBBER=PASS", flush=True)
 
 
@@ -416,9 +417,40 @@ def session_reference():
     deny("fresh_session_clipboard_reference_missing")
 
 
+def open_exact_relative_fixture_file(filename):
+    # Exercise the installed user-facing project-relative Open file form.
+    # Explorer rows can be offscreen after a native modal and tree refresh;
+    # do not loosen exact-file selection or expand global AT-SPI matching.
+    if filename not in ("main.rs", "second.rs"):
+        deny("invalid_relative_fixture_file")
+    before = (digest(SOURCE), digest(SECOND))
+    enter("Open project-relative file", filename)
+    native.key("Return")
+
+    def exact_selected_saved_tab():
+        matches = []
+        for node in native._native_source_editor_nodes():
+            try:
+                if ((node.name or "").strip() != "Saved source tab " + filename
+                        or node.getRoleName().casefold() not in ("tab", "page tab")):
+                    continue
+                state = node.getState()
+                if all(state.contains(flag) for flag in (
+                        pyatspi.STATE_VISIBLE, pyatspi.STATE_SHOWING,
+                        pyatspi.STATE_SELECTED)):
+                    matches.append(node)
+            except Exception:
+                continue
+        return len(matches) == 1
+
+    wait_until(exact_selected_saved_tab, "exact_relative_saved_tab_not_selected_" + filename)
+    if (digest(SOURCE), digest(SECOND)) != before:
+        deny("relative_open_changed_fixture_source")
+
+
 def modern_split_and_private_checkpoint(proc):
     main_before, second_before = digest(SOURCE), digest(SECOND)
-    native.activate_exact_source_file("second.rs")
+    open_exact_relative_fixture_file("second.rs")
     native.activate("Toggle split editor")
     native.accessible("Second editor file")
     native.accessible("Save second file")
@@ -451,7 +483,7 @@ def modern_split_and_private_checkpoint(proc):
     print("DEV01_MODERN_LINUX_TWO_PANE_FOCUSED_SAVE=PASS", flush=True)
 
     native.activate("Toggle split editor")
-    native.activate_exact_source_file("main.rs")
+    open_exact_relative_fixture_file("main.rs")
     native.focus_editor()
     original = digest(SOURCE)
     native.key("ctrl+End")

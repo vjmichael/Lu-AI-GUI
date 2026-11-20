@@ -3,3 +3,5 @@ No provider execution, signing, release authority or main merge.
 
 IDE-MERGE-05B-R4-R5: two observed installed acceptance failures; exact accessibility notification and NSIS bundle identity repair.
 Prior exact SHA 6/8; repeat both existing matrices for unchanged-head acceptance, no new approval or release authority.
+
+IDE-MERGE-05B-R4-R6-R1: prior candidate f610f2227c27 exact-head 7/8 PASS (both technical installed LSP jobs PASS). Linux installed navigation remains the sole failure; verify exact selected saved tab via existing relative-path UI, await restore completion and retain independent source byte, split-save and restart assertions. Repeat both original grouped matrices; no protected provider execution, release or main merge authorization.

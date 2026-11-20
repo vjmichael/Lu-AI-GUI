@@ -135,5 +135,60 @@ class ModalScopeTests(unittest.TestCase):
         self.assertEqual(button.calls, 0)
 
 
+class RelativeFileOpenScopeTests(unittest.TestCase):
+    def exercise(self, nodes, filename='second.rs', change=False):
+        module = ast.parse(SOURCE.read_text(encoding='utf-8'))
+        module.body = [node for node in module.body if isinstance(node, ast.FunctionDef)
+                       and node.name == 'open_exact_relative_fixture_file']
+        self.assertEqual(len(module.body), 1)
+        flags = SimpleNamespace(STATE_VISIBLE=1, STATE_SHOWING=2, STATE_SELECTED=5)
+        calls = []
+        digests = iter(('main', 'second', 'main', 'changed' if change else 'second'))
+
+        def deny(reason):
+            raise RuntimeError(reason)
+
+        def wait(predicate, reason):
+            if not predicate():
+                deny(reason)
+
+        ns = dict(pyatspi=flags, native=SimpleNamespace(
+            key=lambda key: calls.append(key),
+            _native_source_editor_nodes=lambda: iter(nodes)),
+            SOURCE='main', SECOND='second', digest=lambda _: next(digests),
+            enter=lambda label, value: calls.append((label, value)),
+            wait_until=wait, deny=deny)
+        exec(compile(module, str(SOURCE), 'exec'), ns)
+        ns['open_exact_relative_fixture_file'](filename)
+        return calls
+
+    def test_exact_selected_tab_opens_with_native_keyboard(self):
+        for filename in ('main.rs', 'second.rs'):
+            with self.subTest(filename=filename):
+                selected = Node('page tab', 'Saved source tab ' + filename, states=(1, 2, 5))
+                self.assertEqual(self.exercise([selected], filename), [
+                    ('Open project-relative file', filename), 'Return'])
+
+    def test_wrong_hidden_unselected_and_duplicate_tabs_deny(self):
+        selected = Node('page tab', 'Saved source tab second.rs', states=(1, 2, 5))
+        cases = [[], [selected, selected],
+                 [Node('page tab', 'Saved source tab not-second.rs', states=(1, 2, 5))],
+                 [Node('push button', selected.name, states=(1, 2, 5))],
+                 [Node('page tab', selected.name, states=(1, 5))],
+                 [Node('page tab', selected.name, states=(1, 2))]]
+        for nodes in cases:
+            with self.subTest(nodes=nodes), self.assertRaisesRegex(RuntimeError, 'not_selected'):
+                self.exercise(nodes)
+
+    def test_unexpected_disk_change_denied(self):
+        selected = Node('page tab', 'Saved source tab second.rs', states=(1, 2, 5))
+        with self.assertRaisesRegex(RuntimeError, 'changed_fixture'):
+            self.exercise([selected], change=True)
+
+    def test_non_fixture_path_denied(self):
+        with self.assertRaisesRegex(RuntimeError, 'invalid_relative'):
+            self.exercise([], '../second.rs')
+
+
 if __name__ == '__main__':
     unittest.main()
