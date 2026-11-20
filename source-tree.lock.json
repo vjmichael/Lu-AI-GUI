@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "4318632df6736d39a26f6fcc7c61b23f328fe533",
+  "sourceCommitBeforeLock": "01e8f7e82efcef7bfeea8cf06b6090d0606899b1",
   "trackedFileCount": 1977,
   "files": [
     {
@@ -4713,7 +4713,7 @@
     },
     {
       "path": "ide/supervisor/src/snapshot.rs",
-      "blob": "87ee2c55859e59260d5c95972a46d9837ac5223e"
+      "blob": "cbb1a66869a7bcf9b1f19cb00cdde40232a1026b"
     },
     {
       "path": "ide/supervisor/src/windows_broker.rs",
