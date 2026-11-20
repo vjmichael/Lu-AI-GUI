@@ -727,6 +727,17 @@ fn command_for(
             .arg("UV_NO_CONFIG")
             .arg("1");
     }
+    if plan.recipe_id == "vcpkg_install_offline" {
+        // Tool acquisition is never an implicit side effect of a binary-only
+        // restore. Use the reviewed runtime tools and fixed system PATH;
+        // Bubblewrap's network and read-only source restrictions remain.
+        cmd.arg("--setenv")
+            .arg("VCPKG_FORCE_SYSTEM_BINARIES")
+            .arg("1")
+            .arg("--setenv")
+            .arg("VCPKG_DISABLE_METRICS")
+            .arg("1");
+    }
     // Bubblewrap options MUST be constructed before its "--" separator.
     // Only this exact CI-only synthetic-wheel plan gets a local wheelhouse.
     // This never authorizes a production package project or network access.
@@ -848,6 +859,11 @@ fn command_for(
                 "install",
                 "--x-manifest-root=/workspace",
                 "--x-install-root=/output/installed/",
+                // vcpkg takes its lock in buildtrees even for cache-only
+                // restores. All ephemeral state belongs to private output.
+                "--x-buildtrees-root=/output/buildtrees",
+                "--x-packages-root=/output/packages",
+                "--downloads-root=/output/downloads",
                 "--vcpkg-root=/runtime",
                 "--no-downloads",
                 "--only-binarycaching",

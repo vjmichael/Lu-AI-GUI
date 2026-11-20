@@ -52,3 +52,9 @@ test('FIN05 port builds are denied and only reviewed offline binary cache can se
  assert.match(runtimes,/binary-cache\/manifest\.txt/);
  assert.match(linux,/--no-downloads/);
 });
+
+test('FIN05 cache restore writes transient state only to private output',()=>{
+ for(const flag of ['--x-buildtrees-root=/output/buildtrees','--x-packages-root=/output/packages','--downloads-root=/output/downloads']) assert.ok(linux.includes(flag),flag);
+ assert.match(linux,/\.arg\("VCPKG_FORCE_SYSTEM_BINARIES"\)/);
+ assert.match(linux,/--binarysource=files,\/runtime\/binary-cache,read/);
+});
