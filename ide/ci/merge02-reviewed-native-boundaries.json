@@ -83,7 +83,7 @@
     {
       "path": "ide/host/src/git_refs_health.rs",
       "scope": "G06A07 read-only Git recovery-state classification and operator visibility; no execution or mutation grant, source-only",
-      "sha": "e7769d797a42b5f69c9c635aecb18a9c441f9969"
+      "sha": "4cc02a1563be61f1a320621ba6dbb94ad79c9dc7"
     },
     {
       "path": "ide/host/src/git_reviewed_stash_save.rs",
@@ -342,7 +342,7 @@
     },
     {
       "path": "ide/supervisor/examples/wo6_native_dap_acceptance.rs",
-      "sha": "3776ad28f967235f732ee4b2dadb6c7b5a988159",
+      "sha": "2631c910e18b0b5f7fa3fff3b47e774e6140efc1",
       "scope": "03E D6C bounded authenticated owner continuation chain, unchanged one-use and OS/PDB gates; source-only, native Windows pending"
     },
     {
@@ -397,7 +397,7 @@
     },
     {
       "path": "ide/supervisor/src/lib.rs",
-      "sha": "b10383b49ff6343c3dc851a462f9facebef39a72",
+      "sha": "6e94d1338658a61c46ba0925c2373c021dbcac1f",
       "scope": "Strict historical persisted owner receipt parsing; no authority expansion; source-only, OS acceptance pending"
     },
     {
@@ -432,7 +432,7 @@
     },
     {
       "path": "ide/supervisor/src/windows_event_owner.rs",
-      "sha": "616bed4e4bad727859269619eae4912f22ce5c68",
+      "sha": "60110c3c608f8cc0c490e869ce0f07892473b0b6",
       "scope": "03E D6C bounded authenticated owner continuation chain, unchanged one-use and OS/PDB gates; source-only, native Windows pending"
     },
     {
