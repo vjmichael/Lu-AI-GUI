@@ -20,3 +20,9 @@ Remove-Item Env:LU_DX_DISPOSABLE_LAB
 The separately provisioned-account test can instead use a disposable standard-account credential supplied securely in the test environment. Neither path should be run without the isolated test owner's authorization. If account provisioning, logon, effective access, or cleanup is blocked, retain the failure and discard the test guest overlay; do not substitute an ACL prediction for an executed cross-account witness.
 
 The evaluation feature is not a production authorization. Full Windows desktop graphical consent, supported physical Windows ordinary-user and separate-account process tests, remote-client rejection and final release review remain independent gates.
+
+## CP-12B-R7 reviewed-count and stage-level transport
+
+With `--features windows_dx_eval`, the real Windows source additionally supports version-separated v2 reviewed counts and v3 stage summaries, finite source-derived evidence checks, cancellation, authenticated separate-process exchanges, revocation/replay denial and sender crash recovery. The same protected Windows named-pipe path and SID checks are used for all three versions; the default build remains disabled. See `docs/LU_CP12B_R7_WINDOWS_STAGE_EVAL_20261120.md`.
+
+The locked native test binary was qualified in an isolated Microsoft Windows x64 guest: full suite 18/18 passes (7 ignored child/explicit-account entries), plus separately run alternate-account SID kernel-denial 1/1 pass. The account witness must be run only with an explicitly provisioned **disposable** Windows standard account and an administrative, isolated test environment; credential variables must be cleared and the account deleted afterward. Real Windows UI/installer/physical-device acceptance is **not** established by the test executable.

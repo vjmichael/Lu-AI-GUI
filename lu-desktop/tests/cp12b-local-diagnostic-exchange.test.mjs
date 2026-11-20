@@ -34,6 +34,6 @@ test('Windows evaluation preserves explicit opt-in, private local kernel endpoin
  assert.match(win,/SE_DACL_PROTECTED/);assert.match(win,/size\.AceCount != 1/);
  assert.match(win,/verify_endpoint\(&h, expected\)\?/);assert.match(win,/ImpersonateNamedPipeClient/);
  assert.match(win,/SECURITY_IDENTIFICATION/);assert.match(win,/RevertToSelf/);
- assert.match(win,/auth_request\(&key/);assert.match(win,/auth_response\(&key/);
+ assert.match(win,/auth_request_for\(&key/);assert.match(win,/response_full\(&key/);assert.match(win,/auth_response_full\(&key/);
  assert.doesNotMatch(win,/TcpListener|TcpStream|ToolCall/);
 });

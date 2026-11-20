@@ -1066,21 +1066,21 @@ mod linux {
 }
 #[cfg(target_os = "linux")]
 pub(crate) use linux::{receive, receive_review_cancellable, receive_stage_review_cancellable, Controller};
-#[cfg(not(target_os="linux"))]
+#[cfg(not(any(target_os="linux",all(target_os="windows",feature="windows_dx_eval"))))]
 pub(crate) fn receive_review_cancellable(_: &str,_:&std::sync::atomic::AtomicBool)->Result<ReviewedSummary,String>{Err("Collaborative review is not available on this platform.".into())}
-#[cfg(not(target_os="linux"))]
+#[cfg(not(any(target_os="linux",all(target_os="windows",feature="windows_dx_eval"))))]
 impl Controller {
     pub(crate) fn start_review(&self,_:ReviewedSummary)->Result<String,String>{Err("Collaborative review is not available on this platform.".into())}
     pub(crate) fn start_stage_review(&self,_:ReviewedStages)->Result<String,String>{Err("Collaborative review is not available on this platform.".into())}
 }
-#[cfg(not(target_os="linux"))]
+#[cfg(not(any(target_os="linux",all(target_os="windows",feature="windows_dx_eval"))))]
 pub(crate) fn receive_stage_review_cancellable(_: &str,_:&std::sync::atomic::AtomicBool)->Result<ReviewedStages,String>{Err("Collaborative review is not available on this platform.".into())}
-pub(crate) const fn review_supported()->bool{cfg!(target_os="linux")}
+pub(crate) const fn review_supported()->bool{cfg!(any(target_os="linux",all(target_os="windows",feature="windows_dx_eval")))}
 #[cfg(all(target_os = "windows", feature = "windows_dx_eval"))]
 #[path = "dx_windows_pipe.rs"]
 mod windows_pipe;
 #[cfg(all(target_os = "windows", feature = "windows_dx_eval"))]
-pub(crate) use windows_pipe::{receive, Controller};
+pub(crate) use windows_pipe::{receive, receive_review_cancellable, receive_stage_review_cancellable, Controller};
 
 /// Windows evaluation is never in the default release build.
 pub(crate) const fn supported() -> bool {

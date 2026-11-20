@@ -1,5 +1,7 @@
-//! CP-12B-R2 Windows evaluation. Local kernel pipe, explicit account SID,
-//! identification-only peer token, and the existing single-use HMAC protocol.
+//! CP-12B-R7 Windows evaluation. Explicitly feature-gated v1 count-only,
+//! v2 reviewed-count and v3 stage-review exchanges share the same kernel
+//! endpoint protections, per-account SID checks, single-use MAC and deadlines.
+//! This is not enabled for normal Windows release packages.
 use super::{protocol::*, *};
 use std::time::Duration;
 use std::{
@@ -358,12 +360,10 @@ fn accept(h: &OwnedHandle, stop: &AtomicBool, end: Instant) -> io::Result<()> {
         }
     }
 }
-fn connect(id: &[u8; 16], expected: &Sid, end: Instant) -> io::Result<OwnedHandle> {
+fn connect(id: &[u8; 16], expected: &Sid, stop: &AtomicBool, end: Instant) -> io::Result<OwnedHandle> {
     let name = path(id);
     let h = loop {
-        if Instant::now() >= end {
-            return Err(io::ErrorKind::TimedOut.into());
-        }
+        expired(stop, end)?;
         // No GENERIC_WRITE (which includes FILE_CREATE_PIPE_INSTANCE).
         match handle(unsafe {
             CreateFileW(
@@ -430,9 +430,28 @@ impl Controller {
         self.start_inner(summary, TTL)
             .map_err(|_| "Local sharing unavailable".into())
     }
+    pub(crate) fn start_review(&self, review: ReviewedSummary) -> Result<String, String> {
+        self.start_inner_version(review.summary, REVIEW_VERSION, review.finding as u32, None, TTL)
+            .map_err(|_| "Local reviewed sharing unavailable".into())
+    }
+    pub(crate) fn start_stage_review(&self, review: ReviewedStages) -> Result<String, String> {
+        self.start_inner_version(review.summary, STAGE_VERSION, review.verdict, Some(review.evidence), TTL)
+            .map_err(|_| "Local stage review unavailable".into())
+    }
     fn start_inner(&self, summary: Summary, ttl: Duration) -> io::Result<String> {
+        self.start_inner_version(summary, VERSION, 0, None, ttl)
+    }
+    fn start_inner_version(&self, summary: Summary, version:u32, finding:u32, stages:Option<StageEvidence>, ttl: Duration) -> io::Result<String> {
+        // Fail before creating a pipe or invitation. Every v2/v3 verdict must
+        // already be checked against its original finite native evidence.
+        if !summary.valid() || !match version {
+            VERSION => finding == 0 && stages.is_none(),
+            REVIEW_VERSION => stages.is_none() && Finding::from_wire(finding) == Finding::expected(&summary),
+            STAGE_VERSION => stages.as_ref().is_some_and(|e|e.expected(&summary)==Some(finding)),
+            _ => false,
+        } { return Err(invalid()); }
         let mut lock = self.session.lock().map_err(|_| denied())?;
-        if self.closed.load(Ordering::Acquire) || !summary.valid() {
+        if self.closed.load(Ordering::Acquire) {
             return Err(denied());
         }
         if lock.as_ref().is_some_and(|s| !s.worker.is_finished()) {
@@ -456,12 +475,12 @@ impl Controller {
                     let authenticated = read(&h, &w, end)
                         .ok()
                         .filter(|_| peer(&h, &expected))
-                        .and_then(|b| auth_request(&key, &b));
+                        .and_then(|b| auth_request_for(&key, &b, version));
                     if let Some(r) = authenticated {
                         // An authenticated request consumes the invitation even if delivery fails.
                         if write(
                             &h,
-                            response(&key, r.nonce, summary.clone()).encode_to_vec(),
+                            response_full(&key, r.nonce, summary.clone(), version, finding, stages.clone()).encode_to_vec(),
                             &w,
                             end,
                         )
@@ -480,7 +499,7 @@ impl Controller {
                 // Drop the only server handle; no persistent path or reusable token.
             })?;
         *lock = Some(Session { stop, worker });
-        Ok(format!("lu1-{}-{}", hex(&id), hex(&key)))
+        Ok(format!("lu{version}-{}-{}", hex(&id), hex(&key)))
     }
 }
 impl Drop for Controller {
@@ -489,28 +508,44 @@ impl Drop for Controller {
     }
 }
 pub(crate) fn receive(code: &str) -> Result<Summary, String> {
-    receive_inner(code)
+    receive_version(code, VERSION, &AtomicBool::new(false))
+        .map(|(summary, _, _)| summary)
         .map_err(|_| "The invitation is invalid, expired, incompatible or unavailable.".into())
 }
+pub(crate) fn receive_review_cancellable(code: &str, stop: &AtomicBool) -> Result<ReviewedSummary, String> {
+    let (summary, finding, _) = receive_version(code, REVIEW_VERSION, stop).map_err(|_| {
+        if stop.load(Ordering::Acquire) { "Review stopped; an already consumed invitation cannot be recalled." }
+        else { "The review invitation is invalid, expired, incompatible or unavailable." }
+    })?;
+    Ok(ReviewedSummary { summary, finding: Finding::from_wire(finding).ok_or("Unverified peer finding")? })
+}
+pub(crate) fn receive_stage_review_cancellable(code: &str, stop: &AtomicBool) -> Result<ReviewedStages, String> {
+    let (summary, verdict, evidence) = receive_version(code, STAGE_VERSION, stop).map_err(|_| {
+        if stop.load(Ordering::Acquire) { "Review stopped; an already consumed invitation cannot be recalled." }
+        else { "The stage review invitation is invalid, expired, incompatible or unavailable." }
+    })?;
+    Ok(ReviewedStages { summary, verdict, evidence: evidence.ok_or("Unverified stage evidence")? })
+}
+#[cfg(test)]
 fn receive_inner(code: &str) -> io::Result<Summary> {
-    if code.len() != 101 {
-        return Err(invalid());
-    }
+    receive_version(code, VERSION, &AtomicBool::new(false)).map(|(summary, _, _)|summary)
+}
+fn receive_version(code:&str, version:u32, stop:&AtomicBool) -> io::Result<(Summary,u32,Option<StageEvidence>)> {
+    if code.len() != 101 { return Err(invalid()); }
     let mut parts = code.split('-');
-    if parts.next() != Some("lu1") {
-        return Err(invalid());
-    }
+    if parts.next() != Some(match version {
+        VERSION => "lu1", REVIEW_VERSION => "lu2", STAGE_VERSION => "lu3", _ => return Err(invalid()),
+    }) { return Err(invalid()); }
     let id = unhex::<16>(parts.next().ok_or_else(invalid)?).ok_or_else(invalid)?;
     let key = unhex::<32>(parts.next().ok_or_else(invalid)?).ok_or_else(invalid)?;
-    if parts.next().is_some() {
-        return Err(invalid());
-    }
+    if parts.next().is_some() { return Err(invalid()); }
     let end = Instant::now() + FRAME;
-    let h = connect(&id, &account()?, end)?;
+    expired(stop, end)?;
+    let h = connect(&id, &account()?, stop, end)?;
+    expired(stop, end)?;
     let nonce = random::<32>()?.to_vec();
-    let stop = AtomicBool::new(false);
-    write(&h, request(&key, nonce.clone()).encode_to_vec(), &stop, end)?;
-    auth_response(&key, &nonce, &read(&h, &stop, end)?).ok_or_else(invalid)
+    write(&h, request_for(&key, nonce.clone(), version).encode_to_vec(), stop, end)?;
+    auth_response_full(&key, &nonce, &read(&h, stop, end)?, version).ok_or_else(invalid)
 }
 
 #[cfg(test)]
@@ -623,13 +658,13 @@ mod tests {
             r.mac.clear();
             r.mac = mac(&key, b"lu.dx.request.v1\0", &r.encode_to_vec()).to_vec();
             let end = Instant::now() + FRAME;
-            let h = connect(&id, &account().unwrap(), end).unwrap();
+            let h = connect(&id, &account().unwrap(), &AtomicBool::new(false), end).unwrap();
             write(&h, r.encode_to_vec(), &stop, end).unwrap();
             assert!(read(&h, &stop, end).is_err());
         }
         {
             let end = Instant::now() + FRAME;
-            let h = connect(&id, &account().unwrap(), end).unwrap();
+            let h = connect(&id, &account().unwrap(), &AtomicBool::new(false), end).unwrap();
             transfer(&h, &mut ((MAX + 1) as u32).to_be_bytes(), true, &stop, end).unwrap();
             assert!(read(&h, &stop, end).is_err());
         }
@@ -642,7 +677,7 @@ mod tests {
         let code = c.start(sample()).unwrap();
         let (id, _) = decode(&code);
         let end = Instant::now() + FRAME;
-        let h = connect(&id, &account().unwrap(), end).unwrap();
+        let h = connect(&id, &account().unwrap(), &AtomicBool::new(false), end).unwrap();
         transfer(&h, &mut [0], true, &AtomicBool::new(false), end).unwrap();
         let t = Instant::now();
         assert!(c.stop());
@@ -738,6 +773,159 @@ mod tests {
             hex(&mac(&k, b"", b"Hi There")),
             "b0344c61d8db38535ca8afceaf0bf12b881dc200c9833da726e9376c2e32cff7"
         );
+    }
+    // CP-12B-R7: version-separated Windows review and stage-review transport.
+    // These execute the same kernel pipe, SID, one-shot and HMAC path as v1.
+    fn stage_sample() -> ReviewedStages {
+        let s = Summary { complete: 1, observed_failure: 1, bounded: 0, incomplete: 0, unavailable: 0 };
+        let e = StageEvidence { stages: vec![stage::StageCount { stage: 20, observed: 1, bounded: 0 }] };
+        ReviewedStages::checked(s, e, "REFUSED").unwrap()
+    }
+    fn assert_stage(received: ReviewedStages) {
+        let expected = stage_sample();
+        assert_eq!(received.summary, expected.summary);
+        assert_eq!(received.evidence, expected.evidence);
+        assert_eq!(received.verdict, expected.verdict);
+    }
+    #[test]
+    fn cp12br7_versioned_review_native_roundtrip_and_replay() {
+        let c = Controller::default();
+        let summary = sample();
+        let finding = Finding::expected(&summary).unwrap();
+        let code = c.start_review(ReviewedSummary { summary: summary.clone(), finding }).unwrap();
+        assert!(code.starts_with("lu2-"));
+        assert!(receive(&code).is_err());
+        assert!(receive_stage_review_cancellable(&code, &AtomicBool::new(false)).is_err());
+        let received = receive_review_cancellable(&code, &AtomicBool::new(false)).unwrap();
+        assert_eq!(received.summary, summary);
+        assert_eq!(received.finding, finding);
+        assert!(receive_review_cancellable(&code, &AtomicBool::new(false)).is_err());
+        assert!(c.stop());
+        assert!(!c.active());
+    }
+    #[test]
+    fn cp12br7_stage_native_roundtrip_revocation_rotation_and_replay() {
+        let c = Controller::default();
+        let old = c.start_stage_review(stage_sample()).unwrap();
+        assert!(old.starts_with("lu3-"));
+        assert!(receive(&old).is_err());
+        assert!(receive_review_cancellable(&old, &AtomicBool::new(false)).is_err());
+        assert_stage(receive_stage_review_cancellable(&old, &AtomicBool::new(false)).unwrap());
+        assert!(receive_stage_review_cancellable(&old, &AtomicBool::new(false)).is_err());
+        c.stop();
+        let revoked = c.start_stage_review(stage_sample()).unwrap();
+        assert!(c.stop());
+        assert!(receive_stage_review_cancellable(&revoked, &AtomicBool::new(false)).is_err());
+        let fresh = c.start_stage_review(stage_sample()).unwrap();
+        assert_ne!(old, fresh); assert_ne!(revoked, fresh);
+        assert!(receive_stage_review_cancellable(&revoked, &AtomicBool::new(false)).is_err());
+        assert_stage(receive_stage_review_cancellable(&fresh, &AtomicBool::new(false)).unwrap());
+        c.shutdown();
+        assert!(c.start_stage_review(stage_sample()).is_err());
+    }
+    #[test]
+    fn cp12br7_stage_malformed_and_tampered_evidence_denied() {
+        let c = Controller::default();
+        let mut bad = stage_sample(); bad.verdict = 9;
+        assert!(c.start_stage_review(bad).is_err());
+        let mut bad = stage_sample(); bad.evidence.stages[0].observed = 63;
+        assert!(c.start_stage_review(bad).is_err());
+        let k = [42u8; 32]; let nonce = vec![9u8; 32];
+        let sample = stage_sample();
+        let r = response_full(&k, nonce.clone(), sample.summary.clone(), STAGE_VERSION, sample.verdict, Some(sample.evidence.clone()));
+        assert!(auth_response_full(&k, &nonce, &r.encode_to_vec(), STAGE_VERSION).is_some());
+        assert!(auth_response_full(&k, &nonce, &r.encode_to_vec(), REVIEW_VERSION).is_none());
+        assert!(auth_response_full(&k, &[0;32], &r.encode_to_vec(), STAGE_VERSION).is_none());
+        let mut tampered = r.clone(); tampered.stages.as_mut().unwrap().stages[0].observed = 2;
+        assert!(auth_response_full(&k, &nonce, &tampered.encode_to_vec(), STAGE_VERSION).is_none());
+        let mut tampered = r.clone(); tampered.stages.as_mut().unwrap().stages[0].stage = 19;
+        assert!(auth_response_full(&k, &nonce, &tampered.encode_to_vec(), STAGE_VERSION).is_none());
+        let mut tampered = r.clone(); tampered.version = REVIEW_VERSION;
+        assert!(auth_response_full(&k, &nonce, &tampered.encode_to_vec(), STAGE_VERSION).is_none());
+    }
+    #[test]
+    fn cp12br7_stage_cancel_mid_frame_keeps_invitation_unconsumed() {
+        let c = Controller::default();
+        let code = c.start_stage_review(stage_sample()).unwrap();
+        let (id, _) = decode(&code);
+        let end = Instant::now() + FRAME;
+        let h = connect(&id, &account().unwrap(), &AtomicBool::new(false), end).unwrap();
+        transfer(&h, &mut [0u8], true, &AtomicBool::new(false), end).unwrap();
+        let stop = Arc::new(AtomicBool::new(false));
+        let test_stop = Arc::clone(&stop);
+        let start = Instant::now();
+        let code_for_thread = code.clone();
+        let task = thread::spawn(move || receive_stage_review_cancellable(&code_for_thread, &test_stop));
+        thread::sleep(Duration::from_millis(100));
+        stop.store(true, Ordering::Release);
+        assert!(task.join().unwrap().is_err());
+        assert!(start.elapsed() < Duration::from_secs(2));
+        // Revocation cancels the server's incomplete frame immediately.
+        assert!(c.stop()); drop(h);
+        assert!(receive_stage_review_cancellable(&code, &AtomicBool::new(false)).is_err());
+    }
+    #[test]
+    fn cp12br7_stage_separate_process_authenticated_exchange() {
+        let c = Controller::default();
+        let code = c.start_stage_review(stage_sample()).unwrap();
+        let child = child("dx_ipc::windows_pipe::tests::cp12br7_stage_child_receiver")
+            .env("LU_DX_TEST_CODE", &code).output().unwrap();
+        assert!(child.status.success(), "child exchange failed: {}", String::from_utf8_lossy(&child.stdout));
+        assert!(receive_stage_review_cancellable(&code, &AtomicBool::new(false)).is_err());
+        c.stop();
+    }
+    #[test]
+    #[ignore = "parent subprocess entry"]
+    fn cp12br7_stage_child_receiver() {
+        assert_eq!(std::env::var("LU_DX_TEST_CHILD").as_deref(), Ok("1"));
+        assert_stage(receive_stage_review_cancellable(&std::env::var("LU_DX_TEST_CODE").unwrap(), &AtomicBool::new(false)).unwrap());
+    }
+    #[test]
+    fn cp12br7_stage_sender_crash_invalidates_invitation() {
+        let mut p = child("dx_ipc::windows_pipe::tests::cp12br7_stage_child_sender")
+            .stdout(Stdio::piped()).spawn().unwrap();
+        let stdout = p.stdout.take().unwrap();
+        let (tx, rx) = std::sync::mpsc::channel();
+        let reader = thread::spawn(move || {
+            for line in io::BufReader::new(stdout).lines().map_while(Result::ok) {
+                if let Some(code) = line.strip_prefix("INVITE:") { let _ = tx.send(code.to_owned()); break; }
+            }
+        });
+        let code = rx.recv_timeout(Duration::from_secs(15));
+        let _ = p.kill(); let status = p.wait().unwrap(); let _ = reader.join();
+        assert!(!status.success()); let old = code.expect("child sender not ready");
+        assert!(receive_stage_review_cancellable(&old, &AtomicBool::new(false)).is_err());
+        let c = Controller::default(); let fresh = c.start_stage_review(stage_sample()).unwrap();
+        assert_ne!(old, fresh);
+        assert!(receive_stage_review_cancellable(&old, &AtomicBool::new(false)).is_err());
+        assert_stage(receive_stage_review_cancellable(&fresh, &AtomicBool::new(false)).unwrap());
+        c.stop();
+    }
+    #[test]
+    #[ignore = "parent subprocess entry"]
+    fn cp12br7_stage_child_sender() {
+        let c = Controller::default();
+        let code = c.start_stage_review(stage_sample()).unwrap();
+        println!("INVITE:{code}"); io::stdout().flush().unwrap();
+        thread::sleep(Duration::from_secs(60));
+    }
+    #[test]
+    #[ignore = "requires separately provisioned disposable Windows standard account"]
+    fn cp12br7_stage_different_account_kernel_denial() {
+        let user = wide(&std::env::var("LU_DX_LAB_USER").expect("disposable account required"));
+        let pass = wide(&std::env::var("LU_DX_LAB_PASSWORD").expect("disposable account required"));
+        use windows_sys::Win32::{Foundation::ERROR_ACCESS_DENIED,Security::{ImpersonateLoggedOnUser,LogonUserW, LOGON32_LOGON_INTERACTIVE,LOGON32_PROVIDER_DEFAULT}};
+        let c = Controller::default(); let code = c.start_stage_review(stage_sample()).unwrap();
+        let (id, _) = decode(&code); let mut t = null_mut();
+        assert_ne!(unsafe { LogonUserW(user.as_ptr(), wide(".").as_ptr(), pass.as_ptr(), LOGON32_LOGON_INTERACTIVE, LOGON32_PROVIDER_DEFAULT, &mut t) }, 0);
+        let t = handle(t).unwrap(); assert_ne!(token_sid(&t).unwrap(), account().unwrap());
+        assert_ne!(unsafe { ImpersonateLoggedOnUser(t.as_raw_handle()) }, 0);
+        struct Revert; impl Drop for Revert { fn drop(&mut self) { if unsafe { RevertToSelf() } == 0 { std::process::abort() } } }
+        let guard = Revert;
+        let foreign = handle(unsafe { CreateFileW(path(&id).as_ptr(), FILE_READ_DATA|FILE_WRITE_DATA|FILE_WRITE_ATTRIBUTES|READ_CONTROL|SYNCHRONIZE, 0, null(), OPEN_EXISTING, SECURITY_SQOS_PRESENT|SECURITY_IDENTIFICATION, null_mut()) });
+        drop(guard);
+        assert_eq!(foreign.unwrap_err().raw_os_error(),Some(ERROR_ACCESS_DENIED as i32));
+        assert_stage(receive_stage_review_cancellable(&code,&AtomicBool::new(false)).unwrap()); c.stop();
     }
     #[test]
     #[ignore = "isolated disposable Windows lab only; creates and deletes one standard account"]
