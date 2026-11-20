@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "7aca640a752e34eab436642b0462bae78cd279d0",
-  "trackedFileCount": 1975,
+  "sourceCommitBeforeLock": "1cb99c05d319621e9d8ad116bf9c22ae0517b57e",
+  "trackedFileCount": 1976,
   "files": [
     {
       "path": ".gitattributes",
@@ -4474,6 +4474,10 @@
     {
       "path": "ide/supervisor/examples/d7_windows_acceptance.rs",
       "blob": "f7abeb8088f9317f6907cea6792ea40c17cf6118"
+    },
+    {
+      "path": "ide/supervisor/examples/dev03_linux_runtime_acceptance.rs",
+      "blob": "3e4733a2b1e92cc54f99ceafcbd2847b4ae2412d"
     },
     {
       "path": "ide/supervisor/examples/dev046d_restart_receipt_audit.rs",
