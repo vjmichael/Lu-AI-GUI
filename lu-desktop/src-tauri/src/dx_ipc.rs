@@ -3,6 +3,7 @@ use prost::Message;
 use serde::Serialize;
 const VERSION: u32 = 1;
 const DX_VERSION: u32 = 2;
+const REVIEW_VERSION: u32 = 2;
 #[derive(Clone, PartialEq, Message, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct Summary {
@@ -18,7 +19,7 @@ pub(crate) struct Summary {
     pub unavailable: u32,
 }
 impl Summary {
-    fn valid(&self) -> bool {
+    pub(crate) fn valid(&self) -> bool {
         [
             self.complete,
             self.observed_failure,
@@ -30,6 +31,35 @@ impl Summary {
         .map(u64::from)
         .sum::<u64>()
             <= 64
+    }
+}
+/// Finite, independently checkable findings; never model-generated prose.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+#[repr(u32)]
+pub(crate) enum Finding { Failure = 1, Uncertain = 2, Partial = 3, Delivered = 4, Empty = 5 }
+impl Finding {
+    pub(crate) fn expected(s: &Summary) -> Option<Self> {
+        if !s.valid() { return None; }
+        Some(if s.observed_failure > 0 { Self::Failure }
+        else if s.incomplete > 0 || s.unavailable > 0 { Self::Uncertain }
+        else if s.bounded > 0 { Self::Partial }
+        else if s.complete > 0 { Self::Delivered }
+        else { Self::Empty })
+    }
+    pub(crate) fn parse(answer: &str) -> Option<Self> {
+        match answer.trim() { "F" => Some(Self::Failure), "U" => Some(Self::Uncertain),
+            "P" => Some(Self::Partial), "D" => Some(Self::Delivered), "N" => Some(Self::Empty), _ => None }
+    }
+    fn from_wire(n:u32) -> Option<Self> { match n { 1=>Some(Self::Failure),2=>Some(Self::Uncertain),3=>Some(Self::Partial),4=>Some(Self::Delivered),5=>Some(Self::Empty),_=>None } }
+}
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ReviewedSummary { pub summary: Summary, pub finding: Finding }
+impl ReviewedSummary {
+    pub(crate) fn checked(summary: Summary, answer: &str) -> Option<Self> {
+        let finding=Finding::parse(answer)?;
+        (Finding::expected(&summary)==Some(finding)).then_some(Self{summary,finding})
     }
 }
 #[derive(Clone, PartialEq, Message)]
@@ -55,6 +85,9 @@ struct Response {
     summary: Option<Summary>,
     #[prost(bytes = "vec", tag = "5")]
     mac: Vec<u8>,
+    // Zero on v1; v2 is a distinct, explicitly selected collaboration.
+    #[prost(uint32, tag = "6")]
+    finding: u32,
 }
 #[cfg(any(
     target_os = "linux",
@@ -114,8 +147,11 @@ mod protocol {
             .into()
     }
     pub(super) fn request(key: &[u8; 32], nonce: Vec<u8>) -> Request {
+        request_for(key,nonce,VERSION)
+    }
+    pub(super) fn request_for(key: &[u8;32], nonce:Vec<u8>,version:u32)->Request {
         let mut r = Request {
-            version: VERSION,
+            version,
             dx_version: DX_VERSION,
             nonce,
             mac: vec![],
@@ -124,12 +160,16 @@ mod protocol {
         r
     }
     pub(super) fn response(key: &[u8; 32], nonce: Vec<u8>, summary: Summary) -> Response {
+        response_for(key,nonce,summary,VERSION,0)
+    }
+    pub(super) fn response_for(key:&[u8;32],nonce:Vec<u8>,summary:Summary,version:u32,finding:u32)->Response {
         let mut r = Response {
-            version: VERSION,
+            version,
             dx_version: DX_VERSION,
             nonce,
             summary: Some(summary),
             mac: vec![],
+            finding,
         };
         r.mac = mac(key, b"lu.dx.response.v1\0", &r.encode_to_vec()).to_vec();
         r
@@ -139,20 +179,27 @@ mod protocol {
         (m.encode_to_vec() == b).then_some(m)
     }
     pub(super) fn auth_request(key: &[u8; 32], b: &[u8]) -> Option<Request> {
+        auth_request_for(key,b,VERSION)
+    }
+    pub(super) fn auth_request_for(key:&[u8;32],b:&[u8],version:u32)->Option<Request>{
         let r: Request = canonical(b)?;
-        if r.version != VERSION
+        if r.version != version
             || r.dx_version != DX_VERSION
             || r.nonce.len() != 32
             || r.mac.len() != 32
         {
             return None;
         }
-        let e = request(key, r.nonce.clone());
+        let e = request_for(key, r.nonce.clone(),version);
         bool::from(r.mac.ct_eq(&e.mac)).then_some(r)
     }
     pub(super) fn auth_response(key: &[u8; 32], nonce: &[u8], b: &[u8]) -> Option<Summary> {
+        let (summary,finding)=auth_response_for(key,nonce,b,VERSION)?;
+        (finding==0).then_some(summary)
+    }
+    pub(super) fn auth_response_for(key:&[u8;32],nonce:&[u8],b:&[u8],version:u32)->Option<(Summary,u32)>{
         let r: Response = canonical(b)?;
-        if r.version != VERSION
+        if r.version != version
             || r.dx_version != DX_VERSION
             || r.nonce != nonce
             || r.mac.len() != 32
@@ -163,8 +210,9 @@ mod protocol {
         if !s.valid() {
             return None;
         }
-        let e = response(key, nonce.to_vec(), s.clone());
-        bool::from(r.mac.ct_eq(&e.mac)).then_some(s)
+        if (version==VERSION && r.finding!=0) || (version==REVIEW_VERSION && Finding::from_wire(r.finding)!=Finding::expected(&s)) { return None; }
+        let e = response_for(key, nonce.to_vec(), s.clone(),version,r.finding);
+        bool::from(r.mac.ct_eq(&e.mac)).then_some((s,r.finding))
     }
 }
 #[cfg(target_os = "linux")]
@@ -345,6 +393,13 @@ mod linux {
                 .map_err(|_| "Local sharing unavailable".into())
         }
         fn start_inner(&self, summary: Summary, ttl: Duration) -> io::Result<String> {
+            self.start_version(summary,ttl,VERSION,0)
+        }
+        pub(crate) fn start_review(&self, review:ReviewedSummary)->Result<String,String>{
+            if Finding::expected(&review.summary)!=Some(review.finding){return Err("Unverified finding".into())}
+            self.start_version(review.summary,TTL,REVIEW_VERSION,review.finding as u32).map_err(|_|"Local sharing unavailable".into())
+        }
+        fn start_version(&self,summary:Summary,ttl:Duration,version:u32,finding:u32)->io::Result<String>{
             let mut lock = self
                 .session
                 .lock()
@@ -395,12 +450,12 @@ mod linux {
                                 let Ok(b) = read(&mut s, &w, end) else {
                                     continue;
                                 };
-                                let Some(r) = auth_request(&key, &b) else {
+                                let Some(r) = auth_request_for(&key, &b,version) else {
                                     continue;
                                 };
                                 let _ = write(
                                     &mut s,
-                                    response(&key, r.nonce, summary.clone()).encode_to_vec(),
+                                    response_for(&key, r.nonce, summary.clone(),version,finding).encode_to_vec(),
                                     &w,
                                     end,
                                 );
@@ -412,7 +467,7 @@ mod linux {
                     }
                 })?;
             *lock = Some(Session { stop, worker });
-            Ok(format!("lu1-{}-{}", hex(&id), hex(&key)))
+            Ok(format!("lu{version}-{}-{}", hex(&id), hex(&key)))
         }
     }
     impl Drop for Controller {
@@ -425,12 +480,19 @@ mod linux {
             .map_err(|_| "The invitation is invalid, expired, incompatible or unavailable.".into())
     }
     fn receive_inner(code: &str) -> io::Result<Summary> {
+        receive_version(code,VERSION).map(|(s,_)|s)
+    }
+    pub(crate) fn receive_review(code:&str)->Result<ReviewedSummary,String>{
+        let (summary,n)=receive_version(code,REVIEW_VERSION).map_err(|_|"The review invitation is invalid, expired, incompatible or unavailable.")?;
+        Ok(ReviewedSummary{summary,finding:Finding::from_wire(n).ok_or("Unverified peer finding")?})
+    }
+    fn receive_version(code:&str,version:u32)->io::Result<(Summary,u32)>{
         let bad = || io::Error::from(io::ErrorKind::InvalidData);
         if code.len() != 101 || !tmp_ok() {
             return Err(bad());
         }
         let mut parts = code.split('-');
-        if parts.next() != Some("lu1") {
+        if parts.next() != Some(if version==VERSION {"lu1"}else{"lu2"}) {
             return Err(bad());
         }
         let id = unhex::<16>(parts.next().ok_or_else(bad)?).ok_or_else(bad)?;
@@ -456,11 +518,11 @@ mod linux {
         let end = Instant::now() + FRAME;
         write(
             &mut s,
-            request(&key, nonce.clone()).encode_to_vec(),
+            request_for(&key, nonce.clone(),version).encode_to_vec(),
             &stop,
             end,
         )?;
-        auth_response(&key, &nonce, &read(&mut s, &stop, end)?).ok_or_else(bad)
+        auth_response_for(&key, &nonce, &read(&mut s, &stop, end)?,version).ok_or_else(bad)
     }
     #[cfg(test)]
     mod tests {
@@ -476,6 +538,25 @@ mod linux {
         }
         fn endpoint(code: &str) -> PathBuf {
             path(&unhex::<16>(code.split('-').nth(1).unwrap()).unwrap())
+        }
+        #[test]
+        fn cp12br3_review_versions_and_independent_validation(){
+            let c=Controller::default();let s=summary();
+            assert!(ReviewedSummary::checked(s.clone(),"D").is_none());
+            assert!(ReviewedSummary::checked(s.clone(),"F with explanation").is_none());
+            let review=ReviewedSummary::checked(s.clone(),"F").unwrap();
+            let code=c.start_review(review).unwrap();assert!(code.starts_with("lu2-"));
+            assert!(receive(&code).is_err());
+            let wrong=format!("lu1{}",&code[3..]);assert!(receive(&wrong).is_err());
+            let peer=receive_review(&code).unwrap(); assert_eq!(peer.summary,s);assert_eq!(peer.finding,Finding::Failure);
+            c.stop();assert!(receive_review(&code).is_err());
+            let plain=c.start(s.clone()).unwrap();assert!(receive_review(&plain).is_err());assert_eq!(receive(&plain).unwrap(),s);c.stop();
+            let key=[7;32];let nonce=vec![4;32];
+            let invalid=response_for(&key,nonce.clone(),s.clone(),REVIEW_VERSION,Finding::Delivered as u32);
+            assert!(auth_response_for(&key,&nonce,&invalid.encode_to_vec(),REVIEW_VERSION).is_none());
+            let mut good=response_for(&key,nonce.clone(),s,REVIEW_VERSION,Finding::Failure as u32);
+            assert!(auth_response_for(&key,&nonce,&good.encode_to_vec(),REVIEW_VERSION).is_some());
+            good.finding=2;assert!(auth_response_for(&key,&nonce,&good.encode_to_vec(),REVIEW_VERSION).is_none());
         }
         #[test]
         fn native_roundtrip_single_use() {
@@ -691,7 +772,12 @@ mod linux {
     }
 }
 #[cfg(target_os = "linux")]
-pub(crate) use linux::{receive, Controller};
+pub(crate) use linux::{receive, receive_review, Controller};
+#[cfg(not(target_os="linux"))]
+pub(crate) fn receive_review(_: &str)->Result<ReviewedSummary,String>{Err("Collaborative review is not available on this platform.".into())}
+#[cfg(not(target_os="linux"))]
+impl Controller { pub(crate) fn start_review(&self,_:ReviewedSummary)->Result<String,String>{Err("Collaborative review is not available on this platform.".into())} }
+pub(crate) const fn review_supported()->bool{cfg!(target_os="linux")}
 #[cfg(all(target_os = "windows", feature = "windows_dx_eval"))]
 #[path = "dx_windows_pipe.rs"]
 mod windows_pipe;

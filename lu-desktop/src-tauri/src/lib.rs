@@ -30,6 +30,7 @@ mod model_benchmark;
 mod scheduled_ai;
 mod diagnostic_archive;
 mod dx_ipc;
+mod dx_review;
 use causal_diagnostic::Checkpoint as CausalCheckpoint;
 mod vision_context;
 mod observe_desktop;
@@ -766,6 +767,7 @@ struct DesktopState {
     perf01: perf01_telemetry::PerfLedger,
     active_checks: active_checks::CheckController,
     diagnostic_exchange: dx_ipc::Controller,
+    diagnostic_review: dx_review::ReviewControl,
     operational_assets: lu_core::operational_asset_ledger::OperationalAssetLedger,
     continuity: lu_core::continuity::ContinuityStore,
     reviewed_memory_recovery: Vec<reviewed_memory_evidence::ReviewedMemoryRecoveryView>,
@@ -1354,6 +1356,7 @@ impl DesktopState {
             chats,
             active_checks: active_checks::CheckController::new(&root),
             diagnostic_exchange: dx_ipc::Controller::default(),
+            diagnostic_review: dx_review::ReviewControl::default(),
             perf01:perf01_telemetry::PerfLedger::with_archive(
                 diagnostic_archive::DiagnosticArchive::open(&root.join("lu-dx-traces.sqlite"))
                     .ok().map(Arc::new)
@@ -2166,6 +2169,50 @@ fn lu_dx_supported(caller:tauri::WebviewWindow)->bool{matches!(caller.label(),"m
 fn lu_dx_share_active(caller:tauri::WebviewWindow,state:State<'_,Arc<DesktopState>>)->bool{matches!(caller.label(),"main"|"settings")&&state.diagnostic_exchange.active()}
 #[tauri::command]
 fn lu_dx_stop_share(caller:tauri::WebviewWindow,state:State<'_,Arc<DesktopState>>)->bool{matches!(caller.label(),"main"|"settings")&&state.diagnostic_exchange.stop()}
+/// Separate collaborative review: no renderer-supplied summary or finding.
+#[tauri::command]
+fn lu_dx_review_supported(caller:tauri::WebviewWindow)->bool{matches!(caller.label(),"main"|"settings")&&dx_ipc::review_supported()}
+#[tauri::command]
+async fn lu_dx_review_share(app:AppHandle,caller:tauri::WebviewWindow,state:State<'_,Arc<DesktopState>>)->Result<Option<String>,String>{
+    if !matches!(caller.label(),"main"|"settings"){return Ok(None)}
+    if !dx_ipc::review_supported(){return Err("Collaborative review is unavailable on this platform.".into())}
+    let owner=Arc::clone(state.inner());
+    tauri::async_runtime::spawn_blocking(move||{
+        let review=owner.diagnostic_review.begin()?;
+        let snapshot=dx_review::ready(&owner)?;
+        if owner.diagnostic_exchange.active(){return Err("Stop the current invitation first.".into())}
+        if !app.dialog().message("Ask the currently loaded local model to review five recent troubleshooting counts? Only these counts and a checked finding category are shared with another Lu on this computer. No conversation content, files, model identity or tool access. A review can take up to 35 seconds; the invitation expires after two minutes or one use. No repairs are performed.")
+        .title("Lu — Review and share").buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom("Review and share".into(),"Cancel".into())).blocking_show(){return Ok(None)}
+        if review.stopped(){return Err("Review stopped.".into())}
+        let archive=owner.perf01.archive().ok_or("Local diagnostics unavailable")?;
+        let summary=archive.report()?.exchange_summary();
+        let finding=dx_review::run(&owner,&review,&snapshot,summary)?;
+        review.publish(||owner.diagnostic_exchange.start_review(finding).map(Some))
+    }).await.map_err(|_|"Review did not finish")?
+}
+#[tauri::command]
+async fn lu_dx_review_receive(app:AppHandle,caller:tauri::WebviewWindow,state:State<'_,Arc<DesktopState>>,code:String)->Result<Option<dx_ipc::ReviewedSummary>,String>{
+    if !matches!(caller.label(),"main"|"settings"){return Ok(None)}
+    if !dx_ipc::review_supported(){return Err("Collaborative review is unavailable on this platform.".into())}
+    if code.len()!=101||!code.starts_with("lu2-"){return Err("Invalid review invitation.".into())}
+    let owner=Arc::clone(state.inner());
+    tauri::async_runtime::spawn_blocking(move||{
+        let review=owner.diagnostic_review.begin()?;
+        let snapshot=dx_review::ready(&owner)?;
+        if !app.dialog().message("Accept a one-time reviewed troubleshooting summary and ask your currently loaded local model to classify the same five counts independently? The model will not see the other model's answer. No conversations, files, tools or repairs are authorized. The invitation is consumed on receipt, even if this review fails. A review can take up to 35 seconds.")
+        .title("Lu — Review received summary").buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom("Receive and review".into(),"Cancel".into())).blocking_show(){return Ok(None)}
+        if review.stopped(){return Err("Review stopped.".into())}
+        let peer=dx_ipc::receive_review(&code)?;
+        let local=dx_review::run(&owner,&review,&snapshot,peer.summary.clone())?;
+        if local.finding!=peer.finding{return Err("The reviewed findings do not agree.".into())}
+        review.publish(||Ok(Some(local)))
+    }).await.map_err(|_|"Review did not finish")?
+}
+#[tauri::command]
+fn lu_dx_stop_review(caller:tauri::WebviewWindow,state:State<'_,Arc<DesktopState>>)->bool{
+    if !matches!(caller.label(),"main"|"settings"){return false}
+    state.diagnostic_review.stop()
+}
 /// CP-11A: one fixed local health-check suite, always fresh native consent.
 /// No parameters, model registration, shell, user file access or network.
 #[tauri::command]
@@ -10296,6 +10343,7 @@ pub fn run() {
             lu_text_reply_observed,
             lu_cp01_diagnostic_report,
             lu_dx_share, lu_dx_receive, lu_dx_share_active, lu_dx_stop_share, lu_dx_supported,
+            lu_dx_review_supported, lu_dx_review_share, lu_dx_review_receive, lu_dx_stop_review,
             lu_run_local_checks,
             lu_run_model_checks,
             lu_local_check_status,
@@ -10577,6 +10625,7 @@ pub fn run() {
             // must fence the original queue and reconcile its saved turns.
             if matches!(event, tauri::RunEvent::Exit) {
                 if let Some(state) = app.try_state::<Arc<DesktopState>>() {
+                    state.diagnostic_review.shutdown();
                     state.diagnostic_exchange.shutdown();
                     state.active_checks.shutdown();
                     let pending=match state.generation_queue.begin_shutdown(){
