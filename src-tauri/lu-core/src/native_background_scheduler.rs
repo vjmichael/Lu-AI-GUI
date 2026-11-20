@@ -20,7 +20,7 @@ use crate::{
 
 mod reminders;
 mod scheduled_ai;
-pub use scheduled_ai::{AiSchedule,AiRun,validate_ai_schedule,validate_ai_reader,MAX_SCHEDULE_OUTPUT};
+pub use scheduled_ai::{AiSchedule,AiRun,validate_ai_schedule,validate_ai_reader,LiveFile,MAX_SCHEDULE_OUTPUT};
 pub use reminders::{ReminderDraft, ReminderView, parse_reminder_request, validate_reminder};
 
 const MAX_QUEUE:usize=128;
@@ -368,6 +368,7 @@ struct Active{
 }
 struct Inner {
     db:Connection,
+    live_ai_files:BTreeMap<String,LiveFile>,
     plans:BTreeMap<String,Active>,
     running:BTreeMap<String,ResourceClaim>,
     external:BTreeMap<String,(String,ResourceClaim)>,
@@ -464,7 +465,7 @@ impl BackgroundScheduler{
                     WHERE state IN ('QUEUED','RUNNING','PAUSED')",[])
             .map_err(db_error)?;
         Ok(Self{store,process,inner:Mutex::new(Inner{
-            db,plans:BTreeMap::new(),running:BTreeMap::new(),
+            db,live_ai_files:BTreeMap::new(),plans:BTreeMap::new(),running:BTreeMap::new(),
             external:BTreeMap::new(),capacity:budget,
             interactive_admission_hold:false,
         })})

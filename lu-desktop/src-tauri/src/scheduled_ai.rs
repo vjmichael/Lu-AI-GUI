@@ -1,5 +1,5 @@
-//! Host-owned scheduled inference. Only an explicitly approved immutable-note
-//! Reader request is admitted; no general router, file or network authority.
+//! Host-owned scheduled inference. Only explicit fixed-note or session-bound
+//! file Reader grants are admitted; no general router or network authority.
 use crate::{generation_queue::BenchmarkLease, next_id, DesktopState};
 use lu_core::{
     inference_bridge::BridgeError,
@@ -96,7 +96,8 @@ fn run(
         let deadline = Instant::now() + LIMIT;
         if let Some(line) = row.reader_line {
             (|| {
-                let request=generate(&owner,&row.id,seq,sid,&format!("User task: {}\nThe approved note is not yet available. To request its approved line {line}, respond with exactly READ and nothing else. /no_think",row.prompt),deadline)?;
+                let source=if row.live_file.is_some(){"text file"}else{"note"};
+                let request=generate(&owner,&row.id,seq,sid,&format!("User task: {}\nThe approved {source} is not yet available. To request its approved line {line}, respond with exactly READ and nothing else. /no_think",row.prompt),deadline)?;
                 if lease.yield_requested() {
                     return Err("STOPPED");
                 }

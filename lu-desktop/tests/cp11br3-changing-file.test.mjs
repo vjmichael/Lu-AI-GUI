@@ -1,0 +1,10 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {readFileSync as read} from 'node:fs';
+const ui=read(new URL('../web/scheduled_ai.jsx',import.meta.url),'utf8');
+const host=read(new URL('../src-tauri/src/lib.rs',import.meta.url),'utf8');
+const core=read(new URL('../../src-tauri/lu-core/src/native_background_scheduler/scheduled_ai.rs',import.meta.url),'utf8');
+test('mutable file is opt in and mutually exclusive with fixed note',()=>{assert.match(ui,/\[useLive,setUseLive\]=useState\(false\)/);assert.match(ui,/if\(e.target.checked\)setUseNote\(false\)/);assert.match(ui,/if\(e.target.checked\)setUseLive\(false\)/);assert.match(ui,/readerLive:useLive/);assert.match(host,/if reader_note.is_some\(\)\|\|!reader_line/);});
+test('native picker and exact review bind file scope before scheduling',()=>{const src=host.slice(host.indexOf('async fn lu_schedule_ai'),host.indexOf('fn lu_ai_schedules'));assert.ok(src.indexOf('blocking_pick_file()')<src.indexOf('Approve scheduled AI task'));assert.ok(src.indexOf('Approve scheduled AI task')<src.indexOf('create_ai_live_schedule'));assert.match(src,/file\.display\(\)/);assert.match(src,/File access ends when Lu closes/);});
+test('reapprove only through fresh native selector and review',()=>{const src=host.slice(host.indexOf('async fn lu_reapprove_ai_live'),host.indexOf('/// Native file-picker admission.',host.indexOf('async fn lu_reapprove_ai_live')));assert.match(src,/blocking_pick_file/);assert.match(src,/file.display\(\)!=display/);assert.ok(src.indexOf('blocking_show()')<src.indexOf('reapprove_ai_live(&schedule_id'));assert.match(ui,/invoke\('lu_reapprove_ai_live'/);assert.match(ui,/row.permission!=='REVIEW'/);});
+test('explicit revocation and verified snapshot reports have distinct presentation',()=>{assert.match(ui,/Confirm permission revocation/);assert.match(ui,/control\(row,'revoke'\)/);assert.match(ui,/Read-only permission:/);assert.match(ui,/Verified answer from file at time of reading/);assert.match(ui,/Source read verified; answer not verified/);assert.match(core,/live_ai_files.remove\(id\)/);});

@@ -6816,7 +6816,7 @@ fn lu_control_reminder(app:AppHandle,state:State<'_,Arc<DesktopState>>,
 /// Explicit Tasks-form authority only. The frontend never supplies a model ID
 /// or a grant: native consent binds the actual ready catalog selection and optional exact note.
 #[tauri::command]
-async fn lu_schedule_ai(app:AppHandle,state:State<'_,Arc<DesktopState>>,chat_id:String,prompt:String,delay_minutes:u32,repeat_minutes:Option<u32>,reader_note:Option<String>,reader_line:Option<u32>)->Result<Option<String>,String>{
+async fn lu_schedule_ai(app:AppHandle,state:State<'_,Arc<DesktopState>>,chat_id:String,prompt:String,delay_minutes:u32,repeat_minutes:Option<u32>,reader_note:Option<String>,reader_line:Option<u32>,reader_live:Option<bool>)->Result<Option<String>,String>{
     let owner=Arc::clone(state.inner());
     tauri::async_runtime::spawn_blocking(move||{
         let (chats,_)=owner.chats.list()?;
@@ -6828,17 +6828,24 @@ async fn lu_schedule_ai(app:AppHandle,state:State<'_,Arc<DesktopState>>,chat_id:
         let delay=u64::from(delay_minutes)*60;let repeat=repeat_minutes.map(|r|u64::from(r)*60);
         lu_core::native_background_scheduler::validate_ai_schedule(&prompt,model,delay,repeat).map_err(|_|"Use a short single-line task and a delay from one minute to one week")?;
         let safe=|s:&str|s.chars().filter(|c|!c.is_control()&&!matches!(c,'\u{202a}'..='\u{202e}'|'\u{2066}'..='\u{2069}')).take(160).collect::<String>();
-        let reader=match (reader_note.as_deref(),reader_line){
+        let live=if reader_live==Some(true){
+            if reader_note.is_some()||!reader_line.is_some_and(|l|(1..=32).contains(&l)){return Err("Choose one file and a line from 1 to 32".into())}
+            if !cfg!(target_os="linux"){return Err("Changing files are not yet supported on this system".into())}
+            let Some(selected)=app.dialog().file().add_filter("Text file",&["txt"]).blocking_pick_file() else{return Ok(None)};
+            let selected=selected.into_path().map_err(|_|"Invalid file location")?;
+            Some(lu_core::native_background_scheduler::LiveFile::prepare(&selected).map_err(|_|"Choose a small local regular text file; links and replacement files are not supported")?)
+        }else{None};
+        let reader=match (reader_note.as_deref(),if live.is_some(){None}else{reader_line}){
             (None,None)=>None,
             (Some(note),Some(line))=>{lu_core::native_background_scheduler::validate_ai_reader(note,line).map_err(|_|"Use a short note and select a nonempty line (160 bytes maximum)")?;Some((note,line))},
             _=>return Err("Choose a complete note and line".into()),
         };
-        let details=match reader{None=>"No chat history, tools, files or internet. Each run is limited to 128 tokens and 35 seconds.".to_owned(),Some((note,line))=>format!("Approved source: pasted note only; line {line}. The model may request this one line once per occurrence. All note text will be retained locally with the task. No other tools, files, chat history or internet. The final answer must match the selected line. Shared 35-second limit across both model steps.\n\nExact note:\n{note}\n\nEnd of note.")};
+        let details=if let Some(file)=live.as_ref(){format!("Approved changing text file: {}\nLine: {}. Read-only; up to 2,048 bytes of plain text, at most 32 lines. Each occurrence may request the one approved line once, and must return it exactly. In-place changes are allowed; replacement, links, and unavailable or invalid files are refused. No other file, tool, chat history or internet. Results retain the source observation and exact answer locally. File access ends when Lu closes and requires fresh native review before resuming. Revoke stops active and future runs and preserves past results.",file.display(),reader_line.unwrap_or(0))}else{match reader{None=>"No chat history, tools, files or internet. Each run is limited to 128 tokens and 35 seconds.".to_owned(),Some((note,line))=>format!("Approved source: pasted note only; line {line}. The model may request this one line once per occurrence. All note text will be retained locally with the task. No other tools, files, chat history or internet. The final answer must match the selected line. Shared 35-second limit across both model steps.\n\nExact note:\n{note}\n\nEnd of note.")}};
         let disclosure=format!("Task: {prompt}\n\nConversation: {}\nModel: {}\nStart: {delay_minutes} minute(s) after approval. Repeat: {}.\n\nOnly runs while Lu is open and this model is loaded and idle. {details} Missed repeats are combined; interrupted attempts are never replayed. Up to 32 attempts are retained per schedule. Cancel stops the current attempt and future runs; it may unload the model.",safe(&chat.title),safe(&filename),repeat_minutes.map_or("Once".into(),|r|format!("Every {r} minute(s)")));
         if !app.dialog().message(disclosure).title("Lu — Approve scheduled AI task").buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom("Schedule task".into(),"Decline".into())).blocking_show(){return Ok(None)}
         owner.chats.history_window(&chat_id,None,"older",1)?;
         if !owner.supervisor.status().is_ok_and(|s|s==snapshot){return Err("The loaded model changed. Review again.".into())}
-        let id=next_id("ai-task-");match reader{Some((note,line))=>owner.background_scheduler.create_ai_reader_schedule(&id,&chat_id,&prompt,model,delay,repeat,note,line),None=>owner.background_scheduler.create_ai_schedule(&id,&chat_id,&prompt,model,delay,repeat)}.map_err(|_|"Could not save task; check the schedule limit")?;
+        let id=next_id("ai-task-");if let Some(file)=live{owner.background_scheduler.create_ai_live_schedule(&id,&chat_id,&prompt,model,delay,repeat,file,reader_line.ok_or("Choose a line")?)}else{match reader{Some((note,line))=>owner.background_scheduler.create_ai_reader_schedule(&id,&chat_id,&prompt,model,delay,repeat,note,line),None=>owner.background_scheduler.create_ai_schedule(&id,&chat_id,&prompt,model,delay,repeat)}}.map_err(|_|"Could not save task; check the schedule limit")?;
         let _=app.emit("lu-scheduled-ai-changed",());Ok(Some(id))
     }).await.map_err(|_|"Task approval unavailable")?
 }
@@ -6857,6 +6864,30 @@ fn lu_control_ai_schedule(app:AppHandle,state:State<'_,Arc<DesktopState>>,chat_i
     state.chats.history_window(&chat_id,None,"older",1)?;
     state.background_scheduler.control_ai(&schedule_id,&chat_id,&action).map_err(|_|"The task changed or cannot be updated while running")?;
     let _=app.emit("lu-scheduled-ai-changed",());Ok(())
+}
+
+/// Rebinding after cold restart never reopens a stored path automatically.
+/// The exact file is selected again and consented in the native dialog.
+#[tauri::command]
+async fn lu_reapprove_ai_live(app:AppHandle,state:State<'_,Arc<DesktopState>>,chat_id:String,schedule_id:String)->Result<bool,String>{
+    let owner=Arc::clone(state.inner());
+    tauri::async_runtime::spawn_blocking(move||{
+        let (chats,_)=owner.chats.list()?;
+        let chat=chats.into_iter().find(|c|c.chat_id==chat_id).ok_or("Conversation unavailable")?;
+        let row=owner.background_scheduler.ai_schedules().map_err(|_|"Task unavailable")?.into_iter().find(|r|r.id==schedule_id&&r.workspace_id==chat_id&&r.state=="PAUSED"&&r.permission.as_deref()==Some("REVIEW")).ok_or("Task does not need review")?;
+        let display=row.live_file.as_deref().ok_or("File unavailable")?;
+        let line=row.reader_line.ok_or("Line unavailable")?;
+        let model=owner.catalog.lock().map_err(|_|"Model unavailable")?.iter().find(|r|r.model_ref==row.model_ref).map(|r|r.filename.clone()).ok_or("Approved model unavailable")?;
+        let Some(selected)=app.dialog().file().add_filter("Text file",&["txt"]).blocking_pick_file() else{return Ok(false)};
+        let file=lu_core::native_background_scheduler::LiveFile::prepare(&selected.into_path().map_err(|_|"Invalid file location")?).map_err(|_|"File unavailable or unsafe")?;
+        if file.display()!=display{return Err("Select the original file. A replacement needs a new task".into())}
+        let safe=|s:&str|s.chars().filter(|c|!c.is_control()&&!matches!(c,'\u{202a}'..='\u{202e}'|'\u{2066}'..='\u{2069}')).take(160).collect::<String>();
+        let disclosure=format!("Restore read-only permission for this session?\n\nTask: {}\nConversation: {}\nModel: {}\nFile: {display}\nLine: {line}\nRepeat: {}.\n\nOnly the originally selected file and line may be read once per occurrence. In-place content changes are allowed, but replacement is refused. No other resources. Previous reports remain unchanged. The task stays paused until you resume it. Permission ends when Lu closes; revoke ends it immediately.",row.prompt,safe(&chat.title),safe(&model),row.repeat_seconds.map_or("Once".into(),|r|format!("Every {} minute(s)",r/60)));
+        if !app.dialog().message(disclosure).title("Lu — Review recurring file permission").buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom("Approve permission".into(),"Decline".into())).blocking_show(){return Ok(false)}
+        owner.chats.history_window(&chat_id,None,"older",1)?;
+        owner.background_scheduler.reapprove_ai_live(&schedule_id,&chat_id,file).map_err(|_|"Original file or approved task changed. Create a new task if the file was replaced")?;
+        let _=app.emit("lu-scheduled-ai-changed",());Ok(true)
+    }).await.map_err(|_|"Permission review unavailable")?
 }
 
 /// Native file-picker admission. The model never selects the executable,
@@ -10392,6 +10423,7 @@ pub fn run() {
             lu_ai_schedules,
             lu_ai_schedule_runs,
             lu_control_ai_schedule,
+            lu_reapprove_ai_live,
             lu_schedule_reminder,
             lu_control_reminder,
             lu_background_guardian_status,
