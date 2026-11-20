@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "00353ff1ff96f7af6e558edfe550b87eed7d20fa",
-  "trackedFileCount": 1241,
+  "sourceCommitBeforeLock": "df44e8a5049aeae80ff655fe030d2304d2c6dc85",
+  "trackedFileCount": 1242,
   "files": [
     {
       "path": ".gitattributes",
@@ -2898,6 +2898,10 @@
     {
       "path": "scripts/cp12br4-review-lifecycle-gui.py",
       "blob": "96226d660660ae20a5f88be10aa305de5d361fbd"
+    },
+    {
+      "path": "scripts/cp12br4r1-crash-recovery-gui.py",
+      "blob": "f0df865dc9dfe31bba67e3d885592d0396448f11"
     },
     {
       "path": "scripts/install-lu-agent01l-native-fixture.sh",
