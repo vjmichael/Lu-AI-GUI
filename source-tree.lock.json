@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "b0a8cdde35bd028ac35c2e90b078bb23dc3bb163",
-  "trackedFileCount": 1236,
+  "sourceCommitBeforeLock": "9e715f6dec6f8cbef6be53fe4cad52c97cd7662a",
+  "trackedFileCount": 1238,
   "files": [
     {
       "path": ".gitattributes",
@@ -912,6 +912,10 @@
       "blob": "4ca72f4d2e0dc1ee9510bb1f8007354515471ee3"
     },
     {
+      "path": "docs/LU_CP12B_R3_COLLABORATIVE_REVIEW_20261120.md",
+      "blob": "4440201c21c9791c5a57115ab77419e77ae18580"
+    },
+    {
       "path": "docs/LU_CURRENT_PREVIEW_CPU_VULKAN_DUAL_ENGINE_20261109.md",
       "blob": "c1664658ded245a3df6041114e42587f49550200"
     },
@@ -921,7 +925,7 @@
     },
     {
       "path": "docs/LU_DEVELOPMENT_LEDGER.md",
-      "blob": "3e79c8f74ea15d0f2b0bcc3bbe386d8aca0cd6bb"
+      "blob": "de76c3cb0a5391dad8e39d5cfe8e2f6ccf2c6f6b"
     },
     {
       "path": "docs/LU_E1_NATIVE_EVIDENCE_20261107.md",
@@ -2878,6 +2882,10 @@
     {
       "path": "scripts/cp12br2-windows-transport-check/src/lib.rs",
       "blob": "56c8a2619ae837f4a5d3be722deedf0ca59f0c21"
+    },
+    {
+      "path": "scripts/cp12br3-two-model-review-gui.py",
+      "blob": "51c1259f55c61942f61b6aa7c1641808b8db7d51"
     },
     {
       "path": "scripts/install-lu-agent01l-native-fixture.sh",
