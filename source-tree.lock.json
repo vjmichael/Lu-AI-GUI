@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "8bee2ba50337a62d60ea546cb723c1ca34c554f7",
-  "trackedFileCount": 1259,
+  "sourceCommitBeforeLock": "65984038434426ea21b263751f99a6c5ad15aaa0",
+  "trackedFileCount": 1262,
   "files": [
     {
       "path": ".gitattributes",
@@ -133,7 +133,7 @@
     },
     {
       "path": ".github/workflows/lu-cp12br7r1-windows-collaboration.yml",
-      "blob": "5e41a6e5ce50aa03badfb0c1c129cc1e2a0b3b8b"
+      "blob": "970b51057c6e7b66b0b7691e7cf5e9ba3b718dec"
     },
     {
       "path": ".github/workflows/lu-dev-offline-cache.yml",
@@ -944,6 +944,10 @@
       "blob": "25ce14de15cda3ab4d05d004efd76df498192420"
     },
     {
+      "path": "docs/LU_CP12B_R7_R2_HOSTED_PUBLICATION_20261120.md",
+      "blob": "191314a3b9babc35ab0ec4cb1b87c84c253d3cf9"
+    },
+    {
       "path": "docs/LU_CP12B_R7_WINDOWS_STAGE_EVAL_20261120.md",
       "blob": "9820257425a29560dee26598f2fbd7d4a76da375"
     },
@@ -957,7 +961,7 @@
     },
     {
       "path": "docs/LU_DEVELOPMENT_LEDGER.md",
-      "blob": "cab31d4259cc6bd776e3f5ec30aa2a4719efbe93"
+      "blob": "15e6a438778c676edec1bc75356074f100e2a4be"
     },
     {
       "path": "docs/LU_E1_NATIVE_EVIDENCE_20261107.md",
@@ -2277,11 +2281,15 @@
     },
     {
       "path": "lu-desktop/tests/cp12br7r1-gh-ci-contract.test.mjs",
-      "blob": "ead7e047d58979d08123538cd33f83ffc24178ce"
+      "blob": "8533fa53183b62a2dbf1e24480520fad1b82bd32"
     },
     {
       "path": "lu-desktop/tests/cp12br7r1-physical-acceptance-contract.test.mjs",
       "blob": "95c5e736b1d38bb258fa8f4240d399bc0caaa937"
+    },
+    {
+      "path": "lu-desktop/tests/cp12br7r2-publication-contract.test.mjs",
+      "blob": "b67f9288db4dc4a8f92aa780fa4f5106546320fd"
     },
     {
       "path": "lu-desktop/tests/dx-exchange-windows-check/Cargo.lock",
@@ -2970,6 +2978,10 @@
     {
       "path": "scripts/cp12br7r1-windows-installed-acceptance.ps1",
       "blob": "50f9859fc454700e1a94a5cc837c707e90349528"
+    },
+    {
+      "path": "scripts/cp12br7r2-publish-exact-source.ps1",
+      "blob": "d02254148a8a79bc75ea25f93640db4ef87a909a"
     },
     {
       "path": "scripts/install-lu-agent01l-native-fixture.sh",

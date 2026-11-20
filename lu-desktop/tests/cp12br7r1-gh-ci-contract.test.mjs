@@ -2,9 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 const source=readFileSync(new URL('../../.github/workflows/lu-cp12br7r1-windows-collaboration.yml', import.meta.url),'utf8');
-test('R7-R1 CI is opt-in, exact SHA scoped, and Windows-native',()=>{
+test('R7-R2 CI is exact SHA scoped, one candidate-push gated, and Windows-native',()=>{
   for(const token of ['workflow_dispatch:','ref: ${{ github.sha }}','git rev-parse HEAD','GITHUB_SHA','verify-source-tree.mjs','runs-on: windows-2025','contents: read','persist-credentials: false']) assert.ok(source.includes(token),token);
-  assert.doesNotMatch(source,/^\s+push:/m);
+  assert.match(source,/^  push:\n    branches: \['lu\/cp12b-r7-windows-stage-eval'\]\n    paths: \['\.github\/workflows\/lu-cp12br7r1-windows-collaboration\.yml'\]/m);
+  assert.match(source,/github\.event\.head_commit\.message == 'CP-12B-R7-R2 source-locked Windows CI handoff'/);
   assert.doesNotMatch(source,/^\s+schedule:/m);
 });
 test('R7-R1 CI executes actual Windows transport and default-off with strict status',()=>{

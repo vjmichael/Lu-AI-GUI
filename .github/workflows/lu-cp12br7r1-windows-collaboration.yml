@@ -1,7 +1,11 @@
 name: Lu CP-12B-R7-R1 Windows collaboration — exact-source qualification
 
-# Manual, SHA-scoped only: never validate an unpublished local candidate by running main.
+# One initial, source-locked push of the exact candidate can run this workflow
+# before it exists on main. Later pushes cannot schedule expensive jobs.
 on:
+  push:
+    branches: ['lu/cp12b-r7-windows-stage-eval']
+    paths: ['.github/workflows/lu-cp12br7r1-windows-collaboration.yml']
   workflow_dispatch:
     inputs:
       include_desktop_source_check:
@@ -16,6 +20,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   windows-native-protocol:
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.event.head_commit.message == 'CP-12B-R7-R2 source-locked Windows CI handoff') }}
     runs-on: windows-2025
     timeout-minutes: 70
     steps:
@@ -60,7 +65,7 @@ jobs:
           "Verified Git checkout: $env:GITHUB_SHA" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
           'Native Windows transport and consent contracts only: no installed GUI, independent GGUF inference, separate-account account creation or physical-PC acceptance was executed.' | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
   windows-desktop-source-check:
-    if: ${{ inputs.include_desktop_source_check }}
+    if: ${{ (github.event_name == 'workflow_dispatch' && inputs.include_desktop_source_check) || (github.event_name == 'push' && github.event.head_commit.message == 'CP-12B-R7-R2 source-locked Windows CI handoff') }}
     runs-on: windows-2025
     timeout-minutes: 120
     steps:
