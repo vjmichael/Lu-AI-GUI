@@ -52,23 +52,35 @@ def picker(pid,path):
     window=wait(chooser,30,'actual native file chooser')
     subprocess.run(['xdotool','windowactivate','--sync',window],check=True,timeout=5)
     require(subprocess.check_output(['xdotool','getactivewindow'],text=True,timeout=5).strip()==window,'file chooser focus')
-    # A focused chooser location entry is required; GTK may initially have the
-    # WebKit select popup's keyboard grab, so dismiss that before typing.
-    time.sleep(.8)
-    def entry():
+    # Select through the native GTK home list, then verify full path in review.
+    require(path.parent==Path.home(),'fixture must be in test user home')
+    def visible(name):
         for n in nodes(gui.Atspi.get_desktop(0)):
             try:
-                if n.get_process_id()==pid and n.get_role_name() in ('text','entry') and n.get_state_set().contains(gui.Atspi.StateType.FOCUSED) and n.get_editable_text_iface():return n
+                if n.get_process_id()==pid and n.get_name()==name and n.get_state_set().contains(gui.Atspi.StateType.SHOWING):
+                    c=n.get_component_iface()
+                    if c:
+                        r=c.get_extents(gui.Atspi.CoordType.SCREEN)
+                        if r.width>0 and r.height>0:return r
             except Exception:pass
-    subprocess.run(['xdotool','key','--clearmodifiers','ctrl+l'],check=True,timeout=5)
-    e=wait(entry,8,'focused chooser location entry')
-    require(e.get_editable_text_iface().set_text_contents(str(path)),'setting native chooser location')
-    require(gui.Atspi.Text.get_text(e.get_text_iface(),0,-1)==str(path),'exact picker location')
-    subprocess.run(['xdotool','key','Return'],check=True,timeout=5)
+    def click(r,count=1):
+        subprocess.run(['xdotool','mousemove',str(r.x+r.width//2),str(r.y+r.height//2),'click','--repeat',str(count),'1'],check=True,timeout=5)
     time.sleep(.5)
-    if chooser():
-        n=named(pid,'Open',actionable=True)
-        if n:action(pid,'Open')
+    try:
+        # A previously selected exact file can already be listed under Recent.
+        r=visible(path.name)
+        if r is None:
+            h=wait(lambda:visible('Home'),8,'chooser Home row');click(h);time.sleep(.5)
+            r=wait(lambda:visible(path.name),10,'exact disposable file row')
+        click(r,2)
+    except Exception:
+        subprocess.run(['scrot','/tmp/cp11br3-picker-debug.png','-o'],check=False)
+        for n in nodes(gui.Atspi.get_desktop(0)):
+            try:
+                if n.get_process_id()==pid and n.get_state_set().contains(gui.Atspi.StateType.SHOWING):print(n.get_role_name(),repr(n.get_name()),flush=True)
+            except Exception:pass
+        raise
+    wait(lambda:chooser() is None,15,'native chooser closes after selecting file')
 
 def verify(path,seq,source):
     def terminal():
@@ -80,7 +92,7 @@ def verify(path,seq,source):
 def main():
     p=argparse.ArgumentParser(description=__doc__);
     for n in ('exe','model','fresh-data-home','out','source'):p.add_argument('--'+n,type=Path,required=True)
-    p.add_argument('--sha256',required=True);p.add_argument('--model-sha256',required=True);p.add_argument('--refuse-only',action='store_true');a=p.parse_args()
+    p.add_argument('--sha256',required=True);p.add_argument('--model-sha256',required=True);p.add_argument('--refuse-only',action='store_true');p.add_argument('--active-revoke',action='store_true');a=p.parse_args()
     require(os.geteuid()!=0 and a.exe.stat().st_uid==0 and not a.exe.stat().st_mode&0o022 and bm.sha(a.exe)==a.sha256,'installed executable identity');require(bm.sha(a.model)==a.model_sha256,'model identity')
     home=a.fresh_data_home.resolve();root=home/'org.lu.desktop';folder=root/'lu-models';folder.mkdir(parents=True,exist_ok=False);shutil.copyfile(a.model,folder/a.model.name);require(bm.sha(folder/a.model.name)==a.model_sha256,'fixture model copy');a.out.mkdir(parents=True,exist_ok=False)
     data=root/'lu-background-schedule.sqlite';source=a.source.resolve();require(not source.exists() and source.suffix=='.txt','fresh disposable input');first='Sample inventory\nORCHID-731\nOther code LIMA-208';second='Sample inventory\nLOTUS-482\nOther code LIMA-208';third='Sample inventory\nIRIS-293\nOther code LIMA-208';source.write_text(first);inode=source.stat().st_ino
@@ -96,12 +108,32 @@ def main():
         try:
             app=start();action(app.pid,'New Chat',timeout=90);worker=bm.load(app.pid);base.navigate(app.pid);base.field(app.pid,'Scheduled task prompt',PROMPT)
             action(app.pid,'Read a line from a changing text file');base.field(app.pid,'Changing file line','2');base.field(app.pid,'Task delay in minutes','1');sel=wait(lambda:named(app.pid,'Task recurrence',actionable=True),15,'repeat');require(sel.get_component_iface().grab_focus(),'recurrence focus');subprocess.run(['xdotool','key','--clearmodifiers','Home','Down','Return'],check=True,timeout=10)
-            action(app.pid,'Review task…');picker(app.pid,source);review(app.pid,APPROVAL,'Decline' if a.refuse_only else 'Schedule task',[str(source),'Line: 2','Repeat: Every 1 minute(s).','In-place changes are allowed','File access ends when Lu closes','Revoke stops active and future runs'])
+            # Move real keyboard focus outside the HTML select before opening the picker.
+            subprocess.run(['xdotool','key','--clearmodifiers','Escape','Tab'],check=True,timeout=5)
+            button=wait(lambda:named(app.pid,'Review task…',actionable=True),15,'review button');r=button.get_component_iface().get_extents(gui.Atspi.CoordType.SCREEN);subprocess.run(['xdotool','mousemove',str(r.x+r.width//2),str(r.y+r.height//2),'click','1'],check=True,timeout=5);picker(app.pid,source);review(app.pid,APPROVAL,'Decline' if a.refuse_only else 'Schedule task',[str(source),'Line: 2','Repeat: Every 1 minute(s).','In-place changes are allowed','File access ends when Lu closes','Revoke stops active and future runs'])
             if a.refuse_only:
                 require(journal(data) is None,'refusal persisted a schedule');receipt['phases']['refusal']='PASS';receipt['status']='PASS_REFUSAL';return
-            row=wait(lambda:journal(data),20,'persisted schedule');require(row['grant']['display']==str(source) and row['grant']['line']==2 and row['grant']['permission']=='APPROVED' and row['repeat_seconds']==60 and not row['runs'],'wrong grant scope');receipt['phases']['approval']='PASS'
-            before=bm.ticks(worker);r1=verify(data,1,first);require(bm.ticks(worker)>before and bm.model_worker(app.pid)==worker,'genuine inference not observed');receipt['phases']['first_verified_read']='PASS'
-            source.write_text(second);require(source.stat().st_ino==inode,'input replaced by fixture');r2=verify(data,2,second);require(r2['due']-r1['due']==60,'cadence');receipt['phases']['changed_read_on_original_cadence']='PASS';prefix=journal(data);capture('two-reports')
+            row=wait(lambda:journal(data),20,'persisted schedule');require(row['grant']['display']==str(source) and row['grant']['line']==2 and row['grant']['permission']=='APPROVED' and row['repeat_seconds']==60 and not row['runs'],'wrong grant scope');receipt['phases']['approval']='PASS';print('APPROVAL PASS',flush=True)
+            if a.active_revoke:
+                # Open the actual confirmation ahead of the real due time.
+                rec.card_action(app.pid,'Revoke file permission…')
+                confirm=wait(lambda:named(app.pid,'Confirm permission revocation',actionable=True),15,'revocation confirmation')
+                iface=confirm.get_action_iface();require(iface and iface.get_n_actions()>0,'confirmation action unavailable')
+                before=bm.ticks(worker);end=time.monotonic()+115;inflight=None
+                while time.monotonic()<end:
+                    v=journal(data)
+                    run=next((r for r in v['runs'] if r['sequence']==1 and r['state']=='RUNNING'),None)
+                    ticks=bm.ticks(worker)
+                    if run and ticks is not None and ticks>before:
+                        inflight=run;require(iface.do_action(0),'native revocation confirmation click');break
+                    time.sleep(.015)
+                require(inflight is not None,'no genuine active inference witnessed')
+                v=wait(lambda:r if (r:=journal(data)) and r['grant']['permission']=='REVOKED' else None,15,'revocation committed')
+                require(v['state']=='CANCELLED' and len(v['runs'])==1 and v['runs'][0]['state']=='STOPPED' and not v['runs'][0]['output'],'active occurrence was not stopped')
+                receipt['phases']['active_revocation']='PASS';capture('active-revoked');print('ACTIVE REVOCATION PASS',flush=True)
+                stop();app=start();base.navigate(app.pid);require(journal(data)==v and not bm.model_worker(app.pid),'revoked authority or result changed at restart');receipt['phases']['revoked_cold_restart']='PASS';receipt['status']='PASS_ACTIVE_REVOKE';return
+            before=bm.ticks(worker);r1=verify(data,1,first);require(bm.ticks(worker)>before and bm.model_worker(app.pid)==worker,'genuine inference not observed');receipt['phases']['first_verified_read']='PASS';print('FIRST PASS',flush=True)
+            source.write_text(second);require(source.stat().st_ino==inode,'input replaced by fixture');r2=verify(data,2,second);require(r2['due']-r1['due']==60,'cadence');receipt['phases']['changed_read_on_original_cadence']='PASS';print('SECOND PASS',flush=True);prefix=journal(data);capture('two-reports')
             stop();app=start();base.navigate(app.pid);row=wait(lambda:journal(data),20,'reopened schedule');require(row['state']=='PAUSED' and row['grant']['permission']=='REVIEW' and row['runs']==prefix['runs'] and row['receipts']==prefix['receipts'] and not bm.model_worker(app.pid),'restart restored authority or changed results');receipt['phases']['restart_requires_review']='PASS';capture('review-required')
             rec.card_action(app.pid,'Review file permission…');picker(app.pid,source);review(app.pid,REAPPROVAL,'Decline',[str(source),'Line: 2','task stays paused']);require(journal(data)['grant']['permission']=='REVIEW','decline changed permission');receipt['phases']['reapproval_refusal']='PASS'
             rec.card_action(app.pid,'Review file permission…');picker(app.pid,source);review(app.pid,REAPPROVAL,'Approve permission',[str(source),'Line: 2','task stays paused']);row=wait(lambda:v if (v:=journal(data)) and v['grant']['permission']=='APPROVED' else None,20,'new approval');require(row['state']=='PAUSED' and row['runs']==prefix['runs'],'approval resumed without explicit press');receipt['phases']['fresh_reapproval']='PASS'
