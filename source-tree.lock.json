@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "fc56afd467cd0b173d170afc4939a7ac8e7e6b47",
-  "trackedFileCount": 1228,
+  "sourceCommitBeforeLock": "bd90f7cbd2bf187d561dbe3074192f93026bfa0e",
+  "trackedFileCount": 1234,
   "files": [
     {
       "path": ".gitattributes",
@@ -908,6 +908,10 @@
       "blob": "a6cc6b5d9f8d5ed40c27ae1e561ca0b61c03034b"
     },
     {
+      "path": "docs/LU_CP12B_R2_WINDOWS_TRANSPORT_20261120.md",
+      "blob": "4ca72f4d2e0dc1ee9510bb1f8007354515471ee3"
+    },
+    {
       "path": "docs/LU_CURRENT_PREVIEW_CPU_VULKAN_DUAL_ENGINE_20261109.md",
       "blob": "c1664658ded245a3df6041114e42587f49550200"
     },
@@ -917,7 +921,7 @@
     },
     {
       "path": "docs/LU_DEVELOPMENT_LEDGER.md",
-      "blob": "520f2edc9f9a04921e19b2cc0a2cf650a71a6fee"
+      "blob": "3e79c8f74ea15d0f2b0bcc3bbe386d8aca0cd6bb"
     },
     {
       "path": "docs/LU_E1_NATIVE_EVIDENCE_20261107.md",
@@ -1545,11 +1549,11 @@
     },
     {
       "path": "lu-desktop/src-tauri/Cargo.lock",
-      "blob": "a3571e4d609ffa3d7743e71d47c1fd37d2158661"
+      "blob": "7d8b036510b72bca2ca19bce7d832fb4dd22147a"
     },
     {
       "path": "lu-desktop/src-tauri/Cargo.toml",
-      "blob": "6d0eb0418fe4e26a3c9cb272b955c3ae413307a4"
+      "blob": "2659af307171a606fd0927a241af997a15fa3a98"
     },
     {
       "path": "lu-desktop/src-tauri/build.rs",
@@ -1701,7 +1705,11 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/dx_ipc.rs",
-      "blob": "fdb52d90f4d6a10fb435b1145e4d20f16b6d619c"
+      "blob": "e6ca74bfa8cd6fb211f1b6cc74d2d7225c1d54ed"
+    },
+    {
+      "path": "lu-desktop/src-tauri/src/dx_windows_pipe.rs",
+      "blob": "03c8a780bb5901a1e6cd88ee96bfc716b5fce419"
     },
     {
       "path": "lu-desktop/src-tauri/src/edit_proposal.rs",
@@ -1749,7 +1757,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/lib.rs",
-      "blob": "810e562f424c6fada5685eb1f405742de014f6e2"
+      "blob": "56e4ddb7b65844b620eb3bd1b0862c7fe343e123"
     },
     {
       "path": "lu-desktop/src-tauri/src/linked_attachment_file.rs",
@@ -2205,7 +2213,7 @@
     },
     {
       "path": "lu-desktop/tests/cp12b-local-diagnostic-exchange.test.mjs",
-      "blob": "309116c2e487bd43c092c85934fd9faedb39b85d"
+      "blob": "cca0951581a1d143dfb4955cd04378cb4b7cb26b"
     },
     {
       "path": "lu-desktop/tests/dx-exchange-windows-check/Cargo.lock",
@@ -2846,6 +2854,22 @@
     {
       "path": "scripts/cp12br1-local-diagnostic-exchange-gui.py",
       "blob": "f249474a8d1c933e16eadd8593b5dcbc840f7270"
+    },
+    {
+      "path": "scripts/cp12br2-windows-transport-check/Cargo.lock",
+      "blob": "9d0c4e4ec7ad55686000db1e99880051e5da9751"
+    },
+    {
+      "path": "scripts/cp12br2-windows-transport-check/Cargo.toml",
+      "blob": "e677b3efc03509913ac2d306de17e49abe202bc4"
+    },
+    {
+      "path": "scripts/cp12br2-windows-transport-check/README.md",
+      "blob": "c5c9c67bdb95b37497b99423a86eb6420dba7738"
+    },
+    {
+      "path": "scripts/cp12br2-windows-transport-check/src/lib.rs",
+      "blob": "56c8a2619ae837f4a5d3be722deedf0ca59f0c21"
     },
     {
       "path": "scripts/install-lu-agent01l-native-fixture.sh",
