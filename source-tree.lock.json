@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "788b8c52832d8c6debe09587b83f762536aa6742",
-  "trackedFileCount": 1252,
+  "sourceCommitBeforeLock": "8bee2ba50337a62d60ea546cb723c1ca34c554f7",
+  "trackedFileCount": 1259,
   "files": [
     {
       "path": ".gitattributes",
@@ -130,6 +130,10 @@
     {
       "path": ".github/workflows/lu-cp06er3-native-web.yml",
       "blob": "6304b8c48ce71a729d48c8ee4f78647834758273"
+    },
+    {
+      "path": ".github/workflows/lu-cp12br7r1-windows-collaboration.yml",
+      "blob": "5e41a6e5ce50aa03badfb0c1c129cc1e2a0b3b8b"
     },
     {
       "path": ".github/workflows/lu-dev-offline-cache.yml",
@@ -936,6 +940,14 @@
       "blob": "4aa92d9d4c420482be43ed059ae6b0e7642b2680"
     },
     {
+      "path": "docs/LU_CP12B_R7_R1_WINDOWS_CI_PREFLIGHT_20261120.md",
+      "blob": "25ce14de15cda3ab4d05d004efd76df498192420"
+    },
+    {
+      "path": "docs/LU_CP12B_R7_WINDOWS_STAGE_EVAL_20261120.md",
+      "blob": "9820257425a29560dee26598f2fbd7d4a76da375"
+    },
+    {
       "path": "docs/LU_CURRENT_PREVIEW_CPU_VULKAN_DUAL_ENGINE_20261109.md",
       "blob": "c1664658ded245a3df6041114e42587f49550200"
     },
@@ -945,7 +957,7 @@
     },
     {
       "path": "docs/LU_DEVELOPMENT_LEDGER.md",
-      "blob": "a7d30a26d0fc387e23ecd413fc8330a0ad6efe2c"
+      "blob": "cab31d4259cc6bd776e3f5ec30aa2a4719efbe93"
     },
     {
       "path": "docs/LU_E1_NATIVE_EVIDENCE_20261107.md",
@@ -1729,7 +1741,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/dx_ipc.rs",
-      "blob": "e1c9248f199ce00baeb8e0a0b4e372262b1d863b"
+      "blob": "6c0883beec2cb48726a4e145ee411c86686b49f1"
     },
     {
       "path": "lu-desktop/src-tauri/src/dx_review.rs",
@@ -1745,7 +1757,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/dx_windows_pipe.rs",
-      "blob": "03c8a780bb5901a1e6cd88ee96bfc716b5fce419"
+      "blob": "5c779189954818338c9084c224cb984050d24a58"
     },
     {
       "path": "lu-desktop/src-tauri/src/edit_proposal.rs",
@@ -2249,7 +2261,7 @@
     },
     {
       "path": "lu-desktop/tests/cp12b-local-diagnostic-exchange.test.mjs",
-      "blob": "51ab81758c1b765ad9c175d66ea255889e16f2d5"
+      "blob": "730ed04706e6b4bd322cb03e621a36dc7d6fecab"
     },
     {
       "path": "lu-desktop/tests/cp12br3-review.test.mjs",
@@ -2258,6 +2270,18 @@
     {
       "path": "lu-desktop/tests/cp12br5-stages.test.mjs",
       "blob": "eff0b959f269c5411c42d4fd72b5600f7ddf9523"
+    },
+    {
+      "path": "lu-desktop/tests/cp12br7-windows-stage-eval.test.mjs",
+      "blob": "de252465f31ada2aaeb736fb1d29e6af462566f1"
+    },
+    {
+      "path": "lu-desktop/tests/cp12br7r1-gh-ci-contract.test.mjs",
+      "blob": "ead7e047d58979d08123538cd33f83ffc24178ce"
+    },
+    {
+      "path": "lu-desktop/tests/cp12br7r1-physical-acceptance-contract.test.mjs",
+      "blob": "95c5e736b1d38bb258fa8f4240d399bc0caaa937"
     },
     {
       "path": "lu-desktop/tests/dx-exchange-windows-check/Cargo.lock",
@@ -2901,15 +2925,15 @@
     },
     {
       "path": "scripts/cp12br2-windows-transport-check/Cargo.lock",
-      "blob": "9d0c4e4ec7ad55686000db1e99880051e5da9751"
+      "blob": "13e831699dd84735f09b01cc2ce2b1a229eeb5b4"
     },
     {
       "path": "scripts/cp12br2-windows-transport-check/Cargo.toml",
-      "blob": "e677b3efc03509913ac2d306de17e49abe202bc4"
+      "blob": "bee8cbc039c6e0332db8be2d19e988b0afc49783"
     },
     {
       "path": "scripts/cp12br2-windows-transport-check/README.md",
-      "blob": "c5c9c67bdb95b37497b99423a86eb6420dba7738"
+      "blob": "b44092868dedda2dd06803aca20f15bf6e21bd07"
     },
     {
       "path": "scripts/cp12br2-windows-transport-check/src/lib.rs",
@@ -2942,6 +2966,10 @@
     {
       "path": "scripts/cp12br6-stage-lifecycle-gui.py",
       "blob": "14ac3b31b1a0c791e6a9ce0a12b98ae0bba3d819"
+    },
+    {
+      "path": "scripts/cp12br7r1-windows-installed-acceptance.ps1",
+      "blob": "50f9859fc454700e1a94a5cc837c707e90349528"
     },
     {
       "path": "scripts/install-lu-agent01l-native-fixture.sh",

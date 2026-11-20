@@ -1,0 +1,113 @@
+name: Lu CP-12B-R7-R1 Windows collaboration — exact-source qualification
+
+# Manual, SHA-scoped only: never validate an unpublished local candidate by running main.
+on:
+  workflow_dispatch:
+    inputs:
+      include_desktop_source_check:
+        description: 'Also compile the Windows desktop source (not an installed GUI acceptance)'
+        type: boolean
+        default: true
+        required: true
+permissions:
+  contents: read
+concurrency:
+  group: lu-cp12br7r1-${{ github.sha }}
+  cancel-in-progress: false
+jobs:
+  windows-native-protocol:
+    runs-on: windows-2025
+    timeout-minutes: 70
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.16.0'
+      - name: Verify immutable workflow source and user-facing consent boundaries
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ((git rev-parse HEAD).Trim() -cne $env:GITHUB_SHA) { throw 'Checkout SHA differs from workflow SHA' }
+          node scripts/verify-source-tree.mjs
+          if ($LASTEXITCODE -ne 0) { throw 'Source lock mismatch' }
+          node --test lu-desktop/tests/cp12b-local-diagnostic-exchange.test.mjs lu-desktop/tests/cp12br7-windows-stage-eval.test.mjs lu-desktop/tests/cp12br7r1-physical-acceptance-contract.test.mjs lu-desktop/tests/cp12br7r1-gh-ci-contract.test.mjs
+          if ($LASTEXITCODE -ne 0) { throw 'UI/protocol authority contract failed' }
+          $tokens = $null; $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path 'scripts/cp12br7r1-windows-installed-acceptance.ps1').Path, [ref]$tokens, [ref]$errors) | Out-Null
+          if ($errors.Count -gt 0) { throw 'Installed acceptance runner contains PowerShell syntax errors' }
+      - name: Real Windows kernel named-pipe and stage protocol v1/v2/v3
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          cargo test --locked --manifest-path scripts/cp12br2-windows-transport-check/Cargo.toml --features windows_dx_eval -- --test-threads=1
+          if ($LASTEXITCODE -ne 0) { throw 'Windows native collaboration test failed' }
+      - name: Windows default-off regression
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          cargo test --locked --manifest-path scripts/cp12br2-windows-transport-check/Cargo.toml -- --test-threads=1
+          if ($LASTEXITCODE -ne 0) { throw 'Default-off Windows transport regression failed' }
+      - name: State exact qualification boundary
+        shell: pwsh
+        run: |
+          "Verified Git checkout: $env:GITHUB_SHA" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+          'Native Windows transport and consent contracts only: no installed GUI, independent GGUF inference, separate-account account creation or physical-PC acceptance was executed.' | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+  windows-desktop-source-check:
+    if: ${{ inputs.include_desktop_source_check }}
+    runs-on: windows-2025
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.16.0'
+      - name: Verify exact source and compile frontend
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ((git rev-parse HEAD).Trim() -cne $env:GITHUB_SHA) { throw 'Checkout SHA mismatch' }
+          node scripts/verify-source-tree.mjs
+          if ($LASTEXITCODE -ne 0) { throw 'Source lock mismatch' }
+          Push-Location lu-desktop
+          try {
+            npm ci --ignore-scripts --no-audit --no-fund
+            if ($LASTEXITCODE -ne 0) { throw 'Locked npm dependency restoration failed' }
+            npm run build
+            if ($LASTEXITCODE -ne 0) { throw 'Frontend build failed' }
+            npm run check
+            if ($LASTEXITCODE -ne 0) { throw 'Frontend verification failed' }
+          } finally { Pop-Location }
+      - name: Type-check feature-enabled Windows desktop without misrepresenting an installer
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $config = 'lu-desktop/src-tauri/tauri.conf.json'
+          $original = [IO.File]::ReadAllBytes((Resolve-Path $config).Path)
+          try {
+            # These exact native inference resources are NOT bundled into CI.
+            # Resource override is for compilation only; do not publish a binary from it.
+            $value = Get-Content -Raw -LiteralPath $config | ConvertFrom-Json
+            $value.bundle.resources = @{}
+            $value | ConvertTo-Json -Depth 40 | Set-Content -LiteralPath $config -Encoding utf8
+            cargo check --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --features windows_dx_eval --jobs 2
+            if ($LASTEXITCODE -ne 0) { throw 'Windows native desktop source check failed' }
+          } finally {
+            [IO.File]::WriteAllBytes((Resolve-Path $config).Path, $original)
+          }
+          node scripts/verify-source-tree.mjs
+          if ($LASTEXITCODE -ne 0) { throw 'Exact source was not restored' }
+          'Windows desktop source type-check only; no packaged native resources or installed two-model GUI acceptance.' | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append

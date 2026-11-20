@@ -1,0 +1,25 @@
+# CP-12B-R7-R1 — Windows installed collaboration and exact-source hosted CI preflight
+
+**Date:** 2026-11-20. **State:** SOURCE/HARNESS PREFLIGHT; installed Windows two-GGUF graphical acceptance **OPEN**. The prior R7 native Windows pipe tests are historical scoped results, not a pass of this R7-R1 candidate. This checkpoint is not a release.
+
+## Deliverables
+
+- `scripts/cp12br7r1-windows-installed-acceptance.ps1` is an explicitly consented, SHA-pinned **physical Windows observation runner**. It refuses non-Windows/noninteractive hosts, preexisting Lu instances, missing or hash-mismatched installer executable or model, and a console transport-test EXE masquerading as a GUI executable. It launches two distinct installed Lu processes and requires actual native UI observations for permission refusal, both local workers, reviewed stages, sender/receiver cancellation, revocation/replay rejection, restart/recovery and actual another-account isolation. Crash injection needs a separate explicit opt-in. It records no raw diagnostic text, invitation codes or credentials and never upgrades a manual witness to an independent automated pass.
+- `lu-desktop/tests/cp12br7r1-physical-acceptance-contract.test.mjs` checks the runner's identity, consent, replay/crash and truth boundaries.
+- `.github/workflows/lu-cp12br7r1-windows-collaboration.yml` provides an **opt-in-only, exact-Git-SHA** Windows-2025 hosted lane: real native Windows named-pipe v1/v2/v3 regression, default-off check, the source/consent contract suite and PowerShell parsing. Its optional second Windows job performs locked npm/frontend verification and a source-only `windows_dx_eval` Tauri type-check. To compile without unpublished native inference resources, only that source-check job temporarily removes Tauri's `bundle.resources` in a `try/finally` and restores the exact original bytes; this is **never an NSIS installer or an installed GUI acceptance result**. Neither job downloads a GGUF or creates a separate OS account by default.
+- `lu-desktop/tests/cp12br7r1-gh-ci-contract.test.mjs` checks SHA anchoring, manual dispatch, tests, default-off safety, privacy and acceptance scope.
+
+## Evidence and constraints
+
+- Local Node 22 checks: `node --test` for R7/R7-R1 collaboration and CI contracts **14/14 PASS**. The acceptance-runner file passed PowerShell 7 parsing; the workflow parsed as valid YAML.
+- The preserved R7 source is `8bee2ba50337a62d60ea546cb723c1ca34c554f7`. Earlier R7 standalone native Windows transport was **18 passed, 0 failed, 7 ignored**, plus **one** additional isolated native account-ACL test. Those results are not newly run here.
+- Current Linux-to-Windows Tauri source compilation progressed past actual SQLite C source and initial missing SDK header/toolchain issues by using the preserved Windows SDK/MSVC headers, `clang-cl`, `lld-link` and `llvm-ar`, all outside the tracked repository. It then failed at the native **Windows Tauri resource compiler (`llvm-rc`)** on the Linux cross host. An earlier attempt failed at missing `lu-inference` Windows executable/DLL packaging inputs, appropriately refusing to package absent files. The source-only check remains unqualified; no dummy executable or DLL was supplied and no production safety policy changed. The Windows hosted runner is expected to supply its original Windows resource compiler, but successful GitHub compilation has not yet been observed.
+- The original R7 source lock was **stale**: two newly tracked R7 files were absent and seven modified tracked files retained their R6 blob identities. This checkpoint regenerates the tracked source inventory before any hosted attempt. It does not reinterpret the earlier R7 tests as acceptance of a refreshed lock.
+- GitHub search found **no published CP-12B-R7 branch, PR or R7 commit** in `vjmichael/Lu-AI-GUI`. Local HTTPS Git transport cannot resolve `github.com`. The GitHub connector cannot publish the exact local Git commit chain from a bundle. **No hosted workflow was dispatched**, because triggering it against `main` would test the wrong source.
+
+## Next exact-source gate
+
+1. Publish the complete, SHA-preserved incremental Lu source history to a reviewed GitHub integration branch without force pushes or reparenting. Verify the remote commit **exactly** matches this checkpoint's saved Git SHA and tree.
+2. Dispatch **one** manual workflow `lu-cp12br7r1-windows-collaboration.yml` against that exact SHA. Inspect job completion, native Windows kernel test counts and nonzero failure logs; do not start overlapping attempts. Neither the source-only desktop check nor the pipe tests constitutes installed Lu acceptance.
+3. Independently build/stage the approved Windows inference runtime and actual NSIS installation, then run the physical Windows two-instance script and separately verify screenshots, native model-worker execution, consent, process isolation and restart/replay. Keep the feature disabled by default until these gates pass.
+4. Leave physical GPU/Windows owner confirmation, larger-model positive fault localization and consolidated acceptance open independently.
