@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Installed GUI acceptance of changing file grants, actual cadence, fresh review
 and revocation. Writes only disposable input text; observes app journals read-only."""
-import argparse, hashlib, importlib.util, json, os, shutil, sqlite3, subprocess, time
+import argparse, hashlib, importlib.util, json, os, re, shutil, sqlite3, subprocess, time
 from pathlib import Path
 spec=importlib.util.spec_from_file_location('base',Path(__file__).with_name('cp11br2-scheduled-reader-gui.py'));base=importlib.util.module_from_spec(spec);spec.loader.exec_module(base)
 spec=importlib.util.spec_from_file_location('recovery',Path(__file__).with_name('cp11br2-scheduled-reader-recovery-gui.py'));rec=importlib.util.module_from_spec(spec);spec.loader.exec_module(rec)
@@ -22,7 +22,7 @@ def journal(path):
 
 def review(pid,title,choice,phrases):
     label=wait(lambda:named(pid,title),35,'native review '+title)
-    wins=subprocess.check_output(['xdotool','search','--onlyvisible','--name','^'+title+'$'],text=True,timeout=5).splitlines()
+    wins=subprocess.check_output(['xdotool','search','--onlyvisible','--name','^'+re.escape(title)+'$'],text=True,timeout=5).splitlines()
     require(len(wins)==1 and int(subprocess.check_output(['xdotool','getwindowpid',wins[0]],text=True,timeout=5))==pid,'wrong review owner')
     dialog=label
     for _ in range(12):
