@@ -123,6 +123,40 @@ function LocalChecks({active}){
 }
 
 
+// No background sharing, automatic copying, persistence or model import.
+function LocalDiagnosticExchange({active}){
+  const [supported,setSupported]=useState(false);
+  const [sharing,setSharing]=useState(false);
+  const [code,setCode]=useState('');
+  const [incoming,setIncoming]=useState('');
+  const [result,setResult]=useState(null);
+  const [busy,setBusy]=useState(false);
+  const [message,setMessage]=useState('');
+  useEffect(()=>{let live=true;
+    void invoke('lu_dx_supported').then(v=>{if(live)setSupported(v)}).catch(()=>{});
+    return ()=>{live=false};
+  },[]);
+  useEffect(()=>{if(!active||!supported)return undefined;let live=true;let pending=false;
+    const check=async()=>{if(pending)return; pending=true;try{const v=await invoke('lu_dx_share_active');if(live){setSharing(v);if(!v)setCode('');}}catch{if(live){setSharing(false);setCode('');}}finally{pending=false}};
+    void check();const timer=setInterval(check,1000);return ()=>{live=false;clearInterval(timer)};
+  },[active,supported]);
+  async function perform(fn){if(busy)return;setBusy(true);setMessage('');try{await fn()}catch(e){setMessage(errorText(e))}finally{setBusy(false)}}
+  return <div className="nativeOption"><strong>Share troubleshooting with another Lu</strong>
+    <p>Share only a one-time summary of recent response outcomes with another Lu on this computer. No conversations, files, model names or tool access.</p>
+    {!supported?<p>Local sharing is not available on this platform.</p>:<>
+      <p role="status">{sharing?'Sharing is on for one use or up to two minutes.':'Sharing is off.'}</p>
+      {!sharing?<button type="button" disabled={busy} onClick={()=>void perform(async()=>{const invitation=await invoke('lu_dx_share');if(invitation){setCode(invitation);setSharing(true);}})}>Create sharing invitation…</button>:<>
+        {code&&<button type="button" disabled={busy} onClick={()=>void perform(async()=>{await navigator.clipboard.writeText(code);setMessage('Invitation copied. Give it only to your other Lu session.');})}>Copy invitation</button>}
+        <button type="button" onClick={()=>void perform(async()=>{await invoke('lu_dx_stop_share');setSharing(false);setCode('');setMessage('Sharing stopped. Already received summaries cannot be recalled.');})}>Stop sharing</button>
+      </>}
+      <label className="nativeField">Invitation from another Lu<input type="password" autoComplete="off" value={incoming} maxLength={101} onChange={e=>setIncoming(e.target.value)} disabled={busy}/></label>
+      <button type="button" disabled={busy||incoming.length!==101} onClick={()=>void perform(async()=>{setResult(null);const invitation=incoming;setIncoming('');const summary=await invoke('lu_dx_receive',{code:invitation});if(summary)setResult(summary);})}>Receive summary…</button>
+      {result&&<div role="status"><strong>Received troubleshooting summary</strong><p>{result.complete} confirmed deliveries; {result.observedFailure} observed failures; {result.bounded} partially confirmed; {result.incomplete} uncertain; {result.unavailable} unavailable.</p><p>This is delivery evidence, not proof of answer accuracy.</p><button type="button" onClick={()=>setResult(null)}>Clear summary</button></div>}
+      {message&&<p role="status">{message}</p>}
+    </>}
+  </div>;
+}
+
 export function SettingsWindow({onNavigate,active=true}={}){
   const [section,setSection]=useState('general');
   const [chats,setChats]=useState([]);
@@ -836,6 +870,7 @@ export function SettingsWindow({onNavigate,active=true}={}){
               return report;
             })}>Copy troubleshooting report…</button>
           </div>
+          <LocalDiagnosticExchange active={active}/>
           <p>Observe & Learn is OFF by default. Enabling it requires both existing native OS confirmations. Observation never grants general network egress.</p>
           <label className="nativeField">Conversation to observe
             <select value={chatId} onChange={e=>setChatId(e.target.value)}>

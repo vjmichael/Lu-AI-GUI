@@ -29,6 +29,7 @@ mod active_checks;
 mod model_benchmark;
 mod scheduled_ai;
 mod diagnostic_archive;
+mod dx_ipc;
 use causal_diagnostic::Checkpoint as CausalCheckpoint;
 mod vision_context;
 mod observe_desktop;
@@ -764,6 +765,7 @@ struct DesktopState {
     chats: ChatStore,
     perf01: perf01_telemetry::PerfLedger,
     active_checks: active_checks::CheckController,
+    diagnostic_exchange: dx_ipc::Controller,
     operational_assets: lu_core::operational_asset_ledger::OperationalAssetLedger,
     continuity: lu_core::continuity::ContinuityStore,
     reviewed_memory_recovery: Vec<reviewed_memory_evidence::ReviewedMemoryRecoveryView>,
@@ -1351,6 +1353,7 @@ impl DesktopState {
             model_profile_admission:Mutex::new(()),
             chats,
             active_checks: active_checks::CheckController::new(&root),
+            diagnostic_exchange: dx_ipc::Controller::default(),
             perf01:perf01_telemetry::PerfLedger::with_archive(
                 diagnostic_archive::DiagnosticArchive::open(&root.join("lu-dx-traces.sqlite"))
                     .ok().map(Arc::new)
@@ -2133,6 +2136,36 @@ async fn lu_cp01_diagnostic_report(app:AppHandle,caller:tauri::WebviewWindow,
         archive.report().map(|report|Some(report.with_scheduled_runs(scheduler.ai_diagnostic_summary())))
     }).await.map_err(|_|"Troubleshooting report unavailable")?
 }
+/// CP-12B: one reviewed immutable numeric snapshot; no peer tool authority.
+#[tauri::command]
+async fn lu_dx_share(app:AppHandle,caller:tauri::WebviewWindow,state:State<'_,Arc<DesktopState>>)->Result<Option<String>,String>{
+    if !matches!(caller.label(),"main"|"settings"){return Ok(None)}
+    if !cfg!(target_os="linux"){return Err("Local diagnostic sharing is not available on this platform.".into())}
+    let owner=Arc::clone(state.inner());
+    tauri::async_runtime::spawn_blocking(move||{
+        if !app.dialog().message("Share a one-time summary of recent response outcomes with another local Lu session on this computer? Only five counts are shared: confirmed delivery, observed failures, incomplete steps, uncertain records and unavailable records. No conversations, model names, files, or tool access. The invitation expires after two minutes or one use. You may stop sharing at any time.")
+        .title("Lu — Share troubleshooting summary").buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom("Create invitation".into(),"Cancel".into())).blocking_show(){return Ok(None)}
+        let archive=owner.perf01.archive().ok_or("Local diagnostics unavailable")?;
+        owner.diagnostic_exchange.start(archive.report()?.exchange_summary()).map(Some)
+    }).await.map_err(|_|"Local sharing unavailable")?
+}
+#[tauri::command]
+async fn lu_dx_receive(app:AppHandle,caller:tauri::WebviewWindow,code:String)->Result<Option<dx_ipc::Summary>,String>{
+    if !matches!(caller.label(),"main"|"settings"){return Ok(None)}
+    if !cfg!(target_os="linux"){return Err("Local diagnostic sharing is not available on this platform.".into())}
+    if code.len()!=101{return Err("Invalid invitation".into())}
+    tauri::async_runtime::spawn_blocking(move||{
+        if !app.dialog().message("Accept a one-time troubleshooting summary from another local Lu session? Only count totals will be imported for display. This grants neither session access to your conversations, files, tools or model.")
+        .title("Lu — Receive troubleshooting summary").buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom("Receive summary".into(),"Cancel".into())).blocking_show(){return Ok(None)}
+        dx_ipc::receive(&code).map(Some)
+    }).await.map_err(|_|"Local sharing unavailable")?
+}
+#[tauri::command]
+fn lu_dx_supported(caller:tauri::WebviewWindow)->bool{matches!(caller.label(),"main"|"settings")&&cfg!(target_os="linux")}
+#[tauri::command]
+fn lu_dx_share_active(caller:tauri::WebviewWindow,state:State<'_,Arc<DesktopState>>)->bool{matches!(caller.label(),"main"|"settings")&&state.diagnostic_exchange.active()}
+#[tauri::command]
+fn lu_dx_stop_share(caller:tauri::WebviewWindow,state:State<'_,Arc<DesktopState>>)->bool{matches!(caller.label(),"main"|"settings")&&state.diagnostic_exchange.stop()}
 /// CP-11A: one fixed local health-check suite, always fresh native consent.
 /// No parameters, model registration, shell, user file access or network.
 #[tauri::command]
@@ -10262,6 +10295,7 @@ pub fn run() {
             lu_cp01_reply_observed,
             lu_text_reply_observed,
             lu_cp01_diagnostic_report,
+            lu_dx_share, lu_dx_receive, lu_dx_share_active, lu_dx_stop_share, lu_dx_supported,
             lu_run_local_checks,
             lu_run_model_checks,
             lu_local_check_status,
@@ -10543,6 +10577,7 @@ pub fn run() {
             // must fence the original queue and reconcile its saved turns.
             if matches!(event, tauri::RunEvent::Exit) {
                 if let Some(state) = app.try_state::<Arc<DesktopState>>() {
+                    state.diagnostic_exchange.shutdown();
                     state.active_checks.shutdown();
                     let pending=match state.generation_queue.begin_shutdown(){
                         Ok(turns)=>turns,

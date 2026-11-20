@@ -43,6 +43,16 @@ pub(crate) struct ArchiveReport{
     scheduled_runs_unavailable:bool,
 }
 impl ArchiveReport {
+    /// Explicit allowlist: counts only, never diagnostic text or references.
+    pub fn exchange_summary(&self)->crate::dx_ipc::Summary {
+        use lu_core::diagnostic_localization::EvidenceStrength::*;
+        let mut s=crate::dx_ipc::Summary{complete:0,observed_failure:0,bounded:0,incomplete:0,unavailable:self.unavailable_records as u32};
+        for f in &self.findings {match f.finding.evidence_strength{
+            Complete=>s.complete+=1,ObservedFailure=>s.observed_failure+=1,
+            BoundedToNextStage=>s.bounded+=1,InsufficientEvidence=>s.incomplete+=1,
+        }} s
+    }
+
     pub fn with_scheduled_runs(mut self,summary:Result<lu_core::native_background_scheduler::ScheduledDiagnosticSummary,lu_core::native_background_scheduler::SchedulerError>)->Self {
         self.scheduled_runs_unavailable=summary.is_err();self.scheduled_runs=summary.ok();self
     }
