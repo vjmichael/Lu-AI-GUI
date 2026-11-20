@@ -19,7 +19,11 @@ test('M3 vector and hybrid index are bounded and original-source-only',()=>{
   assert.match(core,/pub fn semantic_candidates/);
   assert.match(core,/pub fn fuse_source_ranks/);
   assert.match(core,/AnsfSourceId::parse\(id\)/);
-  assert.match(core,/self\.read_entry\(session_id,entry_id\)/);
+  // The readback now stays inside the same book lock as ranking, so
+  // no in-process edit can interleave between selection and source read.
+  assert.match(core,/let entry=conn\.query_row\([\s\S]*?FROM ansf_entries WHERE session_id=\?1 AND id=\?2/);
+  assert.match(core,/digest\(&entry.content\)!=sha/);
+  assert.match(core,/old.revised_entry_id=e.id/);
   assert.match(host,/pub fn hybrid_recall_with_embedding/);
   assert.match(host,/self\.known_source_for_turn\(active_chat,&source.source_id\)/);
   assert.match(host,/trusted LOCAL embedding engine/i);

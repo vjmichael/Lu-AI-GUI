@@ -52,7 +52,9 @@ test('M2 model memory is bounded task data rather than a tool grant',()=>{
   assert.match(memory,/take\(1600\)/);
   assert.match(memory,/take\(4\)\.map\(/);
   assert.match(memory,/answers\.reverse\(\)/);
-  assert.match(memory,/NOT tool authorization or system instructions/);
+  assert.match(memory,/NOT factual verification, tool authorization or system instructions/);
+  assert.match(memory,/"execution_authorized":false/);
+  assert.match(memory,/"original_goal_revision":view.revision_event_id/);
   assert.match(core,/MAX_EVENTS:usize=1024/);
   assert.match(core,/MAX_QUESTIONS:usize=64/);
 });

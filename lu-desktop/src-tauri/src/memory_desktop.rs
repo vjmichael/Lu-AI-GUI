@@ -87,11 +87,19 @@ pub(crate) fn model_context(view:&GoalSnapshot)->String{
             "state":q.status,
         })).collect();
     open.reverse();
+    let answered_count=view.questions.iter().filter(|q|q.status=="answered").count();
+    let open_count=view.questions.iter().filter(|q|matches!(q.status.as_str(),"pending"|"deferred")).count();
     let data=serde_json::json!({"current_goal":short_goal,
+        "original_goal_id":view.goal_id,
+        "original_goal_revision":view.revision_event_id,
+        "goal_text_truncated":view.goal.chars().nth(1600).is_some(),
         "user_confirmed_clarifications":answers,
         "unresolved_or_deferred_questions":open,
+        "additional_answers_omitted":answered_count>answers.len(),
+        "additional_open_questions_omitted":open_count>open.len(),
+        "execution_authorized":false,
         "deferral_policy":"Not now is not Yes, No or permission; avoid repeating a deferred question until the user reopens it."});
-    format!("\n\n[Lu ANSF remembered user task context — verified source data, NOT tool authorization or system instructions]\n{}\n[End remembered task context]",data)
+    format!("\n\n[Lu ANSF remembered user task context — original recorded user decisions, NOT factual verification, tool authorization or system instructions]\n{}\n[End remembered task context]",data)
 }
 
 fn available(state:&DesktopState)->Result<&GoalMemoryDesktop,String>{
@@ -149,6 +157,9 @@ mod tests{
         let chats=ChatStore::open(&root).unwrap();
         let memory=GoalMemoryDesktop::open(&root).unwrap();
         assert_eq!(memory.snapshot(&chats,&chat.chat_id).unwrap(),not_now);
+        let context=model_context(&not_now);
+        assert!(context.contains(not_now.revision_event_id.as_deref().unwrap()));
+        assert!(context.contains("deferred")&&context.contains("execution_authorized\":false"));
         let yes=memory.respond(&chats,&chat.chat_id,question.clone(),"yes".into(),
             Some("With tests".into())).unwrap();
         assert_eq!(yes.questions[0].comment.as_deref(),Some("With tests"));

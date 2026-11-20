@@ -11,7 +11,7 @@ test('M3 uses original SQLite books and canonical source IDs',()=>{
   assert.match(chat,/pub fn known_source_for_turn/);
   assert.match(chat,/pub fn memory_context_for_turn/);
   assert.match(chat,/self\.require\(source_chat\)/);
-  assert.match(chat,/book\.search_current_messages\(source_chat,&fts,4\)/);
+  assert.match(chat,/book\.search_current_messages_before\(source_chat,&fts,4,/);
   assert.doesNotMatch(chat,/let entries=book\.search\(source_chat,&fts,4\)/);
   assert.match(chat,/AnsfSourceId::parse/);
   assert.match(chat,/historical DATA ONLY/);
@@ -22,7 +22,7 @@ test('M3 wired as human-origin local model task data, not authority',()=>{
     assert.ok(host.includes('fn '+command),command);
     assert.ok(host.includes(command+','),command);
   }
-  assert.match(host,/state\.chats\.memory_context_for_turn\(&chat_id,&prompt\)/);
+  assert.match(host,/state\.chats\.authenticated_memory_context_for_turn\(\s*&chat_id,&gid,&prompt,/);
   assert.match(host,/GenerationOrigin::Human && images\.is_empty\(\)/);
   assert.match(native,/mod m3_cross_chat_acceptance/);
 });

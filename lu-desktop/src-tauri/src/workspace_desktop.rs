@@ -873,7 +873,7 @@ fn execute_approved_read(event_app:AppHandle,host:Arc<DesktopState>,session_id:S
                 return Err("Workspace task lost its authenticated user turn".into())
             }
             let user_prompt=if exact_bound{user_prompt}else{
-                let remembered=host.chats.memory_context_for_turn(&chat_id,&prompt)?;
+                let remembered=host.chats.authenticated_memory_context_for_turn(&chat_id,&gid,&prompt,None)?;
                 add_scoped_ansf_task_data(user_prompt,&remembered)
             };
             let observe=progress.dispatch_observer();

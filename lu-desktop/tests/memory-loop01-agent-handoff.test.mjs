@@ -17,7 +17,7 @@ test('native Send only includes handoff for human nonimage nonplan turns',()=>{
 });
 test('exact plan handoff takes priority over unrelated lexical cross-chat retrieval',()=>{
   assert.match(lib,/agent_memory_handoff::explicit_agent_handoff_request\(&prompt\)\.is_none\(\)/);
-  assert.match(lib,/let base=state\.chats\.memory_context_for_turn\(&chat_id,&prompt\)/);
+  assert.match(lib,/let recalled=state\.chats\.authenticated_memory_context_for_turn\(\s*&chat_id,&gid,&prompt,/);
   assert.match(lib,/if document_context\|\|plan_only \|\|[\s\S]*?explicit_agent_handoff_request\(&prompt\)\.is_some\(\)/);
   assert.match(lib,/if origin==GenerationOrigin::Human && images.is_empty\(\) && !document_context &&\s*agent_memory_handoff::explicit_agent_handoff_request\(&prompt\)\.is_none\(\)/);
 });

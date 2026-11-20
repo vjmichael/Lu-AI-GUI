@@ -32,6 +32,9 @@ pub(crate) fn eligible(prompt:&str)->bool{
         crate::prompt_context::model_native_action_hint(p)!=p||
         crate::prompt_context::model_file_creation_hint(p)!=p||
         crate::agent_memory_handoff::explicit_agent_handoff_request(p).is_some()||
+        crate::p0_memory_continuity::explicit_continuation_target(p).is_some()||
+        crate::chat_store::m4_explicit_belief_target(p).is_some()||
+        crate::chat_store::m4_explicit_procedure_target(p).is_some()||
         (low.contains("commit ")&&!scoped_read_intent::exact_git_commit_read(p))||
         ["<|","[attached ","do not ","don't ","never ","without ","how to ","how do i ","explain ","write ","delete ","remove ","rename ","move ","modify ","edit ","execute ","run ","install ","upload ","download ","push ","checkout ","reset "].iter().any(|s|low.contains(s)) {
         return false
@@ -363,6 +366,15 @@ pub(crate) fn try_read_turn(app:&AppHandle,state:&Arc<DesktopState>,sid:&str,cha
     #[test] fn eligibility_is_not_a_grant_and_ignores_nonread_tasks(){
         assert!(eligible("Which of my project reports mentions the invoice?"));
         for p in ["Hello","What tools can you use?","Do not use tools to read my file","How do I inspect my folder?","Delete my files","Read my files\n[Attached text file: abc]","Explain local storage","Write my report"]{assert!(!eligible(p),"{p}")}
+    }
+    #[test] fn cp06m_explicit_historical_requests_never_negotiate_live_reads(){
+        for p in ["Continue project lu task review_git_head",
+            "Resume project lu task review_git_head",
+            "Recall belief project lu task review subject source predicate backend version 0.1",
+            "Recall procedure project lu task review tool lu.reviewed.git.head tool-version 1.0 application-version 0.1"]{
+            assert!(!eligible(p),"{p}");
+        }
+        assert!(eligible("Inspect the current project folder"));
     }
     #[test] fn exact_input_utility_offer_and_document_scope(){
         let v=views(true,CandidatePresent);

@@ -524,7 +524,15 @@ impl AnsfStore {
         query: &str,
         limit: usize,
     ) -> Result<Vec<Entry>, AnsfError> {
-        if !valid_id(session_id)
+        self.search_current_messages_before(session_id,query,limit,i64::MAX,None)
+    }
+
+    /// Bounded implicit recall of messages strictly before a host-pinned
+    /// original entry. Apply the cutoff before FTS ranking and LIMIT.
+    pub fn search_current_messages_before(
+        &self,session_id:&str,query:&str,limit:usize,before_entry:i64,exclude_user_text:Option<&str>
+    )->Result<Vec<Entry>,AnsfError>{
+        if before_entry<1 || !valid_id(session_id)
             || query.trim().is_empty()
             || query.len() > 256
             || limit == 0
@@ -537,6 +545,8 @@ impl AnsfStore {
             "SELECT e.id,e.session_id,e.chapter_id,e.message_id,e.role,e.summary,e.content
              FROM ansf_entries_fts f JOIN ansf_entries e ON e.id=f.rowid
              WHERE ansf_entries_fts MATCH ?1 AND e.session_id=?2
+               AND e.id<?4 AND e.role IN ('user','assistant')
+               AND (?5 IS NULL OR e.role<>'user' OR e.content<>?5)
                AND NOT EXISTS (
                  SELECT 1 FROM ansf_entry_edits original_edit
                  WHERE original_edit.session_id=e.session_id
@@ -554,7 +564,7 @@ impl AnsfStore {
              ORDER BY bm25(ansf_entries_fts),e.id LIMIT ?3",
         )?;
         let rows = stmt.query_map(
-            params![query, session_id, limit as i64],
+            params![query, session_id, limit as i64,before_entry,exclude_user_text],
             Self::map_entry,
         )?;
         rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)

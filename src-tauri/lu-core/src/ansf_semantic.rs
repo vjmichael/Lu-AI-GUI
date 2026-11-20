@@ -92,6 +92,17 @@ impl AnsfStore{
              FROM ansf_entries e
              WHERE e.session_id=?1 AND e.role IN ('user','assistant')
                AND length(trim(e.content))>0
+               AND NOT EXISTS (
+                 SELECT 1 FROM ansf_entry_edits changed
+                 WHERE changed.session_id=e.session_id AND changed.original_entry_id=e.id
+               )
+               AND NOT EXISTS (
+                 SELECT 1 FROM ansf_entry_edits old JOIN ansf_entry_edits newer
+                   ON newer.session_id=old.session_id
+                  AND newer.original_entry_id=old.original_entry_id
+                  AND newer.revision_number>old.revision_number
+                 WHERE old.session_id=e.session_id AND old.revised_entry_id=e.id
+               )
                AND NOT EXISTS(
                 SELECT 1 FROM ansf_semantic_projection s
                 WHERE s.entry_id=e.id AND s.embedding_model=?2 AND s.chunk_ordinal=0
@@ -180,6 +191,18 @@ impl AnsfStore{
             "SELECT e.id,s.chunk_ordinal,s.dimension,s.source_sha256,s.vector_le_f32
              FROM ansf_semantic_projection s JOIN ansf_entries e ON s.entry_id=e.id
              WHERE e.session_id=?1 AND s.embedding_model=?2
+               AND e.role IN ('user','assistant')
+               AND NOT EXISTS (
+                 SELECT 1 FROM ansf_entry_edits changed
+                 WHERE changed.session_id=e.session_id AND changed.original_entry_id=e.id
+               )
+               AND NOT EXISTS (
+                 SELECT 1 FROM ansf_entry_edits old JOIN ansf_entry_edits newer
+                   ON newer.session_id=old.session_id
+                  AND newer.original_entry_id=old.original_entry_id
+                  AND newer.revision_number>old.revision_number
+                 WHERE old.session_id=e.session_id AND old.revised_entry_id=e.id
+               )
              ORDER BY e.id,s.chunk_ordinal LIMIT ?3"
         )?;
         let rows=stmt.query_map(params![session_id,embedding_model,(MAX_SCAN+1) as i64],|r|{
@@ -206,11 +229,17 @@ impl AnsfStore{
         let mut scores:Vec<_>=best.into_iter().collect();
         scores.sort_by(|a,b|b.1.1.total_cmp(&a.1.1).then(a.0.cmp(&b.0)));
         scores.truncate(limit);
-        drop(stmt);drop(conn);
+        drop(stmt);
         let mut hits=Vec::with_capacity(scores.len());
         for (entry_id,(chunk,score,sha)) in scores{
-            let entry=self.read_entry(session_id,entry_id)?
-                .ok_or(AnsfError::InvalidInput)?;
+            let entry=conn.query_row(
+                "SELECT id,session_id,chapter_id,message_id,role,summary,content
+                 FROM ansf_entries WHERE session_id=?1 AND id=?2",
+                params![session_id,entry_id],|r|Ok(Entry{
+                    id:r.get(0)?,session_id:r.get(1)?,chapter_id:r.get(2)?,
+                    message_id:r.get(3)?,role:r.get(4)?,summary:r.get(5)?,content:r.get(6)?
+                })
+            )?;
             if digest(&entry.content)!=sha ||
                 !matches!(entry.role.as_str(),"user"|"assistant"){
                 return Err(AnsfError::InvalidInput)
@@ -330,6 +359,24 @@ mod tests{
         assert_eq!(second[0].id,b);
         assert_eq!(db.semantic_pending_entries("c-index","model-v2",12).unwrap().len(),2);
         assert!(db.semantic_pending_entries("c-index","model-v1",25).is_err());
+    }
+    #[test]
+    fn cp06m_semantic_recall_excludes_superseded_before_ranking(){
+        use crate::ansf_revisions::RevisionOrigin;
+        let db=AnsfStore::in_memory().unwrap();
+        db.create_session("c-edit","local","Test").unwrap();
+        db.start_chapter("c-edit","Phase").unwrap();
+        let old=db.append_entry("c-edit","a",EntryRole::User,"Decision","Use old cobalt").unwrap();
+        db.index_semantic_passage("c-edit",old,0,"model-v1",&[1.0,0.0]).unwrap();
+        let first=db.append_edited_entry("c-edit","a","Correction","Use amber",RevisionOrigin::VerifiedUser).unwrap().unwrap();
+        db.index_semantic_passage("c-edit",first.revised_entry_id,0,"model-v1",&[1.0,0.0]).unwrap();
+        let current=db.append_edited_entry("c-edit","a","Correction","Use jade",RevisionOrigin::VerifiedUser).unwrap().unwrap();
+        assert_eq!(db.semantic_pending_entries("c-edit","model-v1",12).unwrap().iter().map(|e|e.id).collect::<Vec<_>>(),vec![current.revised_entry_id]);
+        assert!(db.semantic_candidates("c-edit","model-v1",&[1.0,0.0],1).unwrap().is_empty());
+        db.index_semantic_passage("c-edit",current.revised_entry_id,0,"model-v1",&[0.8,0.2]).unwrap();
+        let hits=db.semantic_candidates("c-edit","model-v1",&[1.0,0.0],1).unwrap();
+        assert_eq!(hits[0].entry.id,current.revised_entry_id);
+        assert_eq!(db.read_entry("c-edit",old).unwrap().unwrap().content,"Use old cobalt");
     }
     #[test]
     fn source_fusion_prefers_matches_retrieved_by_both_channels(){
