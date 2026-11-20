@@ -450,8 +450,9 @@ impl OwnedBrowserWorker {
                 }
                 let browser=self.browser.as_mut().ok_or(
                     BrowserSupervisorError::MissingChromiumCustody)?;
-                let reply=self.bridge.process_owned_window(&frame,browser)
+                let reply=self.bridge.process_owned_window(&frame,browser,deadline)
                     .map_err(|_|BrowserSupervisorError::UnauthorizedVisibility)?;
+                if Instant::now()>=deadline{return Err(BrowserSupervisorError::Deadline);}
                 self.stdin.as_mut().ok_or(BrowserSupervisorError::WorkerExited)?
                     .write_all(reply.as_bytes())
                     .and_then(|_|self.stdin.as_mut().ok_or_else(||io::Error::other("closed browser owner"))?
@@ -587,6 +588,7 @@ mod tests {
             visibility:BrowserVisibilityPreference::AutomaticHidden,
             command_timeout:Duration::from_secs(30),
         };
+        eprintln!("SEC06F_RUST_BROWSER_PHASE=ADMISSION");
         let mut worker=OwnedBrowserWorker::launch_sec06c(
             cfg,&chromium,xdotool,
             &format!("c-{}","a".repeat(32)),
@@ -595,17 +597,21 @@ mod tests {
         ).expect("genuine original root-owned Chromium+Node admission");
         assert!(worker.is_alive(),
             "original Chromium, Node and root-owned leaf must still exist");
+        eprintln!("SEC06F_RUST_BROWSER_PHASE=INITIAL_STATUS");
         let initial=worker.execute(BrowserOperation::Status,json!({}))
             .expect("genuine nonroot browser initial human-hide handshake");
         assert_eq!(initial["ok"],true,"original browser startup code: {}",
             initial["error"]["code"].as_str().filter(|code|code.len()<=64&&code.bytes().all(|b|b.is_ascii_uppercase()||b==b'_')).unwrap_or("UNCLASSIFIED"));
         assert_eq!(initial["result"]["windowVisibility"],"HIDDEN");
+        eprintln!("SEC06F_RUST_BROWSER_PHASE=SHOW");
         let shown=worker.execute(BrowserOperation::Show,json!({}))
             .expect("original Chromium human-visible request");
         assert_eq!(shown["result"]["windowVisibility"],"VISIBLE");
+        eprintln!("SEC06F_RUST_BROWSER_PHASE=HIDE");
         let hidden=worker.execute(BrowserOperation::Hide,json!({}))
             .expect("original Chromium human-hiding recheck");
         assert_eq!(hidden["result"]["windowVisibility"],"HIDDEN");
+        eprintln!("SEC06F_RUST_BROWSER_PHASE=STOP");
         worker.stop_verified().expect("root cgroup.kill, empty and fsynced receipt");
         assert!(LinuxOsOwnedBrowserSession::reconcile_previous(&profile).is_ok(),
             "restart may only verify original immutable root receipt, never replay");

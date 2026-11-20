@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 mode=${1:-all}
-case "$mode" in all|normal-only|stall-only) ;; *) exit 2;; esac
+case "$mode" in all|normal-only|stall-only|rust-only) ;; *) exit 2;; esac
 cd /mnt/deploy; sha256sum -c SHA256SUMS
 [[ $(cat /proc/1/comm) == systemd && $(findmnt -n -o FSTYPE /sys/fs/cgroup) == cgroup2 && $(ls /sys/class/net) == lo ]]
 mkdir -p /tmp/host-browser-runtime
@@ -40,6 +40,10 @@ if [[ $mode == normal-only ]]; then
 fi
 if [[ $mode == stall-only ]]; then
  runuser -u luprobe -- env LU_SEC06C_BROKER_DEBUG=1 xvfb-run -a -s '-screen 0 1280x800x24' python3 /mnt/deploy/sec06c_browser_guardian_loss.py --stall --bundle /usr/lib/lu/browser --launcher /usr/libexec/lu/lu-sec06c-launch-browser
+ exit 0
+fi
+if [[ $mode == rust-only ]]; then
+ runuser -u luprobe -- env LU_SEC06C_BROWSER_REVIEWED_BUNDLE=/usr/lib/lu/browser LU_SEC06C_BROKER_DEBUG=1 xvfb-run -a -s '-screen 0 1280x800x24' /usr/libexec/lu/core-tests --ignored --nocapture sec06c_real_linux_browser_original_grant_handoff_and_durable_recovery
  exit 0
 fi
 set +e

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Admission-record filesystem tests only. Not browser or kernel acceptance."""
+import os
 import pathlib
 import runpy
 import tempfile
@@ -43,5 +44,39 @@ class BrowserNonce(unittest.TestCase):
         self.record.symlink_to(target)
         with self.assertRaisesRegex(RuntimeError,'already consumed'):reserve(self.opts,1000)
         self.assertEqual(target.read_bytes(),b'unrelated')
+
+class EndpointPublication(unittest.TestCase):
+    def setUp(self):
+        self.temp=tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.path=pathlib.Path(self.temp.name)/'DevToolsActivePort'
+        self.port=runpy.run_path(str(pathlib.Path(__file__).with_name(
+            'lu-sec06c-owned-browser-worker.py')))['loopback_port']
+
+    def test_missing_empty_then_complete(self):
+        self.assertIsNone(self.port(self.path))
+        self.path.touch()
+        self.assertIsNone(self.port(self.path))
+        self.path.write_bytes(b'43843\n/devtools/browser/abc-123')
+        self.assertEqual(self.port(self.path),43843)
+
+    def test_bad_nonempty_records_remain_denied(self):
+        for data in (b'0\n/devtools/browser/abc',b'65536\n/devtools/browser/abc',
+                     b'127.0.0.1:1\n/devtools/browser/abc',b'123\n/devtools/page/abc',
+                     b'123\n/devtools/browser/abc\nextra',b'123',b'\xff',b'x'*513):
+            with self.subTest(data=data[:20]):
+                self.path.write_bytes(data)
+                with self.assertRaises(RuntimeError):self.port(self.path)
+
+    def test_mutable_and_nonregular_records_denied(self):
+        target=self.path.with_name('target');target.write_bytes(b'123\n/devtools/browser/id')
+        self.path.symlink_to(target)
+        with self.assertRaises(RuntimeError):self.port(self.path)
+        self.path.unlink();os.mkfifo(self.path)
+        with self.assertRaises(RuntimeError):self.port(self.path)
+        self.path.unlink();os.link(target,self.path)
+        with self.assertRaises(RuntimeError):self.port(self.path)
+        self.path.unlink();self.path.write_bytes(target.read_bytes());self.path.chmod(0o666)
+        with self.assertRaises(RuntimeError):self.port(self.path)
 
 if __name__=='__main__':unittest.main()

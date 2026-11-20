@@ -2,7 +2,7 @@
 //! On Linux a trusted SEC-06C manager verifies Chromium's original kernel
 //! PID and immutable root-owned leaf before this interface is created.
 //! X11 search is only for that PID; no model-selected title, PID, or HWND.
-use std::process::Child;
+use std::{process::Child,time::{Duration,Instant}};
 #[cfg(target_os="linux")]
 use std::{fs,path::{Path,PathBuf},os::unix::fs::{MetadataExt,PermissionsExt}};
 #[cfg(target_os="linux")]
@@ -89,13 +89,17 @@ impl OwnedBrowserWindow {
         {false}
     }
     pub fn set_visible(&mut self,visible:bool)->Result<(),WindowOperationError>{
+        self.set_visible_until(visible,Instant::now()+Duration::from_secs(30))
+    }
+    pub(crate) fn set_visible_until(&mut self,visible:bool,deadline:Instant)->Result<(),WindowOperationError>{
+        if Instant::now()>=deadline{return Err(WindowOperationError::NativeFailure);}
         if !self.is_alive(){return Err(WindowOperationError::ChildNotOwned);}
         #[cfg(windows)]
         return lu_win_worker_job::browser_window::set_owned_browser_visible(
             &self.browser,visible).map_err(|_|WindowOperationError::NativeFailure);
         #[cfg(target_os="linux")]
         return crate::browser_window_x11::set_verified_browser_pid_visible(
-            self.child_id(),&self.trusted_xdotool,visible)
+            self.child_id(),&self.trusted_xdotool,visible,deadline)
             .map_err(|_|WindowOperationError::NativeFailure);
         #[cfg(not(any(windows,target_os="linux")))]
         {let _=visible;Err(WindowOperationError::UnsupportedPlatform)}

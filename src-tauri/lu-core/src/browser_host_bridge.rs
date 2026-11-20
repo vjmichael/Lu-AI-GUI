@@ -73,9 +73,9 @@ impl VisibilityBridge {
             kind:"host_visibility_response".into(),request_id:req.request_id,ok:true
         }).map_err(|_|VisibilityProtocolError::InvalidRequest)
     }
-    pub fn process_owned_window(&mut self,line:&str,owner:&mut OwnedBrowserWindow)
+    pub fn process_owned_window(&mut self,line:&str,owner:&mut OwnedBrowserWindow,deadline:std::time::Instant)
       ->Result<String,VisibilityProtocolError> {
-        self.process_with(line,|visible|owner.set_visible(visible))
+        self.process_with(line,|visible|owner.set_visible_until(visible,deadline))
     }
 }
 impl Default for VisibilityBridge {

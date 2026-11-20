@@ -68,16 +68,36 @@ def require_go(nonce):
         return
     reject("root manager never released exact browser session")
 def loopback_port(path):
-    try:st=path.lstat()
+    # Chromium creates its port file before publishing the endpoint. An empty
+    # original regular file is not admission; allow only the existing bounded
+    # startup poll to observe its completion. Never follow a path replacement,
+    # block on a FIFO, or allocate an unbounded record.
+    try:
+        fd=os.open(path,os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK|os.O_CLOEXEC)
     except FileNotFoundError:return None
-    if not stat.S_ISREG(st.st_mode) or st.st_size>512 or st.st_size==0:
-        reject("untrusted DevToolsActivePort")
-    rows=path.read_text(encoding="ascii").splitlines()
-    if len(rows)!=2 or not re.fullmatch(r"/devtools/browser/[A-Za-z0-9_-]{1,200}",rows[1]):
-        reject("invalid browser-only websocket endpoint")
-    port=int(rows[0])
-    if not 1<=port<=65535:reject("non-loopback DevTools endpoint")
-    return port
+    except OSError:reject("untrusted DevToolsActivePort")
+    try:
+        st=os.fstat(fd)
+        if (not stat.S_ISREG(st.st_mode) or st.st_uid!=os.geteuid() or
+            st.st_nlink!=1 or st.st_mode&0o022 or st.st_size>512):
+            reject("untrusted DevToolsActivePort")
+        data=os.read(fd,513)
+        after=os.fstat(fd)
+        if len(data)>512 or after.st_size>512:
+            reject("untrusted DevToolsActivePort")
+        if (st.st_size,st.st_mtime_ns,st.st_ctime_ns)!=(after.st_size,after.st_mtime_ns,after.st_ctime_ns):
+            return None  # changed during snapshot; do not admit this observation
+        if not data:return None
+        if len(data)!=after.st_size:reject("untrusted DevToolsActivePort")
+        try:rows=data.decode("ascii").splitlines()
+        except UnicodeDecodeError:reject("invalid browser-only websocket endpoint")
+        if (len(rows)!=2 or not re.fullmatch(r"[0-9]{1,5}",rows[0]) or
+            not re.fullmatch(r"/devtools/browser/[A-Za-z0-9_-]{1,200}",rows[1])):
+            reject("invalid browser-only websocket endpoint")
+        port=int(rows[0])
+        if not 1<=port<=65535:reject("non-loopback DevTools endpoint")
+        return port
+    finally:os.close(fd)
 def forward(src,dst,limit,partial):
     chunk=os.read(src,65536)
     if not chunk:return False
