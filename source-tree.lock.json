@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "0f82d45c4f2da0803f488c95a2888d78842435dd",
-  "trackedFileCount": 1976,
+  "sourceCommitBeforeLock": "2ac12c8e5459fc4bed6422270d9d1d42909e0af9",
+  "trackedFileCount": 1977,
   "files": [
     {
       "path": ".gitattributes",
@@ -4821,7 +4821,7 @@
     },
     {
       "path": "ide/tools/provision_cmake_candidate.py",
-      "blob": "273c9ed0adffc265b122644913d22f9b2fb33717"
+      "blob": "2fcaac9a165f3fe91a1f66ff4fbf20df16c7f16d"
     },
     {
       "path": "ide/tools/provision_node_candidate.py",
@@ -4842,6 +4842,10 @@
     {
       "path": "ide/tools/tests/test_package_reviewed_runtime.py",
       "blob": "c683dc2c7acd0d5391af20d9d94a91b2e28c0d96"
+    },
+    {
+      "path": "ide/tools/tests/test_provision_cmake_candidate.py",
+      "blob": "b59f7724e3dfaf41d8f98ebd91103fe87d28a70a"
     },
     {
       "path": "lu-desktop/.gitignore",
