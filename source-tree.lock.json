@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "a1f51865d6eefe8c987337daf4655fdb0e8d6f2e",
+  "sourceCommitBeforeLock": "84c1067372371075a973b7f7ac4247b453acae97",
   "trackedFileCount": 1982,
   "files": [
     {
@@ -1805,7 +1805,7 @@
     },
     {
       "path": "ide/app/fixtures/Test-Wo8NativeDesktopUI.ps1",
-      "blob": "8bf0d4398b15806cc4440b0df6b079e326253c49"
+      "blob": "431139678f026cd360fb7c868572f239fcd3dabb"
     },
     {
       "path": "ide/app/fixtures/b2_linux_installed_draft_atspi.py",
@@ -1969,7 +1969,7 @@
     },
     {
       "path": "ide/app/src-tauri/src/lib.rs",
-      "blob": "f72ddbcdb407085a6e1b8d92473857650fb75db2"
+      "blob": "683e67bbd6172595b2361d50738bdbce54d7e4ac"
     },
     {
       "path": "ide/app/src-tauri/src/lsp_backend.rs",
@@ -2373,7 +2373,7 @@
     },
     {
       "path": "ide/app/tests/reviewed_git_commit_form.test.mjs",
-      "blob": "8eb78ca7dba1d7fa1051e6e471708981007b0f36"
+      "blob": "1bf29d30a9c1e698a87d7e1cf827f4574197aafe"
     },
     {
       "path": "ide/app/tests/reviewed_multilang_adapters.test.mjs",
