@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "9e715f6dec6f8cbef6be53fe4cad52c97cd7662a",
-  "trackedFileCount": 1240,
+  "sourceCommitBeforeLock": "00353ff1ff96f7af6e558edfe550b87eed7d20fa",
+  "trackedFileCount": 1241,
   "files": [
     {
       "path": ".gitattributes",
@@ -916,6 +916,10 @@
       "blob": "4440201c21c9791c5a57115ab77419e77ae18580"
     },
     {
+      "path": "docs/LU_CP12B_R4_COLLABORATIVE_LIFECYCLE_20261120.md",
+      "blob": "8635bd62fbb3695da0ff67faa4f2a26b988ea9af"
+    },
+    {
       "path": "docs/LU_CURRENT_PREVIEW_CPU_VULKAN_DUAL_ENGINE_20261109.md",
       "blob": "c1664658ded245a3df6041114e42587f49550200"
     },
@@ -925,7 +929,7 @@
     },
     {
       "path": "docs/LU_DEVELOPMENT_LEDGER.md",
-      "blob": "de76c3cb0a5391dad8e39d5cfe8e2f6ccf2c6f6b"
+      "blob": "d639e4e9e352bdf173f037d38fef02f436fa6e25"
     },
     {
       "path": "docs/LU_E1_NATIVE_EVIDENCE_20261107.md",
@@ -2893,7 +2897,7 @@
     },
     {
       "path": "scripts/cp12br4-review-lifecycle-gui.py",
-      "blob": "f4e1dec17e24df2ecbc23a8043ea54ea3507f0e6"
+      "blob": "96226d660660ae20a5f88be10aa305de5d361fbd"
     },
     {
       "path": "scripts/install-lu-agent01l-native-fixture.sh",
