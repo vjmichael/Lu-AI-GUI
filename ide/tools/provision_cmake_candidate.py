@@ -26,6 +26,12 @@ from package_reviewed_runtime import package, Refused
 HERE=Path(__file__).resolve().parent
 LOCK=HERE.parent / "runtime-pins" / "upstream_sources.json"
 LICENSE_NINJA=HERE / "runtime_licenses" / "ninja-1.13.0-COPYING"
+# llvmorg-23.1.5/llvm/LICENSE.TXT is byte-identical to the retained 18.1.8
+# license (official Git blob fa6ac540007032cbd0ec772a1c72e6cb5527a4fe).
+# The Linux release archive lacks a top-level license; do not substitute
+# the unrelated include/llvm/Support/LICENSE.TXT embedded in that archive.
+LLVM_LINUX_LICENSE=HERE.parent / "packaging" / "upstream-licenses" / "LLVM-18.1.8-LICENSE.txt"
+LLVM_LINUX_LICENSE_SHA="8d85c1057d742e597985c7d4e6320b015a9139385cff4cbae06ffc0ebe89afee"
 DRIVER=HERE / "runtime_drivers" / "dev03-cmake.cmake"
 MAX_ARCHIVE=3*1024**3
 MAX_EXTRACTED=3*1024**3
@@ -88,12 +94,18 @@ def archive_relative(name: str) -> str | None:
     return "/".join(path.parts[1:])
 
 
-def allow_component(category: str, rel: str) -> bool:
+def allow_component(category: str, rel: str, platform: str | None = None) -> bool:
     if category=="cmake":
         return rel in ("bin/cmake","bin/ctest","bin/cmake.exe","bin/ctest.exe") \
             or rel.startswith(("share/","lib/")) \
             or rel.lower().endswith("/copyright.txt")
     if category=="llvm":
+        if platform=="linux-x64":
+            # This fixed C/C++ build profile is not a full LLVM SDK, LSP or
+            # debugger. The independently pinned release has these regular
+            # files behind its clang/clang++ and ld.lld symlinks. Do not
+            # indiscriminately ship clangd, lldb, analyzers or static SDKs.
+            return rel in ("bin/clang-23", "bin/lld") or rel.startswith("lib/clang/23/")
         name=PurePosixPath(rel).name.lower()
         return (rel.startswith("bin/") and (
             name.startswith(("clang","lld","ld.lld")) or name.endswith(".dll")
@@ -105,9 +117,11 @@ def allow_component(category: str, rel: str) -> bool:
     return False
 
 
-def add_entry(stage: Path,category: str,rel: str,source,remaining: list[int]):
-    if not allow_component(category,rel):
+def add_entry(stage: Path,category: str,rel: str,source,remaining: list[int],platform: str | None = None):
+    if not allow_component(category,rel,platform):
         return
+    if category=="llvm" and platform=="linux-x64":
+        rel={"bin/clang-23":"bin/clang", "bin/lld":"bin/ld.lld"}.get(rel,rel)
     if category=="ninja":
         rel="bin/ninja.exe" if rel.endswith(".exe") else "bin/ninja"
     if rel.lower().endswith("/copyright.txt") and category=="cmake":
@@ -132,7 +146,7 @@ def add_entry(stage: Path,category: str,rel: str,source,remaining: list[int]):
         target.chmod(target.stat().st_mode|0o755)
 
 
-def extract_zip(stage:Path,path:Path,category:str,remaining:list[int]):
+def extract_zip(stage:Path,path:Path,category:str,remaining:list[int],platform: str | None = None):
     with zipfile.ZipFile(path) as zip:
         for info in zip.infolist():
             if info.is_dir():continue
@@ -147,11 +161,37 @@ def extract_zip(stage:Path,path:Path,category:str,remaining:list[int]):
                     rel=info.filename
                 else:continue
             with zip.open(info) as source:
-                add_entry(stage,category,rel,source,remaining)
+                add_entry(stage,category,rel,source,remaining,platform)
 
 
-def extract_tar(stage:Path,path:Path,category:str,remaining:list[int]):
+def extract_tar_entries(tar,stage,category,remaining,platform):
+    for entry in tar:
+        if entry.issym() or entry.islnk() or not entry.isfile():continue
+        rel=archive_relative(entry.name)
+        if rel and allow_component(category,rel,platform):
+            if entry.size>remaining[0]:raise Refused("unpacked runtime tree exceeds budget")
+            file=tar.extractfile(entry)
+            if file is None: raise Refused("truncated runtime archive")
+            with file:
+                add_entry(stage,category,rel,file,remaining,platform)
+
+
+def extract_tar(stage:Path,path:Path,category:str,remaining:list[int],platform: str | None = None):
     if path.name.endswith(".tar.zst"):
+        if platform=="linux-x64" and Path("/usr/bin/zstd").is_file():
+            # Native build-machine decompression only; the authenticated
+            # pinned archive specifies a 1 GiB zstd window. This does not
+            # change the worker's runtime budgets or the 3 GiB staged cap.
+            proc=subprocess.Popen(["/usr/bin/zstd","-dc","--memory=1024MB",str(path.resolve())],stdout=subprocess.PIPE)
+            try:
+                with tarfile.open(fileobj=proc.stdout,mode="r|") as tar:
+                    extract_tar_entries(tar,stage,category,remaining,platform)
+                while proc.stdout.read(1024*1024):pass
+                if proc.wait()!=0:raise Refused("zstd decompression failed")
+            finally:
+                proc.stdout.close()
+                if proc.poll() is None:proc.terminate();proc.wait()
+            return
         try:
             import zstandard
         except ImportError as exc:
@@ -159,30 +199,17 @@ def extract_tar(stage:Path,path:Path,category:str,remaining:list[int]):
         with path.open("rb") as packed:
             stream=zstandard.ZstdDecompressor().stream_reader(packed)
             with tarfile.open(fileobj=stream,mode="r|") as tar:
-                for entry in tar:
-                    if entry.issym() or entry.islnk():
-                        # All symlinks are replaced with separate regular
-                        # copies from known selected binaries after unpack.
-                        continue
-                    if not entry.isfile():continue
-                    rel=archive_relative(entry.name)
-                    if rel and allow_component(category,rel):
-                        file=tar.extractfile(entry)
-                        if file is None: raise Refused("truncated LLVM archive")
-                        with file:
-                            add_entry(stage,category,rel,file,remaining)
+                extract_tar_entries(tar,stage,category,remaining,platform)
     else:
         with tarfile.open(path,mode="r:gz") as tar:
-            for entry in tar:
-                if entry.issym() or entry.islnk():
-                    continue
-                if not entry.isfile():continue
-                rel=archive_relative(entry.name)
-                if rel and allow_component(category,rel):
-                    file=tar.extractfile(entry)
-                    if file is None: raise Refused("truncated CMake archive")
-                    with file:
-                        add_entry(stage,category,rel,file,remaining)
+            extract_tar_entries(tar,stage,category,remaining,platform)
+
+
+def bounded_copy(source:Path,target:Path,remaining:list[int]):
+    size=source.stat().st_size
+    if size>remaining[0]:raise Refused("unpacked runtime tree exceeds budget")
+    shutil.copy2(source,target)
+    remaining[0]-=size
 
 
 def provision(stage:Path,cache:Path,platform:str) -> None:
@@ -192,13 +219,17 @@ def provision(stage:Path,cache:Path,platform:str) -> None:
     for category in ("cmake","ninja","llvm"):
         source=fetch_locked(cache,pins[category])
         if source.suffix==".zip":
-            extract_zip(stage,source,category,remaining)
+            extract_zip(stage,source,category,remaining,platform)
         else:
-            extract_tar(stage,source,category,remaining)
+            extract_tar(stage,source,category,remaining,platform)
     (stage/"LICENSES").mkdir(exist_ok=True)
-    shutil.copy2(LICENSE_NINJA,stage/"LICENSES/ninja.txt")
+    bounded_copy(LICENSE_NINJA,stage/"LICENSES/ninja.txt",remaining)
+    if platform=="linux-x64":
+        if hashlib.sha256(LLVM_LINUX_LICENSE.read_bytes()).hexdigest()!=LLVM_LINUX_LICENSE_SHA:
+            raise Refused("pinned LLVM license digest mismatch")
+        bounded_copy(LLVM_LINUX_LICENSE,stage/"LICENSES/llvm.txt",remaining)
     (stage/"drivers").mkdir(exist_ok=True)
-    shutil.copy2(DRIVER,stage/"drivers/dev03-cmake.cmake")
+    bounded_copy(DRIVER,stage/"drivers/dev03-cmake.cmake",remaining)
     # Some official Clang distributions store an executable as a symlink
     # to the core compiler. Materialize separate regular copies, never links.
     win=platform=="windows-x64"
@@ -209,9 +240,9 @@ def provision(stage:Path,cache:Path,platform:str) -> None:
         choices=list((stage/"bin").glob("clang-*" + suffix))
         if len(choices)!=1:
             raise Refused("pinned archive does not contain one Clang compiler")
-        shutil.copy2(choices[0],primary)
+        bounded_copy(choices[0],primary,remaining)
     if not companion.is_file():
-        shutil.copy2(primary,companion)
+        bounded_copy(primary,companion,remaining)
     required=["bin/cmake"+suffix,"bin/ctest"+suffix,"bin/ninja"+suffix,
               "bin/clang"+suffix,"bin/clang++"+suffix,
               "LICENSES/cmake.txt","LICENSES/ninja.txt","LICENSES/llvm.txt",
