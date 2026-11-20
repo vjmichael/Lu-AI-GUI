@@ -91,35 +91,49 @@ impl DiagnosticArchive{
             [MAX_TRACES as i64]).is_err(){return false}
         tx.commit().is_ok()
     }
+    // Active, explicitly approved checks may briefly wait for an independent
+    // read-only journal observer. Keep passive trace writes nonblocking:
+    // the mutex excludes them while the bounded timeout is active, and reset
+    // it on every result path before releasing the connection. Sustained
+    // contention remains a failure, never a fabricated completed report.
+    fn with_active_check<T>(&self,action:impl FnOnce(&Connection)->Result<T,String>)->Result<T,String>{
+        let conn=self.conn.lock().map_err(|_|"Check report unavailable")?;
+        conn.busy_timeout(Duration::from_millis(250)).map_err(|_|"Check report unavailable")?;
+        let result=action(&conn);
+        conn.busy_timeout(Duration::ZERO).map_err(|_|"Check report unavailable")?;
+        result
+    }
     // Only the trusted one-shot check controller may write this latest local
     // report. It contains fixed categories/counts, not conversation evidence.
     pub fn begin_active_check(&self,id:&str)->Result<(),String>{
         let body=serde_json::to_string(&CheckBody::default()).map_err(|_|"Check report unavailable")?;
-        let conn=self.conn.lock().map_err(|_|"Check report unavailable")?;
-        let rows=conn.execute("INSERT INTO active_check(slot,run_id,state,body) VALUES(1,?1,'running',?2)
-            ON CONFLICT(slot) DO UPDATE SET run_id=excluded.run_id,state='running',body=excluded.body
-            WHERE active_check.state<>'running'",params![id,body]).map_err(|_|"Check report unavailable")?;
-        if rows!=1{return Err("A previous check has not been reconciled".into())} Ok(())
+        self.with_active_check(|conn|{
+            let rows=conn.execute("INSERT INTO active_check(slot,run_id,state,body) VALUES(1,?1,'running',?2)
+                ON CONFLICT(slot) DO UPDATE SET run_id=excluded.run_id,state='running',body=excluded.body
+                WHERE active_check.state<>'running'",params![id,body]).map_err(|_|"Check report unavailable")?;
+            if rows!=1{return Err("A previous check has not been reconciled".into())} Ok(())
+        })
     }
     pub fn write_active_check(&self,id:&str,state:CheckState,body:&CheckBody)->Result<(),String>{
         let report=CheckReport{state,body:body.clone()};
         if !report.valid(){return Err("Check report could not be confirmed".into())}
-        let conn=self.conn.lock().map_err(|_|"Check report unavailable")?;
-        let old=Self::read_active_check(&conn)?.ok_or("Check report could not be confirmed")?;
-        if old.state!=CheckState::Running||old.body.expanded!=body.expanded||!body.results.starts_with(&old.body.results){return Err("Check report could not be confirmed".into())}
-        let body=serde_json::to_string(body).map_err(|_|"Check report unavailable")?;
-        let rows=conn.execute("UPDATE active_check SET state=?1,body=?2 WHERE slot=1 AND run_id=?3 AND state='running'",
-            params![state.label(),body,id]).map_err(|_|"Check report unavailable")?;
-        if rows!=1{return Err("Check report could not be confirmed".into())} Ok(())
+        self.with_active_check(|conn|{
+            let old=Self::read_active_check(conn)?.ok_or("Check report could not be confirmed")?;
+            if old.state!=CheckState::Running||old.body.expanded!=body.expanded||!body.results.starts_with(&old.body.results){return Err("Check report could not be confirmed".into())}
+            let body=serde_json::to_string(body).map_err(|_|"Check report unavailable")?;
+            let rows=conn.execute("UPDATE active_check SET state=?1,body=?2 WHERE slot=1 AND run_id=?3 AND state='running'",
+                params![state.label(),body,id]).map_err(|_|"Check report unavailable")?;
+            if rows!=1{return Err("Check report could not be confirmed".into())} Ok(())
+        })
     }
     pub fn interrupt_active_check(&self,id:&str)->Result<(),String>{
-        let conn=self.conn.lock().map_err(|_|"Check report unavailable")?;
-        conn.execute("UPDATE active_check SET state='interrupted' WHERE slot=1 AND run_id=?1 AND state='running'",[id])
-            .map_err(|_|"Check report unavailable")?;Ok(())
+        self.with_active_check(|conn|{
+            conn.execute("UPDATE active_check SET state='interrupted' WHERE slot=1 AND run_id=?1 AND state='running'",[id])
+                .map_err(|_|"Check report unavailable")?;Ok(())
+        })
     }
     pub fn active_check_report(&self)->Result<Option<CheckReport>,String>{
-        let conn=self.conn.lock().map_err(|_|"Check report unavailable")?;
-        Self::read_active_check(&conn)
+        self.with_active_check(Self::read_active_check)
     }
     fn read_active_check(conn:&Connection)->Result<Option<CheckReport>,String>{
         let row:Option<(String,Option<String>)>=conn.query_row("SELECT state,CASE WHEN length(body)<=4096 THEN body END FROM active_check WHERE slot=1",[],|r|Ok((r.get(0)?,r.get(1)?)))
@@ -203,6 +217,56 @@ mod tests{
         assert_eq!(r.findings.len(),MAX_TRACES-1);
         assert_eq!(r.unavailable_records,1);
     }
+    #[test]
+    fn cp11a_readonly_witness_does_not_interrupt_active_publication(){
+        use crate::active_checks::{CheckKind,CheckResult};
+        use rusqlite::OpenFlags;
+        use std::sync::mpsc::{self,RecvTimeoutError};
+        let path=std::env::temp_dir().join(format!("lu-cp11a-read-contention-{}-{}.sqlite",std::process::id(),rand::random::<u64>()));
+        let archive=DiagnosticArchive::open(&path).unwrap();
+        archive.begin_active_check("check-reader-contention").unwrap();
+        let reader=Connection::open_with_flags(&path,OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
+        reader.execute_batch("BEGIN").unwrap();
+        assert_eq!(reader.query_row("SELECT state FROM active_check WHERE slot=1",[],|r|r.get::<_,String>(0)).unwrap(),"running");
+        let body=CheckBody{results:vec![CheckResult{kind:CheckKind::Reading,passed:true,verified_operations:3,elapsed_micros:1}],..CheckBody::default()};
+        std::thread::scope(|scope|{
+            let (ready_tx,ready_rx)=mpsc::channel();
+            let (done_tx,done_rx)=mpsc::channel();
+            let (archive,body)=(&archive,&body);
+            scope.spawn(move||{
+                ready_tx.send(()).unwrap();
+                done_tx.send(archive.write_active_check("check-reader-contention",CheckState::Running,body)).unwrap();
+            });
+            ready_rx.recv().unwrap();
+            let early=done_rx.recv_timeout(Duration::from_millis(40));
+            reader.execute_batch("COMMIT").unwrap();
+            assert!(matches!(early,Err(RecvTimeoutError::Timeout)),"publication prematurely failed or completed: {early:?}");
+            done_rx.recv_timeout(Duration::from_secs(2)).unwrap().unwrap();
+        });
+        assert_eq!(archive.active_check_report().unwrap().unwrap().body,body);
+        assert_eq!(archive.conn.lock().unwrap().query_row("PRAGMA busy_timeout",[],|r|r.get::<_,u32>(0)).unwrap(),0);
+        drop(reader);drop(archive);std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn cp11a_sustained_read_contention_fails_closed_and_restores_nonblocking_policy(){
+        use rusqlite::OpenFlags;
+        let path=std::env::temp_dir().join(format!("lu-cp11a-sustained-contention-{}-{}.sqlite",std::process::id(),rand::random::<u64>()));
+        let archive=DiagnosticArchive::open(&path).unwrap();
+        let reader=Connection::open_with_flags(&path,OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
+        reader.execute_batch("BEGIN").unwrap();
+        assert_eq!(reader.query_row("SELECT count(*) FROM active_check",[],|r|r.get::<_,u32>(0)).unwrap(),0);
+        let started=Instant::now();
+        assert!(archive.begin_active_check("check-blocked").is_err());
+        assert!(started.elapsed()<Duration::from_secs(3));
+        reader.execute_batch("COMMIT").unwrap();
+        assert!(archive.active_check_report().unwrap().is_none());
+        assert_eq!(archive.conn.lock().unwrap().query_row("PRAGMA busy_timeout",[],|r|r.get::<_,u32>(0)).unwrap(),0);
+        archive.begin_active_check("check-fresh").unwrap();
+        assert_eq!(archive.active_check_report().unwrap().unwrap().state,CheckState::Running);
+        drop(reader);drop(archive);std::fs::remove_file(path).unwrap();
+    }
+
     #[test]
     fn cp11a_invalid_active_report_does_not_invent_success(){
         let archive=DiagnosticArchive::open(Path::new(":memory:")).unwrap();

@@ -893,7 +893,7 @@
     },
     {
       "path": "docs/LU_DEVELOPMENT_LEDGER.md",
-      "blob": "66df7c80858737fcb730aa747198a4d0c4f3af53"
+      "blob": "6febb6c72268c0e7600b91efc2b9327f395bbd7b"
     },
     {
       "path": "docs/LU_E1_NATIVE_EVIDENCE_20261107.md",
@@ -1669,7 +1669,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/diagnostic_archive.rs",
-      "blob": "3babe2e63334e5053953f366d62e3048d27e0f40"
+      "blob": "d53e8708ee435f45241db9c5d84122e9194fb98f"
     },
     {
       "path": "lu-desktop/src-tauri/src/document_create_desktop.rs",
@@ -2709,7 +2709,7 @@
     },
     {
       "path": "scripts/cp11a-native-checks-gui.py",
-      "blob": "530e5c188f8c841b4f04253e3d82404e9cabb80d"
+      "blob": "1665ed1efbf80ae71c1a00dc5606acdbf1b29ed2"
     },
     {
       "path": "scripts/install-lu-agent01l-native-fixture.sh",
