@@ -27,6 +27,7 @@ mod perf01_telemetry;
 mod causal_diagnostic;
 mod active_checks;
 mod model_benchmark;
+mod scheduled_ai;
 mod diagnostic_archive;
 use causal_diagnostic::Checkpoint as CausalCheckpoint;
 mod vision_context;
@@ -1506,6 +1507,7 @@ fn start_background_watchdog(app:AppHandle,state:Arc<DesktopState>){
               ||model.phase!=lu_core::inference_host::EnginePhase::Ready{
                 continue;
             }
+            if applied.is_ok() && scheduled_ai::try_start(&app,&state,&model){continue;}
             let Some(session_id)=model.session_id else{continue};
             // Cursor pagination prevents >128 older pending events in
             // disabled chats from starving new opted-in conversations.
@@ -6811,6 +6813,46 @@ fn lu_control_reminder(app:AppHandle,state:State<'_,Arc<DesktopState>>,
     Ok(())
 }
 
+/// Explicit Tasks-form authority only. The frontend never supplies a model ID
+/// or a tool grant: consent binds the actual ready catalog selection.
+#[tauri::command]
+async fn lu_schedule_ai(app:AppHandle,state:State<'_,Arc<DesktopState>>,chat_id:String,prompt:String,delay_minutes:u32,repeat_minutes:Option<u32>)->Result<Option<String>,String>{
+    let owner=Arc::clone(state.inner());
+    tauri::async_runtime::spawn_blocking(move||{
+        let (chats,_)=owner.chats.list()?;
+        let chat=chats.into_iter().find(|c|c.chat_id==chat_id).ok_or("Choose a saved conversation")?;
+        let snapshot=owner.supervisor.status().map_err(|_|"Load a model first")?;
+        if snapshot.phase!=lu_core::inference_host::EnginePhase::Ready||snapshot.generation_id.is_some(){return Err("Load a model and wait until it is ready".into())}
+        let model=snapshot.model_ref.as_deref().ok_or("Load a model first")?;
+        let filename=owner.catalog.lock().map_err(|_|"Model unavailable")?.iter().find(|r|r.model_ref==model).map(|r|r.filename.clone()).ok_or("Model unavailable")?;
+        let delay=u64::from(delay_minutes)*60;let repeat=repeat_minutes.map(|r|u64::from(r)*60);
+        lu_core::native_background_scheduler::validate_ai_schedule(&prompt,model,delay,repeat).map_err(|_|"Use a short single-line task and a delay from one minute to one week")?;
+        let safe=|s:&str|s.chars().filter(|c|!c.is_control()&&!matches!(c,'\u{202a}'..='\u{202e}'|'\u{2066}'..='\u{2069}')).take(160).collect::<String>();
+        let disclosure=format!("Task: {prompt}\n\nConversation: {}\nModel: {}\nStart: {delay_minutes} minute(s) after approval. Repeat: {}.\n\nOnly runs while Lu is open and this model is loaded and idle. No chat history, tools, files or internet. Missed repeats are combined; interrupted attempts are never replayed. Each run is limited to 128 tokens and 35 seconds. Up to 32 attempts are retained per schedule. Cancel stops the current attempt and future runs; it may unload the model.",safe(&chat.title),safe(&filename),repeat_minutes.map_or("Once".into(),|r|format!("Every {r} minute(s)")));
+        if !app.dialog().message(disclosure).title("Lu — Approve scheduled AI task").buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom("Schedule task".into(),"Decline".into())).blocking_show(){return Ok(None)}
+        owner.chats.history_window(&chat_id,None,"older",1)?;
+        if !owner.supervisor.status().is_ok_and(|s|s==snapshot){return Err("The loaded model changed. Review again.".into())}
+        let id=next_id("ai-task-");owner.background_scheduler.create_ai_schedule(&id,&chat_id,&prompt,model,delay,repeat).map_err(|_|"Could not save task; check the schedule limit")?;
+        let _=app.emit("lu-scheduled-ai-changed",());Ok(Some(id))
+    }).await.map_err(|_|"Task approval unavailable")?
+}
+#[tauri::command]
+fn lu_ai_schedules(state:State<'_,Arc<DesktopState>>)->Result<Vec<lu_core::native_background_scheduler::AiSchedule>,String>{
+    let (chats,_)=state.chats.list()?;let ids=chats.into_iter().map(|c|c.chat_id).collect::<std::collections::HashSet<_>>();
+    Ok(state.background_scheduler.ai_schedules().map_err(|_|"Could not read scheduled tasks")?.into_iter().filter(|r|ids.contains(&r.workspace_id)).collect())
+}
+#[tauri::command]
+fn lu_ai_schedule_runs(state:State<'_,Arc<DesktopState>>,chat_id:String,schedule_id:String)->Result<Vec<lu_core::native_background_scheduler::AiRun>,String>{
+    state.chats.history_window(&chat_id,None,"older",1)?;
+    state.background_scheduler.ai_runs(&schedule_id,&chat_id).map_err(|_|"Could not read task results".into())
+}
+#[tauri::command]
+fn lu_control_ai_schedule(app:AppHandle,state:State<'_,Arc<DesktopState>>,chat_id:String,schedule_id:String,action:String)->Result<(),String>{
+    state.chats.history_window(&chat_id,None,"older",1)?;
+    state.background_scheduler.control_ai(&schedule_id,&chat_id,&action).map_err(|_|"The task changed or cannot be updated while running")?;
+    let _=app.emit("lu-scheduled-ai-changed",());Ok(())
+}
+
 /// Native file-picker admission. The model never selects the executable,
 /// file path or task ID, and the same Lu installation performs the scan as
 /// a separately supervised process without loading any AI model.
@@ -10340,6 +10382,10 @@ pub fn run() {
             lu_m3_link_applied_effect,
             lu_background_tasks,
             lu_scheduled_reminders,
+            lu_schedule_ai,
+            lu_ai_schedules,
+            lu_ai_schedule_runs,
+            lu_control_ai_schedule,
             lu_schedule_reminder,
             lu_control_reminder,
             lu_background_guardian_status,

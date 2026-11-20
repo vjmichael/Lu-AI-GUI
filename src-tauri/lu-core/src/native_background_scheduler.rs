@@ -19,6 +19,8 @@ use crate::{
 };
 
 mod reminders;
+mod scheduled_ai;
+pub use scheduled_ai::{AiSchedule,AiRun,validate_ai_schedule,MAX_SCHEDULE_OUTPUT};
 pub use reminders::{ReminderDraft, ReminderView, parse_reminder_request, validate_reminder};
 
 const MAX_QUEUE:usize=128;
@@ -453,6 +455,7 @@ impl BackgroundScheduler{
            );"
         ).map_err(db_error)?;
         reminders::initialize(&db)?;
+        scheduled_ai::initialize(&db)?;
         // A crash cannot restore lost in-memory executable/path authority.
         // The original TaskStore independently marks prior RUNNING as
         // INTERRUPTED; these queue rows are NOT replayed on startup.

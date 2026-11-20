@@ -26,6 +26,7 @@ import {SettingsWindow,ModelLibraryWindow} from './native_windows.jsx';
 import {isModelFreeSendQuestion} from './native_intent.mjs';
 import {TaskBoardWindow} from './task_board.jsx';
 import {ScheduledReminders,useScheduledReminders} from './scheduled_reminders.jsx';
+import {ScheduledAI} from './scheduled_ai.jsx';
 import {LU_TABS,HistoryTab,friendlyError,formatTaskState,taskName} from './unified_tabs.jsx';
 
 function MessageText({text, role='assistant'}) {
@@ -6838,8 +6839,8 @@ function App() {
     {visitedTabs.includes('settings')&&<section className="luTabPage" hidden={activeTab!=='settings'}><SettingsWindow onNavigate={openTab} active={activeTab==='settings'}/></section>}
     {visitedTabs.includes('models')&&<section className="luTabPage" hidden={activeTab!=='models'}><ModelLibraryWindow onNavigate={openTab} active={activeTab==='models'}/></section>}
     {visitedTabs.includes('tasks')&&<section className="luTabPage taskTabPage" hidden={activeTab!=='tasks'}>
-      <div className="taskTabNavigation"><button type="button" aria-pressed={taskView==='background'} onClick={()=>setTaskView('background')}>Background work</button><button type="button" aria-pressed={taskView==='projects'} onClick={()=>setTaskView('projects')}>Project plans</button><button type="button" aria-pressed={taskView==='reminders'} onClick={()=>setTaskView('reminders')}>Reminders{reminders.unread?' ('+reminders.unread+')':''}</button></div>
-      {taskView==='projects'?<TaskBoardWindow onNavigate={openTab}/>:taskView==='reminders'?<ScheduledReminders reminders={reminders} chats={chats} chatId={chatId} onOpenChat={openHistoryChat}/>:<section className="backgroundPane tabTasks" aria-label="Background Tasks">
+      <div className="taskTabNavigation"><button type="button" aria-pressed={taskView==='background'} onClick={()=>setTaskView('background')}>Background work</button><button type="button" aria-pressed={taskView==='projects'} onClick={()=>setTaskView('projects')}>Project plans</button><button type="button" aria-pressed={taskView==='reminders'} onClick={()=>setTaskView('reminders')}>Reminders{reminders.unread?' ('+reminders.unread+')':''}</button><button type="button" aria-pressed={taskView==='scheduledAI'} onClick={()=>setTaskView('scheduledAI')}>Scheduled AI tasks</button></div>
+      {taskView==='scheduledAI'?<ScheduledAI chats={chats} chatId={chatId} runtime={runtime} models={models} onOpenChat={openHistoryChat}/>:taskView==='projects'?<TaskBoardWindow onNavigate={openTab}/>:taskView==='reminders'?<ScheduledReminders reminders={reminders} chats={chats} chatId={chatId} onOpenChat={openHistoryChat}/>:<section className="backgroundPane tabTasks" aria-label="Background Tasks">
         <header className="backgroundPaneHeader">
           <div><h2>Background Tasks</h2><small>Manage running, queued and completed work.</small></div>
         </header>

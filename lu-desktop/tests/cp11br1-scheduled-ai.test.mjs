@@ -1,0 +1,11 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {readFileSync as read} from 'node:fs';
+const ui=read(new URL('../web/scheduled_ai.jsx',import.meta.url),'utf8');
+const host=read(new URL('../src-tauri/src/lib.rs',import.meta.url),'utf8');
+const runner=read(new URL('../src-tauri/src/scheduled_ai.rs',import.meta.url),'utf8');
+const scheduler=read(new URL('../../src-tauri/lu-core/src/native_background_scheduler/scheduled_ai.rs',import.meta.url),'utf8');
+test('Tasks form only, native full approval and unchanged ready model',()=>{assert.match(ui,/invoke\('lu_schedule_ai'/);assert.match(host,/Approve scheduled AI task/);assert.match(host,/s==snapshot/);assert.match(host,/No chat history, tools, files or internet/);assert.match(host,/lu_schedule_ai,/);});
+test('read-only result presentation and owner-scoped control',()=>{assert.match(ui,/\{run.output\}/);assert.doesNotMatch(ui,/dangerouslySetInnerHTML/);assert.match(ui,/chatId:openRow.workspaceId,scheduleId:openRow.id/);assert.match(ui,/chatId:row.workspaceId,scheduleId:row.id,action/);assert.match(ui,/Confirm task cancellation/);});
+test('scheduled work reuses idle-only queue admission and direct text inference, no tool dispatcher',()=>{assert.match(runner,/try_benchmark\(\)/);assert.match(runner,/lease.yield_requested\(\)/);assert.match(runner,/reserve_generation_with_history/);assert.match(runner,/run_reserved_with_history/);assert.doesNotMatch(runner,/generate_internal|tool_registry|tool_dispatch/);assert.match(host,/applied.is_ok\(\) && scheduled_ai::try_start/);});
+test('claimed occurrence is durably advanced and recovery never replays',()=>{assert.match(scheduler,/BEGIN IMMEDIATE/);assert.match(scheduler,/SET state='INTERRUPTED'/);assert.match(scheduler,/CREATE UNIQUE INDEX IF NOT EXISTS lu_ai_one_running/);assert.match(scheduler,/UPDATE lu_ai_schedules SET next_due=\?2,run_count=\?3/);});
