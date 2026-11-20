@@ -5,3 +5,5 @@ IDE-MERGE-05B-R4-R5: two observed installed acceptance failures; exact accessibi
 Prior exact SHA 6/8; repeat both existing matrices for unchanged-head acceptance, no new approval or release authority.
 
 IDE-MERGE-05B-R4-R6-R1: prior candidate f610f2227c27 exact-head 7/8 PASS (both technical installed LSP jobs PASS). Linux installed navigation remains the sole failure; verify exact selected saved tab via existing relative-path UI, await restore completion and retain independent source byte, split-save and restart assertions. Repeat both original grouped matrices; no protected provider execution, release or main merge authorization.
+
+IDE-MERGE-05B-R4-R6-R2: previous exact ea86a98a835c 7/8 PASS, Linux two-pane Save now passes then main.rs tab selection fails before draft/reference recovery. Wait for clean saved tab and directly select exact native existing tab; confirm selected state and unchanged source bytes. Retain original clipboard, undo, hard-kill restart, opt-in recovery and explicit Save assertions. Repeat existing two matrices together; no authority or release change.

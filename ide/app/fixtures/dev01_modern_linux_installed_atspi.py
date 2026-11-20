@@ -448,6 +448,64 @@ def open_exact_relative_fixture_file(filename):
         deny("relative_open_changed_fixture_source")
 
 
+def select_existing_saved_fixture_tab(filename):
+    # An already-open buffer must be selected via its actual native tab.
+    # Disk readback can precede React's Save receipt/clean-tab update.
+    if filename not in ('main.rs', 'second.rs'):
+        deny('invalid_existing_fixture_tab')
+    before = (digest(SOURCE), digest(SECOND))
+
+    def exact_saved_tab():
+        matches = []
+        for node in native._native_source_editor_nodes():
+            try:
+                if ((node.name or '').strip() == 'Saved source tab ' + filename
+                        and node.getRoleName().casefold() in ('tab', 'page tab')
+                        and node.getState().contains(pyatspi.STATE_VISIBLE)):
+                    matches.append(node)
+            except Exception:
+                continue
+        if len(matches) != 1:
+            return None
+        node = matches[0]
+        state = node.getState()
+        if not all(state.contains(flag) for flag in (
+                pyatspi.STATE_ENABLED, pyatspi.STATE_SENSITIVE)):
+            return None
+        return node
+
+    def select_once():
+        node = exact_saved_tab()
+        if node is None:
+            return False
+        state = node.getState()
+        if not state.contains(pyatspi.STATE_SHOWING):
+            try:
+                node.queryComponent().scrollTo(pyatspi.SCROLL_ANYWHERE)
+            except Exception:
+                pass
+            return False
+        if state.contains(pyatspi.STATE_SELECTED):
+            return True
+        action = node.queryAction()
+        choices = [index for index in range(action.nActions)
+                   if action.getName(index).casefold() in ('click', 'press', 'activate')]
+        if len(choices) != 1 or not action.doAction(choices[0]):
+            deny('existing_saved_tab_native_action_denied')
+        return True
+
+    wait_until(select_once, 'existing_saved_tab_not_ready_' + filename)
+
+    def selected():
+        node = exact_saved_tab()
+        return node is not None and all(node.getState().contains(flag) for flag in (
+            pyatspi.STATE_SHOWING, pyatspi.STATE_SELECTED))
+
+    wait_until(selected, 'existing_saved_tab_not_selected_' + filename)
+    if (digest(SOURCE), digest(SECOND)) != before:
+        deny('existing_tab_selection_changed_fixture_source')
+
+
 def modern_split_and_private_checkpoint(proc):
     main_before, second_before = digest(SOURCE), digest(SECOND)
     open_exact_relative_fixture_file("second.rs")
@@ -482,8 +540,10 @@ def modern_split_and_private_checkpoint(proc):
         deny("focused_save_changed_wrong_pane")
     print("DEV01_MODERN_LINUX_TWO_PANE_FOCUSED_SAVE=PASS", flush=True)
 
+    # Explicitly wait for the post-save primary buffer to be clean before navigating.
+    select_existing_saved_fixture_tab("second.rs")
     native.activate("Toggle split editor")
-    open_exact_relative_fixture_file("main.rs")
+    select_existing_saved_fixture_tab("main.rs")
     native.focus_editor()
     original = digest(SOURCE)
     native.key("ctrl+End")
@@ -555,7 +615,7 @@ def main():
     try:
         native.accessible(ROOT.name, seconds=22)
         native.editor_project()
-        native.activate_exact_source_file("main.rs")
+        select_existing_saved_fixture_tab("main.rs")
         native.accessible("Recover preserved draft", seconds=25)
         native.activate("Recover preserved draft")
         native.accessible("Recovered private checkpoint into unsaved editor only", seconds=20)
@@ -569,7 +629,7 @@ def main():
         native.activate("Save · Ctrl+S")
         wait_until(lambda: DRAFT in SOURCE.read_text(encoding="utf-8"),
                    "recovered_draft_explicit_save_missing")
-        native.accessible("Saved source tab main.rs", "tab", seconds=20)
+        select_existing_saved_fixture_tab("main.rs")
         native.focus_editor()
         native.key("ctrl+End")
         saved_ref = session_reference()

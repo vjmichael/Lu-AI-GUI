@@ -190,5 +190,111 @@ class RelativeFileOpenScopeTests(unittest.TestCase):
             self.exercise([], '../second.rs')
 
 
+class ExistingTabNode:
+    def __init__(self, name='Saved source tab main.rs', role='page tab',
+                 states=(1, 2, 3, 4), actions=('click',), succeeds=True,
+                 selects=True):
+        self.name, self.role, self.states, self.actions = name, role, set(states), actions
+        self.calls = self.scrolls = 0
+        self.succeeds, self.selects = succeeds, selects
+
+    def getRoleName(self):
+        return self.role
+
+    def getState(self):
+        return SimpleNamespace(contains=lambda flag: flag in self.states)
+
+    def queryComponent(self):
+        return SimpleNamespace(scrollTo=self.scroll)
+
+    def scroll(self, _):
+        self.scrolls += 1
+        self.states.add(2)
+        return True
+
+    def queryAction(self):
+        return SimpleNamespace(nActions=len(self.actions),
+                               getName=lambda n: self.actions[n], doAction=self.run)
+
+    def run(self, n):
+        self.calls += 1
+        if self.succeeds and self.selects:
+            self.states.add(5)
+        return self.succeeds
+
+
+class ExistingSavedFixtureTabTests(unittest.TestCase):
+    def exercise(self, nodes, filename='main.rs', changed=False):
+        flags = SimpleNamespace(STATE_VISIBLE=1, STATE_SHOWING=2, STATE_ENABLED=3,
+                                STATE_SENSITIVE=4, STATE_SELECTED=5, SCROLL_ANYWHERE=0)
+        values = iter(('m', 's', 'm', 'changed' if changed else 's'))
+
+        def deny(reason):
+            raise RuntimeError(reason)
+
+        def wait(pred, reason):
+            for _ in range(5):
+                if pred():
+                    return
+            deny(reason)
+
+        module = ast.parse(SOURCE.read_text(encoding='utf-8'))
+        module.body = [node for node in module.body if isinstance(node, ast.FunctionDef)
+                       and node.name == 'select_existing_saved_fixture_tab']
+        self.assertEqual(len(module.body), 1)
+        ns = dict(native=SimpleNamespace(_native_source_editor_nodes=lambda: iter(nodes)),
+                  pyatspi=flags, SOURCE='m', SECOND='s', digest=lambda _: next(values),
+                  deny=deny, wait_until=wait)
+        exec(compile(module, str(SOURCE), 'exec'), ns)
+        ns['select_existing_saved_fixture_tab'](filename)
+
+    def test_direct_action(self):
+        n = ExistingTabNode()
+        self.exercise([n])
+        self.assertEqual(n.calls, 1)
+
+    def test_selected_no_second_action(self):
+        n = ExistingTabNode(states=(1, 2, 3, 4, 5))
+        self.exercise([n])
+        self.assertEqual(n.calls, 0)
+
+    def test_offscreen_revealed(self):
+        n = ExistingTabNode(states=(1, 3, 4))
+        self.exercise([n])
+        self.assertEqual((n.scrolls, n.calls), (1, 1))
+
+    def test_duplicate_and_wrong_controls_denied(self):
+        n = ExistingTabNode()
+        wrong = ExistingTabNode(name='Saved source tab not-main.rs')
+        wrongrole = ExistingTabNode(role='push button')
+        dirty = ExistingTabNode(name='Unsaved source tab main.rs')
+        disabled = ExistingTabNode(states=(1, 2, 3))
+        hidden = ExistingTabNode(states=(2, 3, 4))
+        for nodes in ([], [n, n], [wrong], [wrongrole], [dirty], [disabled], [hidden]):
+            with self.subTest(nodes=nodes), self.assertRaisesRegex(RuntimeError, 'not_ready'):
+                self.exercise(nodes)
+        self.assertEqual(n.calls, 0)
+
+    def test_bad_actions_denied(self):
+        for n in (ExistingTabNode(actions=()), ExistingTabNode(actions=('click', 'press')),
+                  ExistingTabNode(succeeds=False)):
+            with self.subTest(n=n), self.assertRaisesRegex(RuntimeError, 'action_denied'):
+                self.exercise([n])
+
+    def test_unselected_after_action_denied(self):
+        n = ExistingTabNode(selects=False)
+        with self.assertRaisesRegex(RuntimeError, 'not_selected'):
+            self.exercise([n])
+        self.assertEqual(n.calls, 1)
+
+    def test_disk_change_denied(self):
+        with self.assertRaisesRegex(RuntimeError, 'changed_fixture_source'):
+            self.exercise([ExistingTabNode()], changed=True)
+
+    def test_foreign_path_denied(self):
+        with self.assertRaisesRegex(RuntimeError, 'invalid_existing'):
+            self.exercise([], filename='../main.rs')
+
+
 if __name__ == '__main__':
     unittest.main()
