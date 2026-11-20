@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "c9424c994f6bfc178a9a2633b0228b83f8738136",
-  "trackedFileCount": 1262,
+  "sourceCommitBeforeLock": "2e0ed022d03bacae73a669e362c41f72a5c1d145",
+  "trackedFileCount": 1263,
   "files": [
     {
       "path": ".gitattributes",
@@ -133,7 +133,7 @@
     },
     {
       "path": ".github/workflows/lu-cp12br7r1-windows-collaboration.yml",
-      "blob": "970b51057c6e7b66b0b7691e7cf5e9ba3b718dec"
+      "blob": "96228c4d18ff3162c06ed3bd1df2a6f7ae32404c"
     },
     {
       "path": ".github/workflows/lu-dev-offline-cache.yml",
@@ -940,6 +940,10 @@
       "blob": "4aa92d9d4c420482be43ed059ae6b0e7642b2680"
     },
     {
+      "path": "docs/LU_CP12B_R7_CP10_NATIVE_REQUALIFICATION_20261120.md",
+      "blob": "371fa7cb3b6333862e84a131c62172be17fc9c0c"
+    },
+    {
       "path": "docs/LU_CP12B_R7_R1_WINDOWS_CI_PREFLIGHT_20261120.md",
       "blob": "25ce14de15cda3ab4d05d004efd76df498192420"
     },
@@ -961,7 +965,7 @@
     },
     {
       "path": "docs/LU_DEVELOPMENT_LEDGER.md",
-      "blob": "15e6a438778c676edec1bc75356074f100e2a4be"
+      "blob": "965f0af5fa3cc3af7642508b2a904f5ff54ae6cc"
     },
     {
       "path": "docs/LU_E1_NATIVE_EVIDENCE_20261107.md",
@@ -2281,7 +2285,7 @@
     },
     {
       "path": "lu-desktop/tests/cp12br7r1-gh-ci-contract.test.mjs",
-      "blob": "8533fa53183b62a2dbf1e24480520fad1b82bd32"
+      "blob": "07922c07eb587118a3800e6b33f8e8c9b90de14f"
     },
     {
       "path": "lu-desktop/tests/cp12br7r1-physical-acceptance-contract.test.mjs",
