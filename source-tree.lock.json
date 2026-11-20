@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "sourceCommitBeforeLock": "db033cd05ce41757d5fdc17db42c4f9ed6dcb6b2",
-  "trackedFileCount": 1219,
+  "trackedFileCount": 1220,
   "files": [
     {
       "path": ".gitattributes",
@@ -917,7 +917,7 @@
     },
     {
       "path": "docs/LU_DEVELOPMENT_LEDGER.md",
-      "blob": "7cb3479c322520c872dc83b27a479335d7b68c90"
+      "blob": "3615bba4469b79a2c5b1dfb2ffd8dd7edf068294"
     },
     {
       "path": "docs/LU_E1_NATIVE_EVIDENCE_20261107.md",
@@ -2810,6 +2810,10 @@
     {
       "path": "scripts/cp12ar1-native-diagnostics-gui.py",
       "blob": "ea8065b0127fe56acfc4979fcb0cb3cd0ba75575"
+    },
+    {
+      "path": "scripts/cp12ar2-scheduled-diagnostics-gui.py",
+      "blob": "aef32851a968f368216883bb8c8e79c774c98038"
     },
     {
       "path": "scripts/install-lu-agent01l-native-fixture.sh",
