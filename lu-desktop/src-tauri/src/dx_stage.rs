@@ -102,5 +102,28 @@ mod tests {
             assert_eq!(ReviewedStages::checked(s.clone(),e.clone(),word).unwrap().verdict,code);
             assert!(!e.prompt(&s).is_empty());assert!(ReviewedStages::checked(s.clone(),e,"UNKNOWN_STAGE").is_none()); }
     }
+    #[test]
+    fn cp12br5r1_frozen_classification_cases_match_native_oracle() {
+        let rows: serde_json::Value = serde_json::from_str(include_str!("../../../scripts/cp12br5r1-stage-cases.json")).unwrap();
+        let cases = rows.as_array().unwrap();
+        assert_eq!(cases.len(),18);
+        assert_eq!(cases.iter().filter(|r|r["phase"]=="holdout").count(),12);
+        for row in cases {
+            let n = |v:&serde_json::Value,k:&str| u32::try_from(v[k].as_u64().unwrap()).unwrap();
+            let v=&row["summary"];
+            let summary=Summary{complete:n(v,"complete"),observed_failure:n(v,"observed_failure"),bounded:n(v,"bounded"),incomplete:n(v,"incomplete"),unavailable:n(v,"unavailable")};
+            let evidence=StageEvidence{stages:row["stages"].as_array().unwrap().iter().map(|v|StageCount{stage:n(v,"stage"),observed:n(v,"observed"),bounded:n(v,"bounded")}).collect()};
+            let expected=row["expected"].as_str().unwrap();
+            assert!(evidence.valid(&summary),"{}",row["name"]);
+            assert_eq!(evidence.prompt(&summary),row["baseline_prompt"].as_str().unwrap(),"{}",row["name"]);
+            assert!(ReviewedStages::checked(summary.clone(),evidence.clone(),expected).is_some(),"{}",row["name"]);
+            for candidate in (1..=25).chain(101..=104).map(|i|label(i).unwrap()) {
+                assert_eq!(ReviewedStages::checked(summary.clone(),evidence.clone(),candidate).is_some(),candidate==expected,"{} / {candidate}",row["name"]);
+            }
+            for invalid in ["", "UNKNOWN_STAGE", "COPY_NAME", "UNCERTAIN because of missing records"] {
+                assert!(ReviewedStages::checked(summary.clone(),evidence.clone(),invalid).is_none(),"{}",row["name"]);
+            }
+        }
+    }
     #[test]fn malformed_and_inconsistent_evidence_refused(){let s=summary();let mut e=evidence();e.stages[0].observed=2;assert!(!e.valid(&s));e=evidence();e.stages.push(e.stages[0].clone());assert!(!e.valid(&s));e=evidence();e.stages[0].stage=27;assert!(!e.valid(&s));e=evidence();e.stages[0].observed=u32::MAX;assert!(!e.valid(&s));e=evidence();e.stages[0].observed=0;assert!(!e.valid(&s));}
 }

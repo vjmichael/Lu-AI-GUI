@@ -1,0 +1,24 @@
+# CP-12B-R5-R1 — Stage model qualification and uncertainty
+
+**2026-11-20 UTC — PARTIAL / positive installed fault review OPEN.** No production application behavior, protocol, verifier, privacy or consent changes. The R5 installed candidate remains `cfadeb517baf67a80f991d17c8079d0e727ad539`; restored ledger base `03b9385cf13b54729c8e48f1daaa2bb328dd44bc`. All 1,247 original source entries and all five recorded artifact checksums passed. Eight installed CPU runtime files verified against existing pins. Both retained GGUF hashes verified before use.
+
+## Measurements (standalone local inference, not installed acceptance)
+
+Frozen 18 independently labelled synthetic cases: six development and twelve separate holdout cases. Case summaries cover unique stage, observed stop/failure, bounded/unconfirmed, missing/unavailable, unknown checkpoint, multiple stages, confirmed and empty. The native regression checks exact production prompt text against each frozen baseline prompt, checks the independent reference label, rejects all 28 other valid labels, and rejects selected invalid responses. The 12 holdout cases include six uniquely localizable stages, three uncertain, two multiple and one confirmed. The previous installed R5 genuine permission refusal remains a separately witnessed, failed positive-model result; no injection of synthetic records into installed application stores.
+
+Each model ran in an independent ordinary-user, CPU-only llama-server process using the existing hash-pinned runtime and authenticated loopback service. Single-worker runs were sequential to fit the 4 GiB cgroup limit. Chat requests used fresh empty history, no tools, prompt cache disabled, greedy sampling, 64 visible-token budget; baseline uses the original model-facing production prompt and ordinary chat settings. Alternate prompts are laboratory candidates only. Exact case-sensitive, trimmed visible labels were scored, not hidden reasoning, substrings or fuzzy matching. All 84 requests completed with terminal stop; 22/84 exact overall, across different prompts and case sets (not a single accuracy measure).
+
+| Model | Holdout prompt | Exact | Unique stage | Correct uncertainty |
+|---|---|---:|---:|---:|
+| Qwen3 0.6B Q4_K_M | R5 baseline | 2/12 | 0/6 | 2/3 |
+| Qwen3 0.6B Q4_K_M | Explicit choices + examples | 1/12 | 0/6 | 1/3 |
+| Qwen2.5 1.5B Instruct Q4_K_M | R5 baseline | 3/12 | 0/6 | 3/3 |
+| Qwen2.5 1.5B Instruct Q4_K_M | Explicit choices + examples | 3/12 | 0/6 | 2/3 |
+
+Baseline: 5/24 exact across both workers, 5/6 exact uncertainty and 0/12 specific localization. Alternate: 4/24 exact, 3/6 exact uncertainty and 0/12 localization. 1.5B baseline over-abstained on all nine non-uncertain holdout cases; 0.6B also returned invalid punctuation in several cases. Development lean and thinking-disabled variants did not improve localization. No prompt promoted; no relaxed validation, fallback answer publication, label coercion or fabricated confidence probability. These small synthetic samples test abstention correctness only, not statistical calibration, source integrity of another machine, or independent root-cause observation. The two models do not see each other's answers; this is separate standalone inference, not successful v3 exchange.
+
+## Verification and handoff
+
+Native desktop locked compilation and all 477 tests passed, 23 ignored (including the new 18-case matrix). Initial name filter selected zero tests; corrected exact name selected one and passed, and full suite executed. Core, frontend, Windows and installed application acceptance not rerun; no production source modified. Benchmark and fixture are retained as `scripts/cp12br5r1-stage-qualification.py` and `scripts/cp12br5r1-stage-cases.json`; evidence archive contains terminal results, not raw account data or runtime logs containing transient endpoint details.
+
+No larger GGUF available in inspected shared test model/runtime and root archives. Direct ordinary Hugging Face DNS failed; no alternate route or dependency version change attempted. Need an already acquired, hash-verified more capable instruct GGUF on a host with adequate RAM. Run the frozen holdout baseline on that model first, then separate unseen cases if tuning any prompt; use the original installed v3 fixture `scripts/cp12br5-stage-review-gui.py` with explicit model SHA for genuine permission refusal, independent sender/receiver workers, two native consents, verified result and replay denial. Additional genuine model/protocol failure, incomplete/multiple evidence and v3 lifecycle tests remain open. A standalone score is never installed acceptance. Prefer a model with enough capacity for the actual task, within host constraints; do not implicitly download or load one. Windows v2/v3 remains disabled and physical acceptance separate. No release, source publication, CI dispatch or merge.

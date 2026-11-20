@@ -1,0 +1,352 @@
+[
+  {
+    "phase": "development",
+    "name": "refusal",
+    "summary": {
+      "complete": 1,
+      "observed_failure": 1,
+      "bounded": 0,
+      "incomplete": 0,
+      "unavailable": 0
+    },
+    "stages": [
+      {
+        "stage": 20,
+        "observed": 1,
+        "bounded": 0
+      }
+    ],
+    "expected": "REFUSED",
+    "baseline_prompt": "Read the diagnostic facts. Answer with one label only.\nMissing or uncertain records: 0\nSuccessful deliveries: 1\nNumber of affected steps: 1\nAffected steps:\nREFUSED: 1 observed stops/failures, 0 unconfirmed\n\nRules in order:\n1. If missing or uncertain records is greater than zero, or a step is UNKNOWN_STAGE, answer UNCERTAIN.\n2. If number of affected steps is greater than one, answer MULTIPLE.\n3. If number of affected steps is one, copy the label before the colon on its line.\n4. If number of affected steps is zero and successful deliveries is greater than zero, answer DELIVERED.\n5. Otherwise answer EMPTY.\nWrite only the label. /no_think"
+  },
+  {
+    "phase": "development",
+    "name": "delivery",
+    "summary": {
+      "complete": 2,
+      "observed_failure": 0,
+      "bounded": 0,
+      "incomplete": 0,
+      "unavailable": 0
+    },
+    "stages": [],
+    "expected": "DELIVERED",
+    "baseline_prompt": "Read the diagnostic facts. Answer with one label only.\nMissing or uncertain records: 0\nSuccessful deliveries: 2\nNumber of affected steps: 0\nAffected steps:\n\n\nRules in order:\n1. If missing or uncertain records is greater than zero, or a step is UNKNOWN_STAGE, answer UNCERTAIN.\n2. If number of affected steps is greater than one, answer MULTIPLE.\n3. If number of affected steps is one, copy the label before the colon on its line.\n4. If number of affected steps is zero and successful deliveries is greater than zero, answer DELIVERED.\n5. Otherwise answer EMPTY.\nWrite only the label. /no_think"
+  },
+  {
+    "phase": "development",
+    "name": "missing",
+    "summary": {
+      "complete": 0,
+      "observed_failure": 0,
+      "bounded": 0,
+      "incomplete": 1,
+      "unavailable": 0
+    },
+    "stages": [],
+    "expected": "UNCERTAIN",
+    "baseline_prompt": "Read the diagnostic facts. Answer with one label only.\nMissing or uncertain records: 1\nSuccessful deliveries: 0\nNumber of affected steps: 0\nAffected steps:\n\n\nRules in order:\n1. If missing or uncertain records is greater than zero, or a step is UNKNOWN_STAGE, answer UNCERTAIN.\n2. If number of affected steps is greater than one, answer MULTIPLE.\n3. If number of affected steps is one, copy the label before the colon on its line.\n4. If number of affected steps is zero and successful deliveries is greater than zero, answer DELIVERED.\n5. Otherwise answer EMPTY.\nWrite only the label. /no_think"
+  },
+  {
+    "phase": "development",
+    "name": "two-stages",
+    "summary": {
+      "complete": 1,
+      "observed_failure": 1,
+      "bounded": 1,
+      "incomplete": 0,
+      "unavailable": 0
+    },
+    "stages": [
+      {
+        "stage": 8,
+        "observed": 1,
+        "bounded": 0
+      },
+      {
+        "stage": 14,
+        "observed": 0,
+        "bounded": 1
+      }
+    ],
+    "expected": "MULTIPLE",
+    "baseline_prompt": "Read the diagnostic facts. Answer with one label only.\nMissing or uncertain records: 0\nSuccessful deliveries: 1\nNumber of affected steps: 2\nAffected steps:\nMODEL_START: 1 observed stops/failures, 0 unconfirmed\nTOOL_START: 0 observed stops/failures, 1 unconfirmed\n\nRules in order:\n1. If missing or uncertain records is greater than zero, or a step is UNKNOWN_STAGE, answer UNCERTAIN.\n2. If number of affected steps is greater than one, answer MULTIPLE.\n3. If number of affected steps is one, copy the label before the colon on its line.\n4. If number of affected steps is zero and successful deliveries is greater than zero, answer DELIVERED.\n5. Otherwise answer EMPTY.\nWrite only the label. /no_think"
+  },
+  {
+    "phase": "development",
+    "name": "empty",
+    "summary": {
+      "complete": 0,
+      "observed_failure": 0,
+      "bounded": 0,
+      "incomplete": 0,
+      "unavailable": 0
+    },
+    "stages": [],
+    "expected": "EMPTY",
+    "baseline_prompt": "Read the diagnostic facts. Answer with one label only.\nMissing or uncertain records: 0\nSuccessful deliveries: 0\nNumber of affected steps: 0\nAffected steps:\n\n\nRules in order:\n1. If missing or uncertain records is greater than zero, or a step is UNKNOWN_STAGE, answer UNCERTAIN.\n2. If number of affected steps is greater than one, answer MULTIPLE.\n3. If number of affected steps is one, copy the label before the colon on its line.\n4. If number of affected steps is zero and successful deliveries is greater than zero, answer DELIVERED.\n5. Otherwise answer EMPTY.\nWrite only the label. /no_think"
+  },
+  {
+    "phase": "development",
+    "name": "unknown-stage",
+    "summary": {
+      "complete": 0,
+      "observed_failure": 0,
+      "bounded": 1,
+      "incomplete": 0,
+      "unavailable": 0
+    },
+    "stages": [
+      {
+        "stage": 26,
+        "observed": 0,
+        "bounded": 1
+      }
+    ],
+    "expected": "UNCERTAIN",
+    "baseline_prompt": "Read the diagnostic facts. Answer with one label only.\nMissing or uncertain records: 0\nSuccessful deliveries: 0\nNumber of affected steps: 1\nAffected steps:\nUNKNOWN_STAGE: 0 observed stops/failures, 1 unconfirmed\n\nRules in order:\n1. If missing or uncertain records is greater than zero, or a step is UNKNOWN_STAGE, answer UNCERTAIN.\n2. If number of affected steps is greater than one, answer MULTIPLE.\n3. If number of affected steps is one, copy the label before the colon on its line.\n4. If number of affected steps is zero and successful deliveries is greater than zero, answer DELIVERED.\n5. Otherwise answer EMPTY.\nWrite only the label. /no_think"
+  },
+  {
+    "phase": "holdout",
+    "name": "model-return",
+    "summary": {
+      "complete": 2,
+      "observed_failure": 2,
+      "bounded": 0,
+      "incomplete": 0,
+      "unavailable": 0
+    },
+    "stages": [
+      {
+        "stage": 9,
+        "observed": 2,
+        "bounded": 0
+      }
+    ],
+    "expected": "MODEL_RETURN",
+    "baseline_prompt": "Read the diagnostic facts. Answer with one label only.\nMissing or uncertain records: 0\nSuccessful deliveries: 2\nNumber of affected steps: 1\nAffected steps:\nMODEL_RETURN: 2 observed stops/failures, 0 unconfirmed\n\nRules in order:\n1. If missing or uncertain records is greater than zero, or a step is UNKNOWN_STAGE, answer UNCERTAIN.\n2. If number of affected steps is greater than one, answer MULTIPLE.\n3. If number of affected steps is one, copy the label before the colon on its line.\n4. If number of affected steps is zero and successful deliveries is greater than zero, answer DELIVERED.\n5. Otherwise answer EMPTY.\nWrite only the label. /no_think"
+  },
+  {
+    "phase": "holdout",
+    "name": "tool-return",
+    "summary": {
+      "complete": 0,
+      "observed_failure": 0,
+      "bounded": 3,
+      "incomplete": 0,
+      "unavailable": 0
+    },
+    "stages": [
+      {
+        "stage": 15,
+        "observed": 0,
+        "bounded": 3
+      }
+    ],
+    "expected": "TOOL_RETURN",
+    "baseline_prompt": "Read the diagnostic facts. Answer with one label only.\nMissing or uncertain records: 0\nSuccessful deliveries: 0\nNumber of affected steps: 1\nAffected steps:\nTOOL_RETURN: 0 observed stops/failures, 3 unconfirmed\n\nRules in order:\n1. If missing or uncertain records is greater than zero, or a step is UNKNOWN_STAGE, answer UNCERTAIN.\n2. If number of affected steps is greater than one, answer MULTIPLE.\n3. If number of affected steps is one, copy the label before the colon on its line.\n4. If number of affected steps is zero and successful deliveries is greater than zero, answer DELIVERED.\n5. Otherwise answer EMPTY.\nWrite only the label. /no_think"
+  },
+  {
+    "phase": "holdout",
+    "name": "native-failure",
+    "summary": {
+      "complete": 1,
+      "observed_failure": 1,
+      "bounded": 0,
+      "incomplete": 0,
+      "unavailable": 0
+    },
+    "stages": [
+      {
+        "stage": 21,
+        "observed": 1,
+        "bounded": 0
+      }
+    ],
+    "expected": "NATIVE_FAILURE",
+    "baseline_prompt": "Read the diagnostic facts. Answer with one label only.\nMissing or uncertain records: 0\nSuccessful deliveries: 1\nNumber of affected steps: 1\nAffected steps:\nNATIVE_FAILURE: 1 observed stops/failures, 0 unconfirmed\n\nRules in order:\n1. If missing or uncertain records is greater than zero, or a step is UNKNOWN_STAGE, answer UNCERTAIN.\n2. If number of affected steps is greater than one, answer MULTIPLE.\n3. If number of affected steps is one, copy the label before the colon on its line.\n4. If number of affected steps is zero and successful deliveries is greater than zero, answer DELIVERED.\n5. Otherwise answer EMPTY.\nWrite only the label. /no_think"
+  },
+  {
+    "phase": "holdout",
+    "name": "recovery",
+    "summary": {
+      "complete": 0,
+      "observed_failure": 1,
+      "bounded": 1,
+      "incomplete": 0,
+      "unavailable": 0
+    },
+    "stages": [
+      {
+        "stage": 18,
+        "observed": 1,
+        "bounded": 1
+      }
+    ],
+    "expected": "RECOVERY",
+    "baseline_prompt": "Read the diagnostic facts. Answer with one label only.\nMissing or uncertain records: 0\nSuccessful deliveries: 0\nNumber of affected steps: 1\nAffected steps:\nRECOVERY: 1 observed stops/failures, 1 unconfirmed\n\nRules in order:\n1. If missing or uncertain records is greater than zero, or a step is UNKNOWN_STAGE, answer UNCERTAIN.\n2. If number of affected steps is greater than one, answer MULTIPLE.\n3. If number of affected steps is one, copy the label before the colon on its line.\n4. If number of affected steps is zero and successful deliveries is greater than zero, answer DELIVERED.\n5. Otherwise answer EMPTY.\nWrite only the label. /no_think"
+  },
+  {
+    "phase": "holdout",
+    "name": "missing-overrides",
+    "summary": {
+      "complete": 1,
+      "observed_failure": 1,
+      "bounded": 0,
+      "incomplete": 2,
+      "unavailable": 0
+    },
+    "stages": [
+      {
+        "stage": 20,
+        "observed": 1,
+        "bounded": 0
+      }
+    ],
+    "expected": "UNCERTAIN",
+    "baseline_prompt": "Read the diagnostic facts. Answer with one label only.\nMissing or uncertain records: 2\nSuccessful deliveries: 1\nNumber of affected steps: 1\nAffected steps:\nREFUSED: 1 observed stops/failures, 0 unconfirmed\n\nRules in order:\n1. If missing or uncertain records is greater than zero, or a step is UNKNOWN_STAGE, answer UNCERTAIN.\n2. If number of affected steps is greater than one, answer MULTIPLE.\n3. If number of affected steps is one, copy the label before the colon on its line.\n4. If number of affected steps is zero and successful deliveries is greater than zero, answer DELIVERED.\n5. Otherwise answer EMPTY.\nWrite only the label. /no_think"
+  },
+  {
+    "phase": "holdout",
+    "name": "unknown-overrides-multiple",
+    "summary": {
+      "complete": 1,
+      "observed_failure": 1,
+      "bounded": 1,
+      "incomplete": 0,
+      "unavailable": 0
+    },
+    "stages": [
+      {
+        "stage": 4,
+        "observed": 1,
+        "bounded": 0
+      },
+      {
+        "stage": 26,
+        "observed": 0,
+        "bounded": 1
+      }
+    ],
+    "expected": "UNCERTAIN",
+    "baseline_prompt": "Read the diagnostic facts. Answer with one label only.\nMissing or uncertain records: 0\nSuccessful deliveries: 1\nNumber of affected steps: 2\nAffected steps:\nRECEIVE: 1 observed stops/failures, 0 unconfirmed\nUNKNOWN_STAGE: 0 observed stops/failures, 1 unconfirmed\n\nRules in order:\n1. If missing or uncertain records is greater than zero, or a step is UNKNOWN_STAGE, answer UNCERTAIN.\n2. If number of affected steps is greater than one, answer MULTIPLE.\n3. If number of affected steps is one, copy the label before the colon on its line.\n4. If number of affected steps is zero and successful deliveries is greater than zero, answer DELIVERED.\n5. Otherwise answer EMPTY.\nWrite only the label. /no_think"
+  },
+  {
+    "phase": "holdout",
+    "name": "two-observed",
+    "summary": {
+      "complete": 0,
+      "observed_failure": 3,
+      "bounded": 0,
+      "incomplete": 0,
+      "unavailable": 0
+    },
+    "stages": [
+      {
+        "stage": 6,
+        "observed": 1,
+        "bounded": 0
+      },
+      {
+        "stage": 21,
+        "observed": 2,
+        "bounded": 0
+      }
+    ],
+    "expected": "MULTIPLE",
+    "baseline_prompt": "Read the diagnostic facts. Answer with one label only.\nMissing or uncertain records: 0\nSuccessful deliveries: 0\nNumber of affected steps: 2\nAffected steps:\nPERMISSION: 1 observed stops/failures, 0 unconfirmed\nNATIVE_FAILURE: 2 observed stops/failures, 0 unconfirmed\n\nRules in order:\n1. If missing or uncertain records is greater than zero, or a step is UNKNOWN_STAGE, answer UNCERTAIN.\n2. If number of affected steps is greater than one, answer MULTIPLE.\n3. If number of affected steps is one, copy the label before the colon on its line.\n4. If number of affected steps is zero and successful deliveries is greater than zero, answer DELIVERED.\n5. Otherwise answer EMPTY.\nWrite only the label. /no_think"
+  },
+  {
+    "phase": "holdout",
+    "name": "two-bounded",
+    "summary": {
+      "complete": 4,
+      "observed_failure": 0,
+      "bounded": 3,
+      "incomplete": 0,
+      "unavailable": 0
+    },
+    "stages": [
+      {
+        "stage": 3,
+        "observed": 0,
+        "bounded": 2
+      },
+      {
+        "stage": 13,
+        "observed": 0,
+        "bounded": 1
+      }
+    ],
+    "expected": "MULTIPLE",
+    "baseline_prompt": "Read the diagnostic facts. Answer with one label only.\nMissing or uncertain records: 0\nSuccessful deliveries: 4\nNumber of affected steps: 2\nAffected steps:\nSEND: 0 observed stops/failures, 2 unconfirmed\nDISPLAY: 0 observed stops/failures, 1 unconfirmed\n\nRules in order:\n1. If missing or uncertain records is greater than zero, or a step is UNKNOWN_STAGE, answer UNCERTAIN.\n2. If number of affected steps is greater than one, answer MULTIPLE.\n3. If number of affected steps is one, copy the label before the colon on its line.\n4. If number of affected steps is zero and successful deliveries is greater than zero, answer DELIVERED.\n5. Otherwise answer EMPTY.\nWrite only the label. /no_think"
+  },
+  {
+    "phase": "holdout",
+    "name": "confirmed-large",
+    "summary": {
+      "complete": 64,
+      "observed_failure": 0,
+      "bounded": 0,
+      "incomplete": 0,
+      "unavailable": 0
+    },
+    "stages": [],
+    "expected": "DELIVERED",
+    "baseline_prompt": "Read the diagnostic facts. Answer with one label only.\nMissing or uncertain records: 0\nSuccessful deliveries: 64\nNumber of affected steps: 0\nAffected steps:\n\n\nRules in order:\n1. If missing or uncertain records is greater than zero, or a step is UNKNOWN_STAGE, answer UNCERTAIN.\n2. If number of affected steps is greater than one, answer MULTIPLE.\n3. If number of affected steps is one, copy the label before the colon on its line.\n4. If number of affected steps is zero and successful deliveries is greater than zero, answer DELIVERED.\n5. Otherwise answer EMPTY.\nWrite only the label. /no_think"
+  },
+  {
+    "phase": "holdout",
+    "name": "all-missing",
+    "summary": {
+      "complete": 0,
+      "observed_failure": 0,
+      "bounded": 0,
+      "incomplete": 0,
+      "unavailable": 64
+    },
+    "stages": [],
+    "expected": "UNCERTAIN",
+    "baseline_prompt": "Read the diagnostic facts. Answer with one label only.\nMissing or uncertain records: 64\nSuccessful deliveries: 0\nNumber of affected steps: 0\nAffected steps:\n\n\nRules in order:\n1. If missing or uncertain records is greater than zero, or a step is UNKNOWN_STAGE, answer UNCERTAIN.\n2. If number of affected steps is greater than one, answer MULTIPLE.\n3. If number of affected steps is one, copy the label before the colon on its line.\n4. If number of affected steps is zero and successful deliveries is greater than zero, answer DELIVERED.\n5. Otherwise answer EMPTY.\nWrite only the label. /no_think"
+  },
+  {
+    "phase": "holdout",
+    "name": "only-submit",
+    "summary": {
+      "complete": 0,
+      "observed_failure": 1,
+      "bounded": 0,
+      "incomplete": 0,
+      "unavailable": 0
+    },
+    "stages": [
+      {
+        "stage": 1,
+        "observed": 1,
+        "bounded": 0
+      }
+    ],
+    "expected": "SUBMIT",
+    "baseline_prompt": "Read the diagnostic facts. Answer with one label only.\nMissing or uncertain records: 0\nSuccessful deliveries: 0\nNumber of affected steps: 1\nAffected steps:\nSUBMIT: 1 observed stops/failures, 0 unconfirmed\n\nRules in order:\n1. If missing or uncertain records is greater than zero, or a step is UNKNOWN_STAGE, answer UNCERTAIN.\n2. If number of affected steps is greater than one, answer MULTIPLE.\n3. If number of affected steps is one, copy the label before the colon on its line.\n4. If number of affected steps is zero and successful deliveries is greater than zero, answer DELIVERED.\n5. Otherwise answer EMPTY.\nWrite only the label. /no_think"
+  },
+  {
+    "phase": "holdout",
+    "name": "worker-exit",
+    "summary": {
+      "complete": 2,
+      "observed_failure": 1,
+      "bounded": 0,
+      "incomplete": 0,
+      "unavailable": 0
+    },
+    "stages": [
+      {
+        "stage": 17,
+        "observed": 1,
+        "bounded": 0
+      }
+    ],
+    "expected": "WORKER_EXIT",
+    "baseline_prompt": "Read the diagnostic facts. Answer with one label only.\nMissing or uncertain records: 0\nSuccessful deliveries: 2\nNumber of affected steps: 1\nAffected steps:\nWORKER_EXIT: 1 observed stops/failures, 0 unconfirmed\n\nRules in order:\n1. If missing or uncertain records is greater than zero, or a step is UNKNOWN_STAGE, answer UNCERTAIN.\n2. If number of affected steps is greater than one, answer MULTIPLE.\n3. If number of affected steps is one, copy the label before the colon on its line.\n4. If number of affected steps is zero and successful deliveries is greater than zero, answer DELIVERED.\n5. Otherwise answer EMPTY.\nWrite only the label. /no_think"
+  }
+]
