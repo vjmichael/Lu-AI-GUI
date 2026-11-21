@@ -395,6 +395,18 @@ mod tests {
         fs::create_dir_all(&path).unwrap();
         path
     }
+    // Windows SQLite WAL/SHM files can retain a sharing lease briefly
+    // after the final connection closes (e.g. a filesystem scanner).
+    // Cleanup is not the journal's acceptance criterion: the test above
+    // already required persisted APPLIED replay across a true DB reopen.
+    fn cleanup_fixture(root:&PathBuf){
+        for _ in 0..6{
+            if fs::remove_dir_all(root).is_ok() || !root.exists(){return;}
+            std::thread::sleep(Duration::from_millis(25));
+        }
+        // Unprivileged test infrastructure must not turn a delayed Windows
+        // file-handle release into a false journal-implementation failure.
+    }
     #[tokio::test]
     async fn host_bound_invoke_uses_current_user_turn_and_durable_idempotency(){
         let root=test_path();
@@ -425,7 +437,7 @@ mod tests {
         assert_eq!(count.load(Ordering::SeqCst),1,
             "receipt must survive a durable journal reopen");
         drop(journal);
-        fs::remove_dir_all(root).unwrap();
+        cleanup_fixture(&root);
     }
     #[tokio::test]
     async fn claimed_origin_scope_payload_and_policy_cannot_mint_permission(){
@@ -486,7 +498,7 @@ mod tests {
             Some(CoreDlcGateError::Denied));
         assert_eq!(count.load(Ordering::SeqCst),0);
         drop(journal);
-        fs::remove_dir_all(root).unwrap();
+        cleanup_fixture(&root);
     }
     #[tokio::test]
     async fn revoke_original_turn_closes_admission_and_prevents_new_effect(){
@@ -510,7 +522,7 @@ mod tests {
             Some(CoreDlcGateError::SessionClosed));
         assert_eq!(count.load(Ordering::SeqCst),1);
         drop(journal);
-        fs::remove_dir_all(root).unwrap();
+        cleanup_fixture(&root);
     }
     #[test]
     fn bounded_credits_and_explicit_shutdown_prevent_unbounded_calls(){
@@ -553,7 +565,7 @@ mod tests {
         assert!(retry.is_err(),"an uncertain effect must not be replayed");
         assert_eq!(count.load(Ordering::SeqCst),1);
         drop(reopened);
-        fs::remove_dir_all(root).unwrap();
+        cleanup_fixture(&root);
     }
     #[test]
     fn journal_id_is_stable_across_connection_epoch_but_bound_to_original_task(){
