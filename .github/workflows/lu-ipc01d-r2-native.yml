@@ -1,0 +1,293 @@
+name: LU-IPC-01D-R2 native Windows and Linux Protobuf transport qualification
+# Manual or reusable task-group only. No automatic PR/push fanout.
+on:
+  workflow_dispatch:
+  workflow_call:
+permissions:
+  contents: read
+concurrency:
+  group: lu-ipc01d-r2-${{ github.event.pull_request.head.sha || github.sha }}
+  cancel-in-progress: false
+jobs:
+  exact-source:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Original committed source verification
+        shell: bash
+        env:
+          SOURCE: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$SOURCE"
+          node scripts/verify-source-tree.mjs
+  native:
+    needs: exact-source
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Exact SHA and original source-lock verification
+        shell: bash
+        env:
+          SOURCE: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$SOURCE"
+          node scripts/verify-source-tree.mjs
+      - name: Original Protobuf v0 envelope and R1/R2 transport suites
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test workspace_ipc_v0 -- --nocapture
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test workspace_ipc_transport_r1 -- --nocapture
+      - name: Lu Core native library compilation and R4-R3-R2 durable restart regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo check --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test registry_contracts film_registration_fence_refuses_unloaded_or_replaced_workspace -- --nocapture
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib workspace_ipc_core_host -- --nocapture
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib ipc_exclusive_owner_tests -- --nocapture
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib ipc_supervisor_exact_reconciliation_tests -- --nocapture
+          echo LU_IPC_R4_R3_R3_EXACT_SUPERVISOR_RECONCILIATION_PASS
+      - name: LU-IPC-GPU-01A model eviction lease and recovery regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib gpu_resource_leases -- --nocapture
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test workspace_ipc_gpu_lease -- --nocapture
+          echo LU_IPC_GPU_01A_SOURCE_LEASE_AND_WIRE_PASS
+      - name: LU-IPC-GPU-01C durable async original-operation and poll regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib gpu_async_reconciler -- --nocapture
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test workspace_ipc_gpu_lease -- --nocapture
+          echo LU_IPC_GPU_01C_DURABLE_ASYNC_AND_POLL_PASS
+      # SOURCE-ONLY typecheck. Real pinned engine binaries live in a
+      # separately approved installer package and are intentionally NOT in Git.
+      # Zero-byte, nonexecutable placeholders exist solely for Tauri's build
+      # script resource existence check and are removed after cargo check.
+      # Do NOT use this step to qualify a signed, runnable or installed app.
+      - name: Windows LU desktop source-only Rust typecheck (non-runnable resource sentinels)
+        if: matrix.os == 'windows-2025'
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci --prefix lu-desktop
+          npm run build --prefix lu-desktop
+          resource_root=lu-desktop/src-tauri/resources/lu-inference
+          sentinels=(
+            "$resource_root/llama-server.exe"
+            "$resource_root/msvcp140.dll"
+            "$resource_root/vcruntime140.dll"
+            "$resource_root/vcruntime140_1.dll"
+          )
+          for file in "${sentinels[@]}"; do
+            test ! -e "$file" || { echo 'Source-only check requires absent real engine package'; exit 1; }
+            : > "$file"
+          done
+          cleanup() {
+            for file in "${sentinels[@]}"; do rm -f "$file"; done
+          }
+          trap cleanup EXIT
+          echo LU_IPC_GPU_01C_NONRUNNABLE_SOURCE_SENTINELS_ONLY
+          cargo check --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib
+          # Compile original-human-turn and native NVP cancellation tests
+          # without invoking a fake installed SCM service or real LTX.
+          cargo check --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --tests
+          echo LU_IPC_GPU_01D_DESKTOP_CREATOR_SOURCE_TYPECHECK_PASS
+          echo LU_IPC_GPU_01C_DESKTOP_RUST_TYPECHECK_SOURCE_ONLY_PASS
+      - name: Windows strict installer record and native NVP pipe peer identity regressions
+        if: matrix.os == 'windows-2025'
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib installed_record_parser_rejects_untrusted_claims_and_embedded_keys -- --nocapture
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib nvp_brokered_public_pins_reject_stale_or_untrusted_pipe_generations -- --nocapture
+          echo LU_IPC_GPU_01D_NVP_NATIVE_OS_PEER_IDENTITY_REFUSAL_PASS
+      - name: Native FFI custody module, protected credentials and original worker crate
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo check --locked --manifest-path src-tauri/lu-win-worker-job/Cargo.toml --lib
+          cargo check --locked --manifest-path src-tauri/lu-win-worker-job/Cargo.toml --bin lu-ipc-scm-supervisor
+          cargo test --locked --manifest-path src-tauri/lu-win-worker-job/Cargo.toml --lib -- --nocapture
+          if [[ "${RUNNER_OS}" == "Windows" ]]; then
+            cargo test --locked --manifest-path src-tauri/lu-win-worker-job/Cargo.toml --lib ipc_scm_owned_jobs -- --nocapture
+            echo LU_IPC_R5_SCM_OWNED_CLIENT_EXECUTOR_KERNEL_JOB_PASS
+            echo LU_IPC_R4_R3_R3_R2_SCM_EXACT_CALL_LANE_REPLAY_SOURCE_PASS
+          fi
+          echo LU_IPC_R4_R3_R2_NATIVE_CREDENTIAL_ACCEPTANCE_PASS
+      - name: Windows LU-IPC-GPU-01B native driver and signed NVP stop-source refusal
+        if: matrix.os == 'windows-2025'
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked --manifest-path src-tauri/lu-win-worker-job/Cargo.toml --lib ipc_gpu_vram -- --nocapture
+          cargo test --locked --manifest-path src-tauri/lu-win-worker-job/Cargo.toml --lib ipc_nvp_gpu_stop -- --nocapture
+          cargo test --locked --manifest-path src-tauri/lu-win-worker-job/Cargo.toml --lib nvp_stop_private_query_requires_original_lease_and_exact_scm_epoch -- --nocapture
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib non_system_nvp_job_zero_verifier_refuses_fake_scm_process -- --nocapture
+          echo LU_IPC_GPU_01D_SCM_PROTECTED_NVP_JOB_ZERO_REFUSAL_PASS
+          echo LU_IPC_GPU_01B_WINDOWS_NATIVE_SOURCE_NEGATIVE_PASS
+      - name: Windows R4 PowerShell installer script syntax qualification
+        if: matrix.os == 'windows-2025'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          foreach($script in @('scripts/lu-ipc-r3-stage-installed-ide.ps1',
+            'scripts/lu-ipc-r4-verify-signed-installer.ps1',
+            'scripts/lu-ipc-r5-installed-scm-preflight.ps1')){
+            $tokens=$null
+            $errors=$null
+            $null=[System.Management.Automation.Language.Parser]::ParseFile(
+              (Join-Path (Get-Location) $script),[ref]$tokens,[ref]$errors)
+            if(@($errors).Count -ne 0){throw "PowerShell installer parser refused $script"}
+          }
+          Write-Host 'LU_IPC_R4_INSTALLER_POWERSHELL_SYNTAX_PASS'
+      - name: Windows R4 approved installer gate rejects a matching-hash unsigned binary
+        if: matrix.os == 'windows-2025'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $fake=Join-Path $env:RUNNER_TEMP 'not-signed-lu-installer.exe'
+          [IO.File]::WriteAllBytes($fake,[byte[]](1,2,3,4,5,6,7,8))
+          $actual=(Get-FileHash -LiteralPath $fake -Algorithm SHA256).Hash.ToLowerInvariant()
+          $args=@{
+            SignedInstaller=$fake
+            ApprovedInstallerSha256=$actual
+            ApprovedInstallerSignerCertificateSha256=('2'*64)
+            InstalledExe=$fake
+            ExpectedInstallRoot=$env:RUNNER_TEMP
+            ApprovedImageSha256=('1'*64)
+            ApprovedSignerCertificateSha256=('3'*64)
+            ApprovedPackageSha256=('7'*64)
+            PackageManifestPath=$fake
+          }
+          $refused=$false
+          try {
+            & scripts/lu-ipc-r4-verify-signed-installer.ps1 @args
+          } catch {
+            if($_.Exception.Message -match 'LU_IPC_R4_REFUSED:'){$refused=$true}
+            else{throw}
+          }
+          if(-not $refused){throw 'Unsigned matching-hash installer admitted'}
+          if(Test-Path (Join-Path $env:ProgramData 'Lu\IPC\enrollments\lu.ide.json')){
+            throw 'Unsigned installer unexpectedly created an enrollment'
+          }
+          Write-Host 'LU_IPC_R4_UNSIGNED_INSTALLER_REFUSED'
+      - name: Windows R4 trusted signed surrogate still refuses untrusted manifest
+        if: matrix.os == 'windows-2025'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $signed=Join-Path $env:ProgramFiles 'PowerShell\7\pwsh.exe'
+          if(-not (Test-Path -LiteralPath $signed)){
+            throw 'Native signed PowerShell surrogate absent'
+          }
+          $signature=Get-AuthenticodeSignature -LiteralPath $signed
+          if($signature.Status -ne 'Valid' -or $null -eq $signature.SignerCertificate){
+            throw 'No independently verifiable signed surrogate'
+          }
+          $hasher=[Security.Cryptography.SHA256]::Create()
+          try{
+            $publisher=([BitConverter]::ToString(
+              $hasher.ComputeHash($signature.SignerCertificate.RawData))).Replace('-','').ToLowerInvariant()
+          }finally{$hasher.Dispose()}
+          $filehash=(Get-FileHash -LiteralPath $signed -Algorithm SHA256).Hash.ToLowerInvariant()
+          $untrusted=Join-Path $env:RUNNER_TEMP 'fake-approved-manifest.json'
+          [IO.File]::WriteAllText($untrusted,'{"unapproved":true}')
+          $manifestHash=(Get-FileHash -LiteralPath $untrusted -Algorithm SHA256).Hash.ToLowerInvariant()
+          $args=@{
+            SignedInstaller=$signed
+            ApprovedInstallerSha256=$filehash
+            ApprovedInstallerSignerCertificateSha256=$publisher
+            InstalledExe=$signed
+            ExpectedInstallRoot=(Split-Path -Parent $signed)
+            ApprovedImageSha256=$filehash
+            ApprovedSignerCertificateSha256=$publisher
+            ApprovedPackageSha256=$manifestHash
+            PackageManifestPath=$untrusted
+          }
+          $refused=$false
+          try{
+            & scripts/lu-ipc-r4-verify-signed-installer.ps1 @args
+          }catch{
+            if($_.Exception.Message -match 'LU_IPC_R4_REFUSED:'){$refused=$true}
+            else{throw}
+          }
+          if(-not $refused){throw 'User-owned manifest was accepted by signed-surrogate gate'}
+          Write-Host 'LU_IPC_R4_SIGNED_SURROGATE_UNTRUSTED_MANIFEST_REFUSED'
+      - name: Windows protected installed Lu IDE enrollment refuses unapproved executable
+        if: matrix.os == 'windows-2025'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $fake=Join-Path $env:RUNNER_TEMP 'unapproved-lu-ide.exe'
+          [IO.File]::WriteAllBytes($fake,[byte[]](1,2,3,4,5,6,7,8))
+          $args=@{
+            InstalledExe=$fake
+            ExpectedInstallRoot=$env:RUNNER_TEMP
+            ApprovedImageSha256=('1'*64)
+            ApprovedSignerCertificateSha256=('2'*64)
+            ApprovedPackageSha256=('7'*64)
+          }
+          $refused=$false
+          try{
+            & scripts/lu-ipc-r3-stage-installed-ide.ps1 @args
+          }catch{
+            if($_.Exception.Message -match 'LU_IPC_R3_REFUSED:'){
+              $refused=$true
+            }else{throw}
+          }
+          if(-not $refused){throw 'Unapproved and unsigned executable was accepted'}
+          if(Test-Path (Join-Path $env:ProgramData 'Lu\IPC\enrollments\lu.ide.json')){
+            throw 'Unsigned test unexpectedly created an enrollment'
+          }
+          Write-Host 'LU_IPC_R3_UNSIGNED_UNAPPROVED_ADMISSION_REFUSED'
+
+
+      - name: Windows independent SCM admission refuses unapproved surrogate
+        if: matrix.os == 'windows-2025'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $fake=Join-Path $env:RUNNER_TEMP 'unapproved-lu-ipc-scm-supervisor.exe'
+          [IO.File]::WriteAllBytes($fake,[byte[]](1,2,3,4,5,6,7,8))
+          $actual=(Get-FileHash -LiteralPath $fake -Algorithm SHA256).Hash.ToLowerInvariant()
+          $args=@{
+            InstalledServiceExe=$fake
+            ApprovedServiceImageSha256=$actual
+            ApprovedServiceSignerCertSha256=('1'*64)
+            ExpectedInstallRoot=$env:RUNNER_TEMP
+          }
+          $refused=$false
+          try{
+            & scripts/lu-ipc-r5-installed-scm-preflight.ps1 @args
+          }catch{
+            if($_.Exception.Message -match 'LU_IPC_R5_SCM_REFUSED:'){$refused=$true}
+            else{throw}
+          }
+          if(-not $refused){throw 'Unsigned SCM surrogate was admitted'}
+          Write-Host 'LU_IPC_R5_UNAPPROVED_SCM_REFUSED'

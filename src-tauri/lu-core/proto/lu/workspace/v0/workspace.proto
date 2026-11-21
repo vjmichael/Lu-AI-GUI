@@ -1,0 +1,378 @@
+syntax = "proto3";
+package lu.workspace.v0;
+
+// LU-IPC-01B: Lu-owned DRAFT app-to-Core protocol, independent of transport.
+// The sender's module_id, role, digest, session_ref and object_ref are CLAIMS
+// or locators. None is an OS identity witness, capability, approval or grant.
+// OS peer/process identity and effect authorization are mandatory host duties.
+// No listener, gRPC server, IPC credential, or backend selection is installed.
+
+message WorkspaceFrame {
+  uint32 protocol_major = 1;  // Initial wire major 1 (schema remains v0 draft).
+  uint32 protocol_minor = 2;  // Initial minor 0; negotiated before normal calls.
+  string request_id = 3;     // Exact per-call correlation, NOT authorization.
+  string session_ref = 4;    // Host-minted connection epoch, NOT bearer auth.
+  uint64 sequence = 5;       // 0 for nonstream calls; contiguous positive events.
+  oneof body {
+    Hello hello = 10;
+    Welcome welcome = 11;
+    RegisterWorkspace register = 12;
+    DiscoverCapabilities discover = 13;
+    CapabilityCatalog catalog = 14;
+    CapabilityInvoke invoke = 15;
+    OperationEvent operation_event = 16;
+    CancelOperation cancel = 17;
+    CancelAcknowledged cancel_ack = 18;
+    ReconcileOperation reconcile = 19;
+    ReconciledOperation reconciled = 20;
+    ResourceTransitionRequest resource_request = 21;
+    ResourceTransitionDecision resource_decision = 22;
+    FocusWorkspace focus = 23;
+    FocusOutcome focus_outcome = 24;
+    HealthRequest health = 25;
+    HealthReport health_report = 26;
+    CoreInferenceRequest inference = 27;
+    CoreInferenceEvent inference_event = 28;
+    StreamCredit stream_credit = 29;
+    ProtocolFailure failure = 30;
+    SharedModelStatusRequest model_status = 31;
+    SharedModelStatusReport model_status_report = 32;
+    ModelLeaseRequest acquire_model_lease = 33;
+    ModelLeaseOutcome model_lease_outcome = 34;
+    ModelLeaseRelease release_model_lease = 35;
+    AuthChallenge auth_challenge = 36;
+    AuthProof auth_proof = 37;
+    // Additive, feature-negotiated gpu-lease-v1: NOT ModelLease (inference).
+    GpuLeaseRequest gpu_lease_request = 38;
+    GpuLeaseOutcome gpu_lease_outcome = 39;
+    GpuLeaseRelease gpu_lease_release = 40;
+    GpuLeasePoll gpu_lease_poll = 41; // Core original-work status, never execution
+  }
+  reserved 6 to 9; // Do not add unreviewed implicit identity fields.
+}
+
+enum ModuleRole {
+  MODULE_ROLE_UNSPECIFIED = 0;
+  MODULE_ROLE_WORKSPACE = 1;
+  MODULE_ROLE_CORE_EXTENSION = 2;
+  MODULE_ROLE_THIRD_PARTY = 3;
+}
+
+message Hello {
+  string claimed_module_id = 1;
+  ModuleRole claimed_role = 2;
+  bytes claimed_package_sha256 = 3; // 32 bytes; not a signature or OS proof.
+  uint32 minimum_major = 4;
+  uint32 maximum_major = 5;
+  uint32 maximum_minor = 6;
+  repeated string requested_features = 7;
+  bytes client_nonce = 8; // 32 bytes; not a bearer secret.
+}
+message AuthChallenge {
+  bytes server_nonce = 1; // Host-supplied cryptographically random 32 bytes.
+}
+message AuthProof {
+  bytes client_hmac_sha256 = 1; // HMAC over canonical hello + challenge.
+}
+message Welcome {
+  uint32 selected_major = 1;
+  uint32 selected_minor = 2;
+  string core_epoch_ref = 3;
+  repeated string enabled_features = 4;
+  bytes server_hmac_sha256 = 5; // Binds welcome/session to enrolled secret.
+  // The *transport* must independently bind verified peer identity, process
+  // owner, package provenance and account to a host-only admitted session.
+}
+
+message OriginRefs {
+  string workspace_ref = 1; // Scope resolved from trusted host state.
+  string conversation_ref = 2;
+  string user_turn_ref = 3;
+  string task_ref = 4;
+  string operation_ref = 5; // Durable idempotency/recovery identity.
+}
+
+enum EffectClass {
+  EFFECT_CLASS_UNSPECIFIED = 0;
+  EFFECT_CLASS_PURE_COMPUTE = 1;
+  EFFECT_CLASS_READ_WORKSPACE = 2;
+  EFFECT_CLASS_WRITE_WORKSPACE = 3;
+  EFFECT_CLASS_EXECUTE = 4;
+  EFFECT_CLASS_NETWORK_READ = 5;
+  EFFECT_CLASS_NETWORK_WRITE = 6;
+  EFFECT_CLASS_DEVICE_CONTROL = 7;
+  EFFECT_CLASS_ELEVATED = 8;
+}
+message CapabilityDescriptor {
+  string capability_id = 1; // Namespaced: lu.ide.*, cognitum.*, nvp.*.
+  uint32 capability_version = 2;
+  string input_type_url = 3;  // Generated, registered Protobuf type.
+  string output_type_url = 4;
+  repeated EffectClass declared_effects = 5;
+  bool streams_progress = 6;
+  string display_name = 7;
+  // A descriptor is untrusted metadata until Lu admission, then still not
+  // an effect grant. Pure compute must be mapped faithfully, never to READ.
+}
+message RegisterWorkspace {
+  string module_id = 1;
+  ModuleRole kind = 2;
+  bytes manifest_sha256 = 3;
+  repeated CapabilityDescriptor capabilities = 4;
+  uint64 manifest_revision = 5;
+}
+message DiscoverCapabilities {
+  string workspace_ref = 1;
+  string namespace_prefix = 2; // Optional, bounded host-filtered prefix.
+}
+message CapabilityCatalog {
+  repeated CapabilityDescriptor capabilities = 1;
+  uint64 catalog_revision = 2;
+  bool truncated = 3;
+}
+
+message TypedValue {
+  string type_url = 1;
+  bytes encoded_message = 2; // Exactly one registered generated schema.
+}
+message ObjectRef {
+  string owner_module_id = 1;
+  string object_ref = 2;
+  bytes sha256 = 3;
+  uint64 size_bytes = 4;
+  uint64 expiry_unix_ms = 5;
+  // Locator only: resolver must check caller+scope+revision+access anew.
+}
+message CapabilityInvoke {
+  OriginRefs origin = 1;
+  string capability_id = 2;
+  uint32 capability_version = 3;
+  TypedValue input = 4;
+  repeated ObjectRef input_refs = 5;
+  uint64 deadline_unix_ms = 6; // Upper bound, host clock rechecks.
+}
+enum TerminalState {
+  TERMINAL_STATE_UNSPECIFIED = 0;
+  TERMINAL_STATE_APPLIED = 1;
+  TERMINAL_STATE_REFUSED = 2;
+  TERMINAL_STATE_FAILED = 3;
+  TERMINAL_STATE_CANCELLED = 4;
+  TERMINAL_STATE_UNCERTAIN = 5;
+}
+message OperationProgress {
+  string stage_code = 1;
+  optional uint32 percent = 2;
+}
+message OperationReceipt {
+  string operation_ref = 1;
+  TerminalState state = 2;
+  string reason_code = 3;
+  TypedValue output = 4;
+  bytes durable_receipt_sha256 = 5; // Evidence locator, not independent proof.
+  repeated ObjectRef output_refs = 6;
+}
+message OperationEvent {
+  string operation_ref = 1;
+  oneof data {
+    OperationProgress progress = 2;
+    OperationReceipt terminal = 3;
+  }
+}
+message CancelOperation {
+  string operation_ref = 1;
+  string reason_code = 2;
+}
+message CancelAcknowledged {
+  string operation_ref = 1;
+  bool signal_recorded = 2; // NOT proof of worker termination/effect rollback.
+}
+message ReconcileOperation {
+  string operation_ref = 1;
+  OriginRefs expected_origin = 2;
+}
+message ReconciledOperation {
+  OperationReceipt observed = 1; // UNKNOWN is a real terminal reconciliation.
+  bool evidence_available = 2;
+}
+message StreamCredit {
+  string operation_ref = 1;
+  uint64 acknowledged_sequence = 2;
+  uint32 additional_events = 3; // Explicit bounded backpressure budget.
+}
+
+enum ResourceAction {
+  RESOURCE_ACTION_UNSPECIFIED = 0;
+  RESOURCE_ACTION_COOPERATIVE_UNLOAD = 1;
+  RESOURCE_ACTION_COOPERATIVE_RELOAD = 2;
+  RESOURCE_ACTION_RELEASE_OWN_LEASE = 3;
+  RESOURCE_ACTION_QUERY_CAPACITY = 4;
+}
+message ResourceTransitionRequest {
+  OriginRefs origin = 1;
+  ResourceAction action = 2;
+  optional uint64 desired_free_ram_bytes = 3;
+  optional uint64 desired_free_vram_bytes = 4;
+}
+enum AdmissionDecision {
+  ADMISSION_DECISION_UNSPECIFIED = 0;
+  ADMISSION_DECISION_ALLOWED = 1;
+  ADMISSION_DECISION_DENIED = 2;
+  ADMISSION_DECISION_DEFERRED = 3;
+  ADMISSION_DECISION_UNKNOWN = 4;
+}
+message ResourceTransitionDecision {
+  string operation_ref = 1;
+  AdmissionDecision decision = 2;
+  string reason_code = 3;
+  optional uint64 observed_ram_bytes = 4;
+  optional uint64 observed_vram_bytes = 5;
+  // Never report freed GPU/host memory based on request alone.
+}
+
+enum SharedModelPhase {
+  SHARED_MODEL_PHASE_UNSPECIFIED = 0;
+  SHARED_MODEL_PHASE_UNLOADED = 1;
+  SHARED_MODEL_PHASE_LOADING = 2;
+  SHARED_MODEL_PHASE_READY = 3;
+  SHARED_MODEL_PHASE_BUSY = 4;
+  SHARED_MODEL_PHASE_EVICTING = 5;
+  SHARED_MODEL_PHASE_FAILED = 6;
+}
+message SharedModelStatusRequest {}
+message SharedModelStatusReport {
+  SharedModelPhase phase = 1;
+  string host_model_ref = 2; // Lu-owned selected model, not path/secret.
+  optional uint64 observed_host_ram_bytes = 3;
+  optional uint64 observed_vram_bytes = 4;
+  string measurement_code = 5;
+}
+message ModelLeaseRequest {
+  OriginRefs origin = 1;
+  uint32 requested_context_tokens = 2;
+  uint64 requested_duration_ms = 3;
+}
+message ModelLeaseOutcome {
+  string operation_ref = 1;
+  AdmissionDecision decision = 2;
+  string lease_ref = 3; // Host-owned, peer+workspace scoped, not bearer.
+  string reason_code = 4;
+  uint64 expires_at_unix_ms = 5;
+}
+message ModelLeaseRelease {
+  OriginRefs origin = 1;
+  string lease_ref = 2;
+}
+
+
+// LU-IPC-GPU-01A: ONE Core-owned GPU resource lease, not NVP-owned Lu
+// model control. Client requests and receipt locators are claims; Lu
+// validates installed peer, original USER turn and actual GPU/worker state.
+enum GpuLeasePhase {
+  GPU_LEASE_PHASE_UNSPECIFIED = 0;
+  GPU_LEASE_PHASE_DRAINING = 1;
+  GPU_LEASE_PHASE_GRANTED = 2;
+  GPU_LEASE_PHASE_RELEASING = 3;
+  GPU_LEASE_PHASE_RESTORING = 4;
+  GPU_LEASE_PHASE_RESTORED = 5;
+  GPU_LEASE_PHASE_QUARANTINED = 6;
+}
+message GpuLeaseRequest {
+  OriginRefs origin = 1;
+  string device_ref = 2;           // host resolves a real GPU, not a raw OS path
+  uint64 required_free_vram_bytes = 3;
+  uint64 max_duration_ms = 4;
+}
+message GpuLeaseOutcome {
+  string operation_ref = 1;
+  AdmissionDecision decision = 2;
+  GpuLeasePhase phase = 3;
+  string lease_ref = 4;             // Core minted, non-bearer, original-turn bound
+  optional uint64 measured_available_vram_bytes = 5;
+  string reason_code = 6;
+}
+message GpuLeaseRelease {
+  OriginRefs origin = 1;
+  string lease_ref = 2;
+  string nvp_worker_stop_ref = 3; // locator only; not trusted termination proof
+}
+// A DEFERRED GPU response with a lease_ref means durable work was queued,
+// NOT that the device is ready. Poll/Recover original operation; never retry
+// a failed unload or assume an abandoned operation freed GPU VRAM.
+enum GpuLeaseTransitionKind {
+  GPU_LEASE_TRANSITION_UNSPECIFIED = 0;
+  GPU_LEASE_TRANSITION_ACQUIRE = 1;
+  GPU_LEASE_TRANSITION_RELEASE = 2;
+}
+message GpuLeasePoll {
+  OriginRefs origin = 1;
+  string lease_ref = 2;
+  GpuLeaseTransitionKind transition = 3;
+}
+
+message CoreInferenceRequest {
+  OriginRefs origin = 1;
+  string user_intent_text = 2;
+  repeated ObjectRef context_refs = 3;
+  uint32 max_new_tokens = 4;
+  // No model path/API key/engine control. Core selects the current user model.
+}
+message InferenceText {
+  string text = 1;
+}
+message CoreInferenceEvent {
+  string operation_ref = 1;
+  oneof data {
+    InferenceText text = 2;
+    OperationReceipt terminal = 3;
+  }
+}
+message HealthRequest {}
+message HealthReport {
+  string module_id = 1;
+  bool connected = 2;
+  string status_code = 3;
+  uint64 epoch = 4; // Host-local lifecycle observation.
+}
+message FocusWorkspace {
+  string module_id = 1;
+  string workspace_ref = 2; // Host-resolved, not a path or executable.
+}
+message FocusOutcome {
+  bool opened = 1;
+  string status_code = 2; // Native OS owner must actually witness focus.
+}
+message ProtocolFailure {
+  string code = 1;
+  bool retryable = 2;
+  bool outcome_uncertain = 3;
+  string explanation = 4; // Fixed safe category, not secrets/logs.
+}
+
+// Service names describe interface roles, not a transport choice. The current
+// prost build generates messages only; a runtime server/client is NOT supplied.
+service LuCoreGateway {
+  rpc Connect(Hello) returns (Welcome);
+  rpc Discover(DiscoverCapabilities) returns (CapabilityCatalog);
+  rpc ModelStatus(SharedModelStatusRequest) returns (SharedModelStatusReport);
+  rpc AcquireModelLease(ModelLeaseRequest) returns (ModelLeaseOutcome);
+  rpc ReleaseModelLease(ModelLeaseRelease) returns (ModelLeaseOutcome);
+  rpc Invoke(CapabilityInvoke) returns (stream OperationEvent);
+  rpc Generate(CoreInferenceRequest) returns (stream CoreInferenceEvent);
+  rpc Cancel(CancelOperation) returns (CancelAcknowledged);
+  rpc Reconcile(ReconcileOperation) returns (ReconciledOperation);
+  rpc RequestResources(ResourceTransitionRequest) returns (ResourceTransitionDecision);
+  // gpu-lease-v1 is explicitly negotiated. Service declarations do not
+  // create an installed endpoint or bypass Core host authorization.
+  rpc RequestGpuLease(GpuLeaseRequest) returns (GpuLeaseOutcome);
+  rpc ReleaseGpuLease(GpuLeaseRelease) returns (GpuLeaseOutcome);
+  rpc PollGpuLease(GpuLeasePoll) returns (GpuLeaseOutcome);
+  rpc Focus(FocusWorkspace) returns (FocusOutcome);
+  rpc Health(HealthRequest) returns (HealthReport);
+}
+service LuWorkspaceProvider {
+  rpc Register(RegisterWorkspace) returns (CapabilityCatalog);
+  rpc Invoke(CapabilityInvoke) returns (stream OperationEvent);
+  rpc Cancel(CancelOperation) returns (CancelAcknowledged);
+  rpc Reconcile(ReconcileOperation) returns (ReconciledOperation);
+  rpc Health(HealthRequest) returns (HealthReport);
+}

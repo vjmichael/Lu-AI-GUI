@@ -96,6 +96,9 @@ pub struct TrustedInferenceSupervisor<B: InferenceBackend + Send + 'static> {
     // once, before starting its pinned backend. No model-issued flags.
     factory: Arc<dyn Fn(&str) -> Result<(B,u32,u32), String> + Send + Sync>,
     current: Mutex<Option<Arc<Session<B>>>>,
+    // Core-owned GPU resource lease fence. A model unload cannot race an
+    // incoming generation or new model load once this has been asserted.
+    gpu_lease_hold: Mutex<bool>,
 }
 impl<B: InferenceBackend + Send + 'static> TrustedInferenceSupervisor<B> {
     pub fn new(
@@ -144,6 +147,7 @@ impl<B: InferenceBackend + Send + 'static> TrustedInferenceSupervisor<B> {
             projectors: Mutex::new(HashMap::new()),
             factory: Arc::new(factory),
             current: Mutex::new(None),
+            gpu_lease_hold: Mutex::new(false),
         })
     }
     fn frame(request_id: &str, body: proto::inference_frame::Body) -> proto::InferenceFrame {
@@ -164,6 +168,8 @@ impl<B: InferenceBackend + Send + 'static> TrustedInferenceSupervisor<B> {
     /// Host-only dynamic admission for the Lu model import command. It is not
     /// callable by untrusted WebView content without host authorization.
     pub fn register_model(&self, id: String, model: AdmittedModel) -> Result<(), SupervisorError> {
+        let gpu_gate=self.gpu_lease_hold.lock().map_err(|_|SupervisorError::Poisoned)?;
+        if *gpu_gate{return Err(SupervisorError::Busy);}
         if id.is_empty() || id.len() > 128 || model.recheck().is_err() {
             return Err(SupervisorError::InvalidRequest);
         }
@@ -195,6 +201,10 @@ impl<B: InferenceBackend + Send + 'static> TrustedInferenceSupervisor<B> {
         model_ref: &str,
         projector: AdmittedProjector,
     ) -> Result<(), SupervisorError> {
+        // An NVP GPU lease freezes the approved GGUF+MMProj pair until the
+        // exact original model has been independently restored READY.
+        let gpu_gate=self.gpu_lease_hold.lock().map_err(|_|SupervisorError::Poisoned)?;
+        if *gpu_gate{return Err(SupervisorError::Busy);}
         let models = self.models.lock().map_err(|_| SupervisorError::Poisoned)?;
         if !models.contains_key(model_ref) {
             return Err(SupervisorError::UnknownModel);
@@ -240,12 +250,33 @@ impl<B: InferenceBackend + Send + 'static> TrustedInferenceSupervisor<B> {
         }
         Ok(Arc::clone(session))
     }
+    /// Host only: hold new model/generation admissions while an approved NVP
+    /// GPU lease is prepared or active. This does not cancel active tasks.
+    pub(crate) fn pause_for_gpu_lease(&self,held:bool)->Result<(),SupervisorError>{
+        let mut gate=self.gpu_lease_hold.lock().map_err(|_|SupervisorError::Poisoned)?;
+        *gate=held;
+        Ok(())
+    }
+    /// Only Core's GPU lease reconciler may restore the previously selected
+    /// model while the public inference gate is still closed.
+    pub(crate) fn load_for_gpu_lease_restore(
+        &self,model_ref:&str,session_id:String,request_id:&str
+    )->Result<Vec<u8>,SupervisorError>{
+        self.load_under_gpu_gate(model_ref,session_id,request_id,true)
+    }
     pub fn load(
-        &self,
-        model_ref: &str,
-        session_id: String,
-        request_id: &str,
-    ) -> Result<Vec<u8>, SupervisorError> {
+        &self,model_ref:&str,session_id:String,request_id:&str
+    )->Result<Vec<u8>,SupervisorError>{
+        self.load_under_gpu_gate(model_ref,session_id,request_id,false)
+    }
+    fn load_under_gpu_gate(
+        &self,model_ref:&str,session_id:String,request_id:&str,
+        only_when_held:bool,
+    )->Result<Vec<u8>,SupervisorError>{
+        // Keep this lock while creating the actual backend session. A GPU
+        // pause cannot slip between model admission and worker construction.
+        let gate=self.gpu_lease_hold.lock().map_err(|_|SupervisorError::Poisoned)?;
+        if *gate!=only_when_held{return Err(SupervisorError::Busy);}
         let mut current = self.current.lock().map_err(|_| SupervisorError::Poisoned)?;
         if current.is_some() {
             return Err(SupervisorError::Busy);
@@ -343,6 +374,8 @@ impl<B: InferenceBackend + Send + 'static> TrustedInferenceSupervisor<B> {
         max_new_tokens: u32,
         history: &[proto::InferenceChatTurn],
     ) -> Result<(), SupervisorError> {
+        let gpu_gate=self.gpu_lease_hold.lock().map_err(|_|SupervisorError::Poisoned)?;
+        if *gpu_gate{return Err(SupervisorError::Busy);}
         let session = self.session(session_id)?;
         if max_new_tokens > session.max_output_tokens {
             return Err(SupervisorError::InvalidRequest);
@@ -476,6 +509,8 @@ impl<B: InferenceBackend + Send + 'static> TrustedInferenceSupervisor<B> {
         images: &[PinnedImage],
         history: &[proto::InferenceChatTurn],
     ) -> Result<(), SupervisorError> {
+        let gpu_gate=self.gpu_lease_hold.lock().map_err(|_|SupervisorError::Poisoned)?;
+        if *gpu_gate{return Err(SupervisorError::Busy);}
         let session = self.session(session_id)?;
         if max_new_tokens > session.max_output_tokens {
             return Err(SupervisorError::InvalidRequest);

@@ -24,6 +24,21 @@ fn halted(reason: impl Into<String>) -> DispatchError {
     DispatchError::Execution(ToolFailure::new("EFFECT_REPLAY_BLOCKED", reason, false))
 }
 
+/// When an in-flight future is dropped by host cancellation/crash handling,
+/// execution may have performed effects. A prepared operation is not enough:
+/// only the caller that won PREPARED -> EXECUTING may hold this guard.
+struct ExecutingEffectGuard<'a> {
+    journal: &'a EffectJournal,
+    call_id: String,
+}
+impl Drop for ExecutingEffectGuard<'_> {
+    fn drop(&mut self) {
+        // Best effort, fail closed. If the journal is unavailable the caller
+        // must not re-execute; recovery will reconcile after prior host exit.
+        let _ = self.journal.mark_uncertain(&self.call_id);
+    }
+}
+
 pub struct DurableDispatcher<'a> {
     pub registry: &'a NativeToolRegistry,
     pub journal: &'a EffectJournal,
@@ -97,6 +112,13 @@ impl DurableDispatcher<'_> {
         self.journal
             .mark_executing(&invocation.call_id)
             .map_err(journal_error)?;
+        // Any cancellation before a terminal durable transition must be
+        // classified UNCERTAIN. Dropping the future cannot leave EXECUTING
+        // available to an unsafe retry.
+        let _effect_guard = ExecutingEffectGuard {
+            journal: self.journal,
+            call_id: invocation.call_id.clone(),
+        };
 
         let call_id = invocation.call_id.clone();
         let tool_id = invocation.tool_id.clone();

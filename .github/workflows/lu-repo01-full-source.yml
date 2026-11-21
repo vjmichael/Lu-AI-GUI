@@ -53,11 +53,14 @@ jobs:
             scripts/lu-sec06c-agent01l-fixture-manager.py
           bash -n scripts/install-lu-agent01l-native-fixture.sh
           node --test lu-desktop/tests/agent01l-linux-cgroup-v2.test.mjs
-      - name: Audit grouped-CI trigger policy and queue cleanup safety
-        if: hashFiles('scripts/lu-ci-group-policy.mjs') != ''
-        run: |
-          node --test scripts/lu-ci-group-policy.test.mjs scripts/lu-ci-superseded-queue.test.mjs
-          node scripts/lu-ci-group-policy.mjs
+      # CI-POLICY-01 retirement, authorized by the project owner on 2026-11-21:
+      # The obsolete global heavy-workflow push-trigger audit conflicts with
+      # nine previously admitted, source-scoped legacy workflows. It no longer
+      # blocks source/native/installed evidence. Keep the historic policy
+      # script/test as manual diagnostics, not a mandatory REPO-01 release gate.
+      # The separate queued-run cancellation safety tests stay mandatory.
+      - name: Verify superseded CI queue cancellation safety
+        run: node --test scripts/lu-ci-superseded-queue.test.mjs
       - name: Audit Core branch convergence and retained canonical ledger
         if: hashFiles('scripts/lu-core-stack-graph.test.mjs') != ''
         run: |
@@ -4090,3 +4093,16 @@ jobs:
       contents: read
       actions: read
     uses: ./.github/workflows/lu-core-c62b-reviewed-browser-nsis.yml
+
+  # LU-IPC R2-R2 one-PR native admission: independent of separately owned
+  # CI-POLICY-01 legacy trigger reconciliation; never generic PR fanout.
+  ipc01d-r2-pr244-native:
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.action == 'synchronize' &&
+      github.event.pull_request.number == 244 &&
+      github.event.pull_request.draft &&
+      github.event.pull_request.head.ref == 'lu/ipc01d-r2-r1-native-20261120'
+    uses: ./.github/workflows/lu-ipc01d-r2-native.yml
+    permissions:
+      contents: read

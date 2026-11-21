@@ -13,7 +13,9 @@ publish = false
 cap-std = "4.0.3"
 serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
-tokio = { version = "1", features = ["rt", "rt-multi-thread"] }
+# Workspace IPC adapters need local sockets/pipes, bounded IO and deadlines.
+# No new crate/dependency is introduced; existing Cargo.lock remains usable.
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "net", "io-util", "time", "macros"] }
 prost = "0.14"
 jsonschema = { version = "=0.55.0", default-features = false }
 regex = "1.11"

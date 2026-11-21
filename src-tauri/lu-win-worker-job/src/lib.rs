@@ -15,6 +15,29 @@ pub mod file_guard;
 pub mod metadata_guard;
 #[cfg(windows)]
 pub mod browser_window;
+#[cfg(windows)]
+pub mod ipc_pipe_peer;
+#[cfg(windows)]
+pub mod ipc_signed_package;
+#[cfg(windows)]
+pub mod ipc_installer_enrollment;
+#[cfg(windows)]
+pub mod ipc_credential_broker;
+#[cfg(windows)]
+pub mod ipc_scm_supervisor;
+#[cfg(windows)]
+pub mod ipc_scm_owned_jobs;
+#[cfg(windows)]
+pub mod ipc_scm_receipts;
+pub mod ipc_scm_control_wire;
+#[cfg(windows)]
+pub mod ipc_scm_control;
+#[cfg(windows)]
+pub mod ipc_scm_launcher;
+#[cfg(windows)]
+pub mod ipc_gpu_vram;
+#[cfg(windows)]
+pub mod ipc_nvp_gpu_stop;
 
 #[cfg(windows)]
 mod windows_owned {
@@ -108,6 +131,7 @@ unsafe extern "system" {
     fn Thread32Next(snapshot:Handle,entry:*mut ThreadEntry32)->i32;
     fn OpenThread(access:u32,inherit:i32,thread_id:u32)->Handle;
     fn ResumeThread(thread:Handle)->u32;
+    fn IsProcessInJob(process:Handle,job:Handle,found:*mut i32)->i32;
 }
 
 /// Owns one kernel Job Object handle, not the child process handle itself.
@@ -214,6 +238,35 @@ impl Job {
         }
         unsafe{CloseHandle(snapshot)};
         if !found{return Err(io::Error::other("suspended engine thread not found"));}
+        Ok(())
+    }
+
+
+    /// Native AppContainer path uses the real CreateProcessAsUserW primary
+    /// thread handle rather than a thread enumeration. The worker is fully
+    /// suspended and must have passed TokenIsAppContainer before this call.
+    /// Only the SCM process gets these raw handles; no DLC can adopt PIDs.
+    pub(crate) fn assign_and_resume_native_handles(
+        &self,process:Handle,thread:Handle,
+    )->io::Result<()>{
+        if process.is_null()||thread.is_null(){
+            return Err(io::Error::other("missing restricted native worker handles"))
+        }
+        if unsafe{AssignProcessToJobObject(self.0,process)}==0{
+            return Err(io::Error::last_os_error())
+        }
+        self.1.store(true,Ordering::Release);
+        let mut contained=0i32;
+        if unsafe{IsProcessInJob(process,self.0,&mut contained)}==0 ||
+            contained!=1 {
+            return Err(io::Error::other("fixed worker not in original SCM Job"))
+        }
+        // The genuine first thread handle is held from CreateProcessAsUserW.
+        // Any non-one previous suspend count is refused, not normalized.
+        let previous=unsafe{ResumeThread(thread)};
+        if previous!=1{
+            return Err(io::Error::other("restricted worker primary thread was not suspended exactly once"))
+        }
         Ok(())
     }
 

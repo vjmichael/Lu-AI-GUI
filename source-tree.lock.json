@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "46c195e22c735e448e182fd5f86da2bf9e9cb313",
-  "trackedFileCount": 1270,
+  "sourceCommitBeforeLock": "95eabc005a46e9d3ba58862aa75241d59bd84f5b",
+  "trackedFileCount": 1305,
   "files": [
     {
       "path": ".gitattributes",
@@ -220,6 +220,10 @@
       "blob": "1eeae0189fac88b5b38251c8e1db3f33d7bf4bf4"
     },
     {
+      "path": ".github/workflows/lu-ipc01d-r2-native.yml",
+      "blob": "0ecabf82784999f5eeb72af4ae609072d4b52bb2"
+    },
+    {
       "path": ".github/workflows/lu-kiaf-execution.yml",
       "blob": "91b1d8a8e639b22d6c588f4c0bbd984efe7963c5"
     },
@@ -309,7 +313,7 @@
     },
     {
       "path": ".github/workflows/lu-repo01-full-source.yml",
-      "blob": "2ab4313ff70b30b5afd9ec2f2e57df01c7e496df"
+      "blob": "6b290576fda38a2d5bcded1dd4a429cda2e006f7"
     },
     {
       "path": ".github/workflows/lu-tools-01-05-integration.yml",
@@ -724,6 +728,10 @@
       "blob": "0536adf6fb9bd696f600ed31051ad6082e603edd"
     },
     {
+      "path": "docs/LU_CI_POLICY_01_RETIREMENT_20261121.md",
+      "blob": "d849b32a1ef6f8d801e700268c4f42a4ec52a234"
+    },
+    {
       "path": "docs/LU_CI_TASK_GROUP_GATES_20261109.md",
       "blob": "69338481a7272999d7525a2762054b3579059f4e"
     },
@@ -981,7 +989,7 @@
     },
     {
       "path": "docs/LU_DEVELOPMENT_LEDGER.md",
-      "blob": "af93d31a73aaac9fb7132b53ed739a839f52d44c"
+      "blob": "18cb33485314d03b7a8ae8dfae7d739ae97ee566"
     },
     {
       "path": "docs/LU_E1_NATIVE_EVIDENCE_20261107.md",
@@ -1062,6 +1070,30 @@
     {
       "path": "docs/LU_HUMAN_CENTERED_AI_MEMORY_FIRST_20261107.md",
       "blob": "3b57b83d8d605dfad3f1d234525e0637ae3861af"
+    },
+    {
+      "path": "docs/LU_IPC_01A_B_V0_CONTRACT_20261120.md",
+      "blob": "7d7c6c034da95d89be8c09747fd8f07e9b40cf51"
+    },
+    {
+      "path": "docs/LU_IPC_01D_R1_NATIVE_TRANSPORT_20261120.md",
+      "blob": "7841277ef7708cad3e06c7aaa30a03f45598ba1b"
+    },
+    {
+      "path": "docs/LU_IPC_GPU_01A_NVP_HANDOFF_20261121.md",
+      "blob": "32356308d09e1766416586b81792776d793e34b7"
+    },
+    {
+      "path": "docs/LU_IPC_GPU_01B_NVP_SCOPED_INSTALLED_GATE_20261121.md",
+      "blob": "944ccc0395b33aa620b7158ce09f03515b44a2a6"
+    },
+    {
+      "path": "docs/LU_IPC_GPU_01C_DURABLE_DESKTOP_NVP_20261121.md",
+      "blob": "9f6f83c2ed31bb86ad5b80aaed10964d43f4f5d2"
+    },
+    {
+      "path": "docs/LU_IPC_R4_R3_R3_R4_ECOSYSTEM_AND_SCM_CONTROL_20261121.md",
+      "blob": "5d5a14d071d855302959b6a1a5226cf84f80ed80"
     },
     {
       "path": "docs/LU_KIAF_ACTIVE_EXECUTION_LEDGER_20261108.md",
@@ -1613,11 +1645,11 @@
     },
     {
       "path": "lu-desktop/src-tauri/Cargo.lock",
-      "blob": "7d8b036510b72bca2ca19bce7d832fb4dd22147a"
+      "blob": "56e01175bb72ede2a8ecb5a62c6fc6758d0fecc4"
     },
     {
       "path": "lu-desktop/src-tauri/Cargo.toml",
-      "blob": "2659af307171a606fd0927a241af997a15fa3a98"
+      "blob": "44962bc5104753fba4f0e7b078e4c4c79e16693c"
     },
     {
       "path": "lu-desktop/src-tauri/build.rs",
@@ -1833,7 +1865,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/lib.rs",
-      "blob": "6a4fa42f7bcb1739c7a6495e1ac09f462f4bd887"
+      "blob": "ece9b71519791c7e6b44f9caff36a07f1665d0b0"
     },
     {
       "path": "lu-desktop/src-tauri/src/linked_attachment_file.rs",
@@ -1920,6 +1952,10 @@
       "blob": "ff79dc110ff83588195e905121ac6ac0a0877600"
     },
     {
+      "path": "lu-desktop/src-tauri/src/nvp_gpu_desktop.rs",
+      "blob": "9ddda1cc26c2384bf7676452110a6fbfb5c5693c"
+    },
+    {
       "path": "lu-desktop/src-tauri/src/observe_desktop.rs",
       "blob": "d04cdef875ebea730690042c3c061f3fd831c7f3"
     },
@@ -1941,7 +1977,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/p0_auth_desktop.rs",
-      "blob": "1c4cf899bcc8d7f70dfe265e0d7a1d956417528b"
+      "blob": "831633bfebebc97c379c465183db446ed531a52a"
     },
     {
       "path": "lu-desktop/src-tauri/src/p0_memory_continuity.rs",
@@ -3140,6 +3176,18 @@
       "blob": "127669a92f6f930e88391ffc4db1238b722c322c"
     },
     {
+      "path": "scripts/lu-ipc-r3-stage-installed-ide.ps1",
+      "blob": "0d9bfc38287bfe0a0cda0a5d43e749fde1e0a5ab"
+    },
+    {
+      "path": "scripts/lu-ipc-r4-verify-signed-installer.ps1",
+      "blob": "8cd036842c63bec0274562df3a903bdbe5854532"
+    },
+    {
+      "path": "scripts/lu-ipc-r5-installed-scm-preflight.ps1",
+      "blob": "600b2cee36d5b0bb08f77a0f4e062c7ea4a114ae"
+    },
+    {
       "path": "scripts/lu-ledger.mjs",
       "blob": "0060dd91f8e39633f9a16fa41a512ba6a01a45b6"
     },
@@ -3373,11 +3421,11 @@
     },
     {
       "path": "src-tauri/lu-core/Cargo.lock",
-      "blob": "d57f9a8454f222065d7dd7ba2180149fbc049eda"
+      "blob": "b2a44b29150271b22758b68df33426649177bb04"
     },
     {
       "path": "src-tauri/lu-core/Cargo.toml",
-      "blob": "c6a4f1e017331ffd34fec3771989270f86d1fe48"
+      "blob": "9d27577a12c8bae9b8359a31cf89c13d8d3eed55"
     },
     {
       "path": "src-tauri/lu-core/DESIGN_GAP_AUDIT_2026-10-25.md",
@@ -3397,7 +3445,7 @@
     },
     {
       "path": "src-tauri/lu-core/build.rs",
-      "blob": "8cafc46386f43ac7afbda8a2500dfbff5ee2873d"
+      "blob": "ba66d82f0f04c854930d41958e1d837bb8d06f6a"
     },
     {
       "path": "src-tauri/lu-core/examples/ansf_memory_baseline.rs",
@@ -3458,6 +3506,10 @@
     {
       "path": "src-tauri/lu-core/proto/lu/v1/core.proto",
       "blob": "cf7eaa53dc1a73ad9f517327d0046ca28ebd09f1"
+    },
+    {
+      "path": "src-tauri/lu-core/proto/lu/workspace/v0/workspace.proto",
+      "blob": "747b7472ab7e4bdfd7d646dd629b2c45a9c63dd1"
     },
     {
       "path": "src-tauri/lu-core/src/agent_continuation_intent.rs",
@@ -3725,7 +3777,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/durable.rs",
-      "blob": "a4544bf5b6830ac6e40ed78c019cae94f1eeb73e"
+      "blob": "96d4f42ae63bde78454eb2eb6948c363cd932a94"
     },
     {
       "path": "src-tauri/lu-core/src/edit_approval_ledger.rs",
@@ -3758,6 +3810,14 @@
     {
       "path": "src-tauri/lu-core/src/gguf_preflight.rs",
       "blob": "3ed35bb1b76c5bd619eace47cc94e6cd9705e12d"
+    },
+    {
+      "path": "src-tauri/lu-core/src/gpu_async_reconciler.rs",
+      "blob": "f80ad0788771b2b152188efa8f4cdf3f70c47b82"
+    },
+    {
+      "path": "src-tauri/lu-core/src/gpu_resource_leases.rs",
+      "blob": "23eac9832529dfdf93cb3cbe73fe8ca2057cb7ae"
     },
     {
       "path": "src-tauri/lu-core/src/host_resource_authority.rs",
@@ -3801,7 +3861,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/inference_supervisor.rs",
-      "blob": "86cd05e4af41e53d4bb17eb80bade81a4e9e7d4e"
+      "blob": "a966b8f4171d8b22898e2215234aac2c6bce0b2c"
     },
     {
       "path": "src-tauri/lu-core/src/inference_wire.rs",
@@ -3809,11 +3869,11 @@
     },
     {
       "path": "src-tauri/lu-core/src/journal.rs",
-      "blob": "9ae06968378c3353a1aac46c0015ce454ce51234"
+      "blob": "578a7ad9b60a9a66d63daa6988d34ffdaf8663d0"
     },
     {
       "path": "src-tauri/lu-core/src/lib.rs",
-      "blob": "4a491ed9e3d03ab4aff57cf9e8d2d761375bed9f"
+      "blob": "d5121b51163a8f3a2e00cf41e3cde97ea194105e"
     },
     {
       "path": "src-tauri/lu-core/src/linux_device_hints.rs",
@@ -4341,7 +4401,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/registry.rs",
-      "blob": "72d177558c238e1227bc8b4e0090a7daf75076a5"
+      "blob": "7ed09e665643542d40c4fbfb7f7990521466bffb"
     },
     {
       "path": "src-tauri/lu-core/src/reversible_edit.rs",
@@ -4454,6 +4514,22 @@
     {
       "path": "src-tauri/lu-core/src/workspace_inference.rs",
       "blob": "181be100d5b270ede1f09480a1281ea53d1255e7"
+    },
+    {
+      "path": "src-tauri/lu-core/src/workspace_ipc.rs",
+      "blob": "506da1f797b98cc75f85e63d329d2cfad0b38305"
+    },
+    {
+      "path": "src-tauri/lu-core/src/workspace_ipc_core_host.rs",
+      "blob": "0652240fc266bd4528f49cff634a98ec3e0d3d1c"
+    },
+    {
+      "path": "src-tauri/lu-core/src/workspace_ipc_scm.rs",
+      "blob": "4bd3176d0333753c137d1736a0e6355176f8ad14"
+    },
+    {
+      "path": "src-tauri/lu-core/src/workspace_ipc_transport.rs",
+      "blob": "75833d3f7e4a14d4e257c56d536d8b6dc986d9ca"
     },
     {
       "path": "src-tauri/lu-core/src/workspace_quarantine.rs",
@@ -4933,7 +5009,7 @@
     },
     {
       "path": "src-tauri/lu-core/tests/registry_contracts.rs",
-      "blob": "b399bda7b302bd19f6dbed75427058409dd066c7"
+      "blob": "365b53de48d7d7e41dffdb6e482d3ed702045a11"
     },
     {
       "path": "src-tauri/lu-core/tests/saved_chat_prompt_limits.rs",
@@ -4968,6 +5044,18 @@
       "blob": "2991d9c0c5f5d8f76c841e5ee649726c321aed18"
     },
     {
+      "path": "src-tauri/lu-core/tests/workspace_ipc_gpu_lease.rs",
+      "blob": "643c5bf1760cd9f88fe0399a6bb06205ae930a44"
+    },
+    {
+      "path": "src-tauri/lu-core/tests/workspace_ipc_transport_r1.rs",
+      "blob": "11da9ecf00fa5489f9683def3a1dbd80478ca657"
+    },
+    {
+      "path": "src-tauri/lu-core/tests/workspace_ipc_v0.rs",
+      "blob": "df18971f0e510b5febe1ac157f28e35675f65291"
+    },
+    {
       "path": "src-tauri/lu-core/tests/workspace_quarantine.rs",
       "blob": "9e3cafd50f26453c6bb5445f869c2b8cc4d1cb6f"
     },
@@ -4997,11 +5085,11 @@
     },
     {
       "path": "src-tauri/lu-win-worker-job/Cargo.lock",
-      "blob": "58a8670b4e23d3d918df608d1a73f285bf6da8da"
+      "blob": "98670d88753742f1b205e1a0cd6abf2c5f529d99"
     },
     {
       "path": "src-tauri/lu-win-worker-job/Cargo.toml",
-      "blob": "64c1005a00985f7650cbe523a559850fdf2cac0a"
+      "blob": "20407e4dee8ad7bb17edf4dd43d0c4f986b09932"
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/bin/lu-e1-p08-linux-cgroup-crash-parent.rs",
@@ -5010,6 +5098,10 @@
     {
       "path": "src-tauri/lu-win-worker-job/src/bin/lu-e1-p08-linux-crash-parent.rs",
       "blob": "f6ab4ef0e463db0eb19b810babde615b12c91287"
+    },
+    {
+      "path": "src-tauri/lu-win-worker-job/src/bin/lu-ipc-scm-supervisor.rs",
+      "blob": "96e1b11519ef76481c64a9a178a540e73cb50d6d"
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/bin/lu-linux-cgroup-guard.rs",
@@ -5032,8 +5124,56 @@
       "blob": "cc0eea939efe62f0c23c38fbd56ecca2e0930e82"
     },
     {
+      "path": "src-tauri/lu-win-worker-job/src/ipc_credential_broker.rs",
+      "blob": "c6888ce7aed299b78aaa4f64bf78488c0aea1603"
+    },
+    {
+      "path": "src-tauri/lu-win-worker-job/src/ipc_gpu_vram.rs",
+      "blob": "ea284a60db7ac15880d2e2a4b7fe0180ed86d568"
+    },
+    {
+      "path": "src-tauri/lu-win-worker-job/src/ipc_installer_enrollment.rs",
+      "blob": "fa96021eb79c2090568d3a58850d5e6a3e6b2f88"
+    },
+    {
+      "path": "src-tauri/lu-win-worker-job/src/ipc_nvp_gpu_stop.rs",
+      "blob": "062f667f24f9e0b58a486973d2b74050bdd61a9c"
+    },
+    {
+      "path": "src-tauri/lu-win-worker-job/src/ipc_pipe_peer.rs",
+      "blob": "eb3eb5c0f1304d18979446602bbbe8f0bbd9d626"
+    },
+    {
+      "path": "src-tauri/lu-win-worker-job/src/ipc_scm_control.rs",
+      "blob": "636fc4679aaaaa8e7b0554118d2354be28e3ab4b"
+    },
+    {
+      "path": "src-tauri/lu-win-worker-job/src/ipc_scm_control_wire.rs",
+      "blob": "cca9a086d4d555e547f22d3e4212e2c14aae1497"
+    },
+    {
+      "path": "src-tauri/lu-win-worker-job/src/ipc_scm_launcher.rs",
+      "blob": "5f33bfdfe808a872f2ff091bd7c1e8ee77a2d9ab"
+    },
+    {
+      "path": "src-tauri/lu-win-worker-job/src/ipc_scm_owned_jobs.rs",
+      "blob": "168db33b2986f10d880e84667d509b578ae161c3"
+    },
+    {
+      "path": "src-tauri/lu-win-worker-job/src/ipc_scm_receipts.rs",
+      "blob": "b81776141c24dafaea2a5051c9d2040e65e740ab"
+    },
+    {
+      "path": "src-tauri/lu-win-worker-job/src/ipc_scm_supervisor.rs",
+      "blob": "48280b6a4d102bee9aed1b67c668bd802dbef6d8"
+    },
+    {
+      "path": "src-tauri/lu-win-worker-job/src/ipc_signed_package.rs",
+      "blob": "baf168b75e46bccbf535da4140c2688977718e87"
+    },
+    {
       "path": "src-tauri/lu-win-worker-job/src/lib.rs",
-      "blob": "d1c9111da594fa3981f2eb26650575f6906c9fb6"
+      "blob": "fab4979768488701dc5cd58eb44e66a2debf8e39"
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/metadata_guard.rs",
