@@ -15,6 +15,7 @@ use crate::{
         read_installed_nvp_gpu_stop_receipt,
     },
     ipc_scm_receipts::verify_external_p256_signature,
+    ipc_credential_broker::require_system_service_context,
 };
 const DOMAIN:&[u8]=b"LU_NVP_GPU_JOB_EMPTY_V1\0";
 const REQUIRED_METHOD:&str="WINDOWS_JOB_ACTIVE_ZERO_V1";
@@ -126,6 +127,10 @@ fn parse_ids_and_verify(
 pub fn independently_verified_nvp_worker_empty(
     original:&NvpOriginalGpuLease<'_>,
 )->io::Result<()>{
+    // Only the unimpersonated installer-owned SCM may open protected
+    // NVP Job-zero evidence. A non-SYSTEM Lu desktop, an administrator
+    // tool or an NVP client must never become an alternative stop verifier.
+    require_system_service_context()?;
     if original.module_id!="nvp.film"||!valid_scope(original.lease_ref) {
         return Err(denied("not a protected original NVP film GPU lease"))
     }
@@ -156,6 +161,15 @@ mod tests{
         assert!(parse_ids_and_verify(&altered,&raw,&pin).is_err());
         raw.push(0);
         assert!(parse_ids_and_verify(&original(),&raw,&pin).is_err());
+    }
+    #[test]
+    fn non_system_cannot_read_protected_nvp_job_zero_evidence(){
+        // Tests run under ordinary CI token. Privileged installed Windows
+        // acceptance is separate and must prove genuine native Job custody.
+        let original=original();
+        if require_system_service_context().is_err(){
+            assert!(independently_verified_nvp_worker_empty(&original).is_err());
+        }
     }
     #[test]
     fn missing_original_job_witness_is_always_refused(){
