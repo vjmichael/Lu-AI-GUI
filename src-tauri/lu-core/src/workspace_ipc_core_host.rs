@@ -557,6 +557,9 @@ impl CoreDlcHostGate {
     }
 }
 
+#[cfg(windows)]
+pub use lu_win_worker_job::ipc_scm_control_wire::OriginalCall;
+
 /// Explicit Core-host user-approved READ + EXECUTE pair. NVP's claimed
 /// OriginRefs, package manifest and LLM text cannot construct these grants.
 /// Device control itself is NOT elevated/physical-device ToolEffect: it is a
