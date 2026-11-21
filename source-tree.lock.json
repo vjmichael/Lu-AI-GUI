@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "2f49e0a6255316b29f0d8cba07b7bf5049d03999",
-  "trackedFileCount": 1280,
+  "sourceCommitBeforeLock": "7f174c4bf4f7dc0a2d58c120b450484281f1ddc4",
+  "trackedFileCount": 1282,
   "files": [
     {
       "path": ".gitattributes",
@@ -221,7 +221,7 @@
     },
     {
       "path": ".github/workflows/lu-ipc01d-r2-native.yml",
-      "blob": "63178a8d14c9db2630536e4d0a31292cc8d7f62a"
+      "blob": "c1abe0d8cc7c64319cae2ef9e74b6c57380837b6"
     },
     {
       "path": ".github/workflows/lu-kiaf-execution.yml",
@@ -1073,7 +1073,7 @@
     },
     {
       "path": "docs/LU_IPC_01D_R1_NATIVE_TRANSPORT_20261120.md",
-      "blob": "09848aa3f100d0f17f96146a4b9e3c5d1d3e6023"
+      "blob": "d8205e944671eda730a1ef0837b8a8c62af74145"
     },
     {
       "path": "docs/LU_KIAF_ACTIVE_EXECUTION_LEDGER_20261108.md",
@@ -3152,6 +3152,10 @@
       "blob": "127669a92f6f930e88391ffc4db1238b722c322c"
     },
     {
+      "path": "scripts/lu-ipc-r3-stage-installed-ide.ps1",
+      "blob": "d5e77104d41a9cff4e2fd7fdb940e9f3af0b8242"
+    },
+    {
       "path": "scripts/lu-ledger.mjs",
       "blob": "0060dd91f8e39633f9a16fa41a512ba6a01a45b6"
     },
@@ -4477,7 +4481,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/workspace_ipc_transport.rs",
-      "blob": "002d7eb249d2bac8b893caa63c36a04dac812cf1"
+      "blob": "96483be8398aa8606d4711b03aea7774ec28ad80"
     },
     {
       "path": "src-tauri/lu-core/src/workspace_quarantine.rs",
@@ -5064,6 +5068,10 @@
       "blob": "cc0eea939efe62f0c23c38fbd56ecca2e0930e82"
     },
     {
+      "path": "src-tauri/lu-win-worker-job/src/ipc_installer_enrollment.rs",
+      "blob": "35f0163848a8fd2f965030b749121694ab97b1a6"
+    },
+    {
       "path": "src-tauri/lu-win-worker-job/src/ipc_pipe_peer.rs",
       "blob": "7b7b456cb3068fd145d89309a587140ad3dc5780"
     },
@@ -5073,7 +5081,7 @@
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/lib.rs",
-      "blob": "afeb53292f290249a8e2ed87e90cf2752a1d6b97"
+      "blob": "f0398d44c5a8083e6d93980a2807581310b716a6"
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/metadata_guard.rs",
