@@ -1,0 +1,124 @@
+name: IDE WO7 positive signed bundle legal and import closure (manual, not release)
+on:
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: Exact reviewed source SHA of both independently held artifacts
+        required: true
+        type: string
+      signed_candidate_run_id:
+        description: Successful separately authorized signed NSIS candidate producer run
+        required: true
+        type: string
+      independent_review_run_id:
+        description: Different successful independent legal and dynamic import review run
+        required: true
+        type: string
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: wo7-positive-bundle-${{ inputs.source_sha }}
+  cancel-in-progress: false
+jobs:
+  independently-reviewed-positive-bundle:
+    runs-on: windows-2022
+    environment: lu-ide-release-audit
+    timeout-minutes: 45
+    env:
+      SOURCE_SHA: ${{ inputs.source_sha }}
+      CANDIDATE_RUN_ID: ${{ inputs.signed_candidate_run_id }}
+      REVIEW_RUN_ID: ${{ inputs.independent_review_run_id }}
+      REVIEW_DIGEST: ${{ vars.IDE_WO7_INDEPENDENT_REVIEW_SHA256 }}
+      REVIEWER_LOGIN: ${{ vars.IDE_WO7_INDEPENDENT_REVIEWER_LOGIN }}
+      CANDIDATE_WORKFLOW_ID: ${{ vars.IDE_WO7_SIGNED_PRODUCER_WORKFLOW_ID }}
+      REVIEW_WORKFLOW_ID: ${{ vars.IDE_WO7_INDEPENDENT_REVIEW_WORKFLOW_ID }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Refuse absent independent approval pins and wrong source
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          if ($env:SOURCE_SHA -cnotmatch '^[0-9a-fA-F]{40}$' -or
+              $env:CANDIDATE_RUN_ID -notmatch '^[1-9][0-9]{0,19}$' -or
+              $env:REVIEW_RUN_ID -notmatch '^[1-9][0-9]{0,19}$' -or
+              $env:CANDIDATE_RUN_ID -eq $env:REVIEW_RUN_ID) {
+            throw 'DENIED: exact SHA and distinct positive run IDs required'
+          }
+          if ($env:REVIEW_DIGEST -cnotmatch '^[0-9a-fA-F]{64}$' -or
+              [string]::IsNullOrWhiteSpace($env:REVIEWER_LOGIN) -or
+              $env:CANDIDATE_WORKFLOW_ID -notmatch '^[1-9][0-9]*$' -or
+              $env:REVIEW_WORKFLOW_ID -notmatch '^[1-9][0-9]*$' -or
+              $env:CANDIDATE_WORKFLOW_ID -eq $env:REVIEW_WORKFLOW_ID) {
+            throw 'DENIED: independent protected-environment reviewer/signing custody not configured'
+          }
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Authenticate candidate and independent review origins with GitHub
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $head=(git rev-parse HEAD).Trim()
+          if ($LASTEXITCODE -ne 0 -or $head -ine $env:SOURCE_SHA) { throw 'DENIED: exact source mismatch' }
+          $base="repos/$env:GITHUB_REPOSITORY/actions/runs"
+          $candidate = & gh api "$base/$env:CANDIDATE_RUN_ID" | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: candidate run not authenticated' }
+          $review = & gh api "$base/$env:REVIEW_RUN_ID" | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: independent review run not authenticated' }
+          if ($candidate.head_sha -ine $head -or $review.head_sha -ine $head -or
+              $candidate.conclusion -cne 'success' -or $review.conclusion -cne 'success' -or
+              $candidate.repository.full_name -cne $env:GITHUB_REPOSITORY -or
+              $review.repository.full_name -cne $env:GITHUB_REPOSITORY -or
+              [string]$candidate.workflow_id -cne $env:CANDIDATE_WORKFLOW_ID -or
+              [string]$review.workflow_id -cne $env:REVIEW_WORKFLOW_ID -or
+              $review.actor.login -cne $env:REVIEWER_LOGIN -or
+              $review.actor.login -ceq $candidate.actor.login) {
+            throw 'DENIED: wrong source, workflow or independent reviewer provenance'
+          }
+      - uses: actions/download-artifact@v4
+        with:
+          name: lu-ide-wo7-candidate
+          path: candidate
+          run-id: ${{ inputs.signed_candidate_run_id }}
+          github-token: ${{ github.token }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: lu-ide-wo7-independent-review
+          path: independent-review
+          run-id: ${{ inputs.independent_review_run_id }}
+          github-token: ${{ github.token }}
+      - name: Audit actual signed candidate, full legal bytes and real import closure
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $root=(Get-Location).Path
+          $report=Join-Path $env:RUNNER_TEMP 'wo7-positive-technical-report.json'
+          & python ide/packaging/verify_wo7_positive_bundle_audit.py `
+            --candidate-root (Join-Path $root 'candidate') `
+            --review-root (Join-Path $root 'independent-review') `
+            --source-sha $env:SOURCE_SHA `
+            --protected-review-sha256 $env:REVIEW_DIGEST `
+            --candidate-run-id ([int64]$env:CANDIDATE_RUN_ID) `
+            --review-run-id ([int64]$env:REVIEW_RUN_ID) `
+            --protected-reviewer-login $env:REVIEWER_LOGIN | Set-Content -LiteralPath $report -Encoding utf8
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: real signed positive bundle audit failed' }
+          $data=Get-Content -LiteralPath $report -Raw | ConvertFrom-Json
+          if ($data.releaseAccepted -ne $false -or $data.installedSCMJobAcceptance -ne $false -or
+              $data.independentDynamicAndLegalReviewDigestMatched -ne $true) {
+            throw 'DENIED: review output confused technical closure with release approval'
+          }
+          Write-Host 'WO7_GENUINE_SIGNED_BUNDLE_LEGAL_AND_IMPORT_CLOSURE=TECHNICAL_AUDIT_ONLY'
+          Write-Host 'SIGNED_WINDOWS_INSTALLED_SCM_AND_JOB=NOT_TESTED'
+          Write-Host 'RELEASE_ACCEPTANCE=NOT_GRANTED'
+          "WO7_POSITIVE_REPORT=$report" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lu-ide-wo7-positive-bundle-audit
+          path: ${{ env.WO7_POSITIVE_REPORT }}
+          if-no-files-found: error
+          retention-days: 30

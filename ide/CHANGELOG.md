@@ -1,5 +1,10 @@
 # Lu IDE — Development changelog
 
+## 2026-11-21 — IDE-PRECORE-CLOSEOUT-R4 positive WO7 technical-audit source admission (NOT release)
+
+Reviewed and staged exact WO7 positive license/import audit workflow and verifier with independent protected-environment reviewer hashes, Windows three-binary Authenticode, complete original notices, staged static PE imports, and human-approved dynamic-import receipt. Added hostile source-only tests into existing source-qualification CI. Corrected WO7/W08 signed protected evidence workflow attribution without reducing anti-replay/unique-job rules, and updated B4/B5 native source pins, integrated Core source exceptions and frozen Git tree inventory. Original SHA `67a02dbac4354b60239805ccae0aab99da833781` passed 6/6 native CI but a successor requires new same-SHA verification. No signing custody, independently reviewed license, signed installer, protected SCM/Job acceptance, approval, main merge, or production permission has been supplied.
+
+
 ## 2026-11-21 — IDE-PRECORE-CLOSEOUT-R4 six-job native follow-up (source correction, not acceptance)
 
 Examined terminal original run #44956609212: 0/6 after prior lock admission repair; native Git jobs failed on stale original supervisor Cargo.lock under `--locked`, while four desktop jobs failed an outdated Node source assertion (520/521 passing) about direct P06 invocation. Prepared one exact reviewed supervisor lock successor with only `rustix` and `zeroize` local links and no external dependency changes; historical source pin and verifier remain immutable. Extended the R4 lock bridge and hostile tests, retained original upstream-license and package checks, and updated the frontend test to require original P06/MERGE02C within the bridge and both before/after source verification on each installed platform. No signer, installer, Job/SCM acceptance or release grant.

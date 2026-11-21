@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "2e6f475e29a983dd82984d899107158ed5708dda",
-  "trackedFileCount": 2007,
+  "sourceCommitBeforeLock": "67a02dbac4354b60239805ccae0aab99da833781",
+  "trackedFileCount": 2010,
   "files": [
     {
       "path": ".gitattributes",
@@ -329,7 +329,7 @@
     },
     {
       "path": ".github/workflows/ide-group6f-integrated-native.yml",
-      "blob": "12882807211a3239c01cec1c72daf710017f85e3"
+      "blob": "0af29ae42c024f7c67757676504725ee1fd627ec"
     },
     {
       "path": ".github/workflows/ide-linux-26-installed-diagnostic.yml",
@@ -416,8 +416,12 @@
       "blob": "b1046bc7277ccb31924e3ed3b78d7afb22595d1e"
     },
     {
+      "path": ".github/workflows/ide-wo7-release-bundle-audit.yml",
+      "blob": "08c951b1c8d88bc8a843b346a5f00c43a0a238ea"
+    },
+    {
       "path": ".github/workflows/ide-wo7-signed-release-preflight.yml",
-      "blob": "6413844fdaa579840441d538d21bb62cf605fc93"
+      "blob": "3eddc41a7aa0447a66320d5999eab4cb25bdfecb"
     },
     {
       "path": ".github/workflows/ide-wo8-installed-linux.yml",
@@ -1693,7 +1697,7 @@
     },
     {
       "path": "ide/CHANGELOG.md",
-      "blob": "6f80dfa4b6cbda239b5743e1af1ce82caa92ce2a"
+      "blob": "d409baded8bb4c77eda692ba86aebaa68d31e5d6"
     },
     {
       "path": "ide/CONTINUITY_PROTOCOL.md",
@@ -1705,7 +1709,7 @@
     },
     {
       "path": "ide/PROJECT_STATE.md",
-      "blob": "cd38b3179a88186e498d9b3fa216b86db64b0e1f"
+      "blob": "609174f222138c081e26b15132e796f1dc3babda"
     },
     {
       "path": "ide/README.md",
@@ -2621,7 +2625,7 @@
     },
     {
       "path": "ide/ci/merge02-reviewed-native-boundaries.json",
-      "blob": "0a20e26b5849781fff1ca7cda1cbc9973b6f72a0"
+      "blob": "15dc31da16337f828934a2bdba222d325cf095c5"
     },
     {
       "path": "ide/ci/test_verify_reviewed_native_boundaries.py",
@@ -4196,8 +4200,12 @@
       "blob": "837d9c68852be3ab965c8e2079f34a74fe139e18"
     },
     {
+      "path": "ide/packaging/test_verify_wo7_positive_bundle_audit.py",
+      "blob": "0d41fa6783e7f97ab192da4f1828d6ad3b0be8b6"
+    },
+    {
       "path": "ide/packaging/test_verify_wo7_release_evidence.py",
-      "blob": "eb92d202de56037a9c6451804b0e94fd3213371c"
+      "blob": "c82851dc52396a53867ee8fa245ae4b5d6ee8deb"
     },
     {
       "path": "ide/packaging/test_verify_wo8_installed_evidence.py",
@@ -4408,8 +4416,12 @@
       "blob": "8164991abdeb05b1d7dc1d89da9fd0b7ad34d4a2"
     },
     {
+      "path": "ide/packaging/verify_wo7_positive_bundle_audit.py",
+      "blob": "d59dd8d38815b17c422201919149fb58dcd4cf74"
+    },
+    {
       "path": "ide/packaging/verify_wo7_release_evidence.py",
-      "blob": "deca9a3f9706955b14d34f9cc5fbfed5358c4ddb"
+      "blob": "e3237d128ca99022c8b73b0d422ae786d8ea71c5"
     },
     {
       "path": "ide/packaging/verify_wo8_installed_evidence.py",
@@ -6077,11 +6089,11 @@
     },
     {
       "path": "scripts/core01-verify-scope.mjs",
-      "blob": "4981d9938faa4d664e299c073efc2f867ebdb399"
+      "blob": "34ac2292bf8f572c53c863e23d27f4d5ac8dbbaf"
     },
     {
       "path": "scripts/core01-verify-scope.test.mjs",
-      "blob": "d8c9f1b25340c30404fadd3e2c2663a3f1efc198"
+      "blob": "4aee94ddd491e80b0c391bace697d208fa436f8b"
     },
     {
       "path": "scripts/core01f-acceptance-reconcile.mjs",

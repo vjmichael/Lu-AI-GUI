@@ -36,9 +36,18 @@ WORKFLOWS = {
     "native-windows-cargo": "ide-d7d-protected-service.yml",
     "native-windows-dap": "ide-wo6-native-os-acceptance.yml",
     "native-linux-dap": "ide-wo6-native-os-acceptance.yml",
-    **{gate: "ide-wo7-installed-acceptance.yml" for gate in REQUIRED - {
-        "native-windows-cargo", "native-windows-dap", "native-linux-dap",
-        "license-and-import-closure"}},
+    # WO7 installed smoke proves signed NSIS/SCM/uninstall, NOT protected execution.
+    "signed-installer": "ide-wo7-installed-acceptance.yml",
+    "protected-scm-install": "ide-wo7-installed-acceptance.yml",
+    "installed-uninstall": "ide-wo7-installed-acceptance.yml",
+    # Protected build/test/debug belong to the genuine signed WO8 UI/OS witness.
+    "protected-run": "ide-wo8-signed-protected-e2e.yml",
+    "protected-test": "ide-wo8-signed-protected-e2e.yml",
+    "protected-debug": "ide-wo8-signed-protected-e2e.yml",
+    # Independent cancellation, crash-restart and source-swap OS witnesses.
+    "host-crash-recovery": "ide-wo8-protected-recovery.yml",
+    "service-crash-recovery": "ide-wo8-protected-recovery.yml",
+    "source-tamper-denial": "ide-wo8-protected-recovery.yml",
     "license-and-import-closure": "ide-wo7-release-bundle-audit.yml",
 }
 MAX_ROWS = 64

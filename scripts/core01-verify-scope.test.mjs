@@ -178,3 +178,24 @@ test('R4 reviewed historical lock bridge has two exact IDE-only source pins', ()
   }
   assert.equal(reviewedR4PrecoreSource('ide/packaging/forged.py', rows[1][1],'100644'),false);
 });
+
+
+test('R4 positive WO7 workflow pins are source-only, never blanket Core authorization', () => {
+  const rows = [
+    ['ide/packaging/verify_wo7_positive_bundle_audit.py','d59dd8d38815b17c422201919149fb58dcd4cf74'],
+    ['ide/packaging/test_verify_wo7_positive_bundle_audit.py','0d41fa6783e7f97ab192da4f1828d6ad3b0be8b6'],
+    ['.github/workflows/ide-wo7-release-bundle-audit.yml','08c951b1c8d88bc8a843b346a5f00c43a0a238ea'],
+  ];
+  assert.equal(rows.length,3);
+  for (const [path,blob] of rows) {
+    const actual = [{path,blob,mode:'100644'}];
+    assert.equal(reviewedR4PrecoreSource(path,blob,'100644'),true);
+    assert.equal(reviewedR4PrecoreSource(path,'0'.repeat(40),'100644'),false);
+    assert.equal(reviewedR4PrecoreSource(path,blob,'120000'),false);
+    assert.equal(reviewedR4PrecoreSource(path,blob,'100755'),false);
+    assert.equal(forbiddenPath(path),true);
+    assert.deepEqual(scopeChanges(new Map(),actual).outOfScope,[path]);
+    assert.deepEqual(scopeChanges(new Map(),actual,integratedIdePaths([],actual)).outOfScope,[]);
+  }
+  assert.equal(reviewedR4PrecoreSource('ide/packaging/forged_positive_grant.py',rows[0][1],'100644'),false);
+});

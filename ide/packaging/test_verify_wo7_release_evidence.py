@@ -55,6 +55,43 @@ class EvidenceTests(unittest.TestCase):
         with self.assertRaisesRegex(Denied,"missing_or_reused"):
             audit(record,HEAD)
 
+    def test_wo7_scm_smoke_cannot_impersonate_wo8_protected_work(self):
+        protected=("protected-run","protected-test","protected-debug",
+                   "host-crash-recovery","service-crash-recovery","source-tamper-denial")
+        for gate in protected:
+            record=full_record()
+            row=next(row for row in record["acceptance"] if row["gate"]==gate)
+            row["workflow"]="ide-wo7-installed-acceptance.yml"
+            with self.subTest(gate=gate):
+                with self.assertRaisesRegex(Denied,"native_workflow_path_mismatch"):
+                    audit(record,HEAD)
+
+    def test_explicit_positive_provenance_targets(self):
+        expected={
+            "signed-installer": "ide-wo7-installed-acceptance.yml",
+            "protected-scm-install": "ide-wo7-installed-acceptance.yml",
+            "installed-uninstall": "ide-wo7-installed-acceptance.yml",
+            "protected-run": "ide-wo8-signed-protected-e2e.yml",
+            "protected-test": "ide-wo8-signed-protected-e2e.yml",
+            "protected-debug": "ide-wo8-signed-protected-e2e.yml",
+            "host-crash-recovery": "ide-wo8-protected-recovery.yml",
+            "service-crash-recovery": "ide-wo8-protected-recovery.yml",
+            "source-tamper-denial": "ide-wo8-protected-recovery.yml",
+            "license-and-import-closure": "ide-wo7-release-bundle-audit.yml",
+        }
+        for gate,workflow in expected.items():
+            with self.subTest(gate=gate):
+                self.assertEqual(WORKFLOWS[gate],workflow)
+        self.assertEqual(set(WORKFLOWS),REQUIRED)
+
+    def test_source_negative_license_preflight_not_positive_audit(self):
+        record=full_record()
+        row=next(r for r in record["acceptance"]
+                 if r["gate"]=="license-and-import-closure")
+        row["workflow"]="ide-wo7-signed-release-preflight.yml"
+        with self.assertRaisesRegex(Denied,"native_workflow_path_mismatch"):
+            audit(record,HEAD)
+
     def test_wrong_os_native_claim_denied(self):
         record=full_record()
         for row in record["acceptance"]:

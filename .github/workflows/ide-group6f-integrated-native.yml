@@ -62,6 +62,13 @@ jobs:
           python -m unittest discover -s ide/packaging -p 'test_ide_precore_lock_successor.py' -v
           python -m unittest discover -s ide/packaging -p 'test_ide_precore_r4_native_lock_chain.py' -v
           python ide/packaging/verify_ide_precore_r4_native_lock_chain.py --repo-root .
+      - name: WO7 signed release provenance and positive audit hostile source checks (NOT signing)
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s ide/packaging -p 'test_verify_wo7_release_evidence.py' -v
+          python -m unittest discover -s ide/packaging -p 'test_verify_wo7_positive_bundle_audit.py' -v
+          echo 'IDE_WO7_POSITIVE_AUDIT=SOURCE_NEGATIVE_TESTS_ONLY_NOT_LEGAL_OR_SIGNED'
       - name: Archive source-pinned exact-head native dependency locks
         uses: actions/upload-artifact@v4
         with:

@@ -361,6 +361,16 @@
       "scope": "R3 hostile installed resource byte and independent archive reconstruction tests"
     },
     {
+      "path": "ide/packaging/test_verify_wo7_positive_bundle_audit.py",
+      "sha": "0d41fa6783e7f97ab192da4f1828d6ad3b0be8b6",
+      "scope": "R4 source-only hostile signed/legal/import test fixtures; mock signatures forbidden in production verification or release admission"
+    },
+    {
+      "path": "ide/packaging/test_verify_wo7_release_evidence.py",
+      "sha": "c82851dc52396a53867ee8fa245ae4b5d6ee8deb",
+      "scope": "R4 hostile tests deny WO7 installed smoke impersonating separate WO8 protected-worker and positive legal/import witnesses"
+    },
+    {
       "path": "ide/packaging/upstream-licenses/README.md",
       "sha": "c2a543bb3fd75014f9d3b98ab58962266c3d27d1",
       "scope": "R1 provenance documentation only: exact canonical bytes and current pinned upstream version"
@@ -409,6 +419,16 @@
       "path": "ide/packaging/verify_technical_lsp_install.py",
       "sha": "0e8071c51d3918a3884d111dcb44f3e8d5334f5d",
       "scope": "R3 read-only staged and installed resource verification from pinned archives; no provider execution"
+    },
+    {
+      "path": "ide/packaging/verify_wo7_positive_bundle_audit.py",
+      "sha": "d59dd8d38815b17c422201919149fb58dcd4cf74",
+      "scope": "R4 fail-closed positive audit of real signed candidate, complete legal and PE imports, exact independent reviewed SHA; never grants release"
+    },
+    {
+      "path": "ide/packaging/verify_wo7_release_evidence.py",
+      "sha": "e3237d128ca99022c8b73b0d422ae786d8ea71c5",
+      "scope": "R4 maps signed WO7 smoke only to SCM/install and actual WO8 protected execution/recovery; source evidence metadata only, not acceptance"
     },
     {
       "path": "ide/supervisor/Cargo.lock",
