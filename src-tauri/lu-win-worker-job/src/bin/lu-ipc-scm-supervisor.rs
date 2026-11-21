@@ -10,7 +10,8 @@ mod native {
         thread,time::Duration};
     use lu_win_worker_job::{
         ipc_credential_broker::require_system_service_context,
-        ipc_scm_owned_jobs::ScmJobKeeper,
+        ipc_scm_owned_jobs::{ScmJobKeeper,SupervisedJobLane},
+        ipc_scm_receipts::persist_executor_stop,
     };
 
     type Handle=*mut c_void;
@@ -121,7 +122,13 @@ mod native {
             thread::sleep(Duration::from_millis(200));
         }
         let _=report(handle,SERVICE_STOP_PENDING,0);
-        let stopped=keeper.stop_all().is_ok();
+        let stopped=match keeper.stop_all(){
+            Ok(witnesses)=>witnesses.iter().all(|witness|
+                witness.lane()!=SupervisedJobLane::CoreExecutor
+                    ||persist_executor_stop(witness).is_ok()
+            ),
+            Err(_)=>false,
+        };
         let _=report(handle,SERVICE_STOPPED,if stopped{0}else{3});
     }
     pub fn run()->io::Result<()>{
