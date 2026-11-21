@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "d96a81dc1caa14982e8109424dce308197dc19c8",
+  "sourceCommitBeforeLock": "3874e86c2ff5b58cb38031d82a5ee31ec55fac53",
   "trackedFileCount": 1270,
   "files": [
     {
@@ -81,7 +81,7 @@
     },
     {
       "path": ".github/workflows/lu-core-c6-hosted-dual-nsis.yml",
-      "blob": "f626ea658f6a9f5d87cb762e45d7ae57648dd476"
+      "blob": "da1aed84ac350a8715f9968a51dc705a3d9c5a04"
     },
     {
       "path": ".github/workflows/lu-core-c62a-windows-browser-candidate.yml",
@@ -757,7 +757,7 @@
     },
     {
       "path": "docs/LU_CORE_C6_PHYSICAL_WINDOWS_ACCEPTANCE_20261116.md",
-      "blob": "085980cb1eaa6df6eea3fc99b8c1f703eebca127"
+      "blob": "a8aba7fa8c57ba14a37da6b2d3a58a29f2d3119e"
     },
     {
       "path": "docs/LU_CORE_CONSOLIDATION_INVENTORY_20261113.md",
@@ -3057,7 +3057,7 @@
     },
     {
       "path": "scripts/lu-c6-hosted-physical-contract.test.mjs",
-      "blob": "312a6e23e5dce8c3589a2d711b5e8af3f542da97"
+      "blob": "83c6eaf145c1a53cc77a368aba9ab1311b36a7ab"
     },
     {
       "path": "scripts/lu-c62-browser-bundle-source.test.mjs",
