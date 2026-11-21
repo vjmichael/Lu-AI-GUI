@@ -38,7 +38,7 @@ pub(crate) struct InstalledNvpHostInputs<'a>{
 }
 
 fn original_creator_turn(
-    owner:&DesktopState,
+    chats:&ChatStore,
     original:&OriginalCall,
 )->Result<(String,i64),String>{
     if original.module_id!="nvp.film" ||
@@ -50,20 +50,20 @@ fn original_creator_turn(
     }
     let chat=&original.conversation_ref;
     let turn=&original.user_turn_ref;
-    if owner.chats.latest_authenticated_user_turn_id(chat).as_deref()!=Some(turn){
+    if chats.latest_authenticated_user_turn_id(chat).as_deref()!=Some(turn){
         return Err("Film request is not the current authenticated USER turn".into())
     }
-    let original_text=owner.chats.trusted_user_turn_text(chat,turn)
+    let original_text=chats.trusted_user_turn_text(chat,turn)
         .ok_or("Film request has no authenticated persisted USER text")?;
     if original_text.trim().is_empty(){
         return Err("Original film request is empty".into())
     }
     let verifier=crate::turn_authority::PersistedHumanTurn::current_chat(
-        &owner.chats,chat,turn,&original_text);
+        chats,chat,turn,&original_text);
     if !verifier.verify_user_turn(chat,turn){
         return Err("Film creator turn provenance changed".into())
     }
-    let watermark=owner.chats.p0_auth_requested_watermark(chat)?;
+    let watermark=chats.p0_auth_requested_watermark(chat)?;
     Ok((original_text,watermark))
 }
 
@@ -116,7 +116,7 @@ fn validate_installed_original(
         return Err("NVP original operation or server generation does not match".into())
     }
     exact_registered_film_tools(inputs.registry,inputs.plan)?;
-    original_creator_turn(owner,original)
+    original_creator_turn(&owner.chats,original)
 }
 
 fn clear_grant(owner:&DesktopState,task:&str){
@@ -192,23 +192,38 @@ pub(crate) async fn serve_installed_nvp_for_creator_turn(
             &owner.chats,&original.conversation_ref,
             &original.user_turn_ref,&original_text
         );
-        owner.nvp_authority.open_user_task(TaskAuthority{
-            conversation_id:original.conversation_ref.clone(),
-            user_turn_id:original.user_turn_ref.clone(),
-            task_id:original.task_ref.clone(),
-            execution_scope_id:original.workspace_ref.clone(),
-            capabilities:vec![
-                AuthorizedCapability{
-                    tool_id:inputs.plan.read_descriptor.id.clone(),
-                    effect:ToolEffect::ReadWorkspace,
-                },
-                AuthorizedCapability{
-                    tool_id:inputs.plan.execute_descriptor.id.clone(),
-                    effect:ToolEffect::ExecuteCode,
-                },
-            ],
-            expires_at:Some(SystemTime::now()+Duration::from_secs(300)),
-        },&verifier).map_err(|_|"Native original film grant refused")?;
+        // Serialize the verified current USER/approval transition against
+        // Lu's global Stop removing the creator grant. A Stop cannot slip
+        // between the last cancelled check and opening this new task.
+        {
+            let slot=owner.nvp_grant.lock()
+                .map_err(|_|"NVP creator authority lock unavailable")?;
+            if cancelled.load(Ordering::Acquire) ||
+               !slot.as_ref().is_some_and(|grant|
+                   grant.task_id==original.task_ref &&
+                   grant.chat_id==original.conversation_ref &&
+                   grant.user_turn_id==original.user_turn_ref &&
+                   grant.revocation_watermark==watermark){
+                return Err("NVP creator grant cancelled before admission".into())
+            }
+            owner.nvp_authority.open_user_task(TaskAuthority{
+                conversation_id:original.conversation_ref.clone(),
+                user_turn_id:original.user_turn_ref.clone(),
+                task_id:original.task_ref.clone(),
+                execution_scope_id:original.workspace_ref.clone(),
+                capabilities:vec![
+                    AuthorizedCapability{
+                        tool_id:inputs.plan.read_descriptor.id.clone(),
+                        effect:ToolEffect::ReadWorkspace,
+                    },
+                    AuthorizedCapability{
+                        tool_id:inputs.plan.execute_descriptor.id.clone(),
+                        effect:ToolEffect::ExecuteCode,
+                    },
+                ],
+                expires_at:Some(SystemTime::now()+Duration::from_secs(300)),
+            },&verifier).map_err(|_|"Native original film grant refused")?;
+        }
         let host_origin=BoundCallOrigin{
             conversation_id:original.conversation_ref.clone(),
             user_turn_id:original.user_turn_ref.clone(),
@@ -260,6 +275,7 @@ mod tests{
             workspace_ref:"film-project".into(),
         };
         assert!(store.trusted_user_turn_text(&chat,&turn).is_none());
+        assert!(original_creator_turn(&store,&original).is_err());
         let fake=crate::turn_authority::PersistedHumanTurn::current_chat(
             &store,&chat,&turn,"Generate this film"
         );
@@ -270,12 +286,16 @@ mod tests{
             &store,&chat,&turn,"Generate this film"
         );
         assert!(p.verify_user_turn(&chat,&turn));
+        assert_eq!(original_creator_turn(&store,&original).unwrap().0,
+            "Generate this film");
         let later=next_id("g-");
         store.append_user_with_turn_id(&chat,&later,"Different request").unwrap();
         assert!(!p.verify_user_turn(&chat,&turn));
+        assert!(original_creator_turn(&store,&original).is_err());
         let mut fake_scope=original.clone();
         fake_scope.module_id="lu.ide".into();
         assert_ne!(fake_scope.module_id,"nvp.film");
+        assert!(original_creator_turn(&store,&fake_scope).is_err());
         drop(store);
         let _=std::fs::remove_dir_all(root);
     }
