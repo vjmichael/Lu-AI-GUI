@@ -12,8 +12,8 @@
 //! ACK is not independently verifiable until the Core reopens the receipt.
 #![cfg(windows)]
 use std::{
-    fs::File,io::{self,Read,Seek,SeekFrom},sync::atomic::{AtomicBool,Ordering},
-    time::Duration,
+    collections::BTreeMap,fs::File,io::{self,Read,Seek,SeekFrom},
+    sync::atomic::{AtomicBool,Ordering},time::{Duration,Instant},
 };
 use tokio::{
     io::{AsyncReadExt,AsyncWriteExt},
@@ -21,17 +21,19 @@ use tokio::{
     time::timeout,
 };
 use crate::{
-    ipc_credential_broker::require_system_service_context,
+    ipc_credential_broker::{require_system_service_context,
+        verify_nvp_handshake_and_sign_welcome},
     ipc_installer_enrollment::{InstalledScmCorePins,read_installed_scm_core_pins,
-        read_installed_scm_receipt_public_key},
+        read_installed_scm_receipt_public_key,read_installed_nvp_film_pins},
     ipc_pipe_peer::{create_scm_control_pipe,observe_host_process,
         observe_connected_peer,WindowsPipePeer},
     ipc_scm_owned_jobs::{ScmJobKeeper,ServiceCallBinding,SupervisedJobLane},
     ipc_scm_receipts::{hash,persist_executor_stop,sign_core_control_request,
         verify_core_control_request,verify_executor_stop,
         read_executor_stop_bytes_for_control},
-    ipc_signed_package::{inspect_signed_client},
+    ipc_signed_package::{inspect_signed_client,open_signed_image},
     ipc_scm_control_wire::{ScmCommand,ScmControl,OriginalCall,
+        NvpAuthRequest,NvpAuthAction,
         CHALLENGE_BYTES,SIGNATURE_BYTES,MAX_CONTROL_BODY},
 };
 const PIPE:&str=r"\\.\pipe\LuCoreIpcScmControlV1";
@@ -43,6 +45,9 @@ const CORE_SERVICE_STOPPED:u8=2;
 const CORE_SERVICE_READ_OK:u8=1;
 const CORE_SERVICE_RECEIPT_EXISTS:u8=3;
 const CORE_SERVICE_LAUNCHED:u8=4;
+const CORE_SERVICE_NVP_AUTH:u8=5;
+const MAX_NVP_BROKER_SESSIONS:usize=128;
+const NVP_AUTH_LIFETIME:Duration=Duration::from_secs(300);
 
 #[link(name="bcrypt")]
 unsafe extern "system"{
@@ -118,8 +123,94 @@ async fn read_signed_packet(pipe:&mut NamedPipeServer)->io::Result<(Vec<u8>,[u8;
     }).await.map_err(|_|denied("SCM request body timeout"))??;
     Ok((body,signature))
 }
+/// Service-memory-only replay registry. This is intentionally LOST on SCM
+/// restart, so old Core/desktop sessions cannot survive a new service epoch.
+/// Tombstones remain until the service ends: expired/revoked scopes are never
+/// silently reopened with a replayed NVP Hello and client HMAC.
+#[derive(Default)]
+struct NvpAuthRegistry{
+    sessions:BTreeMap<[u8;32],(Instant,bool)>,
+}
+impl NvpAuthRegistry{
+    fn apply(&mut self,request:&NvpAuthRequest)->io::Result<()>{
+        let mut normalized=request.clone();
+        normalized.action=NvpAuthAction::Open;
+        let identity=hash(&normalized.canonical([0x7a;CHALLENGE_BYTES])
+            .map_err(|_|denied("noncanonical NVP auth identity"))?)?;
+        match request.action{
+            NvpAuthAction::Open=>{
+                if self.sessions.len()>=MAX_NVP_BROKER_SESSIONS ||
+                   self.sessions.contains_key(&identity){
+                    return Err(denied("NVP session replay or admission capacity"))
+                }
+                self.sessions.insert(identity,
+                    (Instant::now()+NVP_AUTH_LIFETIME,false));
+                Ok(())
+            }
+            NvpAuthAction::Check=>{
+                let (expiry,revoked)=self.sessions.get(&identity)
+                    .ok_or_else(||denied("unknown SCM NVP session"))?;
+                if *revoked||Instant::now()>=*expiry{
+                    return Err(denied("NVP session expired or revoked"))
+                }
+                Ok(())
+            }
+            NvpAuthAction::Revoke=>{
+                let (_,revoked)=self.sessions.get_mut(&identity)
+                    .ok_or_else(||denied("unknown SCM NVP session"))?;
+                if *revoked{return Err(denied("NVP session already revoked"))}
+                *revoked=true;
+                Ok(())
+            }
+        }
+    }
+}
+fn verify_native_nvp_scope(request:&NvpAuthRequest)->io::Result<()>{
+    require_system_service_context()?;
+    if request.scope.original.session_ref!=request.core_session{
+        return Err(denied("NVP host session not original signed operation"))
+    }
+    // The independently protected installer record is re-opened on every
+    // request. The signed Core host supplied the matching exact hash after
+    // independently validating the record's package/signature pins.
+    let record=read_installed_nvp_film_pins()?;
+    if hash(&record)?!=request.enrollment_sha256{
+        return Err(denied("NVP installer enrollment revoked or replaced"))
+    }
+    let observed=observe_host_process(request.scope.nvp_pid)?;
+    if observed.pid!=request.scope.nvp_pid ||
+       observed.creation_filetime!=request.scope.nvp_birth_filetime ||
+       observed.session_id!=request.scope.nvp_session_id ||
+       observed.session_id==0 || observed.user_sid=="S-1-5-18" {
+        return Err(denied("NVP process generation or user scope changed"))
+    }
+    // WinTrust's embedded signer and the SAME opened executable file must
+    // match the independently Core-approved exact pins on this signed packet.
+    // Never accept a filename or a signature alone as identity.
+    let (image,signer_der)=open_signed_image(&observed.image_path)?;
+    if digest_opened_file(&image)?!=request.image_sha256 ||
+       hash(&signer_der)?!=request.signer_sha256{
+        return Err(denied("NVP signed image or publisher changed"))
+    }
+    Ok(())
+}
+fn serve_nvp_auth(
+    request:&NvpAuthRequest,registry:&mut NvpAuthRegistry,
+)->io::Result<[u8;32]>{
+    verify_native_nvp_scope(request)?;
+    // Compute NVP client MAC while the SYSTEM key is in the SCM process,
+    // returning only the bounded HMAC of the unsigned Welcome transcript.
+    let mac=verify_nvp_handshake_and_sign_welcome(
+        request.package_sha256,&request.hello_wire,
+        &request.scope.challenge,&request.client_proof,
+        &request.core_session,&request.welcome_without_mac)?;
+    registry.apply(request)?;
+    Ok(mac)
+}
+
 async fn serve_one(
-    pipe:&mut NamedPipeServer,keeper:&ScmJobKeeper,pins:&InstalledScmCorePins
+    pipe:&mut NamedPipeServer,keeper:&ScmJobKeeper,pins:&InstalledScmCorePins,
+    nvp_registry:&mut NvpAuthRegistry,
 )->io::Result<()>{
     require_system_service_context()?;
     let service=observe_host_process(std::process::id())?;
@@ -132,12 +223,21 @@ async fn serve_one(
     let (body,signature)=read_signed_packet(pipe).await?;
     let lease=signed_kernel_peer(pipe,pins)?;
     verify_core_control_request(&body,&signature)?;
-    let command=ScmControl::parse_exact(
-        &body,nonce,service.pid,service.creation_filetime)
-        .map_err(|_|denied("SCM signed command refused by canonical parser"))?;
     lease.check_alive()?;
     let mut transmitted_receipt=None;
-    let result=match command.command{
+    let mut nvp_welcome_mac=None;
+    let result=if body.starts_with(NvpAuthRequest::DOMAIN){
+        let request=NvpAuthRequest::parse_exact(
+            &body,nonce,service.pid,service.creation_filetime)
+            .map_err(|_|denied("SCM NVP signed scope not canonical"))?;
+        let mac=serve_nvp_auth(&request,nvp_registry)?;
+        nvp_welcome_mac=Some(mac);
+        CORE_SERVICE_NVP_AUTH
+    }else{
+        let command=ScmControl::parse_exact(
+            &body,nonce,service.pid,service.creation_filetime)
+            .map_err(|_|denied("SCM signed command refused by canonical parser"))?;
+        match command.command{
         ScmCommand::ReadStatus=>CORE_SERVICE_READ_OK,
         ScmCommand::LaunchFixedExecutor=>{
             let binding=original_binding(command.original.as_ref()
@@ -166,11 +266,15 @@ async fn serve_one(
             transmitted_receipt=Some(read_executor_stop_bytes_for_control(&binding)?);
             CORE_SERVICE_RECEIPT_EXISTS
         }
-    };
+    }};
     lease.check_alive()?;
     // This 1-byte status is NOT a signed receipt or an execution grant.
     timeout(IO_DEADLINE,async{
         pipe.write_all(&[result]).await?;
+        if let Some(mac)=nvp_welcome_mac{
+            // Never return the package key or an unbounded bearer token.
+            pipe.write_all(&mac).await?;
+        }
         if let Some(receipt)=transmitted_receipt{
             let size=u32::try_from(receipt.len())
                 .map_err(|_|denied("SCM receipt wire too large"))?;
@@ -200,6 +304,7 @@ pub fn serve_control<F:FnOnce()->io::Result<()>>(
     let rt=tokio::runtime::Builder::new_current_thread()
         .enable_all().build()?;
     let mut ready=Some(on_ready);
+    let mut nvp_registry=NvpAuthRegistry::default();
     rt.block_on(async{
         while !stop.load(Ordering::Acquire){
             // A crashed/replaced Core loses its SCM worker by OS observation;
@@ -213,7 +318,7 @@ pub fn serve_control<F:FnOnce()->io::Result<()>>(
                 Ok(Ok(()))=>{
                     // One hostile client can occupy only this bounded time.
                     // Refusals never authorize a worker or stop another Job.
-                    let _=serve_one(&mut pipe,keeper,&pins).await;
+                    let _=serve_one(&mut pipe,keeper,&pins,&mut nvp_registry).await;
                 }
                 Ok(Err(err))=>return Err(err),
                 Err(_)=>(), // drop pending connect and check SCM STOP
@@ -294,6 +399,47 @@ pub async fn issue_core_command(
     }
     Ok(ScmControlResponse{code:result[0],signed_receipt})
 }
+/// Core-only private, signed NVP transcript verifier. It must be invoked
+/// using a trusted HostCoreTask and an independently held signed peer lease.
+/// Success proves only a bounded HMAC session; it is never a GPU-lease grant.
+pub async fn issue_nvp_auth_command(
+    request:&NvpAuthRequest,expected_scm:&WindowsPipePeer,
+)->io::Result<[u8;32]>{
+    if request.scope.service_pid!=expected_scm.pid ||
+       request.scope.service_birth_filetime!=expected_scm.creation_filetime{
+        return Err(denied("NVP private request uses stale SCM epoch"))
+    }
+    let mut pipe=ClientOptions::new().open(PIPE)?;
+    observe_server(&pipe,expected_scm)?;
+    let mut challenge=[0u8;CHALLENGE_BYTES];
+    timeout(IO_DEADLINE,pipe.read_exact(&mut challenge)).await
+        .map_err(|_|denied("NVP SCM broker challenge timeout"))??;
+    let body=request.canonical(challenge)
+        .map_err(|_|denied("invalid private NVP handshake transcript"))?;
+    let signature=sign_core_control_request(&body)?;
+    observe_server(&pipe,expected_scm)?;
+    timeout(IO_DEADLINE,async{
+        pipe.write_all(&(body.len() as u32).to_be_bytes()).await?;
+        pipe.write_all(&body).await?;
+        pipe.write_all(&signature).await?;
+        pipe.flush().await
+    }).await.map_err(|_|denied("NVP SCM broker request timeout"))??;
+    let mut code=[0u8;1];
+    timeout(IO_DEADLINE,pipe.read_exact(&mut code)).await
+        .map_err(|_|denied("NVP SCM broker refused or timed out"))??;
+    if code[0]!=CORE_SERVICE_NVP_AUTH{
+        return Err(denied("NVP SCM broker response not admitted"))
+    }
+    let mut mac=[0u8;32];
+    timeout(IO_DEADLINE,pipe.read_exact(&mut mac)).await
+        .map_err(|_|denied("NVP SCM authenticated reply timeout"))??;
+    observe_server(&pipe,expected_scm)?;
+    if mac.iter().all(|b|*b==0){
+        return Err(denied("NVP SCM broker returned empty transcript MAC"))
+    }
+    Ok(mac)
+}
+
 #[cfg(test)]
 mod tests{
     use super::*;
