@@ -1,0 +1,86 @@
+# Temporary read-only exact-source qualification. Does not update PR #236.
+# The trigger commit contains this runner definition only; the job detaches
+# to the unchanged reviewed candidate before executing the original source.
+name: IDE S01 R1R4 candidate original source qualification (no release)
+on:
+  push:
+    branches:
+      - ide/qualify-s01-r1r4-20261120
+    paths:
+      - '.github/workflows/ide-s01-r1r4-qualify.yml'
+permissions:
+  contents: read
+concurrency:
+  group: ide-s01-r1r4-qualify-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  original-source-qualification:
+    name: Exact candidate original source checks / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            p06-platform: ubuntu-24.04
+          - os: windows-2022
+            p06-platform: windows-2022
+    timeout-minutes: 40
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+      CANDIDATE_SOURCE_SHA: 986ac4b8fbb3d7078cece61efb31cc4a8e3728e7
+      EXPECTED_PARENT_SHA: 77e12b25114bd5316269a601ee1fd87fcf38b5df
+      EXPECTED_CANDIDATE_TREE: 3e877d1e12126cd622a774611cb1a775d30c1962
+      SOURCE_REVIEW_BASE: 06beb2d8725f1175a1c4eb930e829afd582a6e96
+    steps:
+      - name: Retrieve complete qualification ancestry without persisted credentials
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Install source-check Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Detach and attest the unmodified candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          git cat-file -e "$CANDIDATE_SOURCE_SHA^{commit}"
+          git checkout --detach "$CANDIDATE_SOURCE_SHA"
+          test "$(git rev-parse HEAD)" = "$CANDIDATE_SOURCE_SHA"
+          test "$(git rev-parse HEAD^)" = "$EXPECTED_PARENT_SHA"
+          test "$(git rev-parse HEAD^{tree})" = "$EXPECTED_CANDIDATE_TREE"
+          git merge-base --is-ancestor "$SOURCE_REVIEW_BASE" "$CANDIDATE_SOURCE_SHA"
+          git diff --exit-code HEAD --
+          git diff --cached --exit-code
+          test -z "$(git status --porcelain --untracked-files=all)"
+          printf 'QUALIFIED_SOURCE_SHA=%s\nQUALIFIED_SOURCE_TREE=%s\n' "$CANDIDATE_SOURCE_SHA" "$EXPECTED_CANDIDATE_TREE"
+      - name: Run original source manifest checkout audit and negative suite
+        shell: bash
+        run: |
+          set -euo pipefail
+          python ide/ci/verify_reviewed_native_boundaries.py --repo-root .
+          python -m unittest discover -s ide/ci -p 'test_verify_reviewed_native_boundaries.py' -v
+      - name: Run original 45-workflow disposition source suite
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s ide/packaging -p 'test_ide_05b_r3_workflow_dispositions.py' -v
+      - name: Run original platform P06 source dependency lock gate
+        shell: bash
+        env:
+          P06_PLATFORM: ${{ matrix.p06-platform }}
+        run: |
+          set -euo pipefail
+          python ide/packaging/verify_p06_checkout_lock.py --repo-root . --platform "$P06_PLATFORM"
+      - name: Final exact SHA and clean worktree refusal
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$CANDIDATE_SOURCE_SHA"
+          test "$(git rev-parse HEAD^{tree})" = "$EXPECTED_CANDIDATE_TREE"
+          git diff --exit-code HEAD --
+          git diff --cached --exit-code
+          test -z "$(git status --porcelain --untracked-files=all)"
+          printf 'IDE_S01_R1R4_ORIGINAL_SOURCE_TESTS=PASS_NOT_NATIVE_OS_OR_INSTALLED\n'
