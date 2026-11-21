@@ -1041,6 +1041,11 @@ where B:crate::inference_host::InferenceBackend+Send+'static{
     authority.authorize_worker_call(
         host.origin,plan.execute,plan.execute_descriptor,host.policy)
         .map_err(|_|CoreDlcGateError::Denied)?;
+    // Neither a valid chat turn nor a signed NVP HMAC session can admit
+    // diffusion if the independent native worker-stop issuer is absent.
+    // This preflight does NOT sign or assert a worker-empty receipt.
+    supervisor.private_nvp_stop_issuer_ready(original).await
+        .map_err(|_|CoreDlcGateError::Unavailable)?;
     let scm=supervisor.original_process_witness()
         .map_err(|_|CoreDlcGateError::Unavailable)?;
     // This is an actual local OS named-pipe instance with a restricted
