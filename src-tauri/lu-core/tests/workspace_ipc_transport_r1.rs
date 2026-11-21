@@ -229,41 +229,60 @@ impl PeerAdmission for LoopbackPolicy {
 #[cfg(windows)]
 #[tokio::test]
 async fn windows_pipe_is_local_single_instance_and_unauthorized_until_os_attested(){
-    use lu_core::workspace_ipc_transport::windows;
+    use lu_core::workspace_ipc_transport::{
+        windows,WindowsPinnedEnrollment,server_handshake_with_hello,
+    };
     let pipe=format!(r"\\.\pipe\lu-ipc-{:032x}",std::process::id());
     let mut server=windows::bind_one(&pipe).unwrap();
     assert!(windows::bind_one(&pipe).is_err()); // first-instance fence.
     let mut client=windows::connect(&pipe).unwrap();
-    let evidence=windows::accept_peer(&server).await.unwrap();
-    let pinned=match &evidence{
-        PeerEvidence::WindowsObserved{pid,session_id,user_sid,image_path}=>{
-            assert_eq!(*pid,std::process::id());
-            assert!(!user_sid.is_empty()&&!image_path.is_empty());
-            lu_core::workspace_ipc_transport::WindowsPinnedEnrollment {
-                expected_pid:*pid,expected_session_id:*session_id,
-                expected_user_sid:user_sid.clone(),
-                expected_executable_path:image_path.clone(),
-                expected_module_id:"lu.ide".into(),
-                expected_role:proto::ModuleRole::Workspace as i32,
-                expected_package_sha256:DIGEST,handshake_key:KEY,
-            }
-        }
-        _=>panic!("missing Win32 OS witness"),
-    };
-    // Native process/session/SID observed. The host still must independently
-    // attest the executable's enrolled, signer-verified package.
     let server_identity=materials();
-    let server_work=server_handshake(&mut server,&evidence,&pinned,&server_identity);
+    let server_work=async{
+        let (evidence,first)=windows::accept_message_peer(&mut server).await.unwrap();
+        let pinned=match &evidence{
+            PeerEvidence::WindowsMessageTokenObserved {
+                pid,session_id,user_sid,image_path,creation_filetime,
+            }=>{
+                assert_eq!(*pid,std::process::id());
+                assert!(*creation_filetime>0);
+                assert!(!user_sid.is_empty()&&!image_path.is_empty());
+                WindowsPinnedEnrollment {
+                    expected_pid:*pid,expected_creation_filetime:*creation_filetime,
+                    expected_session_id:*session_id,
+                    expected_user_sid:user_sid.clone(),
+                    expected_executable_path:image_path.clone(),
+                    expected_module_id:"lu.ide".into(),
+                    expected_role:proto::ModuleRole::Workspace as i32,
+                    expected_package_sha256:DIGEST,handshake_key:KEY,
+                }
+            }
+            _=>panic!("post-message Win32 token witness missing"),
+        };
+        let received=server_handshake_with_hello(&mut server,&evidence,
+            &pinned,&server_identity,first).await.unwrap();
+        (received,evidence,pinned)
+    };
     let client_work=client_handshake(&mut client,hello(),&KEY);
-    let (host,guest)=tokio::join!(server_work,client_work);
-    assert_eq!(host.unwrap(),guest.unwrap());
-
-    // Verified SID is not sufficient for forged PID or executable identity.
-    let forged_pid=lu_core::workspace_ipc_transport::WindowsPinnedEnrollment {
+    let ((host,evidence,pinned),opened)=tokio::join!(server_work,client_work);
+    assert_eq!(host,opened.unwrap());
+    let h=hello();
+    let Some(proto::workspace_frame::Body::Hello(claimed))=h.body.as_ref()
+        else{unreachable!()};
+    // Raw PID/SID metadata is insufficient even when it matches everything.
+    let raw=match &evidence{
+        PeerEvidence::WindowsMessageTokenObserved {
+            pid,session_id,user_sid,image_path,..
+        }=>PeerEvidence::WindowsObserved {
+            pid:*pid,session_id:*session_id,
+            user_sid:user_sid.clone(),image_path:image_path.clone(),
+        },
+        _=>unreachable!(),
+    };
+    assert!(matches!(pinned.admit(&raw,claimed),
+        Err(TransportError::PeerNotVerified)));
+    let forged_pid=WindowsPinnedEnrollment {
         expected_pid:std::process::id().wrapping_add(1),..pinned
     };
-    let h=hello();
-    let Some(proto::workspace_frame::Body::Hello(claimed))=h.body.as_ref() else{unreachable!()};
     assert!(forged_pid.admit(&evidence,claimed).is_err());
 }
 
@@ -284,7 +303,7 @@ async fn separate_windows_process_has_real_kernel_identity_not_automatic_dlc_aut
     bytes.extend_from_slice(&payload);
     let b64=base64::engine::general_purpose::STANDARD.encode(bytes);
     let script=format!(
-        "$p=[System.IO.Pipes.NamedPipeClientStream]::new('.', '{bare}', [System.IO.Pipes.PipeDirection]::Out); \
+        "$p=[System.IO.Pipes.NamedPipeClientStream]::new('.', '{bare}', [System.IO.Pipes.PipeDirection]::Out, [System.IO.Pipes.PipeOptions]::None, [System.Security.Principal.TokenImpersonationLevel]::Identification); \
          $p.Connect(5000); $b=[Convert]::FromBase64String('{b64}'); \
          $p.Write($b,0,$b.Length); $p.Flush(); \
          Start-Sleep -Milliseconds 500; $p.Dispose()"
@@ -293,22 +312,23 @@ async fn separate_windows_process_has_real_kernel_identity_not_automatic_dlc_aut
         .args(["-NoLogo","-NoProfile","-NonInteractive","-Command",&script])
         .spawn().expect("launch independent Windows client");
     let evidence=match tokio::time::timeout(
-        Duration::from_secs(12),windows::accept_peer(&server)).await{
-        Ok(Ok(witness))=>witness,
+        Duration::from_secs(12),windows::accept_message_peer(&mut server)).await{
+        Ok(Ok((witness,first)))=>{assert_eq!(first,hello());witness},
         failure=>{
             let _=child.kill();let _=child.wait();
             panic!("native Windows independent peer failed: {failure:?}")
         }
     };
-    let inbound=read_frame(&mut server).await.unwrap();
-    assert_eq!(inbound,hello());
-    let PeerEvidence::WindowsObserved{pid,session_id,user_sid,image_path}=&evidence
+    let PeerEvidence::WindowsMessageTokenObserved{
+        pid,session_id,user_sid,image_path,creation_filetime,
+    }=&evidence
         else{panic!("no actual OS peer identity")};
     assert_eq!(*pid,child.id(),"kernel PID must identify other process");
     assert_ne!(*pid,std::process::id(),"must be another native process");
     assert!(!user_sid.is_empty()&&!image_path.is_empty());
+    assert!(*creation_filetime>0);
     let unrelated=WindowsPinnedEnrollment {
-        expected_pid:std::process::id(),
+        expected_pid:std::process::id(),expected_creation_filetime:*creation_filetime,
         expected_session_id:*session_id,
         expected_user_sid:user_sid.clone(),
         expected_executable_path:image_path.clone(),

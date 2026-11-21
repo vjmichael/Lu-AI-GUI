@@ -79,6 +79,12 @@ pub enum PeerEvidence {
     Linux { uid: u32, gid: u32, pid: u32 },
     WindowsUnverified,
     WindowsObserved { pid:u32, session_id:u32, user_sid:String, image_path:String },
+    // Only the native post-ReadFile Win32 token observer may supply this
+    // production admission witness; package signing is a separate gate.
+    WindowsMessageTokenObserved {
+        pid:u32, session_id:u32, user_sid:String, image_path:String,
+        creation_filetime:u64,
+    },
 }
 
 /// Returned exclusively by a trusted native Core admission policy which has
@@ -196,12 +202,28 @@ pub async fn server_handshake<S: AsyncRead + AsyncWrite + Unpin>(
     admission: &dyn PeerAdmission,
     identity: &ServerIdentity,
 ) -> Result<TransportSession, TransportError> {
-    reject_weak_identity(identity)?;
-    // Until a Win32 token/ACL verifier exists, refuse external Windows clients.
-    if *peer == PeerEvidence::WindowsUnverified {
+    // Raw process metadata must never trigger a challenge or an effect.
+    if matches!(peer, PeerEvidence::WindowsUnverified |
+        PeerEvidence::WindowsObserved { .. }) {
         return Err(TransportError::PeerNotVerified);
     }
-    let frame = read_frame(stream).await?;
+    reject_weak_identity(identity)?;
+    let frame=read_frame(stream).await?;
+    server_handshake_with_hello(stream,peer,admission,identity,frame).await
+}
+/// Used by the Windows named-pipe path after its first-frame ReadFile and
+/// synchronous OS impersonated-token attestation. Never trust caller data to
+/// populate a WindowsMessageTokenObserved witness.
+pub async fn server_handshake_with_hello<S: AsyncRead + AsyncWrite + Unpin>(
+    stream:&mut S,peer:&PeerEvidence,admission:&dyn PeerAdmission,
+    identity:&ServerIdentity,frame:proto::WorkspaceFrame,
+) -> Result<TransportSession,TransportError> {
+    reject_weak_identity(identity)?;
+    if matches!(peer, PeerEvidence::WindowsUnverified |
+        PeerEvidence::WindowsObserved { .. }) {
+        return Err(TransportError::PeerNotVerified);
+    }
+    crate::workspace_ipc::validate(&frame)?;
     let hello = match frame.body.as_ref() {
         Some(proto::workspace_frame::Body::Hello(v)) => v,
         _ => return Err(TransportError::Protocol("expected_hello")),
@@ -365,6 +387,7 @@ pub mod linux {
 /// still not authorized to perform a model/tool/workspace effect.
 pub struct WindowsPinnedEnrollment {
     pub expected_pid:u32,
+    pub expected_creation_filetime:u64,
     pub expected_session_id:u32,
     pub expected_user_sid:String,
     pub expected_executable_path:String,
@@ -376,14 +399,16 @@ pub struct WindowsPinnedEnrollment {
 impl PeerAdmission for WindowsPinnedEnrollment {
     fn admit(&self,peer:&PeerEvidence,hello:&proto::Hello)
         ->Result<EnrolledPeer,TransportError>{
-        let PeerEvidence::WindowsObserved{
-            pid,session_id,user_sid,image_path
+        let PeerEvidence::WindowsMessageTokenObserved{
+            pid,session_id,user_sid,image_path,creation_filetime
         }=peer else{return Err(TransportError::PeerNotVerified)};
         // No implicit same-user allowance and no filename-only allowlist.
         // Executable path is an OS-observed hint; caller must independently
         // verify signer/hash and installed package custody before constructing
         // this enrollment. PID is a host-admitted, supervised process.
         if *pid==0||*pid!=self.expected_pid
+           ||*creation_filetime==0
+           ||*creation_filetime!=self.expected_creation_filetime
            ||*session_id!=self.expected_session_id
            ||user_sid!=&self.expected_user_sid
            ||image_path!=&self.expected_executable_path
@@ -437,6 +462,25 @@ pub mod windows {
             user_sid:witness.user_sid,
             image_path:witness.image_path,
         })
+    }
+    /// The only native Windows path that upgrades a pipe connection from
+    /// raw process metadata to message-token observation. It consumes Hello
+    /// before any challenge; authentic signer enrollment is still host-owned.
+    pub async fn accept_message_peer(server:&mut NamedPipeServer)
+        ->Result<(PeerEvidence,proto::WorkspaceFrame),TransportError>{
+        server.connect().await?;
+        let first=read_frame(server).await?;
+        if !matches!(first.body.as_ref(),
+            Some(proto::workspace_frame::Body::Hello(_))) {
+            return Err(TransportError::Protocol("expected_hello"));
+        }
+        let witness=lu_win_worker_job::ipc_pipe_peer::observe_message_token_peer(server)
+            .map_err(|_|TransportError::PeerNotVerified)?;
+        Ok((PeerEvidence::WindowsMessageTokenObserved {
+            pid:witness.pid,session_id:witness.session_id,
+            user_sid:witness.user_sid,image_path:witness.image_path,
+            creation_filetime:witness.creation_filetime,
+        },first))
     }
     pub fn connect(name: &str) -> Result<NamedPipeClient, TransportError> {
         check_pipe_name(name)?;
