@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "dbd91384e800e34328313d9b0f490f668ca02327",
+  "sourceCommitBeforeLock": "e882be3cc6dfa6d2ceb8cd6515d03277a01a2c13",
   "trackedFileCount": 1304,
   "files": [
     {
@@ -1089,7 +1089,7 @@
     },
     {
       "path": "docs/LU_IPC_GPU_01C_DURABLE_DESKTOP_NVP_20261121.md",
-      "blob": "db8e03854c99d76811186fc090f3e9c20710d1b9"
+      "blob": "35fb58f314c5bfd2f646ad12e1aca4fdf6fed141"
     },
     {
       "path": "docs/LU_IPC_R4_R3_R3_R4_ECOSYSTEM_AND_SCM_CONTROL_20261121.md",
@@ -3813,7 +3813,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/gpu_resource_leases.rs",
-      "blob": "a6169cec2e8f7c0197ad05f79f9e545e335d9153"
+      "blob": "ac9842bce31da682437517562202817be1e10cf5"
     },
     {
       "path": "src-tauri/lu-core/src/host_resource_authority.rs",
@@ -4517,7 +4517,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/workspace_ipc_core_host.rs",
-      "blob": "163ca3cf38bfb14468b395dea5243d9c191d3ed8"
+      "blob": "5d17a195faf2e21a23c71e875fc4799ccb999e66"
     },
     {
       "path": "src-tauri/lu-core/src/workspace_ipc_scm.rs",
@@ -5041,7 +5041,7 @@
     },
     {
       "path": "src-tauri/lu-core/tests/workspace_ipc_gpu_lease.rs",
-      "blob": "785224cec48e0ee1659310d4afecc758b0e50e7e"
+      "blob": "643c5bf1760cd9f88fe0399a6bb06205ae930a44"
     },
     {
       "path": "src-tauri/lu-core/tests/workspace_ipc_transport_r1.rs",
