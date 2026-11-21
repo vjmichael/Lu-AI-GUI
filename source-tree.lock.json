@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "3e2161e38dc49b83bdade873d9f9a9569eb45cb2",
-  "trackedFileCount": 1302,
+  "sourceCommitBeforeLock": "dbd91384e800e34328313d9b0f490f668ca02327",
+  "trackedFileCount": 1304,
   "files": [
     {
       "path": ".gitattributes",
@@ -221,7 +221,7 @@
     },
     {
       "path": ".github/workflows/lu-ipc01d-r2-native.yml",
-      "blob": "cc42d737c07ff6942a0cbfb80dacac1ddcef55da"
+      "blob": "5c1d6bcb27095f566e61c4e01239c69eaa218651"
     },
     {
       "path": ".github/workflows/lu-kiaf-execution.yml",
@@ -1088,6 +1088,10 @@
       "blob": "944ccc0395b33aa620b7158ce09f03515b44a2a6"
     },
     {
+      "path": "docs/LU_IPC_GPU_01C_DURABLE_DESKTOP_NVP_20261121.md",
+      "blob": "db8e03854c99d76811186fc090f3e9c20710d1b9"
+    },
+    {
       "path": "docs/LU_IPC_R4_R3_R3_R4_ECOSYSTEM_AND_SCM_CONTROL_20261121.md",
       "blob": "5d5a14d071d855302959b6a1a5226cf84f80ed80"
     },
@@ -1861,7 +1865,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/lib.rs",
-      "blob": "6a4fa42f7bcb1739c7a6495e1ac09f462f4bd887"
+      "blob": "0f53b5368380712ff156581cb134ba726adacd46"
     },
     {
       "path": "lu-desktop/src-tauri/src/linked_attachment_file.rs",
@@ -3501,7 +3505,7 @@
     },
     {
       "path": "src-tauri/lu-core/proto/lu/workspace/v0/workspace.proto",
-      "blob": "c468669910fbc373cb9c19a9a2cf13c5ce0d8b51"
+      "blob": "747b7472ab7e4bdfd7d646dd629b2c45a9c63dd1"
     },
     {
       "path": "src-tauri/lu-core/src/agent_continuation_intent.rs",
@@ -3804,8 +3808,12 @@
       "blob": "3ed35bb1b76c5bd619eace47cc94e6cd9705e12d"
     },
     {
+      "path": "src-tauri/lu-core/src/gpu_async_reconciler.rs",
+      "blob": "f80ad0788771b2b152188efa8f4cdf3f70c47b82"
+    },
+    {
       "path": "src-tauri/lu-core/src/gpu_resource_leases.rs",
-      "blob": "2ffd021fb210b0bab7648d4971398ce999378fb7"
+      "blob": "a6169cec2e8f7c0197ad05f79f9e545e335d9153"
     },
     {
       "path": "src-tauri/lu-core/src/host_resource_authority.rs",
@@ -3861,7 +3869,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/lib.rs",
-      "blob": "9ea5de8ff0f8771da6784457b51c41e09afa9ddb"
+      "blob": "d5121b51163a8f3a2e00cf41e3cde97ea194105e"
     },
     {
       "path": "src-tauri/lu-core/src/linux_device_hints.rs",
@@ -4505,11 +4513,11 @@
     },
     {
       "path": "src-tauri/lu-core/src/workspace_ipc.rs",
-      "blob": "aeca28692374281e02469f1503144bea70fd510e"
+      "blob": "506da1f797b98cc75f85e63d329d2cfad0b38305"
     },
     {
       "path": "src-tauri/lu-core/src/workspace_ipc_core_host.rs",
-      "blob": "912f6fdae583e54ce61beba5f23e637235d71b7e"
+      "blob": "163ca3cf38bfb14468b395dea5243d9c191d3ed8"
     },
     {
       "path": "src-tauri/lu-core/src/workspace_ipc_scm.rs",
@@ -5033,7 +5041,7 @@
     },
     {
       "path": "src-tauri/lu-core/tests/workspace_ipc_gpu_lease.rs",
-      "blob": "ec79c352a54916b8aef475ea48d794b4ac954cfd"
+      "blob": "785224cec48e0ee1659310d4afecc758b0e50e7e"
     },
     {
       "path": "src-tauri/lu-core/tests/workspace_ipc_transport_r1.rs",
