@@ -46,6 +46,8 @@ const CORE_SERVICE_READ_OK:u8=1;
 const CORE_SERVICE_RECEIPT_EXISTS:u8=3;
 const CORE_SERVICE_LAUNCHED:u8=4;
 const CORE_SERVICE_NVP_AUTH:u8=5;
+const CORE_SERVICE_NVP_PUBLIC_PINS:u8=6;
+const MAX_NVP_PUBLIC_PINS:usize=4096;
 const MAX_NVP_BROKER_SESSIONS:usize=128;
 const NVP_AUTH_LIFETIME:Duration=Duration::from_secs(300);
 
@@ -225,6 +227,7 @@ async fn serve_one(
     verify_core_control_request(&body,&signature)?;
     lease.check_alive()?;
     let mut transmitted_receipt=None;
+    let mut transmitted_nvp_public_pins=None;
     let mut nvp_welcome_mac=None;
     let result=if body.starts_with(NvpAuthRequest::DOMAIN){
         let request=NvpAuthRequest::parse_exact(
@@ -266,6 +269,22 @@ async fn serve_one(
             transmitted_receipt=Some(read_executor_stop_bytes_for_control(&binding)?);
             CORE_SERVICE_RECEIPT_EXISTS
         }
+        ScmCommand::ReadNvpPublicEnrollment=>{
+            let original=command.original.as_ref()
+                .ok_or_else(||denied("missing original NVP enrollment scope"))?;
+            if original.module_id!="nvp.film" {
+                return Err(denied("SCM NVP pins cannot be read by another DLC"))
+            }
+            let public=read_installed_nvp_film_pins()?;
+            if public.is_empty()||public.len()>MAX_NVP_PUBLIC_PINS {
+                return Err(denied("NVP protected public pin record invalid"))
+            }
+            // These are ONLY public package/signer/image pins. The
+            // SYSTEM HMAC key remains in Credential Manager and is never
+            // included in this protected installation record.
+            transmitted_nvp_public_pins=Some(public);
+            CORE_SERVICE_NVP_PUBLIC_PINS
+        }
     }};
     lease.check_alive()?;
     // This 1-byte status is NOT a signed receipt or an execution grant.
@@ -274,6 +293,12 @@ async fn serve_one(
         if let Some(mac)=nvp_welcome_mac{
             // Never return the package key or an unbounded bearer token.
             pipe.write_all(&mac).await?;
+        }
+        if let Some(public)=transmitted_nvp_public_pins{
+            let size=u32::try_from(public.len())
+                .map_err(|_|denied("NVP public record too large"))?;
+            pipe.write_all(&size.to_be_bytes()).await?;
+            pipe.write_all(&public).await?;
         }
         if let Some(receipt)=transmitted_receipt{
             let size=u32::try_from(receipt.len())
@@ -350,6 +375,7 @@ fn observe_server(client:&NamedPipeClient,expected:&WindowsPipePeer)->io::Result
 pub struct ScmControlResponse{
     pub code:u8,
     pub signed_receipt:Option<Vec<u8>>,
+    pub public_nvp_enrollment:Option<Vec<u8>>,
 }
 pub async fn issue_core_command(
     command:&ScmControl,expected_scm:&WindowsPipePeer
@@ -389,16 +415,52 @@ pub async fn issue_core_command(
             .map_err(|_|denied("SCM receipt response timeout"))??;
         Some(receipt)
     }else{None};
+    let public_nvp_enrollment=if command.command==ScmCommand::ReadNvpPublicEnrollment{
+        let mut head=[0u8;4];
+        timeout(IO_DEADLINE,pipe.read_exact(&mut head)).await
+            .map_err(|_|denied("NVP public enrollment header timeout"))??;
+        let size=u32::from_be_bytes(head) as usize;
+        if size==0||size>MAX_NVP_PUBLIC_PINS{
+            return Err(denied("NVP public enrollment payload invalid"))
+        }
+        let mut bytes=vec![0u8;size];
+        timeout(IO_DEADLINE,pipe.read_exact(&mut bytes)).await
+            .map_err(|_|denied("NVP public enrollment body timeout"))??;
+        Some(bytes)
+    }else{None};
     observe_server(&pipe,expected_scm)?;
     if !matches!((command.command,result[0]),
         (ScmCommand::ReadStatus,CORE_SERVICE_READ_OK)|
         (ScmCommand::LaunchFixedExecutor,CORE_SERVICE_LAUNCHED)|
         (ScmCommand::StopExactExecutor,CORE_SERVICE_STOPPED)|
-        (ScmCommand::InspectStoppedExecutor,CORE_SERVICE_RECEIPT_EXISTS)){
+        (ScmCommand::InspectStoppedExecutor,CORE_SERVICE_RECEIPT_EXISTS)|
+        (ScmCommand::ReadNvpPublicEnrollment,CORE_SERVICE_NVP_PUBLIC_PINS)){
         return Err(denied("SCM private reply mismatched command"));
     }
-    Ok(ScmControlResponse{code:result[0],signed_receipt})
+    Ok(ScmControlResponse{code:result[0],signed_receipt,
+        public_nvp_enrollment})
 }
+/// Return only fixed installed PUBLIC NVP package/signature pins across the
+/// Core's already authenticated private SCM pipe. A non-SYSTEM desktop
+/// cannot read the protected ProgramData record directly, and no HMAC key
+/// material is ever returned by this operation.
+pub async fn fetch_nvp_public_enrollment(
+    original:&OriginalCall,expected_scm:&WindowsPipePeer,
+)->io::Result<Vec<u8>>{
+    if original.module_id!="nvp.film"{
+        return Err(denied("public NVP pin lookup requires original film task"))
+    }
+    let command=ScmControl{
+        command:ScmCommand::ReadNvpPublicEnrollment,
+        service_pid:expected_scm.pid,
+        service_birth:expected_scm.creation_filetime,
+        original:Some(original.clone()),
+    };
+    let result=issue_core_command(&command,expected_scm).await?;
+    result.public_nvp_enrollment
+        .ok_or_else(||denied("SCM supplied no protected NVP public pins"))
+}
+
 /// Core-only private, signed NVP transcript verifier. It must be invoked
 /// using a trusted HostCoreTask and an independently held signed peer lease.
 /// Success proves only a bounded HMAC session; it is never a GPU-lease grant.
