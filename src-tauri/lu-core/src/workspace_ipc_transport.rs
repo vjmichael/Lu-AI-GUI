@@ -674,7 +674,7 @@ pub mod windows {
                 let key_sha:[u8;32]=ImageSha256::digest(key).into();
                 // Volatile erasure before any comparison/return; it is not
                 // claimed to erase copies made by the OS or compiler.
-                for b in &mut key {unsafe{std::ptr::write_volatile(b,0);}}
+                lu_win_worker_job::ipc_credential_broker::clear_temporary_key(&mut key);
                 if !fixed_equal(&witness.credential_sha256,&key_sha) {
                     return Err(TransportError::PeerNotVerified);
                 }
@@ -768,9 +768,8 @@ pub mod windows {
         let accepted=accept_signed_peer_impl(server,&pin,identity).await;
         // Do not retain the raw session key in this admission object after
         // handshake. The session only retains a digest to detect key rotation.
-        for b in &mut pin.handshake_key {
-            unsafe { std::ptr::write_volatile(b,0); }
-        }
+        lu_win_worker_job::ipc_credential_broker::clear_temporary_key(
+            &mut pin.handshake_key);
         let mut session=accepted?;
         session.revocation=Some(witness);
         session.check_alive()?;

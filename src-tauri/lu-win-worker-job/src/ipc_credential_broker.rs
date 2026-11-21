@@ -14,12 +14,14 @@
 //! fallback target is accepted.
 #![cfg(windows)]
 
-use std::{ffi::c_void,io,ptr};
+use std::{ffi::c_void,io,ptr,sync::atomic::{compiler_fence,Ordering}};
 
 type Handle=*mut c_void;
 const CRED_TYPE_GENERIC:u32=1;
 const CRED_PERSIST_LOCAL_MACHINE:u32=2;
 const LOCAL_SYSTEM_SID:&str="S-1-5-18";
+const TOKEN_QUERY:u32=0x0008;
+const ERROR_NO_TOKEN:u32=1008;
 const TARGET_PREFIX:&str="LuCore/IPC/IDE/v1/";
 
 #[repr(C)]
@@ -44,6 +46,18 @@ unsafe extern "system"{
     fn CredReadW(target_name:*const u16,kind:u32,flags:u32,
         credential:*mut *mut CredentialW)->i32;
     fn CredFree(credential:Handle);
+    fn OpenThreadToken(thread:Handle,desired_access:u32,open_as_self:i32,
+        token:*mut Handle)->i32;
+    #[cfg(test)]
+    fn ImpersonateSelf(level:u32)->i32;
+    #[cfg(test)]
+    fn RevertToSelf()->i32;
+}
+#[link(name="kernel32")]
+unsafe extern "system"{
+    fn GetCurrentThread()->Handle;
+    fn GetLastError()->u32;
+    fn CloseHandle(handle:Handle)->i32;
 }
 struct OwnedCredential(*mut CredentialW);
 impl Drop for OwnedCredential{
@@ -54,6 +68,15 @@ impl Drop for OwnedCredential{
 fn denied(reason:&'static str)->io::Error{
     io::Error::new(io::ErrorKind::PermissionDenied,reason)
 }
+/// Best-effort volatile clearing of a temporary in-process key copy.
+/// Does not claim to erase OS-managed or compiler-created copies.
+pub fn clear_temporary_key(key:&mut [u8;32]){
+    for byte in key.iter_mut(){
+        unsafe{ptr::write_volatile(byte,0);}
+    }
+    compiler_fence(Ordering::SeqCst);
+}
+
 fn target_for_package(package:[u8;32])->io::Result<String>{
     if package.iter().all(|b|*b==0){
         return Err(denied("missing approved installed DLC package digest"));
@@ -66,7 +89,26 @@ fn target_for_package(package:[u8;32])->io::Result<String>{
     }
     Ok(target)
 }
+fn require_unimpersonated_broker_thread()->io::Result<()>{
+    // CredReadW selects the CURRENT TOKEN's logon credential set. Primary
+    // process identity alone is insufficient if a SYSTEM worker thread
+    // impersonates a named-pipe client. Require no active thread token:
+    // ERROR_NO_TOKEN is the only acceptable OpenThreadToken failure.
+    let mut thread_token:Handle=ptr::null_mut();
+    let probe=unsafe{
+        OpenThreadToken(GetCurrentThread(),TOKEN_QUERY,0,&mut thread_token)
+    };
+    if probe!=0 {
+        if !thread_token.is_null(){unsafe{CloseHandle(thread_token)};}
+        return Err(denied("impersonating thread cannot read SYSTEM DLC credential"));
+    }
+    if unsafe{GetLastError()}!=ERROR_NO_TOKEN{
+        return Err(denied("cannot prove non-impersonating SYSTEM broker thread"));
+    }
+    Ok(())
+}
 fn validate_broker_context()->io::Result<()>{
+    require_unimpersonated_broker_thread()?;
     let process=crate::ipc_pipe_peer::observe_host_process(std::process::id())
         .map_err(|_|denied("cannot inspect credential-broker host identity"))?;
     if process.user_sid!=LOCAL_SYSTEM_SID{
@@ -134,6 +176,23 @@ mod tests{
         assert!(copy_checked_secret(&make(0,1,2,64,secret.as_ptr())).is_err());
         assert!(copy_checked_secret(&make(0,1,2,32,ptr::null())).is_err());
         assert!(copy_checked_secret(&make(0,1,2,32,[0u8;32].as_ptr())).is_err());
+    }
+    #[test]
+    fn impersonating_thread_cannot_use_system_credential_reader(){
+        // SECURITY_IMPERSONATION_LEVEL::SecurityImpersonation = 2.
+        assert_ne!(unsafe{ImpersonateSelf(2)},0,
+            "self-impersonation fixture must install a real thread token");
+        struct Undo;
+        impl Drop for Undo {
+            fn drop(&mut self){
+                if unsafe{RevertToSelf()}==0{
+                    std::process::abort();
+                }
+            }
+        }
+        let _undo=Undo;
+        assert!(require_unimpersonated_broker_thread().is_err(),
+            "even a SYSTEM-hosted process cannot read its SYSTEM vault while impersonating");
     }
     #[test]
     fn unsigned_normal_host_cannot_access_system_ide_broker(){
