@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "46c195e22c735e448e182fd5f86da2bf9e9cb313",
+  "sourceCommitBeforeLock": "14f4c8b0f2f6c47cf265efb5e007dd8ce9e9edfc",
   "trackedFileCount": 1270,
   "files": [
     {
@@ -2221,7 +2221,7 @@
     },
     {
       "path": "lu-desktop/tests/cp01-submission-lifecycle.test.mjs",
-      "blob": "083548d56b3ff59e671976be2ae6f5de11553c75"
+      "blob": "272b651584e29636778e591e9a231f361c0b146e"
     },
     {
       "path": "lu-desktop/tests/cp02-document-intake.test.mjs",
@@ -2829,7 +2829,7 @@
     },
     {
       "path": "lu-desktop/web/submission_lifecycle.mjs",
-      "blob": "f52583215c00b7584127adcd39e5117263837d4b"
+      "blob": "fabfc99a1fb27f2736890e5936717494d7f40553"
     },
     {
       "path": "lu-desktop/web/task_board.jsx",
