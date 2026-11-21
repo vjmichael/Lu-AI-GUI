@@ -23,6 +23,8 @@ mod turn_coordinator;
 mod capability_discovery_desktop;
 mod capability_negotiation;
 mod turn_authority;
+#[cfg(windows)]
+mod nvp_gpu_desktop;
 mod perf01_telemetry;
 mod causal_diagnostic;
 mod active_checks;
@@ -757,6 +759,16 @@ struct ActiveBrowserGrant {
     starting:bool,
     revocation_watermark:i64,
 }
+/// Lu-desktop-only creator grant: no HMAC, signer pin, worker-stop proof or
+/// physical GPU assertion may be derived from this memory-only slot.
+#[cfg(windows)]
+struct ActiveNvpGrant{
+    task_id:String,
+    chat_id:String,
+    user_turn_id:String,
+    cancel:Arc<AtomicBool>,
+    revocation_watermark:i64,
+}
 struct DesktopState {
     models_dir: PathBuf,
     catalog_path: PathBuf,
@@ -799,6 +811,10 @@ struct DesktopState {
     browser_runtime: Arc<native_browser_host::DesktopBrowserHost>,
     browser_authority: lu_core::conversation_authority::ConversationAuthority,
     browser_grant: Mutex<Option<ActiveBrowserGrant>>,
+    #[cfg(windows)]
+    nvp_authority:lu_core::conversation_authority::ConversationAuthority,
+    #[cfg(windows)]
+    nvp_grant:Mutex<Option<ActiveNvpGrant>>,
     research: Arc<research_desktop::ResearchDesktop>,
     model_transfers: Arc<model_transfer_desktop::ModelTransferManager>,
     _owner: lu_core::desktop_owner::DesktopOwner,
@@ -1418,6 +1434,10 @@ impl DesktopState {
             )),
             browser_authority:lu_core::conversation_authority::ConversationAuthority::new(),
             browser_grant:Mutex::new(None),
+            #[cfg(windows)]
+            nvp_authority:lu_core::conversation_authority::ConversationAuthority::new(),
+            #[cfg(windows)]
+            nvp_grant:Mutex::new(None),
             research:Arc::new(research_desktop::ResearchDesktop::new(
                 app.path().resource_dir().map_err(|e|format!("Research resource path unavailable: {e}"))?,
                 root.clone(),
