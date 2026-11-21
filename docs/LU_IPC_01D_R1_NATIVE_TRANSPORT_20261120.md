@@ -29,3 +29,10 @@ Source parent: detached LU-IPC-01B contract candidate 62a9736f. Lu, IDE, CI-poli
 - R4: physical Windows/Linux, framing and backpressure p50/p95, disconnect/reconnect, stale endpoint recovery, installer/update/rollback, real single loaded model.
 
 **Blocking security caveat:** This R1 does not enable successful Windows app authentication. A dedicated reviewed OS-native Win32 peer attestor is necessary. Do not circumvent Lu Core's deny-unsafe policy or treat pipe access or a claimed package hash as an authorization grant.
+
+## R2 native Windows source integration (unqualified)
+
+- The Windows FFI module in lu-win-worker-job creates a named-pipe SECURITY_ATTRIBUTES descriptor at creation through Tokio's create_with_security_attributes_raw API. Protected DACL permits LocalSystem and the Lu process owner's SID only, not the Windows default Everyone/Anonymous read DACL.
+- The module captures GetNamedPipeClientProcessId, GetNamedPipeClientSessionId, OpenProcessToken/TokenUser SID and QueryFullProcessImageNameW from the connected client. Native handles and allocated security descriptors are freed with scoped ownership.
+- WindowsPinnedEnrollment compares observed PID, user SID, session, executable path, module ID, role, manifest digest and HMAC enrollment key. The actual signed package/file digest remains independently host-verified BEFORE enrollment; path observation alone is not a code signature.
+- Original Windows tests now require OS-observed identity, positive synthetic same-process handshake and forged-PID denial. Installed native tests are pending.

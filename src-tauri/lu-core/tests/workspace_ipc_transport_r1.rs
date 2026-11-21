@@ -233,11 +233,33 @@ async fn windows_pipe_is_local_single_instance_and_unauthorized_until_os_atteste
     assert!(windows::bind_one(&pipe).is_err()); // first-instance fence.
     let mut client=windows::connect(&pipe).unwrap();
     let evidence=windows::accept_peer(&server).await.unwrap();
-    assert_eq!(evidence,PeerEvidence::WindowsUnverified);
-    write_frame(&mut client,&hello()).await.unwrap();
-    let got=read_frame(&mut server).await.unwrap();
-    assert_eq!(got,hello());
-    // No native token/SID/package attestor => no authenticated service call.
-    assert_eq!(server_handshake(&mut server,&evidence,&TestPolicy,
-        &materials()).await,Err(TransportError::PeerNotVerified));
+    let pinned=match &evidence{
+        PeerEvidence::WindowsObserved{pid,session_id,user_sid,image_path}=>{
+            assert_eq!(*pid,std::process::id());
+            assert!(!user_sid.is_empty()&&!image_path.is_empty());
+            lu_core::workspace_ipc_transport::WindowsPinnedEnrollment {
+                expected_pid:*pid,expected_session_id:*session_id,
+                expected_user_sid:user_sid.clone(),
+                expected_executable_path:image_path.clone(),
+                expected_module_id:"lu.ide".into(),
+                expected_role:proto::ModuleRole::Workspace as i32,
+                expected_package_sha256:DIGEST,handshake_key:KEY,
+            }
+        }
+        _=>panic!("missing Win32 OS witness"),
+    };
+    // Native process/session/SID observed. The host still must independently
+    // attest the executable's enrolled, signer-verified package.
+    let server_work=server_handshake(&mut server,&evidence,&pinned,&materials());
+    let client_work=client_handshake(&mut client,hello(),&KEY);
+    let (host,guest)=tokio::join!(server_work,client_work);
+    assert_eq!(host.unwrap(),guest.unwrap());
+
+    // Verified SID is not sufficient for forged PID or executable identity.
+    let forged_pid=lu_core::workspace_ipc_transport::WindowsPinnedEnrollment {
+        expected_pid:std::process::id().wrapping_add(1),..pinned
+    };
+    let h=hello();
+    let Some(proto::workspace_frame::Body::Hello(claimed))=h.body.as_ref() else{unreachable!()};
+    assert!(forged_pid.admit(&evidence,claimed).is_err());
 }

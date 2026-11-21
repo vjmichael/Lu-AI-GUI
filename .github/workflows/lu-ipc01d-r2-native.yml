@@ -1,0 +1,76 @@
+name: LU-IPC-01D-R2 native Windows and Linux Protobuf transport qualification
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - '.github/workflows/lu-ipc01d-r2-native.yml'
+      - 'src-tauri/lu-core/proto/lu/workspace/v0/**'
+      - 'src-tauri/lu-core/src/workspace_ipc*.rs'
+      - 'src-tauri/lu-core/tests/workspace_ipc*.rs'
+      - 'src-tauri/lu-core/Cargo.toml'
+      - 'src-tauri/lu-core/Cargo.lock'
+      - 'src-tauri/lu-core/build.rs'
+      - 'src-tauri/lu-win-worker-job/**'
+permissions:
+  contents: read
+concurrency:
+  group: lu-ipc01d-r2-${{ github.event.pull_request.head.sha || github.sha }}
+  cancel-in-progress: false
+jobs:
+  exact-source:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Original committed source verification
+        shell: bash
+        env:
+          SOURCE: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$SOURCE"
+          node scripts/verify-source-tree.mjs
+  native:
+    needs: exact-source
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Exact SHA and original source-lock verification
+        shell: bash
+        env:
+          SOURCE: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$SOURCE"
+          node scripts/verify-source-tree.mjs
+      - name: Original Protobuf v0 envelope and R1/R2 transport suites
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test workspace_ipc_v0 -- --nocapture
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test workspace_ipc_transport_r1 -- --nocapture
+      - name: Native FFI custody module and original worker crate
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked --manifest-path src-tauri/lu-win-worker-job/Cargo.toml --lib -- --nocapture

@@ -78,6 +78,7 @@ pub async fn write_frame<S: AsyncWrite + Unpin>(
 pub enum PeerEvidence {
     Linux { uid: u32, gid: u32, pid: u32 },
     WindowsUnverified,
+    WindowsObserved { pid:u32, session_id:u32, user_sid:String, image_path:String },
 }
 
 /// Returned exclusively by a trusted native Core admission policy which has
@@ -358,11 +359,54 @@ pub mod linux {
 /// attestor is integrated and installed under an approved service identity.
 /// PIPE_REJECT_REMOTE_CLIENTS and FIRST_PIPE_INSTANCE mitigate exposure and
 /// squatting, but they do not establish an application's authenticated ID.
+/// Native OS-observed process identity is compared against an enrollment
+/// pinned by the trusted host/installer. It is NOT derived from Hello, from a
+/// path in model output, or from an arbitrary SDK caller. A verified peer is
+/// still not authorized to perform a model/tool/workspace effect.
+pub struct WindowsPinnedEnrollment {
+    pub expected_pid:u32,
+    pub expected_session_id:u32,
+    pub expected_user_sid:String,
+    pub expected_executable_path:String,
+    pub expected_module_id:String,
+    pub expected_role:i32,
+    pub expected_package_sha256:[u8;32],
+    pub handshake_key:[u8;32],
+}
+impl PeerAdmission for WindowsPinnedEnrollment {
+    fn admit(&self,peer:&PeerEvidence,hello:&proto::Hello)
+        ->Result<EnrolledPeer,TransportError>{
+        let PeerEvidence::WindowsObserved{
+            pid,session_id,user_sid,image_path
+        }=peer else{return Err(TransportError::PeerNotVerified)};
+        // No implicit same-user allowance and no filename-only allowlist.
+        // Executable path is an OS-observed hint; caller must independently
+        // verify signer/hash and installed package custody before constructing
+        // this enrollment. PID is a host-admitted, supervised process.
+        if *pid==0||*pid!=self.expected_pid
+           ||*session_id!=self.expected_session_id
+           ||user_sid!=&self.expected_user_sid
+           ||image_path!=&self.expected_executable_path
+           ||hello.claimed_module_id!=self.expected_module_id
+           ||hello.claimed_role!=self.expected_role
+           ||hello.claimed_package_sha256.as_slice()!=self.expected_package_sha256
+           ||self.handshake_key.iter().all(|b|*b==0){
+            return Err(TransportError::PeerNotVerified)
+        }
+        Ok(EnrolledPeer{
+            module_id:self.expected_module_id.clone(),
+            role:self.expected_role,
+            package_sha256:self.expected_package_sha256,
+            handshake_key:self.handshake_key,
+        })
+    }
+}
+
 #[cfg(windows)]
 pub mod windows {
     use super::*;
     use tokio::net::windows::named_pipe::{
-        ClientOptions, NamedPipeClient, NamedPipeServer, PipeMode, ServerOptions,
+        ClientOptions, NamedPipeClient, NamedPipeServer,
     };
     const PREFIX: &str = r"\\.\pipe\lu-ipc-";
     pub fn check_pipe_name(name: &str) -> Result<(), TransportError> {
@@ -377,19 +421,22 @@ pub mod windows {
     }
     pub fn bind_one(name: &str) -> Result<NamedPipeServer, TransportError> {
         check_pipe_name(name)?;
-        let pipe = ServerOptions::new()
-            .pipe_mode(PipeMode::Byte)
-            .first_pipe_instance(true)
-            .reject_remote_clients(true)
-            .max_instances(1)
-            .create(name)?;
-        Ok(pipe)
+        // DACL is constructed by the audited Win32 FFI crate AT CREATION.
+        // The default Windows named-pipe DACL is not an acceptable endpoint.
+        Ok(lu_win_worker_job::ipc_pipe_peer::create_owner_only_pipe(name)?)
     }
     pub async fn accept_peer(
         server: &NamedPipeServer,
     ) -> Result<PeerEvidence, TransportError> {
         server.connect().await?;
-        Ok(PeerEvidence::WindowsUnverified)
+        let witness=lu_win_worker_job::ipc_pipe_peer::observe_connected_peer(server)
+            .map_err(|_|TransportError::PeerNotVerified)?;
+        Ok(PeerEvidence::WindowsObserved {
+            pid:witness.pid,
+            session_id:witness.session_id,
+            user_sid:witness.user_sid,
+            image_path:witness.image_path,
+        })
     }
     pub fn connect(name: &str) -> Result<NamedPipeClient, TransportError> {
         check_pipe_name(name)?;
