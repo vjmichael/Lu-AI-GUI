@@ -676,6 +676,7 @@ struct OwnedNvpGpuAuthority {
     workspace_scope:String,
     session:TransportSession,
     policy:Arc<dyn ToolAuthorizer>,
+    registry:NativeToolRegistry,
     read:ToolInvocation,
     read_descriptor:ToolDescriptor,
     execute:ToolInvocation,
@@ -694,6 +695,8 @@ impl crate::gpu_resource_leases::OriginalTurnAuthority for OwnedNvpGpuAuthority 
             read:&self.read,read_descriptor:&self.read_descriptor,
             execute:&self.execute,execute_descriptor:&self.execute_descriptor,
         };
+        require_registered_nvp_film_plan(&self.registry,&plan)
+            .map_err(|_|crate::gpu_resource_leases::LeaseRefusal::NotAuthorized)?;
         let scoped=OriginalNvpGpuAuthority{
             authority:&self.authority,original:&self.origin,
             workspace_scope:&self.workspace_scope,
@@ -719,7 +722,11 @@ impl crate::gpu_resource_leases::OriginalTurnAuthority for OwnedNvpGpuAuthority 
         }
         let gate=self.gate.upgrade().ok_or(
             crate::gpu_resource_leases::LeaseRefusal::NotAuthorized)?;
-        self.authority.with_authorized_worker_launch(
+        // Hold the real NVP registry's short read fence only across
+        // the final durable GRANTED commit, never native SCM/GPU I/O.
+        let registered=self.registry.with_registered_workspace_pair(
+            "nvp.film",&self.read_descriptor,&self.execute_descriptor,
+            || self.authority.with_authorized_worker_launch(
             &self.origin,
             &self.read,&self.read_descriptor,
             &self.execute,&self.execute_descriptor,
@@ -730,7 +737,8 @@ impl crate::gpu_resource_leases::OriginalTurnAuthority for OwnedNvpGpuAuthority 
                 }
                 commit()
             }
-        ).map_err(|_|crate::gpu_resource_leases::LeaseRefusal::NotAuthorized)?
+        )).map_err(|_|crate::gpu_resource_leases::LeaseRefusal::NotAuthorized)?;
+        registered.map_err(|_|crate::gpu_resource_leases::LeaseRefusal::NotAuthorized)?
     }
     fn admit_cleanup(&self,request:&crate::gpu_resource_leases::GpuLeaseRequest)
         ->Result<(),crate::gpu_resource_leases::LeaseRefusal>{
@@ -803,6 +811,7 @@ impl CoreDlcHostGate{
         pipe:&mut tokio::net::windows::named_pipe::NamedPipeServer,
         host:&HostCoreTask<'_>,
         authority:&ConversationAuthority,
+        registry:&NativeToolRegistry,
         plan:&ApprovedNvpGpuPlan<'_>,
         policy_owned:Arc<dyn ToolAuthorizer>,
         queue:&Arc<crate::gpu_async_reconciler::DurableGpuAsyncQueue>,
@@ -819,6 +828,7 @@ impl CoreDlcHostGate{
             HostModelControl,InstalledHostGpuObserver,InstalledNvpWorkerStopVerifier,
         };
         self.require_session(installed.session())?;
+        require_registered_nvp_film_plan(registry,plan)?;
         if !installed.installed_enrollment_active() ||
            !installed.gpu_lease_feature_negotiated() ||
            self.session.module_id!="nvp.film" ||
@@ -868,6 +878,7 @@ impl CoreDlcHostGate{
             authority:authority.clone(),origin:host.origin.clone(),
             workspace_scope:host.workspace_scope.into(),
             session:self.session.clone(),policy:policy_owned,
+            registry:registry.clone(),
             read:plan.read.clone(),read_descriptor:plan.read_descriptor.clone(),
             execute:plan.execute.clone(),execute_descriptor:plan.execute_descriptor.clone(),
             broker:installed.original_grant_recheck(),
@@ -1030,7 +1041,7 @@ where B:crate::inference_host::InferenceBackend+Send+'static{
     let mut terminal=false;
     for _ in 0..128 {
         let reply=gate.receive_nvp_gpu_windows(
-            &installed,&mut pipe,host,authority,plan,
+            &installed,&mut pipe,host,authority,registry,plan,
             Arc::clone(&policy_owned),queue,manager,model,supervisor
         ).await;
         match reply{
