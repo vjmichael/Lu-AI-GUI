@@ -1515,6 +1515,9 @@ mod tests {
                 count:Arc::clone(&count),delay:Duration::ZERO}),
         ]).unwrap();
         assert_eq!(require_registered_nvp_film_plan(&registry,&approved),Ok(()));
+        let observed=registry.with_registered_workspace_pair(
+            "nvp.film",&read,&execute,||42).unwrap();
+        assert_eq!(observed,42);
         let mut tampered=execute.clone();
         tampered.input_type_url="type.googleapis.com/nvp.film.Forged".into();
         let forged=ApprovedNvpGpuPlan{
@@ -1523,10 +1526,16 @@ mod tests {
         };
         assert_eq!(require_registered_nvp_film_plan(&registry,&forged),
             Err(CoreDlcGateError::UnregisteredTool));
+        assert!(registry.with_registered_workspace_pair(
+            "nvp.film",&read,&tampered,||42).is_err(),
+            "a replaced descriptor cannot reach the durable GPU commit");
         registry.unregister_workspace("nvp.film").unwrap();
         assert_eq!(require_registered_nvp_film_plan(&registry,&approved),
             Err(CoreDlcGateError::UnregisteredTool),
             "unloaded NVP must not retain model/GPU admission");
+        assert!(registry.with_registered_workspace_pair(
+            "nvp.film",&read,&execute,||42).is_err(),
+            "an unloaded workspace cannot reenter the final GPU grant fence");
     }
     #[cfg(windows)]
     #[test]
