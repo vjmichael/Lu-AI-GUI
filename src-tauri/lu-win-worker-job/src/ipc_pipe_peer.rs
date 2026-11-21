@@ -42,6 +42,7 @@ unsafe extern "system" {
         kernel:*mut FileTime,user:*mut FileTime)->i32;
     fn OpenProcess(access:u32,inherit:i32,pid:u32)->Handle;
     fn GetProcessId(process:Handle)->u32;
+    fn ProcessIdToSessionId(pid:u32,session_id:*mut u32)->i32;
     fn CloseHandle(handle:Handle)->i32;
     fn LocalFree(handle:Handle)->Handle;
     fn GetNamedPipeClientProcessId(pipe:Handle,pid:*mut u32)->i32;
@@ -187,23 +188,21 @@ pub struct WindowsPipePeer {
     pub user_sid:String,
     pub image_path:String,
 }
-pub fn observe_connected_peer(pipe:&NamedPipeServer)
-    ->io::Result<WindowsPipePeer>{
-    let raw=pipe.as_raw_handle() as Handle;
-    let mut pid=0u32;
-    if unsafe{GetNamedPipeClientProcessId(raw,&mut pid)}==0||pid==0{
-        return Err(io::Error::last_os_error());
+/// Independently capture the exact OS identity of a process *already*
+/// supervised and launched by the trusted host. Capturing an arbitrary PID
+/// does NOT by itself prove which product the process belongs to.
+pub fn observe_host_process(pid:u32)->io::Result<WindowsPipePeer>{
+    if pid==0 {
+        return Err(io::Error::new(io::ErrorKind::PermissionDenied,"zero process ID"));
     }
     let mut session_id=0u32;
-    if unsafe{GetNamedPipeClientSessionId(raw,&mut session_id)}==0{
+    if unsafe{ProcessIdToSessionId(pid,&mut session_id)}==0{
         return Err(io::Error::last_os_error());
     }
     let handle=unsafe{OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION,0,pid)};
-    if handle.is_null(){
-        return Err(io::Error::last_os_error());
-    }
+    if handle.is_null(){return Err(io::Error::last_os_error());}
     let process=OwnedHandle(handle);
-    if unsafe{GetProcessId(process.0)}!=pid{
+    if unsafe{GetProcessId(process.0)}!=pid {
         return Err(io::Error::new(io::ErrorKind::PermissionDenied,
             "process identity changed"));
     }
@@ -238,6 +237,24 @@ pub fn observe_connected_peer(pipe:&NamedPipeServer)
     }
     Ok(WindowsPipePeer{pid,session_id,user_sid:sid,image_path,
         creation_filetime})
+}
+pub fn observe_connected_peer(pipe:&NamedPipeServer)
+    ->io::Result<WindowsPipePeer>{
+    let raw=pipe.as_raw_handle() as Handle;
+    let mut pid=0u32;
+    if unsafe{GetNamedPipeClientProcessId(raw,&mut pid)}==0||pid==0{
+        return Err(io::Error::last_os_error());
+    }
+    let mut session_id=0u32;
+    if unsafe{GetNamedPipeClientSessionId(raw,&mut session_id)}==0{
+        return Err(io::Error::last_os_error());
+    }
+    let witness=observe_host_process(pid)?;
+    if witness.session_id!=session_id {
+        return Err(io::Error::new(io::ErrorKind::PermissionDenied,
+            "kernel client session disagrees with process"));
+    }
+    Ok(witness)
 }
 
 struct RevertClientOnDrop;

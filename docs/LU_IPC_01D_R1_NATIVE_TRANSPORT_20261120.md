@@ -62,3 +62,49 @@ Original PR #244 first exact head 4cac21018f28301d17695bf71f575d57182b4679:
 - The request token's SID must match the connected client's process primary SID. Win32 process PID/session, image and `GetProcessTimes` creation FILETIME are observed before/after impersonation to refuse changed process generations. The host's pinned enrollment must include exact process creation identity. Raw `WindowsObserved` cannot enter any Protobuf challenge or grant; only a message-token-observed witness is admissible to the existing explicit HMAC policy.
 - Tests now require the original same-process Windows roundtrip through the post-read message-token path; the original independent PowerShell process uses explicit identification-level token and remains an unregistered **negative enrollment** case; raw observations and forged PID must be denied. Original Linux and general Protobuf tests remain mandatory.
 - **NOT YET ACCEPTED:** this successor has not been compiled on a native Windows runner and has not passed installed tests. Effective impersonation token observation is not Authenticode signer verification, signed installed package ownership, retained process-handle lifetime, user-turn grant or durable cancellation/replay protection. There is no automatic tool/model activation. Never call a synthetic test signer proof or live Lu IDE package attestation.
+
+## WIN-SIGN-01 — Authenticode and exact installed image enrollment candidate
+
+**Status: SOURCE CANDIDATE; NOT INSTALLED Lu IDE acceptance.** Base native
+Win32/Ubuntu transport and message-token qualification at \`e6ea8eec\`
+passed (Protobuf 9/9 per OS; Windows IPC 8/8; Linux IPC 7/7;
+Windows worker 13/13; Linux worker 14/14). This successor has new compiler
+and genuine OS tests and needs independent same-SHA native results.
+
+* A new default-off, narrow \`lu-win-worker-job::ipc_signed_package\` FFI
+  module calls \`WinVerifyTrust\` with \`WINTRUST_ACTION_GENERIC_VERIFY_V2\`,
+  a held read-only image HANDLE and \`WTD_CHOICE_FILE\`. It refuses unsigned,
+  untrusted, malformed, or catalog-only files. It copies the leaf code-signing
+  certificate's encoded DER from the verified WinTrust provider chain before
+  closing the provider state. It forbids network retrieval and has no shell,
+  PowerShell or model invocation in production.
+* Lu Core SHA-256 hashes that same pinned file HANDLE in bounded chunks and
+  SHA-256 hashes the signer certificate DER. Both must independently match
+  exact, nonzero trusted host/installer pins. Revocation is not freshly fetched
+  in offline mode; exact image+signer pins are mandatory. The Protobuf
+  \`claimed_package_sha256\` is only a claimed manifest ID, **not** the
+  executable hash or signer proof.
+* The host pins the previously OS-observed and supervised PID, creation
+  FILETIME, session, owner SID and executable path. The new signed-only
+  enrollment creates no default approval and refuses all raw metadata
+  evidence before sending the first challenge byte. The formerly synthetic
+  \`WindowsPinnedEnrollment\` refuses enrollment in non-debug release builds.
+  A successful HMAC still authorizes NO model, project, tool or effect.
+* The signed session retains the actual Win32 process HANDLE and opened image
+  FILE handle; post-handshake frames recheck the process lifetime,
+  post-message impersonation SID and exact observed process generation.
+  Handle or signing failures are terminal; no unsigned fallback.
+* Native Windows tests use a **Microsoft-signed PowerShell 7 pwsh.exe surrogate** to
+  test a separate real process, independent host pre-enrollment, WinTrust,
+  certificate/file fingerprint match, bounded Hello and HMAC proof over the
+  original Protobuf challenge. This is a harmless controlled test fixture,
+  **NOT** a signed or installed Lu IDE. The fixed fixture-only test HMAC key
+  is never a product credential. Additional tests refuse unsigned files,
+  unsigned same-owner processes and mismatched signer/image/PID pins.
+* **Still blocked:** actual signed installed Lu IDE binary and production
+  publisher certificate from the approved installer; protected installer
+  record/key storage, ACL on installed image and canonical file identity
+  across a malicious path replacement, independent vendor signer provenance
+  and revocation policy; physically installed hostile-user tests,
+  one-use operator permission, durable cancellation and replay-denial.
+  No mainline merge or DLC activation is authorized by a signed OS surrogate.

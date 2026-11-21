@@ -17,6 +17,8 @@ pub mod metadata_guard;
 pub mod browser_window;
 #[cfg(windows)]
 pub mod ipc_pipe_peer;
+#[cfg(windows)]
+pub mod ipc_signed_package;
 
 #[cfg(windows)]
 mod windows_owned {

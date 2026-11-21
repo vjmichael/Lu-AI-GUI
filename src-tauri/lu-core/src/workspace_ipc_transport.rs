@@ -85,6 +85,18 @@ pub enum PeerEvidence {
         pid:u32, session_id:u32, user_sid:String, image_path:String,
         creation_filetime:u64,
     },
+    // Unforgeable outside this module: constructed only after an OS-owned
+    // signed image handle and signer certificate pass exact host-owned pins.
+    #[cfg(windows)]
+    WindowsSignedPackage(WindowsSignedPackageWitness),
+}
+
+#[cfg(windows)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WindowsSignedPackageWitness {
+    process: lu_win_worker_job::ipc_pipe_peer::WindowsPipePeer,
+    image_sha256: [u8; 32],
+    signer_certificate_sha256: [u8; 32],
 }
 
 /// Returned exclusively by a trusted native Core admission policy which has
@@ -399,6 +411,12 @@ pub struct WindowsPinnedEnrollment {
 impl PeerAdmission for WindowsPinnedEnrollment {
     fn admit(&self,peer:&PeerEvidence,hello:&proto::Hello)
         ->Result<EnrolledPeer,TransportError>{
+        // Legacy synthetic source fixtures only. A release must never
+        // authorize a DLC using *only* the message token and a claimed
+        // manifest digest; the signed enrollment below is the live path.
+        if !cfg!(debug_assertions) {
+            return Err(TransportError::PeerNotVerified);
+        }
         let PeerEvidence::WindowsMessageTokenObserved{
             pid,session_id,user_sid,image_path,creation_filetime
         }=peer else{return Err(TransportError::PeerNotVerified)};
@@ -427,6 +445,72 @@ impl PeerAdmission for WindowsPinnedEnrollment {
     }
 }
 
+/// Host-owned, installer/supervisor-provisioned *exact* signed DLC pins.
+/// Never create from Hello, from the peer's claimed digest or from a model.
+/// The host must separately protect this record and securely provision its
+/// handshake key. No default, auto-discovery or unsigned fallback is supplied.
+#[cfg(windows)]
+pub struct WindowsInstalledEnrollment {
+    pub expected_pid: u32,
+    pub expected_creation_filetime: u64,
+    pub expected_session_id: u32,
+    pub expected_user_sid: String,
+    pub expected_executable_path: String,
+    pub expected_image_sha256: [u8; 32],
+    pub expected_signer_certificate_sha256: [u8; 32],
+    pub expected_module_id: String,
+    pub expected_role: i32,
+    pub expected_package_sha256: [u8; 32],
+    pub handshake_key: [u8; 32],
+}
+#[cfg(windows)]
+impl WindowsInstalledEnrollment {
+    fn valid_pin(&self) -> bool {
+        self.expected_pid != 0 && self.expected_creation_filetime != 0 &&
+        self.expected_user_sid.starts_with("S-1-") &&
+        std::path::Path::new(&self.expected_executable_path).is_absolute() &&
+        !self.expected_executable_path.contains('\0') &&
+        !self.expected_module_id.is_empty() &&
+        self.expected_role > 0 &&
+        self.expected_image_sha256.iter().any(|b| *b != 0) &&
+        self.expected_signer_certificate_sha256.iter().any(|b| *b != 0) &&
+        self.expected_package_sha256.iter().any(|b| *b != 0) &&
+        self.handshake_key.iter().any(|b| *b != 0)
+    }
+}
+#[cfg(windows)]
+impl PeerAdmission for WindowsInstalledEnrollment {
+    fn admit(&self, peer: &PeerEvidence, hello: &proto::Hello)
+        -> Result<EnrolledPeer, TransportError>
+    {
+        if !self.valid_pin() { return Err(TransportError::PeerNotVerified); }
+        let PeerEvidence::WindowsSignedPackage(witness) = peer else {
+            return Err(TransportError::PeerNotVerified);
+        };
+        let os = &witness.process;
+        if os.pid != self.expected_pid
+            || os.creation_filetime != self.expected_creation_filetime
+            || os.session_id != self.expected_session_id
+            || os.user_sid != self.expected_user_sid
+            || os.image_path != self.expected_executable_path
+            || !fixed_equal(&self.expected_image_sha256, &witness.image_sha256)
+            || !fixed_equal(&self.expected_signer_certificate_sha256,
+                &witness.signer_certificate_sha256)
+            || hello.claimed_module_id != self.expected_module_id
+            || hello.claimed_role != self.expected_role
+            || hello.claimed_package_sha256.as_slice() != self.expected_package_sha256
+        {
+            return Err(TransportError::PeerNotVerified);
+        }
+        Ok(EnrolledPeer {
+            module_id: self.expected_module_id.clone(),
+            role: self.expected_role,
+            package_sha256: self.expected_package_sha256,
+            handshake_key: self.handshake_key,
+        })
+    }
+}
+
 #[cfg(windows)]
 pub mod windows {
     use super::*;
@@ -434,6 +518,104 @@ pub mod windows {
         ClientOptions, NamedPipeClient, NamedPipeServer,
     };
     const PREFIX: &str = r"\\.\pipe\lu-ipc-";
+    use std::io::{Read, Seek, SeekFrom};
+    use sha2::{Digest as _, Sha256 as ImageSha256};
+
+    const MAX_SIGNED_IMAGE_BYTES: u64 = 512 * 1024 * 1024;
+
+    fn file_sha256(file: &std::fs::File) -> Result<[u8;32],TransportError> {
+        let len=file.metadata()?.len();
+        if len == 0 || len > MAX_SIGNED_IMAGE_BYTES {
+            return Err(TransportError::PeerNotVerified);
+        }
+        let mut input=file.try_clone()?;
+        input.seek(SeekFrom::Start(0))?;
+        let mut hasher=ImageSha256::new();
+        let mut read_bytes=0u64;
+        let mut buffer=[0u8;65536];
+        loop {
+            let count=input.read(&mut buffer)?;
+            if count==0 { break; }
+            read_bytes+=count as u64;
+            if read_bytes>len { return Err(TransportError::PeerNotVerified); }
+            hasher.update(&buffer[..count]);
+        }
+        if read_bytes!=len || file.metadata()?.len()!=len {
+            return Err(TransportError::PeerNotVerified);
+        }
+        Ok(hasher.finalize().into())
+    }
+
+    /// A session owns a stable Win32 process HANDLE and read-only signed
+    /// image File; neither may be dropped before disconnect/revocation.
+    /// Caller must still apply ConversationAuthority + durable turn grants.
+    pub struct SignedWindowsSession {
+        session:TransportSession,
+        lease:lu_win_worker_job::ipc_signed_package::SignedClientLease,
+    }
+    impl SignedWindowsSession {
+        pub fn session(&self)->&TransportSession {&self.session}
+        pub fn check_alive(&self)->Result<(),TransportError>{
+            self.lease.check_alive().map_err(|_|TransportError::PeerNotVerified)
+        }
+        /// Preserve the post-ReadFile identity check on EVERY subsequent
+        /// frame; session matching is not effect or model authorization.
+        pub async fn read_verified_frame(&self,server:&mut NamedPipeServer)
+            ->Result<proto::WorkspaceFrame,TransportError>{
+            let frame=read_frame(server).await?;
+            self.check_alive()?;
+            let observed=lu_win_worker_job::ipc_pipe_peer::observe_message_token_peer(server)
+                .map_err(|_|TransportError::PeerNotVerified)?;
+            if &observed != self.lease.witness() {
+                return Err(TransportError::PeerNotVerified);
+            }
+            self.session.check_request(&frame)?;
+            Ok(frame)
+        }
+    }
+
+    /// The signed client is enrolled only after the first canonical Hello,
+    /// *native* post-message client-token witness, held process creation
+    /// identity, embedded Authenticode trust, and the two exact SHA-256 pins.
+    /// A path, same-user SID, signature or HMAC by itself is insufficient.
+    /// This does not grant any model/tool effect.
+    pub async fn accept_installed_signed_peer(
+        server:&mut NamedPipeServer,
+        pin:&WindowsInstalledEnrollment,
+        identity:&ServerIdentity,
+    )->Result<SignedWindowsSession,TransportError>{
+        if !pin.valid_pin() {return Err(TransportError::PeerNotVerified);}
+        server.connect().await?;
+        let first=read_frame(server).await?;
+        if !matches!(first.body.as_ref(),
+            Some(proto::workspace_frame::Body::Hello(_))) {
+            return Err(TransportError::Protocol("expected_hello"));
+        }
+        // This is synchronous: there is no await between the completed
+        // first ReadFile and the impersonated-client-token observation.
+        let lease=lu_win_worker_job::ipc_signed_package::inspect_signed_client(
+            server,&pin.expected_executable_path)
+            .map_err(|_|TransportError::PeerNotVerified)?;
+        let image_sha256=file_sha256(lease.image_file())?;
+        let signer_certificate_sha256: [u8;32]=
+            ImageSha256::digest(lease.signer_certificate_der()).into();
+        let evidence=PeerEvidence::WindowsSignedPackage(WindowsSignedPackageWitness{
+            process:lease.witness().clone(),
+            image_sha256,signer_certificate_sha256,
+        });
+        // Independent trusted pins are checked before any challenge byte.
+        let Some(proto::workspace_frame::Body::Hello(hello))=first.body.as_ref() else{
+            return Err(TransportError::Protocol("expected_hello"));
+        };
+        let _=pin.admit(&evidence,hello)?;
+        lease.check_alive().map_err(|_|TransportError::PeerNotVerified)?;
+        let session=server_handshake_with_hello(
+            server,&evidence,pin,identity,first).await?;
+        lease.check_alive().map_err(|_|TransportError::PeerNotVerified)?;
+        Ok(SignedWindowsSession{session,lease})
+    }
+
+
     pub fn check_pipe_name(name: &str) -> Result<(), TransportError> {
         let suffix = name.strip_prefix(PREFIX)
             .ok_or(TransportError::Protocol("pipe_name"))?;
@@ -493,6 +675,71 @@ pub mod windows {
 #[cfg(test)]
 mod internal_tests {
     use super::*;
+
+    #[cfg(windows)]
+    #[test]
+    fn signed_dlc_policy_requires_both_trusted_pins_and_exact_process() {
+        let process=lu_win_worker_job::ipc_pipe_peer::WindowsPipePeer {
+            pid:8123,session_id:7,creation_filetime:4321,
+            user_sid:"S-1-5-21-123".into(),
+            image_path:r"C:\Program Files\Lu\LuIDE.exe".into(),
+        };
+        let pin=WindowsInstalledEnrollment {
+            expected_pid:process.pid,
+            expected_creation_filetime:process.creation_filetime,
+            expected_session_id:process.session_id,
+            expected_user_sid:process.user_sid.clone(),
+            expected_executable_path:process.image_path.clone(),
+            expected_image_sha256:[0x11;32],
+            expected_signer_certificate_sha256:[0x22;32],
+            expected_module_id:"lu.ide".into(),
+            expected_role:proto::ModuleRole::Workspace as i32,
+            expected_package_sha256:[0x77;32],
+            handshake_key:[0x42;32],
+        };
+        let good_hello=proto::Hello {
+            claimed_module_id:"lu.ide".into(),
+            claimed_role:proto::ModuleRole::Workspace as i32,
+            claimed_package_sha256:vec![0x77;32],
+            minimum_major:WIRE_MAJOR,maximum_major:WIRE_MAJOR,
+            maximum_minor:WIRE_MINOR,requested_features:vec![],
+            client_nonce:vec![0x66;32],
+        };
+        let valid=PeerEvidence::WindowsSignedPackage(WindowsSignedPackageWitness {
+            process:process.clone(),image_sha256:[0x11;32],
+            signer_certificate_sha256:[0x22;32],
+        });
+        assert!(pin.admit(&valid,&good_hello).is_ok());
+        let raw=PeerEvidence::WindowsMessageTokenObserved {
+            pid:process.pid,creation_filetime:process.creation_filetime,
+            session_id:process.session_id,user_sid:process.user_sid.clone(),
+            image_path:process.image_path.clone(),
+        };
+        assert!(matches!(pin.admit(&raw,&good_hello),
+            Err(TransportError::PeerNotVerified)));
+        for altered in [
+            WindowsSignedPackageWitness {
+                process:process.clone(),image_sha256:[0x31;32],
+                signer_certificate_sha256:[0x22;32],
+            },
+            WindowsSignedPackageWitness {
+                process:process.clone(),image_sha256:[0x11;32],
+                signer_certificate_sha256:[0x32;32],
+            },
+            WindowsSignedPackageWitness {
+                process:lu_win_worker_job::ipc_pipe_peer::WindowsPipePeer {
+                    creation_filetime:9999,..process.clone()
+                },image_sha256:[0x11;32],
+                signer_certificate_sha256:[0x22;32],
+            },
+        ] {
+            assert!(pin.admit(&PeerEvidence::WindowsSignedPackage(altered),
+                &good_hello).is_err());
+        }
+        let mut forged=good_hello.clone();
+        forged.claimed_package_sha256=vec![0x44;32];
+        assert!(pin.admit(&valid,&forged).is_err());
+    }
 
     #[test]
     fn hmac_sha256_matches_independent_reference_vector() {

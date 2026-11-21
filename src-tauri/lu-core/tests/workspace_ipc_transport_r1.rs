@@ -346,3 +346,169 @@ async fn separate_windows_process_has_real_kernel_identity_not_automatic_dlc_aut
     let success=child.wait().unwrap();
     assert!(success.success(),"independent Windows client failed");
 }
+
+
+#[cfg(windows)]
+#[tokio::test]
+async fn installed_signed_windows_client_requires_real_signer_hash_and_hmac() {
+    use base64::Engine as _;
+    use sha2::{Digest, Sha256};
+    use lu_core::workspace_ipc_transport::{windows, WindowsInstalledEnrollment};
+    use std::process::Command;
+    use std::time::Duration;
+    use lu_win_worker_job::ipc_pipe_peer::observe_host_process;
+    use lu_win_worker_job::ipc_signed_package::open_signed_image;
+
+    // Microsoft-signed PowerShell 7 PE is a native installed signing
+    // surrogate. This does NOT claim the Lu IDE has been signed or installed.
+    // Two pins are captured from this file BEFORE the peer connects.
+    let program_files=std::env::var_os("ProgramFiles").expect("Windows program files");
+    let exe=std::path::Path::new(&program_files).join(r"PowerShell\7\pwsh.exe");
+    let exe_str=exe.to_str().unwrap();
+    let (_held_file,signer_der)=open_signed_image(exe_str)
+        .expect("trusted Windows binary must carry valid embedded signature");
+    let signer_sha256:[u8;32]=Sha256::digest(&signer_der).into();
+    let image_sha256:[u8;32]=Sha256::digest(std::fs::read(&exe).unwrap()).into();
+    assert_ne!(signer_sha256,[0u8;32]);
+    assert_ne!(image_sha256,[0u8;32]);
+
+    let suffix=(9u128<<96)|u128::from(std::process::id());
+    let bare=format!("lu-ipc-{suffix:032x}");
+    let pipe=format!(r"\\.\pipe\{bare}");
+    let mut server=windows::bind_one(&pipe).unwrap();
+
+    let hello_wire=lu_core::workspace_ipc::encode_frame(&hello()).unwrap();
+    let proof=frame("request-one","",
+        proto::workspace_frame::Body::AuthProof(proto::AuthProof {
+            client_hmac_sha256:vec![0xee;32],
+        }));
+    let proof_wire=lu_core::workspace_ipc::encode_frame(&proof).unwrap();
+    assert!(proof_wire.ends_with(&[0xee;32]));
+    let hello_b64=base64::engine::general_purpose::STANDARD.encode(hello_wire);
+    let proof_b64=base64::engine::general_purpose::STANDARD.encode(proof_wire);
+
+    // The fixed synthetic key is used ONLY in the source-native test client;
+    // production keys must come from protected OS credential custody.
+    let script=r#"
+$ErrorActionPreference='Stop'
+Start-Sleep -Milliseconds 350
+$p=[System.IO.Pipes.NamedPipeClientStream]::new('.','@PIPE@',[System.IO.Pipes.PipeDirection]::InOut,[System.IO.Pipes.PipeOptions]::None,[System.Security.Principal.TokenImpersonationLevel]::Identification)
+$p.Connect(8000)
+function ReadFully([System.IO.Stream]$s,[byte[]]$out) {
+  $offset=0
+  while($offset -lt $out.Length) {
+    $n=$s.Read($out,$offset,$out.Length-$offset)
+    if($n -le 0) { throw 'truncated response' }
+    $offset+=$n
+  }
+}
+function WriteFrame([System.IO.Stream]$s,[byte[]]$buf) {
+  [byte[]]$h=@([byte](($buf.Length -shr 24) -band 255),[byte](($buf.Length -shr 16) -band 255),[byte](($buf.Length -shr 8) -band 255),[byte]($buf.Length -band 255))
+  $s.Write($h,0,4)
+  $s.Write($buf,0,$buf.Length)
+  $s.Flush()
+}
+function ReadFrame([System.IO.Stream]$s) {
+  $h=[byte[]]::new(4)
+  ReadFully $s $h
+  $n=(([int]$h[0] -shl 24) -bor ([int]$h[1] -shl 16) -bor ([int]$h[2] -shl 8) -bor [int]$h[3])
+  if($n -le 32 -or $n -gt 262144) { throw 'bad frame length' }
+  $buf=[byte[]]::new($n)
+  ReadFully $s $buf
+  return ,$buf
+}
+$hello=[Convert]::FromBase64String('@HELLO@')
+WriteFrame $p $hello
+$challenge=ReadFrame $p
+$nonce=[byte[]]::new(32)
+[Array]::Copy($challenge,$challenge.Length-32,$nonce,0,32)
+$domain=[Text.Encoding]::ASCII.GetBytes('lu.workspace.client.v0')
+$transcript=[byte[]]::new($domain.Length+1+$hello.Length+32)
+[Array]::Copy($domain,0,$transcript,0,$domain.Length)
+[Array]::Copy($hello,0,$transcript,$domain.Length+1,$hello.Length)
+[Array]::Copy($nonce,0,$transcript,$domain.Length+1+$hello.Length,32)
+$key=[byte[]]::new(32)
+for($i=0;$i -lt 32;$i++) { $key[$i]=0x42 }
+$hmac=[System.Security.Cryptography.HMACSHA256]::new($key)
+$mac=$hmac.ComputeHash($transcript)
+$hmac.Dispose()
+$proof=[Convert]::FromBase64String('@PROOF@')
+if($proof[$proof.Length-1] -ne 238 -or $proof[$proof.Length-32] -ne 238) { throw 'unexpected test proof frame' }
+[Array]::Copy($mac,0,$proof,$proof.Length-32,32)
+WriteFrame $p $proof
+$welcome=ReadFrame $p
+if($welcome.Length -le 40) { throw 'invalid server welcome' }
+Start-Sleep -Milliseconds 900
+$p.Dispose()
+"#.replace("@PIPE@",&bare)
+  .replace("@HELLO@",&hello_b64)
+  .replace("@PROOF@",&proof_b64);
+
+    let mut child=Command::new(&exe)
+        .args(["-NoLogo","-NoProfile","-NonInteractive","-Command",&script])
+        .spawn().expect("launch signed native test client");
+    let launched=observe_host_process(child.id())
+        .expect("host must inspect launched process separately from pipe Hello");
+    let pin=WindowsInstalledEnrollment {
+        expected_pid:launched.pid,
+        expected_creation_filetime:launched.creation_filetime,
+        expected_session_id:launched.session_id,
+        expected_user_sid:launched.user_sid,
+        expected_executable_path:launched.image_path,
+        expected_image_sha256:image_sha256,
+        expected_signer_certificate_sha256:signer_sha256,
+        expected_module_id:"lu.ide".into(),
+        expected_role:proto::ModuleRole::Workspace as i32,
+        expected_package_sha256:DIGEST,handshake_key:KEY,
+    };
+    let server_identity=materials();
+    let accepted=tokio::time::timeout(Duration::from_secs(15),
+        windows::accept_installed_signed_peer(&mut server,&pin,&server_identity)).await;
+    match accepted {
+        Ok(Ok(session)) => {
+            assert_eq!(session.session().module_id,"lu.ide");
+            assert_eq!(session.session().core_epoch_ref,"core-epoch-one");
+            session.check_alive().unwrap();
+        },
+        Ok(Err(error)) => {
+            let _=child.kill(); let _=child.wait();
+            panic!("native signed installed surrogate refused: {error:?}");
+        },
+        Err(timeout) => {
+            let _=child.kill(); let _=child.wait();
+            panic!("native signed installed surrogate timed out: {timeout:?}");
+        },
+    }
+    assert!(child.wait().unwrap().success(),"signed client did not authenticate");
+}
+
+#[cfg(windows)]
+#[tokio::test]
+async fn unsigned_same_user_process_never_enters_signed_enrollment() {
+    use lu_core::workspace_ipc_transport::{windows, WindowsInstalledEnrollment};
+    use lu_win_worker_job::ipc_pipe_peer::observe_host_process;
+    let me=observe_host_process(std::process::id()).unwrap();
+    let pin=WindowsInstalledEnrollment {
+        expected_pid:me.pid,
+        expected_creation_filetime:me.creation_filetime,
+        expected_session_id:me.session_id,
+        expected_user_sid:me.user_sid,
+        expected_executable_path:me.image_path,
+        expected_image_sha256:[0x11;32],
+        expected_signer_certificate_sha256:[0x22;32],
+        expected_module_id:"lu.ide".into(),
+        expected_role:proto::ModuleRole::Workspace as i32,
+        expected_package_sha256:DIGEST,handshake_key:KEY,
+    };
+    let suffix=(10u128<<96)|u128::from(std::process::id());
+    let pipe=format!(r"\\.\pipe\lu-ipc-{suffix:032x}");
+    let mut server=windows::bind_one(&pipe).unwrap();
+    let mut client=windows::connect(&pipe).unwrap();
+    let server_id=materials();
+    let host=windows::accept_installed_signed_peer(&mut server,&pin,&server_id);
+    let guest=write_frame(&mut client,&hello());
+    let (result,sent)=tokio::join!(host,guest);
+    sent.unwrap();
+    assert!(matches!(result,Err(TransportError::PeerNotVerified)),
+        "unsigned same-user test executable must never become an installed DLC");
+}
