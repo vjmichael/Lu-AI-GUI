@@ -1,6 +1,6 @@
 name: Lu CP-12B-R7-R1 Windows collaboration — exact-source qualification
 
-# CP-10: exactly one consolidated source-locked push after R7/CP10 passed.
+# CP-10: only the exact source-locked, self-path and commit-message candidate.
 # No broad push trigger, manual installed pass or automatic model download.
 on:
   push:
@@ -116,3 +116,141 @@ jobs:
           node scripts/verify-source-tree.mjs
           if ($LASTEXITCODE -ne 0) { throw 'Exact source was not restored' }
           'Windows desktop source type-check only; no packaged native resources or installed two-model GUI acceptance.' | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+
+
+  # CP-10-R4-R2: reuse previously PASS original R4-R1 native test jobs
+  # under the already-reviewed C12 exact branch/path/message admission.
+  # Existing Windows transport/default-off and UI compile jobs above remain.
+  # No generic new workflow trigger, automatic tool grant or release claim.
+  r4-r2-source-lock:
+    if: ${{ github.event_name == 'push' && github.event.head_commit.message == 'CP-10 consolidated single-interface Windows acceptance' && github.ref == 'refs/heads/lu/cp10-consolidated-ux-20261120' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.16.0'
+      - name: Verify exact immutable source and only the one-shot acceptance trigger
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          node scripts/verify-source-tree.mjs
+          node --test lu-desktop/tests/p03-ai-ops.test.mjs lu-desktop/tests/perf01-p4-interactive-priority.test.mjs
+          echo "CP-10-R4-R2_SOURCE=$EXPECTED_SHA" >> "$GITHUB_STEP_SUMMARY"
+          echo "Source-only regression checks do not certify runtime or installed behavior." >> "$GITHUB_STEP_SUMMARY"
+
+  r4-r2-frontend-ui:
+    needs: r4-r2-source-lock
+    runs-on: ubuntu-24.04
+    timeout-minutes: 70
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.16.0'
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - name: Compile actual production scanner harness used by UI tests
+        shell: bash
+        run: cargo build --locked --manifest-path lu-desktop/tests/native-file-scan/Cargo.toml
+      - name: Genuine frontend source compile, UI contracts, and full UI regression suite
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd lu-desktop
+          npm ci --no-audit --no-fund
+          npm run build
+          npm run check
+          npm run test:ui
+      - name: Ensure source inventory survived test execution
+        shell: bash
+        run: node scripts/verify-source-tree.mjs
+
+  r4-r2-native-core:
+    needs: r4-r2-source-lock
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 100
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - name: Real native scheduler guardian, foreground, custody and refusal tests
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_background_scheduler -- --nocapture
+      - name: Real native P03 user-request-bound tool recommendation tests
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib ai_operations -- --nocapture
+      - name: Native workspace protected read turn and traversal refusal
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test native_workspace_read_turn -- --nocapture
+      - name: Native workspace quarantine and changed-root safety
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test workspace_quarantine -- --nocapture
+      - name: Re-verify source on each independent native OS
+        run: node scripts/verify-source-tree.mjs
+
+  r4-r2-desktop-windows:
+    needs: r4-r2-source-lock
+    runs-on: windows-2025
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.16.0'
+      - name: Build actual React UI for native desktop compilation
+        shell: pwsh
+        working-directory: lu-desktop
+        run: |
+          $ErrorActionPreference='Stop'
+          npm ci --no-audit --no-fund
+          if($LASTEXITCODE -ne 0){throw 'npm ci failed'}
+          npm run build
+          if($LASTEXITCODE -ne 0){throw 'React compilation failed'}
+          npm run check
+          if($LASTEXITCODE -ne 0){throw 'React contracts failed'}
+      - name: Disable ONLY packaging of absent development engines for test compilation
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          node scripts/verify-source-tree.mjs
+          if($LASTEXITCODE -ne 0){throw 'Preflight source mismatch'}
+          $p='lu-desktop/src-tauri/tauri.conf.json'
+          $cfg=Get-Content -LiteralPath $p -Raw | ConvertFrom-Json
+          $cfg.bundle.resources=@{}
+          $cfg | ConvertTo-Json -Depth 50 | Set-Content -LiteralPath $p -Encoding utf8
+          Write-Host 'COMPILER_ONLY_NOT_INSTALLED_NOT_GGUF_NOT_NSIS'
+      - name: Real Windows native foreground/background queue scheduling tests
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib generation_queue::tests -- --nocapture
+          if($LASTEXITCODE -ne 0){throw 'Native generation queue tests failed'}
+      - name: Windows current-turn classifier tests (no model grant)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib turn_coordinator::tests -- --nocapture
+          if($LASTEXITCODE -ne 0){throw 'Desktop turn coordinator tests failed'}
