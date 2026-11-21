@@ -917,6 +917,97 @@ impl CoreDlcHostGate{
     }
 }
 
+/// Actual protected Core-side public named-pipe acceptance loop for ONE
+/// independently approved original NVP film job, not a global auto-starting
+/// desktop RPC endpoint. Its caller must be the original Lu user-turn host;
+/// the NVP client has NO way to create the HostCoreTask, approved tool pair,
+/// SCM signer witness or source-pinned GPU manager. The recovered WALs are
+/// already open/fenced by DesktopState before any caller may invoke this.
+#[cfg(windows)]
+pub async fn serve_host_approved_nvp_gpu_windows<B>(
+    endpoint:&str,
+    supervised_nvp_pid:u32,
+    identity:&crate::workspace_ipc_transport::ServerIdentity,
+    original:&lu_win_worker_job::ipc_scm_control_wire::OriginalCall,
+    host:&HostCoreTask<'_>,
+    authority:&ConversationAuthority,
+    plan:&ApprovedNvpGpuPlan<'_>,
+    policy_owned:Arc<dyn ToolAuthorizer>,
+    queue:&Arc<crate::gpu_async_reconciler::DurableGpuAsyncQueue>,
+    manager:&Arc<crate::gpu_resource_leases::CoreGpuLeaseManager>,
+    model:&Arc<crate::inference_supervisor::TrustedInferenceSupervisor<B>>,
+    supervisor:&crate::workspace_ipc_scm::VerifiedScmSupervisor,
+)->Result<(),CoreDlcGateError>
+where B:crate::inference_host::InferenceBackend+Send+'static{
+    // The operation fingerprint and exact job identity come from the
+    // original durable Lu tool invocation, not from NVP's OriginRefs.
+    if original.module_id!="nvp.film" ||
+       original.session_ref!=identity.session_ref ||
+       original.core_epoch_ref!=identity.core_epoch_ref ||
+       original.conversation_ref!=host.origin.conversation_id ||
+       original.user_turn_ref!=host.origin.user_turn_id ||
+       original.task_ref!=host.origin.task_id ||
+       original.workspace_ref!=host.workspace_scope ||
+       original.call_id!=plan.execute.call_id ||
+       original.fingerprint_sha256!=crate::journal::fingerprint(plan.execute) ||
+       !std::ptr::eq(host.policy,policy_owned.as_ref()) ||
+       plan.execute.workspace_id.as_deref()!=Some(host.workspace_scope) ||
+       plan.read.workspace_id.as_deref()!=Some(host.workspace_scope){
+        return Err(CoreDlcGateError::InvalidOrigin)
+    }
+    authority.authorize_worker_call(
+        host.origin,plan.read,plan.read_descriptor,host.policy)
+        .map_err(|_|CoreDlcGateError::Denied)?;
+    authority.authorize_worker_call(
+        host.origin,plan.execute,plan.execute_descriptor,host.policy)
+        .map_err(|_|CoreDlcGateError::Denied)?;
+    let scm=supervisor.original_process_witness()
+        .map_err(|_|CoreDlcGateError::Unavailable)?;
+    // This is an actual local OS named-pipe instance with a restricted
+    // owner/SYSTEM DACL and no remote clients. No TCP or private SCM DLC pipe.
+    let mut pipe=crate::workspace_ipc_transport::windows::bind_one(endpoint)
+        .map_err(|_|CoreDlcGateError::Transport)?;
+    let installed=crate::workspace_ipc_transport::windows::
+        accept_scm_brokered_nvp_film(
+            &mut pipe,supervised_nvp_pid,identity,original,&scm)
+        .await.map_err(|_|CoreDlcGateError::Transport)?;
+    supervisor.require_live().map_err(|_|CoreDlcGateError::Unavailable)?;
+    let gate=CoreDlcHostGate::from_scm_brokered_nvp(&installed)?;
+    // A single authenticated client may submit bounded original-scoped
+    // acquire/poll/release frames. Disconnect, timeout, refusal or restart
+    // closes authority; an unresolved GPU lease remains WAL-QUARANTINED.
+    let mut terminal=false;
+    for _ in 0..128 {
+        let reply=gate.receive_nvp_gpu_windows(
+            &installed,&mut pipe,host,authority,plan,
+            Arc::clone(&policy_owned),queue,manager,model,supervisor
+        ).await;
+        match reply{
+            Ok(frame)=>{
+                if matches!(frame.body,
+                    Some(proto::workspace_frame::Body::GpuLeaseOutcome(ref v))
+                        if v.decision==proto::AdmissionDecision::Allowed as i32 &&
+                           v.phase==proto::GpuLeasePhase::Restored as i32){
+                    terminal=true;
+                    break;
+                }
+            }
+            Err(err)=>{
+                let _=gate.close();
+                let _=installed.revoke_brokered_nvp().await;
+                return Err(err)
+            }
+        }
+    }
+    gate.close()?;
+    installed.revoke_brokered_nvp().await
+        .map_err(|_|CoreDlcGateError::Unavailable)?;
+    if !terminal{
+        return Err(CoreDlcGateError::CapacityExhausted)
+    }
+    Ok(())
+}
+
 #[cfg(windows)]
 fn gpu_failure(error:&crate::gpu_resource_leases::LeaseRefusal)->(i32,i32,&'static str){
     use crate::gpu_resource_leases::LeaseRefusal::*;
