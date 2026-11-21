@@ -1,8 +1,5 @@
 name: Lu CP-04B3R3 provider refusal classification and strict live gate
 on:
-  push:
-    branches: [lu/cp01-attachment-transaction-20261116]
-    paths: ['.github/workflows/lu-cp04b3-native-provision.yml']
   workflow_dispatch:
     inputs:
       google_live:

@@ -1,8 +1,5 @@
 name: Lu CP-06E-R2-B3-R1 grouped exact source native and dual GGUF
 on:
-  push:
-    branches: [lu/cp01-attachment-transaction-20261116]
-    paths: ['.github/workflows/lu-cp06er2-consolidated.yml']
   workflow_dispatch:
 permissions:
   contents: read

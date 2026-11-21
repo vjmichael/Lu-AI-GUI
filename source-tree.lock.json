@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "46c195e22c735e448e182fd5f86da2bf9e9cb313",
+  "sourceCommitBeforeLock": "a20e11350b5d7489876ff786704a7fb5866586d9",
   "trackedFileCount": 1270,
   "files": [
     {
@@ -105,39 +105,39 @@
     },
     {
       "path": ".github/workflows/lu-cp02-grouped-native.yml",
-      "blob": "30574d406559f97a6493f4737b7fcb881ace78b7"
+      "blob": "3d56e4ee8a8cab699cb61cbcd037838ca6a5d633"
     },
     {
       "path": ".github/workflows/lu-cp03-grouped-native.yml",
-      "blob": "c37d22c943759264ca35cbb55c1013e2c44c7563"
+      "blob": "76c158ee1a289b9aa5b86fdd4835072f86010f0e"
     },
     {
       "path": ".github/workflows/lu-cp04b3-native-provision.yml",
-      "blob": "19d3476df99baa174a098c3c134746233fb0e6af"
+      "blob": "d6398d4fc3413b411f67c7107b52079914059dd8"
     },
     {
       "path": ".github/workflows/lu-cp05e-closeout.yml",
-      "blob": "e21bc896f23f64fac0066f492a05a1f9ac679575"
+      "blob": "1a81d55b4e689a6ecf2afcac2adb28fe43c27397"
     },
     {
       "path": ".github/workflows/lu-cp05e-grouped-native.yml",
-      "blob": "ad50a1870828176019bffee4afff49797c45a029"
+      "blob": "66aaff41f5423dc70532f4dd13bbbb97d49fe093"
     },
     {
       "path": ".github/workflows/lu-cp06er2-consolidated.yml",
-      "blob": "c328a87aa7401f777cff342c39aa2864a007b3ca"
+      "blob": "af980467324dcefa2a226c207de6f80e7e9590f2"
     },
     {
       "path": ".github/workflows/lu-cp06er3-native-web.yml",
-      "blob": "6304b8c48ce71a729d48c8ee4f78647834758273"
+      "blob": "061cb1127c04d5e726da5043f5421f42e3ce1ee6"
     },
     {
       "path": ".github/workflows/lu-cp12br7r1-windows-collaboration.yml",
-      "blob": "fac12d394d43a12cd9957e819fc9d2beb25f3666"
+      "blob": "c6683f204f9bb4344d9fb1e7876d57772f642d41"
     },
     {
       "path": ".github/workflows/lu-dev-offline-cache.yml",
-      "blob": "dcd2a954d4d5a34784b4d9387ae8236689be9751"
+      "blob": "0ab4bdb2b6e5a780eeae45c40473ddb6972a06ae"
     },
     {
       "path": ".github/workflows/lu-development-ledger.yml",
@@ -309,7 +309,7 @@
     },
     {
       "path": ".github/workflows/lu-repo01-full-source.yml",
-      "blob": "2ab4313ff70b30b5afd9ec2f2e57df01c7e496df"
+      "blob": "e93a6ae6a92208f7b6e076bc25aa966fcb7c6e52"
     },
     {
       "path": ".github/workflows/lu-tools-01-05-integration.yml",
@@ -981,7 +981,7 @@
     },
     {
       "path": "docs/LU_DEVELOPMENT_LEDGER.md",
-      "blob": "af93d31a73aaac9fb7132b53ed739a839f52d44c"
+      "blob": "43d2cd7fb41b91170e30d67f4b42d7551f036a05"
     },
     {
       "path": "docs/LU_E1_NATIVE_EVIDENCE_20261107.md",
@@ -2313,7 +2313,7 @@
     },
     {
       "path": "lu-desktop/tests/cp12br7r1-gh-ci-contract.test.mjs",
-      "blob": "596a2812f98677a1a1e40f4064003dfb86034db6"
+      "blob": "76bf5a47d788a12c8a0643de1e4b05b57f4ca664"
     },
     {
       "path": "lu-desktop/tests/cp12br7r1-physical-acceptance-contract.test.mjs",
@@ -2321,7 +2321,7 @@
     },
     {
       "path": "lu-desktop/tests/cp12br7r2-publication-contract.test.mjs",
-      "blob": "08dd141c1ca4650d9e50e4b0a6aa977c3ad835b5"
+      "blob": "4e5f813856f58e6c4b03c01983c8d8543ee703d6"
     },
     {
       "path": "lu-desktop/tests/dx-exchange-windows-check/Cargo.lock",
@@ -3077,7 +3077,7 @@
     },
     {
       "path": "scripts/lu-ci-group-policy.test.mjs",
-      "blob": "3093f841f3b410b73a117104b813c2c516c0a039"
+      "blob": "48cce9b550c2bb6f783bd33367081f3c8f0f1194"
     },
     {
       "path": "scripts/lu-ci-superseded-queue.mjs",

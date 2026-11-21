@@ -1,8 +1,5 @@
 name: Lu CP-02C consolidated attachment and Reader acceptance
 on:
-  push:
-    branches: [lu/cp01-attachment-transaction-20261116]
-    paths: ['.github/workflows/lu-cp02-grouped-native.yml']
   workflow_dispatch:
   workflow_call:
 permissions:
