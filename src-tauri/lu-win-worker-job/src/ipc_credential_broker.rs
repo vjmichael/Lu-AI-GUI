@@ -23,6 +23,7 @@ const LOCAL_SYSTEM_SID:&str="S-1-5-18";
 const TOKEN_QUERY:u32=0x0008;
 const ERROR_NO_TOKEN:u32=1008;
 const TARGET_PREFIX:&str="LuCore/IPC/IDE/v1/";
+const NVP_TARGET_PREFIX:&str="LuCore/IPC/NVP/v1/";
 const ERROR_NOT_FOUND:u32=1168;
 const BCRYPT_USE_SYSTEM_PREFERRED_RNG:u32=2;
 
@@ -95,11 +96,17 @@ fn same_key_bytes(a:&[u8;32],b:&[u8;32])->bool{
     diff==0
 }
 fn target_for_package(package:[u8;32])->io::Result<String>{
+    target_for_prefix(TARGET_PREFIX,package)
+}
+fn target_for_nvp_package(package:[u8;32])->io::Result<String>{
+    target_for_prefix(NVP_TARGET_PREFIX,package)
+}
+fn target_for_prefix(prefix:&str,package:[u8;32])->io::Result<String>{
     if package.iter().all(|b|*b==0){
         return Err(denied("missing approved installed DLC package digest"));
     }
-    let mut target=String::with_capacity(TARGET_PREFIX.len()+64);
-    target.push_str(TARGET_PREFIX);
+    let mut target=String::with_capacity(prefix.len()+64);
+    target.push_str(prefix);
     for b in package{
         use std::fmt::Write as _;
         write!(&mut target,"{b:02x}").map_err(|_|denied("invalid credential target"))?;
@@ -156,7 +163,14 @@ fn copy_checked_secret(record:&CredentialW)->io::Result<[u8;32]>{
 /// Credential Manager vault. 32-byte key never appears in logs/JSON/Hello.
 /// No interactive-user fallback and no mutable target name parameter.
 pub fn read_installed_ide_key(package:[u8;32])->io::Result<[u8;32]>{
-    let target=target_for_package(package)?;
+    read_checked_key_target(&target_for_package(package)?)
+}
+/// NVP film keys live under a distinct fixed SYSTEM-only credential target.
+/// Never borrow the IDE credential for an NVP session.
+pub fn read_installed_nvp_key(package:[u8;32])->io::Result<[u8;32]>{
+    read_checked_key_target(&target_for_nvp_package(package)?)
+}
+fn read_checked_key_target(target:&str)->io::Result<[u8;32]>{
     require_system_service_context()?;
     let wide:Vec<u16>=target.encode_utf16().chain(std::iter::once(0)).collect();
     let mut raw:*mut CredentialW=ptr::null_mut();
@@ -176,7 +190,14 @@ pub fn read_installed_ide_key(package:[u8;32])->io::Result<[u8;32]>{
 /// This does NOT deliver a key to a DLC; protected installer-side enrollment
 /// is separately required before the package may authenticate.
 pub fn provision_installed_ide_key(package:[u8;32])->io::Result<()>{
-    let target=target_for_package(package)?;
+    provision_key_target(&target_for_package(package)?)
+}
+/// Installer-only, NVP-specific credential provisioning; no automatic signer
+/// enrollment or reuse of a Lu IDE OS credential.
+pub fn provision_installed_nvp_key(package:[u8;32])->io::Result<()>{
+    provision_key_target(&target_for_nvp_package(package)?)
+}
+fn provision_key_target(target:&str)->io::Result<()>{
     require_system_service_context()?;
     let wide:Vec<u16>=target.encode_utf16().chain(std::iter::once(0)).collect();
     let mut existing:*mut CredentialW=ptr::null_mut();
@@ -209,7 +230,7 @@ pub fn provision_installed_ide_key(package:[u8;32])->io::Result<()>{
     }
     // Verify identity, not merely record format. A concurrent installer or
     // unexpected vault replacement must never produce a success receipt.
-    let matches=match read_installed_ide_key(package){
+    let matches=match read_checked_key_target(target){
         Ok(mut reopened)=>{
             let equal=same_key_bytes(&key,&reopened);
             clear_temporary_key(&mut reopened);
@@ -231,7 +252,13 @@ pub fn provision_installed_ide_key(package:[u8;32])->io::Result<()>{
 /// Lu's live session witness rechecks the OS store on subsequent frame reads;
 /// the host must ALSO cancel and reap affected workers immediately.
 pub fn revoke_installed_ide_key(package:[u8;32])->io::Result<()>{
-    let target=target_for_package(package)?;
+    revoke_key_target(&target_for_package(package)?)
+}
+/// Revocation of an NVP package never deletes the Lu IDE credential.
+pub fn revoke_installed_nvp_key(package:[u8;32])->io::Result<()>{
+    revoke_key_target(&target_for_nvp_package(package)?)
+}
+fn revoke_key_target(target:&str)->io::Result<()>{
     require_system_service_context()?;
     let wide:Vec<u16>=target.encode_utf16().chain(std::iter::once(0)).collect();
     if unsafe{CredDeleteW(wide.as_ptr(),CRED_TYPE_GENERIC,0)}==0{
@@ -243,6 +270,13 @@ pub fn revoke_installed_ide_key(package:[u8;32])->io::Result<()>{
 #[cfg(test)]
 mod tests{
     use super::*;
+    #[test]
+    fn nvp_credential_is_strictly_separated_from_ide(){
+        let digest=[0x42;32];
+        assert_ne!(target_for_package(digest).unwrap(),
+            target_for_nvp_package(digest).unwrap());
+        assert!(target_for_nvp_package([0;32]).is_err());
+    }
     #[test]
     fn zero_package_cannot_create_or_delete_any_credential(){
         assert!(provision_installed_ide_key([0;32]).is_err());

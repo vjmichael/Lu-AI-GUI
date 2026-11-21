@@ -286,8 +286,15 @@ impl CoreDlcHostGate {
         let package=installed.installed_package_sha256()
             .ok_or(CoreDlcGateError::Transport)?;
         self.state.closed.store(true,Ordering::Release);
-        let key_deleted=lu_win_worker_job::ipc_credential_broker::
-            revoke_installed_ide_key(package).is_ok();
+        // Never revoke an NVP film package by mutating an IDE credential
+        // target (or vice versa). Trust immutable installed transport module.
+        let key_deleted=match self.session.module_id.as_str(){
+            "lu.ide"=>lu_win_worker_job::ipc_credential_broker::
+                revoke_installed_ide_key(package).is_ok(),
+            "nvp.film"=>lu_win_worker_job::ipc_credential_broker::
+                revoke_installed_nvp_key(package).is_ok(),
+            _=>false,
+        };
         // Still attempt reaping if the vault is unavailable, otherwise the
         // child may outlive session revocation. Retain the original Job handle.
         let worker_reaped=if let Some(worker)=&self.state.worker{
@@ -530,6 +537,255 @@ impl CoreDlcHostGate {
         supervisor.require_live().map_err(|_|CoreDlcGateError::Unavailable)?;
         Ok(result)
     }
+}
+
+/// Explicit Core-host user-approved READ + EXECUTE pair. NVP's claimed
+/// OriginRefs, package manifest and LLM text cannot construct these grants.
+/// Device control itself is NOT elevated/physical-device ToolEffect: it is a
+/// host resource scheduler operation fencing an already approved NVP render.
+#[cfg(windows)]
+pub struct ApprovedNvpGpuPlan<'a>{
+    pub read:&'a ToolInvocation,
+    pub read_descriptor:&'a ToolDescriptor,
+    pub execute:&'a ToolInvocation,
+    pub execute_descriptor:&'a ToolDescriptor,
+}
+#[cfg(windows)]
+struct OriginalNvpGpuAuthority<'a>{
+    authority:&'a ConversationAuthority,
+    original:&'a BoundCallOrigin,
+    workspace_scope:&'a str,
+    session:&'a TransportSession,
+    policy:&'a dyn ToolAuthorizer,
+    plan:&'a ApprovedNvpGpuPlan<'a>,
+}
+#[cfg(windows)]
+impl OriginalNvpGpuAuthority<'_>{
+    fn check_scoped(
+        &self,request:&crate::gpu_resource_leases::GpuLeaseRequest,
+    )->Result<(),crate::gpu_resource_leases::LeaseRefusal>{
+        use crate::gpu_resource_leases::LeaseRefusal;
+        let o=&request.original;
+        if self.session.module_id!="nvp.film" ||
+           o.module_id!=self.session.module_id ||
+           o.session_ref!=self.session.session_ref ||
+           o.core_epoch_ref!=self.session.core_epoch_ref ||
+           o.workspace_ref!=self.workspace_scope ||
+           o.conversation_ref!=self.original.conversation_id ||
+           o.user_turn_ref!=self.original.user_turn_id ||
+           o.task_ref!=self.original.task_id ||
+           self.plan.read.workspace_id.as_deref()!=Some(self.workspace_scope) ||
+           self.plan.execute.workspace_id.as_deref()!=Some(self.workspace_scope) ||
+           self.plan.read_descriptor.effect!=crate::contracts::ToolEffect::ReadWorkspace ||
+           self.plan.execute_descriptor.effect!=crate::contracts::ToolEffect::ExecuteCode ||
+           self.plan.read.call_id==self.plan.execute.call_id {
+            return Err(LeaseRefusal::NotAuthorized)
+        }
+        Ok(())
+    }
+}
+#[cfg(windows)]
+impl crate::gpu_resource_leases::OriginalTurnAuthority for OriginalNvpGpuAuthority<'_>{
+    fn admit(&self,request:&crate::gpu_resource_leases::GpuLeaseRequest)
+        ->Result<(),crate::gpu_resource_leases::LeaseRefusal>{
+        self.check_scoped(request)?;
+        // These capabilities are from a trusted, verified human task; no
+        // newly minted DeviceControl model privilege is introduced.
+        self.authority.authorize_worker_call(
+            self.original,self.plan.read,self.plan.read_descriptor,self.policy)
+            .map_err(|_|crate::gpu_resource_leases::LeaseRefusal::NotAuthorized)?;
+        self.authority.authorize_worker_call(
+            self.original,self.plan.execute,self.plan.execute_descriptor,self.policy)
+            .map_err(|_|crate::gpu_resource_leases::LeaseRefusal::NotAuthorized)
+    }
+    fn admit_cleanup(&self,request:&crate::gpu_resource_leases::GpuLeaseRequest)
+        ->Result<(),crate::gpu_resource_leases::LeaseRefusal>{
+        // Cleanup of an ALREADY recorded lease may proceed without creating
+        // a new render grant. Only after live installed peer identity,
+        // original exact scope and signed kernel Job stop verification.
+        self.check_scoped(request)
+    }
+}
+#[cfg(windows)]
+impl CoreDlcHostGate{
+    /// Production ingress for installed, independently enrolled NVP ONLY.
+    /// This is a distinct method on the SAME verified Protobuf pipe, not a
+    /// replacement server, SCM call or model-facing native tool.
+    ///
+    /// The call MUST be scheduled on a host-owned bounded blocking worker:
+    /// GGUF unload and WDDM sampling are synchronous native operations.
+    /// No physical positive handoff is claimed until installed keys and the
+    /// independent NVP SCM issuer exist and real R9700 tests pass.
+    pub async fn receive_nvp_gpu_windows<B>(
+        &self,
+        installed:&crate::workspace_ipc_transport::windows::SignedWindowsSession,
+        pipe:&mut tokio::net::windows::named_pipe::NamedPipeServer,
+        host:&HostCoreTask<'_>,
+        authority:&ConversationAuthority,
+        plan:&ApprovedNvpGpuPlan<'_>,
+        manager:&crate::gpu_resource_leases::CoreGpuLeaseManager,
+        model:&crate::inference_supervisor::TrustedInferenceSupervisor<B>,
+        supervisor:&crate::workspace_ipc_scm::VerifiedScmSupervisor,
+    )->Result<proto::WorkspaceFrame,CoreDlcGateError>
+    where B:crate::inference_host::InferenceBackend+Send+'static {
+        use crate::gpu_resource_leases::{
+            GpuLeaseRequest,LeaseOrigin,LeasePhase,LeaseRefusal,
+            OriginalTurnAuthority,CoreGpuLeaseManager,HostModelControl,
+            InstalledHostGpuObserver,InstalledNvpWorkerStopVerifier,
+        };
+        self.require_session(installed.session())?;
+        if !installed.installed_enrollment_active() ||
+           !installed.gpu_lease_feature_negotiated() ||
+           self.session.module_id!="nvp.film" {
+            return Err(CoreDlcGateError::Denied)
+        }
+        supervisor.require_live().map_err(|_|CoreDlcGateError::Unavailable)?;
+        installed.check_alive().map_err(|_|CoreDlcGateError::Transport)?;
+        let native=self.native_worker.as_ref()
+            .ok_or(CoreDlcGateError::Unavailable)?;
+        if native.pid()!=installed.peer_pid()||
+           installed.peer_creation_filetime()==0 {
+            return Err(CoreDlcGateError::SessionMismatch)
+        }
+        let _slot=self.acquire()?;
+        self.bind_host_task(authority,&host.origin.task_id)?;
+        // Startup crash fences must be asserted *before* model or GPU ingress.
+        manager.reassert_recovery_fence(model)
+            .map_err(|_|CoreDlcGateError::Unavailable)?;
+        let frame=installed.read_verified_frame(pipe).await
+            .map_err(|_|CoreDlcGateError::Transport)?;
+        if self.is_closed(){return Err(CoreDlcGateError::SessionClosed)}
+        let origin = match frame.body.as_ref(){
+            Some(proto::workspace_frame::Body::GpuLeaseRequest(v))=>v.origin.as_ref(),
+            Some(proto::workspace_frame::Body::GpuLeaseRelease(v))=>v.origin.as_ref(),
+            _=>return Err(CoreDlcGateError::InvalidInvoke),
+        }.ok_or(CoreDlcGateError::InvalidOrigin)?;
+        if origin.workspace_ref!=host.workspace_scope||
+           origin.conversation_ref!=host.origin.conversation_id||
+           origin.user_turn_ref!=host.origin.user_turn_id||
+           origin.task_ref!=host.origin.task_id||
+           origin.operation_ref.is_empty(){
+            return Err(CoreDlcGateError::InvalidOrigin)
+        }
+        let scoped=OriginalNvpGpuAuthority{
+            authority,original:host.origin,workspace_scope:host.workspace_scope,
+            session:&self.session,policy:host.policy,plan,
+        };
+        let lease_ref=format!("gpu-{}",self.call_id(host,&origin.operation_ref));
+        let observer=InstalledHostGpuObserver;
+        let worker_stop=InstalledNvpWorkerStopVerifier;
+        let outcome=match frame.body.as_ref().unwrap(){
+            proto::workspace_frame::Body::GpuLeaseRequest(v)=>{
+                // Fail before unloading if client names a nonexistent/non-
+                // canonical Windows GPU LUID or unsupported physical node.
+                lu_win_worker_job::ipc_gpu_vram::checked_device(&v.device_ref)
+                    .map_err(|_|CoreDlcGateError::Denied)?;
+                let request=GpuLeaseRequest{
+                    lease_ref,
+                    device_ref:v.device_ref.clone(),
+                    required_free_vram_bytes:v.required_free_vram_bytes,
+                    max_duration_ms:v.max_duration_ms,
+                    original:LeaseOrigin{
+                        module_id:self.session.module_id.clone(),
+                        workspace_ref:host.workspace_scope.into(),
+                        conversation_ref:host.origin.conversation_id.clone(),
+                        user_turn_ref:host.origin.user_turn_id.clone(),
+                        task_ref:host.origin.task_id.clone(),
+                        core_epoch_ref:self.session.core_epoch_ref.clone(),
+                        session_ref:self.session.session_ref.clone(),
+                    },
+                };
+                // The real model/control/driver providers are fixed at this
+                // production boundary, never chosen from incoming bytes.
+                match manager.request_handoff(&request,&scoped,model,&observer){
+                    Ok(granted)=>proto::GpuLeaseOutcome{
+                        operation_ref:origin.operation_ref.clone(),
+                        decision:proto::AdmissionDecision::Allowed as i32,
+                        phase:proto::GpuLeasePhase::Granted as i32,
+                        lease_ref:granted.lease_ref,
+                        measured_available_vram_bytes:Some(granted.available_vram_bytes),
+                        reason_code:"GPU_READY".into(),
+                    },
+                    Err(error)=>{
+                        let (decision,phase,reason)=gpu_failure(&error);
+                        proto::GpuLeaseOutcome{
+                            operation_ref:origin.operation_ref.clone(),decision,
+                            phase,lease_ref:String::new(),
+                            measured_available_vram_bytes:None,
+                            reason_code:reason.into(),
+                        }
+                    }
+                }
+            }
+            proto::workspace_frame::Body::GpuLeaseRelease(v)=>{
+                if v.lease_ref!=lease_ref{
+                    return Err(CoreDlcGateError::Denied)
+                }
+                let request=manager.original_request(&v.lease_ref)
+                    .map_err(|_|CoreDlcGateError::Denied)?;
+                // The signed original NVP worker Job-empty receipt is read
+                // from protected OS custody, not from v.nvp_worker_stop_ref.
+                match manager.release_and_restore(
+                    &request,&scoped,&worker_stop,&observer,model){
+                    Ok(_)=>proto::GpuLeaseOutcome{
+                        operation_ref:origin.operation_ref.clone(),
+                        decision:proto::AdmissionDecision::Allowed as i32,
+                        phase:proto::GpuLeasePhase::Restored as i32,
+                        lease_ref:v.lease_ref.clone(),
+                        measured_available_vram_bytes:None,
+                        reason_code:"LU_MODEL_READY".into(),
+                    },
+                    Err(error)=>{
+                        let (decision,phase,reason)=gpu_failure(&error);
+                        proto::GpuLeaseOutcome{
+                            operation_ref:origin.operation_ref.clone(),decision,
+                            phase,lease_ref:String::new(),
+                            measured_available_vram_bytes:None,
+                            reason_code:reason.into(),
+                        }
+                    },
+                }
+            }
+            _=>return Err(CoreDlcGateError::InvalidInvoke),
+        };
+        // Revocation or service death while a large model was unloading
+        // refuses delivery. A persisted UNKNOWN lease remains fenced.
+        if self.is_closed(){return Err(CoreDlcGateError::SessionClosed)}
+        supervisor.require_live().map_err(|_|CoreDlcGateError::Unavailable)?;
+        installed.check_alive().map_err(|_|CoreDlcGateError::Transport)?;
+        let reply=proto::WorkspaceFrame{
+            protocol_major:crate::workspace_ipc::WIRE_MAJOR,
+            protocol_minor:crate::workspace_ipc::WIRE_MINOR,
+            request_id:frame.request_id,
+            session_ref:self.session.session_ref.clone(),
+            sequence:0,
+            body:Some(proto::workspace_frame::Body::GpuLeaseOutcome(outcome)),
+        };
+        crate::workspace_ipc::validate(&reply)
+            .map_err(|_|CoreDlcGateError::Unavailable)?;
+        crate::workspace_ipc_transport::write_frame(pipe,&reply).await
+            .map_err(|_|CoreDlcGateError::Transport)?;
+        Ok(reply)
+    }
+}
+#[cfg(windows)]
+fn gpu_failure(error:&crate::gpu_resource_leases::LeaseRefusal)->(i32,i32,&'static str){
+    use crate::gpu_resource_leases::LeaseRefusal::*;
+    let (decision,phase,reason)=match error{
+        Deferred|ModelBusy=>(
+            proto::AdmissionDecision::Deferred,proto::GpuLeasePhase::Draining,"INFERENCE_BUSY"),
+        Occupied|Replayed|WrongOwner|InvalidScope|NotAuthorized=>(
+            proto::AdmissionDecision::Denied,proto::GpuLeasePhase::Quarantined,"GPU_SCOPE_DENIED"),
+        NoIndependentWorkerStop=>(
+            proto::AdmissionDecision::Deferred,proto::GpuLeasePhase::Granted,"NVP_WORKERS_ACTIVE"),
+        NoVerifiedCapacity=>(
+            proto::AdmissionDecision::Unknown,proto::GpuLeasePhase::Quarantined,"GPU_CAPACITY_UNVERIFIED"),
+        Quarantined=>(
+            proto::AdmissionDecision::Unknown,proto::GpuLeasePhase::Quarantined,"RECOVERY_REQUIRED"),
+        ModelFailed|Database=>(
+            proto::AdmissionDecision::Unknown,proto::GpuLeasePhase::Quarantined,"GPU_LEASE_UNCERTAIN"),
+    };
+    (decision as i32,phase as i32,reason)
 }
 
 #[cfg(test)]

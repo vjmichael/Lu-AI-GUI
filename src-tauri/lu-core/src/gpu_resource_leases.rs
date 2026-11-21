@@ -101,6 +101,8 @@ pub trait HostModelControl{
     fn observed_unloaded(&self)->Result<bool,LeaseRefusal>;
     fn restore_selected(&self,model_ref:&str,session:&str,lease_ref:&str)
         ->Result<(),LeaseRefusal>;
+    /// Genuine model runtime must be back in READY, not just catalogued.
+    fn ready_after_restore(&self)->Result<bool,LeaseRefusal>;
     fn resume_new_inference(&self)->Result<(),LeaseRefusal>;
 }
 #[derive(Debug,Clone,PartialEq,Eq)]
@@ -224,7 +226,8 @@ impl CoreGpuLeaseManager{
         let observed=model.snapshot()?;
         if observed.active_generation ||
            observed.selected_model_ref.as_deref()!=selected ||
-           observed.original_session_ref.as_deref()!=session {
+           observed.original_session_ref.as_deref()!=session ||
+           (selected.is_some() && !model.ready_after_restore()?) {
             return Err(LeaseRefusal::ModelFailed)
         }
         Ok(())
@@ -326,6 +329,12 @@ impl CoreGpuLeaseManager{
         })();
         match evidence{
             Ok(sample)=>{
+                // Admission may be revoked while the large GGUF context is
+                // draining. Recheck immediately before committing GRANTED.
+                if let Err(reason)=authority.admit(request){
+                    self.quarantine(&request.lease_ref);
+                    return Err(reason)
+                }
                 let done=(||->Result<(),LeaseRefusal>{
                     let conn=self.lock_conn()?;
                     let count=conn.execute(
@@ -373,6 +382,13 @@ impl CoreGpuLeaseManager{
             required_free_vram_bytes:u64::try_from(bytes).map_err(|_|LeaseRefusal::Database)?,
             max_duration_ms:u64::try_from(duration).map_err(|_|LeaseRefusal::Database)?,
         },phase:LeasePhase::parse(&phase)?,model_ref,model_session})
+    }
+    /// Exact immutable original stored scope for a received release ref.
+    /// The installed GPU ingress independently verifies the signed peer,
+    /// host user-turn origin and Core-minted original operation identity.
+    pub fn original_request(&self,lease_ref:&str)
+        ->Result<GpuLeaseRequest,LeaseRefusal>{
+        Ok(self.stored(lease_ref)?.request)
     }
     pub fn phase(&self,lease_ref:&str)->Result<LeasePhase,LeaseRefusal>{
         Ok(self.stored(lease_ref)?.phase)
@@ -504,6 +520,65 @@ impl CoreGpuLeaseManager{
         Ok(count>0)
     }
 }
+/// Read-only actual native Windows observer. No NVP self-report or
+/// process-local DXGI budget alone is accepted. Missing WDDM global counters
+/// return failure; Linux kernel GPU ownership is independently qualified.
+#[derive(Default)]
+pub struct InstalledHostGpuObserver;
+impl HostGpuObserver for InstalledHostGpuObserver {
+    fn observe(&self,device_ref:&str)->Result<GpuSample,LeaseRefusal>{
+        #[cfg(windows)]
+        {
+            let native=lu_win_worker_job::ipc_gpu_vram::sample_device(device_ref)
+                .map_err(|_|LeaseRefusal::NoVerifiedCapacity)?;
+            Ok(GpuSample{
+                device_ref:native.device_ref,
+                available_vram_bytes:native.available_vram_bytes,
+                sample_sequence:native.sequence,
+                source_code:"WIN_DXGI_WDDM_GLOBAL_V1".into(),
+            })
+        }
+        #[cfg(not(windows))]
+        {
+            let _=device_ref;
+            Err(LeaseRefusal::NoVerifiedCapacity)
+        }
+    }
+}
+/// Independent installed NVP supervisor receipt checker. NVP's message
+/// only supplies the original lease_ref; the verifier reads protected local
+/// SCM-origin evidence, checks the fixed installer public pin and binds every
+/// original user-turn/worker field. No raw signed bytes are taken from IPC.
+#[derive(Default)]
+pub struct InstalledNvpWorkerStopVerifier;
+impl NvpWorkerStopVerifier for InstalledNvpWorkerStopVerifier{
+    fn witnessed_empty(&self,request:&GpuLeaseRequest)->Result<bool,LeaseRefusal>{
+        #[cfg(windows)]
+        {
+            let origin=&request.original;
+            let bound=lu_win_worker_job::ipc_nvp_gpu_stop::NvpOriginalGpuLease{
+                lease_ref:&request.lease_ref,
+                device_ref:&request.device_ref,
+                module_id:&origin.module_id,
+                workspace_ref:&origin.workspace_ref,
+                conversation_ref:&origin.conversation_ref,
+                user_turn_ref:&origin.user_turn_ref,
+                task_ref:&origin.task_ref,
+                core_epoch_ref:&origin.core_epoch_ref,
+                nvp_session_ref:&origin.session_ref,
+            };
+            lu_win_worker_job::ipc_nvp_gpu_stop::
+                independently_verified_nvp_worker_empty(&bound)
+                .map(|_|true)
+                .map_err(|_|LeaseRefusal::NoIndependentWorkerStop)
+        }
+        #[cfg(not(windows))]
+        {
+            let _=request;
+            Err(LeaseRefusal::NoIndependentWorkerStop)
+        }
+    }
+}
 /// The genuine Lu supervisor implements Core's model load/unload boundary.
 /// The API adapter does NOT provide an OS driver VRAM verifier.
 impl<B:crate::inference_host::InferenceBackend+Send+'static>
@@ -530,6 +605,11 @@ impl<B:crate::inference_host::InferenceBackend+Send+'static>
         ->Result<(),LeaseRefusal>{
         self.load_for_gpu_lease_restore(model_ref,session.to_owned(),id)
             .map(|_|()).map_err(|_|LeaseRefusal::ModelFailed)
+    }
+    fn ready_after_restore(&self)->Result<bool,LeaseRefusal>{
+        self.status().map(|s|s.phase==crate::inference_host::EnginePhase::Ready &&
+            s.session_id.is_some() && s.model_ref.is_some())
+            .map_err(|_|LeaseRefusal::ModelFailed)
     }
     fn resume_new_inference(&self)->Result<(),LeaseRefusal>{
         self.pause_for_gpu_lease(false).map_err(|_|LeaseRefusal::ModelFailed)
@@ -571,6 +651,9 @@ mod tests{
         }
         fn restore_selected(&self,_:&str,_:&str,_:&str)->Result<(),LeaseRefusal>{
             self.loaded.store(true,Ordering::SeqCst);Ok(())
+        }
+        fn ready_after_restore(&self)->Result<bool,LeaseRefusal>{
+            Ok(self.loaded.load(Ordering::SeqCst))
         }
         fn resume_new_inference(&self)->Result<(),LeaseRefusal>{
             self.paused.store(false,Ordering::SeqCst);Ok(())

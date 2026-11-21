@@ -96,6 +96,14 @@ jobs:
             echo LU_IPC_R4_R3_R3_R2_SCM_EXACT_CALL_LANE_REPLAY_SOURCE_PASS
           fi
           echo LU_IPC_R4_R3_R2_NATIVE_CREDENTIAL_ACCEPTANCE_PASS
+      - name: Windows LU-IPC-GPU-01B native driver and signed NVP stop-source refusal
+        if: matrix.os == 'windows-2025'
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked --manifest-path src-tauri/lu-win-worker-job/Cargo.toml --lib ipc_gpu_vram -- --nocapture
+          cargo test --locked --manifest-path src-tauri/lu-win-worker-job/Cargo.toml --lib ipc_nvp_gpu_stop -- --nocapture
+          echo LU_IPC_GPU_01B_WINDOWS_NATIVE_SOURCE_NEGATIVE_PASS
       - name: Windows R4 PowerShell installer script syntax qualification
         if: matrix.os == 'windows-2025'
         shell: pwsh

@@ -34,6 +34,10 @@ pub mod ipc_scm_control_wire;
 pub mod ipc_scm_control;
 #[cfg(windows)]
 pub mod ipc_scm_launcher;
+#[cfg(windows)]
+pub mod ipc_gpu_vram;
+#[cfg(windows)]
+pub mod ipc_nvp_gpu_stop;
 
 #[cfg(windows)]
 mod windows_owned {

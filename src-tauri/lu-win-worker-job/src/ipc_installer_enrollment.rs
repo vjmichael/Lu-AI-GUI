@@ -312,6 +312,52 @@ pub fn read_installed_scm_executor_pins()->io::Result<InstalledScmExecutorPins>{
     parse_executor_record(&raw)
 }
 
+/// Fixed installer-owned NVP enrollment. Never accept a client-selected file
+/// path or borrow the Lu IDE credential/record as a substitute.
+pub fn read_installed_nvp_film_pins()->io::Result<Vec<u8>>{
+    load_fixed_named_record(&os_program_data()?,"nvp.film.json",false)
+}
+/// The independent native NVP SCM P-256 GPU-worker-stop signer public pin.
+/// Its private CNG key is never created by Lu or supplied over an IPC frame.
+pub fn read_installed_nvp_gpu_stop_public_key()->io::Result<[u8;72]>{
+    let blob=load_fixed_named_record(&os_program_data()?,
+        "nvp-gpu-stop-p256.pub",true)?;
+    if blob.len()!=72 || u32::from_le_bytes(blob[0..4].try_into().unwrap())!=0x31534345 ||
+       u32::from_le_bytes(blob[4..8].try_into().unwrap())!=32 ||
+       blob[8..].iter().all(|x|*x==0){
+        return Err(denied("invalid installed NVP GPU worker signer public blob"))
+    }
+    let mut out=[0u8;72];out.copy_from_slice(&blob);Ok(out)
+}
+/// Only accepts a fixed lease-derived name inside an ACL-protected directory
+/// where the installed NVP supervisor publishes immutable signed receipts.
+pub fn read_installed_nvp_gpu_stop_receipt(lease_ref:&str)->io::Result<Vec<u8>>{
+    if lease_ref.is_empty()||lease_ref.len()>128||
+       !lease_ref.bytes().all(|b|b.is_ascii_alphanumeric()||b=='-') {
+        return Err(denied("invalid NVP GPU stop lease reference"))
+    }
+    let root=os_program_data()?;
+    let lu=root.join("Lu");let ipc=lu.join("IPC");
+    let receipts=ipc.join("nvp-gpu-stops-v1");
+    for dir in [&lu,&ipc,&receipts]{
+        let file=open_custodian(dir,true)?;
+        if !file.metadata()?.is_dir(){
+            return Err(denied("invalid NVP stop receipt directory"))
+        }
+    }
+    let path=receipts.join(format!("{lease_ref}.stop.v1"));
+    let mut file=open_custodian(&path,false)?;
+    let len=file.metadata()?.len();
+    if !(65..=4096).contains(&len){
+        return Err(denied("NVP stop receipt length invalid"))
+    }
+    let mut bytes=Vec::with_capacity(len as usize);
+    file.read_to_end(&mut bytes)?;
+    if bytes.len()!=len as usize {
+        return Err(denied("NVP stop receipt mutated during read"))
+    }
+    Ok(bytes)
+}
 /// Read ONLY the deterministic, protected, installed Lu IDE enrollment.
 /// The OS credential key is deliberately NOT present in these record bytes.
 pub fn read_installed_lu_ide_pins()->io::Result<Vec<u8>>{

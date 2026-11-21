@@ -272,7 +272,10 @@ pub async fn server_handshake_with_hello<S: AsyncRead + AsyncWrite + Unpin>(
     let mut welcome = proto::Welcome {
         selected_major: WIRE_MAJOR, selected_minor: WIRE_MINOR,
         core_epoch_ref: identity.core_epoch_ref.clone(),
-        enabled_features: vec![], server_hmac_sha256: vec![],
+        enabled_features: if enrolled.module_id=="nvp.film" &&
+            hello.requested_features.iter().any(|f|f=="gpu-lease-v1") {
+            vec!["gpu-lease-v1".into()]
+        }else{vec![]}, server_hmac_sha256: vec![],
     };
     welcome.server_hmac_sha256 = server_mac(
         &enrolled.handshake_key, &hello_wire, &identity.server_nonce,
@@ -491,10 +494,16 @@ impl ProtectedInstalledIdeRecord {
         Ok(hash)
     }
     fn parse(bytes:&[u8])->Result<Self,TransportError>{
+        Self::parse_for(bytes,"lu.ide")
+    }
+    fn parse_for(bytes:&[u8],module_id:&str)->Result<Self,TransportError>{
+        if module_id!="lu.ide"&&module_id!="nvp.film"{
+            return Err(TransportError::PeerNotVerified)
+        }
         let record:Self=serde_json::from_slice(bytes)
             .map_err(|_|TransportError::PeerNotVerified)?;
         if record.schema!="lu.win.dlc-enrollment.v1"||
-           record.module_id!="lu.ide"||
+           record.module_id!=module_id||
            record.role!=proto::ModuleRole::Workspace as i32 ||
            record.installed_executable_path.is_empty()||
            record.installed_executable_path.contains('\0')||
@@ -517,13 +526,27 @@ impl WindowsInstalledEnrollment {
     fn from_installer_owned_record(
         supervised_pid:u32,
     )->Result<(Self,[u8;32]),TransportError>{
+        Self::from_installed_module(supervised_pid,"lu.ide")
+    }
+    fn from_installer_owned_nvp(
+        supervised_pid:u32,
+    )->Result<(Self,[u8;32]),TransportError>{
+        Self::from_installed_module(supervised_pid,"nvp.film")
+    }
+    fn from_installed_module(
+        supervised_pid:u32,module_id:&str,
+    )->Result<(Self,[u8;32]),TransportError>{
         if supervised_pid==0 {
             return Err(TransportError::PeerNotVerified);
         }
-        let bytes=lu_win_worker_job::ipc_installer_enrollment::
-            read_installed_lu_ide_pins()
-            .map_err(|_|TransportError::PeerNotVerified)?;
-        let record=ProtectedInstalledIdeRecord::parse(&bytes)?;
+        let bytes=match module_id{
+            "lu.ide"=>lu_win_worker_job::ipc_installer_enrollment::
+                read_installed_lu_ide_pins(),
+            "nvp.film"=>lu_win_worker_job::ipc_installer_enrollment::
+                read_installed_nvp_film_pins(),
+            _=>return Err(TransportError::PeerNotVerified),
+        }.map_err(|_|TransportError::PeerNotVerified)?;
+        let record=ProtectedInstalledIdeRecord::parse_for(&bytes,module_id)?;
         let record_fingerprint:[u8;32]=Sha256::digest(&bytes).into();
         let approved_package=ProtectedInstalledIdeRecord::decode_sha256(
             &record.package_sha256)?;
@@ -548,9 +571,13 @@ impl WindowsInstalledEnrollment {
             expected_package_sha256:approved_package,
             // Fail closed unless this process is the trusted SYSTEM broker
             // and the package-bound locally persisted OS credential exists.
-            handshake_key:lu_win_worker_job::ipc_credential_broker::
-                read_installed_ide_key(approved_package)
-                .map_err(|_|TransportError::PeerNotVerified)?,
+            handshake_key:match module_id{
+                "lu.ide"=>lu_win_worker_job::ipc_credential_broker::
+                    read_installed_ide_key(approved_package),
+                "nvp.film"=>lu_win_worker_job::ipc_credential_broker::
+                    read_installed_nvp_key(approved_package),
+                _=>return Err(TransportError::PeerNotVerified),
+            }.map_err(|_|TransportError::PeerNotVerified)?,
         };
         if !pin.valid_pin(){return Err(TransportError::PeerNotVerified);}
         Ok((pin,record_fingerprint))
@@ -652,9 +679,14 @@ pub mod windows {
         session:TransportSession,
         lease:lu_win_worker_job::ipc_signed_package::SignedClientLease,
         revocation:Option<InstalledRevocationWitness>,
+        gpu_lease_negotiated:bool,
     }
     impl SignedWindowsSession {
         pub fn session(&self)->&TransportSession {&self.session}
+        pub fn gpu_lease_feature_negotiated(&self)->bool{
+            self.gpu_lease_negotiated && self.revocation.is_some() &&
+                self.session.module_id=="nvp.film"
+        }
         /// Stable kernel-observed peer identity held by the signed native
         /// lease, never the PID claimed in an IPC Hello.
         pub fn peer_pid(&self)->u32 {self.lease.witness().pid}
@@ -682,16 +714,24 @@ pub mod windows {
                 // Re-read both protected material sources on each received
                 // frame. Installer record replacement and Credential Manager
                 // deletion/rotation invalidate an already-admitted session.
-                let bytes=lu_win_worker_job::ipc_installer_enrollment::
-                    read_installed_lu_ide_pins()
-                    .map_err(|_|TransportError::PeerNotVerified)?;
+                let bytes=match self.session.module_id.as_str(){
+                    "lu.ide"=>lu_win_worker_job::ipc_installer_enrollment::
+                        read_installed_lu_ide_pins(),
+                    "nvp.film"=>lu_win_worker_job::ipc_installer_enrollment::
+                        read_installed_nvp_film_pins(),
+                    _=>return Err(TransportError::PeerNotVerified),
+                }.map_err(|_|TransportError::PeerNotVerified)?;
                 let record_sha:[u8;32]=ImageSha256::digest(bytes).into();
                 if !fixed_equal(&witness.record_sha256,&record_sha) {
                     return Err(TransportError::PeerNotVerified);
                 }
-                let mut key=lu_win_worker_job::ipc_credential_broker::
-                    read_installed_ide_key(witness.package_sha256)
-                    .map_err(|_|TransportError::PeerNotVerified)?;
+                let mut key=match self.session.module_id.as_str(){
+                    "lu.ide"=>lu_win_worker_job::ipc_credential_broker::
+                        read_installed_ide_key(witness.package_sha256),
+                    "nvp.film"=>lu_win_worker_job::ipc_credential_broker::
+                        read_installed_nvp_key(witness.package_sha256),
+                    _=>return Err(TransportError::PeerNotVerified),
+                }.map_err(|_|TransportError::PeerNotVerified)?;
                 let key_sha:[u8;32]=ImageSha256::digest(key).into();
                 // Volatile erasure before any comparison/return; it is not
                 // claimed to erase copies made by the OS or compiler.
@@ -731,6 +771,9 @@ pub mod windows {
         if !pin.valid_pin() {return Err(TransportError::PeerNotVerified);}
         server.connect().await?;
         let first=read_frame(server).await?;
+        let gpu_lease_requested=matches!(first.body.as_ref(),
+            Some(proto::workspace_frame::Body::Hello(hello)) if
+                hello.requested_features.iter().any(|f|f=="gpu-lease-v1"));
         if !matches!(first.body.as_ref(),
             Some(proto::workspace_frame::Body::Hello(_))) {
             return Err(TransportError::Protocol("expected_hello"));
@@ -756,7 +799,8 @@ pub mod windows {
         let session=server_handshake_with_hello(
             server,&evidence,pin,identity,first).await?;
         lease.check_alive().map_err(|_|TransportError::PeerNotVerified)?;
-        Ok(SignedWindowsSession{session,lease,revocation:None})
+        let gpu_lease_negotiated=gpu_lease_requested && session.module_id=="nvp.film";
+        Ok(SignedWindowsSession{session,lease,revocation:None,gpu_lease_negotiated})
     }
 
     /// Synthetic test admission only: arbitrary caller-constructed pins
@@ -794,6 +838,34 @@ pub mod windows {
         let mut session=accepted?;
         session.revocation=Some(witness);
         session.check_alive()?;
+        Ok(session)
+    }
+
+    /// Installed, independently signed NVP film enrollment; not IDE's
+    /// ProgramData record or credential target. Its GPU feature is usable
+    /// only when explicitly requested in the authenticated Hello.
+    pub async fn accept_installer_owned_nvp_film(
+        server:&mut NamedPipeServer,
+        supervised_pid:u32,
+        identity:&ServerIdentity,
+    )->Result<SignedWindowsSession,TransportError>{
+        let (mut pin,record_sha256)=
+            WindowsInstalledEnrollment::from_installer_owned_nvp(
+                supervised_pid)?;
+        let witness=InstalledRevocationWitness{
+            package_sha256:pin.expected_package_sha256,
+            record_sha256,
+            credential_sha256:ImageSha256::digest(pin.handshake_key).into(),
+        };
+        let accepted=accept_signed_peer_impl(server,&pin,identity).await;
+        lu_win_worker_job::ipc_credential_broker::clear_temporary_key(
+            &mut pin.handshake_key);
+        let mut session=accepted?;
+        session.revocation=Some(witness);
+        session.check_alive()?;
+        if !session.gpu_lease_feature_negotiated(){
+            return Err(TransportError::Protocol("nvp_gpu_feature_not_negotiated"))
+        }
         Ok(session)
     }
 

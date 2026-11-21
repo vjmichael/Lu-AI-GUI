@@ -164,6 +164,14 @@ pub(crate) fn verify(body:&[u8],signature:&[u8],approved_public_blob:&[u8])->io:
     }
     Ok(())
 }
+/// Verify an unrelated installed NVP GPU-stop witness against its OWN
+/// protected installer public pin. This function does not choose a key,
+/// grant access, or permit the NVP SCM to sign a Lu executor receipt.
+pub fn verify_external_p256_signature(
+    body:&[u8],signature:&[u8],approved_public_blob:&[u8],
+)->io::Result<()>{
+    verify(body,signature,approved_public_blob)
+}
 /// A separate pre-provisioned, per-user NON-SYSTEM CNG identity for the
 /// installed Lu Core executable. A signed request remains subject to OS
 /// process/file/publisher checks on the service-held named pipe. Installer
