@@ -484,6 +484,22 @@ $p.Dispose()
 
 #[cfg(windows)]
 #[tokio::test]
+async fn production_broker_refuses_without_protected_system_enrollment() {
+    use lu_core::workspace_ipc_transport::windows;
+    // This CI host has not been provisioned as the privileged Lu Core
+    // service and is not an independently signed installed Lu IDE. The
+    // production path must reject BEFORE the pipe ever connects.
+    let pipe=format!(r"\\.\pipe\lu-ipc-{:032x}",
+        (11u128<<96)|u128::from(std::process::id()));
+    let mut server=windows::bind_one(&pipe).unwrap();
+    let result=windows::accept_installer_owned_lu_ide(
+        &mut server,std::process::id(),&materials()).await;
+    assert!(matches!(result,Err(TransportError::PeerNotVerified)),
+        "unprovisioned local Windows user must never enroll as production Lu IDE");
+}
+
+#[cfg(windows)]
+#[tokio::test]
 async fn unsigned_same_user_process_never_enters_signed_enrollment() {
     use lu_core::workspace_ipc_transport::{windows, WindowsInstalledEnrollment};
     use lu_win_worker_job::ipc_pipe_peer::observe_host_process;

@@ -514,16 +514,19 @@ impl WindowsInstalledEnrollment {
     /// parents. Broker key is NEVER persisted in this public pin record.
     /// Only a trusted host/supervisor may supply the observed launched PID
     /// and an independently OS-custodied handshake key.
-    pub fn from_installer_owned_record(
-        supervised_pid:u32,broker_handshake_key:[u8;32],
-    )->Result<Self,TransportError>{
-        if supervised_pid==0||broker_handshake_key.iter().all(|b|*b==0){
+    fn from_installer_owned_record(
+        supervised_pid:u32,
+    )->Result<(Self,[u8;32]),TransportError>{
+        if supervised_pid==0 {
             return Err(TransportError::PeerNotVerified);
         }
         let bytes=lu_win_worker_job::ipc_installer_enrollment::
             read_installed_lu_ide_pins()
             .map_err(|_|TransportError::PeerNotVerified)?;
         let record=ProtectedInstalledIdeRecord::parse(&bytes)?;
+        let record_fingerprint:[u8;32]=Sha256::digest(&bytes).into();
+        let approved_package=ProtectedInstalledIdeRecord::decode_sha256(
+            &record.package_sha256)?;
         let process=lu_win_worker_job::ipc_pipe_peer::observe_host_process(
             supervised_pid).map_err(|_|TransportError::PeerNotVerified)?;
         if process.image_path!=record.installed_executable_path {
@@ -542,12 +545,15 @@ impl WindowsInstalledEnrollment {
                     &record.signer_certificate_sha256)?,
             expected_module_id:record.module_id,
             expected_role:record.role,
-            expected_package_sha256:ProtectedInstalledIdeRecord::decode_sha256(
-                &record.package_sha256)?,
-            handshake_key:broker_handshake_key,
+            expected_package_sha256:approved_package,
+            // Fail closed unless this process is the trusted SYSTEM broker
+            // and the package-bound locally persisted OS credential exists.
+            handshake_key:lu_win_worker_job::ipc_credential_broker::
+                read_installed_ide_key(approved_package)
+                .map_err(|_|TransportError::PeerNotVerified)?,
         };
         if !pin.valid_pin(){return Err(TransportError::PeerNotVerified);}
-        Ok(pin)
+        Ok((pin,record_fingerprint))
     }
 }
 
@@ -637,14 +643,43 @@ pub mod windows {
     /// A session owns a stable Win32 process HANDLE and read-only signed
     /// image File; neither may be dropped before disconnect/revocation.
     /// Caller must still apply ConversationAuthority + durable turn grants.
+    struct InstalledRevocationWitness {
+        package_sha256:[u8;32],
+        record_sha256:[u8;32],
+        credential_sha256:[u8;32],
+    }
     pub struct SignedWindowsSession {
         session:TransportSession,
         lease:lu_win_worker_job::ipc_signed_package::SignedClientLease,
+        revocation:Option<InstalledRevocationWitness>,
     }
     impl SignedWindowsSession {
         pub fn session(&self)->&TransportSession {&self.session}
         pub fn check_alive(&self)->Result<(),TransportError>{
-            self.lease.check_alive().map_err(|_|TransportError::PeerNotVerified)
+            self.lease.check_alive().map_err(|_|TransportError::PeerNotVerified)?;
+            if let Some(witness)=&self.revocation {
+                // Re-read both protected material sources on each received
+                // frame. Installer record replacement and Credential Manager
+                // deletion/rotation invalidate an already-admitted session.
+                let bytes=lu_win_worker_job::ipc_installer_enrollment::
+                    read_installed_lu_ide_pins()
+                    .map_err(|_|TransportError::PeerNotVerified)?;
+                let record_sha:[u8;32]=ImageSha256::digest(bytes).into();
+                if !fixed_equal(&witness.record_sha256,&record_sha) {
+                    return Err(TransportError::PeerNotVerified);
+                }
+                let mut key=lu_win_worker_job::ipc_credential_broker::
+                    read_installed_ide_key(witness.package_sha256)
+                    .map_err(|_|TransportError::PeerNotVerified)?;
+                let key_sha:[u8;32]=ImageSha256::digest(key).into();
+                // Volatile erasure before any comparison/return; it is not
+                // claimed to erase copies made by the OS or compiler.
+                for b in &mut key {unsafe{std::ptr::write_volatile(b,0);}}
+                if !fixed_equal(&witness.credential_sha256,&key_sha) {
+                    return Err(TransportError::PeerNotVerified);
+                }
+            }
+            Ok(())
         }
         /// Preserve the post-ReadFile identity check on EVERY subsequent
         /// frame; session matching is not effect or model authorization.
@@ -700,7 +735,7 @@ pub mod windows {
         let session=server_handshake_with_hello(
             server,&evidence,pin,identity,first).await?;
         lease.check_alive().map_err(|_|TransportError::PeerNotVerified)?;
-        Ok(SignedWindowsSession{session,lease})
+        Ok(SignedWindowsSession{session,lease,revocation:None})
     }
 
     /// Synthetic test admission only: arbitrary caller-constructed pins
@@ -720,12 +755,26 @@ pub mod windows {
     pub async fn accept_installer_owned_lu_ide(
         server:&mut NamedPipeServer,
         supervised_pid:u32,
-        broker_handshake_key:[u8;32],
         identity:&ServerIdentity,
     )->Result<SignedWindowsSession,TransportError>{
-        let pin=WindowsInstalledEnrollment::from_installer_owned_record(
-            supervised_pid,broker_handshake_key)?;
-        accept_signed_peer_impl(server,&pin,identity).await
+        let (mut pin,record_sha256)=
+            WindowsInstalledEnrollment::from_installer_owned_record(
+                supervised_pid)?;
+        let witness=InstalledRevocationWitness{
+            package_sha256:pin.expected_package_sha256,
+            record_sha256,
+            credential_sha256:ImageSha256::digest(pin.handshake_key).into(),
+        };
+        let accepted=accept_signed_peer_impl(server,&pin,identity).await;
+        // Do not retain the raw session key in this admission object after
+        // handshake. The session only retains a digest to detect key rotation.
+        for b in &mut pin.handshake_key {
+            unsafe { std::ptr::write_volatile(b,0); }
+        }
+        let mut session=accepted?;
+        session.revocation=Some(witness);
+        session.check_alive()?;
+        Ok(session)
     }
 
     pub fn check_pipe_name(name: &str) -> Result<(), TransportError> {

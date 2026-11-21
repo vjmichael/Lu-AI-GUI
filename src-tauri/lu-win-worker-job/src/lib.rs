@@ -21,6 +21,8 @@ pub mod ipc_pipe_peer;
 pub mod ipc_signed_package;
 #[cfg(windows)]
 pub mod ipc_installer_enrollment;
+#[cfg(windows)]
+pub mod ipc_credential_broker;
 
 #[cfg(windows)]
 mod windows_owned {

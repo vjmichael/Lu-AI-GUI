@@ -72,6 +72,36 @@ jobs:
         run: |
           set -euo pipefail
           cargo test --locked --manifest-path src-tauri/lu-win-worker-job/Cargo.toml --lib -- --nocapture
+      - name: Windows R4 approved installer gate rejects a matching-hash unsigned binary
+        if: matrix.os == 'windows-2025'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $fake=Join-Path $env:RUNNER_TEMP 'not-signed-lu-installer.exe'
+          [IO.File]::WriteAllBytes($fake,[byte[]](1,2,3,4,5,6,7,8))
+          $actual=(Get-FileHash -LiteralPath $fake -Algorithm SHA256).Hash.ToLowerInvariant()
+          $args=@{
+            SignedInstaller=$fake
+            ApprovedInstallerSha256=$actual
+            ApprovedInstallerSignerCertificateSha256=('2'*64)
+            InstalledExe=$fake
+            ExpectedInstallRoot=$env:RUNNER_TEMP
+            ApprovedImageSha256=('1'*64)
+            ApprovedSignerCertificateSha256=('3'*64)
+            ApprovedPackageSha256=('7'*64)
+          }
+          $refused=$false
+          try {
+            & scripts/lu-ipc-r4-verify-signed-installer.ps1 @args
+          } catch {
+            if($_.Exception.Message -match 'LU_IPC_R4_REFUSED:'){$refused=$true}
+            else{throw}
+          }
+          if(-not $refused){throw 'Unsigned matching-hash installer admitted'}
+          if(Test-Path (Join-Path $env:ProgramData 'Lu\IPC\enrollments\lu.ide.json')){
+            throw 'Unsigned installer unexpectedly created an enrollment'
+          }
+          Write-Host 'LU_IPC_R4_UNSIGNED_INSTALLER_REFUSED'
       - name: Windows protected installed Lu IDE enrollment refuses unapproved executable
         if: matrix.os == 'windows-2025'
         shell: pwsh
