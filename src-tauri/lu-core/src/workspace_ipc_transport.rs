@@ -535,17 +535,20 @@ impl WindowsInstalledEnrollment {
     }
     /// Non-SYSTEM desktop path for protected PUBLIC NVP signer/package
     /// identity only. Never reads or synthesizes a SYSTEM-held handshake key.
+    /// Construct pinned NVP identity from the actual HELD signed-pipe
+    /// process witness, never a caller-selected PID or an untrusted Hello.
     fn from_installer_owned_nvp_public(
-        supervised_pid:u32,bytes:&[u8],
+        bytes:&[u8],
+        process:&lu_win_worker_job::ipc_pipe_peer::WindowsPipePeer,
     )->Result<(Self,[u8;32]),TransportError>{
-        if supervised_pid==0{return Err(TransportError::PeerNotVerified)}
-        // Verified, public-only enrollment material is fetched across the
-        // signed SCM Core control pipe. Non-SYSTEM desktop may NOT open the
-        // SYSTEM/Administrators-only protected ProgramData file itself.
+        // Non-SYSTEM desktop receives public-only installer record over
+        // authenticated SCM private control; it never reads SYSTEM secrets.
+        if process.pid==0||process.creation_filetime==0||
+           process.session_id==0||process.user_sid=="S-1-5-18"{
+            return Err(TransportError::PeerNotVerified)
+        }
         let record=ProtectedInstalledIdeRecord::parse_for(bytes,"nvp.film")?;
         let record_fingerprint:[u8;32]=Sha256::digest(bytes).into();
-        let process=lu_win_worker_job::ipc_pipe_peer::observe_host_process(
-            supervised_pid).map_err(|_|TransportError::PeerNotVerified)?;
         if process.image_path!=record.installed_executable_path{
             return Err(TransportError::PeerNotVerified)
         }
@@ -553,7 +556,7 @@ impl WindowsInstalledEnrollment {
             expected_pid:process.pid,
             expected_creation_filetime:process.creation_filetime,
             expected_session_id:process.session_id,
-            expected_user_sid:process.user_sid,
+            expected_user_sid:process.user_sid.clone(),
             expected_executable_path:record.installed_executable_path,
             expected_image_sha256:ProtectedInstalledIdeRecord::decode_sha256(
                 &record.image_sha256)?,
@@ -564,7 +567,7 @@ impl WindowsInstalledEnrollment {
             expected_role:record.role,
             expected_package_sha256:ProtectedInstalledIdeRecord::decode_sha256(
                 &record.package_sha256)?,
-            handshake_key:[0u8;32], // key is SCM-only by design
+            handshake_key:[0u8;32], // never leave installed SCM
         };
         if !pin.valid_identity_pin(){
             return Err(TransportError::PeerNotVerified)
@@ -1023,7 +1026,6 @@ pub mod windows {
     /// This call does not itself grant GPU memory or execute a tool.
     pub async fn accept_scm_brokered_nvp_film(
         server:&mut NamedPipeServer,
-        supervised_pid:u32,
         identity:&ServerIdentity,
         original:&OriginalCall,
         expected_scm:&lu_win_worker_job::ipc_pipe_peer::WindowsPipePeer,
@@ -1037,11 +1039,21 @@ pub mod windows {
         let public=lu_win_worker_job::ipc_scm_control::
             fetch_nvp_public_enrollment(original,expected_scm).await
             .map_err(|_|TransportError::PeerNotVerified)?;
-        let (pin,record_sha256)=
-            WindowsInstalledEnrollment::from_installer_owned_nvp_public(
-                supervised_pid,&public)?;
+        // Public pins alone are not trusted process evidence. Once the
+        // client sends the first bounded Hello, synchronously retain its
+        // true kernel process token, executable handle, and verified signer.
+        let public_record=ProtectedInstalledIdeRecord::parse_for(
+            &public,"nvp.film")?;
         server.connect().await?;
         let first=read_frame(server).await?;
+        // No await between the first complete ReadFile and native
+        // message-token + signed-package attestation.
+        let lease=lu_win_worker_job::ipc_signed_package::inspect_signed_client(
+            server,&public_record.installed_executable_path)
+            .map_err(|_|TransportError::PeerNotVerified)?;
+        let (pin,record_sha256)=
+            WindowsInstalledEnrollment::from_installer_owned_nvp_public(
+                &public,lease.witness())?;
         let hello=match first.body.as_ref(){
             Some(proto::workspace_frame::Body::Hello(value))=>value,
             _=>return Err(TransportError::Protocol("expected_nvp_hello")),
@@ -1052,11 +1064,8 @@ pub mod windows {
            !hello.requested_features.iter().any(|f|f=="gpu-lease-v1"){
             return Err(TransportError::PeerNotVerified)
         }
-        // This is synchronous after first ReadFile. The kernel-held process,
-        // executable File and Authenticode signer remain live in the session.
-        let lease=lu_win_worker_job::ipc_signed_package::inspect_signed_client(
-            server,&pin.expected_executable_path)
-            .map_err(|_|TransportError::PeerNotVerified)?;
+        // The held kernel process + signed image live through the session
+        // and are rechecked before subsequent authenticated frames.
         let observed=lease.witness();
         let image_sha256=file_sha256(lease.image_file())?;
         let signer_sha256:[u8;32]=ImageSha256::digest(
