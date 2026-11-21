@@ -51,3 +51,66 @@ The exact R2 cohort on commit `35529d1672a6b77b6f877049ca501d82123fde7f` passed 
 ## R4 desktop macro correction
 
 The R3 exact native run at source `1afb058e09dddb86e1d5ce1726ae8a167c920aca` PASSED Ubuntu and Windows Core tests, including original-session recovery and 01C async/poll fixtures. The disposable source-only Windows Tauri check correctly reached `lu-desktop/src-tauri/src/lib.rs` and revealed one Rust integration error: an inherited `#[tauri::command]` attribute was inadvertently adjacent to the new read-only status `struct` (Tauri requires an actual function). R4 removes that stray attribute while retaining the individual annotations on both `lu_gpu_lease_status` and `lu_status`. Requalify the exact successor with the same explicit source-only typecheck; this is not installed runtime acceptance.
+
+
+## LU-IPC-GPU-01D-R2 — signed-pipe client identity and installed interoperability
+
+**Scope:** This appends to the existing GPU handoff task, not a new task ID. The
+source-qualified SCM broker is in PR #244; physical Windows installation is
+still **unaccepted** until an independently signed Core+NVP+GPU lifecycle passes.
+
+**One public Core IPC endpoint, no caller-selected PID.** Core fetches the NVP
+*public-only* enrollment from its signed Core→SYSTEM SCM control channel before
+accepting an NVP frame. The first complete Protobuf Hello on the owner-only
+Windows named pipe is immediately followed (without an await) by native
+impersonated message-token capture, a **held** kernel process handle, opened
+executable file and embedded Authenticode signer verification. The exact
+installed executable SHA-256, signer-certificate DER SHA-256 and package digest
+must match the protected enrollment, and the process PID, creation FILETIME,
+SID and session are bound to that same held peer. The native listener no
+longer requires or accepts a WebView/NVP/host-selected numeric PID.
+
+**Original user approval still comes first.** The Core on-demand listener must
+receive an independently recorded and *currently authorized* USER turn,
+workspace, READ + EXECUTE invocation pair and precise fingerprint from its
+trusted desktop/host. Neither NVP's Hello, OriginRefs, process identity,
+opaque session nor film job filename may create this approval. The current
+desktop does not yet have an installed, original-turn-confirmed film session
+initializer, and the source-only listener is intentionally not auto-started.
+Until that owner workflow exists, no real GPU handoff may be admitted.
+
+**NVP interoperability contract for its separate owner team:**
+- NVP's genuinely installed Windows client must use the existing
+  `lu.workspace.v0` framed local named pipe and request `gpu-lease-v1`
+  as an authenticated Hello feature. No HTTP, TCP, unprotected local file,
+  second Core model process, or custom IPC replacement.
+- A broker that is independently installed under NVP's protected SCM custody
+  must prove possession of the **same package-enrolled HMAC key** for the
+  canonical `lu.workspace.client.v0\0` transcript. NVP's ordinary UI process
+  must not read the SYSTEM-held secret; its own privileged broker, securely
+  provisioned under reviewed native installer policy, may compute its proof
+  without exporting the key to NVP user mode.
+- Core's independent SYSTEM broker validates the NVP proof and returns only
+  the canonical Welcome MAC over `lu.workspace.server.v0\0`. Each
+  authenticated request and the *final durable GPU GRANTED commit* must
+  recheck the original SCM service birth, signed NVP process generation,
+  protected record/key revocation and expiry. A broker session is not a
+  capability to render or an independent worker-stop receipt.
+- Independently, NVP owns the real LTX diffusion Job/AppContainer and
+  signer key. It must issue an installed, verified kernel Job-empty/
+  quiescence receipt before Lu permits model restoration. The corresponding
+  NVP signer public pin is separately installed in Lu Core, never accepted
+  from an NVP frame or the new HMAC channel.
+
+**Exact physical acceptance required:** real original creator approval;
+signed installed Core + NVP SCM and process; physical Radeon R9700 model VRAM
+before/after unload; deferred→measured GRANTED; NVP LTX processing with Lu's
+model unloaded; independently signed LTX Job-empty receipt; measured GPU
+quiescence; same Lu model/MMProj restored and actually READY. Also test
+wrong turn/workspace, stale PID and process birth, forged HMAC, bad signer,
+revoked/expired session, replay, Core/NVP restart, uncertain worker stop and
+GPU telemetry failure. Hosted Windows CI is a source gate, not that evidence.
+
+**Release decision:** Keep PR #244 draft, issue #250 open and GPU
+recovery/reload default-deny until the installed owner and issuer contracts
+and physical tests above are independently demonstrated.
