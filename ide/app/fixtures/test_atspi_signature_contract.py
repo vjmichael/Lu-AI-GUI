@@ -449,5 +449,22 @@ class AtspiSignatureContract(unittest.TestCase):
         self.assertIn("Deny ('b5_native_installed_editor_not_visible_for_'+$marker)",script)
         self.assertIn("Deny 'real_native_consent_dialog_not_observed'",script)
 
+
+    def test_04k_installed_project_card_navigation_is_exact_scoped(self):
+        # Multi-project installed acceptance cannot open the prior project.
+        script=(ROOT / "Test-Wo8NativeDesktopUI.ps1").read_text(encoding="utf-8")
+        self.assertIn("$reopenLabel='Reopen project '+$projectName",script)
+        self.assertIn("$editLabel='Edit project '+$projectName",script)
+        self.assertIn("Find-Control $reopenLabel 'Button' 3 -Exact",script)
+        self.assertIn("Find-Control $editLabel 'Button' 15 -Exact",script)
+        self.assertIn("Click $reopenLabel",script)
+        self.assertIn("Click $editLabel",script)
+        self.assertIn("-Exact:$exactProjectAction",script)
+        self.assertIn("$exactProjectAction -and $element.Current.Name -cne $label",script)
+        self.assertNotIn("Click 'Reopen'",script)
+        self.assertNotIn("Click 'Edit'",script)
+        self.assertIn("B5-VisibleEditor 'B5_SOURCE_main'",script)
+        self.assertIn("Deny ('b5_native_installed_editor_not_visible_for_'+$marker)",script)
+
 if __name__ == "__main__":
     unittest.main()

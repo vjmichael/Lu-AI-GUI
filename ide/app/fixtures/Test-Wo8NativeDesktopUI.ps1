@@ -514,12 +514,21 @@ function Click([string]$label) {
       return
     } catch {Deny $denial}
   }
-  $element=Find-Control $label 'Button'
-  if (!$element.Current.IsEnabled) { Deny ('button_disabled_'+$label.Replace(' ','_')) }
+  # Bind installed project actions to the exact registered folder.
+  $exactProjectAction=$label.StartsWith('Edit project ',[StringComparison]::Ordinal) -or
+    $label.StartsWith('Reopen project ',[StringComparison]::Ordinal)
+  $element=Find-Control $label 'Button' 18 -Exact:$exactProjectAction
+  if (!$element.Current.IsEnabled -or
+      ($exactProjectAction -and $element.Current.Name -cne $label)) {
+    Deny ('button_disabled_or_wrong_project_'+$label.Replace(' ','_'))
+  }
   try {
     Reveal-NativeControl $element
-    $element=Find-Control $label 'Button'
-    if (!$element.Current.IsEnabled -or $element.Current.IsOffscreen) {Deny ('button_not_visible_'+$label.Replace(' ','_'))}
+    $element=Find-Control $label 'Button' 18 -Exact:$exactProjectAction
+    if (!$element.Current.IsEnabled -or $element.Current.IsOffscreen -or
+        ($exactProjectAction -and $element.Current.Name -cne $label)) {
+      Deny ('button_not_visible_or_wrong_project_'+$label.Replace(' ','_'))
+    }
     $p=$element.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern)
     $p.Invoke()
   } catch {Deny ('ui_invoke_failure_'+$label.Replace(' ','_'))}
@@ -1107,20 +1116,23 @@ try {
     }
     Require 'Registered projects'
     Require (Split-Path $fixed -Leaf)
-    # The registry persists the directory across desktop restart but the
-    # newly launched desktop intentionally restores it as CLOSED. The real
-    # UI exposes Reopen, not Edit, until that explicit project transition.
-    # Never bypass via host IPC or assume catalog presence means active.
+    # A prior installed scenario may leave another registered project in
+    # this same app catalog. Bind Reopen/Edit to the chooser-selected folder,
+    # not the first native UIA project card. No JS or IPC bypass.
+    $projectName=(Split-Path $fixed -Leaf)
+    $reopenLabel='Reopen project '+$projectName
+    $editLabel='Edit project '+$projectName
     $closed=$null
-    try { $closed=Find-Control 'Closed · ready to reopen' '' 3 } catch {}
+    try { $closed=Find-Control $reopenLabel 'Button' 3 -Exact } catch {}
     if ($closed) {
-      Click 'Reopen'
-      Require 'Open · editor available'
-      Write-Host 'WO8_NATIVE_PROJECT_REOPEN=real_installed_ui_reactivated'
+      Click $reopenLabel
+      [void](Find-Control $editLabel 'Button' 15 -Exact)
+      Write-Host 'WO8_NATIVE_PROJECT_REOPEN=exact_registered_project_reactivated'
     } else {
-      Require 'Open · editor available'
+      [void](Find-Control $editLabel 'Button' 15 -Exact)
     }
-    Click 'Edit'
+    Click $editLabel
+    Write-Host 'WO8_NATIVE_PROJECT_OPEN=exact_registered_project_control'
     Require 'Source explorer and editor'
     Click 'main.rs'
     Require 'Source code editor'
