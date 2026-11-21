@@ -13,7 +13,7 @@
 use crate::{
     contracts::{ToolAuthorizer, ToolDescriptor, ToolInvocation, ProtoPayload},
     conversation_authority::{BoundCallOrigin, ConversationAuthority},
-    journal::EffectJournal,
+    journal::{EffectJournal,ExclusiveIpcEffectJournal},
     registry::{NativeToolRegistry, ToolResponse},
     workspace_ipc::{proto, MAX_TYPED_BYTES},
     workspace_ipc_transport::{TransportError, TransportSession},
@@ -361,8 +361,12 @@ impl CoreDlcHostGate {
         host:&HostCoreTask<'_>,
         authority:&ConversationAuthority,
         registry:&NativeToolRegistry,
-        journal:&EffectJournal,
+        journal:&ExclusiveIpcEffectJournal,
     )->Result<ToolResponse,CoreDlcGateError>{
+        // Acquire the SQLite OS lock and check startup-recovery disposition
+        // before any authenticated DLC effect is allowed through.
+        let journal=journal.ready_journal()
+            .map_err(|_|CoreDlcGateError::Unavailable)?;
         self.require_session(installed.session())?;
         if !installed.installed_enrollment_active(){
             return Err(CoreDlcGateError::Transport);

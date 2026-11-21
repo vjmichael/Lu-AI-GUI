@@ -8,7 +8,7 @@
 //! This journal records *intent*, not an entire agent checkpoint. Full task
 //! state/checkpoint orchestration remains a separate implementation stage.
 
-use std::{path::Path, sync::Mutex};
+use std::{path::Path, sync::Mutex, time::Duration};
 
 use rusqlite::{params, Connection, OptionalExtension, TransactionBehavior};
 use sha2::{Digest, Sha256};
@@ -69,6 +69,9 @@ pub enum JournalError {
     DuplicateIdConflict,
     OversizedReceipt,
     InvalidStoredState,
+    /// A prior owner's OS worker shutdown remains unproven. Do not admit
+    /// another DLC effect merely because a SQLite row can be rewritten.
+    IpcRestartNeedsCustody,
 }
 
 impl From<rusqlite::Error> for JournalError {
@@ -96,6 +99,52 @@ pub struct EffectRecord {
 
 pub struct EffectJournal {
     connection: Mutex<Connection>,
+}
+
+/// Host-owned guard for the one active Lu IPC effect journal. SQLite's
+/// EXCLUSIVE locking mode holds the OS database lock until this object drops,
+/// including across the short transactions of the ordinary effect dispatcher.
+/// A second Core process cannot acquire the same journal while one owns it.
+///
+/// This guard is NOT proof that an orphaned OS worker has stopped. It refuses
+/// new admissions when startup sees unresolved prior execution, until an
+/// independent verified kernel/SCM/cgroup custodian reconciles that lifecycle.
+pub struct ExclusiveIpcEffectJournal {
+    journal: EffectJournal,
+    startup_executing: u64,
+    startup_uncertain: u64,
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IpcRestartDisposition {
+    Ready,
+    NeedsCustody { executing: u64, uncertain: u64 },
+}
+impl ExclusiveIpcEffectJournal {
+    pub fn acquire(path: &Path) -> Result<Self, JournalError> {
+        let journal=EffectJournal::open_exclusive_for_ipc(path)?;
+        let (executing,uncertain)=journal.ipc_pending_counts()?;
+        Ok(Self{journal,startup_executing:executing,startup_uncertain:uncertain})
+    }
+    /// Read-only status, not a clearance or OS-custody receipt.
+    pub fn restart_disposition(&self)->IpcRestartDisposition{
+        if self.startup_executing==0 && self.startup_uncertain==0{
+            IpcRestartDisposition::Ready
+        }else{
+            IpcRestartDisposition::NeedsCustody{
+                executing:self.startup_executing,
+                uncertain:self.startup_uncertain,
+            }
+        }
+    }
+    /// The only production IPC journal accessor. Startup is closed to new
+    /// effects if an interrupted/uncertain earlier IPC effect needs independent
+    /// OS worker reconciliation. Never auto-mark it FAILED or retry it.
+    pub fn ready_journal(&self)->Result<&EffectJournal,JournalError>{
+        if self.restart_disposition()!=IpcRestartDisposition::Ready{
+            return Err(JournalError::IpcRestartNeedsCustody);
+        }
+        Ok(&self.journal)
+    }
 }
 
 /// Canonical digest of the exact invocation; callers may bind a reviewed effect without granting authority.
@@ -131,7 +180,25 @@ impl EffectJournal {
     /// Open an existing DB or create a new one. The caller controls the path
     /// and must enforce a single active owner before startup recovery.
     pub fn open(path: &Path) -> Result<Self, JournalError> {
+        Self::open_impl(path,false)
+    }
+
+    /// Durable single-owner journal for authenticated DLC execution. A live
+    /// competing Lu Core instance must fail rather than race journal recovery.
+    /// SQLITE EXCLUSIVE WAL locking is process-bound and releases on crash;
+    /// unlike a create_new PID file it cannot remain falsely owned forever.
+    pub fn open_exclusive_for_ipc(path:&Path)->Result<Self,JournalError>{
+        Self::open_impl(path,true)
+    }
+
+    fn open_impl(path:&Path,exclusive_ipc:bool)->Result<Self,JournalError>{
         let connection = Connection::open(path)?;
+        if exclusive_ipc {
+            // Set BEFORE first WAL access so SQLite takes an actual OS-wide
+            // exclusive lock. A busy timeout makes takeover bounded.
+            connection.busy_timeout(Duration::from_millis(150))?;
+            connection.pragma_update(None,"locking_mode","EXCLUSIVE")?;
+        }
         connection.pragma_update(None, "journal_mode", "WAL")?;
         connection.pragma_update(None, "synchronous", "FULL")?;
         connection.execute_batch(
@@ -156,9 +223,33 @@ impl EffectJournal {
                 FOREIGN KEY(call_id) REFERENCES lu_effects(call_id)
             );",
         )?;
+        if exclusive_ipc {
+            let mode:String=connection.query_row(
+                "PRAGMA locking_mode",[],|row|row.get(0))?;
+            if mode!="exclusive"{
+                return Err(JournalError::IpcRestartNeedsCustody);
+            }
+            // Acquire/retain the OS lock now, before admitting ANY DLC frame.
+            // This must succeed even if the file was previously in WAL mode.
+            connection.execute_batch("BEGIN IMMEDIATE; COMMIT;")?;
+        }
         Ok(Self {
             connection: Mutex::new(connection),
         })
+    }
+
+    /// Startup-only factual state inspection. A nonempty count is a refusal
+    /// to admit a fresh DLC session until independent worker-custody review.
+    pub fn ipc_pending_counts(&self)->Result<(u64,u64),JournalError>{
+        let connection=self.connection.lock().map_err(|_|JournalError::Poisoned)?;
+        let executing:i64=connection.query_row(
+            "SELECT COUNT(*) FROM lu_effects WHERE state='EXECUTING'",
+            [],|row|row.get(0))?;
+        let uncertain:i64=connection.query_row(
+            "SELECT COUNT(*) FROM lu_effects WHERE state='UNCERTAIN'",
+            [],|row|row.get(0))?;
+        Ok((executing.try_into().map_err(|_|JournalError::InvalidStoredState)?,
+            uncertain.try_into().map_err(|_|JournalError::InvalidStoredState)?))
     }
 
     /// An identical call_id is idempotent only when the parameters match.
@@ -529,5 +620,70 @@ mod independent_outcome_tests{
             assert_eq!(count,1);
         }
         fs::remove_dir_all(root).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod ipc_exclusive_owner_tests {
+    use super::*;
+    use crate::contracts::{ProtoPayload,ToolInvocation};
+    use std::{fs,time::{SystemTime,UNIX_EPOCH}};
+    fn db()->(std::path::PathBuf,std::path::PathBuf){
+        let root=std::env::temp_dir().join(format!(
+            "lu-ipc-exclusive-{}-{}",std::process::id(),
+            SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos()));
+        fs::create_dir_all(&root).unwrap();
+        let path=root.join("ipc-effects.sqlite");
+        (root,path)
+    }
+    #[test]
+    fn actual_sqlite_owner_lock_rejects_concurrent_core_and_releases_after_drop(){
+        let (root,path)=db();
+        let owner=ExclusiveIpcEffectJournal::acquire(&path).unwrap();
+        assert_eq!(owner.restart_disposition(),IpcRestartDisposition::Ready);
+        assert!(owner.ready_journal().is_ok());
+        assert!(ExclusiveIpcEffectJournal::acquire(&path).is_err(),
+            "two live Lu Core owners must not hold the same IPC journal");
+        drop(owner);
+        let recovered=ExclusiveIpcEffectJournal::acquire(&path).unwrap();
+        assert_eq!(recovered.restart_disposition(),IpcRestartDisposition::Ready);
+        drop(recovered);
+        let _=fs::remove_dir_all(root);
+    }
+    #[test]
+    fn interrupted_and_uncertain_effects_remain_blocked_after_new_owner(){
+        let (root,path)=db();
+        let call=ToolInvocation{
+            call_id:"ipc-restart-original-call".into(),
+            tool_id:"lu.test.effect".into(),workspace_id:Some("scope-a".into()),
+            input:ProtoPayload{type_url:"lu.test.Input".into(),bytes:vec![1]},
+        };
+        {
+            let first=ExclusiveIpcEffectJournal::acquire(&path).unwrap();
+            let j=first.ready_journal().unwrap();
+            j.prepare(&call).unwrap();
+            j.mark_executing(&call.call_id).unwrap();
+        }
+        let second=ExclusiveIpcEffectJournal::acquire(&path).unwrap();
+        assert_eq!(second.restart_disposition(),
+            IpcRestartDisposition::NeedsCustody{executing:1,uncertain:0});
+        assert!(matches!(second.ready_journal(),
+            Err(JournalError::IpcRestartNeedsCustody)));
+        drop(second);
+        // This test models the original host having definitively stopped,
+        // NOT a production OS-custody proof. Production must not auto-call
+        // the raw journal reconciliation API merely from a PID or timestamp.
+        let inspected=EffectJournal::open(&path).unwrap();
+        assert_eq!(inspected.get(&call.call_id).unwrap().unwrap().state,
+            EffectState::Executing);
+        assert_eq!(inspected.reconcile_interrupted().unwrap(),1);
+        drop(inspected);
+        let third=ExclusiveIpcEffectJournal::acquire(&path).unwrap();
+        assert_eq!(third.restart_disposition(),
+            IpcRestartDisposition::NeedsCustody{executing:0,uncertain:1});
+        assert!(matches!(third.ready_journal(),
+            Err(JournalError::IpcRestartNeedsCustody)));
+        drop(third);
+        let _=fs::remove_dir_all(root);
     }
 }

@@ -1,8 +1,9 @@
 //! LU-IPC-01D-R4: native OS-held installed Lu IDE handshake key reader.
 //!
-//! This reader does NOT provision or export a credential. The approved
-//! SYSTEM-hosted broker must separately install a version-bound 32-byte
-//! nonzero key in Windows Credential Manager under the LocalSystem identity
+//! This module reads, creates and revokes a package-bound credential ONLY
+//! under the unimpersonated LocalSystem identity. The installer must verify
+//! the signed package and serialize provisioning before using these APIs.
+ //! nonzero key in Windows Credential Manager under the LocalSystem identity
 //! and securely enroll the corresponding signed IDE through its protected
 //! channel. A desktop user, arbitrary caller, Hello, model or manifest must
 //! NEVER supply this material.
@@ -217,6 +218,20 @@ pub fn revoke_installed_ide_key(package:[u8;32])->io::Result<()>{
 #[cfg(test)]
 mod tests{
     use super::*;
+    #[test]
+    fn zero_package_cannot_create_or_delete_any_credential(){
+        assert!(provision_installed_ide_key([0;32]).is_err());
+        assert!(revoke_installed_ide_key([0;32]).is_err());
+    }
+    #[test]
+    fn non_system_broker_cannot_create_or_revoke_installed_package_key(){
+        let observed=crate::ipc_pipe_peer::observe_host_process(std::process::id()).unwrap();
+        if observed.user_sid!=LOCAL_SYSTEM_SID{
+            assert!(provision_installed_ide_key([0x55;32]).is_err());
+            assert!(revoke_installed_ide_key([0x55;32]).is_err());
+        }
+        // Test environments running as LocalSystem MUST NOT mutate the vault.
+    }
     #[test]
     fn credential_target_binds_exact_package_and_never_falls_back(){
         assert!(target_for_package([0;32]).is_err());
