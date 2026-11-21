@@ -9,6 +9,9 @@ publish = false
 
 [dependencies]
 
+[target.'cfg(windows)'.dependencies]
+tokio = { version = "1", features = ["net", "macros"] }
+
 # The destructive SIGKILL test host is deliberately excluded from normal
 # builds and all release packaging unless CI opts in explicitly.
 [features]
@@ -44,3 +47,9 @@ required-features = ["e1-p08-crash-fixture"]
 name = "lu-linux-group-guard"
 path = "src/bin/lu-linux-group-guard.rs"
 required-features = ["e1-p08-crash-fixture"]
+
+# A genuine fixed-name Windows SCM entry point; not a worker-authorizing
+# daemon until an independently approved installer enables protected custody.
+[[bin]]
+name = "lu-ipc-scm-supervisor"
+path = "src/bin/lu-ipc-scm-supervisor.rs"

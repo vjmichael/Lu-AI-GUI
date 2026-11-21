@@ -4090,3 +4090,16 @@ jobs:
       contents: read
       actions: read
     uses: ./.github/workflows/lu-core-c62b-reviewed-browser-nsis.yml
+
+  # LU-IPC R2-R2 one-PR native admission: independent of separately owned
+  # CI-POLICY-01 legacy trigger reconciliation; never generic PR fanout.
+  ipc01d-r2-pr244-native:
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.action == 'synchronize' &&
+      github.event.pull_request.number == 244 &&
+      github.event.pull_request.draft &&
+      github.event.pull_request.head.ref == 'lu/ipc01d-r2-r1-native-20261120'
+    uses: ./.github/workflows/lu-ipc01d-r2-native.yml
+    permissions:
+      contents: read

@@ -1,0 +1,230 @@
+name: LU-IPC-01D-R2 native Windows and Linux Protobuf transport qualification
+# Manual or reusable task-group only. No automatic PR/push fanout.
+on:
+  workflow_dispatch:
+  workflow_call:
+permissions:
+  contents: read
+concurrency:
+  group: lu-ipc01d-r2-${{ github.event.pull_request.head.sha || github.sha }}
+  cancel-in-progress: false
+jobs:
+  exact-source:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Original committed source verification
+        shell: bash
+        env:
+          SOURCE: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$SOURCE"
+          node scripts/verify-source-tree.mjs
+  native:
+    needs: exact-source
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Exact SHA and original source-lock verification
+        shell: bash
+        env:
+          SOURCE: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$SOURCE"
+          node scripts/verify-source-tree.mjs
+      - name: Original Protobuf v0 envelope and R1/R2 transport suites
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test workspace_ipc_v0 -- --nocapture
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test workspace_ipc_transport_r1 -- --nocapture
+      - name: Lu Core native library compilation and R4-R3-R2 durable restart regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo check --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib workspace_ipc_core_host -- --nocapture
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib ipc_exclusive_owner_tests -- --nocapture
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib ipc_supervisor_exact_reconciliation_tests -- --nocapture
+          echo LU_IPC_R4_R3_R3_EXACT_SUPERVISOR_RECONCILIATION_PASS
+      - name: Windows strict installer record parser regression
+        if: matrix.os == 'windows-2025'
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib installed_record_parser_rejects_untrusted_claims_and_embedded_keys -- --nocapture
+      - name: Native FFI custody module, protected credentials and original worker crate
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo check --locked --manifest-path src-tauri/lu-win-worker-job/Cargo.toml --lib
+          cargo check --locked --manifest-path src-tauri/lu-win-worker-job/Cargo.toml --bin lu-ipc-scm-supervisor
+          cargo test --locked --manifest-path src-tauri/lu-win-worker-job/Cargo.toml --lib -- --nocapture
+          if [[ "${RUNNER_OS}" == "Windows" ]]; then
+            cargo test --locked --manifest-path src-tauri/lu-win-worker-job/Cargo.toml --lib ipc_scm_owned_jobs -- --nocapture
+            echo LU_IPC_R5_SCM_OWNED_CLIENT_EXECUTOR_KERNEL_JOB_PASS
+          fi
+          echo LU_IPC_R4_R3_R2_NATIVE_CREDENTIAL_ACCEPTANCE_PASS
+      - name: Windows R4 PowerShell installer script syntax qualification
+        if: matrix.os == 'windows-2025'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          foreach($script in @('scripts/lu-ipc-r3-stage-installed-ide.ps1',
+            'scripts/lu-ipc-r4-verify-signed-installer.ps1',
+            'scripts/lu-ipc-r5-installed-scm-preflight.ps1')){
+            $tokens=$null
+            $errors=$null
+            $null=[System.Management.Automation.Language.Parser]::ParseFile(
+              (Join-Path (Get-Location) $script),[ref]$tokens,[ref]$errors)
+            if(@($errors).Count -ne 0){throw "PowerShell installer parser refused $script"}
+          }
+          Write-Host 'LU_IPC_R4_INSTALLER_POWERSHELL_SYNTAX_PASS'
+      - name: Windows R4 approved installer gate rejects a matching-hash unsigned binary
+        if: matrix.os == 'windows-2025'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $fake=Join-Path $env:RUNNER_TEMP 'not-signed-lu-installer.exe'
+          [IO.File]::WriteAllBytes($fake,[byte[]](1,2,3,4,5,6,7,8))
+          $actual=(Get-FileHash -LiteralPath $fake -Algorithm SHA256).Hash.ToLowerInvariant()
+          $args=@{
+            SignedInstaller=$fake
+            ApprovedInstallerSha256=$actual
+            ApprovedInstallerSignerCertificateSha256=('2'*64)
+            InstalledExe=$fake
+            ExpectedInstallRoot=$env:RUNNER_TEMP
+            ApprovedImageSha256=('1'*64)
+            ApprovedSignerCertificateSha256=('3'*64)
+            ApprovedPackageSha256=('7'*64)
+            PackageManifestPath=$fake
+          }
+          $refused=$false
+          try {
+            & scripts/lu-ipc-r4-verify-signed-installer.ps1 @args
+          } catch {
+            if($_.Exception.Message -match 'LU_IPC_R4_REFUSED:'){$refused=$true}
+            else{throw}
+          }
+          if(-not $refused){throw 'Unsigned matching-hash installer admitted'}
+          if(Test-Path (Join-Path $env:ProgramData 'Lu\IPC\enrollments\lu.ide.json')){
+            throw 'Unsigned installer unexpectedly created an enrollment'
+          }
+          Write-Host 'LU_IPC_R4_UNSIGNED_INSTALLER_REFUSED'
+      - name: Windows R4 trusted signed surrogate still refuses untrusted manifest
+        if: matrix.os == 'windows-2025'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $signed=Join-Path $env:ProgramFiles 'PowerShell\7\pwsh.exe'
+          if(-not (Test-Path -LiteralPath $signed)){
+            throw 'Native signed PowerShell surrogate absent'
+          }
+          $signature=Get-AuthenticodeSignature -LiteralPath $signed
+          if($signature.Status -ne 'Valid' -or $null -eq $signature.SignerCertificate){
+            throw 'No independently verifiable signed surrogate'
+          }
+          $hasher=[Security.Cryptography.SHA256]::Create()
+          try{
+            $publisher=([BitConverter]::ToString(
+              $hasher.ComputeHash($signature.SignerCertificate.RawData))).Replace('-','').ToLowerInvariant()
+          }finally{$hasher.Dispose()}
+          $filehash=(Get-FileHash -LiteralPath $signed -Algorithm SHA256).Hash.ToLowerInvariant()
+          $untrusted=Join-Path $env:RUNNER_TEMP 'fake-approved-manifest.json'
+          [IO.File]::WriteAllText($untrusted,'{"unapproved":true}')
+          $manifestHash=(Get-FileHash -LiteralPath $untrusted -Algorithm SHA256).Hash.ToLowerInvariant()
+          $args=@{
+            SignedInstaller=$signed
+            ApprovedInstallerSha256=$filehash
+            ApprovedInstallerSignerCertificateSha256=$publisher
+            InstalledExe=$signed
+            ExpectedInstallRoot=(Split-Path -Parent $signed)
+            ApprovedImageSha256=$filehash
+            ApprovedSignerCertificateSha256=$publisher
+            ApprovedPackageSha256=$manifestHash
+            PackageManifestPath=$untrusted
+          }
+          $refused=$false
+          try{
+            & scripts/lu-ipc-r4-verify-signed-installer.ps1 @args
+          }catch{
+            if($_.Exception.Message -match 'LU_IPC_R4_REFUSED:'){$refused=$true}
+            else{throw}
+          }
+          if(-not $refused){throw 'User-owned manifest was accepted by signed-surrogate gate'}
+          Write-Host 'LU_IPC_R4_SIGNED_SURROGATE_UNTRUSTED_MANIFEST_REFUSED'
+      - name: Windows protected installed Lu IDE enrollment refuses unapproved executable
+        if: matrix.os == 'windows-2025'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $fake=Join-Path $env:RUNNER_TEMP 'unapproved-lu-ide.exe'
+          [IO.File]::WriteAllBytes($fake,[byte[]](1,2,3,4,5,6,7,8))
+          $args=@{
+            InstalledExe=$fake
+            ExpectedInstallRoot=$env:RUNNER_TEMP
+            ApprovedImageSha256=('1'*64)
+            ApprovedSignerCertificateSha256=('2'*64)
+            ApprovedPackageSha256=('7'*64)
+          }
+          $refused=$false
+          try{
+            & scripts/lu-ipc-r3-stage-installed-ide.ps1 @args
+          }catch{
+            if($_.Exception.Message -match 'LU_IPC_R3_REFUSED:'){
+              $refused=$true
+            }else{throw}
+          }
+          if(-not $refused){throw 'Unapproved and unsigned executable was accepted'}
+          if(Test-Path (Join-Path $env:ProgramData 'Lu\IPC\enrollments\lu.ide.json')){
+            throw 'Unsigned test unexpectedly created an enrollment'
+          }
+          Write-Host 'LU_IPC_R3_UNSIGNED_UNAPPROVED_ADMISSION_REFUSED'
+
+
+      - name: Windows independent SCM admission refuses unapproved surrogate
+        if: matrix.os == 'windows-2025'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $fake=Join-Path $env:RUNNER_TEMP 'unapproved-lu-ipc-scm-supervisor.exe'
+          [IO.File]::WriteAllBytes($fake,[byte[]](1,2,3,4,5,6,7,8))
+          $actual=(Get-FileHash -LiteralPath $fake -Algorithm SHA256).Hash.ToLowerInvariant()
+          $args=@{
+            InstalledServiceExe=$fake
+            ApprovedServiceImageSha256=$actual
+            ApprovedServiceSignerCertSha256=('1'*64)
+            ExpectedInstallRoot=$env:RUNNER_TEMP
+          }
+          $refused=$false
+          try{
+            & scripts/lu-ipc-r5-installed-scm-preflight.ps1 @args
+          }catch{
+            if($_.Exception.Message -match 'LU_IPC_R5_SCM_REFUSED:'){$refused=$true}
+            else{throw}
+          }
+          if(-not $refused){throw 'Unsigned SCM surrogate was admitted'}
+          Write-Host 'LU_IPC_R5_UNAPPROVED_SCM_REFUSED'

@@ -15,6 +15,18 @@ pub mod file_guard;
 pub mod metadata_guard;
 #[cfg(windows)]
 pub mod browser_window;
+#[cfg(windows)]
+pub mod ipc_pipe_peer;
+#[cfg(windows)]
+pub mod ipc_signed_package;
+#[cfg(windows)]
+pub mod ipc_installer_enrollment;
+#[cfg(windows)]
+pub mod ipc_credential_broker;
+#[cfg(windows)]
+pub mod ipc_scm_supervisor;
+#[cfg(windows)]
+pub mod ipc_scm_owned_jobs;
 
 #[cfg(windows)]
 mod windows_owned {
