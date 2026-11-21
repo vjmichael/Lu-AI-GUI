@@ -21,7 +21,7 @@ use crate::{
 use sha2::{Digest, Sha256};
 use std::{
     sync::{Arc, atomic::{AtomicBool, AtomicUsize, Ordering}, Mutex},
-    time::{SystemTime, UNIX_EPOCH},
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 const MAX_PARALLEL:u32=4;
 const MAX_DEADLINE_MS:u64=300_000;
@@ -49,6 +49,66 @@ pub enum CoreDlcGateError {
 pub trait TrustedCoreInputVerifier: Send + Sync {
     fn verify_exact(&self, descriptor:&ToolDescriptor, encoded:&[u8])->bool;
 }
+/// Lu Core cannot invent proof of OS custody. The production implementation
+/// below owns a genuine suspended, Job-assigned Windows child. This trait is
+/// deliberately private: an arbitrary plugin cannot attest itself by
+/// supplying a no-op implementation.
+trait CoreDlcWorkerCustody: Send + Sync {
+    fn terminate_and_reap(&self)->Result<(),CoreDlcGateError>;
+}
+
+#[cfg(windows)]
+struct WindowsOwnedChild {
+    job:lu_win_worker_job::Job,
+    child:std::process::Child,
+    reaped:bool,
+}
+
+/// Real Windows Job ownership, not an imported PID, package claim or handle.
+/// The caller must create the Child in CREATE_SUSPENDED and transfer ownership
+/// immediately. The constructor assigns the original private Job BEFORE the
+/// primary thread is resumed. A failed assignment kills and reaps the child.
+#[cfg(windows)]
+pub struct WindowsDlcJobCustody {
+    pid:u32,
+    worker:Mutex<WindowsOwnedChild>,
+}
+#[cfg(windows)]
+impl WindowsDlcJobCustody {
+    pub fn take_suspended(
+        job:lu_win_worker_job::Job,mut child:std::process::Child,
+    )->Result<Self,CoreDlcGateError>{
+        let pid=child.id();
+        if pid==0 || job.assign_and_resume_suspended(&child).is_err(){
+            let _=child.kill();
+            let _=child.wait();
+            return Err(CoreDlcGateError::Unavailable);
+        }
+        Ok(Self{pid,worker:Mutex::new(WindowsOwnedChild{
+            job,child,reaped:false,
+        })})
+    }
+    pub fn pid(&self)->u32{self.pid}
+}
+#[cfg(windows)]
+impl CoreDlcWorkerCustody for WindowsDlcJobCustody {
+    fn terminate_and_reap(&self)->Result<(),CoreDlcGateError>{
+        let mut owned=self.worker.lock().map_err(|_|CoreDlcGateError::Unavailable)?;
+        if owned.reaped{return Ok(());}
+        // The original Job must report zero live descendants. A PID-only
+        // kill or successful TerminateJobObject is insufficient.
+        owned.job.terminate_and_verify_empty()
+            .map_err(|_|CoreDlcGateError::Unavailable)?;
+        owned.child.wait().map_err(|_|CoreDlcGateError::Unavailable)?;
+        owned.reaped=true;
+        Ok(())
+    }
+}
+#[cfg(windows)]
+impl Drop for WindowsDlcJobCustody {
+    fn drop(&mut self){let _=self.terminate_and_reap();}
+}
+
 pub struct HostCoreTask<'a>{
     /// Created by the trusted original-user-turn supervisor, NEVER by copying
     /// incoming OriginRefs. Existing ConversationAuthority rechecks this.
@@ -61,6 +121,15 @@ struct GateState{
     closed:AtomicBool,
     in_flight:AtomicUsize,
     bound_task:Mutex<Option<String>>,
+    worker:Option<Arc<dyn CoreDlcWorkerCustody>>,
+}
+impl Drop for GateState {
+    fn drop(&mut self){
+        self.closed.store(true,Ordering::Release);
+        if let Some(worker)=&self.worker {
+            let _=worker.terminate_and_reap();
+        }
+    }
 }
 /// An authenticated native transport's host-owned lifecycle and bounded
 /// dispatch credits. It holds no HMAC key and cannot sign an IDE package.
@@ -77,11 +146,14 @@ impl Drop for CallSlot {
     }
 }
 impl CoreDlcHostGate {
-    fn from_trusted_session(session:TransportSession)->Self {
+    fn from_trusted_session(
+        session:TransportSession,worker:Option<Arc<dyn CoreDlcWorkerCustody>>,
+    )->Self {
         Self {session,state:Arc::new(GateState{
             closed:AtomicBool::new(false),
             in_flight:AtomicUsize::new(0),
             bound_task:Mutex::new(None),
+            worker,
         })}
     }
     /// Only a genuine installed signed Windows named-pipe session may create
@@ -90,20 +162,32 @@ impl CoreDlcHostGate {
     #[cfg(windows)]
     pub fn from_installed_windows(
         installed:&crate::workspace_ipc_transport::windows::SignedWindowsSession,
+        worker:Arc<WindowsDlcJobCustody>,
     )->Result<Self,CoreDlcGateError>{
         if !installed.installed_enrollment_active() ||
-            installed.check_alive().is_err(){
+            installed.check_alive().is_err() ||
+            installed.peer_pid()!=worker.pid(){
             return Err(CoreDlcGateError::Transport);
         }
-        Ok(Self::from_trusted_session(installed.session().clone()))
+        Ok(Self::from_trusted_session(installed.session().clone(),Some(worker)))
     }
     #[cfg(test)]
-    fn test_only(session:TransportSession)->Self{Self::from_trusted_session(session)}
+    fn test_only(session:TransportSession)->Self{
+        Self::from_trusted_session(session,None)
+    }
 
-    pub fn close(&self){
-        // An in-flight OS worker is NOT killed by closing this admission
-        // gate; its trusted supervisor must separately terminate/reap it.
+    /// Refuse admission first, then request actual worker-tree termination and
+    /// wait for a native empty/reaped observation. A custody error must be
+    /// surfaced to the host and must NEVER be treated as successful recovery.
+    pub fn cancel_and_reap(&self)->Result<(),CoreDlcGateError>{
         self.state.closed.store(true,Ordering::Release);
+        if let Some(worker)=&self.state.worker {
+            worker.terminate_and_reap()?;
+        }
+        Ok(())
+    }
+    pub fn close(&self)->Result<(),CoreDlcGateError>{
+        self.cancel_and_reap()
     }
     pub fn is_closed(&self)->bool{
         self.state.closed.load(Ordering::Acquire)
@@ -140,6 +224,12 @@ impl CoreDlcHostGate {
             if revoked==pinned {
                 if let Some(gate)=state.upgrade(){
                     gate.closed.store(true,Ordering::Release);
+                    if let Some(worker)=&gate.worker{
+                        // Revocation is synchronous; a failed kernel-empty
+                        // observation keeps this session closed and requires
+                        // explicit host recovery, never optimistic re-admit.
+                        let _=worker.terminate_and_reap();
+                    }
                 }
             }
         })).map_err(|_|CoreDlcGateError::Unavailable)?;
@@ -242,9 +332,22 @@ impl CoreDlcHostGate {
             host.origin,&invocation,&descriptor,host.policy
         ).map_err(|_|CoreDlcGateError::Denied)?;
         if self.is_closed(){return Err(CoreDlcGateError::SessionClosed);}
-        let result=authority.dispatch_bound_durable(
-            registry,journal,invocation,host.origin.clone(),host.policy
-        ).await;
+        // Closing a session must CANCEL its in-flight dispatch future.
+        // The durable ExecutingEffectGuard then classifies a started effect
+        // UNCERTAIN, preventing unsafe replay after reconnect/restart.
+        let wait_cancel=async {
+            loop {
+                if self.is_closed(){break;}
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+        };
+        let result=tokio::select! {
+            biased;
+            _=wait_cancel=>return Err(CoreDlcGateError::SessionClosed),
+            reply=authority.dispatch_bound_durable(
+                registry,journal,invocation,host.origin.clone(),host.policy
+            )=>reply,
+        };
         if self.is_closed(){return Err(CoreDlcGateError::SessionClosed);}
         Ok(result)
     }
@@ -530,7 +633,7 @@ mod tests {
         let slots=(0..MAX_PARALLEL).map(|_|gate.acquire().unwrap()).collect::<Vec<_>>();
         assert_eq!(gate.active_calls(),MAX_PARALLEL as usize);
         assert!(matches!(gate.acquire(),Err(CoreDlcGateError::CapacityExhausted)));
-        gate.close();
+        gate.close().unwrap();
         assert!(matches!(gate.acquire(),Err(CoreDlcGateError::SessionClosed)));
         drop(slots);
         assert_eq!(gate.active_calls(),0);
@@ -584,5 +687,67 @@ mod tests {
         let another=HostCoreTask{origin:&other,workspace_scope:host.workspace_scope,
             policy:host.policy,input_verifier:host.input_verifier};
         assert_ne!(gate.call_id(&host,"op-one"),gate.call_id(&another,"op-one"));
+    }
+
+    /// Unit custody is synthetic only: the production constructor accepts a
+    /// concrete Windows Job-backed custodian and compares its original PID.
+    struct FixtureCustody(AtomicUsize);
+    impl CoreDlcWorkerCustody for FixtureCustody {
+        fn terminate_and_reap(&self)->Result<(),CoreDlcGateError>{
+            self.0.fetch_add(1,Ordering::SeqCst);
+            Ok(())
+        }
+    }
+    #[tokio::test]
+    async fn revocation_cancels_inflight_durable_effect_and_requests_reap(){
+        let root=test_path();
+        let db=root.join("effects.sqlite");
+        let journal=EffectJournal::open(&db).unwrap();
+        let (registry,count)=setup(Duration::from_secs(5));
+        let authority=authority();
+        let worker=Arc::new(FixtureCustody(AtomicUsize::new(0)));
+        let gate=CoreDlcHostGate::from_trusted_session(
+            TransportSession{session_ref:"native-host-session-a".into(),
+                module_id:"thirdparty.workspace".into(),
+                core_epoch_ref:"native-core-epoch-a".into()},
+            Some(Arc::clone(&worker) as Arc<dyn CoreDlcWorkerCustody>),
+        );
+        let trusted=origin();
+        let host=HostCoreTask{origin:&trusted,workspace_scope:"workspace-a",
+            policy:&HostPolicy,input_verifier:&TypedVerifier};
+        let request=frame("revoke-during-effect");
+        let id=gate.call_id(&host,"revoke-during-effect");
+        let revoke=async {
+            tokio::time::sleep(Duration::from_millis(100)).await;
+            authority.revoke_task("task-a").unwrap();
+        };
+        let (out,())=tokio::join!(
+            gate.dispatch_verified_frame(&request,&host,&authority,&registry,&journal),
+            revoke
+        );
+        assert_eq!(out.err(),Some(CoreDlcGateError::SessionClosed));
+        assert_eq!(count.load(Ordering::SeqCst),1);
+        assert!(worker.0.load(Ordering::SeqCst)>=1);
+        assert_eq!(journal.get(&id).unwrap().unwrap().state,EffectState::Uncertain);
+        drop(journal);
+        let reopened=EffectJournal::open(&db).unwrap();
+        assert_eq!(reopened.reconcile_interrupted().unwrap(),0);
+        assert_eq!(reopened.get(&id).unwrap().unwrap().state,EffectState::Uncertain);
+        drop(reopened);
+        cleanup_fixture(&root);
+    }
+    #[test]
+    fn cancelled_gate_is_not_reopened_by_completed_reaping(){
+        let worker=Arc::new(FixtureCustody(AtomicUsize::new(0)));
+        let gate=CoreDlcHostGate::from_trusted_session(
+            TransportSession{session_ref:"native-host-session-a".into(),
+                module_id:"thirdparty.workspace".into(),
+                core_epoch_ref:"native-core-epoch-a".into()},
+            Some(Arc::clone(&worker) as Arc<dyn CoreDlcWorkerCustody>),
+        );
+        gate.cancel_and_reap().unwrap();
+        assert!(gate.is_closed());
+        assert!(matches!(gate.acquire(),Err(CoreDlcGateError::SessionClosed)));
+        assert!(worker.0.load(Ordering::SeqCst)>=1);
     }
 }

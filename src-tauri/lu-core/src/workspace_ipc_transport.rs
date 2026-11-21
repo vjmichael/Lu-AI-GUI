@@ -655,6 +655,9 @@ pub mod windows {
     }
     impl SignedWindowsSession {
         pub fn session(&self)->&TransportSession {&self.session}
+        /// Stable kernel-observed peer identity held by the signed native
+        /// lease, never the PID claimed in an IPC Hello.
+        pub fn peer_pid(&self)->u32 {self.lease.witness().pid}
         /// Production Core dispatch requires the installer-owned record and
         /// package-key revocation witness; debug signed surrogate leases
         /// deliberately never satisfy this predicate.

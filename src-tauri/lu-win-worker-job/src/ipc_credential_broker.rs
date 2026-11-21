@@ -23,6 +23,8 @@ const LOCAL_SYSTEM_SID:&str="S-1-5-18";
 const TOKEN_QUERY:u32=0x0008;
 const ERROR_NO_TOKEN:u32=1008;
 const TARGET_PREFIX:&str="LuCore/IPC/IDE/v1/";
+const ERROR_NOT_FOUND:u32=1168;
+const BCRYPT_USE_SYSTEM_PREFERRED_RNG:u32=2;
 
 #[repr(C)]
 struct FileTime{low:u32,high:u32}
@@ -46,12 +48,18 @@ unsafe extern "system"{
     fn CredReadW(target_name:*const u16,kind:u32,flags:u32,
         credential:*mut *mut CredentialW)->i32;
     fn CredFree(credential:Handle);
+    fn CredWriteW(credential:*const CredentialW,flags:u32)->i32;
+    fn CredDeleteW(target_name:*const u16,kind:u32,flags:u32)->i32;
     fn OpenThreadToken(thread:Handle,desired_access:u32,open_as_self:i32,
         token:*mut Handle)->i32;
     #[cfg(test)]
     fn ImpersonateSelf(level:u32)->i32;
     #[cfg(test)]
     fn RevertToSelf()->i32;
+}
+#[link(name="bcrypt")]
+unsafe extern "system"{
+    fn BCryptGenRandom(handle:Handle,bytes:*mut u8,len:u32,flags:u32)->i32;
 }
 #[link(name="kernel32")]
 unsafe extern "system"{
@@ -148,6 +156,64 @@ pub fn read_installed_ide_key(package:[u8;32])->io::Result<[u8;32]>{
     let secret=unsafe{&*raw};
     copy_checked_secret(secret)
 }
+
+/// SYSTEM-broker-only, one-time credential creation for an already verified
+/// installed package digest. The privileged installer owns the exclusive
+/// provisioning lock and signature verification BEFORE calling this method.
+/// No environment-selected target, caller-provided key or silent rotation.
+/// This does NOT deliver a key to a DLC; protected installer-side enrollment
+/// is separately required before the package may authenticate.
+pub fn provision_installed_ide_key(package:[u8;32])->io::Result<()>{
+    let target=target_for_package(package)?;
+    validate_broker_context()?;
+    let wide:Vec<u16>=target.encode_utf16().chain(std::iter::once(0)).collect();
+    let mut existing:*mut CredentialW=ptr::null_mut();
+    if unsafe{CredReadW(wide.as_ptr(),CRED_TYPE_GENERIC,0,&mut existing)}!=0 {
+        if !existing.is_null(){unsafe{CredFree(existing.cast())};}
+        return Err(denied("installed DLC key already exists; no silent rotation"));
+    }
+    if unsafe{GetLastError()}!=ERROR_NOT_FOUND{
+        return Err(denied("cannot establish absence of installed DLC key"));
+    }
+    let mut key=[0u8;32];
+    if unsafe{BCryptGenRandom(ptr::null_mut(),key.as_mut_ptr(),32,
+            BCRYPT_USE_SYSTEM_PREFERRED_RNG)}!=0 ||
+       key.iter().all(|b|*b==0){
+        clear_temporary_key(&mut key);
+        return Err(denied("native DLC credential generation failed"));
+    }
+    let record=CredentialW{
+        flags:0,kind:CRED_TYPE_GENERIC,target_name:wide.as_ptr(),
+        comment:ptr::null(),last_written:FileTime{low:0,high:0},
+        secret_size:32,secret:key.as_ptr(),
+        persistence:CRED_PERSIST_LOCAL_MACHINE,
+        attribute_count:0,attributes:ptr::null_mut(),
+        target_alias:ptr::null(),user_name:ptr::null(),
+    };
+    let written=unsafe{CredWriteW(&record,0)}!=0;
+    clear_temporary_key(&mut key);
+    if !written{
+        return Err(denied("SYSTEM broker could not persist installed DLC key"));
+    }
+    // Only verify accessibility/record shape via the same protected reader.
+    let mut verified=read_installed_ide_key(package)?;
+    clear_temporary_key(&mut verified);
+    Ok(())
+}
+
+/// Revoke the exact installed package key from the SYSTEM credential store.
+/// Lu's live session witness rechecks the OS store on subsequent frame reads;
+/// the host must ALSO cancel and reap affected workers immediately.
+pub fn revoke_installed_ide_key(package:[u8;32])->io::Result<()>{
+    let target=target_for_package(package)?;
+    validate_broker_context()?;
+    let wide:Vec<u16>=target.encode_utf16().chain(std::iter::once(0)).collect();
+    if unsafe{CredDeleteW(wide.as_ptr(),CRED_TYPE_GENERIC,0)}==0{
+        return Err(denied("SYSTEM broker could not revoke installed DLC key"));
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests{
     use super::*;
