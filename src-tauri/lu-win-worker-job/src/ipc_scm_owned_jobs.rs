@@ -15,6 +15,8 @@ use crate::{
     Job,WindowsJobEmptyProof,
     ipc_credential_broker::require_system_service_context,
     ipc_pipe_peer::{observe_host_process,process_is_appcontainer,WindowsPipePeer},
+    ipc_scm_launcher::FixedAppContainerChild,
+    ipc_scm_receipts::persist_executor_admission_intent,
 };
 
 const SYSTEM_SID:&str="S-1-5-18";
@@ -115,18 +117,51 @@ impl ServiceStoppedJob{
     pub fn method(&self)->&'static str{self.proof.method()}
 }
 
+enum ServiceOwnedChild{
+    Fixture(Child),
+    Fixed(FixedAppContainerChild),
+}
+impl ServiceOwnedChild{
+    fn id(&self)->u32{
+        match self{Self::Fixture(c)=>c.id(),Self::Fixed(c)=>c.id()}
+    }
+    fn kill(&mut self)->io::Result<()>{
+        match self{Self::Fixture(c)=>c.kill(),Self::Fixed(c)=>c.kill()}
+    }
+    fn wait(&mut self)->io::Result<()>{
+        match self{
+            Self::Fixture(c)=>{c.wait().map(|_|())},
+            Self::Fixed(c)=>c.wait(),
+        }
+    }
+    fn assign_and_resume(&self,job:&Job)->io::Result<()>{
+        match self{
+            Self::Fixture(c)=>job.assign_and_resume_suspended(c),
+            Self::Fixed(c)=>job.assign_and_resume_native_handles(
+                c.process_handle(),c.thread_handle()),
+        }
+    }
+}
 struct ScmHeldChild{
     binding:ServiceCallBinding,
     lane:SupervisedJobLane,
     supervisor:WindowsPipePeer,
     original:WindowsPipePeer,
     job:Job,
-    child:Child,
+    child:ServiceOwnedChild,
+    core_peer:Option<WindowsPipePeer>,
     stopped:bool,
 }
 impl ScmHeldChild{
     fn attach(
-        job:Job,mut child:Child,lane:SupervisedJobLane,
+        job:Job,child:Child,lane:SupervisedJobLane,
+        binding:ServiceCallBinding,require_executor_appcontainer:bool,
+    )->io::Result<Self>{
+        Self::attach_owned(job,ServiceOwnedChild::Fixture(child),lane,
+            binding,require_executor_appcontainer)
+    }
+    fn attach_owned(
+        job:Job,mut child:ServiceOwnedChild,lane:SupervisedJobLane,
         binding:ServiceCallBinding,require_executor_appcontainer:bool,
     )->io::Result<Self>{
         let supervisor=match observe_host_process(std::process::id()){
@@ -154,7 +189,7 @@ impl ScmHeldChild{
             return Err(denied(
                 "Core executor requires independently observed AppContainer token"));
         }
-        if job.assign_and_resume_suspended(&child).is_err(){
+        if child.assign_and_resume(&job).is_err(){
             let _=child.kill();let _=child.wait();
             return Err(denied("SCM Job assignment before resume failed"));
         }
@@ -163,7 +198,8 @@ impl ScmHeldChild{
             let _=child.kill();let _=child.wait();
             return Err(denied("SCM worker process generation changed at admission"));
         }
-        Ok(Self{binding,lane,supervisor,original,job,child,stopped:false})
+        Ok(Self{binding,lane,supervisor,original,job,child,
+            core_peer:None,stopped:false})
     }
     fn stop_exact(
         &mut self,expected_lane:SupervisedJobLane,
@@ -256,6 +292,43 @@ impl ScmJobKeeper{
         state.jobs.push(held);
         Ok(())
     }
+    /// Launch precisely the protected fixed native executor under the
+    /// *installed Core peer user token*, zero-capability AppContainer and
+    /// THIS SCM-owned Job. No caller-provided binary, argv or Job handle.
+    /// Original admission intent is signed and durable BEFORE any resume;
+    /// failure remains uncertain and cannot produce a successful launch ACK.
+    pub fn launch_fixed_for_service(
+        &self,binding:ServiceCallBinding,core_peer_pid:u32,
+    )->io::Result<()>{
+        require_system_service_context()?;
+        if core_peer_pid==0{return Err(denied("SCM worker Core peer missing"));}
+        let mut state=self.registry.lock()
+            .map_err(|_|denied("SCM Job registry poisoned"))?;
+        let key=(binding.call_id.clone(),SupervisedJobLane::CoreExecutor.discriminator());
+        if state.jobs.len()>=MAX_SERVICE_JOBS||
+            state.calls.len()>=MAX_SERVICE_CALLS ||
+            state.seen_lanes.contains(&key) ||
+            state.calls.contains_key(&binding.call_id){
+            return Err(denied("SCM launch duplicate, full, or drifted call"));
+        }
+        // Durable first, before any worker process exists. If the SCM dies
+        // after this fsync but before resume, Core must keep UNCERTAIN closed.
+        persist_executor_admission_intent(&binding)?;
+        let child=crate::ipc_scm_launcher::spawn_fixed_suspended(core_peer_pid)?;
+        let job=Job::new()?;
+        let core_peer=observe_host_process(core_peer_pid)?;
+        let mut held=ScmHeldChild::attach_owned(
+            job,ServiceOwnedChild::Fixed(child),
+            SupervisedJobLane::CoreExecutor,binding.clone(),true)?;
+        if observe_host_process(core_peer_pid)?!=core_peer{
+            return Err(denied("Core peer expired while SCM worker admitted"));
+        }
+        held.core_peer=Some(core_peer);
+        state.seen_lanes.insert(key);
+        state.calls.insert(binding.call_id.clone(),binding);
+        state.jobs.push(held);
+        Ok(())
+    }
     /// A stop is accepted only for the exact original call, original trusted
     /// turn scope and intended lane. A client cannot stop an unrelated Job.
     /// No executor receipt leaves this process as independent durable proof.
@@ -276,6 +349,31 @@ impl ScmJobKeeper{
         let proof=state.jobs[index].stop_exact(lane,binding)?;
         state.jobs.remove(index);
         Ok(proof)
+    }
+    /// SCM-controlled liveness sweep: an installed Core peer that exits,
+    /// changes PID birth, token SID, or signed image loses its worker.
+    /// The keeper NEVER adopts an executor from a stored PID after restart.
+    /// Caller persists every returned service-origin Job-empty witness.
+    pub fn stop_orphaned_core_executors(&self)->io::Result<Vec<ServiceStoppedJob>>{
+        require_system_service_context()?;
+        let mut state=self.registry.lock()
+            .map_err(|_|denied("SCM orphan sweep registry poisoned"))?;
+        let mut stopped=Vec::new();
+        let mut index=0;
+        while index<state.jobs.len(){
+            let departed=state.jobs[index].core_peer.as_ref()
+                .is_some_and(|expected|
+                    observe_host_process(expected.pid).ok().as_ref()!=Some(expected));
+            if !departed{index+=1;continue;}
+            let lane=state.jobs[index].lane;
+            let identity=state.jobs[index].binding.clone();
+            let proof=state.jobs[index].stop_exact(lane,&identity);
+            state.jobs.remove(index);
+            // If kernel custody fails we cannot mint a positive receipt,
+            // but Dropping the Job still kills descendants on close.
+            stopped.push(proof?);
+        }
+        Ok(stopped)
     }
     /// Shut down every remaining Job before the service exits. If any
     /// observation fails, never return a partial positive all-worker receipt;

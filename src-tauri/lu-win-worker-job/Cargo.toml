@@ -10,7 +10,7 @@ publish = false
 [dependencies]
 
 [target.'cfg(windows)'.dependencies]
-tokio = { version = "1", features = ["net", "macros"] }
+tokio = { version = "1", features = ["net", "macros", "rt", "time", "io-util"] }
 
 # The destructive SIGKILL test host is deliberately excluded from normal
 # builds and all release packaging unless CI opts in explicitly.

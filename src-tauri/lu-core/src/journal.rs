@@ -14,6 +14,17 @@ use rusqlite::{params, Connection, OptionalExtension, TransactionBehavior};
 use sha2::{Digest, Sha256};
 
 use crate::contracts::ToolInvocation;
+#[cfg(windows)]
+use crate::{
+    conversation_authority::BoundCallOrigin,
+    workspace_ipc_transport::TransportSession,
+    workspace_ipc_scm::VerifiedScmSupervisor,
+};
+#[cfg(windows)]
+use lu_win_worker_job::{
+    ipc_scm_owned_jobs::ServiceCallBinding,
+    ipc_scm_receipts::VerifiedExecutorStopReceipt,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EffectState {
@@ -127,6 +138,12 @@ pub enum IpcRestartDisposition {
 /// Immutable, bounded journal-side evidence for an independently supervised
 /// recovery inquiry. This is NOT an OS-custody receipt or an execution grant.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg(windows)]
+pub struct IpcScmOriginalGrant{
+    pub binding:ServiceCallBinding,
+    pub service_pid:u32,
+    pub service_birth:u64,
+}
 pub struct IpcPendingEffect {
     pub call_id: String,
     pub tool_id: String,
@@ -214,6 +231,148 @@ impl ExclusiveIpcEffectJournal {
         self.journal.prepare(call)?;
         self.journal.bind_ipc_worker(
             call,session,worker_pid,worker_creation_filetime)
+    }
+
+    /// Persist the exact ORIGINAL Core-authorized user turn BEFORE sending
+    /// a signed SCM launch command. Caller must have already checked native
+    /// package, typed input, task/user grant, revocation and effect policy.
+    /// A persisted row is NOT itself a grant to model output or another DLC.
+    #[cfg(windows)]
+    pub(crate) fn prepare_original_scm_grant(
+        &self,call:&ToolInvocation,session:&TransportSession,
+        origin:&BoundCallOrigin,workspace_ref:&str,
+        supervisor:&VerifiedScmSupervisor,
+    )->Result<IpcScmOriginalGrant,JournalError>{
+        self.ready_journal()?;
+        supervisor.require_live().map_err(|_|JournalError::IpcCustodyMismatch)?;
+        if call.workspace_id.as_deref().is_some_and(|v|v!=workspace_ref){
+            return Err(JournalError::IpcCustodyMismatch);
+        }
+        let fingerprint=fingerprint(call);
+        let binding=ServiceCallBinding::checked(
+            &call.call_id,&fingerprint,&session.module_id,
+            &session.session_ref,&session.core_epoch_ref,
+            &origin.conversation_id,&origin.user_turn_id,
+            &origin.task_id,workspace_ref,
+        ).map_err(|_|JournalError::IpcCustodyMismatch)?;
+        let pid=supervisor.scm_service_pid();
+        let birth=supervisor.scm_service_birth();
+        let native_birth=i64::try_from(birth)
+            .map_err(|_|JournalError::IpcCustodyMismatch)?;
+        let mut conn=self.journal.connection.lock()
+            .map_err(|_|JournalError::Poisoned)?;
+        let tx=conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let original:Option<(String,String)>=tx.query_row(
+            "SELECT fingerprint,state FROM lu_effects WHERE call_id=?1",
+            [&call.call_id],|row|Ok((row.get(0)?,row.get(1)?))
+        ).optional()?;
+        if original!=Some((fingerprint.clone(),"PREPARED".into())){
+            return Err(JournalError::IpcRestartNeedsCustody);
+        }
+        let client:Option<(String,String,String,String)>=tx.query_row(
+            "SELECT fingerprint,module_id,session_ref,core_epoch_ref
+             FROM lu_ipc_supervised_calls WHERE call_id=?1",
+            [&call.call_id],|row|Ok((row.get(0)?,row.get(1)?,row.get(2)?,row.get(3)?))
+        ).optional()?;
+        if client!=Some((fingerprint.clone(),session.module_id.clone(),
+            session.session_ref.clone(),session.core_epoch_ref.clone())){
+            return Err(JournalError::IpcCustodyMismatch);
+        }
+        let count=tx.execute(
+            "INSERT OR IGNORE INTO lu_ipc_scm_original_grants
+             (call_id,fingerprint,module_id,session_ref,core_epoch_ref,
+              conversation_ref,user_turn_ref,task_ref,workspace_ref,
+              service_pid,service_birth)
+             VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)",
+            params![binding.call_id(),binding.fingerprint_sha256(),
+                binding.module_id(),binding.session_ref(),binding.core_epoch_ref(),
+                binding.conversation_ref(),binding.user_turn_ref(),
+                binding.task_ref(),binding.workspace_ref(),
+                i64::from(pid),native_birth]
+        )?;
+        if count!=1{return Err(JournalError::DuplicateIdConflict);}
+        tx.commit()?;
+        Ok(IpcScmOriginalGrant{binding,service_pid:pid,service_birth:birth})
+    }
+    /// Recovery must reconstruct original CALL/TURN from the exclusive Core
+    /// journal. A caller cannot substitute values from an IPC envelope.
+    #[cfg(windows)]
+    pub(crate) fn original_scm_grant_for_call(
+        &self,call_id:&str,
+    )->Result<IpcScmOriginalGrant,JournalError>{
+        let conn=self.journal.connection.lock()
+            .map_err(|_|JournalError::Poisoned)?;
+        let raw:Option<(String,String,String,String,String,String,String,String,
+                         String,i64,i64)>=conn.query_row(
+            "SELECT call_id,fingerprint,module_id,session_ref,core_epoch_ref,
+                    conversation_ref,user_turn_ref,task_ref,workspace_ref,
+                    service_pid,service_birth
+             FROM lu_ipc_scm_original_grants WHERE call_id=?1",
+            [call_id],|row|Ok((
+                row.get(0)?,row.get(1)?,row.get(2)?,row.get(3)?,
+                row.get(4)?,row.get(5)?,row.get(6)?,row.get(7)?,
+                row.get(8)?,row.get(9)?,row.get(10)?))
+        ).optional()?;
+        let (id,digest,module,session,epoch,conv,turn,task,workspace,pid,birth)=
+            raw.ok_or(JournalError::IpcCustodyMismatch)?;
+        let binding=ServiceCallBinding::checked(
+            &id,&digest,&module,&session,&epoch,&conv,&turn,&task,&workspace
+        ).map_err(|_|JournalError::IpcCustodyMismatch)?;
+        let service_pid=u32::try_from(pid).map_err(|_|JournalError::IpcCustodyMismatch)?;
+        let service_birth=u64::try_from(birth).map_err(|_|JournalError::IpcCustodyMismatch)?;
+        if service_pid==0||service_birth==0{
+            return Err(JournalError::IpcCustodyMismatch);
+        }
+        Ok(IpcScmOriginalGrant{binding,service_pid,service_birth})
+    }
+    /// Record only independently verified service-signed kernel executor
+    /// stop, matched to the ORIGINAL protected user turn/SCM generation.
+    /// Effects remain UNCERTAIN and restart effect admissions stay CLOSED.
+    #[cfg(windows)]
+    pub(crate) fn record_verified_scm_executor_stop(
+        &self,original:&IpcScmOriginalGrant,proof:&VerifiedExecutorStopReceipt,
+    )->Result<(),JournalError>{
+        if original.service_pid!=proof.supervisor_pid()
+            ||original.service_birth!=proof.supervisor_creation_filetime()
+            ||proof.worker_pid()==0||proof.worker_creation_filetime()==0{
+            return Err(JournalError::IpcCustodyMismatch);
+        }
+        let mut conn=self.journal.connection.lock()
+            .map_err(|_|JournalError::Poisoned)?;
+        let tx=conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let state:Option<(String,String)>=tx.query_row(
+            "SELECT fingerprint,state FROM lu_effects WHERE call_id=?1",
+            [original.binding.call_id()],|row|Ok((row.get(0)?,row.get(1)?))
+        ).optional()?;
+        let Some((digest,status))=state else{
+            return Err(JournalError::IpcCustodyMismatch)
+        };
+        if digest!=original.binding.fingerprint_sha256() ||
+            !matches!(status.as_str(),"EXECUTING"|"UNCERTAIN"){
+            return Err(JournalError::IpcCustodyMismatch);
+        }
+        let count=tx.execute(
+            "INSERT OR IGNORE INTO lu_ipc_scm_verified_executor_stops
+             (call_id,worker_pid,worker_birth,service_pid,service_birth,method)
+             VALUES(?1,?2,?3,?4,?5,'WINDOWS_JOB_ACTIVE_ZERO_V1')",
+            params![original.binding.call_id(),i64::from(proof.worker_pid()),
+                i64::try_from(proof.worker_creation_filetime())
+                    .map_err(|_|JournalError::IpcCustodyMismatch)?,
+                i64::from(proof.supervisor_pid()),
+                i64::try_from(proof.supervisor_creation_filetime())
+                    .map_err(|_|JournalError::IpcCustodyMismatch)?]
+        )?;
+        if count!=1{return Err(JournalError::DuplicateIdConflict)}
+        if status=="EXECUTING"{
+            tx.execute(
+                "UPDATE lu_effects SET state='UNCERTAIN',
+                 updated_at=CURRENT_TIMESTAMP
+                 WHERE call_id=?1 AND state='EXECUTING'",
+                [original.binding.call_id()],
+            )?;
+        }
+        tx.commit()?;
+        Ok(())
     }
 
     /// Store typed, nonforgeable proof that the signed DLC *client* Job was
@@ -334,6 +493,30 @@ impl EffectJournal {
                     CHECK(method = 'WINDOWS_JOB_ACTIVE_ZERO_V1'),
                 recorded_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY(call_id) REFERENCES lu_ipc_supervised_calls(call_id)
+            );
+            CREATE TABLE IF NOT EXISTS lu_ipc_scm_original_grants (
+                call_id TEXT PRIMARY KEY NOT NULL,
+                fingerprint TEXT NOT NULL,
+                module_id TEXT NOT NULL,
+                session_ref TEXT NOT NULL,
+                core_epoch_ref TEXT NOT NULL,
+                conversation_ref TEXT NOT NULL,
+                user_turn_ref TEXT NOT NULL,
+                task_ref TEXT NOT NULL,
+                workspace_ref TEXT NOT NULL,
+                service_pid INTEGER NOT NULL CHECK(service_pid > 0),
+                service_birth INTEGER NOT NULL CHECK(service_birth > 0),
+                FOREIGN KEY(call_id) REFERENCES lu_ipc_supervised_calls(call_id)
+            );
+            CREATE TABLE IF NOT EXISTS lu_ipc_scm_verified_executor_stops (
+                call_id TEXT PRIMARY KEY NOT NULL,
+                worker_pid INTEGER NOT NULL CHECK(worker_pid > 0),
+                worker_birth INTEGER NOT NULL CHECK(worker_birth > 0),
+                service_pid INTEGER NOT NULL CHECK(service_pid > 0),
+                service_birth INTEGER NOT NULL CHECK(service_birth > 0),
+                method TEXT NOT NULL CHECK(method='WINDOWS_JOB_ACTIVE_ZERO_V1'),
+                checked_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY(call_id) REFERENCES lu_ipc_scm_original_grants(call_id)
             );
             CREATE TABLE IF NOT EXISTS lu_independent_outcomes (
                 call_id TEXT PRIMARY KEY NOT NULL,

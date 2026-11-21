@@ -144,6 +144,9 @@ impl RunningScmSupervisor{
         Ok(Self{_manager:manager,service,process,witness:after,
             image_file,signer_der})
     }
+    pub fn original_process_witness(&self)->WindowsPipePeer{
+        self.witness.clone()
+    }
     pub fn image_file(&self)->&File {&self.image_file}
     pub fn signer_certificate_der(&self)->&[u8] {&self.signer_der}
     pub fn process_id(&self)->u32 {self.witness.pid}

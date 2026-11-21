@@ -25,6 +25,9 @@ pub struct ApprovedScmPins{
     pub absolute_image_path:String,
     pub image_sha256:[u8;32],
     pub signer_der_sha256:[u8;32],
+    /// Independently installed public verification pin, not supplied by
+    /// SCM, a DLC, receipt bytes or the model.
+    pub receipt_p256_public_blob:[u8;72],
 }
 fn nonzero(value:&[u8;32])->bool{value.iter().any(|b|*b!=0)}
 fn exact_digest<R:Read>(mut reader:R,maximum:u64)->io::Result<[u8;32]>{
@@ -85,12 +88,18 @@ pub fn verify_installed_executor_stop(
 /// It never contains worker Jobs, and is NOT executor custody evidence.
 pub struct VerifiedScmSupervisor{
     native:lu_win_worker_job::ipc_scm_supervisor::RunningScmSupervisor,
+    receipt_public_blob:[u8;72],
 }
 impl VerifiedScmSupervisor{
     pub fn observe(pins:&ApprovedScmPins)->Result<Self,ScmSupervisorError>{
         if !Path::new(&pins.absolute_image_path).is_absolute()
             ||!nonzero(&pins.image_sha256)
-            ||!nonzero(&pins.signer_der_sha256){
+            ||!nonzero(&pins.signer_der_sha256)
+            ||u32::from_le_bytes(pins.receipt_p256_public_blob[0..4]
+                .try_into().unwrap())!=0x31534345
+            ||u32::from_le_bytes(pins.receipt_p256_public_blob[4..8]
+                .try_into().unwrap())!=32{
+
             return Err(ScmSupervisorError::UnapprovedPins);
         }
         let native=lu_win_worker_job::ipc_scm_supervisor::
@@ -98,10 +107,89 @@ impl VerifiedScmSupervisor{
             .map_err(|_|ScmSupervisorError::ServiceUnavailable)?;
         verify_pins(pins,native.image_file(),native.signer_certificate_der())?;
         native.check_alive().map_err(|_|ScmSupervisorError::ServiceUnavailable)?;
-        Ok(Self{native})
+        Ok(Self{native,receipt_public_blob:pins.receipt_p256_public_blob})
     }
     pub fn require_live(&self)->Result<(),ScmSupervisorError>{
         self.native.check_alive().map_err(|_|ScmSupervisorError::ServiceUnavailable)
+    }
+    /// Authenticate a real installed Core-originated read-only private
+    /// SCM health round trip against the SAME pinned OS service generation.
+    /// This is an actual local service channel, not a DLC capability grant.
+    pub async fn private_scm_health(&self)->Result<(),ScmSupervisorError>{
+        use lu_win_worker_job::ipc_scm_control_wire::{ScmControl,ScmCommand};
+        self.require_live()?;
+        let witness=self.native.original_process_witness();
+        let query=ScmControl{
+            command:ScmCommand::ReadStatus,
+            service_pid:witness.pid,
+            service_birth:witness.creation_filetime,
+            original:None,
+        };
+        lu_win_worker_job::ipc_scm_control::issue_core_command(&query,&witness).await
+            .map_err(|_|ScmSupervisorError::ServiceUnavailable)?;
+        self.require_live()
+    }
+    /// Exact-command scope is always supplied from a host-owned, durable
+    /// original-turn grant, never from a DLC Frame or model-origin text.
+    pub(crate) async fn private_original_command(
+        &self,
+        original:&lu_win_worker_job::ipc_scm_owned_jobs::ServiceCallBinding,
+        action:lu_win_worker_job::ipc_scm_control_wire::ScmCommand,
+    )->Result<lu_win_worker_job::ipc_scm_control::ScmControlResponse,ScmSupervisorError>{
+        use lu_win_worker_job::ipc_scm_control_wire::{ScmControl,OriginalCall};
+        self.require_live()?;
+        let witness=self.native.original_process_witness();
+        let call=OriginalCall{
+            call_id:original.call_id().into(),
+            fingerprint_sha256:original.fingerprint_sha256().into(),
+            module_id:original.module_id().into(),
+            session_ref:original.session_ref().into(),
+            core_epoch_ref:original.core_epoch_ref().into(),
+            conversation_ref:original.conversation_ref().into(),
+            user_turn_ref:original.user_turn_ref().into(),
+            task_ref:original.task_ref().into(),
+            workspace_ref:original.workspace_ref().into(),
+        };
+        let query=ScmControl{
+            command:action,service_pid:witness.pid,
+            service_birth:witness.creation_filetime,original:Some(call),
+        };
+        let result=lu_win_worker_job::ipc_scm_control::
+            issue_core_command(&query,&witness).await
+            .map_err(|_|ScmSupervisorError::ServiceUnavailable)?;
+        self.require_live()?;
+        Ok(result)
+    }
+    /// Fetch signed SCM-native Job-empty material over the independently
+    /// authenticated private channel, then verify against *Core's installed
+    /// public key pin*. No SYSTEM-only file reads by the desktop account.
+    /// A valid stop NEVER converts UNCERTAIN to APPLIED or grants replay.
+    pub(crate) async fn verified_original_executor_stop(
+        &self,
+        original:&lu_win_worker_job::ipc_scm_owned_jobs::ServiceCallBinding,
+    )->Result<lu_win_worker_job::ipc_scm_receipts::VerifiedExecutorStopReceipt,ScmSupervisorError>{
+        use lu_win_worker_job::ipc_scm_control_wire::ScmCommand;
+        let response=self.private_original_command(
+            original,ScmCommand::InspectStoppedExecutor).await?;
+        let material=response.signed_receipt
+            .ok_or(ScmSupervisorError::ReceiptUnavailable)?;
+        lu_win_worker_job::ipc_scm_receipts::verify_executor_stop_bytes(
+            original,&self.receipt_public_blob,&material)
+            .map_err(|_|ScmSupervisorError::ReceiptUnavailable)
+    }
+    /// Recovery path: only the original exclusive Core SQLite owner may
+    /// reconstruct immutable call/turn/SCM generation for inspection.
+    /// An independently verified signer receipt quarantines old execution;
+    /// it NEVER marks the effect APPLIED or releases automatic replay.
+    pub(crate) async fn reconcile_original_executor_stop(
+        &self,journal:&crate::journal::ExclusiveIpcEffectJournal,
+        call_id:&str,
+    )->Result<(),ScmSupervisorError>{
+        let original=journal.original_scm_grant_for_call(call_id)
+            .map_err(|_|ScmSupervisorError::ReceiptUnavailable)?;
+        let proof=self.verified_original_executor_stop(&original.binding).await?;
+        journal.record_verified_scm_executor_stop(&original,&proof)
+            .map_err(|_|ScmSupervisorError::ReceiptUnavailable)
     }
     /// Read-only SCM identity: not a native tool executor or kernel Job receipt.
     pub fn scm_service_pid(&self)->u32{self.native.process_id()}
@@ -114,12 +202,14 @@ mod tests{
     #[test]
     fn source_or_model_cannot_mint_arbitrary_scm_identity(){
         let zero=ApprovedScmPins{absolute_image_path:"not-an-install.exe".into(),
-            image_sha256:[1;32],signer_der_sha256:[1;32]};
+            image_sha256:[1;32],signer_der_sha256:[1;32],
+            receipt_p256_public_blob:[0;72]};
         assert!(matches!(VerifiedScmSupervisor::observe(&zero),
             Err(ScmSupervisorError::UnapprovedPins)));
         let missing=ApprovedScmPins{absolute_image_path:
             r"C:\Windows\System32\not-the-lu-scm-supervisor.exe".into(),
-            image_sha256:[0x45;32],signer_der_sha256:[0x12;32]};
+            image_sha256:[0x45;32],signer_der_sha256:[0x12;32],
+            receipt_p256_public_blob:[0;72]};
         assert!(matches!(VerifiedScmSupervisor::observe(&missing),
             Err(ScmSupervisorError::ServiceUnavailable)));
     }

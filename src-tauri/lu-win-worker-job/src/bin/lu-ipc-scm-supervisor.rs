@@ -6,11 +6,11 @@
 //! LocalSystem service is alive; it is NOT proof of effect recovery.
 #[cfg(windows)]
 mod native {
-    use std::{ffi::c_void,io,ptr,sync::atomic::{AtomicBool,Ordering},
-        thread,time::Duration};
+    use std::{ffi::c_void,io,ptr,sync::atomic::{AtomicBool,Ordering}};
     use lu_win_worker_job::{
         ipc_credential_broker::require_system_service_context,
         ipc_scm_owned_jobs::{ScmJobKeeper,SupervisedJobLane},
+        ipc_scm_control::serve_control,
         ipc_scm_receipts::{
             persist_executor_stop,installed_public_key_for_protected_installer,
         },
@@ -131,10 +131,11 @@ mod native {
             let _=report(handle,SERVICE_STOPPED,4);
             return;
         }
-        if report(handle,SERVICE_RUNNING,0).is_err(){return;}
-        while !STOP.load(Ordering::Acquire){
-            thread::sleep(Duration::from_millis(200));
-        }
+        // The only private control listener. A stopped/crashed listener
+        // prevents new admissions; the service still reaps every owned Job.
+        let control_ok=serve_control(&keeper,&STOP,||
+            report(handle,SERVICE_RUNNING,0)).is_ok();
+        STOP.store(true,Ordering::Release);
         let _=report(handle,SERVICE_STOP_PENDING,0);
         let stopped=match keeper.stop_all(){
             Ok(witnesses)=>witnesses.iter().all(|witness|
@@ -143,7 +144,7 @@ mod native {
             ),
             Err(_)=>false,
         };
-        let _=report(handle,SERVICE_STOPPED,if stopped{0}else{3});
+        let _=report(handle,SERVICE_STOPPED,if stopped&&control_ok{0}else{3});
     }
     pub fn run()->io::Result<()>{
         // SCM calls service_main only through this registered table; a plain

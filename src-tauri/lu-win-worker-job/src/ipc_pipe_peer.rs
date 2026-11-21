@@ -178,6 +178,43 @@ pub fn create_owner_only_pipe(name:&str)->io::Result<NamedPipeServer>{
         name,(&mut attributes as *mut SecurityAttributes).cast())}
 }
 
+/// Private SCM service-only endpoint. The SID comes exclusively from the
+/// installer-sealed Core host record, never from a DLC Hello or model output.
+pub fn create_scm_control_pipe(user_sid:&str)->io::Result<NamedPipeServer>{
+    if !user_sid.starts_with("S-1-5-")||user_sid.len()>128||
+        !user_sid.bytes().all(|b|b.is_ascii_digit()||b==b'-'||b==b'S'){
+        return Err(io::Error::new(io::ErrorKind::PermissionDenied,
+            "SCM Core pipe user pin invalid"));
+    }
+    // Only the enrolled Core's OS account and the SCM's SYSTEM identity
+    // may access the control pipe. Permissions are not authority alone.
+    let sddl=format!("D:P(A;;GA;;;SY)(A;;GRGW;;;{user_sid})");
+    let wide:Vec<u16>=sddl.encode_utf16().chain(std::iter::once(0)).collect();
+    let mut descriptor:Handle=ptr::null_mut();
+    if unsafe{ConvertStringSecurityDescriptorToSecurityDescriptorW(
+        wide.as_ptr(),SDDL_REVISION_1,&mut descriptor,ptr::null_mut()
+    )}==0||descriptor.is_null(){
+        return Err(io::Error::last_os_error());
+    }
+    let _sd=OwnedSecurityDescriptor(descriptor);
+    let mut attributes=SecurityAttributes{
+        length:mem::size_of::<SecurityAttributes>() as u32,
+        security_descriptor:descriptor,inherit_handle:0,
+    };
+    let opts=ServerOptions::new()
+        .pipe_mode(PipeMode::Byte)
+        .reject_remote_clients(true)
+        .first_pipe_instance(true)
+        .max_instances(1)
+        .in_buffer_size(4096)
+        .out_buffer_size(4096)
+        .clone();
+    unsafe{opts.create_with_security_attributes_raw(
+        r"\\.\pipe\LuCoreIpcScmControlV1",
+        (&mut attributes as *mut SecurityAttributes).cast()
+    )}
+}
+
 /// Native observations, NOT a registration grant. Never return these fields
 /// to model output or logs. An approved host policy must compare exact SID,
 /// package digest/signature, executable identity and process lifetime.

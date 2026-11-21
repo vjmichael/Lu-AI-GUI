@@ -79,7 +79,7 @@ struct BCryptKey(Handle);
 impl Drop for BCryptKey{
     fn drop(&mut self){if !self.0.is_null(){unsafe{BCryptDestroyKey(self.0)};}}
 }
-fn hash(data:&[u8])->io::Result<[u8;32]>{
+pub(crate) fn hash(data:&[u8])->io::Result<[u8;32]>{
     let mut raw=ptr::null_mut();
     if unsafe{BCryptOpenAlgorithmProvider(
         &mut raw,wide_str("SHA256").as_ptr(),ptr::null(),0)}!=0 ||raw.is_null(){
@@ -141,7 +141,7 @@ fn sign(body:&[u8])->io::Result<[u8;SIGNATURE_BYTES]>{
     }
     Ok(signature)
 }
-fn verify(body:&[u8],signature:&[u8],approved_public_blob:&[u8])->io::Result<()>{
+pub(crate) fn verify(body:&[u8],signature:&[u8],approved_public_blob:&[u8])->io::Result<()>{
     if !valid_public_blob(approved_public_blob)||signature.len()!=SIGNATURE_BYTES{
         return Err(refused("missing independently approved receipt verification pin"));
     }
@@ -164,6 +164,44 @@ fn verify(body:&[u8],signature:&[u8],approved_public_blob:&[u8])->io::Result<()>
     }
     Ok(())
 }
+/// A separate pre-provisioned, per-user NON-SYSTEM CNG identity for the
+/// installed Lu Core executable. A signed request remains subject to OS
+/// process/file/publisher checks on the service-held named pipe. Installer
+/// must seal this user's key and the SCM-owned matching PUBLIC pin.
+pub fn sign_core_control_request(body:&[u8])->io::Result<[u8;SIGNATURE_BYTES]>{
+    use crate::ipc_pipe_peer::observe_host_process;
+    if observe_host_process(std::process::id())?.user_sid=="S-1-5-18"{
+        return Err(refused("LocalSystem cannot impersonate a Core control caller"));
+    }
+    let mut raw=ptr::null_mut();
+    if unsafe{NCryptOpenStorageProvider(&mut raw,wide_str(KSP).as_ptr(),0)}!=0
+        ||raw.is_null(){return Err(refused("Core CNG provider unavailable"));}
+    let provider=Ncrypt(raw);
+    let mut key=ptr::null_mut();
+    if unsafe{NCryptOpenKey(provider.0,&mut key,
+        wide_str("LuCoreIpcCommandP256V1").as_ptr(),0,0)}!=0||key.is_null(){
+        return Err(refused("installed Core per-user control key unavailable"));
+    }
+    let key=Ncrypt(key);
+    let digest=hash(body)?;
+    let mut signature=[0u8;SIGNATURE_BYTES];
+    let mut used=0u32;
+    if unsafe{NCryptSignHash(key.0,ptr::null_mut(),digest.as_ptr(),32,
+        signature.as_mut_ptr(),SIGNATURE_BYTES as u32,&mut used,0)}!=0
+        ||used as usize!=SIGNATURE_BYTES{
+        return Err(refused("Core control signature failed"));
+    }
+    Ok(signature)
+}
+/// SCM service only: verify independently provisioned Core key, never a
+/// certificate/public key from the incoming packet. Not a tool grant.
+pub fn verify_core_control_request(body:&[u8],signature:&[u8])->io::Result<()>{
+    require_system_service_context()?;
+    let trusted=crate::ipc_installer_enrollment::
+        read_installed_scm_core_command_public_key()?;
+    verify(body,signature,&trusted)
+}
+
 fn lane_byte(lane:SupervisedJobLane)->u8{
     match lane{SupervisedJobLane::DlcClient=>1,SupervisedJobLane::CoreExecutor=>2}
 }
@@ -213,10 +251,16 @@ fn read_scope<'a>(body:&'a[u8],offset:&mut usize)->io::Result<&'a str>{
 /// or an automatic transition from UNCERTAIN to successful execution.
 #[derive(Debug)]
 pub struct VerifiedExecutorStopReceipt{
-    pub supervisor_pid:u32,
-    pub supervisor_creation_filetime:u64,
-    pub worker_pid:u32,
-    pub worker_creation_filetime:u64,
+    supervisor_pid:u32,
+    supervisor_creation_filetime:u64,
+    worker_pid:u32,
+    worker_creation_filetime:u64,
+}
+impl VerifiedExecutorStopReceipt{
+    pub fn supervisor_pid(&self)->u32{self.supervisor_pid}
+    pub fn supervisor_creation_filetime(&self)->u64{self.supervisor_creation_filetime}
+    pub fn worker_pid(&self)->u32{self.worker_pid}
+    pub fn worker_creation_filetime(&self)->u64{self.worker_creation_filetime}
 }
 fn verify_exact_body(body:&[u8],binding:&ServiceCallBinding)->io::Result<VerifiedExecutorStopReceipt>{
     if !body.starts_with(DOMAIN){return Err(invalid("receipt domain mismatch"));}
@@ -260,6 +304,59 @@ fn receipt_path(call_id:&str)->io::Result<PathBuf>{
 fn protected_root()->io::Result<()>{
     protected_executor_receipts_root().map(|_|())
 }
+/// Service-signed, one-use original-call admission intent. Saved BEFORE
+/// native CreateProcessAsUserW resumes the fixed executor. An intent without
+/// a later signed kernel stop is NOT executor-stop evidence; it forces manual
+/// uncertain-outcome reconciliation after a service crash.
+pub fn persist_executor_admission_intent(binding:&ServiceCallBinding)->io::Result<PathBuf>{
+    require_system_service_context()?;
+    protected_root()?;
+    let mut body=b"LU_SCM_EXECUTOR_ADMISSION_INTENT_V1\0".to_vec();
+    body.push(1);
+    for item in [
+        binding.call_id(),binding.fingerprint_sha256(),binding.module_id(),
+        binding.session_ref(),binding.core_epoch_ref(),
+        binding.conversation_ref(),binding.user_turn_ref(),
+        binding.task_ref(),binding.workspace_ref()
+    ]{push_scope(&mut body,item)?;}
+    let current=crate::ipc_pipe_peer::observe_host_process(std::process::id())?;
+    if current.user_sid!="S-1-5-18"||current.session_id!=0||
+        current.creation_filetime==0{
+        return Err(refused("SCM admission intent missing original service generation"));
+    }
+    body.extend_from_slice(&u64::from(current.pid).to_le_bytes());
+    body.extend_from_slice(&current.creation_filetime.to_le_bytes());
+    if body.len()+SIGNATURE_BYTES>MAX_RECORD{
+        return Err(invalid("SCM admission intent oversized"));
+    }
+    let sig=sign(&body)?;
+    let directory=protected_executor_receipts_root()?;
+    let path=directory.join(format!("{}.executor.admit.v1",binding.call_id()));
+    if path.exists(){return Err(refused("duplicate SCM executor admission intent"));}
+    let temporary=directory.join(format!(
+        "{}.executor.admit.pending.{}.{}",
+        binding.call_id(),current.pid,current.creation_filetime));
+    let mut file=OpenOptions::new().create_new(true).write(true).open(&temporary)?;
+    let wrote=(||->io::Result<()>{
+        file.write_all(&body)?;
+        file.write_all(&sig)?;
+        file.sync_all()?;
+        Ok(())
+    })();
+    drop(file);
+    if let Err(error)=wrote{
+        let _=fs::remove_file(&temporary);
+        return Err(error);
+    }
+    if unsafe{MoveFileExW(wide(temporary.as_os_str()).as_ptr(),
+        wide(path.as_os_str()).as_ptr(),MOVEFILE_WRITE_THROUGH)}==0{
+        let error=io::Error::last_os_error();
+        let _=fs::remove_file(&temporary);
+        return Err(error);
+    }
+    Ok(path)
+}
+
 /// Service-only, after OS-confirmed executor Job termination. A failure to
 /// flush or atomically rename is a FAILED receipt, never a successful stop.
 pub fn persist_executor_stop(stop:&ServiceStoppedJob)->io::Result<PathBuf>{
@@ -294,25 +391,45 @@ pub fn persist_executor_stop(stop:&ServiceStoppedJob)->io::Result<PathBuf>{
     }
     Ok(path)
 }
+/// SCM-only retrieval from a fixed, protected receipt path. This is raw
+/// signed material; the receiving Core MUST independently verify the
+/// signature against its installer-pinned public key and exact original call.
+pub fn read_executor_stop_bytes_for_control(original:&ServiceCallBinding)
+    ->io::Result<Vec<u8>>{
+    require_system_service_context()?;
+    let path=receipt_path(original.call_id())?;
+    let file=File::open(path)?;
+    if file.metadata()?.len()>MAX_RECORD as u64{
+        return Err(invalid("oversized SCM receipt"));
+    }
+    let mut bytes=Vec::new();
+    file.take((MAX_RECORD+1) as u64).read_to_end(&mut bytes)?;
+    if bytes.len()<DOMAIN.len()+SIGNATURE_BYTES||bytes.len()>MAX_RECORD{
+        return Err(invalid("invalid SCM receipt"));
+    }
+    Ok(bytes)
+}
+/// Independently verify bytes received over an authenticated Core <-> SCM
+/// pipe; no local SYSTEM-only receipt-file read is required by the user Core.
+/// PIN MUST be the signed Core install's pinned SCM public verification key.
+pub fn verify_executor_stop_bytes(original:&ServiceCallBinding,
+    approved_public_blob:&[u8],record:&[u8])
+    ->io::Result<VerifiedExecutorStopReceipt>{
+    if record.len()<DOMAIN.len()+SIGNATURE_BYTES||record.len()>MAX_RECORD{
+        return Err(invalid("SCM receipt wire bound invalid"));
+    }
+    let len=record.len()-SIGNATURE_BYTES;
+    verify(&record[..len],&record[len..],approved_public_blob)?;
+    verify_exact_body(&record[..len],original)
+}
 /// Independent verification: the public CNG key must come from a separately
 /// approved protected installer record, never from the receipt or the pipe.
 /// Read canonical exact-call file only, with no arbitrary filename/PID lookup.
 pub fn verify_executor_stop(
     original:&ServiceCallBinding,approved_public_blob:&[u8],
 )->io::Result<VerifiedExecutorStopReceipt>{
-    let path=receipt_path(original.call_id())?;
-    let mut file=File::open(path)?;
-    if file.metadata()?.len()>MAX_RECORD as u64{
-        return Err(invalid("oversized persisted SCM receipt"));
-    }
-    let mut record=Vec::new();
-    file.take((MAX_RECORD+1) as u64).read_to_end(&mut record)?;
-    if record.len()<=DOMAIN.len()+SIGNATURE_BYTES||record.len()>MAX_RECORD{
-        return Err(invalid("truncated or oversized SCM receipt"));
-    }
-    let body_len=record.len()-SIGNATURE_BYTES;
-    verify(&record[..body_len],&record[body_len..],approved_public_blob)?;
-    verify_exact_body(&record[..body_len],original)
+    let record=read_executor_stop_bytes_for_control(original)?;
+    verify_executor_stop_bytes(original,approved_public_blob,&record)
 }
 
 #[cfg(test)]

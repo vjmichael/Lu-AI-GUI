@@ -219,6 +219,99 @@ pub fn read_installed_scm_receipt_public_key()->io::Result<[u8;72]>{
         &os_program_data()?,"scm-receipt-pub-v1.bin",true)?;
     bytes.try_into().map_err(|_|denied("SCM public-key pin must be exactly 72 bytes"))
 }
+/// Installer-protected, fixed Core identity for the private SCM control pipe.
+/// This is NOT a workspace/DLC capability or a bearer credential.
+#[derive(Debug,Clone)]
+pub struct InstalledScmCorePins{
+    pub image_path:String,
+    pub image_sha256:[u8;32],
+    pub signer_sha256:[u8;32],
+    pub user_sid:String,
+}
+fn decode_hex32(value:&str)->io::Result<[u8;32]>{
+    if value.len()!=64 || !value.bytes().all(|b|
+        b.is_ascii_digit()||(b'a'..=b'f').contains(&b)){
+        return Err(denied("SCM installed digest is malformed"));
+    }
+    let mut out=[0u8;32];
+    for i in 0..32{
+        out[i]=u8::from_str_radix(&value[2*i..2*i+2],16)
+            .map_err(|_|denied("SCM installed digest invalid"))?;
+    }
+    if out.iter().all(|v|*v==0){
+        return Err(denied("SCM digest cannot be zero"));
+    }
+    Ok(out)
+}
+fn parse_control_host_record(raw:&[u8])->io::Result<InstalledScmCorePins>{
+    let text=std::str::from_utf8(raw)
+        .map_err(|_|denied("SCM control host UTF-8 invalid"))?;
+    let parts:Vec<_>=text.lines().collect();
+    if parts.len()!=4 ||raw.len()>2048 ||text.contains('\r'){
+        return Err(denied("SCM control host record shape invalid"));
+    }
+    let image_path=parts[0].strip_prefix("image=")
+        .ok_or_else(||denied("SCM image pin missing"))?;
+    let hash=parts[1].strip_prefix("sha256=")
+        .ok_or_else(||denied("SCM binary digest missing"))?;
+    let signer=parts[2].strip_prefix("signer=")
+        .ok_or_else(||denied("SCM publisher pin missing"))?;
+    let sid=parts[3].strip_prefix("user_sid=")
+        .ok_or_else(||denied("SCM user SID missing"))?;
+    if !Path::new(image_path).is_absolute()||image_path.len()>1024||
+       image_path.contains('\0') ||
+       !sid.starts_with("S-1-5-")||sid.len()>128||
+       !sid.bytes().all(|b|b.is_ascii_digit()||b==b'-'||b==b'S'){
+        return Err(denied("SCM installed Core path or SID invalid"));
+    }
+    Ok(InstalledScmCorePins{image_path:image_path.into(),
+        image_sha256:decode_hex32(hash)?,
+        signer_sha256:decode_hex32(signer)?,user_sid:sid.into()})
+}
+pub fn read_installed_scm_core_pins()->io::Result<InstalledScmCorePins>{
+    let record=load_fixed_named_record(&os_program_data()?,
+        "scm-control-core-host-v1.txt",false)?;
+    parse_control_host_record(&record)
+}
+pub fn read_installed_scm_core_command_public_key()->io::Result<[u8;72]>{
+    let bytes=load_fixed_named_record(
+        &os_program_data()?,"scm-control-core-pub-v1.bin",true)?;
+    bytes.try_into().map_err(|_|denied("Core command public key pin wrong size"))
+}
+/// Exact fixed executable selected ONLY by the protected Core installer.
+#[derive(Debug,Clone)]
+pub struct InstalledScmExecutorPins{
+    pub image_path:PathBuf,
+    pub image_sha256:[u8;32],
+    pub signer_sha256:[u8;32],
+}
+fn parse_executor_record(raw:&[u8])->io::Result<InstalledScmExecutorPins>{
+    let text=std::str::from_utf8(raw)
+        .map_err(|_|denied("SCM fixed executor pin not UTF-8"))?;
+    let lines:Vec<_>=text.lines().collect();
+    if lines.len()!=3||text.len()>2048||text.contains('\r'){
+        return Err(denied("SCM fixed executor record shape invalid"));
+    }
+    let path=lines[0].strip_prefix("image=")
+        .ok_or_else(||denied("SCM fixed executor image missing"))?;
+    let digest=lines[1].strip_prefix("sha256=")
+        .ok_or_else(||denied("SCM fixed executor digest missing"))?;
+    let signer=lines[2].strip_prefix("signer=")
+        .ok_or_else(||denied("SCM fixed executor signer missing"))?;
+    if !Path::new(path).is_absolute()||path.len()>1024||path.contains('\0'){
+        return Err(denied("SCM fixed executable path invalid"));
+    }
+    Ok(InstalledScmExecutorPins{
+        image_path:PathBuf::from(path),image_sha256:decode_hex32(digest)?,
+        signer_sha256:decode_hex32(signer)?,
+    })
+}
+pub fn read_installed_scm_executor_pins()->io::Result<InstalledScmExecutorPins>{
+    let raw=load_fixed_named_record(&os_program_data()?,
+        "scm-fixed-executor-v1.txt",false)?;
+    parse_executor_record(&raw)
+}
+
 /// Read ONLY the deterministic, protected, installed Lu IDE enrollment.
 /// The OS credential key is deliberately NOT present in these record bytes.
 pub fn read_installed_lu_ide_pins()->io::Result<Vec<u8>>{
@@ -227,6 +320,26 @@ pub fn read_installed_lu_ide_pins()->io::Result<Vec<u8>>{
 #[cfg(test)]
 mod tests{
     use super::*;
+    #[test]
+    fn no_untrusted_core_host_record_or_drifted_public_pin(){
+        let original=format!("image=C:\\Program Files\\Lu\\LuCore.exe\nsha256={}\nsigner={}\nuser_sid=S-1-5-21-100\n",
+            "a".repeat(64),"b".repeat(64));
+        let parsed=parse_control_host_record(original.as_bytes()).unwrap();
+        assert_eq!(parsed.user_sid,"S-1-5-21-100");
+        assert_eq!(parsed.image_sha256,[0xaa;32]);
+        assert_eq!(parsed.signer_sha256,[0xbb;32]);
+        assert!(parse_control_host_record(original.replace("signer=","owner=").as_bytes()).is_err());
+        assert!(parse_control_host_record(original.replace("S-1-5-21-100","S-1-5-21-X").as_bytes()).is_err());
+        assert!(parse_control_host_record(original.replace("sha256=","sha256=00").as_bytes()).is_err());
+    }
+    #[test]
+    fn fixed_executor_is_never_from_client_arguments(){
+        let raw=format!("image=C:\\Program Files\\Lu\\LuNativeWorker.exe\nsha256={}\nsigner={}\n",
+            "1".repeat(64),"2".repeat(64));
+        assert!(parse_executor_record(raw.as_bytes()).is_ok());
+        assert!(parse_executor_record(raw.replace("image=","argv=").as_bytes()).is_err());
+        assert!(parse_executor_record(raw.replace("signer=","command=").as_bytes()).is_err());
+    }
     #[test]
     fn refuses_user_owned_or_missing_installer_record(){
         let scratch=std::env::temp_dir().join(format!(
