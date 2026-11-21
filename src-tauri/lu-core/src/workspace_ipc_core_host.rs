@@ -929,14 +929,14 @@ impl CoreDlcHostGate{
 
 /// Actual protected Core-side public named-pipe acceptance loop for ONE
 /// independently approved original NVP film job, not a global auto-starting
-/// desktop RPC endpoint. Its caller must be the original Lu user-turn host;
+/// desktop RPC endpoint. The native pipe itself establishes NVP PID, session
+/// and process birth; no caller can select or impersonate an enrolled PID. Its caller must be the original Lu user-turn host;
 /// the NVP client has NO way to create the HostCoreTask, approved tool pair,
 /// SCM signer witness or source-pinned GPU manager. The recovered WALs are
 /// already open/fenced by DesktopState before any caller may invoke this.
 #[cfg(windows)]
 pub async fn serve_host_approved_nvp_gpu_windows<B>(
     endpoint:&str,
-    supervised_nvp_pid:u32,
     identity:&crate::workspace_ipc_transport::ServerIdentity,
     original:&lu_win_worker_job::ipc_scm_control_wire::OriginalCall,
     host:&HostCoreTask<'_>,
@@ -979,7 +979,7 @@ where B:crate::inference_host::InferenceBackend+Send+'static{
         .map_err(|_|CoreDlcGateError::Transport)?;
     let installed=crate::workspace_ipc_transport::windows::
         accept_scm_brokered_nvp_film(
-            &mut pipe,supervised_nvp_pid,identity,original,&scm)
+            &mut pipe,identity,original,&scm)
         .await.map_err(|_|CoreDlcGateError::Transport)?;
     supervisor.require_live().map_err(|_|CoreDlcGateError::Unavailable)?;
     let gate=CoreDlcHostGate::from_scm_brokered_nvp(&installed)?;
