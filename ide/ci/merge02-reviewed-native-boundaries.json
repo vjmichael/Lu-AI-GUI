@@ -261,6 +261,11 @@
       "scope": "IDE-PRECORE R2/R3 reviewed exact native source and protected authorization integration; source identity only, independent OS acceptance pending"
     },
     {
+      "path": "ide/packaging/test_ide_precore_r4_native_lock_chain.py",
+      "sha": "ce1ab36a9024c58617b8d562b8f364326b23a48f",
+      "scope": "R4 source-only hostile tests require original MERGE02C/P06 checks plus pinned R2 successor; no release approval"
+    },
+    {
       "path": "ide/packaging/test_p05_merge02_pending_native_boundaries.py",
       "sha": "e004af8f1010c9e9d30809027946ffd1ccdbbe5e",
       "scope": "source or historical preservation test, not native acceptance"
@@ -374,6 +379,11 @@
       "path": "ide/packaging/verify_ide_precore_r3.py",
       "sha": "b9e551f5f8c7b1262527d46f8cb1393de4d3187f",
       "scope": "IDE-PRECORE R2/R3 reviewed exact native source and protected authorization integration; source identity only, independent OS acceptance pending"
+    },
+    {
+      "path": "ide/packaging/verify_ide_precore_r4_native_lock_chain.py",
+      "sha": "7c2d9f066ecfa988028e6ae4419b8468c52bad2e",
+      "scope": "R4 frozen historical worktree verification followed by exact R2 lock successor; not an installed acceptance"
     },
     {
       "path": "ide/packaging/verify_language_servers.py",

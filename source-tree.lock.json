@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "6af74bce614e84ecfa0170a6e82d71a3793a52ce",
-  "trackedFileCount": 2005,
+  "sourceCommitBeforeLock": "17d593c6bf7985aecd11a920f1fc00cc7f828124",
+  "trackedFileCount": 2007,
   "files": [
     {
       "path": ".gitattributes",
@@ -329,7 +329,7 @@
     },
     {
       "path": ".github/workflows/ide-group6f-integrated-native.yml",
-      "blob": "db0703b38c8644118a44df8a0c3323bfce6f0ac1"
+      "blob": "12882807211a3239c01cec1c72daf710017f85e3"
     },
     {
       "path": ".github/workflows/ide-linux-26-installed-diagnostic.yml",
@@ -1693,7 +1693,7 @@
     },
     {
       "path": "ide/CHANGELOG.md",
-      "blob": "aa617ffc90f8e584360946653aa5863637926e7f"
+      "blob": "73a1d4ccede17be193f85214de069e80d36d02db"
     },
     {
       "path": "ide/CONTINUITY_PROTOCOL.md",
@@ -1705,7 +1705,7 @@
     },
     {
       "path": "ide/PROJECT_STATE.md",
-      "blob": "101291e79352acfd6ee22880d4b8fab82312b2f7"
+      "blob": "b05abcfa298ba4d49e41c1c3aa7704ac2b253d20"
     },
     {
       "path": "ide/README.md",
@@ -2621,7 +2621,7 @@
     },
     {
       "path": "ide/ci/merge02-reviewed-native-boundaries.json",
-      "blob": "7a8cd4a7198a5621723ac8cdcbb0d2768129482a"
+      "blob": "65ea6c419b32e58e207b54c2885c911e7fcac54f"
     },
     {
       "path": "ide/ci/test_verify_reviewed_native_boundaries.py",
@@ -4004,6 +4004,10 @@
       "blob": "7ee94931f57a990dbaf51ff57e5a2b0f6c1a4d23"
     },
     {
+      "path": "ide/packaging/test_ide_precore_r4_native_lock_chain.py",
+      "blob": "ce1ab36a9024c58617b8d562b8f364326b23a48f"
+    },
+    {
       "path": "ide/packaging/test_p04_transactional_upgrade.py",
       "blob": "e5068800df4ef4c061614c72e8b7fed8bb306d9a"
     },
@@ -4338,6 +4342,10 @@
     {
       "path": "ide/packaging/verify_ide_precore_r3.py",
       "blob": "b9e551f5f8c7b1262527d46f8cb1393de4d3187f"
+    },
+    {
+      "path": "ide/packaging/verify_ide_precore_r4_native_lock_chain.py",
+      "blob": "7c2d9f066ecfa988028e6ae4419b8468c52bad2e"
     },
     {
       "path": "ide/packaging/verify_language_servers.py",
@@ -6069,11 +6077,11 @@
     },
     {
       "path": "scripts/core01-verify-scope.mjs",
-      "blob": "1f76ef5e5f6946e4c6cf8dcb876b17363a78ca24"
+      "blob": "16b9c479f6b33d67eb83679cf4982509da163bfe"
     },
     {
       "path": "scripts/core01-verify-scope.test.mjs",
-      "blob": "cabaab8f01dc4da87daffbbb4fc2b28dbefd12a5"
+      "blob": "9ce701476ffab30251eee675238a1cd5bdf4ba99"
     },
     {
       "path": "scripts/core01f-acceptance-reconcile.mjs",

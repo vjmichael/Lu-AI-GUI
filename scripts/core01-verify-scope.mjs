@@ -89,6 +89,8 @@ const R4_PRECORE_SOURCE_PINS = new Map([
   ['ide/packaging/verify_ide_precore_r3.py', 'b9e551f5f8c7b1262527d46f8cb1393de4d3187f'],
   ['ide/proto/lu/ide/v1/native_broker.proto', '9906f7e727af1b8daa80c6898c645fe579eaf89a'],
   ['ide/proto/lu/workspace/v0/readonly.proto', 'fd0d88a26fcb712c5456518ee88550d54a922205'],
+  ['ide/packaging/test_ide_precore_r4_native_lock_chain.py', 'ce1ab36a9024c58617b8d562b8f364326b23a48f'],
+  ['ide/packaging/verify_ide_precore_r4_native_lock_chain.py', '7c2d9f066ecfa988028e6ae4419b8468c52bad2e'],
 ]);
 export function reviewedR4PrecoreSource(path, blob, mode) {
   return mode === '100644' && R4_PRECORE_SOURCE_PINS.get(path) === blob;

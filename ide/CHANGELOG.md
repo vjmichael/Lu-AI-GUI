@@ -1,5 +1,9 @@
 # Lu IDE — Development changelog
 
+## 2026-11-21 — IDE-PRECORE-CLOSEOUT-R4 reviewed original-six-job CI correction (source only)
+
+Reconciled run 44955421989 (six exact-SHA Windows/Linux failures: the same original MERGE02C verifier versus approved PRECORE-R2 Cargo.lock successor). Added a fail-closed historical-worktree MERGE02C/P06 verification bridge plus current R2 successor check and regression tests; replaced only obsolete current-worktree historical verifier calls in the existing six-job integrated CI workflow, including post-fetch and full historical checkout. Preserved original byte pins, signatures, licenses, worker Job/SCM gates and Core-only isolation. Signed physical installed acceptance remains HOLD, pending genuine native CI on one new exact SHA.
+
 ## 2026-11-21 — IDE-PRECORE-CLOSEOUT-R4 grouped native source repair (pre-qualification)
 
 Reconciled original failed CI evidence into one reviewed integration follow-on: two formatting-only supervisor repairs, exact-pin scoped 109-file B4/B5 native boundary review, integrated-only 25-pin CORE-01A IDE source exception and regenerated 2005-file tracked source inventory. Host DAP format and native picker R2 source changes were already in the parent. No new feature, release approval, signed installed evidence or physical worker custody is claimed; original Windows/Linux workflow acceptance must be observed on the new exact commit.

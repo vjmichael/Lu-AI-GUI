@@ -59,7 +59,9 @@ jobs:
         run: |
           set -euo pipefail
           python -m unittest discover -s ide/packaging -p 'test_ide_merge02c_native_locks.py' -v
-          python ide/packaging/verify_ide_merge02c_native_locks.py --repo-root .
+          python -m unittest discover -s ide/packaging -p 'test_ide_precore_lock_successor.py' -v
+          python -m unittest discover -s ide/packaging -p 'test_ide_precore_r4_native_lock_chain.py' -v
+          python ide/packaging/verify_ide_precore_r4_native_lock_chain.py --repo-root .
       - name: Archive source-pinned exact-head native dependency locks
         uses: actions/upload-artifact@v4
         with:
@@ -235,9 +237,10 @@ jobs:
         run: |
           set -euo pipefail
           python -m unittest discover -s ide/packaging -p 'test_ide_merge02c_native_locks.py' -v
-          python ide/packaging/verify_ide_merge02c_native_locks.py --repo-root .
-          python ide/packaging/verify_p06_candidate_lock.py \
-            --repo-root . --platform "${{ matrix.os }}" --ide-merge02-successor
+          python -m unittest discover -s ide/packaging -p 'test_ide_precore_lock_successor.py' -v
+          python -m unittest discover -s ide/packaging -p 'test_ide_precore_r4_native_lock_chain.py' -v
+          python ide/packaging/verify_ide_precore_r4_native_lock_chain.py \
+            --repo-root . --platform "${{ matrix.os }}"
       - name: Archive exact-head desktop and debugger dependency locks
         uses: actions/upload-artifact@v4
         with:
@@ -354,6 +357,7 @@ jobs:
         with:
           ref: ${{ env.INTEGRATION_SOURCE_SHA }}
           persist-credentials: false
+          fetch-depth: 0 # R4 verifies the actual frozen historical predecessor before accepting R2
       - name: Preserve the exact integration source
         shell: bash
         run: |
@@ -382,9 +386,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 ide/packaging/verify_ide_merge02c_native_locks.py --repo-root .
-          python3 ide/packaging/verify_p06_candidate_lock.py \
-            --repo-root . --platform ubuntu-24.04 --ide-merge02-successor
+          python3 -m unittest discover -s ide/packaging -p 'test_ide_merge02c_native_locks.py' -v
+          python3 -m unittest discover -s ide/packaging -p 'test_ide_precore_lock_successor.py' -v
+          python3 -m unittest discover -s ide/packaging -p 'test_ide_precore_r4_native_lock_chain.py' -v
+          python3 ide/packaging/verify_ide_precore_r4_native_lock_chain.py \
+            --repo-root . --platform ubuntu-24.04
           echo "DEV01_MODERN_CARGO_LOCK=SOURCE_VERIFIED_NOT_RELEASE_PIN"
       - name: Build actual unsigned Debian desktop without extending execution authority
         shell: bash
@@ -396,8 +402,8 @@ jobs:
           # Preserve the exact original P04/WO8 legal-notice gate.
           # No synthetic licenses, blank resources or release approval.
           cargo fetch --locked --manifest-path src-tauri/Cargo.toml
-          python ../packaging/verify_p06_candidate_lock.py \
-            --repo-root ../.. --platform ubuntu-24.04 --ide-merge02-successor
+          python ../packaging/verify_ide_precore_r4_native_lock_chain.py \
+            --repo-root ../.. --platform ubuntu-24.04
           python ../packaging/upstream_notice_receipt.py \
             --repo-root ../.. --source-sha "$INTEGRATION_SOURCE_SHA" \
             --output src-tauri/upstream-notice-receipt.json
@@ -435,6 +441,7 @@ jobs:
         with:
           ref: ${{ env.INTEGRATION_SOURCE_SHA }}
           persist-credentials: false
+          fetch-depth: 0 # R4 verifies the actual frozen historical predecessor before accepting R2
       - name: Exact integration source and original native UIA parser
         shell: pwsh
         run: |
@@ -463,10 +470,14 @@ jobs:
       - name: Verify tracked native locks and original P06 desktop pin before installed NSIS build
         shell: pwsh
         run: |
-          python ide/packaging/verify_ide_merge02c_native_locks.py --repo-root .
-          if ($LASTEXITCODE -ne 0) { throw 'DEV01_WINDOWS_TRACKED_CARGO_LOCK_DENIED' }
-          python ide/packaging/verify_p06_candidate_lock.py --repo-root . --platform windows-2022 --ide-merge02-successor
-          if ($LASTEXITCODE -ne 0) { throw 'DEV01_WINDOWS_P06_SOURCE_GRAPH_DENIED' }
+          python -m unittest discover -s ide/packaging -p 'test_ide_merge02c_native_locks.py' -v
+          if ($LASTEXITCODE -ne 0) { throw 'DEV01_WINDOWS_ORIGINAL_MERGE02C_TEST_DENIED' }
+          python -m unittest discover -s ide/packaging -p 'test_ide_precore_lock_successor.py' -v
+          if ($LASTEXITCODE -ne 0) { throw 'DEV01_WINDOWS_R2_IPC_LOCK_TEST_DENIED' }
+          python -m unittest discover -s ide/packaging -p 'test_ide_precore_r4_native_lock_chain.py' -v
+          if ($LASTEXITCODE -ne 0) { throw 'DEV01_WINDOWS_R4_LOCK_CHAIN_TEST_DENIED' }
+          python ide/packaging/verify_ide_precore_r4_native_lock_chain.py --repo-root . --platform windows-2022
+          if ($LASTEXITCODE -ne 0) { throw 'DEV01_WINDOWS_REVIEWED_HISTORICAL_AND_R2_LOCK_DENIED' }
           python ide/app/fixtures/verify_reviewed_ide_icons.py --repo-root .
           if ($LASTEXITCODE -ne 0) { throw 'DENIED: reviewed real Windows Tauri icon unavailable' }
       - name: Build real unsigned NSIS desktop from current source
@@ -483,7 +494,7 @@ jobs:
             # Never create empty placeholder resources to pass packaging.
             cargo fetch --locked --manifest-path src-tauri/Cargo.toml
             if ($LASTEXITCODE -ne 0) { throw 'DEV01_WINDOWS_RESOLVED_CARGO_FETCH_DENIED' }
-            python ../packaging/verify_p06_candidate_lock.py --repo-root ../.. --platform windows-2022 --ide-merge02-successor
+            python ../packaging/verify_ide_precore_r4_native_lock_chain.py --repo-root ../.. --platform windows-2022
             if ($LASTEXITCODE -ne 0) { throw 'DEV01_WINDOWS_POST_FETCH_P06_DRIFT_DENIED' }
             python ../packaging/upstream_notice_receipt.py --repo-root ../.. --source-sha $env:INTEGRATION_SOURCE_SHA --output src-tauri/upstream-notice-receipt.json
             if ($LASTEXITCODE -ne 0) { throw 'DEV01_WINDOWS_UPSTREAM_ORIGINAL_LICENSE_DENIED' }

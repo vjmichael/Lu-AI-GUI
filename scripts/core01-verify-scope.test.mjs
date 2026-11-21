@@ -160,3 +160,21 @@ test('R4 PRECORE pins are exact, source-only, and cannot widen the Core-only gat
   assert.equal(reviewedR4PrecoreSource('ide/host/src/unknown.rs','a'.repeat(40),'100644'),false);
 });
 
+
+test('R4 reviewed historical lock bridge has two exact IDE-only source pins', () => {
+  const rows = [
+    ['ide/packaging/test_ide_precore_r4_native_lock_chain.py','ce1ab36a9024c58617b8d562b8f364326b23a48f'],
+    ['ide/packaging/verify_ide_precore_r4_native_lock_chain.py','7c2d9f066ecfa988028e6ae4419b8468c52bad2e'],
+  ];
+  for (const [path, blob] of rows) {
+    assert.equal(reviewedR4PrecoreSource(path,blob,'100644'), true);
+    assert.equal(reviewedR4PrecoreSource(path,'0'.repeat(40),'100644'),false);
+    assert.equal(reviewedR4PrecoreSource(path,blob,'120000'),false);
+    assert.equal(reviewedR4PrecoreSource(path,blob,'100755'),false);
+    assert.equal(forbiddenPath(path),true);
+    const fixture = [{path,blob,mode:'100644'}];
+    assert.deepEqual(scopeChanges(new Map(),fixture).outOfScope,[path]);
+    assert.deepEqual(scopeChanges(new Map(),fixture,integratedIdePaths([],fixture)).outOfScope,[]);
+  }
+  assert.equal(reviewedR4PrecoreSource('ide/packaging/forged.py', rows[1][1],'100644'),false);
+});
