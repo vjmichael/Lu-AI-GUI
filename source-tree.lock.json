@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "597c660e54cbbe57716cd637e6ab684b486b6eed",
+  "sourceCommitBeforeLock": "bb6f7e2184718e9f3257d44e47a37803bac7ae1a",
   "trackedFileCount": 1284,
   "files": [
     {
@@ -221,7 +221,7 @@
     },
     {
       "path": ".github/workflows/lu-ipc01d-r2-native.yml",
-      "blob": "343213efcf77190135d1901bc0f2272c003e3340"
+      "blob": "f14e69368143d6ad3dbc45078c7edbad5ebb6b1a"
     },
     {
       "path": ".github/workflows/lu-kiaf-execution.yml",
@@ -1073,7 +1073,7 @@
     },
     {
       "path": "docs/LU_IPC_01D_R1_NATIVE_TRANSPORT_20261120.md",
-      "blob": "8d4b321fe68ccf2cb08c0e580eb0f3d09c50bd0e"
+      "blob": "46b6885a110b4eadd426bcb7b86c7c5a08b63598"
     },
     {
       "path": "docs/LU_KIAF_ACTIVE_EXECUTION_LEDGER_20261108.md",
@@ -3157,7 +3157,7 @@
     },
     {
       "path": "scripts/lu-ipc-r4-verify-signed-installer.ps1",
-      "blob": "c2579b327c57c27e90f3d62ad7e0368ee74b032f"
+      "blob": "8cd036842c63bec0274562df3a903bdbe5854532"
     },
     {
       "path": "scripts/lu-ledger.mjs",
@@ -4485,7 +4485,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/workspace_ipc_transport.rs",
-      "blob": "c596530884c4d994dda19995bb0cc4b85690cf95"
+      "blob": "11937521279783d0a640126b1890b6c1e8bf2dcc"
     },
     {
       "path": "src-tauri/lu-core/src/workspace_quarantine.rs",
@@ -5073,7 +5073,7 @@
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/ipc_credential_broker.rs",
-      "blob": "9d773d1f251f32193c7f2cee8f5b34fb729dcf43"
+      "blob": "07865833a68875775be28a1b39bfecc8a43a8b9e"
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/ipc_installer_enrollment.rs",
