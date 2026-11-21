@@ -100,6 +100,8 @@ pub mod contracts;
 pub mod workspace_ipc;
 pub mod workspace_ipc_transport;
 pub mod workspace_ipc_core_host;
+#[cfg(windows)]
+pub mod workspace_ipc_scm;
 pub mod conversation_authority;
 pub mod core_extension;
 pub mod cpu_instructions;

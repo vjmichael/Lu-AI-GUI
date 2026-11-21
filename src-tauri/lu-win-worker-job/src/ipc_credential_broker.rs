@@ -124,7 +124,10 @@ fn require_unimpersonated_broker_thread()->io::Result<()>{
     }
     Ok(())
 }
-fn validate_broker_context()->io::Result<()>{
+/// Service-only LocalSystem identity check. This authorizes no package,
+/// worker launch or credential mutation; all such actions need separately
+/// approved installer provenance and their own admission proofs.
+pub fn require_system_service_context()->io::Result<()>{
     require_unimpersonated_broker_thread()?;
     let process=crate::ipc_pipe_peer::observe_host_process(std::process::id())
         .map_err(|_|denied("cannot inspect credential-broker host identity"))?;
@@ -154,7 +157,7 @@ fn copy_checked_secret(record:&CredentialW)->io::Result<[u8;32]>{
 /// No interactive-user fallback and no mutable target name parameter.
 pub fn read_installed_ide_key(package:[u8;32])->io::Result<[u8;32]>{
     let target=target_for_package(package)?;
-    validate_broker_context()?;
+    require_system_service_context()?;
     let wide:Vec<u16>=target.encode_utf16().chain(std::iter::once(0)).collect();
     let mut raw:*mut CredentialW=ptr::null_mut();
     if unsafe{CredReadW(wide.as_ptr(),CRED_TYPE_GENERIC,0,&mut raw)}==0||
@@ -174,7 +177,7 @@ pub fn read_installed_ide_key(package:[u8;32])->io::Result<[u8;32]>{
 /// is separately required before the package may authenticate.
 pub fn provision_installed_ide_key(package:[u8;32])->io::Result<()>{
     let target=target_for_package(package)?;
-    validate_broker_context()?;
+    require_system_service_context()?;
     let wide:Vec<u16>=target.encode_utf16().chain(std::iter::once(0)).collect();
     let mut existing:*mut CredentialW=ptr::null_mut();
     if unsafe{CredReadW(wide.as_ptr(),CRED_TYPE_GENERIC,0,&mut existing)}!=0 {
@@ -229,7 +232,7 @@ pub fn provision_installed_ide_key(package:[u8;32])->io::Result<()>{
 /// the host must ALSO cancel and reap affected workers immediately.
 pub fn revoke_installed_ide_key(package:[u8;32])->io::Result<()>{
     let target=target_for_package(package)?;
-    validate_broker_context()?;
+    require_system_service_context()?;
     let wide:Vec<u16>=target.encode_utf16().chain(std::iter::once(0)).collect();
     if unsafe{CredDeleteW(wide.as_ptr(),CRED_TYPE_GENERIC,0)}==0{
         return Err(denied("SYSTEM broker could not revoke installed DLC key"));

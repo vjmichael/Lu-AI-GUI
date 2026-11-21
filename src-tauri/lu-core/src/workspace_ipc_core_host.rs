@@ -482,7 +482,11 @@ impl CoreDlcHostGate {
         authority:&ConversationAuthority,
         registry:&NativeToolRegistry,
         journal:&ExclusiveIpcEffectJournal,
+        supervisor:&crate::workspace_ipc_scm::VerifiedScmSupervisor,
     )->Result<ToolResponse,CoreDlcGateError>{
+        // The OS SCM service is a separately signed and independently pinned
+        // host requirement, NOT a client Hello claim or executor stop receipt.
+        supervisor.require_live().map_err(|_|CoreDlcGateError::Unavailable)?;
         // Acquire the SQLite OS lock and check startup-recovery disposition
         // before any authenticated DLC effect is allowed through.
         let live=journal.ready_journal()
@@ -499,6 +503,7 @@ impl CoreDlcHostGate {
         }
         let frame=installed.read_verified_frame(pipe).await
             .map_err(|_|CoreDlcGateError::Transport)?;
+        supervisor.require_live().map_err(|_|CoreDlcGateError::Unavailable)?;
         // The verified native process is persisted as the owner BEFORE
         // dispatch can transition PREPARED->EXECUTING. Auth is checked again
         // by dispatch, including the current original-user-turn grant.
@@ -520,7 +525,10 @@ impl CoreDlcHostGate {
         journal.bind_authenticated_call(
             &call,&self.session,worker.pid(),installed.peer_creation_filetime())
             .map_err(|_|CoreDlcGateError::Unavailable)?;
-        self.dispatch_verified_frame(&frame,host,authority,registry,live).await
+        let result=self.dispatch_verified_frame(
+            &frame,host,authority,registry,live).await?;
+        supervisor.require_live().map_err(|_|CoreDlcGateError::Unavailable)?;
+        Ok(result)
     }
 }
 

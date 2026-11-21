@@ -81,6 +81,7 @@ jobs:
         run: |
           set -euo pipefail
           cargo check --locked --manifest-path src-tauri/lu-win-worker-job/Cargo.toml --lib
+          cargo check --locked --manifest-path src-tauri/lu-win-worker-job/Cargo.toml --bin lu-ipc-scm-supervisor
           cargo test --locked --manifest-path src-tauri/lu-win-worker-job/Cargo.toml --lib -- --nocapture
           echo LU_IPC_R4_R3_R2_NATIVE_CREDENTIAL_ACCEPTANCE_PASS
       - name: Windows R4 PowerShell installer script syntax qualification
@@ -89,7 +90,8 @@ jobs:
         run: |
           $ErrorActionPreference='Stop'
           foreach($script in @('scripts/lu-ipc-r3-stage-installed-ide.ps1',
-            'scripts/lu-ipc-r4-verify-signed-installer.ps1')){
+            'scripts/lu-ipc-r4-verify-signed-installer.ps1',
+            'scripts/lu-ipc-r5-installed-scm-preflight.ps1')){
             $tokens=$null
             $errors=$null
             $null=[System.Management.Automation.Language.Parser]::ParseFile(
@@ -198,3 +200,27 @@ jobs:
           }
           Write-Host 'LU_IPC_R3_UNSIGNED_UNAPPROVED_ADMISSION_REFUSED'
 
+
+      - name: Windows independent SCM admission refuses unapproved surrogate
+        if: matrix.os == 'windows-2025'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $fake=Join-Path $env:RUNNER_TEMP 'unapproved-lu-ipc-scm-supervisor.exe'
+          [IO.File]::WriteAllBytes($fake,[byte[]](1,2,3,4,5,6,7,8))
+          $actual=(Get-FileHash -LiteralPath $fake -Algorithm SHA256).Hash.ToLowerInvariant()
+          $args=@{
+            InstalledServiceExe=$fake
+            ApprovedServiceImageSha256=$actual
+            ApprovedServiceSignerCertSha256=('1'*64)
+            ExpectedInstallRoot=$env:RUNNER_TEMP
+          }
+          $refused=$false
+          try{
+            & scripts/lu-ipc-r5-installed-scm-preflight.ps1 @args
+          }catch{
+            if($_.Exception.Message -match 'LU_IPC_R5_SCM_REFUSED:'){$refused=$true}
+            else{throw}
+          }
+          if(-not $refused){throw 'Unsigned SCM surrogate was admitted'}
+          Write-Host 'LU_IPC_R5_UNAPPROVED_SCM_REFUSED'
