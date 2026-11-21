@@ -1222,6 +1222,60 @@ pub mod windows {
 mod internal_tests {
     use super::*;
 
+    /// Only the held, authenticated native pipe process may supply the
+    /// enrolled PID: neither NVP Hello, a WebView field nor an arbitrary
+    /// process enumeration may choose an existing signed executable.
+    #[cfg(windows)]
+    #[test]
+    fn nvp_brokered_public_pins_reject_stale_or_untrusted_pipe_generations(){
+        use lu_win_worker_job::ipc_pipe_peer::WindowsPipePeer;
+        let raw=serde_json::to_vec(&serde_json::json!({
+            "schema":"lu.win.dlc-enrollment.v1",
+            "module_id":"nvp.film",
+            "role":1,
+            "installed_executable_path":r"C:\Program Files\NVP\NVP.exe",
+            "image_sha256":"11".repeat(32),
+            "signer_certificate_sha256":"22".repeat(32),
+            "package_sha256":"33".repeat(32)
+        })).unwrap();
+        let mut observed=WindowsPipePeer{
+            pid:5301,session_id:2,creation_filetime:1234567,
+            user_sid:"S-1-5-21-500".into(),
+            image_path:r"C:\Program Files\NVP\NVP.exe".into(),
+        };
+        let (pin,digest)=WindowsInstalledEnrollment::
+            from_installer_owned_nvp_public(&raw,&observed).unwrap();
+        assert_eq!(pin.expected_pid,observed.pid);
+        assert_eq!(pin.expected_creation_filetime,observed.creation_filetime);
+        assert_eq!(pin.expected_session_id,observed.session_id);
+        assert_eq!(pin.expected_package_sha256,[0x33;32]);
+        assert!(pin.handshake_key.iter().all(|key|*key==0),
+            "desktop must never be given SYSTEM HMAC material");
+        assert_eq!(digest,Sha256::digest(&raw).into());
+        assert!(!pin.valid_pin(),"keyless public pins cannot authorize a normal handshake");
+        observed.pid=0;
+        assert!(WindowsInstalledEnrollment::from_installer_owned_nvp_public(
+            &raw,&observed).is_err());
+        observed.pid=5301;observed.creation_filetime=0;
+        assert!(WindowsInstalledEnrollment::from_installer_owned_nvp_public(
+            &raw,&observed).is_err());
+        observed.creation_filetime=1234567;observed.session_id=0;
+        assert!(WindowsInstalledEnrollment::from_installer_owned_nvp_public(
+            &raw,&observed).is_err());
+        observed.session_id=2;observed.user_sid="S-1-5-18".into();
+        assert!(WindowsInstalledEnrollment::from_installer_owned_nvp_public(
+            &raw,&observed).is_err());
+        observed.user_sid="S-1-5-21-500".into();
+        observed.image_path=r"C:\Program Files\Other\Other.exe".into();
+        assert!(WindowsInstalledEnrollment::from_installer_owned_nvp_public(
+            &raw,&observed).is_err());
+        observed.image_path=r"C:\Program Files\NVP\NVP.exe".into();
+        let mut forbidden:serde_json::Value=serde_json::from_slice(&raw).unwrap();
+        forbidden["handshake_key"]=serde_json::json!("never-export");
+        assert!(WindowsInstalledEnrollment::from_installer_owned_nvp_public(
+            &serde_json::to_vec(&forbidden).unwrap(),&observed).is_err());
+    }
+
     #[cfg(windows)]
     #[test]
     fn installed_record_parser_rejects_untrusted_claims_and_embedded_keys(){
