@@ -1,8 +1,5 @@
 name: Lu CP-05E5 closeout - repaired installed GGUF and original browser byte review
 on:
-  push:
-    branches: [lu/cp01-attachment-transaction-20261116]
-    paths: ['.github/workflows/lu-cp05e-closeout.yml']
   workflow_dispatch:
 permissions:
   contents: read

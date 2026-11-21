@@ -3,9 +3,6 @@ name: Lu CP-12B-R7-R1 Windows collaboration — exact-source qualification
 # CP-10: only the exact source-locked, self-path and commit-message candidate.
 # No broad push trigger, manual installed pass or automatic model download.
 on:
-  push:
-    branches: ['lu/cp10-consolidated-ux-20261120']
-    paths: ['.github/workflows/lu-cp12br7r1-windows-collaboration.yml']
   workflow_dispatch:
     inputs:
       include_desktop_source_check:
@@ -20,7 +17,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   windows-native-protocol:
-    if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.event.head_commit.message == 'CP-10 consolidated single-interface Windows acceptance') }}
+    if: ${{ github.event_name == 'workflow_dispatch' }}
     runs-on: windows-2025
     timeout-minutes: 70
     steps:
@@ -65,7 +62,7 @@ jobs:
           "Verified Git checkout: $env:GITHUB_SHA" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
           'Native Windows transport and consent contracts only: no installed GUI, independent GGUF inference, separate-account account creation or physical-PC acceptance was executed.' | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
   windows-desktop-source-check:
-    if: ${{ (github.event_name == 'workflow_dispatch' && inputs.include_desktop_source_check) || (github.event_name == 'push' && github.event.head_commit.message == 'CP-10 consolidated single-interface Windows acceptance') }}
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.include_desktop_source_check }}
     runs-on: windows-2025
     timeout-minutes: 120
     steps:
@@ -126,7 +123,7 @@ jobs:
     # Inherit the ORIGINAL exact-message gate and Windows evidence; never
     # manufacture a third relaxed admission for the extended test group.
     needs: [windows-native-protocol, windows-desktop-source-check]
-    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/lu/cp10-consolidated-ux-20261120' && needs.windows-native-protocol.result == 'success' && needs.windows-desktop-source-check.result == 'success' }}
+    if: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/lu/cp10-consolidated-ux-20261120' && needs.windows-native-protocol.result == 'success' && needs.windows-desktop-source-check.result == 'success' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:

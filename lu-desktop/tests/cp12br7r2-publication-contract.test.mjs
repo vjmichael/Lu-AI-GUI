@@ -6,10 +6,17 @@ import {readFileSync} from 'node:fs';
 const wf=readFileSync(new URL('../../.github/workflows/lu-cp12br7r1-windows-collaboration.yml',import.meta.url),'utf8').replace(/\r\n?/g,'\n');
 const pub=readFileSync(new URL('../../scripts/cp12br7r2-publish-exact-source.ps1',import.meta.url),'utf8');
 const label='CP-12B-R7-R2 source-locked Windows CI handoff';
-test('CP-10 consolidated push event remains narrow and one-commit gated',()=>{
-  assert.match(wf,/^  push:\n    branches: \['lu\/cp10-consolidated-ux-20261120'\]\n    paths: \['\.github\/workflows\/lu-cp12br7r1-windows-collaboration\.yml'\]/m);
-  assert.match(wf,/github\.event\.head_commit\.message == 'CP-10 consolidated single-interface Windows acceptance'/);
-  assert.equal((wf.match(/github\.event\.head_commit\.message/g)||[]).length,2);
+test('CP-10 consolidated manual run requires original Windows success and source lock',()=>{
+  assert.match(wf,/^on:\n  workflow_dispatch:/m);
+  assert.doesNotMatch(wf,/^  (?:push|pull_request|pull_request_target|schedule):/m);
+  assert.ok(wf.includes("if: ${{ github.event_name == 'workflow_dispatch' }}"));
+  assert.ok(wf.includes("if: ${{ github.event_name == 'workflow_dispatch' && inputs.include_desktop_source_check }}"));
+  assert.ok(wf.includes("needs: [windows-native-protocol, windows-desktop-source-check]"));
+  assert.ok(wf.includes("github.ref == 'refs/heads/lu/cp10-consolidated-ux-20261120'"));
+  assert.ok(wf.includes("needs.windows-native-protocol.result == 'success'"));
+  assert.ok(wf.includes("needs.windows-desktop-source-check.result == 'success'"));
+  assert.doesNotMatch(wf,/github\.event\.head_commit\.message/);
+  assert.equal((wf.match(/github\.event\.head_commit\.message/g)||[]).length,0);
   assert.doesNotMatch(wf,/^\s+schedule:|^\s+pull_request:|^\s+pull_request_target:/m);
   assert.match(wf,/ref: \$\{\{ github\.sha \}\}/);
   assert.match(wf,/if \(\(git rev-parse HEAD\)/);

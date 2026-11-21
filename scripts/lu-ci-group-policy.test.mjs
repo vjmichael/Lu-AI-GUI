@@ -168,3 +168,39 @@ test("hosted-positive never softens original SEC-06C and AGENT-01L kernel tests"
   assert.doesNotMatch(positive,/set \+e/);
   assert.match(positive,/if: \$\{\{ !cancelled\(\) \}\}/);
 });
+
+
+test("CI-POLICY-01-R1: all nine retired triggers keep native jobs and reject reinsertion", () => {
+  const records = [
+    ["lu-cp02-grouped-native.yml",["source-and-frontend","native"],true],
+    ["lu-cp03-grouped-native.yml",["source-and-frontend","native"],true],
+    ["lu-cp04b3-native-provision.yml",["browser-candidate","native-provider-routing","engine-and-model"],false],
+    ["lu-cp05e-closeout.yml",["independent-original-browser-byte-review","installed-repaired-windows-gguf"],false],
+    ["lu-cp05e-grouped-native.yml",["linux-agent01l-hosted-positive","core01e-sec06c-os-owned-probes","genuine-local-qwen","windows-native-witness","windows-nsis-engine-and-current-lu","windows-headed-browser-candidate","current-browser-byte-audit-not-approval"],false],
+    ["lu-cp06er2-consolidated.yml",["exact-source","native","dual-gguf","browser-custody","core01e-sec06-native","core01e-sec06c-os-owned-git","core01e-sec06c-os-owned-probes","core01e-sec06c-os-owned-native","core01e-sec06f-original-receipts"],false],
+    ["lu-cp06er3-native-web.yml",["native-web"],false],
+    ["lu-cp12br7r1-windows-collaboration.yml",["windows-native-protocol","windows-desktop-source-check","r4-r2-source-lock","r4-r2-frontend-ui","r4-r2-native-core","r4-r2-desktop-windows"],false],
+    ["lu-dev-offline-cache.yml",["collect-exact-offline-inputs"],false]
+  ];
+  for(const [file,jobs,reusable] of records) {
+    const src=fs.readFileSync(".github/workflows/"+file,"utf8").replace(/\r\n?/g,"\n");
+    const check=inspectOne(file,src);
+    assert.deepEqual(check.problems,[],file);
+    assert.deepEqual(check.events,reusable?["workflow_dispatch","workflow_call"]:["workflow_dispatch"],file);
+    for(const job of jobs)assert.match(src,new RegExp("^  "+job+":","m"),file+" "+job);
+    const unsafe=src.replace(/^on:\n  workflow_dispatch:/,"on:\n  push:\n  workflow_dispatch:");
+    assert.ok(inspectOne(file,unsafe).problems.includes("HEAVY_WORKFLOW_AUTOMATIC_FANOUT"),file);
+  }
+  const src=fs.readFileSync(".github/workflows/lu-cp12br7r1-windows-collaboration.yml","utf8");
+  assert.match(src,/needs: \[windows-native-protocol, windows-desktop-source-check\]/);
+  assert.match(src,/github\.ref == 'refs\/heads\/lu\/cp10-consolidated-ux-20261120'/);
+  assert.match(src,/needs\.windows-native-protocol\.result == 'success'/);
+  assert.match(src,/needs\.windows-desktop-source-check\.result == 'success'/);
+  assert.doesNotMatch(src,/github\.event\.head_commit\.message/);
+  assert.match(src,/--features windows_dx_eval/);
+  assert.match(src,/Default-off Windows transport regression failed/);
+  assert.match(src,/generation_queue::tests/);
+  assert.match(src,/turn_coordinator::tests/);
+  const cp6=fs.readFileSync(".github/workflows/lu-cp06er2-consolidated.yml","utf8");
+  assert.match(cp6,/github\.ref == 'refs\/heads\/lu\/cp01-attachment-transaction-20261116'/);
+});

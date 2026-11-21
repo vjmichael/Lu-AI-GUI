@@ -1,8 +1,5 @@
 name: Lu CP-06E-R3-R1 native web and desktop consent
 on:
-  push:
-    branches: [lu/cp01-attachment-transaction-20261116]
-    paths: ['.github/workflows/lu-cp06er3-native-web.yml']
   workflow_dispatch:
 permissions:
   contents: read

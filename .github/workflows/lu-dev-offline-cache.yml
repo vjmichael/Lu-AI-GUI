@@ -1,8 +1,5 @@
 name: Lu CP-DEV-01C offline dependency transport (download only)
 on:
-  push:
-    branches: [lu/cp01-attachment-transaction-20261116]
-    paths: ['.github/workflows/lu-dev-offline-cache.yml']
   workflow_dispatch:
 permissions:
   contents: read

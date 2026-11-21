@@ -1,8 +1,5 @@
 name: Lu CP-03D consolidated filesystem and navigation acceptance
 on:
-  push:
-    branches: [lu/cp01-attachment-transaction-20261116]
-    paths: ['.github/workflows/lu-cp03-grouped-native.yml']
   workflow_dispatch:
   workflow_call:
 permissions:
