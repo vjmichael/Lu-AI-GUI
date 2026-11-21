@@ -69,8 +69,10 @@ fn frame(
 async fn authenticated_duplex_roundtrip_and_session_binding(){
     let (mut server,mut client)=tokio::io::duplex(4096);
     let policy=TestPolicy;
+    let peer=linux_peer();
+    let server_identity=materials();
     let server_work=server_handshake(
-        &mut server,&linux_peer(),&policy,&materials());
+        &mut server,&peer,&policy,&server_identity);
     let client_work=client_handshake(&mut client,hello(),&KEY);
     let (received,opened)=tokio::join!(server_work,client_work);
     let host=received.unwrap();
@@ -250,7 +252,8 @@ async fn windows_pipe_is_local_single_instance_and_unauthorized_until_os_atteste
     };
     // Native process/session/SID observed. The host still must independently
     // attest the executable's enrolled, signer-verified package.
-    let server_work=server_handshake(&mut server,&evidence,&pinned,&materials());
+    let server_identity=materials();
+    let server_work=server_handshake(&mut server,&evidence,&pinned,&server_identity);
     let client_work=client_handshake(&mut client,hello(),&KEY);
     let (host,guest)=tokio::join!(server_work,client_work);
     assert_eq!(host.unwrap(),guest.unwrap());
@@ -262,4 +265,64 @@ async fn windows_pipe_is_local_single_instance_and_unauthorized_until_os_atteste
     let h=hello();
     let Some(proto::workspace_frame::Body::Hello(claimed))=h.body.as_ref() else{unreachable!()};
     assert!(forged_pid.admit(&evidence,claimed).is_err());
+}
+
+
+#[cfg(windows)]
+#[tokio::test]
+async fn separate_windows_process_has_real_kernel_identity_not_automatic_dlc_authority(){
+    use base64::Engine as _;
+    use lu_core::workspace_ipc_transport::{windows, WindowsPinnedEnrollment};
+    use std::process::Command;
+    use std::time::Duration;
+    let suffix=(1u128<<64)|u128::from(std::process::id());
+    let bare=format!("lu-ipc-{suffix:032x}");
+    let pipe_name=format!(r"\\.\pipe\{bare}");
+    let mut server=windows::bind_one(&pipe_name).unwrap();
+    let payload=lu_core::workspace_ipc::encode_frame(&hello()).unwrap();
+    let mut bytes=(payload.len() as u32).to_be_bytes().to_vec();
+    bytes.extend_from_slice(&payload);
+    let b64=base64::engine::general_purpose::STANDARD.encode(bytes);
+    let script=format!(
+        "$p=[System.IO.Pipes.NamedPipeClientStream]::new('.', '{bare}', [System.IO.Pipes.PipeDirection]::Out); \
+         $p.Connect(5000); $b=[Convert]::FromBase64String('{b64}'); \
+         $p.Write($b,0,$b.Length); $p.Flush(); \
+         Start-Sleep -Milliseconds 500; $p.Dispose()"
+    );
+    let mut child=Command::new("powershell.exe")
+        .args(["-NoLogo","-NoProfile","-NonInteractive","-Command",&script])
+        .spawn().expect("launch independent Windows client");
+    let evidence=match tokio::time::timeout(
+        Duration::from_secs(12),windows::accept_peer(&server)).await{
+        Ok(Ok(witness))=>witness,
+        failure=>{
+            let _=child.kill();let _=child.wait();
+            panic!("native Windows independent peer failed: {failure:?}")
+        }
+    };
+    let inbound=read_frame(&mut server).await.unwrap();
+    assert_eq!(inbound,hello());
+    let PeerEvidence::WindowsObserved{pid,session_id,user_sid,image_path}=&evidence
+        else{panic!("no actual OS peer identity")};
+    assert_eq!(*pid,child.id(),"kernel PID must identify other process");
+    assert_ne!(*pid,std::process::id(),"must be another native process");
+    assert!(!user_sid.is_empty()&&!image_path.is_empty());
+    let unrelated=WindowsPinnedEnrollment {
+        expected_pid:std::process::id(),
+        expected_session_id:*session_id,
+        expected_user_sid:user_sid.clone(),
+        expected_executable_path:image_path.clone(),
+        expected_module_id:"lu.ide".into(),
+        expected_role:proto::ModuleRole::Workspace as i32,
+        expected_package_sha256:DIGEST,
+        handshake_key:KEY,
+    };
+    let message=hello();
+    let Some(proto::workspace_frame::Body::Hello(ref claim))=message.body else{
+        unreachable!()
+    };
+    assert!(unrelated.admit(&evidence,claim).is_err(),
+        "same Windows owner SID does not authorize another process");
+    let success=child.wait().unwrap();
+    assert!(success.success(),"independent Windows client failed");
 }

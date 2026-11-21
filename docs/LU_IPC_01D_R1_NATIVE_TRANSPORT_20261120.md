@@ -36,3 +36,12 @@ Source parent: detached LU-IPC-01B contract candidate 62a9736f. Lu, IDE, CI-poli
 - The module captures GetNamedPipeClientProcessId, GetNamedPipeClientSessionId, OpenProcessToken/TokenUser SID and QueryFullProcessImageNameW from the connected client. Native handles and allocated security descriptors are freed with scoped ownership.
 - WindowsPinnedEnrollment compares observed PID, user SID, session, executable path, module ID, role, manifest digest and HMAC enrollment key. The actual signed package/file digest remains independently host-verified BEFORE enrollment; path observation alone is not a code signature.
 - Original Windows tests now require OS-observed identity, positive synthetic same-process handshake and forged-PID denial. Installed native tests are pending.
+
+## R2-R1 original native qualification and source repair
+
+Original PR #244 first exact head 4cac21018f28301d17695bf71f575d57182b4679:
+- Linux native test phase failed with rustc E0716 at workspace_ipc_transport_r1.rs:73: borrowed temporary peer + server identity across tokio::join; Windows failed same two places plus analogous Windows server identity temporary at line 253.
+- Original lu.workspace.v0 protobuf suite passed 9/9 on BOTH actual runners before transport fixture compilation failed. No transport test executed on that SHA. Source gate passed, original REPO-01 failed its separate existing CI-policy #242 test.
+- Prepared successor binds peer and server identity to locals before creating futures; adds an actual separate Windows PowerShell client connecting to the private named pipe. That fixture tests kernel-reported non-parent PID, received original Protobuf Hello, and refusal to turn a same-user connection into another process's enrollment.
+- The separate Windows client fixture is an intentionally UNENROLLED process and is a negative identity test, not a signed IDE test. Successful synthetic same-process handshake still does not prove real IDE package signing, installed custody, or user-turn permission.
+- No original negative result may be erased; exact new SHA requires fresh native acceptance on both platforms. Frozen Lu/IDE branches remain unchanged.
