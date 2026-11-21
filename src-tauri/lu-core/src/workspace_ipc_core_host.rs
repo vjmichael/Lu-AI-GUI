@@ -644,6 +644,7 @@ struct OwnedNvpGpuAuthority {
     read_descriptor:ToolDescriptor,
     execute:ToolInvocation,
     execute_descriptor:ToolDescriptor,
+    broker:Option<crate::workspace_ipc_transport::windows::BrokeredNvpGrantRecheck>,
 }
 #[cfg(windows)]
 impl crate::gpu_resource_leases::OriginalTurnAuthority for OwnedNvpGpuAuthority {
@@ -672,6 +673,14 @@ impl crate::gpu_resource_leases::OriginalTurnAuthority for OwnedNvpGpuAuthority 
         // read guard is held ONLY during the short SQLite GRANTED commit.
         // No Vulkan, GGUF unload, worker wait or network I/O runs inside.
         self.admit(request)?;
+        // The native GGUF unload may have taken minutes. Revalidate the
+        // *same* SCM credential, original OS generation, protected pins and
+        // session deadline before the short durable GRANTED commit. Never
+        // run the broker inside ConversationAuthority's critical lock.
+        if let Some(broker)=&self.broker{
+            broker.check_before_grant()
+                .map_err(|_|crate::gpu_resource_leases::LeaseRefusal::NotAuthorized)?;
+        }
         let gate=self.gate.upgrade().ok_or(
             crate::gpu_resource_leases::LeaseRefusal::NotAuthorized)?;
         self.authority.with_authorized_worker_launch(
@@ -825,6 +834,7 @@ impl CoreDlcHostGate{
             session:self.session.clone(),policy:policy_owned,
             read:plan.read.clone(),read_descriptor:plan.read_descriptor.clone(),
             execute:plan.execute.clone(),execute_descriptor:plan.execute_descriptor.clone(),
+            broker:installed.original_grant_recheck(),
         });
         let result=match frame.body.as_ref().unwrap(){
             proto::workspace_frame::Body::GpuLeaseRequest(v)=>{
