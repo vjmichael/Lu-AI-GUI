@@ -44,3 +44,9 @@ The real `TrustedInferenceSupervisor` restores its previously admitted GGUF+appr
 - This is not a production-ready service or a claim that Lu and NVP already completed a physical handoff. No NVP repository changes made from the Lu Core workstream. The existing Core PR/branch remains the sole publication target without stacking CI.
 
 Source design reference: Microsoft DXGI QueryVideoMemoryInfo semantics are *per-process budgets*. WDDM adapter-global dedicated usage is required as a distinct measurement, not added to DXGI process usage.
+
+## R2 corrections and latency requirement
+
+After first native cohort at source accb6e763b41f814037b1a18527059c24df1272f, Ubuntu passed; Windows compiler stopped on one exact byte-vs-character literal in the protected NVP receipt filename guard (E0308). The consolidated R2 successor repairs this native source issue, prevents model/projector catalog changes while the GPU lease fence is asserted, and limits the original READ+EXECUTE pair to host-approved `nvp.film.*` capabilities. Added `open_and_fence_at_startup` to make restart quarantine assertion synchronous before new model admissions. The installed host must still call it during real startup, not only when an NVP frame arrives.
+
+**Latency/reconciliation blocker:** the current workspace IPC frame deadline is 3 seconds; a genuine GGUF unload or reload can exceed that. The 01B verified message-handler source is not yet a complete nonblocking desktop dispatcher with progress/status polling. The installed host must move the durable operation onto a supervised bounded worker and expose progress or authenticated reconcile results before production enablement. NVP must not interpret a client timeout as failure to unload or a release; it must reconcile the original Core lease identity, never mint a second lease. This remains an explicitly OPEN production gate after source-native tests.

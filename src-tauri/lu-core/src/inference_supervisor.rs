@@ -168,6 +168,8 @@ impl<B: InferenceBackend + Send + 'static> TrustedInferenceSupervisor<B> {
     /// Host-only dynamic admission for the Lu model import command. It is not
     /// callable by untrusted WebView content without host authorization.
     pub fn register_model(&self, id: String, model: AdmittedModel) -> Result<(), SupervisorError> {
+        let gpu_gate=self.gpu_lease_hold.lock().map_err(|_|SupervisorError::Poisoned)?;
+        if *gpu_gate{return Err(SupervisorError::Busy);}
         if id.is_empty() || id.len() > 128 || model.recheck().is_err() {
             return Err(SupervisorError::InvalidRequest);
         }
@@ -199,6 +201,10 @@ impl<B: InferenceBackend + Send + 'static> TrustedInferenceSupervisor<B> {
         model_ref: &str,
         projector: AdmittedProjector,
     ) -> Result<(), SupervisorError> {
+        // An NVP GPU lease freezes the approved GGUF+MMProj pair until the
+        // exact original model has been independently restored READY.
+        let gpu_gate=self.gpu_lease_hold.lock().map_err(|_|SupervisorError::Poisoned)?;
+        if *gpu_gate{return Err(SupervisorError::Busy);}
         let models = self.models.lock().map_err(|_| SupervisorError::Poisoned)?;
         if !models.contains_key(model_ref) {
             return Err(SupervisorError::UnknownModel);

@@ -578,6 +578,10 @@ impl OriginalNvpGpuAuthority<'_>{
            self.plan.execute.workspace_id.as_deref()!=Some(self.workspace_scope) ||
            self.plan.read_descriptor.effect!=crate::contracts::ToolEffect::ReadWorkspace ||
            self.plan.execute_descriptor.effect!=crate::contracts::ToolEffect::ExecuteCode ||
+           !self.plan.read_descriptor.id.starts_with("nvp.film.") ||
+           !self.plan.execute_descriptor.id.starts_with("nvp.film.") ||
+           self.plan.read.tool_id!=self.plan.read_descriptor.id ||
+           self.plan.execute.tool_id!=self.plan.execute_descriptor.id ||
            self.plan.read.call_id==self.plan.execute.call_id {
             return Err(LeaseRefusal::NotAuthorized)
         }

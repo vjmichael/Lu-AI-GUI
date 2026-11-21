@@ -161,6 +161,16 @@ pub struct CoreGpuLeaseManager{
     transition:Mutex<()>,
 }
 impl CoreGpuLeaseManager{
+    /// Host startup must construct this BEFORE the first LLM/model
+    /// admission. Reconstructs every unfinished row as QUARANTINED and
+    /// synchronously asserts the inference fence before returning control.
+    pub fn open_and_fence_at_startup(
+        path:&Path,model:&impl HostModelControl,
+    )->Result<Self,LeaseRefusal>{
+        let manager=Self::open(path)?;
+        manager.reassert_recovery_fence(model)?;
+        Ok(manager)
+    }
     pub fn open(path:&Path)->Result<Self,LeaseRefusal>{
         let connection=Connection::open(path).map_err(|_|LeaseRefusal::Database)?;
         connection.execute_batch(
@@ -721,7 +731,8 @@ mod tests{
             let mgr=CoreGpuLeaseManager::open(&path).unwrap();
             mgr.request_handoff(&request,&a,&m,&p).unwrap();
         }
-        let recovered=CoreGpuLeaseManager::open(&path).unwrap();
+        let recovered=CoreGpuLeaseManager::open_and_fence_at_startup(&path,&m).unwrap();
+        assert!(m.paused.load(Ordering::SeqCst));
         assert_eq!(recovered.phase("lease-1"),Ok(LeasePhase::Quarantined));
         assert!(recovered.has_unreconciled().unwrap());
         assert_eq!(recovered.release_and_restore(&request,&a,&Stop(true),&p,&m),

@@ -333,7 +333,7 @@ pub fn read_installed_nvp_gpu_stop_public_key()->io::Result<[u8;72]>{
 /// where the installed NVP supervisor publishes immutable signed receipts.
 pub fn read_installed_nvp_gpu_stop_receipt(lease_ref:&str)->io::Result<Vec<u8>>{
     if lease_ref.is_empty()||lease_ref.len()>128||
-       !lease_ref.bytes().all(|b|b.is_ascii_alphanumeric()||b=='-') {
+       !lease_ref.bytes().all(|b|b.is_ascii_alphanumeric()||b==b'-') {
         return Err(denied("invalid NVP GPU stop lease reference"))
     }
     let root=os_program_data()?;
