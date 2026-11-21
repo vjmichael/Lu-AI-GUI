@@ -629,7 +629,13 @@ mod protected {
             // before any setBreakpoints/step/variable-control request.
             let observed = dap.verify_project_loaded_module(
                 &supervisor, &debug_job.job_id, &debug_plan, &target,
-            ).map_err(|_| "DENIED: live Windows AppContainer/SCM Job module or durable build/debug receipts not verified")?;
+            ).map_err(|error| {
+                // R2-R7: preserve the typed native refusal without exposing
+                // untrusted DAP text, source paths, process IDs or memory.
+                // This changes diagnostics only; absent OS/receipt proof DENIES.
+                eprintln!("FIN04R1_NATIVE_MODULE_WITNESS_REFUSAL={}", error.code());
+                "DENIED: live Windows AppContainer/SCM Job module or durable build/debug receipts not verified".to_owned()
+            })?;
             if !observed.module.job_member_verified
                 || !observed.module.process_exe_path_verified
                 || !observed.module.os_loaded_pe_image_verified

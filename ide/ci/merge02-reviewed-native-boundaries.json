@@ -342,8 +342,8 @@
     },
     {
       "path": "ide/supervisor/examples/wo6_native_dap_acceptance.rs",
-      "sha": "2631c910e18b0b5f7fa3fff3b47e774e6140efc1",
-      "scope": "03E D6C bounded authenticated owner continuation chain, unchanged one-use and OS/PDB gates; source-only, native Windows pending"
+      "sha": "5bf12ec90d52c25656b54823c63d2af7a0574701",
+      "scope": "03E D6C bounded authenticated owner continuation chain, unchanged one-use and OS/PDB gates; source-only, native Windows pending; R2-R7 bounded native refusal-code diagnostic only, authorization and AppContainer/SCM/Job gates unchanged; genuine Windows retest pending"
     },
     {
       "path": "ide/supervisor/fixtures/debug/Probe-WindowsWo6FileDenial.ps1",

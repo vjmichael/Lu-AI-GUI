@@ -142,6 +142,20 @@ test('release PDB cancellation is original OS Job reaping and durable restart, n
  assert.match(nativeScript,/--project-debug-protected-pdb-cancel/);
  assert.match(nativeScript,/abnormalWorkerDeathAfterProtectedPdbAccepted=\$false/);
 });
+test('FIN04 module refusal exposes bounded native error without approving a missing witness',()=>{
+ const original=nativeScenario.slice(
+   nativeScenario.indexOf('if verify_job_module {'),
+   nativeScenario.indexOf('if sample_stopped_thread {'));
+ assert.match(original,/dap\.verify_project_loaded_module\(/);
+ assert.match(original,/FIN04R1_NATIVE_MODULE_WITNESS_REFUSAL=\{\}/);
+ assert.match(original,/error\.code\(\)/);
+ assert.match(original,/DENIED: live Windows AppContainer\/SCM Job module or durable build\/debug receipts not verified/);
+ assert.match(original,/!observed\.module\.job_member_verified/);
+ assert.match(original,/!observed\.module\.os_loaded_pe_image_verified/);
+ assert.match(original,/observed\.build_terminal_receipt_sha256 != receipt\.terminal_receipt_hash/);
+ assert.doesNotMatch(original,/unwrap_or(?:_else)?\([^)]*true/);
+});
+
 test('physical Windows acceptance cannot infer installed approval from source or mutate journal at restart',()=>{
  assert.match(physical,/requires_physical_interactive_windows_no_CI/);
  assert.match(physical,/installed_pinned_LLVM_chrono_header_missing/);
