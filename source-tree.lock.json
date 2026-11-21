@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "a96bc119397c7af81a99bcecfc1766d35db9ef91",
-  "trackedFileCount": 1289,
+  "sourceCommitBeforeLock": "817f2cebcac9d623612ecfb41cc7f64929719c28",
+  "trackedFileCount": 1290,
   "files": [
     {
       "path": ".gitattributes",
@@ -221,7 +221,7 @@
     },
     {
       "path": ".github/workflows/lu-ipc01d-r2-native.yml",
-      "blob": "53ff16d717f611ece6684e1f053aabd2b74860ce"
+      "blob": "c4c4bdcb6e9f0e6300b49726436473d4026f6013"
     },
     {
       "path": ".github/workflows/lu-kiaf-execution.yml",
@@ -1073,7 +1073,7 @@
     },
     {
       "path": "docs/LU_IPC_01D_R1_NATIVE_TRANSPORT_20261120.md",
-      "blob": "3be410f3ef9a6862a2051717fe07e4bb918012dc"
+      "blob": "5f6f91dd564ed1f79fefc1f9c1c1a0959274c033"
     },
     {
       "path": "docs/LU_KIAF_ACTIVE_EXECUTION_LEDGER_20261108.md",
@@ -5065,7 +5065,7 @@
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/bin/lu-ipc-scm-supervisor.rs",
-      "blob": "87e8efcbd960231a6d7af454d4ce62c9c8d00c79"
+      "blob": "37e3dfc8530ad190e92c1d5154d0d8e57482a023"
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/bin/lu-linux-cgroup-guard.rs",
@@ -5100,6 +5100,10 @@
       "blob": "7b7b456cb3068fd145d89309a587140ad3dc5780"
     },
     {
+      "path": "src-tauri/lu-win-worker-job/src/ipc_scm_owned_jobs.rs",
+      "blob": "9819ed23fa6fb6999555839f23d8330cd0368587"
+    },
+    {
       "path": "src-tauri/lu-win-worker-job/src/ipc_scm_supervisor.rs",
       "blob": "6c0aac50c377169fe2f5e76e145331c592671694"
     },
@@ -5109,7 +5113,7 @@
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/lib.rs",
-      "blob": "0936bb979b9d8f98dda7dac2f42d662cf1d760cf"
+      "blob": "8bada6f7ef1e34abb6de2e9b1e30dfc38d13392f"
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/metadata_guard.rs",

@@ -8,7 +8,10 @@
 mod native {
     use std::{ffi::c_void,io,ptr,sync::atomic::{AtomicBool,Ordering},
         thread,time::Duration};
-    use lu_win_worker_job::ipc_credential_broker::require_system_service_context;
+    use lu_win_worker_job::{
+        ipc_credential_broker::require_system_service_context,
+        ipc_scm_owned_jobs::ScmJobKeeper,
+    };
 
     type Handle=*mut c_void;
     const SERVICE_WIN32_OWN_PROCESS:u32=0x10;
@@ -102,15 +105,24 @@ mod native {
             let _=report(handle,SERVICE_STOPPED,1);
             return;
         }
+        // The keeper lives entirely in this SCM process. The Core/UI is
+        // never handed the owning Job handles. Admission of real workers
+        // remains disabled until an installer-pinned, authenticated service
+        // control plane can supply already-restricted suspended children.
+        let keeper=match ScmJobKeeper::new_for_service(){
+            Ok(value)=>value,
+            Err(_)=>{
+                let _=report(handle,SERVICE_STOPPED,2);
+                return;
+            }
+        };
         if report(handle,SERVICE_RUNNING,0).is_err(){return;}
-        // No unsupervised worker launch/credential issuance. This service
-        // remains a read-only observed SCM identity until a protected
-        // installer-owned client/executor Job registry is implemented.
         while !STOP.load(Ordering::Acquire){
             thread::sleep(Duration::from_millis(200));
         }
         let _=report(handle,SERVICE_STOP_PENDING,0);
-        let _=report(handle,SERVICE_STOPPED,0);
+        let stopped=keeper.stop_all().is_ok();
+        let _=report(handle,SERVICE_STOPPED,if stopped{0}else{3});
     }
     pub fn run()->io::Result<()>{
         // SCM calls service_main only through this registered table; a plain

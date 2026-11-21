@@ -25,6 +25,8 @@ pub mod ipc_installer_enrollment;
 pub mod ipc_credential_broker;
 #[cfg(windows)]
 pub mod ipc_scm_supervisor;
+#[cfg(windows)]
+pub mod ipc_scm_owned_jobs;
 
 #[cfg(windows)]
 mod windows_owned {

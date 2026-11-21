@@ -285,3 +285,26 @@ No such privileged service or physical installed receipt is present here.
 - Added read-only physical-Windows `scripts/lu-ipc-r5-installed-scm-preflight.ps1` that checks installed service registration, LocalSystem owner identity, stable live process epoch, protected installer-owned file ancestry, exact signed image hash and signer approval. It never registers the service, changes permissions, provisions credentials, or emits an executor Job-empty receipt.
 - The original grouped native workflow now compiles the SCM service binary, tests SCM status/refusal paths and verifies the unapproved/unsigned SCM preflight refusal on hosted Windows. **These tests are distinct from physical installed Windows SCM/credential/cancellation and restart acceptance.**
 - Remaining: the installed SYSTEM service must ACTUALLY own protected client and Core native-executor Job handles across Core crashes, launch only independently signed/pinned workers, keep scoped call ownership, produce independently authenticated kernel-empty service-origin receipts, implement one-use credential enroll/rotation/revoke and prove physical Windows restart/power-loss refusal and recovery. No read-only SCM identity or SQLite journal record can stand in for that evidence.
+
+### R4-R3-R3-R1 native SCM-held client/executor Job registry
+
+A second service-process-only source addition, `ipc_scm_owned_jobs`, now retains the
+actual Rust `Job` and suspended `Child` handles within the SCM service process.
+Its typed `DlcClient` and `CoreExecutor` lanes cannot be interchanged; a
+native one-use stop witness is minted only after the original Job reports
+kernel BasicAccounting.ActiveProcesses=0 and the original Child is reaped.
+Unassigned, wrong-lane, duplicate-stop, SYSTEM-token worker, and capacity
+conditions fail closed. The service's controlled shutdown holds this keeper
+through its entire RUNNING lifetime and checks stop disposition before
+reporting SCM STOPPED. Hosted Windows native tests use a genuinely suspended,
+assigned, and reaped kernel child; these are NOT an installed System service.
+
+**Still NOT wired:** The service does not accept external requests or spawn
+production workers. A future independently authorized installer/SCM control
+channel must launch pinned executable images using restricted OS tokens,
+bind exact original user turn/call ID/fingerprint to BOTH client and executor
+Jobs, retain them across Lu Core process death, authenticate service-origin
+one-use per-call stop receipts and then allow a reviewed recovery transition.
+Until that path exists, `NeedsExecutorCustody` blocks effect admission. This
+module never supplies a shortcut to clear it. Physical Windows signed service,
+credential lifecycle and power-loss acceptance remain outstanding.
