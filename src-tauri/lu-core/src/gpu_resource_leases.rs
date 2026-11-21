@@ -121,6 +121,17 @@ pub trait OriginalTurnAuthority{
     /// Must check Core's current immutable user turn, task and scoped NVP
     /// package/session as a verified OS peer, independently of Protobuf.
     fn admit(&self,request:&GpuLeaseRequest)->Result<(),LeaseRefusal>;
+    /// Final bounded SQLite GRANTED commit must be fenced against user-turn
+    /// revocation. The installed NVP host overrides this using the trusted
+    /// ConversationAuthority read-lock launch fence, NEVER by locking it
+    /// across a long GGUF unload or driver query.
+    fn fence_final_grant<R>(
+        &self,request:&GpuLeaseRequest,
+        commit:impl FnOnce()->Result<R,LeaseRefusal>,
+    )->Result<R,LeaseRefusal>{
+        self.admit(request)?;
+        commit()
+    }
     /// Release is cleanup of a PREVIOUSLY approved effect, not a new GPU
     /// effect. The installed broker may permit cleanup after user revocation
     /// only against the exact original durable grant and stopped worker.
@@ -339,13 +350,11 @@ impl CoreGpuLeaseManager{
         })();
         match evidence{
             Ok(sample)=>{
-                // Admission may be revoked while the large GGUF context is
-                // draining. Recheck immediately before committing GRANTED.
-                if let Err(reason)=authority.admit(request){
-                    self.quarantine(&request.lease_ref);
-                    return Err(reason)
-                }
-                let done=(||->Result<(),LeaseRefusal>{
+                // A long native unload may overlap human revocation. Only
+                // the short, durable GRANTED commit is held under original
+                // conversation+turn authority. No model/driver I/O is done
+                // while the user-task read lock is held.
+                let done=authority.fence_final_grant(request,||{
                     let conn=self.lock_conn()?;
                     let count=conn.execute(
                         "UPDATE lu_gpu_nvp_leases
@@ -357,7 +366,7 @@ impl CoreGpuLeaseManager{
                         .map_err(|_|LeaseRefusal::Database)?;
                     if count!=1{return Err(LeaseRefusal::Quarantined)}
                     Ok(())
-                })();
+                });
                 if let Err(err)=done{self.quarantine(&request.lease_ref);return Err(err)}
                 Ok(GrantedGpuLease{lease_ref:request.lease_ref.clone(),
                     device_ref:request.device_ref.clone(),

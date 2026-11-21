@@ -80,7 +80,7 @@ fn queued_gpu_work_is_deferred_not_a_device_grant_and_requires_original_poll(){
     assert_eq!(decode_frame(&encode_frame(&f).unwrap()).unwrap(),f);
     let poll=proto::GpuLeasePoll{
         origin:Some(origin()),lease_ref:queued.lease_ref.clone(),
-        transition:proto::GpuLeaseTransitionKind::Acquire as i32,
+        transition:1, // GPU_LEASE_TRANSITION_ACQUIRE (wire number fixed by proto)
     };
     assert!(validate(&frame(proto::workspace_frame::Body::GpuLeasePoll(
         poll.clone()))).is_ok());

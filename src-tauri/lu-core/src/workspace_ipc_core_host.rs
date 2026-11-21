@@ -646,6 +646,29 @@ impl crate::gpu_resource_leases::OriginalTurnAuthority for OwnedNvpGpuAuthority 
         };
         crate::gpu_resource_leases::OriginalTurnAuthority::admit(&scoped,request)
     }
+    fn fence_final_grant<R>(
+        &self,request:&crate::gpu_resource_leases::GpuLeaseRequest,
+        commit:impl FnOnce()->Result<R,crate::gpu_resource_leases::LeaseRefusal>,
+    )->Result<R,crate::gpu_resource_leases::LeaseRefusal>{
+        // Preflight may run host policy, but the final original-task
+        // read guard is held ONLY during the short SQLite GRANTED commit.
+        // No Vulkan, GGUF unload, worker wait or network I/O runs inside.
+        self.admit(request)?;
+        let gate=self.gate.upgrade().ok_or(
+            crate::gpu_resource_leases::LeaseRefusal::NotAuthorized)?;
+        self.authority.with_authorized_worker_launch(
+            &self.origin,
+            &self.read,&self.read_descriptor,
+            &self.execute,&self.execute_descriptor,
+            self.policy.as_ref(),
+            || {
+                if gate.closed.load(Ordering::Acquire){
+                    return Err(crate::gpu_resource_leases::LeaseRefusal::NotAuthorized)
+                }
+                commit()
+            }
+        ).map_err(|_|crate::gpu_resource_leases::LeaseRefusal::NotAuthorized)?
+    }
     fn admit_cleanup(&self,request:&crate::gpu_resource_leases::GpuLeaseRequest)
         ->Result<(),crate::gpu_resource_leases::LeaseRefusal>{
         if !self.gate.upgrade().is_some_and(|g|
@@ -834,9 +857,15 @@ impl CoreDlcHostGate{
                 if v.lease_ref!=expected_lease_ref{
                     return Err(CoreDlcGateError::Denied)
                 }
-                let kind=match proto::GpuLeaseTransitionKind::try_from(v.transition){
-                    Ok(proto::GpuLeaseTransitionKind::Acquire)=>GpuAsyncKind::Acquire,
-                    Ok(proto::GpuLeaseTransitionKind::Release)=>GpuAsyncKind::Release,
+                // Literal wire numbers 1/2 are frozen in workspace.proto.
+                // Validate the generated enum first, without assuming prost
+                // strips the long enumeration prefix to a short variant.
+                if proto::GpuLeaseTransitionKind::try_from(v.transition).is_err(){
+                    return Err(CoreDlcGateError::Denied)
+                }
+                let kind=match v.transition{
+                    1=>GpuAsyncKind::Acquire,
+                    2=>GpuAsyncKind::Release,
                     _=>return Err(CoreDlcGateError::Denied),
                 };
                 let original=queue.original_for_poll(&v.lease_ref,kind)
