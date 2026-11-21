@@ -66,6 +66,7 @@ jobs:
         run: |
           set -euo pipefail
           cargo check --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test registry_contracts film_registration_fence_refuses_unloaded_or_replaced_workspace -- --nocapture
           cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib workspace_ipc_core_host -- --nocapture
           cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib ipc_exclusive_owner_tests -- --nocapture
           cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib ipc_supervisor_exact_reconciliation_tests -- --nocapture
