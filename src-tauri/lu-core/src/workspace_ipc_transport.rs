@@ -756,6 +756,22 @@ pub mod windows {
                 if !fixed_equal(&expected,&actual){
                     return Err(TransportError::MacMismatch)
                 }
+                // A signed NVP HMAC session alone cannot yield VRAM if
+                // the independent LTX Job-empty issuer has been removed
+                // while Lu unloads GGUF. Preflight the protected signer pin
+                // again before the final durable GPU GRANTED commit.
+                let original=check.scope.original.clone();
+                let issuer=lu_win_worker_job::ipc_scm_control_wire::ScmControl{
+                    command:lu_win_worker_job::ipc_scm_control_wire::
+                        ScmCommand::VerifyNvpStopIssuerPinned,
+                    service_pid:service.pid,
+                    service_birth:service.creation_filetime,
+                    original:Some(original),
+                };
+                rt.block_on(async{
+                    lu_win_worker_job::ipc_scm_control::
+                        issue_core_command(&issuer,&service).await
+                }).map_err(|_|TransportError::PeerNotVerified)?;
                 Ok(())
             }).join().map_err(|_|TransportError::PeerNotVerified)?;
             result?;
