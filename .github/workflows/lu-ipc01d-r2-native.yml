@@ -6,7 +6,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: lu-ipc01d-r2-${{ github.sha || github.sha }}
+  group: lu-ipc01d-r2-${{ github.event.pull_request.head.sha || github.sha }}
   cancel-in-progress: false
 jobs:
   exact-source:
@@ -15,7 +15,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
       - uses: actions/setup-node@v4
         with:
@@ -23,7 +23,7 @@ jobs:
       - name: Original committed source verification
         shell: bash
         env:
-          SOURCE: ${{ github.sha }}
+          SOURCE: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$SOURCE"
@@ -39,7 +39,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -50,7 +50,7 @@ jobs:
       - name: Exact SHA and original source-lock verification
         shell: bash
         env:
-          SOURCE: ${{ github.sha }}
+          SOURCE: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$SOURCE"
