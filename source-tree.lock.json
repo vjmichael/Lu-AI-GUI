@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "b41c2f46abcda85aeb294d81b3229389c26a6627",
+  "sourceCommitBeforeLock": "7d3d2fb7aa7b158f59db1514da0e0a6abb14b97c",
   "trackedFileCount": 1304,
   "files": [
     {
@@ -4517,7 +4517,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/workspace_ipc_core_host.rs",
-      "blob": "ca3aa98c39ebaa4f54a20b552ab489a8398b6a43"
+      "blob": "8e024a4016b45d23e7d36327d6bdd788f428ee80"
     },
     {
       "path": "src-tauri/lu-core/src/workspace_ipc_scm.rs",
@@ -4525,7 +4525,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/workspace_ipc_transport.rs",
-      "blob": "bd26e80019aab38eaad482facbf3999dac61cbd0"
+      "blob": "d5eb987db638c9d4eccf55a9ca6942d6aad16fb6"
     },
     {
       "path": "src-tauri/lu-core/src/workspace_quarantine.rs",
@@ -5141,11 +5141,11 @@
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/ipc_scm_control.rs",
-      "blob": "6648234d96e312e77a932f12bf6774ef4026ebd6"
+      "blob": "50b1e91611921f386904193dc6b7fa1e861b4121"
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/ipc_scm_control_wire.rs",
-      "blob": "b5a0946968e870c3b476e6353a602f3e58a19a61"
+      "blob": "55a10f0c89b75db5ea766feecbe327da6936a77b"
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/ipc_scm_launcher.rs",
