@@ -16,7 +16,7 @@ use lu_core::{
     registry::NativeToolRegistry,
     workspace_ipc_core_host::{
         ApprovedNvpGpuPlan,HostCoreTask,TrustedCoreInputVerifier,
-        serve_host_approved_nvp_gpu_windows,
+        OriginalCall,serve_host_approved_nvp_gpu_windows,
     },
     workspace_ipc_scm::VerifiedScmSupervisor,
     workspace_ipc_transport::ServerIdentity,
