@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "7d028d214aac561baff9fcd2a877fec07991070b",
+  "sourceCommitBeforeLock": "79d0284253888dca2892ced189224e8a5b07d9f6",
   "trackedFileCount": 1304,
   "files": [
     {
@@ -1089,7 +1089,7 @@
     },
     {
       "path": "docs/LU_IPC_GPU_01C_DURABLE_DESKTOP_NVP_20261121.md",
-      "blob": "f891a7e4f2241a57a0937879ae855cce4f21ef68"
+      "blob": "960546fb22b50c7629debc293ee3356b8eb9236c"
     },
     {
       "path": "docs/LU_IPC_R4_R3_R3_R4_ECOSYSTEM_AND_SCM_CONTROL_20261121.md",
@@ -1865,7 +1865,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/lib.rs",
-      "blob": "0f53b5368380712ff156581cb134ba726adacd46"
+      "blob": "e4c2f4c05ec8e93ca3c13ebb318afe39ad4eae1f"
     },
     {
       "path": "lu-desktop/src-tauri/src/linked_attachment_file.rs",
