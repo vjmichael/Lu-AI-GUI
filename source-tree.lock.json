@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "84c1067372371075a973b7f7ac4247b453acae97",
+  "sourceCommitBeforeLock": "0e303108671d8ac336b44dca6046548ecf6ba637",
   "trackedFileCount": 1982,
   "files": [
     {
@@ -293,11 +293,11 @@
     },
     {
       "path": ".github/workflows/ide-group04d-source.yml",
-      "blob": "3e714d46421e8cd23576b899bef6ae4d0c8d85f9"
+      "blob": "c735825a928a1b9b86708f630b5c4893bc87bfd4"
     },
     {
       "path": ".github/workflows/ide-group06a-native.yml",
-      "blob": "970eaa04e02e6868d4f0e29a6d40d81ec5c5bc06"
+      "blob": "80edc4e117fe9c5dded1924ad87d186a4892e3c0"
     },
     {
       "path": ".github/workflows/ide-group06b-native.yml",
@@ -1857,7 +1857,7 @@
     },
     {
       "path": "ide/app/fixtures/test_atspi_signature_contract.py",
-      "blob": "262b5507b56ad0a5a15343ccd7b1cae31a8ca475"
+      "blob": "b3329fb587d840a535003f1c22159efef4e05dda"
     },
     {
       "path": "ide/app/fixtures/test_dev01_native_confirmation_scope.py",
@@ -2613,7 +2613,7 @@
     },
     {
       "path": "ide/ci/merge02-reviewed-native-boundaries.json",
-      "blob": "8b82fdc2cb200b13df785b02d124c0ccef85ecb8"
+      "blob": "21a665497cac6879df5d3077e6758775980fdf3a"
     },
     {
       "path": "ide/ci/test_verify_reviewed_native_boundaries.py",
@@ -3737,7 +3737,7 @@
     },
     {
       "path": "ide/packaging/ide-05b-r3-outside-cohort.json",
-      "blob": "90e56a2c0769f68ac7a647f965c35e5efd294d71"
+      "blob": "4ee9f256964d084655f35cb359fd5991419148f7"
     },
     {
       "path": "ide/packaging/ide-merge02-reviewed-lock-successor.json",
@@ -3925,7 +3925,7 @@
     },
     {
       "path": "ide/packaging/test_ide_05b_r3_workflow_dispositions.py",
-      "blob": "d8dccd6cbaa34fb8666c8ed58cf3756b15f4f3b7"
+      "blob": "58c74ab671178f4a781c91ab098fae6ed8182787"
     },
     {
       "path": "ide/packaging/test_ide_merge02c_native_locks.py",
