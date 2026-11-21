@@ -19,6 +19,8 @@ pub mod browser_window;
 pub mod ipc_pipe_peer;
 #[cfg(windows)]
 pub mod ipc_signed_package;
+#[cfg(windows)]
+pub mod ipc_installer_enrollment;
 
 #[cfg(windows)]
 mod windows_owned {

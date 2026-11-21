@@ -464,6 +464,94 @@ pub struct WindowsInstalledEnrollment {
     pub handshake_key: [u8; 32],
 }
 #[cfg(windows)]
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ProtectedInstalledIdeRecord {
+    schema:String,
+    module_id:String,
+    role:i32,
+    installed_executable_path:String,
+    image_sha256:String,
+    signer_certificate_sha256:String,
+    package_sha256:String,
+}
+#[cfg(windows)]
+impl ProtectedInstalledIdeRecord {
+    fn decode_sha256(s:&str)->Result<[u8;32],TransportError>{
+        if s.len()!=64 || !s.bytes().all(|c|
+            c.is_ascii_digit() || (b'a'..=b'f').contains(&c)){
+            return Err(TransportError::PeerNotVerified);
+        }
+        let mut hash=[0u8;32];
+        for (i,b) in hash.iter_mut().enumerate(){
+            *b=u8::from_str_radix(&s[i*2..i*2+2],16)
+                .map_err(|_|TransportError::PeerNotVerified)?;
+        }
+        if hash.iter().all(|b|*b==0){return Err(TransportError::PeerNotVerified);}
+        Ok(hash)
+    }
+    fn parse(bytes:&[u8])->Result<Self,TransportError>{
+        let record:Self=serde_json::from_slice(bytes)
+            .map_err(|_|TransportError::PeerNotVerified)?;
+        if record.schema!="lu.win.dlc-enrollment.v1"||
+           record.module_id!="lu.ide"||
+           record.role!=proto::ModuleRole::Workspace as i32 ||
+           record.installed_executable_path.is_empty()||
+           record.installed_executable_path.contains('\0')||
+           !std::path::Path::new(&record.installed_executable_path).is_absolute(){
+            return Err(TransportError::PeerNotVerified);
+        }
+        Self::decode_sha256(&record.image_sha256)?;
+        Self::decode_sha256(&record.signer_certificate_sha256)?;
+        Self::decode_sha256(&record.package_sha256)?;
+        Ok(record)
+    }
+}
+#[cfg(windows)]
+impl WindowsInstalledEnrollment {
+    /// Production-only source of signed DLC identity. The native reader
+    /// verifies the fixed ProgramData SYSTEM/BA-only protected file and its
+    /// parents. Broker key is NEVER persisted in this public pin record.
+    /// Only a trusted host/supervisor may supply the observed launched PID
+    /// and an independently OS-custodied handshake key.
+    pub fn from_installer_owned_record(
+        supervised_pid:u32,broker_handshake_key:[u8;32],
+    )->Result<Self,TransportError>{
+        if supervised_pid==0||broker_handshake_key.iter().all(|b|*b==0){
+            return Err(TransportError::PeerNotVerified);
+        }
+        let bytes=lu_win_worker_job::ipc_installer_enrollment::
+            read_installed_lu_ide_pins()
+            .map_err(|_|TransportError::PeerNotVerified)?;
+        let record=ProtectedInstalledIdeRecord::parse(&bytes)?;
+        let process=lu_win_worker_job::ipc_pipe_peer::observe_host_process(
+            supervised_pid).map_err(|_|TransportError::PeerNotVerified)?;
+        if process.image_path!=record.installed_executable_path {
+            return Err(TransportError::PeerNotVerified);
+        }
+        let pin=Self{
+            expected_pid:process.pid,
+            expected_creation_filetime:process.creation_filetime,
+            expected_session_id:process.session_id,
+            expected_user_sid:process.user_sid,
+            expected_executable_path:record.installed_executable_path,
+            expected_image_sha256:ProtectedInstalledIdeRecord::decode_sha256(
+                &record.image_sha256)?,
+            expected_signer_certificate_sha256:
+                ProtectedInstalledIdeRecord::decode_sha256(
+                    &record.signer_certificate_sha256)?,
+            expected_module_id:record.module_id,
+            expected_role:record.role,
+            expected_package_sha256:ProtectedInstalledIdeRecord::decode_sha256(
+                &record.package_sha256)?,
+            handshake_key:broker_handshake_key,
+        };
+        if !pin.valid_pin(){return Err(TransportError::PeerNotVerified);}
+        Ok(pin)
+    }
+}
+
+#[cfg(windows)]
 impl WindowsInstalledEnrollment {
     fn valid_pin(&self) -> bool {
         self.expected_pid != 0 && self.expected_creation_filetime != 0 &&
@@ -579,7 +667,7 @@ pub mod windows {
     /// identity, embedded Authenticode trust, and the two exact SHA-256 pins.
     /// A path, same-user SID, signature or HMAC by itself is insufficient.
     /// This does not grant any model/tool effect.
-    pub async fn accept_installed_signed_peer(
+    async fn accept_signed_peer_impl(
         server:&mut NamedPipeServer,
         pin:&WindowsInstalledEnrollment,
         identity:&ServerIdentity,
@@ -615,6 +703,30 @@ pub mod windows {
         Ok(SignedWindowsSession{session,lease})
     }
 
+    /// Synthetic test admission only: arbitrary caller-constructed pins
+    /// are refused in a non-debug release build.
+    pub async fn accept_installed_signed_peer(
+        server:&mut NamedPipeServer,
+        pin:&WindowsInstalledEnrollment,
+        identity:&ServerIdentity,
+    )->Result<SignedWindowsSession,TransportError>{
+        if !cfg!(debug_assertions) {
+            return Err(TransportError::PeerNotVerified);
+        }
+        accept_signed_peer_impl(server,pin,identity).await
+    }
+    /// Production admission: installer-owned protected record plus broker
+    /// credential and supervised PID. No auto-enrollment from Hello.
+    pub async fn accept_installer_owned_lu_ide(
+        server:&mut NamedPipeServer,
+        supervised_pid:u32,
+        broker_handshake_key:[u8;32],
+        identity:&ServerIdentity,
+    )->Result<SignedWindowsSession,TransportError>{
+        let pin=WindowsInstalledEnrollment::from_installer_owned_record(
+            supervised_pid,broker_handshake_key)?;
+        accept_signed_peer_impl(server,&pin,identity).await
+    }
 
     pub fn check_pipe_name(name: &str) -> Result<(), TransportError> {
         let suffix = name.strip_prefix(PREFIX)
@@ -675,6 +787,40 @@ pub mod windows {
 #[cfg(test)]
 mod internal_tests {
     use super::*;
+
+    #[cfg(windows)]
+    #[test]
+    fn installed_record_parser_rejects_untrusted_claims_and_embedded_keys(){
+        let correct=serde_json::json!({
+            "schema":"lu.win.dlc-enrollment.v1",
+            "module_id":"lu.ide",
+            "role":1,
+            "installed_executable_path":r"C:\Program Files\Lu IDE\LuIDE.exe",
+            "image_sha256":"11".repeat(32),
+            "signer_certificate_sha256":"22".repeat(32),
+            "package_sha256":"77".repeat(32)
+        });
+        assert!(ProtectedInstalledIdeRecord::parse(
+            &serde_json::to_vec(&correct).unwrap()).is_ok());
+        for (field,value) in [
+            ("schema",serde_json::json!("forged")),
+            ("module_id",serde_json::json!("lu.core")),
+            ("role",serde_json::json!(3)),
+            ("installed_executable_path",serde_json::json!(r".\forged.exe")),
+            ("image_sha256",serde_json::json!("11".repeat(31))),
+            ("signer_certificate_sha256",serde_json::json!("00".repeat(32))),
+            ("package_sha256",serde_json::json!("AA".repeat(32))),
+        ]{
+            let mut forged=correct.clone();
+            forged[field]=value;
+            assert!(ProtectedInstalledIdeRecord::parse(
+                &serde_json::to_vec(&forged).unwrap()).is_err(),"{field}");
+        }
+        let mut secret=correct;
+        secret["handshake_key"]=serde_json::json!("forbidden");
+        assert!(ProtectedInstalledIdeRecord::parse(
+            &serde_json::to_vec(&secret).unwrap()).is_err());
+    }
 
     #[cfg(windows)]
     #[test]
