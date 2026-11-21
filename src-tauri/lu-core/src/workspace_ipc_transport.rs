@@ -543,7 +543,7 @@ impl WindowsInstalledEnrollment {
         // signed SCM Core control pipe. Non-SYSTEM desktop may NOT open the
         // SYSTEM/Administrators-only protected ProgramData file itself.
         let record=ProtectedInstalledIdeRecord::parse_for(bytes,"nvp.film")?;
-        let record_fingerprint:[u8;32]=Sha256::digest(&bytes).into();
+        let record_fingerprint:[u8;32]=Sha256::digest(bytes).into();
         let process=lu_win_worker_job::ipc_pipe_peer::observe_host_process(
             supervised_pid).map_err(|_|TransportError::PeerNotVerified)?;
         if process.image_path!=record.installed_executable_path{
@@ -890,12 +890,16 @@ pub mod windows {
         pub async fn read_verified_frame(&self,server:&mut NamedPipeServer)
             ->Result<proto::WorkspaceFrame,TransportError>{
             let frame=read_frame(server).await?;
-            self.check_authenticated().await?;
+            // Synchronously attest the native last-message token before
+            // ANY asynchronous broker I/O can change the pipe's observed
+            // message provenance. A later SCM check is not a substitute.
+            self.check_alive()?;
             let observed=lu_win_worker_job::ipc_pipe_peer::observe_message_token_peer(server)
                 .map_err(|_|TransportError::PeerNotVerified)?;
             if &observed != self.lease.witness() {
                 return Err(TransportError::PeerNotVerified);
             }
+            self.check_authenticated().await?;
             self.session.check_request(&frame)?;
             Ok(frame)
         }
