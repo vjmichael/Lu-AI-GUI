@@ -122,7 +122,7 @@
     },
     {
       "path": "ide/packaging/ide-05b-r3-outside-cohort.json",
-      "sha": "4ee9f256964d084655f35cb359fd5991419148f7",
+      "sha": "d603439db9d17a433a0fc694dda409e63db154d3",
       "scope": "R3 historical workflow inventory unchanged; 3 reviewed successor blobs recorded separately without dispatch or retirement grant"
     },
     {
