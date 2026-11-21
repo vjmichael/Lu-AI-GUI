@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "6c7eb0569f5061d5d177b8fa0de0f26c015ed706",
+  "sourceCommitBeforeLock": "08b8d240e426e4ab60f462617b5dcd85673a1c3b",
   "trackedFileCount": 1270,
   "files": [
     {
@@ -981,7 +981,7 @@
     },
     {
       "path": "docs/LU_DEVELOPMENT_LEDGER.md",
-      "blob": "7c7b2e25e26159f3f62e2a11c86e9f5c57c08aa3"
+      "blob": "29db354d4732f87554dc2b0cf895cba0eebb76f5"
     },
     {
       "path": "docs/LU_E1_NATIVE_EVIDENCE_20261107.md",
@@ -2545,7 +2545,7 @@
     },
     {
       "path": "lu-desktop/tests/p03-ai-ops.test.mjs",
-      "blob": "fae91311b750dedddc24fc43f5f6b09785a46db5"
+      "blob": "79c29861c13ecce69e7bb22f1a7502cd2a9906b7"
     },
     {
       "path": "lu-desktop/tests/p06-observe-privacy.test.mjs",
@@ -2585,7 +2585,7 @@
     },
     {
       "path": "lu-desktop/tests/perf01-p4-interactive-priority.test.mjs",
-      "blob": "22d2820c84e9b8dbf2d63e4be480850263af78a4"
+      "blob": "cee38d44f18a1235b24cb490eaec8609236c32e1"
     },
     {
       "path": "lu-desktop/tests/phase2-agent-replan.test.mjs",

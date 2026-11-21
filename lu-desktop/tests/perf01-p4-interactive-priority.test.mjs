@@ -48,8 +48,24 @@ test('P4 native scheduler maintains process custody and probes immediately befor
   assert.match(core,/pub fn tick_interactive_guarded\(/);
   assert.match(core,/if foreground_probe\(\)\{break\}/);
   const probeAt=core.indexOf('if foreground_probe(){break}');
-  const spawnAt=core.indexOf('if self.process.start_host_approved(plan).is_err()');
-  assert.ok(probeAt>=0 && spawnAt>probeAt);
+  // Linux may use separately reviewed scanner admission; Windows uses
+  // ordinary host-approved workers. Both must follow a fresh foreground
+  // probe and share fail-closed uncertainty handling.
+  const linuxStartAt=core.indexOf('let started_worker=if let Some(turn)=job.reviewed_turn.as_deref(){',probeAt);
+  const windowsStartAt=core.indexOf('let started_worker=self.process.start_host_approved(plan);',linuxStartAt);
+  const errorAt=core.indexOf('if started_worker.is_err(){',windowsStartAt);
+  assert.ok(probeAt>=0 && linuxStartAt>probeAt && windowsStartAt>linuxStartAt && errorAt>windowsStartAt,
+    'foreground must be probed before either OS-specific worker start');
+  const starts=core.slice(probeAt,errorAt);
+  assert.match(starts,/#\[cfg\(target_os="linux"\)\]/);
+  assert.match(starts,/#\[cfg\(not\(target_os="linux"\)\)\]/);
+  assert.match(starts,/start_host_approved_reviewed_scan\(plan,turn\)/);
+  assert.match(starts,/else\{self\.process\.start_host_approved\(plan\)\}/);
+  assert.match(starts,/let started_worker=self\.process\.start_host_approved\(plan\)/);
+  const failedAdmission=core.slice(errorAt,errorAt+1500);
+  assert.match(failedAdmission,/self\.process\.can_cancel\(&id\)/);
+  assert.match(failedAdmission,/self\.store\.process_uncertainty\(&id\)/);
+  assert.match(failedAdmission,/worker_admission_uncertain/);
   assert.match(desktop,/tick_interactive_guarded\(/);
   assert.match(desktop,/\|\|state\.generation_queue\.has_foreground_jobs\(\)/);
   assert.match(desktop,/admission\.defer_new_background/);
