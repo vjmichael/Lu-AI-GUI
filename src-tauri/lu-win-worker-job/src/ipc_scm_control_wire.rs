@@ -24,6 +24,7 @@ pub enum ScmCommand{
     StopExactExecutor=3,
     InspectStoppedExecutor=4,
     ReadNvpPublicEnrollment=5,
+    VerifyNvpStopIssuerPinned=6,
 }
 impl TryFrom<u8> for ScmCommand{
     type Error=Refusal;
@@ -34,6 +35,7 @@ impl TryFrom<u8> for ScmCommand{
             3=>Ok(Self::StopExactExecutor),
             4=>Ok(Self::InspectStoppedExecutor),
             5=>Ok(Self::ReadNvpPublicEnrollment),
+            6=>Ok(Self::VerifyNvpStopIssuerPinned),
             _=>Err(Refusal::UnsupportedCommand),
         }
     }
@@ -531,10 +533,11 @@ mod tests {
             original:if cmd==ScmCommand::ReadStatus{None}else{Some(call())}}
     }
     #[test]
-    fn all_five_commands_have_exact_private_scopes(){
+    fn all_six_commands_have_exact_private_scopes(){
         for cmd in [ScmCommand::ReadStatus,ScmCommand::LaunchFixedExecutor,
             ScmCommand::StopExactExecutor,ScmCommand::InspectStoppedExecutor,
-            ScmCommand::ReadNvpPublicEnrollment]{
+            ScmCommand::ReadNvpPublicEnrollment,
+            ScmCommand::VerifyNvpStopIssuerPinned]{
             let expected=signed(cmd);
             let challenge=[0x45;32];
             let raw=expected.canonical(challenge).unwrap();
