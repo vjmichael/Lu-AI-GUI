@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "67a02dbac4354b60239805ccae0aab99da833781",
+  "sourceCommitBeforeLock": "dc29237d2862b683c84c25f1809da0cac8b0c9d3",
   "trackedFileCount": 2010,
   "files": [
     {
@@ -421,7 +421,7 @@
     },
     {
       "path": ".github/workflows/ide-wo7-signed-release-preflight.yml",
-      "blob": "3eddc41a7aa0447a66320d5999eab4cb25bdfecb"
+      "blob": "6413844fdaa579840441d538d21bb62cf605fc93"
     },
     {
       "path": ".github/workflows/ide-wo8-installed-linux.yml",
@@ -1697,7 +1697,7 @@
     },
     {
       "path": "ide/CHANGELOG.md",
-      "blob": "d409baded8bb4c77eda692ba86aebaa68d31e5d6"
+      "blob": "4c7d58a02e90a838e5235d5d60fbc0c3605a3bc1"
     },
     {
       "path": "ide/CONTINUITY_PROTOCOL.md",
@@ -1709,7 +1709,7 @@
     },
     {
       "path": "ide/PROJECT_STATE.md",
-      "blob": "609174f222138c081e26b15132e796f1dc3babda"
+      "blob": "7795e77a796d56d152ae1c2f51d9aa5b40818ef8"
     },
     {
       "path": "ide/README.md",

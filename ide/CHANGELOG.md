@@ -1,5 +1,10 @@
 # Lu IDE — Development changelog
 
+## 2026-11-21 — IDE-PRECORE-CLOSEOUT-R4 original P05 workflow source preservation
+
+Reconciled terminal exact-SHA native cohort 44961720181: four Windows/Linux source/native jobs succeeded; both Windows/Linux Tauri jobs failed original P05's immutable 38-workflow check because the newly added WO7 signed-source-preflight test step changed its original P05-pinned Git bytes. One minimal successor restores the original `.github/workflows/ide-wo7-signed-release-preflight.yml` bytes exactly, keeps the additional hostile WO7 tests in the separately reviewed integrated native workflow, refreshes source-tree lock, and preserves all legacy P05 38/8/5 contract and signed release HOLD. No native pass on the corrected SHA yet.
+
+
 ## 2026-11-21 — IDE-PRECORE-CLOSEOUT-R4 positive WO7 technical-audit source admission (NOT release)
 
 Reviewed and staged exact WO7 positive license/import audit workflow and verifier with independent protected-environment reviewer hashes, Windows three-binary Authenticode, complete original notices, staged static PE imports, and human-approved dynamic-import receipt. Added hostile source-only tests into existing source-qualification CI. Corrected WO7/W08 signed protected evidence workflow attribution without reducing anti-replay/unique-job rules, and updated B4/B5 native source pins, integrated Core source exceptions and frozen Git tree inventory. Original SHA `67a02dbac4354b60239805ccae0aab99da833781` passed 6/6 native CI but a successor requires new same-SHA verification. No signing custody, independently reviewed license, signed installer, protected SCM/Job acceptance, approval, main merge, or production permission has been supplied.

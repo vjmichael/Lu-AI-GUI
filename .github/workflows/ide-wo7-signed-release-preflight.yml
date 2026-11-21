@@ -36,8 +36,6 @@ jobs:
         run: python -m unittest discover -s ide/packaging -p 'test_verify_wo7_pe_imports.py' -v
       - name: Run release evidence authenticity-boundary tests
         run: python -m unittest discover -s ide/packaging -p 'test_verify_wo7_release_evidence.py' -v
-      - name: Refuse forged positive WO7 legal/import evidence (source-only hostile fixtures)
-        run: python -m unittest discover -s ide/packaging -p 'test_verify_wo7_positive_bundle_audit.py' -v
       - name: Verify Tauri reviewed-resource transfer refuses stray and changed assets
         run: python -m unittest discover -s ide/packaging -p 'test_prepare_wo7_tauri_bundle.py' -v
       - name: Verify signed candidate preflight distinguishes installed test from release

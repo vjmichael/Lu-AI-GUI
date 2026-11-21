@@ -1,5 +1,10 @@
 # Lu IDE — Current project state (authoritative handoff)
 
+## IDE-PRECORE-CLOSEOUT-R4 — exact-SHA P05 historical-workflow source correction (2026-11-21)
+
+Original [Actions run 44961720181](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/44961720181), at `dc29237d2862b683c84c25f1809da0cac8b0c9d3`, is terminal: 4/6 PASS and exactly two Windows/Linux Tauri failures at original P05 source provenance. The actual failure is `p05_unreviewed_or_unretained_native_workflow_change`; the only changed original path among all 38 protected P05 workflows is `.github/workflows/ide-wo7-signed-release-preflight.yml`. The recent WO7 negative-test insertion changed its historical Git blob from `6413844fdaa579840441d538d21bb62cf605fc93` to `3eddc41a7aa0447a66320d5999eab4cb25bdfecb`. Restoring the original exact blob leaves the existing positive WO7 source-audit hostile tests in the separate original integration six-job workflow and does not weaken historical negative preflight. No other P05 historical workflow or owner/source review was changed. This correction is source-only and needs one fresh exact-SHA native qualification; no previous green results or physical signed Windows approval transfer to the new SHA. Genuine signing/legal reviewer custody, source-admitted positive workflow registration, signed installer/desktop/service and physically witnessed SCM/Job acceptance remain HOLD.
+
+
 ## IDE-PRECORE-CLOSEOUT-R4 — positive signed WO7 legal/import admission source (2026-11-21; unqualified successor)
 
 The original integration source `67a02dbac4354b60239805ccae0aab99da833781` passed all six independent original Windows/Linux native jobs in [run 44957491273](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/44957491273). This subsequent R4 source change does **not** inherit their exact-SHA acceptance.
