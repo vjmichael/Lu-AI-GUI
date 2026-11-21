@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "b9060299c7d14aee217cf7fc2f6cf0711dcd5327",
-  "trackedFileCount": 1274,
+  "sourceCommitBeforeLock": "31b8943c3ec21e96c804bdac48233916e50cafac",
+  "trackedFileCount": 1277,
   "files": [
     {
       "path": ".gitattributes",
@@ -1066,6 +1066,10 @@
     {
       "path": "docs/LU_IPC_01A_B_V0_CONTRACT_20261120.md",
       "blob": "7d7c6c034da95d89be8c09747fd8f07e9b40cf51"
+    },
+    {
+      "path": "docs/LU_IPC_01D_R1_NATIVE_TRANSPORT_20261120.md",
+      "blob": "831d75c872f313e89bb56655d5787b2dbd40f15e"
     },
     {
       "path": "docs/LU_KIAF_ACTIVE_EXECUTION_LEDGER_20261108.md",
@@ -3377,11 +3381,11 @@
     },
     {
       "path": "src-tauri/lu-core/Cargo.lock",
-      "blob": "d57f9a8454f222065d7dd7ba2180149fbc049eda"
+      "blob": "586642e0127a449fc8f89a2c270ddaa827bbc48e"
     },
     {
       "path": "src-tauri/lu-core/Cargo.toml",
-      "blob": "c6a4f1e017331ffd34fec3771989270f86d1fe48"
+      "blob": "eae4f9fbfc1962f0b3a171776bf4d3e738416d12"
     },
     {
       "path": "src-tauri/lu-core/DESIGN_GAP_AUDIT_2026-10-25.md",
@@ -3465,7 +3469,7 @@
     },
     {
       "path": "src-tauri/lu-core/proto/lu/workspace/v0/workspace.proto",
-      "blob": "83585c37733de69610e8c5ec0fbdfb883da83f86"
+      "blob": "4e01d921197fb1c58c99958479b1cede36e13c9a"
     },
     {
       "path": "src-tauri/lu-core/src/agent_continuation_intent.rs",
@@ -3821,7 +3825,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/lib.rs",
-      "blob": "9d73802911c447d5e42a9c87a68859836ac2a967"
+      "blob": "5a4b8a1a84c0610d26aba3150d1b865e451ed691"
     },
     {
       "path": "src-tauri/lu-core/src/linux_device_hints.rs",
@@ -4465,7 +4469,11 @@
     },
     {
       "path": "src-tauri/lu-core/src/workspace_ipc.rs",
-      "blob": "b4f1572e777072c6f01d863dccf1d3302a4aac11"
+      "blob": "06c47e8e83ad835711dca3ed0dc9851bcf8aae05"
+    },
+    {
+      "path": "src-tauri/lu-core/src/workspace_ipc_transport.rs",
+      "blob": "c60bd9d930fd9cf8cd6da7a0275b857117d25391"
     },
     {
       "path": "src-tauri/lu-core/src/workspace_quarantine.rs",
@@ -4978,6 +4986,10 @@
     {
       "path": "src-tauri/lu-core/tests/web_research_roadmap_acceptance.rs",
       "blob": "2991d9c0c5f5d8f76c841e5ee649726c321aed18"
+    },
+    {
+      "path": "src-tauri/lu-core/tests/workspace_ipc_transport_r1.rs",
+      "blob": "a03e3629ea12872c584218e70ca564f05d062ceb"
     },
     {
       "path": "src-tauri/lu-core/tests/workspace_ipc_v0.rs",
