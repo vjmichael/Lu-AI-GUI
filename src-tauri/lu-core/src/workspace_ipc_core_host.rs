@@ -832,7 +832,8 @@ impl CoreDlcHostGate{
         };
         use crate::gpu_resource_leases::{
             GpuLeaseRequest,LeaseOrigin,OriginalTurnAuthority,
-            HostModelControl,InstalledHostGpuObserver,InstalledNvpWorkerStopVerifier,
+            HostModelControl,InstalledHostGpuObserver,
+            InstalledScmNvpWorkerStopVerifier,
         };
         self.require_session(installed.session())?;
         require_registered_nvp_film_plan(registry,plan)?;
@@ -880,6 +881,16 @@ impl CoreDlcHostGate{
             return Err(CoreDlcGateError::InvalidOrigin)
         }
         let expected_lease_ref=format!("gpu-{}",self.call_id(host,&origin.operation_ref));
+        // Only the already verified Core-signed SCM service is allowed
+        // to open SYSTEM/Administrators-only NVP stop receipts. Keep its
+        // actual OS process-birth witness in the blocking GPU worker;
+        // the desktop never accesses that protected receipt file.
+        let stop_verifier=Arc::new(
+            InstalledScmNvpWorkerStopVerifier::new(
+                supervisor.original_process_witness()
+                    .map_err(|_|CoreDlcGateError::Unavailable)?
+            ).map_err(|_|CoreDlcGateError::Unavailable)?
+        );
         let owner=Arc::new(OwnedNvpGpuAuthority{
             gate:Arc::downgrade(&self.state),
             authority:authority.clone(),origin:host.origin.clone(),
@@ -915,7 +926,7 @@ impl CoreDlcHostGate{
                     manager:Arc::clone(manager),model:Arc::clone(model),
                     authority:Arc::clone(&owner),
                     probe:Arc::new(InstalledHostGpuObserver),
-                    workers:Arc::new(InstalledNvpWorkerStopVerifier),
+                    workers:Arc::clone(&stop_verifier),
                 });
                 queue.submit(original,GpuAsyncKind::Acquire,worker)
                     .map(|s|gpu_async_outcome(&origin.operation_ref,s))
@@ -931,7 +942,7 @@ impl CoreDlcHostGate{
                     manager:Arc::clone(manager),model:Arc::clone(model),
                     authority:Arc::clone(&owner),
                     probe:Arc::new(InstalledHostGpuObserver),
-                    workers:Arc::new(InstalledNvpWorkerStopVerifier),
+                    workers:Arc::clone(&stop_verifier),
                 });
                 queue.submit(original,GpuAsyncKind::Release,worker)
                     .map(|s|gpu_async_outcome(&origin.operation_ref,s))
