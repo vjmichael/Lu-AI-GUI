@@ -536,13 +536,13 @@ impl WindowsInstalledEnrollment {
     /// Non-SYSTEM desktop path for protected PUBLIC NVP signer/package
     /// identity only. Never reads or synthesizes a SYSTEM-held handshake key.
     fn from_installer_owned_nvp_public(
-        supervised_pid:u32,
+        supervised_pid:u32,bytes:&[u8],
     )->Result<(Self,[u8;32]),TransportError>{
         if supervised_pid==0{return Err(TransportError::PeerNotVerified)}
-        let bytes=lu_win_worker_job::ipc_installer_enrollment::
-            read_installed_nvp_film_pins()
-            .map_err(|_|TransportError::PeerNotVerified)?;
-        let record=ProtectedInstalledIdeRecord::parse_for(&bytes,"nvp.film")?;
+        // Verified, public-only enrollment material is fetched across the
+        // signed SCM Core control pipe. Non-SYSTEM desktop may NOT open the
+        // SYSTEM/Administrators-only protected ProgramData file itself.
+        let record=ProtectedInstalledIdeRecord::parse_for(bytes,"nvp.film")?;
         let record_fingerprint:[u8;32]=Sha256::digest(&bytes).into();
         let process=lu_win_worker_job::ipc_pipe_peer::observe_host_process(
             supervised_pid).map_err(|_|TransportError::PeerNotVerified)?;
@@ -769,13 +769,9 @@ pub mod windows {
                 if std::time::Instant::now()>=broker.deadline {
                     return Err(TransportError::PeerNotVerified)
                 }
-                let bytes=lu_win_worker_job::ipc_installer_enrollment::
-                    read_installed_nvp_film_pins()
-                    .map_err(|_|TransportError::PeerNotVerified)?;
-                let digest:[u8;32]=ImageSha256::digest(bytes).into();
-                if !fixed_equal(&broker.request.enrollment_sha256,&digest){
-                    return Err(TransportError::PeerNotVerified)
-                }
+                // The SCM reopens the protected enrollment and verifies its
+                // digest on EVERY check_authenticated() call. Never use a
+                // desktop read or cached pins as proof that it still exists.
             }
             if let Some(witness)=&self.revocation {
                 // Re-read both protected material sources on each received
@@ -984,9 +980,12 @@ pub mod windows {
            original.core_epoch_ref!=identity.core_epoch_ref{
             return Err(TransportError::IdentityMismatch)
         }
+        let public=lu_win_worker_job::ipc_scm_control::
+            fetch_nvp_public_enrollment(original,expected_scm).await
+            .map_err(|_|TransportError::PeerNotVerified)?;
         let (pin,record_sha256)=
             WindowsInstalledEnrollment::from_installer_owned_nvp_public(
-                supervised_pid)?;
+                supervised_pid,&public)?;
         server.connect().await?;
         let first=read_frame(server).await?;
         let hello=match first.body.as_ref(){
