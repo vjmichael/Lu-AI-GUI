@@ -114,12 +114,14 @@ jobs:
           echo LU_IPC_GPU_01C_NONRUNNABLE_SOURCE_SENTINELS_ONLY
           cargo check --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib
           echo LU_IPC_GPU_01C_DESKTOP_RUST_TYPECHECK_SOURCE_ONLY_PASS
-      - name: Windows strict installer record parser regression
+      - name: Windows strict installer record and native NVP pipe peer identity regressions
         if: matrix.os == 'windows-2025'
         shell: bash
         run: |
           set -euo pipefail
           cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib installed_record_parser_rejects_untrusted_claims_and_embedded_keys -- --nocapture
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib nvp_brokered_public_pins_reject_stale_or_untrusted_pipe_generations -- --nocapture
+          echo LU_IPC_GPU_01D_NVP_NATIVE_OS_PEER_IDENTITY_REFUSAL_PASS
       - name: Native FFI custody module, protected credentials and original worker crate
         shell: bash
         run: |
