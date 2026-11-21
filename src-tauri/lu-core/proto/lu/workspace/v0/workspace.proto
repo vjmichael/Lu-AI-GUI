@@ -46,6 +46,7 @@ message WorkspaceFrame {
     GpuLeaseRequest gpu_lease_request = 38;
     GpuLeaseOutcome gpu_lease_outcome = 39;
     GpuLeaseRelease gpu_lease_release = 40;
+    GpuLeasePoll gpu_lease_poll = 41; // Core original-work status, never execution
   }
   reserved 6 to 9; // Do not add unreviewed implicit identity fields.
 }
@@ -294,6 +295,19 @@ message GpuLeaseRelease {
   string lease_ref = 2;
   string nvp_worker_stop_ref = 3; // locator only; not trusted termination proof
 }
+// A DEFERRED GPU response with a lease_ref means durable work was queued,
+// NOT that the device is ready. Poll/Recover original operation; never retry
+// a failed unload or assume an abandoned operation freed GPU VRAM.
+enum GpuLeaseTransitionKind {
+  GPU_LEASE_TRANSITION_UNSPECIFIED = 0;
+  GPU_LEASE_TRANSITION_ACQUIRE = 1;
+  GPU_LEASE_TRANSITION_RELEASE = 2;
+}
+message GpuLeasePoll {
+  OriginRefs origin = 1;
+  string lease_ref = 2;
+  GpuLeaseTransitionKind transition = 3;
+}
 
 message CoreInferenceRequest {
   OriginRefs origin = 1;
@@ -351,6 +365,7 @@ service LuCoreGateway {
   // create an installed endpoint or bypass Core host authorization.
   rpc RequestGpuLease(GpuLeaseRequest) returns (GpuLeaseOutcome);
   rpc ReleaseGpuLease(GpuLeaseRelease) returns (GpuLeaseOutcome);
+  rpc PollGpuLease(GpuLeasePoll) returns (GpuLeaseOutcome);
   rpc Focus(FocusWorkspace) returns (FocusOutcome);
   rpc Health(HealthRequest) returns (HealthReport);
 }

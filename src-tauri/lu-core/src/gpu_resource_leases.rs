@@ -40,7 +40,7 @@ impl LeasePhase{
         }
     }
 }
-#[derive(Debug,Clone,PartialEq,Eq)]
+#[derive(Debug,Clone,PartialEq,Eq,serde::Serialize,serde::Deserialize)]
 pub struct LeaseOrigin{
     pub module_id:String,
     pub workspace_ref:String,
@@ -65,7 +65,7 @@ fn safe_ref(s:&str)->bool{
     !s.is_empty()&&s.len()<=128&&s.bytes().all(|x|
         x.is_ascii_alphanumeric()||matches!(x,b'-'|b'_'|b'.'|b':'|b'/'))
 }
-#[derive(Debug,Clone,PartialEq,Eq)]
+#[derive(Debug,Clone,PartialEq,Eq,serde::Serialize,serde::Deserialize)]
 pub struct GpuLeaseRequest{
     /// Host-minted correlation ID; never a raw client-chosen OS capability.
     pub lease_ref:String,

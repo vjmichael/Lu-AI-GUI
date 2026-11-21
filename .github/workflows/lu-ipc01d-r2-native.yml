@@ -77,6 +77,20 @@ jobs:
           cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib gpu_resource_leases -- --nocapture
           cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test workspace_ipc_gpu_lease -- --nocapture
           echo LU_IPC_GPU_01A_SOURCE_LEASE_AND_WIRE_PASS
+      - name: LU-IPC-GPU-01C durable async original-operation and poll regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib gpu_async_reconciler -- --nocapture
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test workspace_ipc_gpu_lease -- --nocapture
+          echo LU_IPC_GPU_01C_DURABLE_ASYNC_AND_POLL_PASS
+      - name: Windows LU desktop real Tauri host startup/source compilation
+        if: matrix.os == 'windows-2025'
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo check --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib
+          echo LU_IPC_GPU_01C_DESKTOP_STARTUP_SOURCE_PASS
       - name: Windows strict installer record parser regression
         if: matrix.os == 'windows-2025'
         shell: bash

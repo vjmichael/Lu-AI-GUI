@@ -65,3 +65,31 @@ fn all_clear_is_only_a_scoped_locator_not_proof_of_worker_stop(){
     assert_eq!(validate(&frame(proto::workspace_frame::Body::GpuLeaseRelease(release))),
         Err(WorkspaceWireError::Invalid("gpu_release_origin")));
 }
+
+#[test]
+fn queued_gpu_work_is_deferred_not_a_device_grant_and_requires_original_poll(){
+    let queued=proto::GpuLeaseOutcome{
+        operation_ref:"op-1".into(),
+        decision:proto::AdmissionDecision::Deferred as i32,
+        phase:proto::GpuLeasePhase::Draining as i32,
+        lease_ref:"gpu-queued-1".into(),
+        measured_available_vram_bytes:None,
+        reason_code:"GPU_QUEUED".into(),
+    };
+    let f=frame(proto::workspace_frame::Body::GpuLeaseOutcome(queued.clone()));
+    assert_eq!(decode_frame(&encode_frame(&f).unwrap()).unwrap(),f);
+    let poll=proto::GpuLeasePoll{
+        origin:Some(origin()),lease_ref:queued.lease_ref.clone(),
+        transition:proto::GpuLeaseTransitionKind::Acquire as i32,
+    };
+    assert!(validate(&frame(proto::workspace_frame::Body::GpuLeasePoll(
+        poll.clone()))).is_ok());
+    let invalid=proto::GpuLeasePoll{transition:0,..poll};
+    assert_eq!(validate(&frame(proto::workspace_frame::Body::GpuLeasePoll(invalid))),
+        Err(WorkspaceWireError::Invalid("gpu_poll_transition")));
+    let invalid=proto::GpuLeaseOutcome{
+        phase:proto::GpuLeasePhase::Granted as i32,..queued
+    };
+    assert_eq!(validate(&frame(proto::workspace_frame::Body::GpuLeaseOutcome(invalid))),
+        Err(WorkspaceWireError::Invalid("gpu_lease_pending_ref")));
+}

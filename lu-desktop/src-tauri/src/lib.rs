@@ -818,6 +818,10 @@ struct DesktopState {
     workspace_locations: workspace_desktop::WorkspaceLocations,
     source_reuse: lu_core::ai_operations::SourceReuseIndex,
     supervisor: Arc<TrustedInferenceSupervisor<PersistentLlamaBackend>>,
+    // Owner-locked, crash-reconciled original NVP GPU leases. Constructed
+    // BEFORE the Tauri host starts accepting any model or IPC requests.
+    gpu_leases: Arc<lu_core::gpu_resource_leases::CoreGpuLeaseManager>,
+    gpu_async: Arc<lu_core::gpu_async_reconciler::DurableGpuAsyncQueue>,
     background_tasks: Arc<lu_core::tasks::TaskStore>,
     background_scheduler: Arc<lu_core::native_background_scheduler::BackgroundScheduler>,
     background_pressure: Arc<lu_core::native_resource_pressure::PressureMonitor>,
@@ -1310,6 +1314,23 @@ impl DesktopState {
                 .attach_projector(&model_ref, projector)
                 .map_err(|e| format!("saved projector binding: {e:?}"))?;
         }
+        // LU-IPC-GPU-01C: DesktopOwner has already excluded any concurrent
+        // Lu process. Reopen the original journal and synchronously FENCE
+        // model admission before this DesktopState is published to Tauri.
+        // A crashed NVP render is not proof of worker stop or reclaimed VRAM.
+        let gpu_leases=Arc::new(
+            lu_core::gpu_resource_leases::CoreGpuLeaseManager::open_and_fence_at_startup(
+                &root.join("lu-nvp-gpu-leases.sqlite"),&supervisor,
+            ).map_err(|e|format!("GPU lease startup recovery unavailable: {e:?}"))?
+        );
+        // A QUEUED GPU effect can crash before the model's lease row exists.
+        // Its separate accepted-operation ledger also fences model startup.
+        let gpu_async=Arc::new(
+            lu_core::gpu_async_reconciler::DurableGpuAsyncQueue::
+                open_and_fence_at_startup(
+                    &root.join("lu-nvp-gpu-async.sqlite"),&supervisor,
+                ).map_err(|e|format!("NVP GPU transition startup unavailable: {e:?}"))?
+        );
         let background_tasks=Arc::new(lu_core::tasks::TaskStore::open(
             &root.join("lu-background-tasks.sqlite")
         ).map_err(|_|"Background task store unavailable")?);
@@ -1417,6 +1438,8 @@ impl DesktopState {
             load_trace,
             engine_start_events,
             supervisor: Arc::new(supervisor),
+            gpu_leases,
+            gpu_async,
         })
     }
 }
@@ -1556,6 +1579,24 @@ fn start_background_watchdog(app:AppHandle,state:Arc<DesktopState>){
     });
 }
 
+#[tauri::command]
+/// Read-only desktop status; never fabricates a NVP permission or releases
+/// a lease. This is usable even while the large Lu GGUF is fully unloaded.
+#[derive(Clone,Serialize)]
+#[serde(rename_all="camelCase")]
+struct LuGpuLeaseDesktopStatus{unreconciled:bool,model_phase:String}
+#[tauri::command]
+fn lu_gpu_lease_status(state:State<'_,Arc<DesktopState>>)
+    ->Result<LuGpuLeaseDesktopStatus,String>{
+    let unresolved=state.gpu_leases.has_unreconciled()
+        .map_err(|_|"GPU lease SQLite custody unavailable")? ||
+        state.gpu_async.has_unreconciled()
+        .map_err(|_|"GPU transition SQLite custody unavailable")?;
+    let model_phase=state.supervisor.status()
+        .map(|s|format!("{:?}",s.phase))
+        .map_err(|_|"model supervisor unavailable")?;
+    Ok(LuGpuLeaseDesktopStatus{unreconciled:unresolved,model_phase})
+}
 #[tauri::command]
 fn lu_status(state: State<'_, Arc<DesktopState>>) -> Result<RuntimeView, String> {
     let s = state.supervisor.status().map_err(|e| format!("{e:?}"))?;
@@ -4589,6 +4630,14 @@ fn lu_model_save_inference_profile(
         return Err("Invalid registered model identity".into());
     }
     let approved=profile.validate()?;
+    // Even when Lu has temporarily unloaded its GGUF, the exact approved
+    // GGUF/MMProj and profile must not change underneath a film GPU lease.
+    if state.gpu_leases.has_unreconciled()
+        .map_err(|_|"GPU lease recovery journal unavailable")? ||
+        state.gpu_async.has_unreconciled()
+        .map_err(|_|"GPU transition recovery journal unavailable")? {
+        return Err("Finish or explicitly reconcile the active NVP GPU lease first".into());
+    }
     let _fence=state.model_profile_admission.lock()
         .map_err(|_|"Model configuration admission unavailable")?;
     if state.generation_queue.has_jobs() ||
@@ -10429,6 +10478,7 @@ pub fn run() {
             project_review_decisions_desktop::lu_project_update_review_decide,
             project_review_decisions_desktop::lu_project_update_review_exact_requirement,
             lu_status,
+            lu_gpu_lease_status,
             lu_list_models,
             lu_model_preflight,
             lu_model_backend_options,

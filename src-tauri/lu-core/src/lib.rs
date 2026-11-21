@@ -124,6 +124,7 @@ pub mod inference_supervisor;
 pub mod prefix_kv_cache;
 pub mod warm_model_residency;
 pub mod gpu_resource_leases;
+pub mod gpu_async_reconciler;
 pub mod inference_wire;
 pub mod journal;
 pub mod linux_device_hints;

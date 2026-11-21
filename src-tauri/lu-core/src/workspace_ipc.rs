@@ -327,6 +327,16 @@ pub fn validate(frame:&proto::WorkspaceFrame)->Result<(),WorkspaceWireError>{
                     Ok(proto::GpuLeasePhase::Granted|proto::GpuLeasePhase::Restored)){
                     return Err(WorkspaceWireError::Invalid("gpu_lease_grant"))
                 }
+            } else if v.decision==proto::AdmissionDecision::Deferred as i32 {
+                // Durable QUEUED/RUNNING work can return a correlation
+                // lease_ref; DEFERRED is NOT GPU_READY or permission for LTX.
+                if !v.lease_ref.is_empty() &&
+                   !matches!(proto::GpuLeasePhase::try_from(v.phase),
+                       Ok(proto::GpuLeasePhase::Draining |
+                          proto::GpuLeasePhase::Releasing |
+                          proto::GpuLeasePhase::Restoring)){
+                    return Err(WorkspaceWireError::Invalid("gpu_lease_pending_ref"))
+                }
             } else if !v.lease_ref.is_empty() {
                 return Err(WorkspaceWireError::Invalid("gpu_lease_denied_ref"))
             }
@@ -338,6 +348,14 @@ pub fn validate(frame:&proto::WorkspaceFrame)->Result<(),WorkspaceWireError>{
             origin(v.origin.as_ref().ok_or(WorkspaceWireError::Invalid("gpu_release_origin"))?)?;
             name(&v.lease_ref,128)?;
             optional_name(&v.nvp_worker_stop_ref,128)?;
+        }
+        Body::GpuLeasePoll(v)=>{
+            origin(v.origin.as_ref().ok_or(WorkspaceWireError::Invalid("gpu_poll_origin"))?)?;
+            name(&v.lease_ref,128)?;
+            if v.transition==0 ||
+                proto::GpuLeaseTransitionKind::try_from(v.transition).is_err(){
+                return Err(WorkspaceWireError::Invalid("gpu_poll_transition"))
+            }
         }
         Body::Inference(v)=>{
             origin(v.origin.as_ref().ok_or(WorkspaceWireError::Invalid("inference_origin"))?)?;
