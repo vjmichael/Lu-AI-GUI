@@ -926,18 +926,55 @@ mod independent_outcome_tests{
     }
 }
 
+// Windows SystemTime can advance in coarse ticks. Parallel Rust tests that
+// used PID + as_nanos alone could reopen the SAME SQLite test database,
+// generating false "database is locked" and leaked UNCERTAIN state failures.
+// Retain exclusive OS locking unchanged; only isolate test fixture paths.
+#[cfg(test)]
+fn unique_ipc_test_directory(prefix:&str)->std::path::PathBuf{
+    static NEXT:std::sync::atomic::AtomicU64=
+        std::sync::atomic::AtomicU64::new(0);
+    let ordinal=NEXT.fetch_add(1,Ordering::Relaxed);
+    let instant=std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("fixture timestamp").as_nanos();
+    let root=std::env::temp_dir().join(format!(
+        "{prefix}-{}-{instant}-{ordinal}",std::process::id()));
+    // create_dir, not create_dir_all: silently reusing a fixture DB is a
+    // failure of test isolation, never an acceptable recovery scenario.
+    std::fs::create_dir(&root).expect("unique IPC test database directory");
+    root
+}
+
 #[cfg(test)]
 mod ipc_exclusive_owner_tests {
     use super::*;
     use crate::contracts::{ProtoPayload,ToolInvocation};
-    use std::{fs,time::{SystemTime,UNIX_EPOCH}};
+    use std::fs;
     fn db()->(std::path::PathBuf,std::path::PathBuf){
-        let root=std::env::temp_dir().join(format!(
-            "lu-ipc-exclusive-{}-{}",std::process::id(),
-            SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos()));
-        fs::create_dir_all(&root).unwrap();
+        let root=unique_ipc_test_directory("lu-ipc-exclusive");
         let path=root.join("ipc-effects.sqlite");
         (root,path)
+    }
+    #[test]
+    fn parallel_fixture_databases_have_independent_sqlite_owner_locks(){
+        // Especially on Windows, SystemTime can yield identical clock ticks
+        // in concurrent Rust test threads. Test-path identity must be
+        // independent of time resolution and never share recovery history.
+        let handles=(0..12).map(|_|std::thread::spawn(||{
+            let (root,path)=db();
+            let owner=ExclusiveIpcEffectJournal::acquire(&path).unwrap();
+            assert_eq!(owner.restart_disposition(),IpcRestartDisposition::Ready);
+            (root,path,owner)
+        })).collect::<Vec<_>>();
+        let mut roots=std::collections::BTreeSet::new();
+        for handle in handles {
+            let (root,path,owner)=handle.join().unwrap();
+            assert!(roots.insert(path),"parallel tests shared one IPC database");
+            assert_eq!(owner.restart_disposition(),IpcRestartDisposition::Ready);
+            drop(owner);
+            let _=fs::remove_dir_all(root);
+        }
     }
     #[test]
     fn actual_sqlite_owner_lock_rejects_concurrent_core_and_releases_after_drop(){
@@ -1004,14 +1041,10 @@ mod ipc_exclusive_owner_tests {
 mod ipc_supervisor_exact_reconciliation_tests {
     use super::*;
     use crate::contracts::{ProtoPayload,ToolInvocation};
-    use std::{fs,time::{SystemTime,UNIX_EPOCH}};
+    use std::fs;
 
     fn path()->(std::path::PathBuf,std::path::PathBuf){
-        let dir=std::env::temp_dir().join(format!(
-            "lu-ipc-kernel-stop-{}-{}",
-            std::process::id(),
-            SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos()));
-        fs::create_dir_all(&dir).unwrap();
+        let dir=unique_ipc_test_directory("lu-ipc-kernel-stop");
         (dir.clone(),dir.join("journal.sqlite"))
     }
     fn call(id:&str)->ToolInvocation{

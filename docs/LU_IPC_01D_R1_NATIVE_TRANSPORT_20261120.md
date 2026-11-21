@@ -323,3 +323,22 @@ token requirement; test-only fixture bypass is restricted to the crate's
 native Job-empty unit test, which must never be treated as an installed
 AppContainer executor acceptance result. Current installed Core execution
 remains disabled until that independent custody/control plane is qualified.
+
+
+## R4-R3-R3-R2 — Windows SQLite fixture isolation and exact-call SCM custody (2026-11-21)
+
+Original observed native failure: https://github.com/vjmichael/Lu-AI-GUI/actions/runs/44925435498 at exact source 8d7c11621eea40322619a7bd6d959fad84122d71:
+- REPO-01 verify-source, exact-source, Linux native PASS;
+- Windows native FAIL at two parallel journal::ipc_exclusive_owner_tests with `database is locked` and unexpected `NeedsCustody { executing: 0, uncertain: 1 }` when Ready was expected.
+
+Diagnosed test-isolation defect: Windows SystemTime precision can produce the same as_nanos() for parallel test threads. The test fixture path was only a process ID and that timestamp, and create_dir_all() silently reopened an existing SQLite database. The correction adds a process-wide atomic ordinal, refuses directory reuse with create_dir() and includes concurrent fresh-journal regression. The production SQLite locking_mode=EXCLUSIVE, WAL, durable recovery classification and refusal behavior are UNCHANGED. This is a strongly supported cause, not a native PASS until exact-SHA tests rerun.
+
+Native SCM Job service-side groundwork:
+- A service-call binding now records exact Core call ID, SHA-256 fingerprint, module, session, Core epoch, conversation, original user turn, task and workspace, with bounded field checks. Identity is NOT authorization.
+- The service keeper rejects same-call/lane replay, cross-lane or cross-turn/epoch drift and >32 live children / >1,024 lifetime call identities (the latter fails closed pending a durable-receipt acknowledgement protocol).
+- The holder assigns an original suspended restricted child to the native kernel Job before resume, refuses SYSTEM-token workers, demands OS-observed AppContainer for a Core executor in the production entry, and preserves original OS worker and supervisor PID/creation-time observations.
+- One-use ServiceStoppedJob comes from actual JobBasicAccounting.ActiveProcesses==0 and native child reaping, bound to the exact original service call and distinct DLC-client/executor lane. Service shutdown refuses partial all-worker positive claims.
+
+Still UNACCEPTED / implementation OPEN: A real installed service-side authenticated worker launcher/control channel does not exist yet. No caller may treat syntactically checked call identity as an installed publisher/user-turn grant. No signed durable SCM-origin executor receipts or independent Core verifier across Core process death/power loss exist. Client-Job proof alone does NOT clear NeedsExecutorCustody; historical UNCERTAIN effects must never be replayed. Physical Windows signed installer, SCM registration, token/ACL/credential rotation/revocation, real AppContainer executor positive, reboot/recovery and Core↔DLC integrated acceptance remain independently required.
+
+CI discipline: prepare one source-locked successor on existing draft PR #244; no CI dispatch per small source repair, no bypass of REPO-01 source identity, native Windows/Linux tests, or physical installed gates. Hosted Windows fixtures are not physical Windows installed release.
