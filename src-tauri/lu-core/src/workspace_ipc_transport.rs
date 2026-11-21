@@ -967,6 +967,139 @@ pub mod windows {
         Ok(session)
     }
 
+    /// NVP production admission via the *installed* SCM, never a credential
+    /// copied into Lu desktop. The trusted original USER-turn host provides
+    /// the immutable OriginalCall BEFORE this public pipe accepts any Hello.
+    /// This call does not itself grant GPU memory or execute a tool.
+    pub async fn accept_scm_brokered_nvp_film(
+        server:&mut NamedPipeServer,
+        supervised_pid:u32,
+        identity:&ServerIdentity,
+        original:&OriginalCall,
+        expected_scm:&lu_win_worker_job::ipc_pipe_peer::WindowsPipePeer,
+    )->Result<SignedWindowsSession,TransportError>{
+        reject_weak_identity(identity)?;
+        if original.module_id!="nvp.film" ||
+           original.session_ref!=identity.session_ref ||
+           original.core_epoch_ref!=identity.core_epoch_ref{
+            return Err(TransportError::IdentityMismatch)
+        }
+        let (pin,record_sha256)=
+            WindowsInstalledEnrollment::from_installer_owned_nvp_public(
+                supervised_pid)?;
+        server.connect().await?;
+        let first=read_frame(server).await?;
+        let hello=match first.body.as_ref(){
+            Some(proto::workspace_frame::Body::Hello(value))=>value,
+            _=>return Err(TransportError::Protocol("expected_nvp_hello")),
+        };
+        if hello.claimed_module_id!="nvp.film" ||
+           hello.claimed_role!=proto::ModuleRole::Workspace as i32 ||
+           hello.claimed_package_sha256.as_slice()!=pin.expected_package_sha256 ||
+           !hello.requested_features.iter().any(|f|f=="gpu-lease-v1"){
+            return Err(TransportError::PeerNotVerified)
+        }
+        // This is synchronous after first ReadFile. The kernel-held process,
+        // executable File and Authenticode signer remain live in the session.
+        let lease=lu_win_worker_job::ipc_signed_package::inspect_signed_client(
+            server,&pin.expected_executable_path)
+            .map_err(|_|TransportError::PeerNotVerified)?;
+        let observed=lease.witness();
+        let image_sha256=file_sha256(lease.image_file())?;
+        let signer_sha256:[u8;32]=ImageSha256::digest(
+            lease.signer_certificate_der()).into();
+        if !pin.valid_identity_pin() ||
+           observed.pid!=pin.expected_pid ||
+           observed.creation_filetime!=pin.expected_creation_filetime ||
+           observed.session_id!=pin.expected_session_id ||
+           observed.user_sid!=pin.expected_user_sid ||
+           observed.image_path!=pin.expected_executable_path ||
+           image_sha256!=pin.expected_image_sha256 ||
+           signer_sha256!=pin.expected_signer_certificate_sha256{
+            return Err(TransportError::PeerNotVerified)
+        }
+        let hello_wire=encode_frame(&first)?;
+        if hello_wire.len()>1024{
+            return Err(TransportError::InvalidFrameLength)
+        }
+        write_frame(server,&envelope(
+            first.request_id.clone(),String::new(),
+            proto::workspace_frame::Body::AuthChallenge(proto::AuthChallenge{
+                server_nonce:identity.server_nonce.to_vec(),
+            }),
+        )).await?;
+        let proof_frame=read_frame(server).await?;
+        if proof_frame.request_id!=first.request_id ||
+           !proof_frame.session_ref.is_empty(){
+            return Err(TransportError::IdentityMismatch)
+        }
+        let proof=match proof_frame.body{
+            Some(proto::workspace_frame::Body::AuthProof(value))=>value,
+            _=>return Err(TransportError::Protocol("expected_nvp_proof")),
+        };
+        let client_proof:[u8;32]=proof.client_hmac_sha256.as_slice()
+            .try_into().map_err(|_|TransportError::MacMismatch)?;
+        // Never trust an after-await PID: re-observe the last message-token
+        // peer and the held process generation before invoking the SYSTEM SCM.
+        let next=lu_win_worker_job::ipc_pipe_peer::observe_message_token_peer(
+            server).map_err(|_|TransportError::PeerNotVerified)?;
+        if &next!=lease.witness(){
+            return Err(TransportError::PeerNotVerified)
+        }
+        lease.check_alive().map_err(|_|TransportError::PeerNotVerified)?;
+        let welcome=proto::Welcome{
+            selected_major:WIRE_MAJOR,selected_minor:WIRE_MINOR,
+            core_epoch_ref:identity.core_epoch_ref.clone(),
+            enabled_features:vec!["gpu-lease-v1".into()],
+            server_hmac_sha256:vec![],
+        };
+        let scope=NvpBrokerScope{
+            original:original.clone(),
+            nvp_pid:observed.pid,
+            nvp_birth_filetime:observed.creation_filetime,
+            nvp_session_id:observed.session_id,
+            service_pid:expected_scm.pid,
+            service_birth_filetime:expected_scm.creation_filetime,
+            challenge:identity.server_nonce,
+        };
+        scope.canonical().map_err(|_|TransportError::IdentityMismatch)?;
+        let request=NvpAuthRequest{
+            action:NvpAuthAction::Open,scope,
+            package_sha256:pin.expected_package_sha256,
+            enrollment_sha256:record_sha256,
+            image_sha256,signer_sha256,
+            hello_wire,client_proof,
+            welcome_without_mac:welcome.encode_to_vec(),
+            core_session:identity.session_ref.clone(),
+        };
+        let mac=lu_win_worker_job::ipc_scm_control::
+            issue_nvp_auth_command(&request,expected_scm).await
+            .map_err(|_|TransportError::PeerNotVerified)?;
+        lease.check_alive().map_err(|_|TransportError::PeerNotVerified)?;
+        let mut signed_welcome=welcome;
+        signed_welcome.server_hmac_sha256=mac.to_vec();
+        write_frame(server,&envelope(
+            first.request_id,identity.session_ref.clone(),
+            proto::workspace_frame::Body::Welcome(signed_welcome),
+        )).await?;
+        let session=SignedWindowsSession{
+            session:TransportSession{
+                session_ref:identity.session_ref.clone(),
+                module_id:"nvp.film".into(),
+                core_epoch_ref:identity.core_epoch_ref.clone(),
+            },
+            lease,revocation:None,
+            brokered:Some(BrokeredNvpWitness{
+                request,service:expected_scm.clone(),
+                deadline:std::time::Instant::now()+std::time::Duration::from_secs(300),
+                expected_welcome_mac:mac,
+            }),
+            gpu_lease_negotiated:true,
+        };
+        session.check_authenticated().await?;
+        Ok(session)
+    }
+
     pub fn check_pipe_name(name: &str) -> Result<(), TransportError> {
         let suffix = name.strip_prefix(PREFIX)
             .ok_or(TransportError::Protocol("pipe_name"))?;
