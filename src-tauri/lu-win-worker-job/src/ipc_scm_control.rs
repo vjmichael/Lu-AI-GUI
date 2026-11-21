@@ -32,8 +32,9 @@ use crate::{
         verify_core_control_request,verify_executor_stop,
         read_executor_stop_bytes_for_control},
     ipc_signed_package::{inspect_signed_client,open_signed_image},
+    ipc_nvp_gpu_stop::{independently_verified_nvp_worker_empty,NvpOriginalGpuLease},
     ipc_scm_control_wire::{ScmCommand,ScmControl,OriginalCall,
-        NvpAuthRequest,NvpAuthAction,
+        NvpAuthRequest,NvpAuthAction,NvpStopQuery,
         CHALLENGE_BYTES,SIGNATURE_BYTES,MAX_CONTROL_BODY},
 };
 const PIPE:&str=r"\\.\pipe\LuCoreIpcScmControlV1";
@@ -47,6 +48,7 @@ const CORE_SERVICE_RECEIPT_EXISTS:u8=3;
 const CORE_SERVICE_LAUNCHED:u8=4;
 const CORE_SERVICE_NVP_AUTH:u8=5;
 const CORE_SERVICE_NVP_PUBLIC_PINS:u8=6;
+const CORE_SERVICE_NVP_WORKER_STOP_VERIFIED:u8=7;
 const MAX_NVP_PUBLIC_PINS:usize=4096;
 const MAX_NVP_BROKER_SESSIONS:usize=128;
 const NVP_AUTH_LIFETIME:Duration=Duration::from_secs(300);
@@ -229,7 +231,26 @@ async fn serve_one(
     let mut transmitted_receipt=None;
     let mut transmitted_nvp_public_pins=None;
     let mut nvp_welcome_mac=None;
-    let result=if body.starts_with(NvpAuthRequest::DOMAIN){
+    let result=if body.starts_with(NvpStopQuery::DOMAIN){
+        let q=NvpStopQuery::parse_exact(
+            &body,nonce,service.pid,service.creation_filetime)
+            .map_err(|_|denied("SCM NVP stop request has invalid original lease"))?;
+        // Re-open the SYSTEM/Administrators-only NVP signer key and exact
+        // lease-named receipt within the privileged SCM. A missing or
+        // forged external issuer produces NO ACK and no VRAM/reload grant.
+        // This proves only NVP's independent SIGNED kernel Job-empty
+        // witness. Core separately measures GPU VRAM and exact model state.
+        require_system_service_context()?;
+        let original=NvpOriginalGpuLease{
+            lease_ref:&q.lease_ref,device_ref:&q.device_ref,
+            module_id:&q.module_id,workspace_ref:&q.workspace_ref,
+            conversation_ref:&q.conversation_ref,
+            user_turn_ref:&q.user_turn_ref,task_ref:&q.task_ref,
+            core_epoch_ref:&q.core_epoch_ref,nvp_session_ref:&q.nvp_session_ref,
+        };
+        independently_verified_nvp_worker_empty(&original)?;
+        CORE_SERVICE_NVP_WORKER_STOP_VERIFIED
+    }else if body.starts_with(NvpAuthRequest::DOMAIN){
         let request=NvpAuthRequest::parse_exact(
             &body,nonce,service.pid,service.creation_filetime)
             .map_err(|_|denied("SCM NVP signed scope not canonical"))?;
@@ -459,6 +480,45 @@ pub async fn fetch_nvp_public_enrollment(
     let result=issue_core_command(&command,expected_scm).await?;
     result.public_nvp_enrollment
         .ok_or_else(||denied("SCM supplied no protected NVP public pins"))
+}
+
+/// Verify the original NVP lease's independently signed kernel Job-empty
+/// proof in the SCM SYSTEM process (NOT the desktop account). The request
+/// is signed using the installed Core CNG identity and nonce, and the server
+/// process is re-attested after the reply. No receipt bytes, signer key, or
+/// client-supplied filesystem path cross this channel. A one-byte ACK is
+/// scoped to this one authenticated private request, NEVER a standalone
+/// release or model-restore capability.
+pub async fn issue_nvp_stop_query(
+    query:&NvpStopQuery,expected_scm:&WindowsPipePeer,
+)->io::Result<()>{
+    if query.service_pid!=expected_scm.pid ||
+       query.service_birth!=expected_scm.creation_filetime{
+        return Err(denied("stale original NVP stop SCM generation"))
+    }
+    let mut pipe=ClientOptions::new().open(PIPE)?;
+    observe_server(&pipe,expected_scm)?;
+    let mut challenge=[0u8;CHALLENGE_BYTES];
+    timeout(IO_DEADLINE,pipe.read_exact(&mut challenge)).await
+        .map_err(|_|denied("NVP Job-empty SCM challenge timeout"))??;
+    let body=query.canonical(challenge)
+        .map_err(|_|denied("NVP Job-empty query scope invalid"))?;
+    let signature=sign_core_control_request(&body)?;
+    observe_server(&pipe,expected_scm)?;
+    timeout(IO_DEADLINE,async{
+        pipe.write_all(&(body.len() as u32).to_be_bytes()).await?;
+        pipe.write_all(&body).await?;
+        pipe.write_all(&signature).await?;
+        pipe.flush().await
+    }).await.map_err(|_|denied("NVP Job-empty signed request timeout"))??;
+    let mut status=[0u8;1];
+    timeout(IO_DEADLINE,pipe.read_exact(&mut status)).await
+        .map_err(|_|denied("NVP Job-empty verification refused or timed out"))??;
+    observe_server(&pipe,expected_scm)?;
+    if status[0]!=CORE_SERVICE_NVP_WORKER_STOP_VERIFIED{
+        return Err(denied("NVP Job-empty private response not verified"))
+    }
+    Ok(())
 }
 
 /// Core-only private, signed NVP transcript verifier. It must be invoked
