@@ -189,6 +189,36 @@ impl CoreDlcHostGate {
     pub fn close(&self)->Result<(),CoreDlcGateError>{
         self.cancel_and_reap()
     }
+
+    /// SYSTEM-broker-only retirement of the exact installed session's
+    /// protected OS credential. Never accept a caller-supplied package digest:
+    /// the immutable pin is read from the installed native session witness.
+    /// Key deletion precedes worker reaping so later frames fail even when
+    /// kernel custody cannot yet be independently proved. The gate closes
+    /// regardless of either outcome; failure is never reported as success.
+    #[cfg(windows)]
+    pub fn revoke_installed_package(
+        &self,
+        installed:&crate::workspace_ipc_transport::windows::SignedWindowsSession,
+    )->Result<(),CoreDlcGateError>{
+        if installed.session()!=&self.session{
+            return Err(CoreDlcGateError::SessionMismatch);
+        }
+        let package=installed.installed_package_sha256()
+            .ok_or(CoreDlcGateError::Transport)?;
+        self.state.closed.store(true,Ordering::Release);
+        let key_deleted=lu_win_worker_job::ipc_credential_broker::
+            revoke_installed_ide_key(package).is_ok();
+        // Still attempt reaping if the vault is unavailable, otherwise the
+        // child may outlive session revocation. Retain the original Job handle.
+        let worker_reaped=if let Some(worker)=&self.state.worker{
+            worker.terminate_and_reap().is_ok()
+        }else{false};
+        if !key_deleted || !worker_reaped{
+            return Err(CoreDlcGateError::Unavailable);
+        }
+        Ok(())
+    }
     pub fn is_closed(&self)->bool{
         self.state.closed.load(Ordering::Acquire)
     }

@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "00d8bbc97f1d3969d8fe282e0a47860f2919facd",
+  "sourceCommitBeforeLock": "7955fb5faa561d274510e0daecb79fc998db4b0b",
   "trackedFileCount": 1285,
   "files": [
     {
@@ -1073,7 +1073,7 @@
     },
     {
       "path": "docs/LU_IPC_01D_R1_NATIVE_TRANSPORT_20261120.md",
-      "blob": "9b50c347cbe0b91541c38dcfd83994889f8ca14a"
+      "blob": "e1596bb1277f9cebe2edb650f89c859b6d0d98c9"
     },
     {
       "path": "docs/LU_KIAF_ACTIVE_EXECUTION_LEDGER_20261108.md",
@@ -4485,11 +4485,11 @@
     },
     {
       "path": "src-tauri/lu-core/src/workspace_ipc_core_host.rs",
-      "blob": "6487ae2292c3549fce00bedcb078ca0006f77352"
+      "blob": "3214635a20825e0d7fc8e0a78c81180358b0d217"
     },
     {
       "path": "src-tauri/lu-core/src/workspace_ipc_transport.rs",
-      "blob": "31402fead9839ddb718c080c3b1978dde184b14b"
+      "blob": "bf955b5f3cee22967a14d03d164cd50ecda1a80f"
     },
     {
       "path": "src-tauri/lu-core/src/workspace_quarantine.rs",
@@ -5077,7 +5077,7 @@
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/ipc_credential_broker.rs",
-      "blob": "ac430cff9dd9c7ade160c561eff3b2b690a23b2b"
+      "blob": "f780cd98e7e353570ce559add78aec064e9f6348"
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/ipc_installer_enrollment.rs",

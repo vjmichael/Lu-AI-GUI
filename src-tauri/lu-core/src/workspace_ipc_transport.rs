@@ -664,6 +664,12 @@ pub mod windows {
         pub fn installed_enrollment_active(&self)->bool{
             self.revocation.is_some()
         }
+        /// Host-only package identity captured from the protected installer
+        /// record, never the peer's claimed package digest. Used exclusively
+        /// for exact-key retirement under the SYSTEM broker.
+        pub fn installed_package_sha256(&self)->Option<[u8;32]>{
+            self.revocation.as_ref().map(|v|v.package_sha256)
+        }
         pub fn check_alive(&self)->Result<(),TransportError>{
             self.lease.check_alive().map_err(|_|TransportError::PeerNotVerified)?;
             if let Some(witness)=&self.revocation {

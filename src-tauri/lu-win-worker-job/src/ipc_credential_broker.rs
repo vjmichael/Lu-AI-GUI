@@ -3,10 +3,9 @@
 //! This module reads, creates and revokes a package-bound credential ONLY
 //! under the unimpersonated LocalSystem identity. The installer must verify
 //! the signed package and serialize provisioning before using these APIs.
- //! nonzero key in Windows Credential Manager under the LocalSystem identity
-//! and securely enroll the corresponding signed IDE through its protected
-//! channel. A desktop user, arbitrary caller, Hello, model or manifest must
-//! NEVER supply this material.
+//! A generated 32-byte key is persisted in Windows Credential Manager;
+//! enrollment through an independently protected installer channel is
+//! required. No interactive user, Hello, model, or DLC can supply key bytes.
 //!
 //! CRED_TYPE_GENERIC target is exactly:
 //!     LuCore/IPC/IDE/v1/<lowercase 64-byte package SHA-256>
