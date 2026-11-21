@@ -533,6 +533,44 @@ impl WindowsInstalledEnrollment {
     )->Result<(Self,[u8;32]),TransportError>{
         Self::from_installed_module(supervised_pid,"nvp.film")
     }
+    /// Non-SYSTEM desktop path for protected PUBLIC NVP signer/package
+    /// identity only. Never reads or synthesizes a SYSTEM-held handshake key.
+    fn from_installer_owned_nvp_public(
+        supervised_pid:u32,
+    )->Result<(Self,[u8;32]),TransportError>{
+        if supervised_pid==0{return Err(TransportError::PeerNotVerified)}
+        let bytes=lu_win_worker_job::ipc_installer_enrollment::
+            read_installed_nvp_film_pins()
+            .map_err(|_|TransportError::PeerNotVerified)?;
+        let record=ProtectedInstalledIdeRecord::parse_for(&bytes,"nvp.film")?;
+        let record_fingerprint:[u8;32]=Sha256::digest(&bytes).into();
+        let process=lu_win_worker_job::ipc_pipe_peer::observe_host_process(
+            supervised_pid).map_err(|_|TransportError::PeerNotVerified)?;
+        if process.image_path!=record.installed_executable_path{
+            return Err(TransportError::PeerNotVerified)
+        }
+        let pin=Self{
+            expected_pid:process.pid,
+            expected_creation_filetime:process.creation_filetime,
+            expected_session_id:process.session_id,
+            expected_user_sid:process.user_sid,
+            expected_executable_path:record.installed_executable_path,
+            expected_image_sha256:ProtectedInstalledIdeRecord::decode_sha256(
+                &record.image_sha256)?,
+            expected_signer_certificate_sha256:
+                ProtectedInstalledIdeRecord::decode_sha256(
+                    &record.signer_certificate_sha256)?,
+            expected_module_id:record.module_id,
+            expected_role:record.role,
+            expected_package_sha256:ProtectedInstalledIdeRecord::decode_sha256(
+                &record.package_sha256)?,
+            handshake_key:[0u8;32], // key is SCM-only by design
+        };
+        if !pin.valid_identity_pin(){
+            return Err(TransportError::PeerNotVerified)
+        }
+        Ok((pin,record_fingerprint))
+    }
     fn from_installed_module(
         supervised_pid:u32,module_id:&str,
     )->Result<(Self,[u8;32]),TransportError>{
@@ -586,7 +624,7 @@ impl WindowsInstalledEnrollment {
 
 #[cfg(windows)]
 impl WindowsInstalledEnrollment {
-    fn valid_pin(&self) -> bool {
+    fn valid_identity_pin(&self) -> bool {
         self.expected_pid != 0 && self.expected_creation_filetime != 0 &&
         self.expected_user_sid.starts_with("S-1-") &&
         std::path::Path::new(&self.expected_executable_path).is_absolute() &&
@@ -595,8 +633,10 @@ impl WindowsInstalledEnrollment {
         self.expected_role > 0 &&
         self.expected_image_sha256.iter().any(|b| *b != 0) &&
         self.expected_signer_certificate_sha256.iter().any(|b| *b != 0) &&
-        self.expected_package_sha256.iter().any(|b| *b != 0) &&
-        self.handshake_key.iter().any(|b| *b != 0)
+        self.expected_package_sha256.iter().any(|b| *b != 0)
+    }
+    fn valid_pin(&self)->bool{
+        self.valid_identity_pin() && self.handshake_key.iter().any(|b|*b!=0)
     }
 }
 #[cfg(windows)]
@@ -638,6 +678,9 @@ pub mod windows {
     use tokio::net::windows::named_pipe::{
         ClientOptions, NamedPipeClient, NamedPipeServer,
     };
+    use lu_win_worker_job::ipc_scm_control_wire::{
+        NvpBrokerScope,NvpAuthRequest,NvpAuthAction,OriginalCall,
+    };
     const PREFIX: &str = r"\\.\pipe\lu-ipc-";
     use std::io::{Read, Seek, SeekFrom};
     use sha2::{Digest as _, Sha256 as ImageSha256};
@@ -675,16 +718,24 @@ pub mod windows {
         record_sha256:[u8;32],
         credential_sha256:[u8;32],
     }
+    struct BrokeredNvpWitness{
+        request:lu_win_worker_job::ipc_scm_control_wire::NvpAuthRequest,
+        service:lu_win_worker_job::ipc_pipe_peer::WindowsPipePeer,
+        deadline:std::time::Instant,
+        expected_welcome_mac:[u8;32],
+    }
     pub struct SignedWindowsSession {
         session:TransportSession,
         lease:lu_win_worker_job::ipc_signed_package::SignedClientLease,
         revocation:Option<InstalledRevocationWitness>,
+        brokered:Option<BrokeredNvpWitness>,
         gpu_lease_negotiated:bool,
     }
     impl SignedWindowsSession {
         pub fn session(&self)->&TransportSession {&self.session}
         pub fn gpu_lease_feature_negotiated(&self)->bool{
-            self.gpu_lease_negotiated && self.revocation.is_some() &&
+            self.gpu_lease_negotiated &&
+                (self.revocation.is_some() || self.brokered.is_some()) &&
                 self.session.module_id=="nvp.film"
         }
         /// Stable kernel-observed peer identity held by the signed native
@@ -700,16 +751,32 @@ pub mod windows {
         /// package-key revocation witness; debug signed surrogate leases
         /// deliberately never satisfy this predicate.
         pub fn installed_enrollment_active(&self)->bool{
-            self.revocation.is_some()
+            self.revocation.is_some() || self.brokered.is_some()
+        }
+        pub fn brokered_nvp_active(&self)->bool{
+            self.brokered.is_some() && self.session.module_id=="nvp.film"
         }
         /// Host-only package identity captured from the protected installer
         /// record, never the peer's claimed package digest. Used exclusively
         /// for exact-key retirement under the SYSTEM broker.
         pub fn installed_package_sha256(&self)->Option<[u8;32]>{
-            self.revocation.as_ref().map(|v|v.package_sha256)
+            self.revocation.as_ref().map(|v|v.package_sha256).or_else(||
+                self.brokered.as_ref().map(|v|v.request.package_sha256))
         }
         pub fn check_alive(&self)->Result<(),TransportError>{
             self.lease.check_alive().map_err(|_|TransportError::PeerNotVerified)?;
+            if let Some(broker)=&self.brokered {
+                if std::time::Instant::now()>=broker.deadline {
+                    return Err(TransportError::PeerNotVerified)
+                }
+                let bytes=lu_win_worker_job::ipc_installer_enrollment::
+                    read_installed_nvp_film_pins()
+                    .map_err(|_|TransportError::PeerNotVerified)?;
+                let digest:[u8;32]=ImageSha256::digest(bytes).into();
+                if !fixed_equal(&broker.request.enrollment_sha256,&digest){
+                    return Err(TransportError::PeerNotVerified)
+                }
+            }
             if let Some(witness)=&self.revocation {
                 // Re-read both protected material sources on each received
                 // frame. Installer record replacement and Credential Manager
@@ -742,12 +809,42 @@ pub mod windows {
             }
             Ok(())
         }
+        /// An SCM-issued NVP session is rechecked against the same signed
+        /// Core control peer, current SYSTEM key and OS peer generation on
+        /// EVERY frame and before returning a GPU handoff result.
+        pub async fn check_authenticated(&self)->Result<(),TransportError>{
+            self.check_alive()?;
+            if let Some(broker)=&self.brokered{
+                let mut check=broker.request.clone();
+                check.action=lu_win_worker_job::ipc_scm_control_wire::
+                    NvpAuthAction::Check;
+                let mac=lu_win_worker_job::ipc_scm_control::issue_nvp_auth_command(
+                    &check,&broker.service).await
+                    .map_err(|_|TransportError::PeerNotVerified)?;
+                if !fixed_equal(&broker.expected_welcome_mac,&mac){
+                    return Err(TransportError::MacMismatch)
+                }
+                self.check_alive()?;
+            }
+            Ok(())
+        }
+        pub async fn revoke_brokered_nvp(&self)->Result<(),TransportError>{
+            if let Some(broker)=&self.brokered{
+                let mut revoke=broker.request.clone();
+                revoke.action=lu_win_worker_job::ipc_scm_control_wire::
+                    NvpAuthAction::Revoke;
+                lu_win_worker_job::ipc_scm_control::issue_nvp_auth_command(
+                    &revoke,&broker.service).await
+                    .map_err(|_|TransportError::PeerNotVerified)?;
+            }
+            Ok(())
+        }
         /// Preserve the post-ReadFile identity check on EVERY subsequent
         /// frame; session matching is not effect or model authorization.
         pub async fn read_verified_frame(&self,server:&mut NamedPipeServer)
             ->Result<proto::WorkspaceFrame,TransportError>{
             let frame=read_frame(server).await?;
-            self.check_alive()?;
+            self.check_authenticated().await?;
             let observed=lu_win_worker_job::ipc_pipe_peer::observe_message_token_peer(server)
                 .map_err(|_|TransportError::PeerNotVerified)?;
             if &observed != self.lease.witness() {
@@ -800,7 +897,8 @@ pub mod windows {
             server,&evidence,pin,identity,first).await?;
         lease.check_alive().map_err(|_|TransportError::PeerNotVerified)?;
         let gpu_lease_negotiated=gpu_lease_requested && session.module_id=="nvp.film";
-        Ok(SignedWindowsSession{session,lease,revocation:None,gpu_lease_negotiated})
+        Ok(SignedWindowsSession{session,lease,revocation:None,brokered:None,
+            gpu_lease_negotiated})
     }
 
     /// Synthetic test admission only: arbitrary caller-constructed pins
