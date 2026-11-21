@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "be2e8b8557ece0a5985f4fba7a3e78dc5275eb8d",
+  "sourceCommitBeforeLock": "d96a81dc1caa14982e8109424dce308197dc19c8",
   "trackedFileCount": 1270,
   "files": [
     {
@@ -1581,7 +1581,7 @@
     },
     {
       "path": "lu-desktop/scripts/check-ui.mjs",
-      "blob": "7a5da643d1a33764417533e5dbecd847eadfc4a2"
+      "blob": "d6df4981c6f115675b3a03303bd8b871a81b6be7"
     },
     {
       "path": "lu-desktop/scripts/lu-desktop.manifest",
