@@ -98,6 +98,7 @@ pub mod operational_asset_ledger;
 pub mod operational_memory;
 pub mod contracts;
 pub mod workspace_ipc;
+pub mod workspace_ipc_transport;
 pub mod conversation_authority;
 pub mod core_extension;
 pub mod cpu_instructions;

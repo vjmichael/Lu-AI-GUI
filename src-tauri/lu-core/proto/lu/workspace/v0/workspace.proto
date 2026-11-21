@@ -40,6 +40,8 @@ message WorkspaceFrame {
     ModelLeaseRequest acquire_model_lease = 33;
     ModelLeaseOutcome model_lease_outcome = 34;
     ModelLeaseRelease release_model_lease = 35;
+    AuthChallenge auth_challenge = 36;
+    AuthProof auth_proof = 37;
   }
   reserved 6 to 9; // Do not add unreviewed implicit identity fields.
 }
@@ -61,11 +63,18 @@ message Hello {
   repeated string requested_features = 7;
   bytes client_nonce = 8; // 32 bytes; not a bearer secret.
 }
+message AuthChallenge {
+  bytes server_nonce = 1; // Host-supplied cryptographically random 32 bytes.
+}
+message AuthProof {
+  bytes client_hmac_sha256 = 1; // HMAC over canonical hello + challenge.
+}
 message Welcome {
   uint32 selected_major = 1;
   uint32 selected_minor = 2;
   string core_epoch_ref = 3;
   repeated string enabled_features = 4;
+  bytes server_hmac_sha256 = 5; // Binds welcome/session to enrolled secret.
   // The *transport* must independently bind verified peer identity, process
   // owner, package provenance and account to a host-only admitted session.
 }

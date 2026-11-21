@@ -128,7 +128,8 @@ pub fn validate(frame:&proto::WorkspaceFrame)->Result<(),WorkspaceWireError>{
     }
     name(&frame.request_id,128)?;
     let body=frame.body.as_ref().ok_or(WorkspaceWireError::Invalid("body"))?;
-    let handshake=matches!(body,Body::Hello(_)|Body::Welcome(_));
+    let handshake=matches!(body,Body::Hello(_)|Body::Welcome(_)|
+        Body::AuthChallenge(_)|Body::AuthProof(_));
     if handshake {
         if !frame.session_ref.is_empty() && !matches!(body,Body::Welcome(_)){
             return Err(WorkspaceWireError::Invalid("handshake_session"))
@@ -145,12 +146,26 @@ pub fn validate(frame:&proto::WorkspaceFrame)->Result<(),WorkspaceWireError>{
             if v.claimed_role==0 || proto::ModuleRole::try_from(v.claimed_role).is_err()||
                 v.minimum_major>WIRE_MAJOR || v.maximum_major<WIRE_MAJOR ||
                 v.maximum_minor<WIRE_MINOR ||v.client_nonce.len()!=32 ||
+                v.client_nonce.iter().all(|b| *b==0) ||
                 v.requested_features.len()>32 {
                 return Err(WorkspaceWireError::Invalid("hello"));
             }
             for f in &v.requested_features {code(f)?}
         }
+        Body::AuthChallenge(v)=>{
+            if v.server_nonce.len()!=32{
+                return Err(WorkspaceWireError::Invalid("challenge_nonce"))
+            }
+        }
+        Body::AuthProof(v)=>{
+            if v.client_hmac_sha256.len()!=32{
+                return Err(WorkspaceWireError::Invalid("client_proof"))
+            }
+        }
         Body::Welcome(v)=>{
+            if v.server_hmac_sha256.len()!=32{
+                return Err(WorkspaceWireError::Invalid("server_proof"))
+            }
             if v.selected_major!=WIRE_MAJOR||v.selected_minor!=WIRE_MINOR{
                 return Err(WorkspaceWireError::UnsupportedVersion);
             }
