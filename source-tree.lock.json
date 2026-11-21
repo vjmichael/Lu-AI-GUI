@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "fce0452356b8c2ec5a5a56bb9a64c242224b149b",
+  "sourceCommitBeforeLock": "9a5814746ebe9afcb5f5ae69a4523339e9a5265d",
   "trackedFileCount": 1304,
   "files": [
     {
@@ -221,7 +221,7 @@
     },
     {
       "path": ".github/workflows/lu-ipc01d-r2-native.yml",
-      "blob": "2b85dc6ec72df60fd7882ad1de8663b851d1ef56"
+      "blob": "5ae71ae81611a54ddb253615734cda8b5527e4dd"
     },
     {
       "path": ".github/workflows/lu-kiaf-execution.yml",
@@ -4517,7 +4517,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/workspace_ipc_core_host.rs",
-      "blob": "991ecb2c664fd5f520a2580354e7c64d5fee807a"
+      "blob": "de20863f0cdd9a4e09be0038b252bf2d537e8f2d"
     },
     {
       "path": "src-tauri/lu-core/src/workspace_ipc_scm.rs",
