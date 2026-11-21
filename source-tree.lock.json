@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "c57d37ceecf0e47eb3211bfbeadfb5c0a7729729",
+  "sourceCommitBeforeLock": "7d028d214aac561baff9fcd2a877fec07991070b",
   "trackedFileCount": 1304,
   "files": [
     {
@@ -221,7 +221,7 @@
     },
     {
       "path": ".github/workflows/lu-ipc01d-r2-native.yml",
-      "blob": "5c1d6bcb27095f566e61c4e01239c69eaa218651"
+      "blob": "2b85dc6ec72df60fd7882ad1de8663b851d1ef56"
     },
     {
       "path": ".github/workflows/lu-kiaf-execution.yml",
@@ -1089,7 +1089,7 @@
     },
     {
       "path": "docs/LU_IPC_GPU_01C_DURABLE_DESKTOP_NVP_20261121.md",
-      "blob": "35fb58f314c5bfd2f646ad12e1aca4fdf6fed141"
+      "blob": "f891a7e4f2241a57a0937879ae855cce4f21ef68"
     },
     {
       "path": "docs/LU_IPC_R4_R3_R3_R4_ECOSYSTEM_AND_SCM_CONTROL_20261121.md",
