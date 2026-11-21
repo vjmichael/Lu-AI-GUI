@@ -58,6 +58,8 @@ jobs:
         run: |
           node --test scripts/lu-ci-group-policy.test.mjs scripts/lu-ci-superseded-queue.test.mjs
           node scripts/lu-ci-group-policy.mjs
+      - name: Qualify original CP12 manual-only Windows workflow and publication source contracts
+        run: node --test lu-desktop/tests/cp12br7r1-gh-ci-contract.test.mjs lu-desktop/tests/cp12br7r2-publication-contract.test.mjs
       - name: Audit Core branch convergence and retained canonical ledger
         if: hashFiles('scripts/lu-core-stack-graph.test.mjs') != ''
         run: |

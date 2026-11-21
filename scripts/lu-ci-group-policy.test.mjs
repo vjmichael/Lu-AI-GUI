@@ -201,6 +201,8 @@ test("CI-POLICY-01-R1: all nine retired triggers keep native jobs and reject rei
   assert.match(src,/Default-off Windows transport regression failed/);
   assert.match(src,/generation_queue::tests/);
   assert.match(src,/turn_coordinator::tests/);
+  const baseline=fs.readFileSync(".github/workflows/lu-repo01-full-source.yml","utf8");
+  assert.match(baseline,/node --test lu-desktop\/tests\/cp12br7r1-gh-ci-contract\.test\.mjs lu-desktop\/tests\/cp12br7r2-publication-contract\.test\.mjs/);
   const cp6=fs.readFileSync(".github/workflows/lu-cp06er2-consolidated.yml","utf8");
   assert.match(cp6,/github\.ref == 'refs\/heads\/lu\/cp01-attachment-transaction-20261116'/);
 });

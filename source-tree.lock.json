@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "0335f303680be4fea742651423fa7f5aaacd27df",
+  "sourceCommitBeforeLock": "a20e11350b5d7489876ff786704a7fb5866586d9",
   "trackedFileCount": 1270,
   "files": [
     {
@@ -309,7 +309,7 @@
     },
     {
       "path": ".github/workflows/lu-repo01-full-source.yml",
-      "blob": "2ab4313ff70b30b5afd9ec2f2e57df01c7e496df"
+      "blob": "e93a6ae6a92208f7b6e076bc25aa966fcb7c6e52"
     },
     {
       "path": ".github/workflows/lu-tools-01-05-integration.yml",
@@ -981,7 +981,7 @@
     },
     {
       "path": "docs/LU_DEVELOPMENT_LEDGER.md",
-      "blob": "0b1ff07f89a27eeff9d67a820c475667f32cee71"
+      "blob": "43d2cd7fb41b91170e30d67f4b42d7551f036a05"
     },
     {
       "path": "docs/LU_E1_NATIVE_EVIDENCE_20261107.md",
@@ -3077,7 +3077,7 @@
     },
     {
       "path": "scripts/lu-ci-group-policy.test.mjs",
-      "blob": "60311b7f56f8969eb3b91fc86d07f1792a0d56b8"
+      "blob": "48cce9b550c2bb6f783bd33367081f3c8f0f1194"
     },
     {
       "path": "scripts/lu-ci-superseded-queue.mjs",
