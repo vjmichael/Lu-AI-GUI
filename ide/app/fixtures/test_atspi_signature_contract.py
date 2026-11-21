@@ -406,20 +406,9 @@ class AtspiSignatureContract(unittest.TestCase):
         self.assertIn("GetWindow(hwnd, 4) != owner",script)
         self.assertIn("pid == expectedPid && ownerPid == expectedPid",script)
         self.assertIn("OwnedConsentHandles($expectedOwnerHwnd",script)
-        # New native SHA-256 witnesses must be exact AND OS-window owned.
+        # R16C native consent title binds the full exact SHA-256 and owner.
         self.assertIn("function Native-Wo9TitleWitness",script)
-        self.assertIn("if ($expectedMessage -cnotmatch '^[0-9a-f]{64}
-        self.assertIn("'WO9 installed reviewed Git source' $commitOwnerHwnd",script)
-        self.assertIn("if (!$exactHit) {$unavailableNativeAction++;continue}",script)
-        self.assertLess(script.index("$commitOwnerHwnd=$proc.MainWindowHandle"),
-                        script.index("Click 'Confirm separate local commit (no push)'"))
-        editor=(ROOT.parent / "web" / "code_editor.jsx").read_text(encoding="utf-8")
-        self.assertIn("EditorView.contentAttributes.of(view =>",editor)
-        self.assertNotIn("view.contentDOM.setAttribute('aria-label'",editor)
-
-if __name__ == "__main__":
-    unittest.main()
-)",script)
+        self.assertIn("if ($expectedMessage -cnotmatch '^[0-9a-f]{64}$')",script)
         self.assertIn("return ('Lu IDE · One-file Git stage · SHA-256 '+$expectedMessage)",script)
         self.assertIn("[Security.Cryptography.SHA256]::HashData(",script)
         self.assertIn("return ('Lu IDE · Confirm local Git commit · Message SHA-256 '+$messageSha256)",script)
@@ -447,6 +436,18 @@ if __name__ == "__main__":
         self.assertIn("ParseFile(",g06a)
         self.assertIn("G06A_WINDOWS_OPERATOR=PARSED_NOT_EXECUTED",g06a)
         self.assertNotIn("powershell.exe -NoProfile -Command",g06a)
+
+    def test_04j_native_windows_failure_census_does_not_approve(self):
+        # Source-only diagnostics cannot replace native OS authorization.
+        script=(ROOT / "Test-Wo8NativeDesktopUI.ps1").read_text(encoding="utf-8")
+        self.assertIn("public static string ConsentWindowCensus",script)
+        self.assertIn("GetWindowThreadProcessId(owner, out ownerPid)",script)
+        self.assertIn("P04_NATIVE_CONSENT_HWND_CENSUS=",script)
+        self.assertIn("P04_NATIVE_CONSENT_OBSERVATION=owned_roots_",script)
+        self.assertIn("IsOwnedConsentWindow($hwnd,$expectedOwnerHwnd",script)
+        self.assertIn("B5_NATIVE_EDITOR_COPY_DIAGNOSTIC=attempts_",script)
+        self.assertIn("Deny ('b5_native_installed_editor_not_visible_for_'+$marker)",script)
+        self.assertIn("Deny 'real_native_consent_dialog_not_observed'",script)
 
 if __name__ == "__main__":
     unittest.main()

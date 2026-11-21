@@ -75,6 +75,40 @@ public static class P04NativeWebViewWindows {
     EnumWindows(callback, IntPtr.Zero);
     return results.ToArray();
   }
+  // Observational only. Counts OS HWNDs; never creates an approval path.
+  // Avoid logging HWNDs, titles, clipboard bytes or file content.
+  public static string ConsentWindowCensus(IntPtr owner, uint expectedPid) {
+    if (owner == IntPtr.Zero) return "invalid_owner";
+    uint ownerPid;
+    if (GetWindowThreadProcessId(owner, out ownerPid) == 0 ||
+        ownerPid != expectedPid) return "owner_identity_unverified";
+    int topLevel = 0, directOwner = 0, otherOwner = 0, noOwner = 0;
+    Enumeration callback = (hwnd, data) => {
+      if (hwnd == owner || !IsWindowVisible(hwnd)) return true;
+      uint pid;
+      if (GetWindowThreadProcessId(hwnd, out pid) == 0 ||
+          pid != expectedPid) return true;
+      topLevel++;
+      var actualOwner = GetWindow(hwnd, 4);
+      if (actualOwner == owner) directOwner++;
+      else if (actualOwner == IntPtr.Zero) noOwner++;
+      else otherOwner++;
+      return topLevel <= 64;
+    };
+    EnumWindows(callback, IntPtr.Zero);
+    int childCount = 0;
+    Enumeration children = (hwnd, data) => {
+      uint pid;
+      if (GetWindowThreadProcessId(hwnd, out pid) != 0 &&
+          pid == expectedPid) childCount++;
+      return childCount <= 128;
+    };
+    EnumChildWindows(owner, children, IntPtr.Zero);
+    return "same_pid_top_" + topLevel + ";direct_owner_" + directOwner +
+      ";other_owner_" + otherOwner + ";no_owner_" + noOwner +
+      ";owned_hwnd_children_" + childCount;
+  }
+
   [DllImport("user32.dll", SetLastError=true)]
   private static extern bool EnumChildWindows(IntPtr parent, Enumeration callback, IntPtr data);
   [DllImport("user32.dll", CharSet=CharSet.Unicode)]
@@ -867,6 +901,11 @@ function Confirm-NativeOneUseDialog([string]$titleFragment,[string]$approvalCapt
       } catch {}
     }
     Start-Sleep -Milliseconds 350
+  }
+  if ($expectedOwnerHwnd -ne [IntPtr]::Zero) {
+    # Bound same-PID window census. No owned-dialog fallback or approval.
+    Write-Host ('P04_NATIVE_CONSENT_HWND_CENSUS='+
+      [P04NativeWebViewWindows]::ConsentWindowCensus($expectedOwnerHwnd,[uint32]$proc.Id))
   }
   Write-Host ('P04_NATIVE_CONSENT_OBSERVATION=owned_roots_'+$ownedRoots+
     ';matched_titles_'+$titleMatches+
@@ -1821,11 +1860,21 @@ try {
         $leaf=if ($marker -cmatch '^B5_SOURCE_(main|p[0-4][0-9])$') { $Matches[1]+'.rs' } else { 'main.rs' }
         $tail=$marker -ceq 'B5_EXPLICIT_SAVE_PERF_ONLY'
         $end=(Get-Date).AddSeconds(18)
+        $attempts=0
+        $lastLen=0
+        $anySourceMarker=$false
         while((Get-Date) -lt $end) {
           $value=B5-FreshEditorCopy $leaf $tail
+          $attempts++
+          $lastLen=$value.Length
+          $anySourceMarker=$anySourceMarker -or $value.Contains('B5_SOURCE_')
           if ($value.Contains($marker) -and (!$tail -or $value.Contains('B5_SOURCE_main'))) {return}
           Start-Sleep -Milliseconds 190
         }
+        # Diagnostic only: never log source text, path or clipboard data.
+        Write-Host ('B5_NATIVE_EDITOR_COPY_DIAGNOSTIC=attempts_'+$attempts+
+          ';last_clipboard_len_'+$lastLen+
+          ';some_b5_marker_seen_'+$anySourceMarker)
         Deny ('b5_native_installed_editor_not_visible_for_'+$marker)
       }
       function B5-OpenRelative([string]$leaf,[string]$marker) {
