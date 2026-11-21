@@ -506,7 +506,8 @@ async fn unsigned_same_user_process_never_enters_signed_enrollment() {
     let mut client=windows::connect(&pipe).unwrap();
     let server_id=materials();
     let host=windows::accept_installed_signed_peer(&mut server,&pin,&server_id);
-    let guest=write_frame(&mut client,&hello());
+    let outbound=hello();
+    let guest=write_frame(&mut client,&outbound);
     let (result,sent)=tokio::join!(host,guest);
     sent.unwrap();
     assert!(matches!(result,Err(TransportError::PeerNotVerified)),

@@ -23,6 +23,7 @@ const PROCESS_QUERY_LIMITED_INFORMATION: u32 = 0x1000;
 const SYNCHRONIZE: u32 = 0x0010_0000;
 const WAIT_TIMEOUT: u32 = 0x0000_0102;
 const FILE_SHARE_READ: u32 = 0x0000_0001;
+const LOAD_LIBRARY_SEARCH_SYSTEM32: u32 = 0x0000_0800;
 const MAX_CERT_DER_BYTES: usize = 128 * 1024;
 const WTD_UI_NONE: u32 = 2;
 const WTD_REVOKE_NONE: u32 = 0;
@@ -91,22 +92,73 @@ struct FileTime { low: u32, high: u32 }
 #[link(name = "wintrust")]
 unsafe extern "system" {
     fn WinVerifyTrust(window: Handle, action: *const Guid, data: *mut WinTrustData) -> i32;
-    fn WTHelperProvDataFromStateData(state: Handle) -> *mut c_void;
-    fn WTHelperGetProvSignerFromChain(
-        provider: *mut c_void, signer_index: u32, countersigner: i32,
-        countersigner_index: u32,
-    ) -> *mut c_void;
-    fn WTHelperGetProvCertFromChain(signer: *mut c_void, cert_index: u32)
-        -> *const CryptProviderCert;
 }
 #[link(name = "kernel32")]
 unsafe extern "system" {
     fn OpenProcess(access: u32, inherit: i32, pid: u32) -> Handle;
+    fn LoadLibraryExW(path: *const u16, file: Handle, flags: u32) -> Handle;
+    fn GetProcAddress(module: Handle, symbol: *const u8) -> *mut c_void;
+    fn FreeLibrary(module: Handle) -> i32;
     fn GetProcessId(process: Handle) -> u32;
     fn GetProcessTimes(process: Handle, created: *mut FileTime, exited: *mut FileTime,
         kernel: *mut FileTime, user: *mut FileTime) -> i32;
     fn WaitForSingleObject(handle: Handle, timeout_ms: u32) -> u32;
     fn CloseHandle(handle: Handle) -> i32;
+}
+
+
+type HelperData = unsafe extern "system" fn(Handle) -> *mut c_void;
+type HelperSigner = unsafe extern "system" fn(*mut c_void,u32,i32,u32) -> *mut c_void;
+type HelperCert = unsafe extern "system" fn(*mut c_void,u32) -> *const CryptProviderCert;
+
+/// WinTrust's WTHelper APIs have NO import-library symbols. Load only the
+/// System32 module and resolve named exports or refuse signer admission.
+/// The module stays loaded until the provider state has been closed.
+struct WinTrustHelpers {
+    module: Handle,
+    data: HelperData,
+    signer: HelperSigner,
+    cert: HelperCert,
+}
+impl Drop for WinTrustHelpers {
+    fn drop(&mut self) {
+        if !self.module.is_null() { unsafe { FreeLibrary(self.module) }; }
+    }
+}
+impl WinTrustHelpers {
+    fn load() -> io::Result<Self> {
+        let file: Vec<u16> = "wintrust.dll".encode_utf16()
+            .chain(std::iter::once(0)).collect();
+        let module = unsafe { LoadLibraryExW(file.as_ptr(),
+            ptr::null_mut(), LOAD_LIBRARY_SEARCH_SYSTEM32) };
+        if module.is_null() { return Err(io::Error::last_os_error()); }
+        // SAFETY: WinTrust export signatures are fixed Win32 system ABIs.
+        // Every pointer is checked before conversion, the DLL owns the code
+        // for the entire wrapper lifetime and no user-chosen DLL is loaded.
+        let result = (|| {
+            let a = unsafe { GetProcAddress(module,
+                b"WTHelperProvDataFromStateData\0".as_ptr()) };
+            let b = unsafe { GetProcAddress(module,
+                b"WTHelperGetProvSignerFromChain\0".as_ptr()) };
+            let c = unsafe { GetProcAddress(module,
+                b"WTHelperGetProvCertFromChain\0".as_ptr()) };
+            if a.is_null() || b.is_null() || c.is_null() {
+                return None;
+            }
+            Some(Self {module,
+                data: unsafe { mem::transmute::<*mut c_void,HelperData>(a) },
+                signer: unsafe { mem::transmute::<*mut c_void,HelperSigner>(b) },
+                cert: unsafe { mem::transmute::<*mut c_void,HelperCert>(c) },
+            })
+        })();
+        match result {
+            Some(helpers) => Ok(helpers),
+            None => {
+                unsafe { FreeLibrary(module) };
+                Err(refused("required WinTrust signer helper unavailable"))
+            }
+        }
+    }
 }
 
 fn refused(message: &'static str) -> io::Error {
@@ -163,6 +215,7 @@ pub fn embedded_signer_der(file: &File, absolute_path: &str) -> io::Result<Vec<u
             | WTD_REVOCATION_CHECK_NONE | WTD_DISABLE_MD2_MD4,
         ui_context: 0, signature_settings: ptr::null_mut(),
     };
+    let helpers=WinTrustHelpers::load()?;
     // SAFETY: file, UTF-16 pathname and repr(C) structs are held through the
     // synchronous WinTrust call; only documented provider helper accessors
     // are used while the verification state is alive.
@@ -171,11 +224,11 @@ pub fn embedded_signer_der(file: &File, absolute_path: &str) -> io::Result<Vec<u
         if status != 0 || data.state_data.is_null() {
             return Err(refused("Authenticode embedded signature not trusted"));
         }
-        let provider = unsafe { WTHelperProvDataFromStateData(data.state_data) };
+        let provider = unsafe { (helpers.data)(data.state_data) };
         if provider.is_null() { return Err(refused("missing trust provider evidence")); }
-        let signer = unsafe { WTHelperGetProvSignerFromChain(provider, 0, 0, 0) };
+        let signer = unsafe { (helpers.signer)(provider, 0, 0, 0) };
         if signer.is_null() { return Err(refused("missing verified primary signer")); }
-        let certificate = unsafe { WTHelperGetProvCertFromChain(signer, 0) };
+        let certificate = unsafe { (helpers.cert)(signer, 0) };
         if certificate.is_null() { return Err(refused("missing trusted signer certificate")); }
         if unsafe { (*certificate).cb_struct } < (mem::size_of::<CryptProviderCert>() as u32) {
             return Err(refused("invalid WinTrust certificate record"));

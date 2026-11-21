@@ -108,3 +108,11 @@ and genuine OS tests and needs independent same-SHA native results.
   and revocation policy; physically installed hostile-user tests,
   one-use operator permission, durable cancellation and replay-denial.
   No mainline merge or DLC activation is authorized by a signed OS surrogate.
+
+## WIN-SIGN-01-R1 — exact-SHA native reconciliation and strictly scoped repair
+
+Original run [44879933412](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/44879933412) on `edbb824b61d5f78a322ed05f5575cbfd828b41ad` finished: independent tracked source 1,280 PASS; Ubuntu 24.04 Protobuf 9/9, UDS 7/7, worker 14/14 PASS; Windows original Protobuf 9/9 PASS, then transport test compilation failed genuine Rust **E0716** at `workspace_ipc_transport_r1.rs:509`, because `&hello()` was borrowed across `tokio::join!`. The Windows transport and worker steps did not run. This is NOT a native signing PASS and NOT a failed signed positive test; the compiler stopped before that execution.
+
+R1 consolidated repair keeps the original signed-payload policy and native negatives, binds the Hello fixture to a scoped local value before awaiting and changes WinTrust's three `WTHelper...` signer-chain APIs to **system32-only dynamic export lookup** through `LoadLibraryExW(..., LOAD_LIBRARY_SEARCH_SYSTEM32)` and `GetProcAddress`. Microsoft's official Win32 documentation explicitly says these helpers have no associated import library; direct `#[link(name="wintrust")]` helper imports are not a reliable linker contract. `WinVerifyTrust` itself remains the documented imported API. Missing exports fail closed, the library handle is retained through `WTD_STATEACTION_CLOSE`, and no network retrieval, shell signer check or unsigned fallback is introduced.
+
+The exact-successor source and locked original native tests must still pass Windows/Linux. The overall REPO-01 nine-legacy-trigger policy failure remains separately owned by CI-POLICY-01. There is no signed Lu IDE release artifact available, no pinned publisher/installer custody evidence, and no actual installed DLC positive acceptance; a signed `pwsh.exe` test surrogate can never substitute for these.
