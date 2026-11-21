@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "fba5cb694c97235d4169afa78a18ac62157e261d",
-  "trackedFileCount": 1282,
+  "sourceCommitBeforeLock": "597c660e54cbbe57716cd637e6ab684b486b6eed",
+  "trackedFileCount": 1284,
   "files": [
     {
       "path": ".gitattributes",
@@ -221,7 +221,7 @@
     },
     {
       "path": ".github/workflows/lu-ipc01d-r2-native.yml",
-      "blob": "74890bd67fa754537a833ee06cc26dab51e6fb63"
+      "blob": "343213efcf77190135d1901bc0f2272c003e3340"
     },
     {
       "path": ".github/workflows/lu-kiaf-execution.yml",
@@ -1073,7 +1073,7 @@
     },
     {
       "path": "docs/LU_IPC_01D_R1_NATIVE_TRANSPORT_20261120.md",
-      "blob": "ea1f93420432644daa36c0b0d0b7a60ec0afffca"
+      "blob": "8d4b321fe68ccf2cb08c0e580eb0f3d09c50bd0e"
     },
     {
       "path": "docs/LU_KIAF_ACTIVE_EXECUTION_LEDGER_20261108.md",
@@ -3156,6 +3156,10 @@
       "blob": "0d9bfc38287bfe0a0cda0a5d43e749fde1e0a5ab"
     },
     {
+      "path": "scripts/lu-ipc-r4-verify-signed-installer.ps1",
+      "blob": "c2579b327c57c27e90f3d62ad7e0368ee74b032f"
+    },
+    {
       "path": "scripts/lu-ledger.mjs",
       "blob": "0060dd91f8e39633f9a16fa41a512ba6a01a45b6"
     },
@@ -4481,7 +4485,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/workspace_ipc_transport.rs",
-      "blob": "96483be8398aa8606d4711b03aea7774ec28ad80"
+      "blob": "c596530884c4d994dda19995bb0cc4b85690cf95"
     },
     {
       "path": "src-tauri/lu-core/src/workspace_quarantine.rs",
@@ -4997,7 +5001,7 @@
     },
     {
       "path": "src-tauri/lu-core/tests/workspace_ipc_transport_r1.rs",
-      "blob": "0c32cf3649b5de8fcf7507484cd24ce51e894f39"
+      "blob": "11da9ecf00fa5489f9683def3a1dbd80478ca657"
     },
     {
       "path": "src-tauri/lu-core/tests/workspace_ipc_v0.rs",
@@ -5068,6 +5072,10 @@
       "blob": "cc0eea939efe62f0c23c38fbd56ecca2e0930e82"
     },
     {
+      "path": "src-tauri/lu-win-worker-job/src/ipc_credential_broker.rs",
+      "blob": "9d773d1f251f32193c7f2cee8f5b34fb729dcf43"
+    },
+    {
       "path": "src-tauri/lu-win-worker-job/src/ipc_installer_enrollment.rs",
       "blob": "35f0163848a8fd2f965030b749121694ab97b1a6"
     },
@@ -5081,7 +5089,7 @@
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/lib.rs",
-      "blob": "f0398d44c5a8083e6d93980a2807581310b716a6"
+      "blob": "7d44c377eb1e2a56cecc8586e3976031348cb885"
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/metadata_guard.rs",
