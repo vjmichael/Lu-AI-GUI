@@ -722,11 +722,10 @@ impl crate::gpu_resource_leases::OriginalTurnAuthority for OwnedNvpGpuAuthority 
         }
         let gate=self.gate.upgrade().ok_or(
             crate::gpu_resource_leases::LeaseRefusal::NotAuthorized)?;
-        // Hold the real NVP registry's short read fence only across
-        // the final durable GRANTED commit, never native SCM/GPU I/O.
-        let registered=self.registry.with_registered_workspace_pair(
-            "nvp.film",&self.read_descriptor,&self.execute_descriptor,
-            || self.authority.with_authorized_worker_launch(
+        // Host policy may involve an external provider. It is checked
+        // BEFORE both short native locks; never hold the registry lock
+        // around a host policy call or an OS broker round trip.
+        self.authority.with_authorized_worker_launch(
             &self.origin,
             &self.read,&self.read_descriptor,
             &self.execute,&self.execute_descriptor,
@@ -735,10 +734,15 @@ impl crate::gpu_resource_leases::OriginalTurnAuthority for OwnedNvpGpuAuthority 
                 if gate.closed.load(Ordering::Acquire){
                     return Err(crate::gpu_resource_leases::LeaseRefusal::NotAuthorized)
                 }
-                commit()
+                // Both original-turn authority and *current* native NVP
+                // registration now remain stable for the one bounded
+                // SQLite GRANTED commit. Unregister must wait until it ends.
+                self.registry.with_registered_workspace_pair(
+                    "nvp.film",&self.read_descriptor,&self.execute_descriptor,
+                    commit,
+                ).map_err(|_|crate::gpu_resource_leases::LeaseRefusal::NotAuthorized)?
             }
-        )).map_err(|_|crate::gpu_resource_leases::LeaseRefusal::NotAuthorized)?;
-        registered.map_err(|_|crate::gpu_resource_leases::LeaseRefusal::NotAuthorized)?
+        ).map_err(|_|crate::gpu_resource_leases::LeaseRefusal::NotAuthorized)?
     }
     fn admit_cleanup(&self,request:&crate::gpu_resource_leases::GpuLeaseRequest)
         ->Result<(),crate::gpu_resource_leases::LeaseRefusal>{
