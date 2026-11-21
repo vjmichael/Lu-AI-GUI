@@ -5,6 +5,17 @@ const text = relative => readFileSync(new URL(relative, import.meta.url), 'utf8'
 
 test('integrated Windows and Linux source build actual upstream license evidence before Tauri', () => {
   const source = text('../../../.github/workflows/ide-group6f-integrated-native.yml');
+  // R4's reviewed bridge preserves the original P06/MERGE02C verifiers and
+  // independently pins current R2 IPC and supervisor lock successors.
+  const lockBridge = text('../../packaging/verify_ide_precore_r4_native_lock_chain.py');
+  assert.match(lockBridge, /verify_p06_candidate_lock\.py/);
+  assert.match(lockBridge, /--ide-merge02-successor/);
+  assert.match(lockBridge, /verify_ide_merge02c_native_locks\.py/);
+  assert.match(lockBridge, /verify_ipc_successor\(root\)/);
+  assert.match(lockBridge, /verify_supervisor_successor\(root, data\)/);
+  assert.match(lockBridge, /worktree", "add", "--detach"/);
+  assert.match(lockBridge, /HISTORICAL_SHA = "f1f0ed4bc1e740d2a9f85615b988b779a46651db"/);
+
   const batches = [
     source.split('  dev01-modern-real-installed-linux:')[1]?.split('  dev01-modern-real-installed-windows:')[0],
     source.split('  dev01-modern-real-installed-windows:')[1],
@@ -13,8 +24,12 @@ test('integrated Windows and Linux source build actual upstream license evidence
   for (const [index, batch] of batches.entries()) {
     assert.ok(batch, 'both real native installed build jobs are required');
     assert.match(batch, /cargo fetch --locked --manifest-path src-tauri\/Cargo\.toml/);
-    assert.match(batch, /verify_p06_candidate_lock\.py/);
-    assert.match(batch, /--ide-merge02-successor/);
+    assert.equal((batch.match(/verify_ide_precore_r4_native_lock_chain\.py/g) || []).length, 2,
+      'current source locks must be checked before build and again after Cargo fetch');
+    assert.match(batch, /--platform (?:ubuntu-24\.04|windows-2022)/);
+    assert.ok(batch.indexOf('verify_ide_precore_r4_native_lock_chain.py') <
+      batch.indexOf('upstream_notice_receipt.py'),
+      'reviewed original and successor source locks must precede licensing and package creation');
     assert.match(batch, /upstream_notice_receipt\.py/);
     assert.match(batch, /collect_verification_licenses\.py/);
     assert.match(batch, /--upstream-receipt src-tauri\/upstream-notice-receipt\.json/);

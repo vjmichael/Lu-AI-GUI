@@ -88,9 +88,33 @@ class R4NativeLockChainTests(unittest.TestCase):
                 return "b"*40
             with mock.patch.object(bridge,"git",side_effect=fake_git), \
                  mock.patch.object(bridge,"verify_ipc_successor",return_value=True), \
-                 mock.patch.object(bridge,"verify_bytes",return_value=True):
-                with self.assertRaisesRegex(bridge.Denied,"unreviewed_supervisor_lock_successor"):
+                 mock.patch.object(bridge,"verify_supervisor_successor",side_effect=bridge.Denied("supervisor_lock_successor_bytes_unreviewed")):
+                with self.assertRaisesRegex(bridge.Denied,"supervisor_lock_successor_bytes_unreviewed"):
                     bridge.verify_current(root)
+
+    def test_exact_reproducible_supervisor_local_successor_and_hostile_mutations(self):
+        import subprocess
+        root = Path(__file__).resolve().parents[2]
+        original = subprocess.check_output([
+            "git", "-C", str(root), "show", bridge.HISTORICAL_SHA + ":" + bridge.SUPERVISOR
+        ])
+        reconstructed = bridge.reproduce_supervisor_lock(original)
+        current = (root / bridge.SUPERVISOR).read_bytes()
+        self.assertEqual(reconstructed, current)
+        self.assertEqual(len(reconstructed), len(original) + 23)
+        self.assertEqual(bridge.REVIEWED_SUPERVISOR_BLOB,
+                         "d3f1af3f66f29d8c7d08cae826131de27b9dfe7c")
+        self.assertTrue(bridge.verify_supervisor_successor(root, current))
+        for corrupted in (
+            original,
+            current + b" ",
+            current.replace(b' "rustix",\n', b' "rustiy",\n', 1),
+            current.replace(b' "zeroize",\n', b' "zer0ize",\n', 1),
+            current.replace(b' "rustix",\n', b'', 1),
+        ):
+            with self.subTest(length=len(corrupted)):
+                with self.assertRaisesRegex(bridge.Denied, "supervisor_lock_successor_bytes_unreviewed"):
+                    bridge.verify_supervisor_successor(root, corrupted)
 
     def test_source_tests_do_not_grant_signed_release(self):
         self.assertIn("IDE_PRECORE_R4_SIGNED_INSTALLED_AND_RELEASE=NOT_APPROVED",

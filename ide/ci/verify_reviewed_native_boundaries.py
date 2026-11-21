@@ -49,7 +49,8 @@ def compare(review: dict, observed: dict[str, str]) -> int:
                     and path not in ("ide/packaging/upstream-licenses/README.md",
                                      "ide/supervisor/WORKER_ACCEPTANCE.md",
                                      "ide/host/Cargo.lock",
-                                     "ide/app/src-tauri/Cargo.lock"))
+                                     "ide/app/src-tauri/Cargo.lock",
+                                     "ide/supervisor/Cargo.lock"))
                 or any(part in ("", ".", "..") for part in path.split("/"))
                 or not isinstance(sha, str) or HEX.fullmatch(sha) is None
                 or not isinstance(reason, str) or not 8 <= len(reason) <= 200

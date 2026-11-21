@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "17d593c6bf7985aecd11a920f1fc00cc7f828124",
+  "sourceCommitBeforeLock": "2e6f475e29a983dd82984d899107158ed5708dda",
   "trackedFileCount": 2007,
   "files": [
     {
@@ -1693,7 +1693,7 @@
     },
     {
       "path": "ide/CHANGELOG.md",
-      "blob": "73a1d4ccede17be193f85214de069e80d36d02db"
+      "blob": "6f80dfa4b6cbda239b5743e1af1ce82caa92ce2a"
     },
     {
       "path": "ide/CONTINUITY_PROTOCOL.md",
@@ -1705,7 +1705,7 @@
     },
     {
       "path": "ide/PROJECT_STATE.md",
-      "blob": "b05abcfa298ba4d49e41c1c3aa7704ac2b253d20"
+      "blob": "cd38b3179a88186e498d9b3fa216b86db64b0e1f"
     },
     {
       "path": "ide/README.md",
@@ -2069,7 +2069,7 @@
     },
     {
       "path": "ide/app/tests/dev01_integrated_license_bundle_source.test.mjs",
-      "blob": "c6cc3f305b96575c43cbd0a6575815da91c41a0c"
+      "blob": "00b6b7e78478b5d6b2f5542509710f912783e31c"
     },
     {
       "path": "ide/app/tests/dev02_project_problems.test.mjs",
@@ -2621,15 +2621,15 @@
     },
     {
       "path": "ide/ci/merge02-reviewed-native-boundaries.json",
-      "blob": "65ea6c419b32e58e207b54c2885c911e7fcac54f"
+      "blob": "0a20e26b5849781fff1ca7cda1cbc9973b6f72a0"
     },
     {
       "path": "ide/ci/test_verify_reviewed_native_boundaries.py",
-      "blob": "1f33d7d96629ac75a76bd43d5e249e6235763aaf"
+      "blob": "7c54709bef2c22ce2ecdf7f414901cc39b4c809b"
     },
     {
       "path": "ide/ci/verify_reviewed_native_boundaries.py",
-      "blob": "7fb2e2cb9f4014d554eb68bc1e4a984cbc620504"
+      "blob": "540a395019ae81340618f0a006390310a08b061e"
     },
     {
       "path": "ide/docs/ADR_0001_STANDALONE_APP_AND_LU_BRIDGE.md",
@@ -4005,7 +4005,7 @@
     },
     {
       "path": "ide/packaging/test_ide_precore_r4_native_lock_chain.py",
-      "blob": "ce1ab36a9024c58617b8d562b8f364326b23a48f"
+      "blob": "eabcb6d2b43fc131fb86b59c19a91ba92561ef4f"
     },
     {
       "path": "ide/packaging/test_p04_transactional_upgrade.py",
@@ -4345,7 +4345,7 @@
     },
     {
       "path": "ide/packaging/verify_ide_precore_r4_native_lock_chain.py",
-      "blob": "7c2d9f066ecfa988028e6ae4419b8468c52bad2e"
+      "blob": "0d2b10380e5d370a13bc50409f65dbcf7b2a746d"
     },
     {
       "path": "ide/packaging/verify_language_servers.py",
@@ -4549,7 +4549,7 @@
     },
     {
       "path": "ide/supervisor/Cargo.lock",
-      "blob": "cf3ea845e89c7b8242a75d71c9dd5288b5580595"
+      "blob": "d3f1af3f66f29d8c7d08cae826131de27b9dfe7c"
     },
     {
       "path": "ide/supervisor/Cargo.toml",
@@ -6077,11 +6077,11 @@
     },
     {
       "path": "scripts/core01-verify-scope.mjs",
-      "blob": "16b9c479f6b33d67eb83679cf4982509da163bfe"
+      "blob": "4981d9938faa4d664e299c073efc2f867ebdb399"
     },
     {
       "path": "scripts/core01-verify-scope.test.mjs",
-      "blob": "9ce701476ffab30251eee675238a1cd5bdf4ba99"
+      "blob": "d8c9f1b25340c30404fadd3e2c2663a3f1efc198"
     },
     {
       "path": "scripts/core01f-acceptance-reconcile.mjs",

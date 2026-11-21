@@ -1,5 +1,9 @@
 # Lu IDE — Development changelog
 
+## 2026-11-21 — IDE-PRECORE-CLOSEOUT-R4 six-job native follow-up (source correction, not acceptance)
+
+Examined terminal original run #44956609212: 0/6 after prior lock admission repair; native Git jobs failed on stale original supervisor Cargo.lock under `--locked`, while four desktop jobs failed an outdated Node source assertion (520/521 passing) about direct P06 invocation. Prepared one exact reviewed supervisor lock successor with only `rustix` and `zeroize` local links and no external dependency changes; historical source pin and verifier remain immutable. Extended the R4 lock bridge and hostile tests, retained original upstream-license and package checks, and updated the frontend test to require original P06/MERGE02C within the bridge and both before/after source verification on each installed platform. No signer, installer, Job/SCM acceptance or release grant.
+
 ## 2026-11-21 — IDE-PRECORE-CLOSEOUT-R4 reviewed original-six-job CI correction (source only)
 
 Reconciled run 44955421989 (six exact-SHA Windows/Linux failures: the same original MERGE02C verifier versus approved PRECORE-R2 Cargo.lock successor). Added a fail-closed historical-worktree MERGE02C/P06 verification bridge plus current R2 successor check and regression tests; replaced only obsolete current-worktree historical verifier calls in the existing six-job integrated CI workflow, including post-fetch and full historical checkout. Preserved original byte pins, signatures, licenses, worker Job/SCM gates and Core-only isolation. Signed physical installed acceptance remains HOLD, pending genuine native CI on one new exact SHA.

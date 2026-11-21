@@ -262,8 +262,8 @@
     },
     {
       "path": "ide/packaging/test_ide_precore_r4_native_lock_chain.py",
-      "sha": "ce1ab36a9024c58617b8d562b8f364326b23a48f",
-      "scope": "R4 source-only hostile tests require original MERGE02C/P06 checks plus pinned R2 successor; no release approval"
+      "sha": "eabcb6d2b43fc131fb86b59c19a91ba92561ef4f",
+      "scope": "R4 exact source-only historical verifier and new supervisor Cargo.lock successor negative tests, no runtime authorization"
     },
     {
       "path": "ide/packaging/test_p05_merge02_pending_native_boundaries.py",
@@ -382,8 +382,8 @@
     },
     {
       "path": "ide/packaging/verify_ide_precore_r4_native_lock_chain.py",
-      "sha": "7c2d9f066ecfa988028e6ae4419b8468c52bad2e",
-      "scope": "R4 frozen historical worktree verification followed by exact R2 lock successor; not an installed acceptance"
+      "sha": "0d2b10380e5d370a13bc50409f65dbcf7b2a746d",
+      "scope": "R4 exact source-only historical verifier and new supervisor Cargo.lock successor negative tests, no runtime authorization"
     },
     {
       "path": "ide/packaging/verify_language_servers.py",
@@ -409,6 +409,11 @@
       "path": "ide/packaging/verify_technical_lsp_install.py",
       "sha": "0e8071c51d3918a3884d111dcb44f3e8d5334f5d",
       "scope": "R3 read-only staged and installed resource verification from pinned archives; no provider execution"
+    },
+    {
+      "path": "ide/supervisor/Cargo.lock",
+      "sha": "d3f1af3f66f29d8c7d08cae826131de27b9dfe7c",
+      "scope": "R4 exact 171-package supervisor lock adds only existing rustix and zeroize local dependency links, original lock remains historical evidence"
     },
     {
       "path": "ide/supervisor/Cargo.toml",

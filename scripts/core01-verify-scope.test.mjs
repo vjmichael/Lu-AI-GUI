@@ -163,8 +163,8 @@ test('R4 PRECORE pins are exact, source-only, and cannot widen the Core-only gat
 
 test('R4 reviewed historical lock bridge has two exact IDE-only source pins', () => {
   const rows = [
-    ['ide/packaging/test_ide_precore_r4_native_lock_chain.py','ce1ab36a9024c58617b8d562b8f364326b23a48f'],
-    ['ide/packaging/verify_ide_precore_r4_native_lock_chain.py','7c2d9f066ecfa988028e6ae4419b8468c52bad2e'],
+    ['ide/packaging/test_ide_precore_r4_native_lock_chain.py','eabcb6d2b43fc131fb86b59c19a91ba92561ef4f'],
+    ['ide/packaging/verify_ide_precore_r4_native_lock_chain.py','0d2b10380e5d370a13bc50409f65dbcf7b2a746d'],
   ];
   for (const [path, blob] of rows) {
     assert.equal(reviewedR4PrecoreSource(path,blob,'100644'), true);

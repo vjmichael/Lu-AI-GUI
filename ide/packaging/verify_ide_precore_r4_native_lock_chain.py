@@ -19,6 +19,7 @@ from verify_ide_precore_lock_successor import check as verify_ipc_successor
 
 HISTORICAL_SHA = "f1f0ed4bc1e740d2a9f85615b988b779a46651db"
 SUPERVISOR = "ide/supervisor/Cargo.lock"
+REVIEWED_SUPERVISOR_BLOB = "d3f1af3f66f29d8c7d08cae826131de27b9dfe7c"
 PLATFORMS = ("windows-2022", "ubuntu-24.04")
 
 
@@ -44,6 +45,50 @@ def git(root, *args):
     return invoke(["git", "-C", root, *args])
 
 
+def reproduce_supervisor_lock(original):
+    """Only rustix/zeroize links in the existing 171-package original graph."""
+    _, digest, length, count = PINS[SUPERVISOR]
+    verify_bytes(original, digest, length, count)
+    marker = b'[[package]]\nname = "lu-ide-workspace"\n'
+    if original.count(marker) != 1:
+        raise Denied("original_supervisor_workspace_package_not_unique")
+    prefix, tail = original.split(marker, 1)
+    if b'\n[[package]]' not in tail:
+        raise Denied("original_supervisor_following_package_missing")
+    local, remainder = tail.split(b'\n[[package]]', 1)
+    rand_anchor = b' "rand",\n "serde",'
+    end_anchor = b' "ureq",\n "zip",'
+    if (local.count(rand_anchor) != 1 or local.count(end_anchor) != 1
+            or b' "rustix",\n' in local or b' "zeroize",\n' in local):
+        raise Denied("unreviewed_original_supervisor_package_layout")
+    updated = local.replace(rand_anchor, b' "rand",\n "rustix",\n "serde",', 1)
+    updated = updated.replace(end_anchor, b' "ureq",\n "zeroize",\n "zip",', 1)
+    if len(updated) != len(local) + 23:
+        raise Denied("unexpected_supervisor_lock_delta")
+    return prefix + marker + updated + b'\n[[package]]' + remainder
+
+
+def verify_supervisor_successor(root, current):
+    """Verify original Git blob/hash and exact successor bytes without Cargo update."""
+    original_blob, digest, size, packages = PINS[SUPERVISOR]
+    if git(root, "rev-parse", HISTORICAL_SHA + ":" + SUPERVISOR) != original_blob:
+        raise Denied("original_supervisor_lock_blob_mismatch")
+    try:
+        base = subprocess.check_output(
+            ["git", "-C", str(root), "show", HISTORICAL_SHA + ":" + SUPERVISOR],
+            timeout=20,
+        )
+    except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+        raise Denied("original_supervisor_lock_unavailable") from exc
+    verify_bytes(base, digest, size, packages)
+    exact = reproduce_supervisor_lock(base)
+    if current != exact:
+        raise Denied("supervisor_lock_successor_bytes_unreviewed")
+    if git(root, "rev-parse", "HEAD:" + SUPERVISOR) != REVIEWED_SUPERVISOR_BLOB:
+        raise Denied("supervisor_lock_successor_blob_unreviewed")
+    return True
+
+
 def verify_current(root):
     """Require exact reviewed current lock bytes and tracked Git identity."""
     head = git(root, "rev-parse", "HEAD")
@@ -61,11 +106,8 @@ def verify_current(root):
             raise Denied("reviewed_lock_line_endings_not_pinned")
         if git(root, "rev-parse", "HEAD:" + path) != git(root, "hash-object", "--", path):
             raise Denied("current_lock_worktree_does_not_match_exact_commit")
-    original_blob, digest, length, count = PINS[SUPERVISOR]
     data = (root / SUPERVISOR).read_bytes()
-    verify_bytes(data, digest, length, count)
-    if git(root, "rev-parse", "HEAD:" + SUPERVISOR) != original_blob:
-        raise Denied("unreviewed_supervisor_lock_successor")
+    verify_supervisor_successor(root, data)
     return head
 
 
