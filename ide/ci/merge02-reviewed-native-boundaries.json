@@ -72,13 +72,13 @@
     },
     {
       "path": "ide/host/Cargo.toml",
-      "sha": "ee529f038409f31e2dd6ca01aa03d095fd58fb69",
-      "scope": "Explicit debug CI oracle features only; no default expansion; source-only, OS acceptance pending"
+      "sha": "e4d8bc1431100817ef99e9960f4de2db34f71bef",
+      "scope": "Explicit debug CI oracle features only; no default expansion; source-only, OS acceptance pending; R2-R9 separately feature-gated synthetic source trap, native OS acceptance pending"
     },
     {
       "path": "ide/host/src/dap_session.rs",
-      "sha": "bf8e447242da5bfa2fbdb78a498d2ae6e02be084",
-      "scope": "03D WO6 fixed Windows native suffix only; absolute path, traversal, control, no-debug-args guards preserved; regression tests; OS acceptance pending"
+      "sha": "f5eea7c1e8d6a4e6c87535ab18f12e36b2f5599d",
+      "scope": "03D WO6 fixed Windows native suffix only; absolute path, traversal, control, no-debug-args guards preserved; regression tests; OS acceptance pending; R2-R9 separately feature-gated synthetic source trap, native OS acceptance pending"
     },
     {
       "path": "ide/host/src/git_refs_health.rs",
@@ -297,8 +297,8 @@
     },
     {
       "path": "ide/supervisor/Cargo.toml",
-      "sha": "d62a906c32402b18046e29a9adb8b058521d0ef7",
-      "scope": "03B optimizes sha2 in debug; same dependency graph and one-use custody checks"
+      "sha": "847fd18ec516df6e03451a57ea71ef1ab10ec7c9",
+      "scope": "03B optimizes sha2 in debug; same dependency graph and one-use custody checks; R2-R9 separately feature-gated synthetic source trap, native OS acceptance pending"
     },
     {
       "path": "ide/supervisor/WORKER_ACCEPTANCE.md",
@@ -342,8 +342,8 @@
     },
     {
       "path": "ide/supervisor/examples/wo6_native_dap_acceptance.rs",
-      "sha": "5bf12ec90d52c25656b54823c63d2af7a0574701",
-      "scope": "03E D6C bounded authenticated owner continuation chain, unchanged one-use and OS/PDB gates; source-only, native Windows pending; R2-R7 bounded native refusal-code diagnostic only, authorization and AppContainer/SCM/Job gates unchanged; genuine Windows retest pending"
+      "sha": "8ca969be55c33fa1febde183826e067e1ee5da96",
+      "scope": "03E D6C bounded authenticated owner continuation chain, unchanged one-use and OS/PDB gates; source-only, native Windows pending; R2-R7 bounded native refusal-code diagnostic only, authorization and AppContainer/SCM/Job gates unchanged; genuine Windows retest pending; R2-R9 separately feature-gated synthetic source trap, native OS acceptance pending"
     },
     {
       "path": "ide/supervisor/fixtures/debug/Probe-WindowsWo6FileDenial.ps1",
@@ -382,8 +382,8 @@
     },
     {
       "path": "ide/supervisor/src/dap_transport.rs",
-      "sha": "65de6652084c4a9a105d1ee95dd87da1be800ed1",
-      "scope": "03E D6C bounded authenticated owner continuation chain, unchanged one-use and OS/PDB gates; source-only, native Windows pending"
+      "sha": "56ddd79fd5500724252525d2d96d2df53a9488dd",
+      "scope": "03E D6C bounded authenticated owner continuation chain, unchanged one-use and OS/PDB gates; source-only, native Windows pending; R2-R9 separately feature-gated synthetic source trap, native OS acceptance pending"
     },
     {
       "path": "ide/supervisor/src/debug_action_receipts.rs",
@@ -452,8 +452,8 @@
     },
     {
       "path": "ide/supervisor/src/windows_lsp_worker.rs",
-      "sha": "a04bd5b7a8fd913f3558c6de4ef0e343cfc6d7c6",
-      "scope": "03E D6C bounded authenticated owner continuation chain, unchanged one-use and OS/PDB gates; source-only, native Windows pending"
+      "sha": "e110d7593bdb3002f51078517f0fb3bd3d70e0af",
+      "scope": "03E D6C bounded authenticated owner continuation chain, unchanged one-use and OS/PDB gates; source-only, native Windows pending; R2-R9 separately feature-gated synthetic source trap, native OS acceptance pending"
     }
   ]
 }

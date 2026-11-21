@@ -13,6 +13,8 @@ default = []
 dev045d3-ci-oracle = []
 # Fixed Windows acceptance source trap, never a released debugger route.
 dev045d4c-ci-oracle = []
+# CI-only FIN-04R1 exact-source stop; not default or installed debugger.
+fin04r1-fixed-probe = []
 # Source-only, disposable protected Windows native acceptance. No Tauri
 # control route or released debugger execution rights.
 dev046c-ci-control = []

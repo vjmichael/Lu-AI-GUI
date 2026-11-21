@@ -22,6 +22,31 @@ const tauri=read('ide/app/src-tauri/src/lib.rs');
 const browser=read('ide/app/web/main.jsx');
 const authority=read('ide/app/web/project_debug_authority.js');
 
+const hostDap=read('ide/host/src/dap_session.rs');
+const hostCargo=read('ide/host/Cargo.toml');
+const supervisorCargo=read('ide/supervisor/Cargo.toml');
+const workflow=read('.github/workflows/ide-fin04r1-exact-native.yml');
+test('FIN04 fixed release-built acceptance remains source-locked and fail closed',()=>{
+ assert.match(hostCargo,/fin04r1-fixed-probe = \[\]/);
+ assert.match(supervisorCargo,/lu-ide-workspace\/fin04r1-fixed-probe/);
+ assert.match(hostDap,/fn fin04r1_fixed_probe_denies_foreign_paths_and_keeps_regular_entry/);
+ assert.match(hostDap,/self\.launch_verified_project_entry\(program, false\)/);
+ assert.match(worker,/pub const FIN04R1_FIXED_PROBE_SOURCE: &str/);
+ const fixed=worker.slice(worker.indexOf('pub fn launch_fin04r1_fixed_probe('),
+    worker.indexOf('pub fn launch_fin04r1_fixed_probe(')+2400);
+ assert.match(fixed,/verify_input\(&self\.source_input\)/);
+ assert.match(fixed,/self\.source_input\.seal\.file_count != 3/);
+ assert.match(fixed,/FIN04R1_FIXED_PROBE_SOURCE\.as_bytes\(\)/);
+ assert.match(fixed,/WrongProjectOrSource/);
+ assert.match(gate,/pub\(crate\) fn launch_fin04r1_fixed_probe/);
+ assert.match(nativeScenario,/dap\.launch_fin04r1_fixed_probe\(\)/);
+ assert.match(nativeScenario,/if protected_release_pdb && !cfg!\(feature = "fin04r1-fixed-probe"\)/);
+ assert.match(workflow,/--features fin04r1-fixed-probe --example wo6_native_dap_acceptance/);
+ assert.match(workflow,/--features fin04-release-owner-evidence --bin windows_recovery_service --bin windows_null_service_bootstrap/);
+ assert.match(nativeScript,/--features fin04r1-fixed-probe --example wo6_native_dap_acceptance/);
+ assert.match(worker,/pub fn observe_release_owned_stop\(/);
+ assert.match(nativeScenario,/!observed\.module\.job_member_verified/);
+});
 test('old host Command symbolizer is strictly dev-only',()=>{
  assert.match(source,/#\[cfg\(all\(debug_assertions, feature = "dev045d4c-ci-oracle"\)\)\]\s*fn run_measured_reader/);
  assert.match(source,/fn independently_verify_pdb_line_with_reader/);

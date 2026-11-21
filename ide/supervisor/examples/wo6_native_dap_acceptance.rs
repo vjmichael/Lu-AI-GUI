@@ -271,6 +271,9 @@ mod protected {
         if protected_release_pdb && !cfg!(feature = "fin04-release-owner-evidence") {
             return Err("DENIED: release protected PDB observer feature not compiled".into());
         }
+        if protected_release_pdb && !cfg!(feature = "fin04r1-fixed-probe") {
+            return Err("DENIED: FIN-04 CI-only source-stop feature missing".into());
+        }
         if ci_control.is_some() && (!verify_owner_event || crash_owner || cancel_project) {
             return Err(
                 "DENIED: D6C native command requires verified owner and its own one-use normal Job"
@@ -347,7 +350,18 @@ mod protected {
             };
             fs::write(&source_file, text)?;
         }
-        if !source_trap && ci_control == Some("step") {
+        if !source_trap && protected_release_pdb {
+            // Do not stop at an unsourced Windows loader entry.
+            #[cfg(all(target_arch = "x86_64", feature = "fin04r1-fixed-probe"))]
+            {
+                use lu_ide_execution_supervisor::windows_worker::lsp_native::FIN04R1_FIXED_PROBE_SOURCE;
+                fs::write(&source_file, FIN04R1_FIXED_PROBE_SOURCE)?;
+            }
+            #[cfg(not(all(target_arch = "x86_64", feature = "fin04r1-fixed-probe")))]
+            {
+                return Err("DENIED: FIN-04 fixed source-stop fixture unavailable".into());
+            }
+        } else if !source_trap && ci_control == Some("step") {
             // A multi-line sealed original Cargo project allows a real
             // line step while preserving the immutable source snapshot.
             fs::write(
@@ -553,7 +567,16 @@ mod protected {
         if source_trap {
             dap.launch_windows_ci_source_trap().map_err(|e| e.code())?;
         }
-        if !source_trap {
+        if protected_release_pdb {
+            #[cfg(all(target_arch = "x86_64", feature = "fin04r1-fixed-probe"))]
+            {
+                dap.launch_fin04r1_fixed_probe().map_err(|e| e.code())?;
+            }
+            #[cfg(not(all(target_arch = "x86_64", feature = "fin04r1-fixed-probe")))]
+            {
+                return Err("DENIED: FIN-04 fixed source-stop launcher unavailable".into());
+            }
+        } else if !source_trap {
             dap.launch_project_target().map_err(|e| e.code())?;
         }
         if dap.configuration_needed() {

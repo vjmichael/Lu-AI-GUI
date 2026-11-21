@@ -354,6 +354,15 @@ impl DapGateway {
             .map_err(protocol_denied)?;
         self.send(&frame)
     }
+    #[cfg(all(windows, target_arch = "x86_64", feature = "fin04r1-fixed-probe"))]
+    pub(crate) fn launch_fin04r1_fixed_probe(
+        &mut self,
+        target: &str,
+    ) -> Result<(), SupervisorError> {
+        let frame = self.session.launch_fin04r1_fixed_probe(target)
+            .map_err(protocol_denied)?;
+        self.send(&frame)
+    }
     #[cfg(all(
         target_os = "linux",
         target_arch = "x86_64",

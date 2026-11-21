@@ -56,6 +56,8 @@ dev045d3-ci-oracle = ["dap-transport", "linux-worker", "lu-ide-workspace/dev045d
 # AppContainer / Job Object and SCM custody is observation-only.
 # No DAP control, CI symbolizer, action grant, or replay authority.
 fin04-release-owner-evidence = ["dap-transport", "protected-recovery-service"]
+# CI-only synthetic fixture must never be inherited by the installed owner.
+fin04r1-fixed-probe = ["fin04-release-owner-evidence", "lu-ide-workspace/fin04r1-fixed-probe"]
 # FIN-04W2 native source only: no default worker, LLDB or arbitrary command.
 fin04w2-protocol = ["dap-transport"]
 # Independent debugger SCM service with restricted identity/Job/WFP auditing.

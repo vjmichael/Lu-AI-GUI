@@ -63,7 +63,7 @@ AssertNative 'release_Rust_supervisor_compiler' {
   cargo check --manifest-path ide/supervisor/Cargo.toml --release --features fin04-release-owner-evidence
 }
 AssertNative 'real_release_PDB_fixture_compile' {
-  cargo build --manifest-path ide/supervisor/Cargo.toml --release --features fin04-release-owner-evidence --example wo6_native_dap_acceptance
+  cargo build --manifest-path ide/supervisor/Cargo.toml --release --features fin04r1-fixed-probe --example wo6_native_dap_acceptance
 }
 # This host executable is NOT installed Lu and cannot claim physical user
 # approval. The service must ALREADY be separately installed with its
