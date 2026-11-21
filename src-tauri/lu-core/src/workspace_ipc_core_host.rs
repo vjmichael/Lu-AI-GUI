@@ -568,6 +568,42 @@ pub struct ApprovedNvpGpuPlan<'a>{
     pub execute:&'a ToolInvocation,
     pub execute_descriptor:&'a ToolDescriptor,
 }
+/// Source-authenticated film registration is separate from IPC MAC and
+/// human approval. A synthetic descriptor with a plausible nvp.film.*
+/// prefix must never acquire the model/GPU through a forged host task.
+#[cfg(windows)]
+fn require_registered_nvp_film_plan(
+    registry:&NativeToolRegistry,
+    plan:&ApprovedNvpGpuPlan<'_>,
+)->Result<(),CoreDlcGateError>{
+    let modules=registry.modules()
+        .map_err(|_|CoreDlcGateError::Unavailable)?;
+    if !modules.iter().any(|m|
+        m.id=="nvp.film" &&
+        m.kind==crate::contracts::ModuleKind::Workspace){
+        return Err(CoreDlcGateError::UnregisteredTool)
+    }
+    let tools=registry.tools().map_err(|_|CoreDlcGateError::Unavailable)?;
+    for (invocation,descriptor,effect) in [
+        (plan.read,plan.read_descriptor,crate::contracts::ToolEffect::ReadWorkspace),
+        (plan.execute,plan.execute_descriptor,crate::contracts::ToolEffect::ExecuteCode),
+    ]{
+        if !descriptor.id.starts_with("nvp.film.") ||
+           descriptor.effect!=effect ||
+           invocation.tool_id!=descriptor.id ||
+           invocation.workspace_id.is_none() ||
+           invocation.input.type_url!=descriptor.input_type_url ||
+           !tools.iter().any(|available|available==descriptor){
+            return Err(CoreDlcGateError::UnregisteredTool)
+        }
+    }
+    if plan.read.call_id==plan.execute.call_id ||
+       plan.read.workspace_id!=plan.execute.workspace_id{
+        return Err(CoreDlcGateError::Denied)
+    }
+    Ok(())
+}
+
 #[cfg(windows)]
 struct OriginalNvpGpuAuthority<'a>{
     authority:&'a ConversationAuthority,
@@ -941,6 +977,7 @@ pub async fn serve_host_approved_nvp_gpu_windows<B>(
     original:&lu_win_worker_job::ipc_scm_control_wire::OriginalCall,
     host:&HostCoreTask<'_>,
     authority:&ConversationAuthority,
+    registry:&NativeToolRegistry,
     plan:&ApprovedNvpGpuPlan<'_>,
     policy_owned:Arc<dyn ToolAuthorizer>,
     queue:&Arc<crate::gpu_async_reconciler::DurableGpuAsyncQueue>,
@@ -965,6 +1002,10 @@ where B:crate::inference_host::InferenceBackend+Send+'static{
        plan.read.workspace_id.as_deref()!=Some(host.workspace_scope){
         return Err(CoreDlcGateError::InvalidOrigin)
     }
+    // A host-created TaskAuthority alone cannot register a tool or load a
+    // first-party NVP Workspace. Require both exact source descriptors
+    // currently present in the native owner registry before reading SCM.
+    require_registered_nvp_film_plan(registry,plan)?;
     authority.authorize_worker_call(
         host.origin,plan.read,plan.read_descriptor,host.policy)
         .map_err(|_|CoreDlcGateError::Denied)?;
@@ -1416,6 +1457,66 @@ mod tests {
         assert!(worker.0.load(Ordering::SeqCst)>=1);
     }
 
+    #[cfg(windows)]
+    #[test]
+    fn gpu_plan_must_use_live_registered_nvp_workspace_descriptors(){
+        let registry=NativeToolRegistry::new();
+        let read=ToolDescriptor{
+            id:"nvp.film.production.read".into(),
+            display_name:"Read approved film production".into(),
+            effect:ToolEffect::ReadWorkspace,
+            input_type_url:REQ.into(),output_type_url:OUT.into(),
+        };
+        let execute=ToolDescriptor{
+            id:"nvp.film.production.render".into(),
+            display_name:"Execute approved film production".into(),
+            effect:ToolEffect::ExecuteCode,
+            input_type_url:REQ.into(),output_type_url:OUT.into(),
+        };
+        let read_call=ToolInvocation{
+            call_id:"nvp-read-1".into(),tool_id:read.id.clone(),
+            workspace_id:Some("film-project".into()),
+            input:ProtoPayload{type_url:REQ.into(),bytes:vec![8,1]},
+        };
+        let exec_call=ToolInvocation{
+            call_id:"nvp-exec-1".into(),tool_id:execute.id.clone(),
+            workspace_id:Some("film-project".into()),
+            input:ProtoPayload{type_url:REQ.into(),bytes:vec![8,2]},
+        };
+        let approved=ApprovedNvpGpuPlan{
+            read:&read_call,read_descriptor:&read,
+            execute:&exec_call,execute_descriptor:&execute,
+        };
+        assert_eq!(require_registered_nvp_film_plan(&registry,&approved),
+            Err(CoreDlcGateError::UnregisteredTool),
+            "string-prefixed unregistered tools cannot stand in for film approval");
+        let count=Arc::new(AtomicUsize::new(0));
+        registry.register(ModuleManifest{
+            id:"nvp.film".into(),display_name:"Native NVP film fixture".into(),
+            contract_version:CORE_CONTRACT_VERSION,
+            kind:ModuleKind::Workspace,
+            tools:vec![read.clone(),execute.clone()],
+            panels:vec![],workflows:vec![],
+        },vec![
+            Arc::new(TestRead{descriptor:read.clone(),
+                count:Arc::clone(&count),delay:Duration::ZERO}),
+            Arc::new(TestRead{descriptor:execute.clone(),
+                count:Arc::clone(&count),delay:Duration::ZERO}),
+        ]).unwrap();
+        assert_eq!(require_registered_nvp_film_plan(&registry,&approved),Ok(()));
+        let mut tampered=execute.clone();
+        tampered.input_type_url="type.googleapis.com/nvp.film.Forged".into();
+        let forged=ApprovedNvpGpuPlan{
+            read:&read_call,read_descriptor:&read,
+            execute:&exec_call,execute_descriptor:&tampered,
+        };
+        assert_eq!(require_registered_nvp_film_plan(&registry,&forged),
+            Err(CoreDlcGateError::UnregisteredTool));
+        registry.unregister_workspace("nvp.film").unwrap();
+        assert_eq!(require_registered_nvp_film_plan(&registry,&approved),
+            Err(CoreDlcGateError::UnregisteredTool),
+            "unloaded NVP must not retain model/GPU admission");
+    }
     #[cfg(windows)]
     #[test]
     fn genuine_original_windows_job_requires_kernel_empty_and_reaps_child(){
