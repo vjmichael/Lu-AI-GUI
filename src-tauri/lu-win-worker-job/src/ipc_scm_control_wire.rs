@@ -410,6 +410,107 @@ impl NvpAuthRequest{
     }
 }
 
+
+/// Read-only ORIGINAL GPU lease verification through the installed SYSTEM
+/// SCM service. The request contains NO bearer token, key, signer material,
+/// receipt bytes, user-supplied filesystem path, or execution authorization.
+/// The service must independently read the installer-pinned NVP signer and
+/// the exact lease-named signed Job-empty receipt.
+#[derive(Debug,Clone,PartialEq,Eq)]
+pub struct NvpStopQuery{
+    pub service_pid:u32,
+    pub service_birth:u64,
+    pub lease_ref:String,
+    pub device_ref:String,
+    pub module_id:String,
+    pub workspace_ref:String,
+    pub conversation_ref:String,
+    pub user_turn_ref:String,
+    pub task_ref:String,
+    pub core_epoch_ref:String,
+    pub nvp_session_ref:String,
+}
+impl NvpStopQuery{
+    pub const DOMAIN:&'static [u8]=b"LU_CORE_SCM_NVP_STOP_V1\0";
+    const VERSION:u8=1;
+    fn fields(&self)->[&str;9]{
+        [&self.lease_ref,&self.device_ref,&self.module_id,
+         &self.workspace_ref,&self.conversation_ref,&self.user_turn_ref,
+         &self.task_ref,&self.core_epoch_ref,&self.nvp_session_ref]
+    }
+    pub fn canonical(&self,challenge:[u8;CHALLENGE_BYTES])
+        ->Result<Vec<u8>,Refusal>{
+        if self.service_pid==0||self.service_birth==0||
+           self.module_id!="nvp.film"||
+           challenge.iter().all(|v|*v==0){
+            return Err(Refusal::InvalidScope)
+        }
+        let mut body=Vec::with_capacity(512);
+        body.extend_from_slice(Self::DOMAIN);
+        body.push(Self::VERSION);
+        body.extend_from_slice(&challenge);
+        body.extend_from_slice(&self.service_pid.to_le_bytes());
+        body.extend_from_slice(&self.service_birth.to_le_bytes());
+        for value in self.fields(){
+            if value.is_empty()||value.len()>MAX_SCOPE||
+               !value.bytes().all(|b|
+                   b.is_ascii_alphanumeric()||
+                   matches!(b,b'-'|b'_'|b'.'|b':'|b'/')){
+                return Err(Refusal::InvalidScope)
+            }
+            write_scope(&mut body,value)?;
+        }
+        if body.len()>MAX_CONTROL_BODY{
+            return Err(Refusal::InvalidFrame)
+        }
+        Ok(body)
+    }
+    pub fn parse_exact(
+        raw:&[u8],challenge:[u8;CHALLENGE_BYTES],
+        service_pid:u32,service_birth:u64,
+    )->Result<Self,Refusal>{
+        if raw.len()>MAX_CONTROL_BODY||!raw.starts_with(Self::DOMAIN){
+            return Err(Refusal::InvalidFrame)
+        }
+        let mut at=Self::DOMAIN.len();
+        if raw.get(at)!=Some(&Self::VERSION){return Err(Refusal::InvalidFrame)}
+        at+=1;
+        if raw.get(at..at+CHALLENGE_BYTES)!=Some(challenge.as_slice()){
+            return Err(Refusal::Replay)
+        }
+        at+=CHALLENGE_BYTES;
+        let pid=u32::from_le_bytes(raw.get(at..at+4)
+            .ok_or(Refusal::InvalidFrame)?.try_into()
+            .map_err(|_|Refusal::InvalidFrame)?);
+        at+=4;
+        let birth=u64::from_le_bytes(raw.get(at..at+8)
+            .ok_or(Refusal::InvalidFrame)?.try_into()
+            .map_err(|_|Refusal::InvalidFrame)?);
+        at+=8;
+        if service_pid==0||service_birth==0||
+           pid!=service_pid||birth!=service_birth{
+            return Err(Refusal::StaleService)
+        }
+        let mut fields=Vec::with_capacity(9);
+        for _ in 0..9{
+            fields.push(read_scope(raw,&mut at)?.to_owned());
+        }
+        if at!=raw.len(){return Err(Refusal::InvalidFrame)}
+        let value=Self{
+            service_pid:pid,service_birth:birth,
+            lease_ref:fields[0].clone(),device_ref:fields[1].clone(),
+            module_id:fields[2].clone(),workspace_ref:fields[3].clone(),
+            conversation_ref:fields[4].clone(),user_turn_ref:fields[5].clone(),
+            task_ref:fields[6].clone(),core_epoch_ref:fields[7].clone(),
+            nvp_session_ref:fields[8].clone(),
+        };
+        if value.canonical(challenge)?.as_slice()!=raw{
+            return Err(Refusal::InvalidFrame)
+        }
+        Ok(value)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -518,6 +619,40 @@ mod tests {
         }
         let mut appended=bytes;appended.push(0);
         assert!(NvpAuthRequest::parse_exact(&appended,challenge,42,123).is_err());
+    }
+    #[test]
+    fn nvp_stop_private_query_requires_original_lease_and_exact_scm_epoch(){
+        let query=NvpStopQuery{
+            service_pid:42,service_birth:123,lease_ref:"gpu-abc123".into(),
+            device_ref:"dxgi:luid_0x1234_phys_0".into(),
+            module_id:"nvp.film".into(),workspace_ref:"film".into(),
+            conversation_ref:"conv".into(),user_turn_ref:"turn".into(),
+            task_ref:"task".into(),core_epoch_ref:"epoch".into(),
+            nvp_session_ref:"session".into(),
+        };
+        let nonce=[0x62;CHALLENGE_BYTES];
+        let bytes=query.canonical(nonce).unwrap();
+        assert_eq!(NvpStopQuery::parse_exact(&bytes,nonce,42,123),Ok(query.clone()));
+        assert_eq!(NvpStopQuery::parse_exact(&bytes,[0x63;32],42,123),
+            Err(Refusal::Replay));
+        assert_eq!(NvpStopQuery::parse_exact(&bytes,nonce,43,123),
+            Err(Refusal::StaleService));
+        assert_eq!(NvpStopQuery::parse_exact(&bytes,nonce,42,124),
+            Err(Refusal::StaleService));
+        let mut forged=query.clone();
+        forged.module_id="lu.ide".into();
+        assert_eq!(forged.canonical(nonce),Err(Refusal::InvalidScope));
+        forged=query.clone();forged.lease_ref="../../other".into();
+        assert_eq!(forged.canonical(nonce),Err(Refusal::InvalidScope));
+        forged=query.clone();forged.user_turn_ref="other".into();
+        assert_ne!(forged.canonical(nonce).unwrap(),bytes);
+        for len in 0..bytes.len(){
+            assert!(NvpStopQuery::parse_exact(&bytes[..len],nonce,42,123).is_err());
+        }
+        let mut trailing=bytes.clone();trailing.push(0);
+        assert_eq!(NvpStopQuery::parse_exact(&trailing,nonce,42,123),
+            Err(Refusal::InvalidFrame));
+        assert_eq!(query.canonical([0;32]),Err(Refusal::InvalidScope));
     }
     #[test]
     fn truncated_noncanonical_and_replayed_packets_are_refused(){
