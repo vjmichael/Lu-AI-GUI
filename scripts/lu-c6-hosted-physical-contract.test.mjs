@@ -3,12 +3,15 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 const read = (path) => fs.readFileSync(new URL("../"+path, import.meta.url),"utf8");
 
-test("C6 heavy source + native packaging is manual-only and exact-SHA bound",()=>{
+test("C6 heavy source + native packaging automatically runs only on locked CP-10 branch publication",()=>{
   const workflow=read(".github/workflows/lu-core-c6-hosted-dual-nsis.yml");
   const trigger=workflow.slice(workflow.indexOf("\non:\n"),workflow.indexOf("\npermissions:"));
   assert.match(trigger,/workflow_dispatch:/);
   assert.match(trigger,/workflow_call:/);
-  assert.doesNotMatch(trigger,/push:|pull_request:|pull_request_target:/);
+  assert.match(trigger,/push:\\n    branches:\\n      - lu\\/cp10-consolidated-ux-20261120\\n    paths:\\n      - source-tree\\.lock\\.json/);
+  assert.doesNotMatch(trigger,/pull_request:|pull_request_target:|schedule:/);
+  assert.match(workflow,/group: lu-c6-dual-nsis-\\$\\{\\{ github\\.ref \\}\\}/);
+  assert.match(workflow,/cancel-in-progress: false/);
   assert.match(workflow,/github\.sha/);
   assert.match(workflow,/node scripts\/verify-source-tree\.mjs/);
   assert.match(workflow,/Build exact-current native Lu and separately pinned CPU plus Vulkan llama\.cpp NSIS/);

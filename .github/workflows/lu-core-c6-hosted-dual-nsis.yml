@@ -1,11 +1,19 @@
 name: Lu C6 exact-SHA Windows dual-engine NSIS hosted preflight (NOT physical R9700)
 on:
+  # Only the final locked source publication on this isolated branch triggers
+  # the expensive native Windows package lane. Bare source edits do not.
+  push:
+    branches:
+      - lu/cp10-consolidated-ux-20261120
+    paths:
+      - source-tree.lock.json
   workflow_dispatch:
   workflow_call:
 permissions:
   contents: read
 concurrency:
-  group: lu-c6-dual-nsis-${{ github.sha }}
+  # One running and at most one pending branch run; preserve running evidence.
+  group: lu-c6-dual-nsis-${{ github.ref }}
   cancel-in-progress: false
 jobs:
   reviewed-source:
