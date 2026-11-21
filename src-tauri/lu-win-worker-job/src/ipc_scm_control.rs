@@ -444,6 +444,59 @@ pub async fn issue_nvp_auth_command(
 mod tests{
     use super::*;
     #[test]
+    fn nvp_broker_registry_denies_replay_revocation_and_timeout(){
+        use crate::ipc_scm_control_wire::{NvpBrokerScope,NvpAuthRequest,NvpAuthAction};
+        let request=NvpAuthRequest{
+            action:NvpAuthAction::Open,
+            scope:NvpBrokerScope{
+                original:OriginalCall{
+                    call_id:"a".repeat(64),fingerprint_sha256:"b".repeat(64),
+                    module_id:"nvp.film".into(),session_ref:"sess".into(),
+                    core_epoch_ref:"epoch".into(),conversation_ref:"conv".into(),
+                    user_turn_ref:"turn".into(),task_ref:"task".into(),
+                    workspace_ref:"workspace".into(),
+                },
+                nvp_pid:123,nvp_birth_filetime:456,nvp_session_id:7,
+                service_pid:22,service_birth_filetime:33,challenge:[0x57;32],
+            },
+            package_sha256:[0x31;32],enrollment_sha256:[0x32;32],
+            image_sha256:[0x33;32],signer_sha256:[0x34;32],
+            hello_wire:b"hello".to_vec(),client_proof:[0x35;32],
+            welcome_without_mac:b"welcome".to_vec(),core_session:"sess".into(),
+        };
+        let mut registry=NvpAuthRegistry::default();
+        assert!(registry.apply(&request).is_ok());
+        assert!(registry.apply(&request).is_err()); // one-use open
+        let mut check=request.clone();
+        check.action=NvpAuthAction::Check;
+        assert!(registry.apply(&check).is_ok());
+        let mut wrong=check.clone();
+        wrong.scope.original.user_turn_ref="forged-turn".into();
+        assert!(registry.apply(&wrong).is_err());
+        wrong=check.clone();
+        wrong.scope.nvp_birth_filetime+=1;
+        assert!(registry.apply(&wrong).is_err());
+        wrong=check.clone();
+        wrong.scope.service_birth_filetime+=1;
+        assert!(registry.apply(&wrong).is_err());
+        let mut revoke=check.clone();
+        revoke.action=NvpAuthAction::Revoke;
+        assert!(registry.apply(&revoke).is_ok());
+        assert!(registry.apply(&revoke).is_err());
+        assert!(registry.apply(&check).is_err());
+        assert!(registry.apply(&request).is_err());
+        let mut other=request.clone();
+        other.scope.challenge=[0x64;32];
+        assert!(registry.apply(&other).is_ok());
+        let key=*registry.sessions.iter().find(|(_,(_,revoked))|!revoked)
+            .unwrap().0;
+        registry.sessions.get_mut(&key).unwrap().0=Instant::now();
+        other.action=NvpAuthAction::Check;
+        assert!(registry.apply(&other).is_err());
+        other.action=NvpAuthAction::Open;
+        assert!(registry.apply(&other).is_err());
+    }
+    #[test]
     fn private_pipe_is_not_any_dlc_endpoint(){
         assert_ne!(PIPE,r"\\.\pipe\lu-ipc-00000000000000000000000000000000");
         assert!(PIPE.starts_with(r"\\.\pipe\LuCoreIpcScmControl"));
