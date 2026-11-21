@@ -6,8 +6,8 @@ const baseline=readFileSync(new URL('../.github/workflows/lu-core-c6-hosted-dual
 const native=readFileSync(new URL('../.github/workflows/lu-cp12br7r1-windows-collaboration.yml',import.meta.url),'utf8').replace(/\r\n?/g,'\n');
 
 test('CP-10-R3 qualifies one exact source SHA and does not open broad CI triggers',()=>{
-  assert.match(workflow,/^  push:\n    branches: \['lu\/cp10-r3-windows-nsis-20261120'\]\n    paths: \['\.github\/workflows\/lu-cp10-r3-windows-nsis\.yml'\]/m);
-  assert.match(workflow,/github\.event\.head_commit\.message == 'CP-10-R3 source-locked Windows NSIS qualification'/);
+  assert.match(workflow,/^  push:\n    branches: \['lu\/cp10-r3-r1-windows-nsis-20261120'\]\n    paths: \['\.github\/workflows\/lu-cp10-r3-windows-nsis\.yml'\]/m);
+  assert.match(workflow,/github\.event\.head_commit\.message == 'CP-10-R3-R1 source-locked Windows NSIS qualification'/);
   assert.doesNotMatch(workflow,/^\s+(pull_request|pull_request_target|schedule|workflow_dispatch):/m);
   for(const token of ['github.sha','git rev-parse HEAD','verify-source-tree.mjs','persist-credentials: false','cancel-in-progress: false','runs-on: windows-2025']) assert.ok(workflow.includes(token),token);
   assert.doesNotMatch(workflow,/continue-on-error:\s*true|curl\s+.+\|\s*(bash|pwsh)|-SkipValidation/);

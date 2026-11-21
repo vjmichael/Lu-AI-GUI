@@ -4,7 +4,7 @@ name: Lu CP-10-R3 exact-source Windows NSIS qualification
 # this one-shot orchestrator invokes it only after the native Windows gate passes.
 on:
   push:
-    branches: ['lu/cp10-r3-windows-nsis-20261120']
+    branches: ['lu/cp10-r3-r1-windows-nsis-20261120']
     paths: ['.github/workflows/lu-cp10-r3-windows-nsis.yml']
 permissions:
   contents: read
@@ -13,7 +13,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   source-and-native-windows:
-    if: ${{ github.event_name == 'push' && github.event.head_commit.message == 'CP-10-R3 source-locked Windows NSIS qualification' }}
+    if: ${{ github.event_name == 'push' && github.event.head_commit.message == 'CP-10-R3-R1 source-locked Windows NSIS qualification' }}
     runs-on: windows-2025
     timeout-minutes: 120
     steps:

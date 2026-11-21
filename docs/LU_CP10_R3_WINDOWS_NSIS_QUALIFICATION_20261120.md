@@ -30,3 +30,13 @@ The checked-in `lu-desktop/src-tauri/resources/lu-inference/manifest.json` descr
 Focused CP-10-R3, C6 native/installer, dual backend and physical-contract source checks: **18 passed, 0 failed**. These are local contract assertions, not installed Windows acceptance.
 
 **Next:** Run the exact R3 source/native and actual hosted NSIS qualification once the preceding consolidated CI is terminal, repair measured failures as one batch, then execute physical Windows/two-model acceptance. Keep `main` and original R7 unchanged.
+
+## CP-10-R3-R1 — Terminal R3 CI failure and scoped correction (2026-11-20)
+
+**Actual result:** [Windows run #44844486130](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/44844486130) at exact source `59b4dfa46ae7e160904cb058928f53e68beb0a88` **FAILED** in the initial contract gate. Source-tree lock passed; **31/32** Node contracts passed and **1/32** failed. The downstream `real-source-built-nsis-and-hosted-install` job was **SKIPPED**, not failed and not accepted. This run did **not** build, install, or qualify NSIS, and did **not** execute the intended native Rust stage.
+
+**Exact failure:** `scripts/lu-c6-hosted-physical-contract.test.mjs` used literal `"\\non:\\n"` and `"\\npermissions:"` string offsets to isolate the source-built C6 workflow trigger. Git Windows checkout supplied CRLF, so the first offset was `-1` and the computed trigger was empty. The original C6 workflow actually retains only `workflow_dispatch` and `workflow_call`; the failure was in the **test's newline handling**, not a demonstrated installer/runtime error.
+
+**Source-only repair:** Normalize YAML reads **in memory** using `.replace(/\\r\\n?/g,"\\n")`, leave the checked-out source and raw cryptographic source lock untouched, and add a two-encoding regression requiring both manual/reusable triggers while explicitly prohibiting `push`, `pull_request`, `pull_request_target` and `schedule` in the C6 workflow. Use a new one-shot isolated branch `lu/cp10-r3-r1-windows-nsis-20261120` with matching exact commit-message gate to re-run the unmodified native/installer qualification. Do **not** loosen CI assertions, remove the source lock, weaken approvals, add network egress, or misclassify the previous failed run.
+
+**Acceptance:** The new candidate's Windows CI and real source-built CPU/Vulkan NSIS install/uninstall remain **OPEN** until a terminal same-SHA run and original native evidence pass. Installed two-GGUF collaborative consent and physical Radeon R9700 remain separate later gates; browser package and two historical UI failures remain open. No mainline merge or v1.0 promotion.

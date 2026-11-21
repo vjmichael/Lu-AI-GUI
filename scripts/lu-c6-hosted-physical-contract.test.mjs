@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
-const read = (path) => fs.readFileSync(new URL("../"+path, import.meta.url),"utf8");
+const read = (path) => fs.readFileSync(new URL("../"+path, import.meta.url),"utf8").replace(/\r\n?/g,"\n");
 
 test("C6 heavy source + native packaging is manual-only and exact-SHA bound",()=>{
   const workflow=read(".github/workflows/lu-core-c6-hosted-dual-nsis.yml");
@@ -59,4 +59,19 @@ test("C6 installed package never claims physical offload or silently bundles an 
   assert.match(nsis,/File \/oname=llama-server-vulkan\.exe/);
   assert.match(nsis,/RMDir \/r "\$INSTDIR\\lu-browser"/);
   assert.doesNotMatch(nsis,/RMDir \/r "\$APPDATA/);
+});
+
+test("C6 trigger enforcement works with both Unix LF and Windows CRLF checkout text",()=>{
+  const source=read(".github/workflows/lu-core-c6-hosted-dual-nsis.yml");
+  const windows=source.replace(/\n/g,"\r\n");
+  for(const text of [source,windows]){
+    const normalized=text.replace(/\r\n?/g,"\n");
+    const begin=normalized.indexOf("\non:\n");
+    const end=normalized.indexOf("\npermissions:",begin);
+    assert.ok(begin>=0 && end>begin,"event block must be present");
+    const events=normalized.slice(begin,end);
+    assert.match(events,/workflow_dispatch:/);
+    assert.match(events,/workflow_call:/);
+    assert.doesNotMatch(events,/(?:^|\n)\s*(?:push|pull_request|pull_request_target|schedule):/);
+  }
 });

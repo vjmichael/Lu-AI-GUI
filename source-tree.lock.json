@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "08b8d240e426e4ab60f462617b5dcd85673a1c3b",
+  "sourceCommitBeforeLock": "59b4dfa46ae7e160904cb058928f53e68beb0a88",
   "trackedFileCount": 1273,
   "files": [
     {
@@ -133,7 +133,7 @@
     },
     {
       "path": ".github/workflows/lu-cp10-r3-windows-nsis.yml",
-      "blob": "b5798d3fd850a360663c3587a454e09762722ca2"
+      "blob": "b044c277fbf6c26957ce66183701ceab757a66b7"
     },
     {
       "path": ".github/workflows/lu-cp12br7r1-windows-collaboration.yml",
@@ -901,7 +901,7 @@
     },
     {
       "path": "docs/LU_CP10_R3_WINDOWS_NSIS_QUALIFICATION_20261120.md",
-      "blob": "9c92c6991565596744869d904cc943ee12bc5987"
+      "blob": "29845bda08650b149f2ece21bacd51ddd9a2ea06"
     },
     {
       "path": "docs/LU_CP11A_LOCAL_CHECKS_20261120.md",
@@ -989,7 +989,7 @@
     },
     {
       "path": "docs/LU_DEVELOPMENT_LEDGER.md",
-      "blob": "44993e14365256bd081bb429d89b4e34f34e10d7"
+      "blob": "660cdee5a63f769ab1710b97b3df1f1736a4bb00"
     },
     {
       "path": "docs/LU_E1_NATIVE_EVIDENCE_20261107.md",
@@ -2925,7 +2925,7 @@
     },
     {
       "path": "scripts/cp10-r3-source-install-contract.test.mjs",
-      "blob": "c3b460c524a1af3a6eb5fc14bf547b98fcea072d"
+      "blob": "a2246c763d8a6f2c7e245d8ddb9120478165d043"
     },
     {
       "path": "scripts/cp11a-model-benchmark-gui.py",
@@ -3069,7 +3069,7 @@
     },
     {
       "path": "scripts/lu-c6-hosted-physical-contract.test.mjs",
-      "blob": "d77727f03186a445cf55c37fe0cff91142c2e77d"
+      "blob": "d10d2c76ee28c0df6a32b1e4d3042314f1c7b2e2"
     },
     {
       "path": "scripts/lu-c62-browser-bundle-source.test.mjs",
