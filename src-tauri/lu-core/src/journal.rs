@@ -119,6 +119,15 @@ pub enum IpcRestartDisposition {
     Ready,
     NeedsCustody { executing: u64, uncertain: u64 },
 }
+/// Immutable, bounded journal-side evidence for an independently supervised
+/// recovery inquiry. This is NOT an OS-custody receipt or an execution grant.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IpcPendingEffect {
+    pub call_id: String,
+    pub tool_id: String,
+    pub fingerprint: String,
+    pub state: EffectState,
+}
 impl ExclusiveIpcEffectJournal {
     pub fn acquire(path: &Path) -> Result<Self, JournalError> {
         let journal=EffectJournal::open_exclusive_for_ipc(path)?;
@@ -135,6 +144,13 @@ impl ExclusiveIpcEffectJournal {
                 uncertain:self.startup_uncertain,
             }
         }
+    }
+    /// Inspect exact original call IDs for native supervisor reconciliation.
+    /// It returns NO raw payloads, secret handles or false custody approval.
+    /// An older live worker remains possible until independent OS evidence
+    /// arrives; this interface cannot close the restart refusal by itself.
+    pub fn pending_for_supervisor(&self)->Result<Vec<IpcPendingEffect>,JournalError>{
+        self.journal.ipc_pending_effects()
     }
     /// The only production IPC journal accessor. Startup is closed to new
     /// effects if an interrupted/uncertain earlier IPC effect needs independent
@@ -250,6 +266,42 @@ impl EffectJournal {
             [],|row|row.get(0))?;
         Ok((executing.try_into().map_err(|_|JournalError::InvalidStoredState)?,
             uncertain.try_into().map_err(|_|JournalError::InvalidStoredState)?))
+    }
+
+    /// Bounded, deterministic recovery inventory. A missing or malformed
+    /// fingerprint refuses the entire inquiry; no opaque ToolReply or input
+    /// bytes are exported to the supervising process.
+    fn ipc_pending_effects(&self)->Result<Vec<IpcPendingEffect>,JournalError>{
+        const MAX_PENDING:usize=1024;
+        let connection=self.connection.lock().map_err(|_|JournalError::Poisoned)?;
+        let mut stmt=connection.prepare(
+            "SELECT call_id,tool_id,fingerprint,state FROM lu_effects
+             WHERE state IN ('EXECUTING','UNCERTAIN')
+             ORDER BY call_id LIMIT 1025"
+        )?;
+        let rows=stmt.query_map([],|row|Ok((
+            row.get::<_,String>(0)?,
+            row.get::<_,String>(1)?,
+            row.get::<_,String>(2)?,
+            row.get::<_,String>(3)?,
+        )))?;
+        let mut pending=Vec::new();
+        for row in rows{
+            let (call_id,tool_id,fingerprint,state)=row?;
+            if pending.len()>=MAX_PENDING{
+                return Err(JournalError::IpcRestartNeedsCustody);
+            }
+            let valid_hash=fingerprint.len()==64&&fingerprint.bytes().all(|b|
+                b.is_ascii_digit()||(b'a'..=b'f').contains(&b));
+            if call_id.is_empty()||call_id.len()>128||
+                tool_id.is_empty()||!valid_hash{
+                return Err(JournalError::InvalidStoredState);
+            }
+            let state=EffectState::parse(&state)
+                .ok_or(JournalError::InvalidStoredState)?;
+            pending.push(IpcPendingEffect{call_id,tool_id,fingerprint,state});
+        }
+        Ok(pending)
     }
 
     /// An identical call_id is idempotent only when the parameters match.
@@ -667,6 +719,12 @@ mod ipc_exclusive_owner_tests {
         let second=ExclusiveIpcEffectJournal::acquire(&path).unwrap();
         assert_eq!(second.restart_disposition(),
             IpcRestartDisposition::NeedsCustody{executing:1,uncertain:0});
+        let pending=second.pending_for_supervisor().unwrap();
+        assert_eq!(pending.len(),1);
+        assert_eq!(pending[0].call_id,call.call_id);
+        assert_eq!(pending[0].tool_id,call.tool_id);
+        assert_eq!(pending[0].state,EffectState::Executing);
+        assert_eq!(pending[0].fingerprint,fingerprint(&call));
         assert!(matches!(second.ready_journal(),
             Err(JournalError::IpcRestartNeedsCustody)));
         drop(second);
@@ -681,6 +739,8 @@ mod ipc_exclusive_owner_tests {
         let third=ExclusiveIpcEffectJournal::acquire(&path).unwrap();
         assert_eq!(third.restart_disposition(),
             IpcRestartDisposition::NeedsCustody{executing:0,uncertain:1});
+        assert_eq!(third.pending_for_supervisor().unwrap()[0].state,
+            EffectState::Uncertain);
         assert!(matches!(third.ready_journal(),
             Err(JournalError::IpcRestartNeedsCustody)));
         drop(third);

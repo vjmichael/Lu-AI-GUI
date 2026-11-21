@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "9f43d078aa5e979de0ff72ca4c19e8c5829572af",
+  "sourceCommitBeforeLock": "406b6c4da144e62144f0a2fe847c73d363f02b9e",
   "trackedFileCount": 1285,
   "files": [
     {
@@ -1073,7 +1073,7 @@
     },
     {
       "path": "docs/LU_IPC_01D_R1_NATIVE_TRANSPORT_20261120.md",
-      "blob": "bad80c353d2b4d2d9d7ab6bfc087eacd781c56d0"
+      "blob": "e3fe45ae897846283181afb546a96c9cb40a5db7"
     },
     {
       "path": "docs/LU_KIAF_ACTIVE_EXECUTION_LEDGER_20261108.md",
@@ -3833,7 +3833,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/journal.rs",
-      "blob": "0c1a377d70d05df4602c511ee316f4ac59dd7a70"
+      "blob": "9dcf636c07c6fada8884a83cd18fb56818b40f60"
     },
     {
       "path": "src-tauri/lu-core/src/lib.rs",
