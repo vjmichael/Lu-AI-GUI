@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "163d4cfb1297207f43279bbbb71d967823236618",
+  "sourceCommitBeforeLock": "c6fd4bdeb149b486af9e6526545218dafe1a9a6c",
   "trackedFileCount": 1279,
   "files": [
     {
@@ -221,7 +221,7 @@
     },
     {
       "path": ".github/workflows/lu-ipc01d-r2-native.yml",
-      "blob": "7537ffae22c95859bb50b5cbbc7d4419ed1f2dfc"
+      "blob": "f006c758ce0af30912e950b2bf426fdb84064534"
     },
     {
       "path": ".github/workflows/lu-kiaf-execution.yml",
@@ -1073,7 +1073,7 @@
     },
     {
       "path": "docs/LU_IPC_01D_R1_NATIVE_TRANSPORT_20261120.md",
-      "blob": "75554fa1ae65dfa24bfdbc26ea3a27d80a33550e"
+      "blob": "a63aa6f7709e8194e65b44882f79cfa1361578a6"
     },
     {
       "path": "docs/LU_KIAF_ACTIVE_EXECUTION_LEDGER_20261108.md",
@@ -5029,7 +5029,7 @@
     },
     {
       "path": "src-tauri/lu-win-worker-job/Cargo.lock",
-      "blob": "d184568889937fac4a4059fd0403c380308b7fdb"
+      "blob": "b704158bd2a711bda5a987e04d8c8b5d470ce806"
     },
     {
       "path": "src-tauri/lu-win-worker-job/Cargo.toml",
