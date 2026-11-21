@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "46c195e22c735e448e182fd5f86da2bf9e9cb313",
-  "trackedFileCount": 1270,
+  "sourceCommitBeforeLock": "b9060299c7d14aee217cf7fc2f6cf0711dcd5327",
+  "trackedFileCount": 1274,
   "files": [
     {
       "path": ".gitattributes",
@@ -1062,6 +1062,10 @@
     {
       "path": "docs/LU_HUMAN_CENTERED_AI_MEMORY_FIRST_20261107.md",
       "blob": "3b57b83d8d605dfad3f1d234525e0637ae3861af"
+    },
+    {
+      "path": "docs/LU_IPC_01A_B_V0_CONTRACT_20261120.md",
+      "blob": "7d7c6c034da95d89be8c09747fd8f07e9b40cf51"
     },
     {
       "path": "docs/LU_KIAF_ACTIVE_EXECUTION_LEDGER_20261108.md",
@@ -3397,7 +3401,7 @@
     },
     {
       "path": "src-tauri/lu-core/build.rs",
-      "blob": "8cafc46386f43ac7afbda8a2500dfbff5ee2873d"
+      "blob": "ba66d82f0f04c854930d41958e1d837bb8d06f6a"
     },
     {
       "path": "src-tauri/lu-core/examples/ansf_memory_baseline.rs",
@@ -3458,6 +3462,10 @@
     {
       "path": "src-tauri/lu-core/proto/lu/v1/core.proto",
       "blob": "cf7eaa53dc1a73ad9f517327d0046ca28ebd09f1"
+    },
+    {
+      "path": "src-tauri/lu-core/proto/lu/workspace/v0/workspace.proto",
+      "blob": "83585c37733de69610e8c5ec0fbdfb883da83f86"
     },
     {
       "path": "src-tauri/lu-core/src/agent_continuation_intent.rs",
@@ -3813,7 +3821,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/lib.rs",
-      "blob": "4a491ed9e3d03ab4aff57cf9e8d2d761375bed9f"
+      "blob": "9d73802911c447d5e42a9c87a68859836ac2a967"
     },
     {
       "path": "src-tauri/lu-core/src/linux_device_hints.rs",
@@ -4456,6 +4464,10 @@
       "blob": "181be100d5b270ede1f09480a1281ea53d1255e7"
     },
     {
+      "path": "src-tauri/lu-core/src/workspace_ipc.rs",
+      "blob": "b4f1572e777072c6f01d863dccf1d3302a4aac11"
+    },
+    {
       "path": "src-tauri/lu-core/src/workspace_quarantine.rs",
       "blob": "a7fcd91466556cde0f88f559d0645b373be6dd2f"
     },
@@ -4966,6 +4978,10 @@
     {
       "path": "src-tauri/lu-core/tests/web_research_roadmap_acceptance.rs",
       "blob": "2991d9c0c5f5d8f76c841e5ee649726c321aed18"
+    },
+    {
+      "path": "src-tauri/lu-core/tests/workspace_ipc_v0.rs",
+      "blob": "df18971f0e510b5febe1ac157f28e35675f65291"
     },
     {
       "path": "src-tauri/lu-core/tests/workspace_quarantine.rs",
