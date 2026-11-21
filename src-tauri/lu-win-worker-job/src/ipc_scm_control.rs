@@ -24,7 +24,8 @@ use crate::{
     ipc_credential_broker::{require_system_service_context,
         verify_nvp_handshake_and_sign_welcome},
     ipc_installer_enrollment::{InstalledScmCorePins,read_installed_scm_core_pins,
-        read_installed_scm_receipt_public_key,read_installed_nvp_film_pins},
+        read_installed_scm_receipt_public_key,read_installed_nvp_film_pins,
+        read_installed_nvp_gpu_stop_public_key},
     ipc_pipe_peer::{create_scm_control_pipe,observe_host_process,
         observe_connected_peer,WindowsPipePeer},
     ipc_scm_owned_jobs::{ScmJobKeeper,ServiceCallBinding,SupervisedJobLane},
@@ -49,6 +50,7 @@ const CORE_SERVICE_LAUNCHED:u8=4;
 const CORE_SERVICE_NVP_AUTH:u8=5;
 const CORE_SERVICE_NVP_PUBLIC_PINS:u8=6;
 const CORE_SERVICE_NVP_WORKER_STOP_VERIFIED:u8=7;
+const CORE_SERVICE_NVP_STOP_ISSUER_PINNED:u8=8;
 const MAX_NVP_PUBLIC_PINS:usize=4096;
 const MAX_NVP_BROKER_SESSIONS:usize=128;
 const NVP_AUTH_LIFETIME:Duration=Duration::from_secs(300);
@@ -290,6 +292,19 @@ async fn serve_one(
             transmitted_receipt=Some(read_executor_stop_bytes_for_control(&binding)?);
             CORE_SERVICE_RECEIPT_EXISTS
         }
+        ScmCommand::VerifyNvpStopIssuerPinned=>{
+            let original=command.original.as_ref()
+                .ok_or_else(||denied("missing original NVP issuer scope"))?;
+            if original.module_id!="nvp.film"{
+                return Err(denied("NVP stop issuer probe requires film original"))
+            }
+            // A protected, separate P-256 public pin must ALREADY exist
+            // before Core is allowed to unload its GGUF for NVP. Checking
+            // this never signs an empty-Job receipt or grants restoration.
+            require_system_service_context()?;
+            let _pin=read_installed_nvp_gpu_stop_public_key()?;
+            CORE_SERVICE_NVP_STOP_ISSUER_PINNED
+        }
         ScmCommand::ReadNvpPublicEnrollment=>{
             let original=command.original.as_ref()
                 .ok_or_else(||denied("missing original NVP enrollment scope"))?;
@@ -455,7 +470,8 @@ pub async fn issue_core_command(
         (ScmCommand::LaunchFixedExecutor,CORE_SERVICE_LAUNCHED)|
         (ScmCommand::StopExactExecutor,CORE_SERVICE_STOPPED)|
         (ScmCommand::InspectStoppedExecutor,CORE_SERVICE_RECEIPT_EXISTS)|
-        (ScmCommand::ReadNvpPublicEnrollment,CORE_SERVICE_NVP_PUBLIC_PINS)){
+        (ScmCommand::ReadNvpPublicEnrollment,CORE_SERVICE_NVP_PUBLIC_PINS)|
+        (ScmCommand::VerifyNvpStopIssuerPinned,CORE_SERVICE_NVP_STOP_ISSUER_PINNED)){
         return Err(denied("SCM private reply mismatched command"));
     }
     Ok(ScmControlResponse{code:result[0],signed_receipt,
