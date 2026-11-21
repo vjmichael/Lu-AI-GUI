@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "a6b83677d33886263c1bb5c730d8e0abddfa6adf",
+  "sourceCommitBeforeLock": "78b4b68ee247ee998f05bbff05af33d18b6dab06",
   "trackedFileCount": 1982,
   "files": [
     {
@@ -2197,7 +2197,7 @@
     },
     {
       "path": "ide/app/tests/fin04r1_protected_pdb.test.mjs",
-      "blob": "d24dd4616d8407b200534b4f09811d3b40021c49"
+      "blob": "58ad09859c400cccb17ad472990e721658805a97"
     },
     {
       "path": "ide/app/tests/fin05_offline_vcpkg_worker.test.mjs",
@@ -2613,7 +2613,7 @@
     },
     {
       "path": "ide/ci/merge02-reviewed-native-boundaries.json",
-      "blob": "21a665497cac6879df5d3077e6758775980fdf3a"
+      "blob": "dbda89f36a723b03fff308dc62a4ab420cfa1382"
     },
     {
       "path": "ide/ci/test_verify_reviewed_native_boundaries.py",
@@ -4529,7 +4529,7 @@
     },
     {
       "path": "ide/supervisor/examples/wo6_native_dap_acceptance.rs",
-      "blob": "2631c910e18b0b5f7fa3fff3b47e774e6140efc1"
+      "blob": "5bf12ec90d52c25656b54823c63d2af7a0574701"
     },
     {
       "path": "ide/supervisor/fixtures/Install-ProtectedRecoveryService.ps1",
