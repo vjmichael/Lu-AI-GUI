@@ -8,9 +8,9 @@ test("C6 heavy source + native packaging automatically runs only on locked CP-10
   const trigger=workflow.slice(workflow.indexOf("\non:\n"),workflow.indexOf("\npermissions:"));
   assert.match(trigger,/workflow_dispatch:/);
   assert.match(trigger,/workflow_call:/);
-  assert.match(trigger,/push:\\n    branches:\\n      - lu\\/cp10-consolidated-ux-20261120\\n    paths:\\n      - source-tree\\.lock\\.json/);
+  assert.ok(trigger.includes("push:\n    branches:\n      - lu/cp10-consolidated-ux-20261120\n    paths:\n      - source-tree.lock.json"),"only published CP-10 source locks trigger Windows CI");
   assert.doesNotMatch(trigger,/pull_request:|pull_request_target:|schedule:/);
-  assert.match(workflow,/group: lu-c6-dual-nsis-\\$\\{\\{ github\\.ref \\}\\}/);
+  assert.ok(workflow.includes("group: lu-c6-dual-nsis-${{ github.ref }}"),"one concurrency group per branch");
   assert.match(workflow,/cancel-in-progress: false/);
   assert.match(workflow,/github\.sha/);
   assert.match(workflow,/node scripts\/verify-source-tree\.mjs/);
