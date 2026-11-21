@@ -202,6 +202,24 @@ impl CoreDlcHostGate {
         gate.native_worker=Some(worker);
         Ok(gate)
     }
+    /// Only an installed SCM-brokered NVP session may enter without a
+    /// Core-owned DLC Child Job: NVP owns its independently supervised
+    /// signed worker-stop issuer. The GPU release path still independently
+    /// verifies that issuer; authentication is never worker-empty evidence.
+    #[cfg(windows)]
+    pub fn from_scm_brokered_nvp(
+        installed:&crate::workspace_ipc_transport::windows::SignedWindowsSession,
+    )->Result<Self,CoreDlcGateError>{
+        if !installed.brokered_nvp_active() ||
+           !installed.gpu_lease_feature_negotiated() ||
+           installed.session().module_id!="nvp.film" ||
+           installed.peer_pid()==0 ||
+           installed.peer_creation_filetime()==0 ||
+           installed.check_alive().is_err(){
+            return Err(CoreDlcGateError::Transport)
+        }
+        Ok(Self::from_trusted_session(installed.session().clone(),None))
+    }
     #[cfg(test)]
     fn test_only(session:TransportSession)->Self{
         Self::from_trusted_session(session,None)
@@ -763,11 +781,13 @@ impl CoreDlcHostGate{
             return Err(CoreDlcGateError::Denied)
         }
         supervisor.require_live().map_err(|_|CoreDlcGateError::Unavailable)?;
-        installed.check_alive().map_err(|_|CoreDlcGateError::Transport)?;
-        let native=self.native_worker.as_ref()
-            .ok_or(CoreDlcGateError::Unavailable)?;
-        if native.pid()!=installed.peer_pid() ||
-           installed.peer_creation_filetime()==0 {
+        installed.check_authenticated().await
+            .map_err(|_|CoreDlcGateError::Transport)?;
+        if installed.peer_creation_filetime()==0 ||
+           self.native_worker.as_ref().map(|native|
+               native.pid()!=installed.peer_pid()).unwrap_or(
+                   !installed.brokered_nvp_active()
+               ){
             return Err(CoreDlcGateError::SessionMismatch)
         }
         let _slot=self.acquire()?;
@@ -879,7 +899,8 @@ impl CoreDlcHostGate{
         };
         if self.is_closed(){return Err(CoreDlcGateError::SessionClosed)}
         supervisor.require_live().map_err(|_|CoreDlcGateError::Unavailable)?;
-        installed.check_alive().map_err(|_|CoreDlcGateError::Transport)?;
+        installed.check_authenticated().await
+            .map_err(|_|CoreDlcGateError::Transport)?;
         let response=proto::WorkspaceFrame{
             protocol_major:crate::workspace_ipc::WIRE_MAJOR,
             protocol_minor:crate::workspace_ipc::WIRE_MINOR,
