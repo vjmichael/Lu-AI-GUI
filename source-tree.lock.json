@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "2a1178f5a814c31532b3ad8c74e9a038d14b71db",
-  "trackedFileCount": 1290,
+  "sourceCommitBeforeLock": "e231da8c8d94e1e2b104d15a1d363e31fc1e0cdb",
+  "trackedFileCount": 1291,
   "files": [
     {
       "path": ".gitattributes",
@@ -313,7 +313,7 @@
     },
     {
       "path": ".github/workflows/lu-repo01-full-source.yml",
-      "blob": "5cd7ac691d63d31c3a860bdf270e6725de8b53fd"
+      "blob": "6b290576fda38a2d5bcded1dd4a429cda2e006f7"
     },
     {
       "path": ".github/workflows/lu-tools-01-05-integration.yml",
@@ -726,6 +726,10 @@
     {
       "path": "docs/LU_CENTRAL_DESIGN.md",
       "blob": "0536adf6fb9bd696f600ed31051ad6082e603edd"
+    },
+    {
+      "path": "docs/LU_CI_POLICY_01_RETIREMENT_20261121.md",
+      "blob": "d849b32a1ef6f8d801e700268c4f42a4ec52a234"
     },
     {
       "path": "docs/LU_CI_TASK_GROUP_GATES_20261109.md",
