@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "6c56491228968bd9b0c354bf63da561bcfe9c834",
-  "trackedFileCount": 1273,
+  "sourceCommitBeforeLock": "1b59eedc8f0db0befacaa3c03699832bc18d4624",
+  "trackedFileCount": 1274,
   "files": [
     {
       "path": ".gitattributes",
@@ -134,6 +134,10 @@
     {
       "path": ".github/workflows/lu-cp10-r3-windows-nsis.yml",
       "blob": "b044c277fbf6c26957ce66183701ceab757a66b7"
+    },
+    {
+      "path": ".github/workflows/lu-cp10-r4-r1-native-qualification.yml",
+      "blob": "822007cd948d99f34ef68ca52e9b6a5863faf657"
     },
     {
       "path": ".github/workflows/lu-cp12br7r1-windows-collaboration.yml",
@@ -989,7 +993,7 @@
     },
     {
       "path": "docs/LU_DEVELOPMENT_LEDGER.md",
-      "blob": "2563394016567aa2edb0441cf3294bd2450439e5"
+      "blob": "8bccd29f37ed0b931ee77e92dee547224270f386"
     },
     {
       "path": "docs/LU_E1_NATIVE_EVIDENCE_20261107.md",
