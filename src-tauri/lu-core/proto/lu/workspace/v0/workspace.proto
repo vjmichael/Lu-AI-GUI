@@ -42,6 +42,10 @@ message WorkspaceFrame {
     ModelLeaseRelease release_model_lease = 35;
     AuthChallenge auth_challenge = 36;
     AuthProof auth_proof = 37;
+    // Additive, feature-negotiated gpu-lease-v1: NOT ModelLease (inference).
+    GpuLeaseRequest gpu_lease_request = 38;
+    GpuLeaseOutcome gpu_lease_outcome = 39;
+    GpuLeaseRelease gpu_lease_release = 40;
   }
   reserved 6 to 9; // Do not add unreviewed implicit identity fields.
 }
@@ -258,6 +262,39 @@ message ModelLeaseRelease {
   string lease_ref = 2;
 }
 
+
+// LU-IPC-GPU-01A: ONE Core-owned GPU resource lease, not NVP-owned Lu
+// model control. Client requests and receipt locators are claims; Lu
+// validates installed peer, original USER turn and actual GPU/worker state.
+enum GpuLeasePhase {
+  GPU_LEASE_PHASE_UNSPECIFIED = 0;
+  GPU_LEASE_PHASE_DRAINING = 1;
+  GPU_LEASE_PHASE_GRANTED = 2;
+  GPU_LEASE_PHASE_RELEASING = 3;
+  GPU_LEASE_PHASE_RESTORING = 4;
+  GPU_LEASE_PHASE_RESTORED = 5;
+  GPU_LEASE_PHASE_QUARANTINED = 6;
+}
+message GpuLeaseRequest {
+  OriginRefs origin = 1;
+  string device_ref = 2;           // host resolves a real GPU, not a raw OS path
+  uint64 required_free_vram_bytes = 3;
+  uint64 max_duration_ms = 4;
+}
+message GpuLeaseOutcome {
+  string operation_ref = 1;
+  AdmissionDecision decision = 2;
+  GpuLeasePhase phase = 3;
+  string lease_ref = 4;             // Core minted, non-bearer, original-turn bound
+  optional uint64 measured_available_vram_bytes = 5;
+  string reason_code = 6;
+}
+message GpuLeaseRelease {
+  OriginRefs origin = 1;
+  string lease_ref = 2;
+  string nvp_worker_stop_ref = 3; // locator only; not trusted termination proof
+}
+
 message CoreInferenceRequest {
   OriginRefs origin = 1;
   string user_intent_text = 2;
@@ -310,6 +347,10 @@ service LuCoreGateway {
   rpc Cancel(CancelOperation) returns (CancelAcknowledged);
   rpc Reconcile(ReconcileOperation) returns (ReconciledOperation);
   rpc RequestResources(ResourceTransitionRequest) returns (ResourceTransitionDecision);
+  // gpu-lease-v1 is explicitly negotiated. Service declarations do not
+  // create an installed endpoint or bypass Core host authorization.
+  rpc RequestGpuLease(GpuLeaseRequest) returns (GpuLeaseOutcome);
+  rpc ReleaseGpuLease(GpuLeaseRelease) returns (GpuLeaseOutcome);
   rpc Focus(FocusWorkspace) returns (FocusOutcome);
   rpc Health(HealthRequest) returns (HealthReport);
 }

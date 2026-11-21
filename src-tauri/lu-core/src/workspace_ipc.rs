@@ -302,6 +302,43 @@ pub fn validate(frame:&proto::WorkspaceFrame)->Result<(),WorkspaceWireError>{
             origin(v.origin.as_ref().ok_or(WorkspaceWireError::Invalid("release_origin"))?)?;
             name(&v.lease_ref,128)?;
         }
+        Body::GpuLeaseRequest(v)=>{
+            origin(v.origin.as_ref().ok_or(WorkspaceWireError::Invalid("gpu_lease_origin"))?)?;
+            name(&v.device_ref,128)?;
+            if v.required_free_vram_bytes==0 ||
+                v.required_free_vram_bytes>512*1024*1024*1024 ||
+                !(1..=8*60*60*1000).contains(&v.max_duration_ms){
+                return Err(WorkspaceWireError::Invalid("gpu_lease_limits"))
+            }
+        }
+        Body::GpuLeaseOutcome(v)=>{
+            name(&v.operation_ref,128)?;
+            if v.decision==0 ||
+               proto::AdmissionDecision::try_from(v.decision).is_err() ||
+               v.phase==0 ||
+               proto::GpuLeasePhase::try_from(v.phase).is_err(){
+                return Err(WorkspaceWireError::Invalid("gpu_lease_decision"))
+            }
+            optional_name(&v.lease_ref,128)?;
+            code(&v.reason_code)?;
+            if v.decision==proto::AdmissionDecision::Allowed as i32 {
+                if v.lease_ref.is_empty() ||
+                   !matches!(proto::GpuLeasePhase::try_from(v.phase),
+                    Ok(proto::GpuLeasePhase::Granted|proto::GpuLeasePhase::Restored)){
+                    return Err(WorkspaceWireError::Invalid("gpu_lease_grant"))
+                }
+            } else if !v.lease_ref.is_empty() {
+                return Err(WorkspaceWireError::Invalid("gpu_lease_denied_ref"))
+            }
+            if v.measured_available_vram_bytes.is_some_and(|m|m>512*1024*1024*1024){
+                return Err(WorkspaceWireError::Invalid("gpu_lease_vram"))
+            }
+        }
+        Body::GpuLeaseRelease(v)=>{
+            origin(v.origin.as_ref().ok_or(WorkspaceWireError::Invalid("gpu_release_origin"))?)?;
+            name(&v.lease_ref,128)?;
+            optional_name(&v.nvp_worker_stop_ref,128)?;
+        }
         Body::Inference(v)=>{
             origin(v.origin.as_ref().ok_or(WorkspaceWireError::Invalid("inference_origin"))?)?;
             if v.user_intent_text.trim().is_empty()||v.user_intent_text.len()>16*1024||
