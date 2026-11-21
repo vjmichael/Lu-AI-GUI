@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "a1a24c245191dc096e42e6c11a887a23a311bbdd",
+  "sourceCommitBeforeLock": "b41c2f46abcda85aeb294d81b3229389c26a6627",
   "trackedFileCount": 1304,
   "files": [
     {
@@ -4517,15 +4517,15 @@
     },
     {
       "path": "src-tauri/lu-core/src/workspace_ipc_core_host.rs",
-      "blob": "5d17a195faf2e21a23c71e875fc4799ccb999e66"
+      "blob": "ca3aa98c39ebaa4f54a20b552ab489a8398b6a43"
     },
     {
       "path": "src-tauri/lu-core/src/workspace_ipc_scm.rs",
-      "blob": "1cc8e219363a055711df91efe97e288bb27ce495"
+      "blob": "c6d497afb60dd90facce0e4843736e93d8d3e6fd"
     },
     {
       "path": "src-tauri/lu-core/src/workspace_ipc_transport.rs",
-      "blob": "133198027db1834a0f0904bab2f1decb9d0f9456"
+      "blob": "bd26e80019aab38eaad482facbf3999dac61cbd0"
     },
     {
       "path": "src-tauri/lu-core/src/workspace_quarantine.rs",
@@ -5121,7 +5121,7 @@
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/ipc_credential_broker.rs",
-      "blob": "6c30f57e8af701f308ff61215e97d20cdaa5adac"
+      "blob": "c6888ce7aed299b78aaa4f64bf78488c0aea1603"
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/ipc_gpu_vram.rs",
@@ -5141,11 +5141,11 @@
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/ipc_scm_control.rs",
-      "blob": "686553695f4842381321abc5fa23bff3572511af"
+      "blob": "6648234d96e312e77a932f12bf6774ef4026ebd6"
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/ipc_scm_control_wire.rs",
-      "blob": "e5d5b3f63982ffe57eaca526319abcb4e9fc08d8"
+      "blob": "b5a0946968e870c3b476e6353a602f3e58a19a61"
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/ipc_scm_launcher.rs",
