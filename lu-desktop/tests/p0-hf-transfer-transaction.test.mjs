@@ -48,5 +48,5 @@ test('native operator grants each original/resumed transfer and recovery never a
   assert.match(windows,/lu_model_transfer_ready/);
   assert.match(windows,/lu_model_transfer_resume/);
   assert.match(windows,/lu_model_transfer_cancel/);
-  assert.match(windows,/Verify full file SHA-256 now/);
+  assert.match(windows,/Verify downloaded file/);
 });

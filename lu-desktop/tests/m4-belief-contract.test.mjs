@@ -27,7 +27,7 @@ test('Lu local GGUF Send receives bounded, explicit, inert belief evidence',()=>
   assert.match(host,/serialized\.len\(\)<=4096/);
   assert.match(host,/model_prompt\.push_str\(&envelope\)/);
   assert.match(host,/NO TOOL GRANTS/);
-  assert.match(jsx,/M4 semantic claims · source and conflict review/);
+  assert.match(jsx,/Review saved facts and corrections/);
   assert.match(jsx,/Record as reported, not verified/);
   assert.match(jsx,/lu_m4_retract_claim/);
   assert.match(jsx,/lu_m4_read_beliefs/);

@@ -35,8 +35,8 @@ test('settings inventory is model-neutral but never a tool grant or verification
   assert.match(rust,/fn lu_native_route_catalog\(\)->Vec<LuNativeRouteView>/);
   assert.match(rust,/NativeCapabilityView from a granted model turn/);
   assert.match(rust,/ConversationAuthority and registered codecs/);
-  assert.match(windows,/not automatic grants/);
-  assert.match(windows,/not independently verified/);
+  assert.match(windows,/They cannot approve or run tasks on their own/);
+  assert.match(windows,/Not independently verified/);
   assert.match(rust,/id:"reviewed\.media"/);
   assert.match(rust,/id:"reviewed\.git"/);
 });

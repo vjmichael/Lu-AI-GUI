@@ -37,7 +37,7 @@ test('P03 model inspection does not certify compatibility or invent GPU proof',(
   assert.match(ui,/invoke\('lu_model_preflight'/);
   assert.match(ui,/aria-label="Search local models"/);
   assert.match(ui,/inspection\?\.loadAllowed/);
-  assert.match(ui,/No successful download by itself admits a GGUF/);
+  assert.match(ui,/Downloading never loads a model automatically/);
 });
 test('P03 provider review requires immutable revision and verified digest and approval',()=>{
   assert.match(core,/c\.provider!="hugging_face"/);
@@ -73,7 +73,7 @@ test('P03 public provider metadata search is an explicit read-only Settings acti
   assert.match(researcher,/if !self\.available\(\)/);
   assert.match(ui,/lu_model_provider_search/);
   assert.match(ui,/lu_model_provider_review/);
-  assert.match(ui,/download and interrupted resume still needs a fresh OS confirmation/);
+  assert.match(ui,/You must approve each download/);
   assert.match(ui,/lu_model_transfer_start/);
   assert.match(ui,/disabled=\{busy\|\|!transferReady\}/);
   assert.match(ui,/INTERRUPTED_REVIEW_REQUIRED/);

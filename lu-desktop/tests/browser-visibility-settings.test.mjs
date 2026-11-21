@@ -23,7 +23,7 @@ test('browser modes require persisted native host approval without launching a s
   assert.ok(!ui.includes("invoke('lu_start_browser'"));
 });
 test('browser settings UI accurately distinguishes mode choice from task admission',()=>{
-  assert.ok(ui.includes('No browser page, model output or prior session can grant permission'));
+  assert.ok(ui.includes('Pages, model replies and earlier approvals cannot grant new access'));
   assert.ok(ui.includes('Browser runtime not independently verified'));
   assert.ok(ui.includes('Browser preference saved.'));
 });

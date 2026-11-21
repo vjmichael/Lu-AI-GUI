@@ -35,7 +35,8 @@ test('task controls keep the original scope and actual security checks',()=>{
  assert.match(host,/scheduler\.cancel_owned\(&task_id,&chat_id\)/);
  assert.match(host,/Read-only Browser grant/);
  assert.match(host,/owner\.observe\.deny_unscoped_network_while_observing\(\)\?/);
- assert.match(settings,/section==='tools'&&!onNavigate/);
+ assert.match(settings,/section==='tools'&&<Section title="Tools & permissions">/);
+ assert.match(settings,/<summary>Project planning tools<\/summary>/);
 });
 test('installed oracle demands real same HWND and all five tabs',()=>{
  assert.match(smoke,/PASS_INSTALLED_UNIFIED_TABS/);

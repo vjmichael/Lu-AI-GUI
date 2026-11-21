@@ -40,7 +40,7 @@ test('backend selection stays a human controlled native preference, not a model 
   assert.match(settings,/invoke\('lu_model_select_backend'/);
   assert.match(settings,/Use on next start/);
   assert.match(settings,/selectedOnNextStart/);
-  assert.match(settings,/Saving a preference never grants GPU access/);
+  assert.match(settings,/This does not restart a loaded model or grant new permissions/);
   assert.doesNotMatch(ui,/invoke\('lu_model_select_backend'/);
   assert.doesNotMatch(choice,/Command::new|std::process::Command|unsafe/);
 });

@@ -63,7 +63,7 @@ const tests = [
     windows.includes('Select window/display · capture one frame') &&
     windows.includes('Capture selected foreground app (4s)') &&
     windows.includes('Capture primary display (redacted)') &&
-    windows.includes('Capture foreground app for local GGUF image') &&
+    windows.includes('Attach image from selected app to Lu') &&
     host.includes('async fn lu_observe_capture_local_image(') &&
     host.includes('--lu-observe-foreground-one-shot') &&
     windows.includes("invoke('lu_observe_capture_local_image',{chatId})") &&
@@ -76,7 +76,7 @@ const tests = [
     host.includes('fn lu_observe_self_signal(') &&
     host.includes('fn lu_observe_status(') &&
     host.includes('lu_observe_start,') &&
-    windows.includes('OFF by default') &&
+    windows.includes('Observe & Learn is off by default') &&
     windows.includes("changeObservation('stop')") &&
     host.includes('notice.task_id.starts_with("obs-")') &&
     windows.includes('local-only')],
@@ -84,7 +84,8 @@ const tests = [
     host.includes('fn lu_browser_visibility(') &&
     host.includes('fn lu_set_browser_visibility(') &&
     windows.includes("invoke('lu_set_browser_visibility',{mode:event.target.value})") &&
-    windows.includes('never grants GPU access')],
+    windows.includes('Browsing is limited to approved sites.') &&
+    windows.includes('Approving one task does not approve future tasks.')],
   ['Wave 4 vision status is host-attested and never claims projector presence is a successful probe',
     host.includes('fn lu_vision_capability(') &&
     host.includes('vision_context::image_preflight(') &&
@@ -132,7 +133,7 @@ const tests = [
     ui.includes("listen('lu-native-action-proposal'") &&
     ui.includes("invoke('lu_accept_native_action_proposal'") &&
     ui.includes("invoke('lu_deny_native_action_proposal'") &&
-    ui.includes('Review with native controls') &&
+    ui.includes('Review permissions and continue') &&
     host.includes('state.native_actions.stage(') &&
     host.includes('fn lu_accept_native_action_proposal(')],
   ['Wave 3 ordinary Send uses one host coordinator and native workspace picker',
@@ -305,10 +306,10 @@ const tests = [
     !host.includes('fn lu_review_trash_file(')],
   ['file operation UI reports active native work without fabricating completion or percent',
     ui.includes('const wave2FileBusy = archiveBusy') &&
-    ui.includes('aria-label="Native file operation in progress"') &&
-    ui.includes('Byte-level progress is not available') &&
-    ui.includes('No automatic retry occurs') &&
-    ui.includes('File recovery before taking another action')],
+    ui.includes('aria-label="File operation in progress"') &&
+    ui.includes('Detailed progress is not') &&
+    ui.includes('will not retry automatically') &&
+    ui.includes('review the earlier result before trying again')],
   ['bounded Office batch native review binds full before-after diff and unchanged package hashes',
     ui.includes("invoke('lu_review_office_batch'") &&
     ui.includes("invoke('lu_confirm_office_batch'") &&

@@ -4,7 +4,7 @@ import {invoke} from '@tauri-apps/api/core';
 export const LU_TABS=[['chat','Chat'],['history','History'],['tasks','Tasks'],['models','Models'],['settings','Settings']];
 export function friendlyError(error){
   const message=String(error?.message||error||'');
-  if(/HTTP 400|compatible MMProj|image generation|image request/i.test(message))return 'This model could not read the image. Check that the matching vision projector is loaded, then try again.';
+  if(/HTTP 400|compatible MMProj|image generation|image request/i.test(message))return 'This model could not read the image. Check that its vision support is attached, then try again.';
   if(/Observe & Learn is active|unscoped network/i.test(message))return 'Internet access is paused while Observe & Learn is active. Stop observation in Settings before searching online.';
   if(/catalog search unavailable|catalog returned|catalog search response/i.test(message))return 'Could not reach the model catalog. Check your connection and try again.';
   if(/InferenceFailed|Bridge\(|Engine\(|Backend\(/i.test(message))return 'The model could not complete this request. Try again or reload the model.';

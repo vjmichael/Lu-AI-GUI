@@ -235,7 +235,7 @@ function AnsfHistoryPane({activeChatId,chats,onClose}){
     try{
       const id=await invoke('lu_m3_embedding_enable',{chatId:activeChatId});
       if(id){setSemanticModelId(id);setSemanticReceipt(
-        'Verified local embedding GGUF loaded; choose Index this book to add semantic candidates.'
+        'Local search model is ready. Choose Index this book to include related results.'
       )}
     }catch(e){setError('Local semantic model could not start: '+String(e))}
     finally{setSemanticBusy(false)}
@@ -260,7 +260,7 @@ function AnsfHistoryPane({activeChatId,chats,onClose}){
     try{
       await invoke('lu_m3_embedding_disable',{chatId:activeChatId});
       setSemanticModelId('');setSemanticReceipt(
-        'Local embedding worker stopped. Original ANSF and rebuildable vector index preserved.'
+        'Local search stopped. Saved history was preserved; the search index can be rebuilt.'
       );
     }catch(e){setError('Local embedding model shutdown failed: '+String(e))}
     finally{setSemanticBusy(false)}
@@ -427,9 +427,9 @@ function AnsfHistoryPane({activeChatId,chats,onClose}){
     }catch(e){setError('Effect receipt was not verified: '+String(e))}
     finally{setResumeBusy(false)}
   }
-  return <aside className="ansfHistoryPane" aria-label="Independent ANSF history browser">
+  return <aside className="ansfHistoryPane" aria-label="Saved conversation history">
     <header className="ansfHistoryHeader">
-      <div><strong>ANSF Library</strong><small>Independent history · active chat unchanged</small></div>
+      <div><strong>Saved history</strong><small>Browse earlier conversations without changing this chat</small></div>
       <button type="button" className="subtleButton" onClick={onClose}
         aria-label="Close history browser">Close</button>
     </header>
@@ -442,22 +442,22 @@ function AnsfHistoryPane({activeChatId,chats,onClose}){
     <form onSubmit={search} className="ansfHistorySearch">
       <input type="search" value={query} maxLength={256}
         onChange={e=>setQuery(e.target.value)}
-        placeholder="Keywords or exact ansf:v1: ID"
+        placeholder="Search saved messages"
         aria-label="Search historical messages"/>
       <button type="submit" disabled={busy||!query.trim()}>Search</button>
     </form>
     {error&&<p role="alert" className="ansfHistoryError">{error}</p>}
     <small>Historical source text is read-only context, never a new tool permission.</small>
     <details className="ansfAssetsMemory" aria-label="Local semantic retrieval">
-      <summary>Local semantic search · original-source hybrid</summary>
-      <small>Optional, offline-only GGUF embedding worker. No cloud history transfer; the SQLite originals remain authoritative. Search falls back to lexical recall when unloaded.</small>
+      <summary>Find messages by meaning (optional)</summary>
+      <small>Optional local search model. No history is sent to the cloud. Saved messages remain the source of truth; search still works without this model.</small>
       <p>{semanticModelId
         ?'Local semantic model loaded: '+semanticModelId
         :'No separate local embedding model is loaded.'}</p>
       {semanticReceipt&&<small>{semanticReceipt}</small>}
       {!semanticModelId?<button type="button" disabled={semanticBusy}
         onClick={()=>void enableSemantic()}>
-          {semanticBusy?'Starting local engine…':'Choose local embedding GGUF…'}
+          {semanticBusy?'Starting local engine…':'Choose a local search model…'}
         </button>:<div>
         <button type="button" disabled={semanticBusy}
           onClick={()=>void indexSemantic()}>
@@ -470,7 +470,7 @@ function AnsfHistoryPane({activeChatId,chats,onClose}){
     </details>
 
     <details className="ansfAssetsMemory" aria-label="M4 belief revision and semantic claims">
-      <summary>M4 semantic claims · source and conflict review</summary>
+      <summary>Review saved facts and corrections</summary>
       <small>Reported claims are never verified facts. Contradictions, stale versions and corrections must be reviewed; prior claims give no authority to use tools.</small>
       <form className="ansfAssetForm" onSubmit={noteBelief}>
         <label>Project and task
@@ -488,7 +488,7 @@ function AnsfHistoryPane({activeChatId,chats,onClose}){
           <input value={beliefVersion} maxLength={128}
             onChange={e=>setBeliefVersion(e.target.value)}/>
         </label>
-        <label>Original user ANSF source ID
+        <label>Original saved source ID
           <input value={beliefSource||
             (reading?.sourceChatId===activeChatId?reading?.sourceId:'')}
             onChange={e=>setBeliefSource(e.target.value)} maxLength={224}
@@ -535,7 +535,7 @@ function AnsfHistoryPane({activeChatId,chats,onClose}){
           <input value={resumeTask} maxLength={128}
             onChange={e=>setResumeTask(e.target.value)}/>
         </label>
-        <label>ANSF evidence from this conversation
+        <label>Saved evidence from this conversation
           <input value={resumeSource||
              (reading?.sourceChatId===activeChatId?reading?.sourceId:'')}
             maxLength={224} onChange={e=>setResumeSource(e.target.value)}
@@ -569,7 +569,7 @@ function AnsfHistoryPane({activeChatId,chats,onClose}){
           <small>Compared checkpoints {contextChange.previousCheckpointId} and {contextChange.currentCheckpointId}. Historical changes never approve a new action.</small>
           {contextChange.nextActionChanged&&<p>Next action changed. Review before continuing.</p>}
           {contextChange.completedWorkChanged&&<p>Completed-work description changed; verify the APPLIED receipts.</p>}
-          {contextChange.sourceEvidenceChanged&&<p>Original ANSF source evidence changed; reconcile supersession.</p>}
+          {contextChange.sourceEvidenceChanged&&<p>Previously saved evidence changed. Review the newer source before continuing.</p>}
           {contextChange.addedBlockers.map(b=><p key={'added-'+b}>New blocker: {b}</p>)}
           {contextChange.clearedBlockers.map(b=><p key={'cleared-'+b}>Cleared blocker (verify): {b}</p>)}
         </section>}
@@ -634,7 +634,7 @@ function AnsfHistoryPane({activeChatId,chats,onClose}){
           <input value={assetVersion} maxLength={180}
             onChange={e=>setAssetVersion(e.target.value)} placeholder="10.0.x / SHA build"/>
         </label>
-        <label>Original ANSF source ID
+        <label>Original saved source ID
           <input value={assetSource||reading?.sourceId||''} maxLength={224}
             onChange={e=>setAssetSource(e.target.value)}
             placeholder="First open an original source"/>
@@ -897,7 +897,6 @@ function App() {
   const [lastHostLoadReply, setLastHostLoadReply] = useState(0);
   const [error, setError] = useState('');
   const [activity, setActivity] = useState('');
-  const [advancedSettingsOpen, setAdvancedSettingsOpen] = useState(false);
   const [documentSettings, setDocumentSettings] = useState(null);
   const [latestCreated, setLatestCreated] = useState(null);
   const [archiveBatchReview,setArchiveBatchReview]=useState(null);
@@ -968,6 +967,7 @@ function App() {
   const searchRef = useRef(null);
   const composerRef = useRef(null);
   const modelMenuRef = useRef(null);
+  const modelSwitcherButtonRef = useRef(null);
   const requestedChat = useRef(null);
   const dragSize = useRef(null);
   const currentChat = useRef(null);
@@ -1875,7 +1875,7 @@ function App() {
       // user switches during capture. Never delete it on a focus change.
       await refreshDraftImages(activeChat,[image]);
       setCaptureLocalTaskId(null);
-      setActivity('Approved observed frame attached locally. Use the current multimodal GGUF to ask about its visible content.');
+      setActivity('Approved image attached to this conversation. A vision-enabled model may be able to describe it.');
     }catch(e){setError(String(e));}
     finally{setCaptureStarting(false);}
   }
@@ -1937,12 +1937,12 @@ function App() {
       });
       if(examined){
         setAuthorityPostureByChat(old=>({...old,[targetChat]:examined}));
-        setActivity('Stop requests recorded in the original ANSF audit. Reopen native custody and any uncertain-effect receipts before new work.');
+        setActivity('Stop requests saved. Review any unfinished work and its original records before proceeding.');
       }else{
         setActivity('Native stop consent was declined. No cancellation was requested.');
       }
     }catch(error){
-      setError('Native stop uncertain; inspect original ANSF authority record: '+String(error));
+      setError('Could not confirm that all work stopped. Review the saved task records: '+String(error));
       try{
         const inspected=await invoke('lu_p0_authority_posture',{
           chatId:targetChat
@@ -1958,7 +1958,7 @@ function App() {
       const items=await invoke('lu_native_source_history',{chatId:targetChat});
       setNativeSourcesByChat(prev=>({...prev,[targetChat]:items||[]}));
     }catch(e){
-      setError('Original ANSF source identities could not be rechecked: '+String(e));
+      setError('Could not recheck the saved source records: '+String(e));
     }finally{setNativeSourceBusy(false)}
   }
   async function publishPrivateObserveSource(){
@@ -1981,7 +1981,7 @@ function App() {
       }
       const items=await invoke('lu_native_source_history',{chatId:target});
       setNativeSourcesByChat(prev=>({...prev,[target]:items||[]}));
-      setActivity('Private Observe source identity saved in ANSF; no notes, screenshots or tool grants stored.');
+      setActivity('Private observation source record saved. No notes, screenshots or permissions were stored.');
     }catch(e){
       setError('Private Observe source was not admitted: '+String(e));
     }finally{setNativeSourceBusy(false)}
@@ -2163,7 +2163,7 @@ function App() {
       if(currentChat.current===target){
         setM2Context({...view,chatId:target});
         setM2GoalDraft(view.goal);
-        setActivity('Goal saved in ANSF-backed memory');
+        setActivity('Goal saved in Lu’s memory');
       }
     }catch(error){setError('Goal not confirmed: '+String(error));}
     finally{setM2Busy(false);}
@@ -2585,7 +2585,7 @@ function App() {
       } else if (isNewChatKey(event)) {
         event.preventDefault(); void newChat();
       } else if (event.key === 'Escape') {
-        if (modelMenuOpen) setModelMenuOpen(false);
+        if (modelMenuOpen) { event.preventDefault(); setModelMenuOpen(false); modelSwitcherButtonRef.current?.focus(); }
         else if (document.activeElement === searchRef.current) {
           setChatQuery(''); composerRef.current?.focus();
         }
@@ -2681,14 +2681,14 @@ function App() {
     finally{setProviderBusy(false);}
   }
   function importModel() {
-    action('Importing GGUF', async () => {
+    action('Adding model file', async () => {
       const model = await invoke('lu_import_model');
       await refreshCatalog();
       if (model) setSelectedModel(model.modelRef);
     });
   }
   function attachProjector() {
-    action('Attaching MMProj', async () => {
+    action('Adding vision support', async () => {
       await invoke('lu_attach_projector', {modelRef: selectedModel});
       await refreshCatalog();
     });
@@ -2697,13 +2697,13 @@ function App() {
     action('Scanning models folder', async () => {
       const count = await invoke('lu_rescan_models');
       await refreshCatalog();
-      setActivity(count ? `Found ${count} new model${count === 1 ? '' : 's'}` : 'No new GGUF files');
+      setActivity(count ? `Found ${count} new model${count === 1 ? '' : 's'}` : 'No new model files');
     });
   }
   function loadModel() {
     if (!selectedModel || busy || loaded) return;
     setModelMenuOpen(false);
-    action('Loading GGUF and projector', async () => {
+    action('Loading selected model', async () => {
       await invoke('lu_load_model', {modelRef: selectedModel});
       await refreshCatalog();
     });
@@ -2840,7 +2840,7 @@ function App() {
         await refreshChats();
         if (currentChat.current === proposal.chatId)
           setHistory(await loadLatestUiHistory(proposal.chatId));
-        setActivity(result.truncated ? 'Approved native read completed (truncated)' : 'Approved native read completed');
+        setActivity(result.truncated ? 'File read completed (only part of the file was included)' : 'Approved file read completed');
       }
     } catch (error) {
       setError(String(error));
@@ -3472,7 +3472,7 @@ function App() {
         setP08ResultByChat(old=>({...old,[owner]:receipt}));
         setActivity(mode==='review'?'P08 read-only publication status: '+receipt.status:'P08 verified multipart operation published: '+receipt.destination);
       }else{
-        setActivity('P08 native archive operation cancelled before publication.');
+        setActivity('Archive operation cancelled before any result was saved.');
       }
     }catch(error){
       setError('Multipart archive operation denied or uncertain. Inspect staging; no automatic retry: '+String(error));
@@ -4592,21 +4592,17 @@ function App() {
         <div className="chatTitle"><h1>{activeChat?.title && activeChat.title !== 'New chat' ? activeChat.title : 'Chat'}</h1>
           <p>{loaded ? 'Ready to chat' : 'Choose a local model to start'}</p></div>
         <div className="headerControls">
-          {working && activity.startsWith('Loading') && <span className="busyHint" role="status" aria-live="polite"><span className="spinner" aria-hidden="true"></span> Loading model · {modelLoadTrace?.loading&&modelLoadTrace.events?.length ? modelLoadTrace.events[modelLoadTrace.events.length-1].phase.replaceAll('_',' ') : 'Reading model and initializing backend'} · {modelMemorySample?.workingSetRamBytes!=null
-            ? 'RAM process '+(modelMemorySample.workingSetRamBytes/1073741824).toFixed(2)+' GiB'
-            : 'RAM unmeasured'} · {modelMemorySample?.dedicatedGpuBytes!=null
-            ? 'GPU process '+(modelMemorySample.dedicatedGpuBytes/1073741824).toFixed(2)+' GiB'
-            : 'GPU unmeasured'} · Tensor loading % unavailable</span>}
+          {working && activity.startsWith('Loading') && <span className="busyHint" role="status" aria-live="polite"><span className="spinner" aria-hidden="true"></span> Getting your model ready…</span>}
           <div className="modelSwitcherWrap" ref={modelMenuRef}>
-            <button className="modelSwitcher" aria-label="Choose a model" onClick={() => setModelMenuOpen(v => !v)} aria-expanded={modelMenuOpen} title="Quick model selection">
+            <button ref={modelSwitcherButtonRef} className="modelSwitcher" aria-controls="lu-model-choices" aria-label="Choose a model" onClick={() => setModelMenuOpen(v => !v)} aria-expanded={modelMenuOpen} title="Quick model selection">
               <span className="modelText">{selectModelText}</span> <span>⌄</span></button>
-            {modelMenuOpen && <div className="modelMenu">
-              <div className="modelMenuHeading">LOCAL GGUF MODELS <small>Selection does not load</small></div>
+            {modelMenuOpen && <div className="modelMenu" id="lu-model-choices" role="group" aria-label="Available local models">
+              <div className="modelMenuHeading">LOCAL MODELS <small>Selection does not load</small></div>
               {models.map(m => <button className="quickModel" key={m.modelRef} onClick={() => { setSelectedModel(m.modelRef); setModelMenuOpen(false); }}>
-                <span>{m.filename}<small>{m.projectorAttached ? 'GGUF + MMProj' : 'GGUF'}{!m.available ? ' · missing file' : ''}</small></span>
+                <span>{m.filename}<small>{m.projectorAttached ? 'Vision enabled' : 'Text model'}{!m.available ? ' · file missing' : ''}</small></span>
                 {runtime.modelRef === m.modelRef && loaded ? <span className="readyMark">● Loaded</span> : selectedModel === m.modelRef ? '✓' : ''}
               </button>)}
-              {!models.length && <div className="asideHelp">Put GGUF files in Lu's models directory or import them from Settings.</div>}
+              {!models.length && <div className="asideHelp">No models added yet. Open Model Library to add one.</div>}
               <div className="modelMenuActions">
                 <button className="primaryButton" disabled={busy || loaded || !selected?.available} onClick={loadModel}>Load selected</button>
                 <button className="subtleButton" onClick={() => {setModelMenuOpen(false);openTab('models');}}>Manage models</button>
@@ -4770,8 +4766,7 @@ function App() {
           <header><strong>Correct displayed message #{messageEditor.seq}</strong>
             <button type="button" onClick={()=>setMessageEditor(null)}>Close</button>
           </header>
-          <small>Human display correction only. The immutable ANSF original,
-            previous model input, and all earlier tool permissions remain unchanged.</small>
+          <small>This changes only how the message appears. Its original text and earlier approvals stay unchanged.</small>
           <label className="messageRevisionEditor">Corrected text
             <textarea autoFocus rows={8} maxLength={16384}
               value={messageEditor.text}
@@ -4805,7 +4800,7 @@ function App() {
             <button type="button" autoFocus
               onClick={()=>setMessageProvenance(null)}>Close</button>
           </header>
-          <small>Authenticated ANSF originals are retained even after a display correction.
+          <small>Original messages are retained even after a display correction.
             A human correction is not a new model answer or tool-execution receipt.</small>
           <div className="settingsActions">
             <button type="button" disabled={revisionActionBusy||!
@@ -4825,24 +4820,24 @@ function App() {
             version. Posting it does not trigger inference or inherit earlier approval.</small>
           <div className="messageProvenanceVersions">
             <section>
-              <strong>Original ANSF text · version 0</strong>
-              <small>SHA-256: {messageProvenance.revision.originalSha256}</small>
+              <strong>Original saved message · version 0</strong>
               <pre>{messageProvenance.revision.originalText}</pre>
+              <details><summary>Technical proof</summary><small>SHA-256: {messageProvenance.revision.originalSha256}</small></details>
             </section>
             {messageProvenance.revision.versions.map(v=>
               <section key={v.version}>
                 <strong>Version {v.version} · human display correction</strong>
-                <small>SHA-256: {v.sha256}</small>
                 <pre>{v.text}</pre>
+                <details><summary>Technical proof</summary><small>SHA-256: {v.sha256}</small></details>
               </section>
             )}
             {messageProvenance.revision.replyTo&&<section>
               <strong>Linked reply provenance</strong>
-              <small>Parent ANSF message: #{messageProvenance.revision.replyTo.parentSeq}
+              <small>Reply to message #{messageProvenance.revision.replyTo.parentSeq}
                 {' '}· pinned version {messageProvenance.revision.replyTo.pinnedParentVersion}
               </small>
-              <small>Parent SHA-256:
-                {' '+messageProvenance.revision.replyTo.pinnedParentSha256}</small>
+              <details><summary>Technical proof</summary><small>Parent SHA-256:
+                {' '+messageProvenance.revision.replyTo.pinnedParentSha256}</small></details>
               <pre>{messageProvenance.revision.replyTo.pinnedParentExcerpt}</pre>
               <small>The parent link never changes when the parent is edited later.</small>
             </section>}
@@ -4889,12 +4884,11 @@ function App() {
         </div>
 
         {wave2FileBusy && <section className="readProposalCard" role="status"
-          aria-live="polite" aria-label="Native file operation in progress">
-          <strong>Native file operation in progress</strong>
-          <small>Lu is handling a native picker, confirmation, bounded document/archiving work,
-            or receipt verification. Byte-level progress is not available in this workflow.
-            No automatic retry occurs if a write is interrupted; inspect File operations or
-            File recovery before taking another action.</small>
+          aria-live="polite" aria-label="File operation in progress">
+          <strong>Working with your file…</strong>
+          <small>Lu may ask you to select a file or approve a change. Detailed progress is not
+            available for this step. If the work is interrupted, Lu will not retry automatically;
+            review the earlier result before trying again.</small>
         </section>}
         {error && <div className="error" role="alert"><span>{friendlyError(error)}</span><button onClick={() => setError('')}>Dismiss</button></div>}
         {Object.values(readProposals).filter(proposal => proposal.chatId === chatId).map(proposal =>
@@ -4931,13 +4925,13 @@ function App() {
                   replacement must be inspected and confirmed separately.
                   The model cannot select the operating-system path.</small>
               </details>}
-              <small>This model suggestion cannot change files. The native
-                picker and a separate approval are required before execution.</small>
+              <small>This suggestion cannot change files on its own. You must select
+                the file and approve the operation separately.</small>
               <div className="settingsActions">
                 <button type="button" className="primaryButton"
                   disabled={working||chatBusy}
                   onClick={()=>void reviewNativeActionProposal(proposal)}>
-                  Review with native controls
+                  Review permissions and continue
                 </button>
                 <button type="button" className="subtleButton"
                   onClick={()=>void rejectNativeActionProposal(proposal)}>Deny</button>
@@ -4954,7 +4948,7 @@ function App() {
             <button type="button" className="subtleButton"
               disabled={authorityBusy||!chatId}
               onClick={()=>void refreshAuthorityPosture(chatId)}>
-              {authorityBusy?'Inspecting…':'Inspect current native custody…'}
+              {authorityBusy?'Inspecting…':'Check work and permissions…'}
             </button>
             <button type="button" className="subtleButton"
               disabled={authorityBusy||!chatId}
@@ -5051,7 +5045,7 @@ function App() {
             <button type="button" className="subtleButton"
               disabled={nativeSourceBusy}
               onClick={()=>void refreshNativeSourceHistory(chatId)}>
-              {nativeSourceBusy?'Reading ANSF…':'Show original ANSF source receipts'}
+              {nativeSourceBusy?'Reading saved history…':'Show original source records'}
             </button>
             <button type="button" className="subtleButton"
               onClick={()=>setToolActivityOpen(false)}>Close</button>
@@ -5337,9 +5331,9 @@ function App() {
             </section>
           </details>
 
-          <section className="readProposalCard" role="region"
-            aria-label="ANSF native source provenance">
-            <strong>Original ANSF source provenance · P0-TOOLS-03</strong>
+          <details className="readProposalCard" aria-label="Historical source evidence">
+            <summary>Original source records</summary>
+            <strong>Original source records</strong>
             <small>Read-only records of actual native Browser, Reader, and OCR
               observations and separately reviewed Observe identities.
               The sources are historical, not proof of current content,
@@ -5350,7 +5344,7 @@ function App() {
               <button type="button" className="subtleButton"
                 disabled={nativeSourceBusy}
                 onClick={()=>void refreshNativeSourceHistory(chatId)}>
-                {nativeSourceBusy?'Reopening…':'Refresh ANSF source list'}
+                {nativeSourceBusy?'Reopening…':'Refresh source history'}
               </button>
               {(observeView.mode==='active'||observeView.mode==='paused')&&
                 <button type="button" className="subtleButton"
@@ -5360,8 +5354,7 @@ function App() {
                 </button>}
             </div>
             {(nativeSourcesByChat[chatId]||[]).length===0&&
-              <small>No source receipts loaded. Refresh to read the original ANSF
-                library; an empty view does not establish that no prior source exists.</small>}
+              <small>No source history loaded. Refresh to check the saved records; an empty view does not establish that no earlier sources exist.</small>}
             {(nativeSourcesByChat[chatId]||[]).map(item=>
               <article key={item.sourceId} className="recoveryProvenanceOperation">
                 <strong>{item.kind.toUpperCase()} · {item.sourceStatus.replaceAll('_',' ')}</strong>
@@ -5380,7 +5373,7 @@ function App() {
                   {' '}· Current source freshness: NOT RECHECKED
                   {' '}· Execution authorized: NO.</small>
               </article>)}
-          </section>
+          </details>
 
           <section className="readProposalCard" role="region"
             aria-label="Reviewed memory projection recovery">
@@ -6262,7 +6255,7 @@ function App() {
               <code className="writeTarget">{proposal.destination.exactTarget}</code>
               <small>Only this destination and these exact bytes may be created.
                 This approval is single-use and will not survive an interrupted attempt.</small>
-            </> : <small>By default, save in your Documents folder. You can change the default under Settings → Advanced, or choose another folder for this file. Lu never chooses a destination without your approval.</small>}
+            </> : <small>By default, save in your Documents folder. Choose another folder for this file if you prefer. Lu never chooses a destination without your approval.</small>}
             <div className="settingsActions">
               {!proposal.destination ? <>
                 <button type="button" className="subtleButton"

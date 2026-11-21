@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "2e0ed022d03bacae73a669e362c41f72a5c1d145",
-  "trackedFileCount": 1263,
+  "sourceCommitBeforeLock": "6c7eb0569f5061d5d177b8fa0de0f26c015ed706",
+  "trackedFileCount": 1270,
   "files": [
     {
       "path": ".gitattributes",
@@ -133,7 +133,7 @@
     },
     {
       "path": ".github/workflows/lu-cp12br7r1-windows-collaboration.yml",
-      "blob": "96228c4d18ff3162c06ed3bd1df2a6f7ae32404c"
+      "blob": "69207608be94e42a47af37ba38eed952f4db6e8c"
     },
     {
       "path": ".github/workflows/lu-dev-offline-cache.yml",
@@ -772,6 +772,10 @@
       "blob": "a42b1314d6c8e1fd00e2da44cd69a3767202b304"
     },
     {
+      "path": "docs/LU_CORE_DESIGN_PARITY_CP13_R1_20261120.md",
+      "blob": "b399be217b75f754508ce8f309d1c2e6e902fe1d"
+    },
+    {
       "path": "docs/LU_CORE_DESIGN_TRACE_CP13_20261116.md",
       "blob": "ca86a06d4a74484222b11ea69ef44841dba5b540"
     },
@@ -880,6 +884,18 @@
       "blob": "ead78e2503a93e03d8d90cdbb442df93a71e46d3"
     },
     {
+      "path": "docs/LU_CP07_08_UX_R1_BASIC_PRESENTATION_20261120.md",
+      "blob": "96e8d837f06641ebd3634d7f65631f45c890431d"
+    },
+    {
+      "path": "docs/LU_CP07_08_UX_R2_SINGLE_INTERFACE_20261120.md",
+      "blob": "de5bbdcff5b609f21ef2f87ff74f9048e51a106d"
+    },
+    {
+      "path": "docs/LU_CP10_CONSOLIDATED_UX_WINDOWS_ACCEPTANCE_20261120.md",
+      "blob": "40dbc75d10323afbac76f743ead2c9a21c3df614"
+    },
+    {
       "path": "docs/LU_CP11A_LOCAL_CHECKS_20261120.md",
       "blob": "bfee5736f1109a8db225c093a195efba4ce0000b"
     },
@@ -965,7 +981,7 @@
     },
     {
       "path": "docs/LU_DEVELOPMENT_LEDGER.md",
-      "blob": "965f0af5fa3cc3af7642508b2a904f5ff54ae6cc"
+      "blob": "7c7b2e25e26159f3f62e2a11c86e9f5c57c08aa3"
     },
     {
       "path": "docs/LU_E1_NATIVE_EVIDENCE_20261107.md",
@@ -1428,6 +1444,10 @@
       "blob": "9cdd7b65cb5778364a125c3b5fedebcf641c53ff"
     },
     {
+      "path": "docs/acceptance/LU_CP13_R1_REQUIREMENT_DELTA_20261120.md",
+      "blob": "5f299616de8cc79926ca02af69f4b7457ddc14f6"
+    },
+    {
       "path": "docs/acceptance/LU_M3_WINDOWS_NATIVE_ACCEPTANCE_20261107.md",
       "blob": "ebedc54a3b544ffc3d3c635f09c3ec0426b85c95"
     },
@@ -1561,7 +1581,7 @@
     },
     {
       "path": "lu-desktop/scripts/check-ui.mjs",
-      "blob": "f69b0443c2f69a1b20ac54c2cf9a481164f5a09a"
+      "blob": "7a5da643d1a33764417533e5dbecd847eadfc4a2"
     },
     {
       "path": "lu-desktop/scripts/lu-desktop.manifest",
@@ -2173,11 +2193,11 @@
     },
     {
       "path": "lu-desktop/tests/browser-visibility-settings.test.mjs",
-      "blob": "edafe79988852529ddda839264a53977f9c7f6ec"
+      "blob": "787eb58aeb1f4d3380de3cb24b3c779e6ec91ff2"
     },
     {
       "path": "lu-desktop/tests/c64-unified-tabs.test.mjs",
-      "blob": "677c8674744777cfee63e4224b96adef9a8e3a6b"
+      "blob": "7108bd877265bc012cae38b7969e1ddbdbdad9f9"
     },
     {
       "path": "lu-desktop/tests/core01d-normal-chat-boundary.test.mjs",
@@ -2230,6 +2250,14 @@
     {
       "path": "lu-desktop/tests/cp06er3-web-research.test.mjs",
       "blob": "a35b6bc70f08ce38402ddea88957d2bd436e8774"
+    },
+    {
+      "path": "lu-desktop/tests/cp07-08-ux-r1-basic-copy.test.mjs",
+      "blob": "56b35c90f4777492eb7611a3adc22bed57a469c6"
+    },
+    {
+      "path": "lu-desktop/tests/cp07-08-ux-r2-no-modes.test.mjs",
+      "blob": "8dac52ee2d10d4839a1ec47c7deb33c6fac76fad"
     },
     {
       "path": "lu-desktop/tests/cp11a-local-checks.test.mjs",
@@ -2285,7 +2313,7 @@
     },
     {
       "path": "lu-desktop/tests/cp12br7r1-gh-ci-contract.test.mjs",
-      "blob": "07922c07eb587118a3800e6b33f8e8c9b90de14f"
+      "blob": "596a2812f98677a1a1e40f4064003dfb86034db6"
     },
     {
       "path": "lu-desktop/tests/cp12br7r1-physical-acceptance-contract.test.mjs",
@@ -2293,7 +2321,7 @@
     },
     {
       "path": "lu-desktop/tests/cp12br7r2-publication-contract.test.mjs",
-      "blob": "ec9b7498ae7ae70764fba44ecd931dca4a88fded"
+      "blob": "08dd141c1ca4650d9e50e4b0a6aa977c3ad835b5"
     },
     {
       "path": "lu-desktop/tests/dx-exchange-windows-check/Cargo.lock",
@@ -2333,7 +2361,7 @@
     },
     {
       "path": "lu-desktop/tests/m3-ansf-recall.test.mjs",
-      "blob": "60bb5928a240a986f31244fcc0ff8db267d9f556"
+      "blob": "84c1106469bfd69d7887a0756d22b60720a590d0"
     },
     {
       "path": "lu-desktop/tests/m3-asset-resume.test.mjs",
@@ -2349,7 +2377,7 @@
     },
     {
       "path": "lu-desktop/tests/m3-history-pane.test.mjs",
-      "blob": "aca4c1d06118d0c8b051bee350f430d41c073fff"
+      "blob": "3dbe4c78141c9a234ca50daa0403ee07778c563a"
     },
     {
       "path": "lu-desktop/tests/m3-local-embedding.test.mjs",
@@ -2377,7 +2405,7 @@
     },
     {
       "path": "lu-desktop/tests/m4-belief-contract.test.mjs",
-      "blob": "6a4d9ab24b7c91d069cfd833d7f434bd2dab0374"
+      "blob": "53afb0c99f78f74b3cb28e2a0ec83296b59831e3"
     },
     {
       "path": "lu-desktop/tests/m4-installed-acceptance-contract.test.mjs",
@@ -2473,15 +2501,15 @@
     },
     {
       "path": "lu-desktop/tests/p0-hf-transfer-transaction.test.mjs",
-      "blob": "7ddc137a1193f065b2d85068b1daffb3de07c013"
+      "blob": "e5fdc59cda3450131eca997d3a83fce17537c4e4"
     },
     {
       "path": "lu-desktop/tests/p0-installed-gui-smoke.test.mjs",
-      "blob": "26f525cacbe71a546cc10d611de928d44ec510d8"
+      "blob": "e377db6db3f1716107c5e5c420f8bed87db63525"
     },
     {
       "path": "lu-desktop/tests/p0-memory-telemetry.test.mjs",
-      "blob": "6f81cb5cf27d35b0f26655bd690c57563d26a3ae"
+      "blob": "40482dddbe295ed19ca763cb3b4c961d58c5d36a"
     },
     {
       "path": "lu-desktop/tests/p0-native-intent.test.mjs",
@@ -2489,11 +2517,11 @@
     },
     {
       "path": "lu-desktop/tests/p0-native-window-separation.test.mjs",
-      "blob": "9a6b6f0e4a075d6e861244d293d019cdf36a8014"
+      "blob": "ebfe8f65458b0d259a721c4fa78cc62573a74a69"
     },
     {
       "path": "lu-desktop/tests/p0-physical-ux-contract.test.mjs",
-      "blob": "5f2c9b6e36ffd96e379547e1a8ca8e3c28121a30"
+      "blob": "c1fb90bf09f5daa614c14f8331656f19675f2d6b"
     },
     {
       "path": "lu-desktop/tests/p0-qwen38-radeon-handoff.test.mjs",
@@ -2517,11 +2545,11 @@
     },
     {
       "path": "lu-desktop/tests/p03-ai-ops.test.mjs",
-      "blob": "a97c9e6caeb5219602e2e2975fc187c144ec205e"
+      "blob": "fae91311b750dedddc24fc43f5f6b09785a46db5"
     },
     {
       "path": "lu-desktop/tests/p06-observe-privacy.test.mjs",
-      "blob": "0ad0841556532b3e3a18b85201e66c43aff9fe4a"
+      "blob": "f64f58f8b2032258e6aecc30beda4f3ca72f38da"
     },
     {
       "path": "lu-desktop/tests/p07-research-styles.test.mjs",
@@ -2569,7 +2597,7 @@
     },
     {
       "path": "lu-desktop/tests/preview-dual-backend.test.mjs",
-      "blob": "e495c5fc16b0d9c6026855f401579690849a56d3"
+      "blob": "aa97bdf27b3b9809c3e061a027e6402378fa6fe0"
     },
     {
       "path": "lu-desktop/tests/r17-interface.test.mjs",
@@ -2593,7 +2621,7 @@
     },
     {
       "path": "lu-desktop/tests/r21-image-ux.test.mjs",
-      "blob": "95cfd06684608833a9136a95f51730030fb3eb83"
+      "blob": "7227b49465ed09fac9c9cf52d59e8acb343a0599"
     },
     {
       "path": "lu-desktop/tests/r23-profile.test.mjs",
@@ -2681,7 +2709,7 @@
     },
     {
       "path": "lu-desktop/tests/workspace-desktop.test.mjs",
-      "blob": "a8b6a8a8fc6a4445586dae6be91629aec516c5ab"
+      "blob": "af5b87600c28c41c7c65c6ba763c3cba08b9888e"
     },
     {
       "path": "lu-desktop/tests/write-01e-edit-ux.test.mjs",
@@ -2745,7 +2773,7 @@
     },
     {
       "path": "lu-desktop/web/main.jsx",
-      "blob": "c1fbec7ec157bb6cdc2730d2bbb53e5a0e3dd1ec"
+      "blob": "778b86dcb72c4424d02eece54baad83bb5a4e510"
     },
     {
       "path": "lu-desktop/web/markdown_view.jsx",
@@ -2769,7 +2797,7 @@
     },
     {
       "path": "lu-desktop/web/native_windows.jsx",
-      "blob": "4057a749f5fd18278af94817d4b95ce76bbf869f"
+      "blob": "a58da27d5295fcb25750582f342e8ae2ea76547f"
     },
     {
       "path": "lu-desktop/web/response_view.mjs",
@@ -2805,7 +2833,7 @@
     },
     {
       "path": "lu-desktop/web/task_board.jsx",
-      "blob": "0df822423e6e4ec96c0081991946c1125dc996fd"
+      "blob": "462a09e8980c7c4c8279b9b5c427462182cebed1"
     },
     {
       "path": "lu-desktop/web/task_board_model.mjs",
@@ -2813,7 +2841,7 @@
     },
     {
       "path": "lu-desktop/web/unified_tabs.jsx",
-      "blob": "b5a056cc03effa9313512fe5872e15a5e6ddb83c"
+      "blob": "4c550e136c56474246d001ff6326a50b1718df01"
     },
     {
       "path": "scripts/build-agent01g-physical-windows-nsis.ps1",

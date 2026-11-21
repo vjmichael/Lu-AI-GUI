@@ -26,7 +26,7 @@ test('GUI smoke is independent from strict real install-uninstall/AppData and on
   assert.match(workflow,/LU_PR_NUMBER/);
   assert.match(workflow,/ExerciseInstalledGui:\$verifyUi/);
   assert.match(ui,/className="luTopTabs"/);
-  assert.match(ui,/className="modelSwitcher" aria-label="Choose a model"/);
+  assert.match(ui,/ref=\{modelSwitcherButtonRef\} className="modelSwitcher" aria-controls="lu-model-choices" aria-label="Choose a model"/);
 });
 
 test('unified tabs in a real Tauri window activate through supported UIA or verified physical OS click',()=>{

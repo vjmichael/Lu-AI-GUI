@@ -32,14 +32,15 @@ test('one main window presents Settings and Models tabs; fixed legacy roots reta
   assert.deepEqual(capability.windows,['main','settings','model-library','task-list']);
   assert.match(windows,/aria-label="Lu settings"/);
   assert.match(windows,/aria-label="Model Library"/);
-  assert.match(windows,/Model-specific settings/);
-  assert.match(windows,/Lu runtime/);
+  assert.match(windows,/Model settings/);
+  assert.match(windows,/<summary>How Lu runs local models<\/summary>/);
+  assert.doesNotMatch(windows,/Show advanced settings|Hide advanced settings|Advanced runtime/);
   assert.match(windows,/Tools & permissions/);
   assert.match(windows,/Browser & research/);
   assert.match(windows,/\['memory','Memory'\]/);
   assert.match(windows,/Privacy & Observe/);
   assert.match(windows,/Hugging Face/);
-  assert.match(windows,/No registered local GGUF models/);
+  assert.match(windows,/No local models added yet/);
 });
 
 test('Observe & Learn and configuration are mounted only in an independent native Settings root',()=>{
@@ -47,7 +48,7 @@ test('Observe & Learn and configuration are mounted only in an independent nativ
   assert.match(windows,/invoke\('lu_observe_'\+action,\{chatId\}\)/);
   assert.match(windows,/lu_observe_forget_notes/);
   assert.match(windows,/Request native consent/);
-  assert.match(windows,/OFF by default/);
+  assert.match(windows,/Observe & Learn is off by default/);
   assert.doesNotMatch(ui,/chatToolsDrawer|settingsBackdrop|modelLibraryOpen&&/);
   assert.match(ui,/window\.location\.search/);
   assert.match(ui,/<SettingsWindow\/>/);
@@ -86,9 +87,11 @@ test('model-proposed Office and document drafts remain inert until separate nati
 
 test('fake elapsed timer is absent; actual memory loading percent remains explicitly unverified',()=>{
   assert.doesNotMatch(ui,/modelLoadSeconds|s elapsed/);
-  assert.match(ui,/Tensor loading % unavailable/);
-  assert.match(ui,/workingSetRamBytes/);
-  assert.match(ui,/dedicatedGpuBytes/);
+  assert.doesNotMatch(ui,/Tensor loading % unavailable/);
+  assert.match(ui,/Getting your model ready/);
+  const settings=readFileSync(new URL('../web/native_windows.jsx',import.meta.url),'utf8');
+  assert.doesNotMatch(settings,/Tensor loading % unavailable/);
+  assert.match(rust,/fn lu_load_memory_sample\(/);
 });
 
 test('ordinary human chat turns inject a fresh non-authoritative native device time observation',()=>{

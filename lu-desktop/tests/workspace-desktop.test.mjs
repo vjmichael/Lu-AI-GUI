@@ -234,7 +234,7 @@ test('PLAN-06 isolated task-list surface never turns operator plan review into e
   assert.match(screen,/Evidence details/);
   assert.match(screen,/Review correction in OS dialog/);
   assert.match(screen,/Approve plan wording and order only/);
-  assert.match(screen,/Export evidence-bound JSON plan/);
+  assert.match(screen,/Export reviewed project plan/);
   assert.doesNotMatch(native,/supervisor\.run_reserved|grant_execution|Command::new|reqwest|create_task_worker/);
   assert.doesNotMatch(screen,/invoke\('lu_agent_run_reviewed_step'/);
 });
@@ -357,7 +357,7 @@ test('PLAN-07B native cancellation is scoped to its own GGUF job; real acceptanc
   assert.match(host,/PLAN07B_CANCELLED_BEFORE_IMMUTABLE_PERSIST/);
   assert.match(lib,/project_update_model_desktop::lu_project_update_model_cancel,/);
   assert.match(ui,/invoke\('lu_project_update_model_cancel'\)/);
-  assert.match(ui,/Cancel queued\/active GGUF generation/);
+  assert.match(ui,/Stop model suggestions/);
   assert.match(workflow,/genuine-plan07b-gguf:/);
   assert.match(workflow,/LU_PLAN07B_REAL_SHA/);
   assert.match(workflow,/native-plan07b-model:/);
@@ -382,7 +382,7 @@ test('PLAN-07C original ANSF operator review preserves refusal, stale denial, re
   assert.match(ui,/invoke\('lu_project_update_review_exact_requirement'/);
   assert.match(ui,/Original task for human evidence review/);
   assert.match(ui,/Native deterministic evidence/);
-  assert.match(ui,/Original GGUF suggestion \(untrusted\)/);
+  assert.match(ui,/Model suggestion \(not independently verified\)/);
   assert.match(ui,/Open native OS approve\/refuse decision/);
   assert.match(host,/ansf_project_task_update_review_events/);
   assert.match(host,/Phase::Refused/);

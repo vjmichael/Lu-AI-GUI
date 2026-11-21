@@ -42,7 +42,7 @@ test('P06 seven-day retention and chat-only deletion cannot mint tool or learnin
   assert.match(desktop,/Forget diagnostic notes/);
   assert.match(ui,/invoke\('lu_observe_forget_notes'/);
   assert.match(ui,/Review forgetting notes/);
-  assert.match(ui,/Observe & Learn is OFF by default/);
+  assert.match(ui,/Observe & Learn is off by default/);
   assert.match(tasks,/datetime\('now','-7 days'\)/);
   assert.doesNotMatch(host,/grant_learning_review\(true\)/);
 });
@@ -288,7 +288,7 @@ test('P06 actual two native dialogs and Linux administrator OS agent keep activa
   assert.match(auth,/Duration::from_secs\(90\)/);
   assert.match(polkit,/<allow_active>auth_admin<\/allow_active>/);
   assert.match(polkit,/<allow_any>no<\/allow_any>/);
-  assert.match(ui,/Observe & Learn is OFF by default/);
+  assert.match(ui,/Observe & Learn is off by default/);
   assert.match(ui,/Request native consent/);
 });
 test('P06 tagged local-only observations cannot be declassified into network sinks or research/browser tools',()=>{
@@ -415,8 +415,8 @@ const chatUi=read('../web/main.jsx');
   assert.match(host,/a\.attachment_id==image_ref&&!a\.observed/);
   assert.match(host,/DataProvenance::OBSERVE_LEARN/);
   assert.match(host,/lu_observe_capture_local_image,/);
-  assert.match(ui,/Capture foreground app for local GGUF image/);
-  assert.match(ui,/Capture primary display for local GGUF image/);
+  assert.match(ui,/Attach image from selected app to Lu/);
+  assert.match(ui,/Attach image from this screen to Lu/);
   assert.match(ui,/Attach approved local frame to chat/);
   assert.match(ui,/emit\('lu-observed-image-admitted'/);
   assert.match(ui,/invoke\('lu_observe_capture_local_image'/);

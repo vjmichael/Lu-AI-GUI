@@ -161,7 +161,7 @@ export function TaskBoardWindow({onNavigate}={}){
         !result.criterionMethodReviewable)||
        criterionReason.trim().length<10||
        !current.reviewCurrent||active.needsHumanReconciliation)return;
-    await act('Human decision appended to original ANSF criterion-evidence journal. Task status and tool authority unchanged.',async()=>{
+    await act('Review saved. Task status and permissions are unchanged.',async()=>{
       const entry=await invoke('lu_project_task_review_independent_witness',{
         registerId:current.board.registerId,taskId:active.taskId,
         expectedBoardSha256:current.board.sha256,
@@ -268,7 +268,7 @@ export function TaskBoardWindow({onNavigate}={}){
     if(!updatePreview||busy)return;
     setModelBusy(true);
     try{
-      await act('Original local GGUF suggestions admitted as review-only evidence; no tasks were accepted.',async()=>{
+      await act('Model suggestions saved for review. No tasks were accepted or run.',async()=>{
         const result=await invoke('lu_project_update_model_suggest',{
           previewSha256:updatePreview.digestSha256
         });
@@ -290,7 +290,7 @@ export function TaskBoardWindow({onNavigate}={}){
   }
   async function reloadOriginalModelReceipt(){
     if(!updatePreview)return;
-    await act('Reopened and independently verified the original GGUF receipt from ANSF.',async()=>{
+    await act('Saved model suggestions reopened and checked.',async()=>{
       const original=await invoke('lu_project_update_model_latest',{
         previewSha256:updatePreview.digestSha256
       });
@@ -305,7 +305,7 @@ export function TaskBoardWindow({onNavigate}={}){
     const original=modelSuggestion?.suggestions?.find(s=>s.taskId===task);
     if(reviewMode==='model'&&(!original||
       modelSuggestion.previewSha256!==updatePreview.digestSha256)){
-      setError('Reopen the original matching GGUF suggestion before reviewing it.');
+      setError('Reopen the matching saved model suggestion before reviewing it.');
       return;
     }
     await act('Native human evidence-review decision recorded; no task completion or execution authorized.',async()=>{
@@ -403,17 +403,17 @@ export function TaskBoardWindow({onNavigate}={}){
     subtitle={onNavigate?"Review and manage project plans":"Human-reviewed plans · original evidence · no model execution"}>
     <div className="plan06Layout" aria-label="Project task list">
       <header className="plan06Toolbar">
-        <label>Project / task register
+        <label>Project
           <select aria-label="Project selector" disabled={busy}
             value={current?.board.registerId||''}
             onChange={e=>setRegisterId(e.target.value)}>
-            {boards.map(b=><option key={b.board.registerId} value={b.board.registerId}>
-              {b.projectScopeSha256.slice(0,12)} · {b.tasks.length} tasks · {b.board.registerId.slice(-9)}
+            {boards.map((b,index)=><option key={b.board.registerId} value={b.board.registerId}>
+              Project {index+1} · {b.tasks.length} tasks
             </option>)}
           </select>
         </label>
         <button type="button" disabled={busy}
-          onClick={()=>void act('Audited ANSF registers refreshed.',reload)}>Refresh registers</button>
+          onClick={()=>void act('Project lists refreshed.',reload)}>Refresh registers</button>
         {current&&<span role="status" className="plan06State">
           {current.reviewCurrent?'Human-reviewed plan · NOT executable':
             current.board.reviewState==='human_approved'?'Prior approval stale after task revisions':
@@ -422,17 +422,19 @@ export function TaskBoardWindow({onNavigate}={}){
       </header>
       {error&&<p role="alert" className="nativeError">{error}</p>}
       {notice&&<p role="status" className="nativeNotice">{notice}</p>}
-      {!current?<p className="plan06Empty">No task registers yet. Use Settings to inspect a
-        project, generate an evidence-backed proposal and import it after native human review.
-        This window never creates tool authority.</p>:<>
+      {!current?<p className="plan06Empty">No project tasks yet. Open Settings to set up a project plan.
+        Reviewing a task does not grant access to files or run tools.</p>:<>
+        <details className="plan06SourceRecords" aria-label="Original project source records">
+          <summary>Original source records</summary>
         <div className="plan06Provenance">
           <small>Original proposal: {current.originalProposalSha256}</small>
           <small>Source register: {current.sourceRegisterSha256}</small>
           <small>Plan revision {current.board.sequence} · {current.eventCount} task-history events · {current.historicalApprovalCount} historical plan reviews</small>
         </div>
+        </details>
         <section className="plan07Refresh" aria-label="Evidence-driven task update review">
           <div className="plan07RefreshHeader">
-            <strong>Evidence refresh · PLAN-07A</strong>
+            <strong>Check project changes</strong>
             <button type="button" disabled={busy}
               onClick={()=>void refreshEvidence()}>
               Recheck project source using native folder picker…
@@ -466,20 +468,20 @@ export function TaskBoardWindow({onNavigate}={}){
             {updatePreview.changedListTruncated&&<p>Source-delta display is truncated;
               archived original evidence and task identities remain authoritative.</p>}
             <div className="plan07ModelSuggestions" aria-label="Local GGUF evidence review suggestions">
-              <h3>Local GGUF suggestions · PLAN-07B</h3>
+              <h3>Suggestions from your local model</h3>
               <p>Optional original-model suggestions only. Native citations and status
                 are checked by the host; no result completes or executes a task.</p>
               <div className="plan06Actions">
                 <button type="button" disabled={busy} onClick={()=>void suggestUpdatesWithGGUF()}>
-                  Ask loaded local GGUF for evidence suggestions…
+                  Ask the loaded model for suggestions…
                 </button>
                 <button type="button" disabled={busy}
                   onClick={()=>void reloadOriginalModelReceipt()}>
-                  Reopen audited original GGUF receipt…
+                  Review saved model suggestions…
                 </button>
                 <button type="button" disabled={!modelBusy||modelCancelBusy}
                   onClick={()=>void cancelGgufSuggestions()}>
-                  {modelCancelBusy?'Canceling local GGUF…':'Cancel queued/active GGUF generation…'}
+                  {modelCancelBusy?'Stopping model suggestions…':'Stop model suggestions…'}
                 </button>
               </div>
               {modelSuggestion?.previewSha256===updatePreview.digestSha256&&
@@ -510,7 +512,7 @@ export function TaskBoardWindow({onNavigate}={}){
         </section>
         <section className="plan07HumanReview" aria-label="Human evidence-review decision journal">
           <div className="plan07HumanHeader">
-            <h3>Human evidence decisions · PLAN-07C</h3>
+            <h3>Review proposed project changes</h3>
             <button type="button" disabled={busy||!current} onClick={()=>void refreshReviewHistory()}>
               Reopen original decision and restart history…
             </button>
@@ -539,7 +541,7 @@ export function TaskBoardWindow({onNavigate}={}){
                 checked={reviewMode==='model'}
                 disabled={!modelSuggestion?.suggestions?.some(t=>
                   t.taskId===(reviewTaskId||updatePreview.candidates[0]?.taskId))}
-                onChange={()=>setReviewMode('model')}/> Original GGUF suggestion (untrusted)</label>
+                onChange={()=>setReviewMode('model')}/> Model suggestion (not independently verified)</label>
             </fieldset>
             <label>Your independent review note (5–250 characters)
               <textarea aria-label="Reason for human evidence decision"
@@ -569,7 +571,7 @@ export function TaskBoardWindow({onNavigate}={}){
               interrupted reviews remain durably recorded.</small>
           </>}
           <div className="plan07ReviewHistory" role="region" aria-label="Original human review history">
-            {reviewHistory.length===0?<small>No human PLAN-07C review decisions yet.</small>:
+            {reviewHistory.length===0?<small>No project change reviews recorded yet.</small>:
               reviewHistory.slice(-24).reverse().map(e=><article key={e.reviewId}>
                 <strong>{e.taskId} v{e.expectedTaskVersion} · {e.phase.replaceAll('_',' ')}</strong>
                 <p>{e.operatorNote}</p>
@@ -608,7 +610,7 @@ export function TaskBoardWindow({onNavigate}={}){
                       onClick={()=>void selectTask(task)}>
                       <strong>{task.priority} · {task.summary}</strong>
                       <span>{taskStatus(task)}</span>
-                      <small>v{task.version} · {task.sourceRequirementId.slice(0,16)}</small>
+                      <small>Revision {task.version}</small>
                     </button>
                     <div className="plan06Order" aria-label={'Reorder '+task.summary}>
                       <button type="button" disabled={busy||filter!=='All'||Boolean(search.trim())||i<=0}
@@ -632,8 +634,8 @@ export function TaskBoardWindow({onNavigate}={}){
               <p><strong>Acceptance criterion:</strong> {active.acceptanceCriteria}</p>
               <p><strong>Blocker:</strong> {active.blockedBy}</p>
               <section className="plan06AgentHandoff" aria-label="Selected task agent planning handoff">
-                <h3>Agent plan from selected task · P0-Next</h3>
-                <p>This creates a separate ANSF conversation and human-review-only agent plan
+                <h3>Prepare a plan for this task</h3>
+                <p>This prepares a separate saved conversation and a plan for your review
                   from the original task and a freshly selected native project source.
                   Task-board approval is not tool approval; the task is never marked complete.</p>
                 <label>Agent draft mode
@@ -746,7 +748,7 @@ export function TaskBoardWindow({onNavigate}={}){
                     value={criterionReason}
                     onChange={e=>setCriterionReason(e.target.value)}/>
                 </label>
-                <small>P0-TOOLS-05 requires at least 10 characters of HUMAN reasoning,
+                <small>This review requires at least 10 characters explaining your decision,
                   a fresh OS-picked project source, reopened original native
                   oracle receipts, and a separate native confirmation.
                   Accepting evidence never completes the task.</small>
@@ -891,7 +893,7 @@ export function TaskBoardWindow({onNavigate}={}){
             <button type="button" disabled={busy||current.reviewCurrent}
               onClick={()=>void approve()}>Approve plan wording and order only…</button>
             <button type="button" disabled={busy}
-              onClick={()=>void exportPlan()}>Export evidence-bound JSON plan…</button>
+              onClick={()=>void exportPlan()}>Export reviewed project plan…</button>
           </div>
           <small>Review never grants file writes, Git operations, worker scheduling,
             native tools or task completion. Those require separate authorization and evidence.</small>

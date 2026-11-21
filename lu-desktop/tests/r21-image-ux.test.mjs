@@ -46,8 +46,8 @@ test('drop targets the whole Lu shell and not just the composer',()=>{
 });
 test('model loading is labeled without inventing percentage telemetry',()=>{
  assert.match(ui,/role="status" aria-live="polite"/);
- assert.match(ui,/modelLoadTrace\?\.loading/);
- assert.match(ui,/modelMemorySample\?\.workingSetRamBytes/);
+ assert.match(ui,/Getting your model ready…/);
+ assert.doesNotMatch(ui,/Tensor loading % unavailable/);
  assert.match(ui,/invoke\('lu_load_diagnostics'\)/);
  assert.match(ui,/invoke\('lu_load_memory_sample'\)/);
  assert.match(ui,/setInterval\(sampleHost, 1500\)/);

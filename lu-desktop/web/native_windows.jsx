@@ -10,14 +10,11 @@ import {friendlyError,formatTaskState} from './unified_tabs.jsx';
 // background tasks, own chat drafts, or inherit the main composer state.
 const SETTINGS_SECTIONS=[
   ['general','General & appearance'],
-  ['models','Model-specific'],
-  ['runtime','Lu runtime'],
+  ['models','Models'],
   ['tools','Tools & permissions'],
   ['research','Browser & research'],
   ['memory','Memory'],
-  ['privacy','Privacy & Observe'],
-  ['huggingface','Hugging Face'],
-  ['diagnostics','Diagnostics']
+  ['privacy','Privacy & Observe']
 ];
 const errorText=error=>String(error?.message||error||'Native operation unavailable');
 export function NativeWindowFrame({title,subtitle,children,onNavigate}){
@@ -182,6 +179,7 @@ function LocalDiagnosticExchange({active}){
 
 export function SettingsWindow({onNavigate,active=true}={}){
   const [section,setSection]=useState('general');
+  const [troubleshootingOpen,setTroubleshootingOpen]=useState(false);
   const [chats,setChats]=useState([]);
   const [chatId,setChatId]=useState('');
   const [runtime,setRuntime]=useState(null);
@@ -428,7 +426,7 @@ export function SettingsWindow({onNavigate,active=true}={}){
   return <NativeWindowFrame onNavigate={onNavigate} title="Settings" subtitle="Preferences, privacy and model settings">
     <div className="nativeWindowSplit" aria-label="Lu settings">
       <nav className="nativeSettingsNavigation" aria-label="Settings sections">
-        {SETTINGS_SECTIONS.filter(([key])=>!onNavigate||!['huggingface','diagnostics'].includes(key)).map(([key,label])=>
+        {SETTINGS_SECTIONS.map(([key,label])=>
           <button type="button" key={key} aria-current={section===key?'page':undefined}
             className={section===key?'selected':''} onClick={()=>setSection(key)}>{label}</button>)}
       </nav>
@@ -451,12 +449,12 @@ export function SettingsWindow({onNavigate,active=true}={}){
             <p>Current background: {appearance?.background||'default'} · Your bubbles: {appearance?.userBubble||'default'} · Lu bubbles: {appearance?.assistantBubble||'default'}</p>
           </>}
         </Section>}
-        {section==='models'&&<Section title="Model-specific settings">
+        {section==='models'&&<Section title="Model settings">
           <p>Choose a local model and adjust how it responds. Changes take effect the next time it loads.</p>
           <p>{modelList.length} local models. {runtime?.sessionId?"A model is loaded.":"No active model."}</p>
           <button className="primaryButton" type="button" onClick={()=>void openModels()}>Open Model Library</button>
-          <div className="nativeOption" aria-label="Per-model native inference settings">
-            <strong>Local GGUF inference profile</strong>
+          <details className="nativeOption" aria-label="Model response options">
+            <summary>Model response options</summary>
             <p>Larger context sizes use more memory. Unload the model before changing these settings.</p>
             <label className="nativeField">Registered model
               <select aria-label="Model for inference settings" value={profileModel}
@@ -485,9 +483,9 @@ export function SettingsWindow({onNavigate,active=true}={}){
             </>}
             {runtime?.sessionId&&<p>Unload the active model before changing inference settings. The current session stays unchanged.</p>}
             <small>Settings do not grant tool permissions.</small>
-          </div>
-          {!onNavigate&&<div className="nativeOption">
-            <strong>Actual multimodal inference</strong>
+          </details>
+          {!onNavigate&&<details className="nativeOption">
+            <summary>Check image understanding</summary>
             <p role="status">Vision: {vision?.status||'unverified'} — {vision?.detail||'No native result is available.'}</p>
             <p>Exact loaded-model pixel receipt: {vision?.evidenceId||'Not yet durably observed in this session'}. An emitted receipt records actual synthetic PNG hashes and bounded model text in Lu app data; it never proves Radeon GPU offload.</p>
             <label className="nativeField">Conversation for independently witnessed pixel probe
@@ -498,15 +496,14 @@ export function SettingsWindow({onNavigate,active=true}={}){
             </label>
             <button type="button" disabled={!chatId||!runtime?.sessionId||busy||visionBusy}
               onClick={()=>void verifyNativeVision()}>
-              {visionBusy?'Running actual GGUF/MMProj inference…':'Verify native pixel inference…'}
+              {visionBusy?'Checking image understanding…':'Check image understanding…'}
             </button>
             <p>Fresh OS approval is required. Lu generates four private randomized-color PNG challenges, runs them through the loaded GGUF/MMProj and checks each actual response. A missing projector, failed model response, or incompatible backend is never reported as verified vision.</p>
-          </div>}
-          {!onNavigate&&<p>Model-specific thinking templates remain disabled pending real llama.cpp/Qwen compatibility acceptance; this profile does not grant a larger ANSF recall window.</p>}
-        </Section>}
-        {section==='runtime'&&<Section title="Lu runtime">
-          <p>Choose the locally packaged engine for the next start. Saving a preference never grants GPU access or restarts an active session.</p>
-          <div className="nativeOptionList">
+          </details>}
+          <details className="nativeOption">
+            <summary>How Lu runs local models</summary>
+            <p>Choose the available local engine for the next model start. This does not restart a loaded model or grant new permissions.</p>
+            <div className="nativeOptionList">
             {backends.map(option=><article key={option.backend} className="nativeOption">
               <strong>{option.backend.toUpperCase()} {option.selectedOnNextStart?'· selected':''}</strong>
               <Readiness value={option.packaged?'Available':'Not packaged'}/>
@@ -514,11 +511,16 @@ export function SettingsWindow({onNavigate,active=true}={}){
               {option.selectable&&<button type="button" disabled={busy||option.selectedOnNextStart}
                 onClick={()=>void chooseBackend(option.backend)}>Use on next start</button>}
             </article>)}
-          </div>
+            </div>
+          </details>
         </Section>}
-        {section==='tools'&&onNavigate&&<Section title="Tools & permissions"><p>Lu asks for permission when it needs access to your files, apps or the internet. Approving one task does not approve future tasks.</p><p>Browser status: {browserRuntime?.launchReady?'Ready to use':browserRuntime?.packageAvailable?'Installed but unavailable':'Not installed'}</p><p>Use Chat to ask Lu to work with a file or website.</p></Section>}
-        {section==='tools'&&!onNavigate&&<Section title="Tools & permissions">
-          <p>These are host-owned capability ROUTES, not automatic grants. Any compatible model can receive a typed schema only after Lu binds an original human turn, a reviewed resource and the specific tool permission. Model text, extensions and settings cannot create authority.</p>
+        {section==='tools'&&<Section title="Tools & permissions">
+          <p>Lu asks for permission when it needs access to your files, apps or the internet. Approving one task does not approve future tasks.</p>
+          <p>Browser status: {browserRuntime?.launchReady?'Ready to use':browserRuntime?.packageAvailable?'Installed but unavailable':'Not installed'}</p>
+          <p>Use Chat to ask Lu to work with a file or website.</p>
+          {!onNavigate&&<details className="nativeOption">
+            <summary>Project planning tools</summary>
+            <p>These project tools can review local source and draft work. They cannot approve or run tasks on their own.</p>
           <div className="nativeOptionList">
             {capabilityStatus.map(cap=><article key={cap.id} className="nativeOption">
               <strong>{cap.name}</strong> <Readiness value={cap.status}/>
@@ -790,7 +792,8 @@ export function SettingsWindow({onNavigate,active=true}={}){
                 <small>Historical acceptance stays historical when source changes. These records never authorize files, code execution, tools, or GitHub mutation.</small>
               </section>)}
           </Section>
-          <p>Worker execution requires original-turn authorization, bounded input/output, cancellation, durable receipts and independent verification. Not every provider implements Lu's current tool-response protocol.</p>
+          <p>Executing a task always requires separate permission. A project proposal does not authorize any action.</p>
+          </details>}
         </Section>}
         {section==='research'&&<Section title="Browser & research">
           <p>Lu asks for your permission before opening websites. Browsing is limited to approved sites.</p>
@@ -835,7 +838,7 @@ export function SettingsWindow({onNavigate,active=true}={}){
                 })}>Stop supervised browser</button>
             </>}
           </div>
-          <p>These are human-owned, live native task controls. No browser page, model output or prior session can grant permission to use them.</p>
+          <p>Only you can approve a new browsing task. Pages, model replies and earlier approvals cannot grant new access.</p>
           <p>Research source checking, cited page reading and retrieved documents are initiated through the conversation; they are not settings operations.</p>
         </Section>}
         {section==='memory'&&<Section title="Memory">
@@ -893,8 +896,12 @@ export function SettingsWindow({onNavigate,active=true}={}){
               return report;
             })}>Copy troubleshooting report…</button>
           </div>
-          <LocalDiagnosticExchange active={active}/>
-          <p>Observe & Learn is OFF by default. Enabling it requires both existing native OS confirmations. Observation never grants general network egress.</p>
+          <details className="nativeOption" onToggle={event=>setTroubleshootingOpen(event.currentTarget.open)}>
+            <summary>Share a troubleshooting review</summary>
+            <p>This is optional. Both people must approve the exchange; Lu never starts sharing in the background.</p>
+            {troubleshootingOpen&&<LocalDiagnosticExchange active={active}/>}
+          </details>
+          <p>Observe & Learn is off by default. Starting it requires your approval in Lu and in the system prompt. It does not authorize other actions or internet access.</p>
           <label className="nativeField">Conversation to observe
             <select value={chatId} onChange={e=>setChatId(e.target.value)}>
               <option value="">Select conversation…</option>
@@ -916,7 +923,7 @@ export function SettingsWindow({onNavigate,active=true}={}){
             })}>Review forgetting notes</button>
           </div>}
           {observation?.mode==='active'&&captureWorkerReady&&<>
-            <h3>One-shot Windows capture · additional consent required</h3>
+            <h3>Capture a screen image · approval required</h3>
             <p>Each button opens a fresh OS review. A receipt-only frame is fully redacted. Local multimodal images are never uploaded or shared with research.</p>
             <div className="nativeChoiceRow">
               <button type="button" disabled={busy} onClick={()=>void captureOneShot(true,false,false)}>Capture selected foreground app (4s)</button>
@@ -924,14 +931,14 @@ export function SettingsWindow({onNavigate,active=true}={}){
               <button type="button" disabled={busy} onClick={()=>void captureOneShot(false,false,false)}>Select window/display · capture one frame</button>
             </div>
             <div className="nativeChoiceRow">
-              <button type="button" disabled={busy} onClick={()=>void captureOneShot(true,false,true)}>Capture foreground app for local GGUF image</button>
-              <button type="button" disabled={busy} onClick={()=>void captureOneShot(false,true,true)}>Capture primary display for local GGUF image</button>
+              <button type="button" disabled={busy} onClick={()=>void captureOneShot(true,false,true)}>Attach image from selected app to Lu</button>
+              <button type="button" disabled={busy} onClick={()=>void captureOneShot(false,true,true)}>Attach image from this screen to Lu</button>
             </div>
           </>}
-          {!captureWorkerReady&&<p>Verified Windows capture worker not installed. Lu cannot start screen capture.</p>}
+          {!captureWorkerReady&&<p>Screen capture is unavailable on this installation. Lu will not capture your screen.</p>}
           {captureTaskId&&<div className="nativeOption">
             <strong>Capture task: {captureTaskId}</strong>
-            <button type="button" disabled={busy} onClick={()=>void inspectCapture()}>Inspect original native frame receipt</button>
+            <button type="button" disabled={busy} onClick={()=>void inspectCapture()}>Review capture details</button>
             {captureReceipt&&<p>State: {captureReceipt.state||'unavailable'}.
               {captureReceipt.fullyRedactedReceipt?' Receipt-only pixels fully blanked.':''}
               {captureReceipt.sourceIdentityAttested?' Foreground window/display identity checked.':' Source identity not independently attested.'}
@@ -956,19 +963,6 @@ export function SettingsWindow({onNavigate,active=true}={}){
           </section>}
           <small>One-shot capture requires genuine Windows Graphics Capture, OS-confirmed source and the separately reviewed worker. No screenshot is taken automatically.</small>
         </Section>}
-        {section==='huggingface'&&<Section title="Hugging Face model discovery">
-          <p>Browse remote GGUF metadata in Model Library. An installed SHA-pinned HTTPS client can start a separately OS-reviewed transfer, with cancellation, interruption recovery, exact-range resume and independent full-file SHA-256 readback. Availability is checked at runtime. A completed transfer is never automatically loaded or treated as proven inference.</p>
-          <button className="primaryButton" type="button" onClick={()=>void openModels()}>Open Model Library · Discover</button>
-        </Section>}
-        {section==='diagnostics'&&<Section title="Diagnostics">
-          <p>Active model: {runtime?.modelRef||'none'} · Inference phase: {runtime?.phase||'unavailable'}</p>
-          <button type="button" className="subtleButton" disabled={busy} onClick={()=>void act('Native process memory sampled.',async()=>{
-            const sample=await invoke('lu_load_memory_sample');setMemorySample(sample);return sample;
-          })}>Sample RAM / VRAM</button>
-          <p>Working-set RAM: {bytesGiB(memorySample?.workingSetRamBytes)}</p>
-          <p>Dedicated GPU: {bytesGiB(memorySample?.dedicatedGpuBytes)}</p>
-          <p>Tensor loading percentage unavailable until exact backend tensor-progress measurements exist. OS process counters do not prove Vulkan offload.</p>
-        </Section>}
       </main>
     </div>
   </NativeWindowFrame>;
@@ -976,6 +970,7 @@ export function SettingsWindow({onNavigate,active=true}={}){
 
 export function ModelLibraryWindow({onNavigate,active=true}={}){
   const [tab,setTab]=useState('installed');
+  const [showTechnicalDetails,setShowTechnicalDetails]=useState(false);
   const [models,setModels]=useState([]);
   const [runtime,setRuntime]=useState(null);
   const [selected,setSelected]=useState('');
@@ -1043,38 +1038,41 @@ export function ModelLibraryWindow({onNavigate,active=true}={}){
   const loaded=Boolean(runtime?.sessionId);
   return <NativeWindowFrame onNavigate={onNavigate} title="Model Library" subtitle="Manage local models and discover new ones">
     <nav className="nativeModelTabs" aria-label="Model library tabs">
-      <button aria-current={tab==='installed'?'page':undefined} onClick={()=>setTab('installed')}>Installed GGUF</button>
+      <button aria-current={tab==='installed'?'page':undefined} onClick={()=>setTab('installed')}>My models</button>
       <button aria-current={tab==='discover'?'page':undefined} onClick={()=>setTab('discover')}>Discover · Hugging Face</button>
+      <button type="button" aria-pressed={showTechnicalDetails} onClick={()=>setShowTechnicalDetails(v=>!v)}>
+        {showTechnicalDetails?'Hide technical details':'Technical details'}
+      </button>
     </nav>
     <main className="nativeModelContent" aria-label="Model Library">
-      {error&&<p className="nativeError" role="alert">{onNavigate?friendlyError(error):error}</p>}
+      {error&&<p className="nativeError" role="alert">{showTechnicalDetails?error:friendlyError(error)}</p>}
       {notice&&<p className="nativeNotice" role="status">{notice}</p>}
       {tab==='installed'&&<>
         <div className="nativeChoiceRow">
           <input aria-label="Search local models" type="search" maxLength={100}
             placeholder="Search installed models" value={query} onChange={e=>setQuery(e.target.value)}/>
           <button disabled={busy||loaded} onClick={()=>void mutated(()=>invoke('lu_rescan_models'))}>Rescan</button>
-          <button disabled={busy} onClick={()=>void mutated(()=>invoke('lu_import_model'))}>Import GGUF…</button>
+          <button disabled={busy} onClick={()=>void mutated(()=>invoke('lu_import_model'))}>Add model file…</button>
         </div>
         <div className="nativeModelGrid">
           {filtered.map(m=><button key={m.modelRef} type="button"
             className={'nativeModelCard '+(selected===m.modelRef?'selected':'')}
             aria-pressed={selected===m.modelRef} onClick={()=>setSelected(m.modelRef)}>
             <strong>{m.filename}</strong>
-            <small>{m.projectorAttached?'GGUF + MMProj':'GGUF'} · {m.available?'Local file available':'Missing file'}</small>
+            <small>{m.projectorAttached?'Vision support attached':'Text model'} · {m.available?'Available':'File missing'}</small>
           </button>)}
         </div>
-        {models.length===0&&<p>No registered local GGUF models. Import from a native file picker or use a verified transfer manager when available.</p>}
+        {models.length===0&&<p>No local models added yet. Choose a model file to get started.</p>}
         {models.length>0&&filtered.length===0&&<p>No models match this search.</p>}
         {current&&<Section title="Selected model">
           <h3>{current.filename}</h3>
-          <p>{onNavigate?(inspection?.modelRef===selected?(inspection.loadAllowed?'Ready to load':'This model cannot be loaded yet'):'Checking model…'):(inspection?.modelRef===selected?inspection.detail:'Verifying native model metadata…')}</p>
+          <p>{!showTechnicalDetails?(inspection?.modelRef===selected?(inspection.loadAllowed?'Ready to load':'This model cannot be loaded yet'):'Checking model…'):(inspection?.modelRef===selected?inspection.detail:'Checking model information…')}</p>
           <p>File size: {bytesGiB(inspection?.fileBytes)}</p>
-          <p>Vision projector: {current.projectorAttached?'attached':'not attached'}</p>
+          <p>Image understanding: {current.projectorAttached?'Vision support attached':'Additional vision file not attached'}</p>
           <p>{loaded?"A model is loaded.":"No model loaded."}</p>
           <div className="nativeChoiceRow">
             <button disabled={busy||loaded||current.projectorAttached}
-              onClick={()=>void mutated(()=>invoke('lu_attach_projector',{modelRef:selected}))}>Attach MMProj…</button>
+              onClick={()=>void mutated(()=>invoke('lu_attach_projector',{modelRef:selected}))}>Add vision support…</button>
             <button disabled={busy||loaded||!current.available||inspection?.modelRef!==selected||!inspection?.loadAllowed}
               onClick={()=>void mutated(()=>invoke('lu_load_model',{modelRef:selected}))}>Load model</button>
             <button disabled={busy||!loaded} onClick={()=>void mutated(()=>invoke('lu_unload_model'))}>Unload active model</button>
@@ -1083,7 +1081,7 @@ export function ModelLibraryWindow({onNavigate,active=true}={}){
       </>}
       {tab==='discover'&&<>
         <div className="nativeChoiceRow">
-          <input aria-label="Search Hugging Face public GGUF repositories" type="search" maxLength={96}
+          <input aria-label="Search models on Hugging Face" type="search" maxLength={96}
             placeholder="Model / author" value={providerQuery} onChange={e=>setProviderQuery(e.target.value)}/>
           <button disabled={busy||!providerQuery.trim()} onClick={()=>void act('Provider search completed.',async()=>{
             setReview(null);
@@ -1091,10 +1089,8 @@ export function ModelLibraryWindow({onNavigate,active=true}={}){
             setHits(items);return items;
           })}>Search catalog</button>
         </div>
-        {onNavigate?<p>{transferReady?'Search and download models. You will be asked to approve each download.':'Model downloads are unavailable in this installation.'}</p>:<p>Model discovery is metadata-only. {transferReady
-          ?'Lu has an installed hash-pinned HTTPS transfer client. Each download and interrupted resume still needs a fresh OS confirmation, exact immutable asset and full verified bytes.'
-          :'The independently pinned Lu transfer client is not available; remote download and resume are disabled.'}
-          No successful download by itself admits a GGUF for inference or GPU loading.</p>}
+        <p>{transferReady?'Search and download models. You will be asked to approve each download. Downloading never loads a model automatically.':'Model downloads are unavailable in this installation.'}</p>
+        {showTechnicalDetails&&<p>Model discovery is metadata-only. Transfers require system approval and independent file verification. A downloaded file does not prove model compatibility, inference quality or GPU loading.</p>}
         <div className="nativeModelGrid">
           {hits.map(lead=><button key={lead.repoId+lead.revision} className="nativeModelCard"
             onClick={()=>void act('Immutable model metadata reviewed.',async()=>{
@@ -1108,11 +1104,11 @@ export function ModelLibraryWindow({onNavigate,active=true}={}){
               setReview(detail);return detail;
             })}>
             <strong>{lead.repoId}</strong>
-            <small>License {lead.licenseLabel||'unknown'}{!onNavigate&&(" · Revision "+(lead.revision?.slice(0,12)||'unknown'))}</small>
+            <small>License {lead.licenseLabel||'unknown'}{showTechnicalDetails&&(" · Revision "+(lead.revision?.slice(0,12)||'unknown'))}</small>
           </button>)}
         </div>
-        <Section title={onNavigate?"Downloads":"Verified model transfers & recovery"}>
-          {!onNavigate&&<p>These are original host-owned transfer receipts. Downloaded bytes are distinct from GGUF compatibility, model-load RAM/VRAM or inference verification.</p>}
+        <Section title="Downloads">
+          {showTechnicalDetails&&<p>These are original host-owned transfer receipts. Downloaded bytes are distinct from model compatibility, memory capacity or inference verification.</p>}
           <div className="nativeChoiceRow">
             <button type="button" disabled={busy}
               onClick={()=>void act('Original transfer receipts refreshed.',refreshTransfers)}>
@@ -1127,14 +1123,14 @@ export function ModelLibraryWindow({onNavigate,active=true}={}){
             const published=t.state==='VERIFIED_AT_PUBLICATION';
             return <article key={t.transferId} className="nativeOption">
               <strong>{t.filename}</strong>
-              <small>{t.repoId}{!onNavigate&&(" · revision "+t.revision.slice(0,12))}</small>
-              <p>{onNavigate?formatTaskState(t.state):t.state} · {t.receivedBytes.toLocaleString()} / {t.totalBytes.toLocaleString()} bytes · {measuredPercent}% received</p>
+              <small>{t.repoId}{showTechnicalDetails&&(" · revision "+t.revision.slice(0,12))}</small>
+              <p>{showTechnicalDetails?t.state:formatTaskState(t.state)} · {t.receivedBytes.toLocaleString()} / {t.totalBytes.toLocaleString()} bytes · {measuredPercent}% received</p>
               <div role="progressbar" aria-label={'Measured transfer bytes for '+t.filename}
                 aria-valuemin={0} aria-valuemax={100} aria-valuenow={measuredPercent}
                 className="nativeTransferProgress">
                 <span style={{width:measuredPercent+'%'}}/>
               </div>
-              {!onNavigate&&<><small>Expected SHA-256: {t.expectedSha256}</small><p>{t.message}</p></>}
+              {showTechnicalDetails&&<><small>Expected SHA-256: {t.expectedSha256}</small><p>{t.message}</p></>}
               <div className="nativeChoiceRow">
                 {running&&<button type="button" disabled={busy}
                   onClick={()=>void act('Cancellation signaled to owned transfer worker.',async()=>{
@@ -1145,7 +1141,7 @@ export function ModelLibraryWindow({onNavigate,active=true}={}){
                   onClick={()=>void act('Interrupted publication independently rechecked; no network or auto-load.',async()=>{
                     const result=await invoke('lu_model_transfer_verify',{transferId:t.transferId});
                     await refreshTransfers();return result;
-                  })}>Recheck published bytes after interruption</button>}
+                  })}>Check interrupted download</button>}
                 {interrupted&&<button type="button" disabled={busy||!transferReady}
                   onClick={()=>void act('Separately reviewed immutable transfer resume.',async()=>{
                     const resumed=await invoke('lu_model_transfer_resume',{transferId:t.transferId});
@@ -1155,10 +1151,10 @@ export function ModelLibraryWindow({onNavigate,active=true}={}){
                   onClick={()=>void act('Current downloaded GGUF bytes independently reverified.',async()=>{
                     const verified=await invoke('lu_model_transfer_verify',{transferId:t.transferId});
                     await refreshTransfers();return verified;
-                  })}>Verify full file SHA-256 now</button>}
+                  })}>Verify downloaded file</button>}
                 {published&&<button type="button" disabled={busy||loaded}
                   onClick={()=>void mutated(()=>invoke('lu_rescan_models'))}>
-                  Admit GGUF metadata into Model Library
+                  Add verified model to library
                 </button>}
               </div>
             </article>
@@ -1166,10 +1162,10 @@ export function ModelLibraryWindow({onNavigate,active=true}={}){
           {transfers.length===0&&<p>No managed model downloads or interrupted transfers have been recorded.</p>}
         </Section>
         {review&&<Section title={review.repoId}>
-          <p>License: {review.licenseLabel||'unknown'}{!onNavigate&&(" · Revision "+review.revision)}</p>
+          <p>License: {review.licenseLabel||'unknown'}{showTechnicalDetails&&(" · Revision "+review.revision)}</p>
           {(review.files||[]).map(file=><article key={file.name} className="nativeOption">
             <strong>{file.name}</strong>
-            <p>{bytesGiB(file.bytes)} {!onNavigate&&<>· SHA-256: <code>{file.sha256}</code></>}</p>
+            <p>{bytesGiB(file.bytes)} {showTechnicalDetails&&<>· SHA-256: <code>{file.sha256}</code></>}</p>
             <button type="button" disabled={busy||!transferReady}
               onClick={()=>void act('Fresh native download review completed.',async()=>{
                 const started=await invoke('lu_model_transfer_start',{
@@ -1177,9 +1173,10 @@ export function ModelLibraryWindow({onNavigate,active=true}={}){
                   filename:file.name,sha256:file.sha256,bytes:file.bytes
                 });
                 await refreshTransfers();return started;
-              })}>Review and download exact GGUF…</button>
+              })}>Review and download…</button>
           </article>)}
-          <p>Only the native operator may authorize transfer. Lu never uses a model-supplied URL, writes outside its model library, resumes after restart without review or automatically loads downloaded weights.</p>
+          <p>You must approve each download. Lu never loads downloaded models automatically or resumes a download without renewed approval.</p>
+          {showTechnicalDetails&&<p>Lu uses host-validated sources, verifies file identity and keeps downloads within its model library.</p>}
           {review.sourceUrl&&<a href={review.sourceUrl} target="_blank" rel="noopener noreferrer">View on Hugging Face</a>}
         </Section>}
       </>}

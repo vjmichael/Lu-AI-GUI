@@ -19,7 +19,7 @@ test('Read original ANSF entries through bounded stable backward cursor',()=>{
 });
 test('legacy history reader remains read-only; unified History tab handles explicit navigation',()=>{
   const pane=jsx.slice(jsx.indexOf('function AnsfHistoryPane('),jsx.indexOf('function App() {'));
-  assert.match(pane,/Independent ANSF history browser/);
+  assert.match(pane,/Saved conversation history/);
   assert.match(pane,/lu_m3_history_page/);
   assert.match(pane,/lu_m3_source_text_page/);
   assert.doesNotMatch(pane,/\b(setChatId|setHistory|setPrompt|setImages|switchChat)\s*\(/);
