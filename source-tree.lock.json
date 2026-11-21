@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "bf8a9c26c7764494e85ac36365f0894df711af01",
-  "trackedFileCount": 1304,
+  "sourceCommitBeforeLock": "209f5db3570109a913aacae59d88156a4c8cd3f0",
+  "trackedFileCount": 1305,
   "files": [
     {
       "path": ".gitattributes",
@@ -221,7 +221,7 @@
     },
     {
       "path": ".github/workflows/lu-ipc01d-r2-native.yml",
-      "blob": "acef7f03ae6bb57d9a29557a818eeaab0a06f020"
+      "blob": "a16aa1698172145930d59f56a19dcb516172786a"
     },
     {
       "path": ".github/workflows/lu-kiaf-execution.yml",
@@ -989,7 +989,7 @@
     },
     {
       "path": "docs/LU_DEVELOPMENT_LEDGER.md",
-      "blob": "f1186f78174f4774752254b993505584e08c8108"
+      "blob": "e50385797777ca887e7c49f064e9d782042024ba"
     },
     {
       "path": "docs/LU_E1_NATIVE_EVIDENCE_20261107.md",
@@ -1645,11 +1645,11 @@
     },
     {
       "path": "lu-desktop/src-tauri/Cargo.lock",
-      "blob": "4cf7242e403349ad4a2d9f849728962fe5281163"
+      "blob": "56e01175bb72ede2a8ecb5a62c6fc6758d0fecc4"
     },
     {
       "path": "lu-desktop/src-tauri/Cargo.toml",
-      "blob": "2659af307171a606fd0927a241af997a15fa3a98"
+      "blob": "44962bc5104753fba4f0e7b078e4c4c79e16693c"
     },
     {
       "path": "lu-desktop/src-tauri/build.rs",
@@ -1865,7 +1865,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/lib.rs",
-      "blob": "e4c2f4c05ec8e93ca3c13ebb318afe39ad4eae1f"
+      "blob": "ece9b71519791c7e6b44f9caff36a07f1665d0b0"
     },
     {
       "path": "lu-desktop/src-tauri/src/linked_attachment_file.rs",
@@ -1952,6 +1952,10 @@
       "blob": "ff79dc110ff83588195e905121ac6ac0a0877600"
     },
     {
+      "path": "lu-desktop/src-tauri/src/nvp_gpu_desktop.rs",
+      "blob": "95bd76e629582711032abcbbf920381fb4b9af45"
+    },
+    {
       "path": "lu-desktop/src-tauri/src/observe_desktop.rs",
       "blob": "d04cdef875ebea730690042c3c061f3fd831c7f3"
     },
@@ -1973,7 +1977,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/p0_auth_desktop.rs",
-      "blob": "1c4cf899bcc8d7f70dfe265e0d7a1d956417528b"
+      "blob": "831633bfebebc97c379c465183db446ed531a52a"
     },
     {
       "path": "lu-desktop/src-tauri/src/p0_memory_continuity.rs",
@@ -4517,7 +4521,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/workspace_ipc_core_host.rs",
-      "blob": "f73847d1bee0a96795aad192af64d1c84effa18b"
+      "blob": "8e06ef364a3cf2fcb06290bb31f3546c266fe0eb"
     },
     {
       "path": "src-tauri/lu-core/src/workspace_ipc_scm.rs",
