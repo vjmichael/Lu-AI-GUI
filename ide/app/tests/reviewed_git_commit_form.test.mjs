@@ -89,3 +89,27 @@ test('WO9 installed one-use Git dialogs bind a full native title witness without
   assert.ok(fixture.includes('nativeTitleWitnessMatches'));
   assert.ok(fixture.includes('$matches.Count -ne 1'));
 });
+
+test('WO9 staged identity must be complete before matching any commit receipt',()=>{
+  // Equal missing fields must never produce a false renderer-level success.
+  const forged={commitSha:'c'.repeat(40),gitHooksExecuted:false,
+    remoteUpdated:false,releaseApproved:false};
+  assert.equal(matchesReviewedCommitReceipt({},forged),false);
+  const stage={projectId:'p',relativePath:'a.rs',baseHead:'a'.repeat(40),
+    sourceSha256:'b'.repeat(64)};
+  const good={projectId:'p',relativePath:'a.rs',previousHead:stage.baseHead,
+    sourceSha256:stage.sourceSha256,commitSha:'c'.repeat(40),
+    gitHooksExecuted:false,remoteUpdated:false,releaseApproved:false};
+  for(const bad of [
+    {...stage,projectId:''},{...stage,projectId:0},
+    {...stage,relativePath:' '},{...stage,relativePath:0},
+    {...stage,baseHead:'bad'},{...stage,baseHead:'A'.repeat(40)},
+    {...stage,sourceSha256:'bad'},{...stage,sourceSha256:'B'.repeat(64)}
+  ]){
+    assert.equal(matchesReviewedCommitReceipt(bad,{
+      ...good,projectId:bad.projectId,relativePath:bad.relativePath,
+      previousHead:bad.baseHead,sourceSha256:bad.sourceSha256
+    }),false,JSON.stringify(bad));
+  }
+  assert.equal(matchesReviewedCommitReceipt(stage,good),true);
+});

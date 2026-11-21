@@ -16,7 +16,16 @@ export function readReviewedCommitMetadata(form) {
 
 // A renderer receipt cannot grant authority; it only reports the exact result.
 export function matchesReviewedCommitReceipt(stage, receipt) {
-  return !!stage && !!receipt && receipt.projectId===stage.projectId &&
+  // Undefined === undefined is not provenance. Validate the staged identity
+  // before comparing a renderer-visible receipt; native commit authority is
+  // separately enforced by the protected host.
+  if (typeof stage?.projectId !== 'string' || !stage.projectId.trim() ||
+      typeof stage.relativePath !== 'string' || !stage.relativePath.trim() ||
+      typeof stage.baseHead !== 'string' || !/^[a-f0-9]{40}$/.test(stage.baseHead) ||
+      typeof stage.sourceSha256 !== 'string' ||
+      !/^[a-f0-9]{64}$/.test(stage.sourceSha256) ||
+      typeof receipt?.commitSha !== 'string') return false;
+  return receipt.projectId===stage.projectId &&
     receipt.relativePath===stage.relativePath && receipt.previousHead===stage.baseHead &&
     receipt.sourceSha256===stage.sourceSha256 && /^[a-f0-9]{40}$/.test(receipt.commitSha) &&
     receipt.commitSha!==stage.baseHead && receipt.gitHooksExecuted===false &&
