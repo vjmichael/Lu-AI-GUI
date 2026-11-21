@@ -2020,11 +2020,13 @@ dependencies = [
  "prost-build",
  "protoc-bin-vendored",
  "rand",
+ "rustix",
  "serde",
  "serde_json",
  "sha2",
  "similar",
  "ureq",
+ "zeroize",
  "zip",
 ]
 

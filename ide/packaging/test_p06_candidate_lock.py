@@ -3,6 +3,7 @@ import copy
 import json
 from pathlib import Path
 import tempfile
+import subprocess
 import unittest
 from verify_p06_candidate_lock import check,sha,LockDenied
 BASE=Path(__file__).with_name("p06-reviewed-lock-graphs.json")
@@ -67,7 +68,12 @@ class Merge02ScopedCargoTests(unittest.TestCase):
                     "ide/packaging/ide05-reviewed-lock-successor.json"):
             dest = self.root / rel
             dest.parent.mkdir(parents=True, exist_ok=True)
-            dest.write_bytes((self.source_root / rel).read_bytes())
+            # The immutable P06/MERGE02 predecessor exercise must use the
+            # exact original reviewed Cargo graph; the current worktree
+            # carries a separately verified IPC lock successor.
+            original = (subprocess.check_output(["git", "show", "f1f0ed4bc1e740d2a9f85615b988b779a46651db:" + rel], cwd=self.source_root)
+                        if rel == "ide/app/src-tauri/Cargo.lock" else (self.source_root / rel).read_bytes())
+            dest.write_bytes(original)
 
     def test_original_baseline_remains_denied_and_scoped_successor_has_no_release(self):
         with self.assertRaisesRegex(LockDenied, "candidate_cargo_lock_not_reviewed"):
@@ -82,7 +88,7 @@ class Merge02ScopedCargoTests(unittest.TestCase):
     def test_recomputed_desktop_block_digest_and_65_digit_typo_denial(self):
         import hashlib
         import re
-        data = (self.source_root / "ide/app/src-tauri/Cargo.lock").read_bytes()
+        data = (self.root / "ide/app/src-tauri/Cargo.lock").read_bytes()
         blocks = list(re.finditer(
             rb'\n\[\[package\]\]\nname = "lu-ide-desktop"\n.*?(?=\n\[\[package\]\]|\Z)',
             data, re.DOTALL))

@@ -35,10 +35,20 @@ class NativePickerSourceTests(unittest.TestCase):
     def test_restarted_project_must_reopen_through_actual_installed_ui(self):
         windows=(ROOT/"ide/app/fixtures/Test-Wo8NativeDesktopUI.ps1").read_text(encoding="utf-8")
         mark=windows.split("    Require 'Registered projects'",1)[1]
-        self.assertIn("Click 'Reopen'",mark)
-        self.assertLess(mark.index("Click 'Reopen'"),mark.index("Click 'Edit'"))
-        self.assertIn("Require 'Open · editor available'",mark)
-        self.assertIn("WO8_NATIVE_PROJECT_REOPEN=real_installed_ui_reactivated",mark)
+        # The installed UI now has multiple registered projects. The current
+        # fixture binds Reopen/Edit to the chooser-selected exact project,
+        # rather than clicking the first unrelated generic button.
+        self.assertIn("$projectName=(Split-Path $fixed -Leaf)",mark)
+        self.assertIn("$reopenLabel='Reopen project '+$projectName",mark)
+        self.assertIn("$editLabel='Edit project '+$projectName",mark)
+        self.assertIn("Find-Control $reopenLabel 'Button' 3 -Exact",mark)
+        self.assertIn("Click $reopenLabel",mark)
+        self.assertIn("Click $editLabel",mark)
+        self.assertLess(mark.index("Click $reopenLabel"),mark.index("Click $editLabel"))
+        self.assertIn("WO8_NATIVE_PROJECT_REOPEN=exact_registered_project_reactivated",mark)
+        self.assertIn("WO8_NATIVE_PROJECT_OPEN=exact_registered_project_control",mark)
+        self.assertNotIn("Click 'Reopen'",mark)
+        self.assertNotIn("Click 'Edit'",mark)
         linux=(ROOT/"ide/app/fixtures/wo8_linux_editor_atspi.py").read_text(encoding="utf-8")
         editor=linux.split("def editor_project():",1)[1].split("def main():",1)[0]
         self.assertIn('_activate_exact_project_button("Reopen project "',editor)

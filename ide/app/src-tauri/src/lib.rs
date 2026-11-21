@@ -19,6 +19,8 @@ mod build_backend;
 mod debug_backend;
 #[cfg(all(any(windows, target_os = "linux"), feature = "native-lsp"))]
 mod lsp_backend;
+#[cfg(all(feature = "native-core-health", target_os = "linux"))]
+mod native_core_health_menu;
 mod terminal_broker;
 // Test-case observations depend on the opt-in native supervisor's durable
 // live-output and input snapshot types. Default desktop has no process
@@ -4716,6 +4718,17 @@ pub fn run() {
             app.manage(Arc::new(Fin05ManifestMutationGate::default()));
             app.manage(Arc::new(terminal_broker::TerminalSessions::default()));
             app.manage(Arc::new(registry));
+            // Optional IDE-CORE-IPC-01B-R2 startup: OS-installed profile only.
+            // No key borrowing or health IPC at startup; no JS/model command.
+            #[cfg(all(feature = "native-core-health", target_os = "linux"))]
+            match lu_ide_workspace::installed_core_health::InstalledCoreHealthRuntime::from_installed_linux() {
+                Ok(health) => {
+                    app.manage(Arc::new(health));
+                    native_core_health_menu::install(app)?;
+                }
+                Err(_) => eprintln!("IDE protected Core health remains unavailable: installed admission refused"),
+            }
+
             let snapshots = InventorySnapshots::new(data.join("evidence-baselines.json"))
                 .map_err(|_| std::io::Error::other("IDE evidence history failed to open"))?;
             let workflows = lu_ide_workspace::workflow_orchestrator::WorkflowCoordinator::new(
@@ -4756,6 +4769,14 @@ pub fn run() {
             #[cfg(all(windows, debug_assertions, feature = "fin04w2-c4-desktop"))]
             fin04w2_c4_desktop::install(app)?;
             Ok(())
+        })
+        // Native menu events do not enter the WebView invoke surface. A
+        // separate OS confirmation is mandatory before the one-shot probe.
+        .on_menu_event(|app, event| {
+            #[cfg(all(feature = "native-core-health", target_os = "linux"))]
+            native_core_health_menu::on_menu_event(app, &event);
+            #[cfg(not(all(feature = "native-core-health", target_os = "linux")))]
+            let _ = (app, event);
         })
         .invoke_handler(tauri::generate_handler![
             ide_list_capabilities,

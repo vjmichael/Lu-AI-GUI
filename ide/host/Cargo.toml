@@ -20,7 +20,7 @@ fin04r1-fixed-probe = []
 dev046c-ci-control = []
 # Explicit native-only read from OS credential stores, never the mock keyring.
 # No credential setter, WebView endpoint, model route or remote mutation.
-fin03-native-vault = ["dep:keyring", "dep:zeroize"]
+fin03-native-vault = ["dep:keyring"]
 
 [dependencies]
 prost = "0.14"
@@ -29,12 +29,17 @@ serde_json = "1"
 rand = "0.8"
 cap-std = "3.4.6"
 sha2 = "0.10"
+# Ephemeral protected enrollment bytes must be wiped after the native callback.
+zeroize = "1.8"
 zip = { version = "2.2.2", default-features = false }
 similar = "2.7.0"
 git2 = { version = "0.20", default-features = false }
 ureq = { version = "2.12", default-features = false, features = ["tls", "json"] }
 keyring = { version = "=3.6.3", default-features = false, features = ["windows-native", "sync-secret-service"], optional = true }
-zeroize = { version = "1.8", optional = true }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+# Safe Linux SO_PEERCRED verification of actual Core and issuer peers.
+rustix = { version = "1.1.6", features = ["fs", "net", "process"] }
 
 [build-dependencies]
 prost-build = "0.14"

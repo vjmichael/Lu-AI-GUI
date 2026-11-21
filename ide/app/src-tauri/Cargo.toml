@@ -49,6 +49,9 @@ fin04w2-c4-desktop = ["native-build", "lu-ide-execution-supervisor/fin04w2-c2"]
 # This intentionally cannot be compiled into a release/signed installer yet.
 dev046d-native-dialog = ["native-project-debug", "lu-ide-execution-supervisor/dev046d-native-dialog"]
 # FIN03 experimental one-file restore: no release package enables this by default.
+# IDE-CORE-IPC-01B-R2: opt-in native startup only. Never admits missing
+# installed OS credentials or exposes a WebView invoke handler.
+native-core-health = []
 fin03-reviewed-restore = []
 # Source candidate only; no released profile enables destructive stash mutation.
 fin03-reviewed-stash = []

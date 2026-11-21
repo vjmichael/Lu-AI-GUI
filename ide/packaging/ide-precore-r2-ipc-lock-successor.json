@@ -1,0 +1,15 @@
+{
+  "schema": "lu.ide.precore-r2-ipc-native-lock-successor.v1",
+  "baseIdeCommit": "f1f0ed4bc1e740d2a9f85615b988b779a46651db",
+  "changedLocalPackage": "lu-ide-workspace@0.1.0",
+  "hostAddedExistingDependencies": ["rustix"],
+  "desktopAddedExistingDependencies": ["rustix", "zeroize"],
+  "hostSha256": "f9fc6178178bf2d56c6ca308472b9ba2e35a27910e3a30f6b72e9339bb4d10b2",
+  "desktopSha256": "77e317747fdf2743f55363c9809f7baeca40d949675ad547d6909f866a770255",
+  "originalMERGE02CUnchanged": true,
+  "externalPackageChanges": 0,
+  "releaseApproved": false,
+  "legalReviewed": false,
+  "physicalOsAccepted": false,
+  "mainMergeAuthorized": false
+}

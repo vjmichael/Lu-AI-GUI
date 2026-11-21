@@ -1,0 +1,24 @@
+{
+  "schema": "lu.ide.precore.r3.admission-register.v1",
+  "repository": "vjmichael/Lu-AI-GUI",
+  "originalPr": 236,
+  "originalHead": "f1f0ed4bc1e740d2a9f85615b988b779a46651db",
+  "r2CumulativeSha256": "b5a4c4dffb4c85b1603039940b9f42c2a018c8b4e5b1f6388bc45f525cad246d",
+  "r2HostLockSha256": "f9fc6178178bf2d56c6ca308472b9ba2e35a27910e3a30f6b72e9339bb4d10b2",
+  "r2DesktopLockSha256": "77e317747fdf2743f55363c9809f7baeca40d949675ad547d6909f866a770255",
+  "candidateSha": null,
+  "custodyReceipts": {
+    "scmTerminal": null,
+    "jobEmpty": null,
+    "originalCancel": null,
+    "revocation": null,
+    "restartRecovery": null
+  },
+  "physicalWindowsAccepted": false,
+  "releaseApproved": false,
+  "signingTool": {
+    "path": null,
+    "sha256": null
+  },
+  "publisherThumbprint": null
+}

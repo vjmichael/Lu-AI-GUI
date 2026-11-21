@@ -15,8 +15,10 @@ class DispositionTests(unittest.TestCase):
         self.assertEqual({r['workflow'] for r in rows},paths-automatic)
         # Original gitBlob/triggerKinds remain historical evidence. Admit only
         # these three independently reviewed, exact successor workflow blobs.
+        # The FIN-04R1 successor adds the reviewed fixed-probe denial gate;
+        # retain its exact current Git blob pin, never a wildcard allowance.
         reviewed_successors = {
-            '.github/workflows/ide-fin04r1-exact-native.yml': ('6f4bf3ff41acd9eea869d701a0799125aa4e3d65', 'fd3259aaa830851d5cbc1a6fd7fc6f4f6edb39f1'),
+            '.github/workflows/ide-fin04r1-exact-native.yml': ('6f4bf3ff41acd9eea869d701a0799125aa4e3d65', 'aaca9c87aa8de0ba2dde807c9b43d547fb3ffc37'),
             '.github/workflows/ide-group04d-source.yml': ('08c1e1eeb4a7b71e31707d4377764412d9a1556a', 'c735825a928a1b9b86708f630b5c4893bc87bfd4'),
             '.github/workflows/ide-group06a-native.yml': ('19ba1e3280880a9bc48005c7572a94b8f8d3f1aa', '80edc4e117fe9c5dded1924ad87d186a4892e3c0'),
         }

@@ -1,0 +1,66 @@
+syntax = "proto3";
+package lu.workspace.v0;
+
+// IDE-CORE-IPC-01A-R1. Source-audited WIRE PROJECTION for a single read-only
+// Health exchange, NOT a replacement for Core's full workspace.proto.
+// Field names, types and numbers below were reviewed against Core PR #244
+// schema blob 4e01d921197fb1c58c99958479b1cede36e13c9a.
+// Add operations only after independently reviewing the full contract.
+message WorkspaceFrame {
+  uint32 protocol_major = 1;
+  uint32 protocol_minor = 2;
+  string request_id = 3;
+  string session_ref = 4;
+  uint64 sequence = 5;
+  oneof body {
+    Hello hello = 10;
+    Welcome welcome = 11;
+    HealthRequest health = 25;
+    HealthReport health_report = 26;
+    ProtocolFailure failure = 30;
+    AuthChallenge auth_challenge = 36;
+    AuthProof auth_proof = 37;
+  }
+}
+enum ModuleRole {
+  MODULE_ROLE_UNSPECIFIED = 0;
+  MODULE_ROLE_WORKSPACE = 1;
+  MODULE_ROLE_CORE_EXTENSION = 2;
+  MODULE_ROLE_THIRD_PARTY = 3;
+}
+message Hello {
+  string claimed_module_id = 1;
+  ModuleRole claimed_role = 2;
+  bytes claimed_package_sha256 = 3;
+  uint32 minimum_major = 4;
+  uint32 maximum_major = 5;
+  uint32 maximum_minor = 6;
+  repeated string requested_features = 7;
+  bytes client_nonce = 8;
+}
+message AuthChallenge {
+  bytes server_nonce = 1;
+}
+message AuthProof {
+  bytes client_hmac_sha256 = 1;
+}
+message Welcome {
+  uint32 selected_major = 1;
+  uint32 selected_minor = 2;
+  string core_epoch_ref = 3;
+  repeated string enabled_features = 4;
+  bytes server_hmac_sha256 = 5;
+}
+message HealthRequest {}
+message HealthReport {
+  string module_id = 1;
+  bool connected = 2;
+  string status_code = 3;
+  uint64 epoch = 4;
+}
+message ProtocolFailure {
+  string code = 1;
+  bool retryable = 2;
+  bool outcome_uncertain = 3;
+  string explanation = 4;
+}

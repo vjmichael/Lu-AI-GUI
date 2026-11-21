@@ -1,5 +1,15 @@
 # Lu IDE — Current project state (authoritative handoff)
 
+## IDE-PRECORE-CLOSEOUT-R3 — signed Windows RC preflight (2026-11-21; unpublished)
+
+Reviewed the exact draft PR #236 head `f1f0ed4bc1e740d2a9f85615b988b779a46651db` and recovered immutable R2 patch evidence. New default-deny source/package/custody verifier and Windows read-only signed-binary/SCM probe are source-ready; 24/24 hostile Python tests passed, exact WO7/WO8/WO9 source manifests were reconciled with release approval OFF. No signed binaries, publisher/tool identities, independent physical Job/SCM terminal receipts or Windows-machine acceptance; no GitHub source push or CI dispatch. Core #245 remains external. See `docs/IDE_PRECORE_CLOSEOUT_R3_SIGNED_WINDOWS_ADMISSION.md`.
+
+
+## IDE-CORE-IPC-01B-R3 — protected native Health menu, disposable installed Linux smoke (2026-11-21; unpublished)
+
+Separate IDE-only local candidate based on PR #236 original SHA `f1f0ed4bc1e740d2a9f85615b988b779a46651db` plus reviewed R2 cumulative patch. Root-owned installed-profile startup is opt-in, Linux only, default denied without exact executable SHA/UID/journal custody. Adds one-use OS-menu + native confirmation control, no WebView IPC command and no automatic enrollment on startup. Local Debian Rust 1.99.1 --locked --offline host+Tauri source checks pass; actual Tauri binary built using verified offline GUI dependencies and first-party frontend. Disposable root-owned executable and profile, actual UID 65534, Xvfb: profile absent/tampered denied with normal UI; admitted profile opens native Health menu; denied dialog yields fsynced cancelled without issuer; duplicate click denied; approved dialog with no issuer yields fsynced refused without replay. **Not** independently signed installed issuer or production Core Health. Core #245 remains open; Windows OS admission remains unimplemented. No PR source push, no CI dispatch or Core changes. See `docs/IDE_CORE_IPC_01B_R3_ISSUER_HANDOFF.md`.
+
+
 ## IDE-MERGE-05B-R3 — technical-only installed LSP and outside-cohort disposition (2026-11-19)
 
 Unpublished local successor of `c79c72c5d0fe29369cb4070adf1c2d8e8c1da3c2`; existing PR #236 remote integration remains `e066faf9cf866163c65bc43d7a7efa3093cde810`. Source implementation and local regression qualification only. The 44 previously unobserved workflow files now have complete per-path, per-blob contract dispositions in `ide/packaging/ide-05b-r3-outside-cohort.json`. Related automatic lanes are not proof of equivalence. Preserve all historical refs. Twelve existing separately authorized manual lanes remain gated; no CI dispatch, signing, legal approval, release or main merge.

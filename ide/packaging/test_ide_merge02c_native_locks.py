@@ -1,5 +1,6 @@
 """Negative tests for exact source-pinned standalone Cargo lock receipts."""
 import json
+import subprocess
 from pathlib import Path
 import unittest
 from verify_ide_merge02c_native_locks import Denied, PINS, verify_bytes
@@ -10,12 +11,14 @@ class ReviewedNativeLockTests(unittest.TestCase):
     def test_original_windows_linux_exact_lock_bytes_and_package_counts(self):
         for rel, (_, sha256, size, package_count) in PINS.items():
             with self.subTest(path=rel):
-                self.assertTrue(verify_bytes((ROOT / rel).read_bytes(), sha256,
-                                             size, package_count))
+                # This immutable MERGE02C receipt certifies the original bytes,
+                # not the reviewed, later IPC dependency successor worktree.
+                data = subprocess.check_output(["git", "show", "f1f0ed4bc1e740d2a9f85615b988b779a46651db:" + rel], cwd=ROOT)
+                self.assertTrue(verify_bytes(data, sha256, size, package_count))
 
     def test_hostile_byte_mutation_stays_denied(self):
         for rel, (_, sha256, size, package_count) in PINS.items():
-            data = (ROOT / rel).read_bytes()
+            data = subprocess.check_output(["git", "show", "f1f0ed4bc1e740d2a9f85615b988b779a46651db:" + rel], cwd=ROOT)
             for tampered in (data + b" ", data.replace(b"\n", b"\r\n", 1),
                              data[:-1]):
                 with self.assertRaises(Denied):

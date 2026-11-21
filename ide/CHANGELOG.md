@@ -1,5 +1,15 @@
 # Lu IDE — Development changelog
 
+## 2026-11-21 — IDE-PRECORE-CLOSEOUT-R3 (unpublished source-only candidate)
+
+Added fail-closed reviewed R2/WO7/WO8/WO9 source, package, signing-input and worker-custody reconciliation with 24 hostile tests and a read-only Windows native signed-candidate/SCM identity probe. Current signed installer, publisher, native Job/SCM receipts and physical Windows acceptance remain unavailable; no release, publication or CI authorization. See `docs/IDE_PRECORE_CLOSEOUT_R3_SIGNED_WINDOWS_ADMISSION.md`.
+
+
+## 2026-11-21 — IDE-CORE-IPC-01B-R3 (unpublished IDE-only native candidate)
+
+Built the opt-in protected native OS Health menu and one-use confirmation permit, with cancellation/revocation journal semantics and no WebView command. Restored Debian 13 GUI and npm inputs from verified local archives; tested the real Tauri executable in a disposable root-owned installed-style location under a separate Linux UID. Native menu denial writes an actual durable `cancelled` outcome, duplicate clicks cannot reissue, missing issuer refuses explicitly approved request, and tampered executable profile refuses startup authorization while keeping IDE usable. This is **not** production signed issuer or live Core acceptance; see task-specific handoff. No GitHub source push or CI launch.
+
+
 ## 2026-11-19 — IDE-MERGE-05B-R3 (unpublished source candidate)
 
 - Restored test-only real NSIS/Debian LSP resource-install lane, pinned archive reconstruction and exact two-job technical observation, without provider execution rights. Recorded 44 outside-cohort workflow dispositions. Native installed and final-SHA acceptance remain open.

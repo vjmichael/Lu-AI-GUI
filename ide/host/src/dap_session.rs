@@ -368,7 +368,9 @@ impl DapSession {
     /// Does not supply arbitrary launch, breakpoint, step or evaluate rights.
     #[cfg(all(windows, target_arch = "x86_64", feature = "fin04r1-fixed-probe"))]
     pub fn launch_fin04r1_fixed_probe(&mut self, program: &str) -> Result<Vec<u8>, DapError> {
-        if std::path::Path::new(program).file_name().and_then(|name| name.to_str())
+        if std::path::Path::new(program)
+            .file_name()
+            .and_then(|name| name.to_str())
             != Some("dev045b_acceptance.exe")
         {
             return Err(DapError::InvalidMessage);
@@ -1696,19 +1698,31 @@ mod tests {
     fn fin04r1_fixed_probe_denies_foreign_paths_and_keeps_regular_entry() {
         let mut denied = DapSession::new();
         denied.phase = DapPhase::Ready;
-        assert_eq!(denied.launch_fin04r1_fixed_probe(
-            r"C:\Temp\debug-target\debug\foreign.exe").unwrap_err(), DapError::InvalidMessage);
-        assert_eq!(denied.launch_fin04r1_fixed_probe(
-            r"C:\Temp\dev045b_acceptance.exe").unwrap_err(), DapError::InvalidMessage);
+        assert_eq!(
+            denied
+                .launch_fin04r1_fixed_probe(r"C:\Temp\debug-target\debug\foreign.exe")
+                .unwrap_err(),
+            DapError::InvalidMessage
+        );
+        assert_eq!(
+            denied
+                .launch_fin04r1_fixed_probe(r"C:\Temp\dev045b_acceptance.exe")
+                .unwrap_err(),
+            DapError::InvalidMessage
+        );
         let path = r"C:\Temp\debug-target\debug\dev045b_acceptance.exe";
         let mut fixed = DapSession::new();
         fixed.phase = DapPhase::Ready;
         let wire = fixed.launch_fin04r1_fixed_probe(path).unwrap();
-        assert!(std::str::from_utf8(&wire).unwrap().contains(r#""stopOnEntry":false"#));
+        assert!(std::str::from_utf8(&wire)
+            .unwrap()
+            .contains(r#""stopOnEntry":false"#));
         let mut ordinary = DapSession::new();
         ordinary.phase = DapPhase::Ready;
         let wire = ordinary.launch_verified_project(path).unwrap();
-        assert!(std::str::from_utf8(&wire).unwrap().contains(r#""stopOnEntry":true"#));
+        assert!(std::str::from_utf8(&wire)
+            .unwrap()
+            .contains(r#""stopOnEntry":true"#));
     }
 
     #[cfg(windows)]

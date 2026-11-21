@@ -11,6 +11,15 @@ pub mod browser;
 pub mod capabilities;
 pub mod continuity;
 pub mod conventional_tests;
+mod core_ipc_host;
+#[cfg(target_os = "linux")]
+mod core_ipc_issuer;
+mod core_ipc_lifecycle;
+#[cfg(target_os = "linux")]
+pub(crate) mod core_ipc_native_transport;
+pub(crate) mod core_ipc_readonly;
+#[cfg(any(test, windows))]
+mod core_ipc_windows_contract;
 pub mod dap_session;
 pub mod dap_source_lines;
 pub mod debug_target_review;
@@ -48,6 +57,8 @@ pub mod github_pull_review;
 pub mod github_remote_live_policy;
 pub mod github_remote_publication;
 pub mod github_review_state;
+#[cfg(target_os = "linux")]
+pub mod installed_core_health;
 // 6E-05C: native-only offline plan and one-use prepared journal.
 // No Tauri route, credential, OS consent or GitHub mutation.
 mod github_remote_publication_intent;

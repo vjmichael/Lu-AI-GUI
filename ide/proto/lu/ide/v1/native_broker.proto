@@ -1,0 +1,26 @@
+syntax = "proto3";
+package lu.ide.v1;
+
+// IDE-CORE-IPC-01B: native-OS credential issuer adapter, NOT a WebView API.
+// The installed, privileged native issuer MUST independently attest the
+// calling installed IDE, its package, requested scope and one-use operation.
+// A Health lease is only an enrollment for a read-only Core Health probe;
+// it never confers Core capability/tool/session/execution grants.
+message NativeHealthLeaseRequest {
+  uint32 schema_version = 1;             // Exactly 1.
+  bytes operation_nonce = 2;             // Random 32 bytes, single use.
+  bytes installed_package_sha256 = 3;    // Pinned by native installer.
+  string scope = 4;                      // Exactly "core.health.readonly".
+  string journal_operation_ref = 5;      // Durable one-use 32-char operation ID.
+}
+message NativeHealthLeaseReply {
+  uint32 schema_version = 1;
+  bytes operation_nonce = 2;             // Echo the full issued challenge.
+  bytes installed_package_sha256 = 3;    // Must match pinned installation.
+  string scope = 4;                      // Exactly "core.health.readonly".
+  string core_socket_path = 5;           // Absolute trusted Unix socket.
+  uint32 core_owner_uid = 6;             // Must match independently pinned UID.
+  bytes credential = 7;                  // 32-byte ephemeral HMAC enrollment.
+  uint64 expires_unix_seconds = 8;       // <= 60 seconds from receipt.
+  string journal_operation_ref = 9;      // Exact operation ID echo; issuer burns it.
+}
