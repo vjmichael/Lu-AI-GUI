@@ -12,6 +12,7 @@ type Handle=*mut c_void;
 const TOKEN_QUERY:u32=0x0008;
 const TOKEN_USER:u32=1;
 const TOKEN_IMPERSONATION_LEVEL:u32=9;
+const TOKEN_IS_APP_CONTAINER:u32=29;
 const PROCESS_QUERY_LIMITED_INFORMATION:u32=0x1000;
 const SDDL_REVISION_1:u32=1;
 const MAX_TOKEN_USER_BYTES:u32=16384;
@@ -238,6 +239,36 @@ pub fn observe_host_process(pid:u32)->io::Result<WindowsPipePeer>{
     Ok(WindowsPipePeer{pid,session_id,user_sid:sid,image_path,
         creation_filetime})
 }
+/// Host/kernel-observed AppContainer evidence for the specific native
+/// process. A non-SYSTEM SID or ordinary interactive token is NOT sufficient
+/// isolation for native Core executor tools.
+pub fn process_is_appcontainer(pid:u32)->io::Result<bool>{
+    if pid==0{return Err(io::Error::new(io::ErrorKind::PermissionDenied,
+        "cannot inspect zero process"));}
+    let handle=unsafe{OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION,0,pid)};
+    if handle.is_null(){return Err(io::Error::last_os_error());}
+    let process=OwnedHandle(handle);
+    if unsafe{GetProcessId(process.0)}!=pid{
+        return Err(io::Error::new(io::ErrorKind::PermissionDenied,
+            "process identity changed before token check"));
+    }
+    let primary=token(process.0)?;
+    let mut is_appcontainer=0u32;
+    let mut returned=0u32;
+    if unsafe{GetTokenInformation(
+        primary.0,TOKEN_IS_APP_CONTAINER,
+        (&mut is_appcontainer as *mut u32).cast(),
+        mem::size_of::<u32>() as u32,&mut returned)}==0
+        ||returned!=mem::size_of::<u32>() as u32{
+        return Err(io::Error::last_os_error());
+    }
+    if unsafe{GetProcessId(process.0)}!=pid{
+        return Err(io::Error::new(io::ErrorKind::PermissionDenied,
+            "process changed during token check"));
+    }
+    Ok(is_appcontainer!=0)
+}
+
 pub fn observe_connected_peer(pipe:&NamedPipeServer)
     ->io::Result<WindowsPipePeer>{
     let raw=pipe.as_raw_handle() as Handle;

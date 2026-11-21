@@ -9,7 +9,7 @@
 use std::{io,process::Child,sync::Mutex};
 use crate::{Job,WindowsJobEmptyProof,
     ipc_credential_broker::require_system_service_context,
-    ipc_pipe_peer::{observe_host_process,WindowsPipePeer}};
+    ipc_pipe_peer::{observe_host_process,process_is_appcontainer,WindowsPipePeer}};
 
 const SYSTEM_SID:&str="S-1-5-18";
 const MAX_SERVICE_JOBS:usize=32;
@@ -43,8 +43,8 @@ struct ScmHeldChild{
     stopped:bool,
 }
 impl ScmHeldChild{
-    fn attach(job:Job,mut child:Child,lane:SupervisedJobLane)
-        ->io::Result<Self>{
+    fn attach(job:Job,mut child:Child,lane:SupervisedJobLane,
+        require_executor_appcontainer:bool)->io::Result<Self>{
         let original=match observe_host_process(child.id()){
             Ok(witness) if witness.user_sid!=SYSTEM_SID
                 && witness.creation_filetime!=0 => witness,
@@ -53,13 +53,21 @@ impl ScmHeldChild{
                 return Err(denied("SCM must not execute untrusted jobs as SYSTEM"));
             }
         };
+        if require_executor_appcontainer && lane==SupervisedJobLane::CoreExecutor
+            && !matches!(process_is_appcontainer(child.id()),Ok(true)){
+            let _=child.kill();let _=child.wait();
+            return Err(denied(
+                "Core executor requires independently observed AppContainer token"));
+        }
         if job.assign_and_resume_suspended(&child).is_err(){
             let _=child.kill();let _=child.wait();
             return Err(denied("SCM Job assignment before resume failed"));
         }
         if observe_host_process(child.id()).ok().as_ref()!=Some(&original){
+            // Even if the Job kernel check itself fails, never wait forever
+            // for a still-running untrusted child after identity drift.
             let _=job.terminate_and_verify_empty();
-            let _=child.wait();
+            let _=child.kill();let _=child.wait();
             return Err(denied("SCM worker process generation changed at admission"));
         }
         Ok(Self{lane,original,job,child,stopped:false})
@@ -123,7 +131,7 @@ impl ScmJobKeeper{
             let _=child.kill();let _=child.wait();
             return Err(denied("SCM Job custody capacity exhausted"));
         }
-        owned.push(ScmHeldChild::attach(job,child,lane)?);
+        owned.push(ScmHeldChild::attach(job,child,lane,true)?);
         Ok(())
     }
     /// One-use bounded kernel observations. A partial failure cannot be
@@ -163,8 +171,11 @@ mod tests{
     #[test]
     fn actual_assigned_job_proof_is_exact_lane_and_one_use(){
         let (job,child)=child();
-        let mut held=ScmHeldChild::attach(job,child,SupervisedJobLane::CoreExecutor)
-            .unwrap();
+        // The ordinary CI runner shell is deliberately NOT an AppContainer.
+        // This tests real Job-empty custody independently of installed
+        // sandbox/token policy. Production always requires AppContainer.
+        let mut held=ScmHeldChild::attach(
+            job,child,SupervisedJobLane::CoreExecutor,false).unwrap();
         assert!(held.stop(SupervisedJobLane::DlcClient).is_err());
         let proof=held.stop(SupervisedJobLane::CoreExecutor).unwrap();
         assert_eq!(proof.lane(),SupervisedJobLane::CoreExecutor);
@@ -172,6 +183,15 @@ mod tests{
         assert_ne!(proof.original_creation_filetime(),0);
         assert_eq!(proof.method(),"WINDOWS_JOB_ACTIVE_ZERO_V1");
         assert!(held.stop(SupervisedJobLane::CoreExecutor).is_err());
+    }
+    #[test]
+    fn host_token_observation_never_equates_non_system_with_appcontainer(){
+        let peer=observe_host_process(std::process::id()).unwrap();
+        let observed=process_is_appcontainer(peer.pid).unwrap();
+        // No success assumption: the CI user's actual token is inspected,
+        // not replaced with a fake boolean. Production demands Ok(true).
+        assert_eq!(observed,process_is_appcontainer(peer.pid).unwrap());
+        assert!(process_is_appcontainer(0).is_err());
     }
     #[test]
     fn ordinary_runner_does_not_gain_system_service_job_registry(){

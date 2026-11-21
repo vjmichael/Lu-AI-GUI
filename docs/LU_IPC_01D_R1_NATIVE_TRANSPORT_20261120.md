@@ -308,3 +308,18 @@ one-use per-call stop receipts and then allow a reviewed recovery transition.
 Until that path exists, `NeedsExecutorCustody` blocks effect admission. This
 module never supplies a shortcut to clear it. Physical Windows signed service,
 credential lifecycle and power-loss acceptance remain outstanding.
+
+### R4-R3-R3-R1 native executor AppContainer admission hardening
+
+A plain non-SYSTEM SID is NOT an execution sandbox. The service-side Job
+keeper now requires a native `GetTokenInformation(TokenIsAppContainer)`
+**positive OS observation** for each CoreExecutor process before it resumes
+the originally suspended child. Missing, invalid, non-AppContainer or
+uninspectable tokens are refused and the pending child is killed/reaped.
+DLC client processes retain a separate admission lane, but will still need
+approved installed package/publisher pins and the protected service launcher.
+An ordinary Windows CI cmd.exe child cannot satisfy the production executor
+token requirement; test-only fixture bypass is restricted to the crate's
+native Job-empty unit test, which must never be treated as an installed
+AppContainer executor acceptance result. Current installed Core execution
+remains disabled until that independent custody/control plane is qualified.
