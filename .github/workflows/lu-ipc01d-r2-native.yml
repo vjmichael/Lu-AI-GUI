@@ -84,13 +84,36 @@ jobs:
           cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib gpu_async_reconciler -- --nocapture
           cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test workspace_ipc_gpu_lease -- --nocapture
           echo LU_IPC_GPU_01C_DURABLE_ASYNC_AND_POLL_PASS
-      - name: Windows LU desktop real Tauri host startup/source compilation
+      # SOURCE-ONLY typecheck. Real pinned engine binaries live in a
+      # separately approved installer package and are intentionally NOT in Git.
+      # Zero-byte, nonexecutable placeholders exist solely for Tauri's build
+      # script resource existence check and are removed after cargo check.
+      # Do NOT use this step to qualify a signed, runnable or installed app.
+      - name: Windows LU desktop source-only Rust typecheck (non-runnable resource sentinels)
         if: matrix.os == 'windows-2025'
         shell: bash
         run: |
           set -euo pipefail
+          npm ci --prefix lu-desktop
+          npm run build --prefix lu-desktop
+          resource_root=lu-desktop/src-tauri/resources/lu-inference
+          sentinels=(
+            "$resource_root/llama-server.exe"
+            "$resource_root/msvcp140.dll"
+            "$resource_root/vcruntime140.dll"
+            "$resource_root/vcruntime140_1.dll"
+          )
+          for file in "${sentinels[@]}"; do
+            test ! -e "$file" || { echo 'Source-only check requires absent real engine package'; exit 1; }
+            : > "$file"
+          done
+          cleanup() {
+            for file in "${sentinels[@]}"; do rm -f "$file"; done
+          }
+          trap cleanup EXIT
+          echo LU_IPC_GPU_01C_NONRUNNABLE_SOURCE_SENTINELS_ONLY
           cargo check --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib
-          echo LU_IPC_GPU_01C_DESKTOP_STARTUP_SOURCE_PASS
+          echo LU_IPC_GPU_01C_DESKTOP_RUST_TYPECHECK_SOURCE_ONLY_PASS
       - name: Windows strict installer record parser regression
         if: matrix.os == 'windows-2025'
         shell: bash
