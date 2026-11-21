@@ -655,6 +655,12 @@ pub mod windows {
     }
     impl SignedWindowsSession {
         pub fn session(&self)->&TransportSession {&self.session}
+        /// Production Core dispatch requires the installer-owned record and
+        /// package-key revocation witness; debug signed surrogate leases
+        /// deliberately never satisfy this predicate.
+        pub fn installed_enrollment_active(&self)->bool{
+            self.revocation.is_some()
+        }
         pub fn check_alive(&self)->Result<(),TransportError>{
             self.lease.check_alive().map_err(|_|TransportError::PeerNotVerified)?;
             if let Some(witness)=&self.revocation {

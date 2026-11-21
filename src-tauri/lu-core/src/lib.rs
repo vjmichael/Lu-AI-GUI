@@ -99,6 +99,7 @@ pub mod operational_memory;
 pub mod contracts;
 pub mod workspace_ipc;
 pub mod workspace_ipc_transport;
+pub mod workspace_ipc_core_host;
 pub mod conversation_authority;
 pub mod core_extension;
 pub mod cpu_instructions;

@@ -61,6 +61,12 @@ jobs:
           set -euo pipefail
           cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test workspace_ipc_v0 -- --nocapture
           cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test workspace_ipc_transport_r1 -- --nocapture
+      - name: Lu Core DLC host turn, durable journal, cancellation and bounded-session regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib workspace_ipc_core_host -- --nocapture
+          echo LU_IPC_R4_R2_CORE_AUTH_JOURNAL_PASS
       - name: Windows strict installer record parser regression
         if: matrix.os == 'windows-2025'
         shell: bash
