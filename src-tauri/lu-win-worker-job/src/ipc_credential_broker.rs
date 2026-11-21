@@ -183,6 +183,68 @@ fn read_checked_key_target(target:&str)->io::Result<[u8;32]>{
     copy_checked_secret(secret)
 }
 
+/// Only the privileged SCM service may verify a pre-enrolled NVP client
+/// challenge and mint the corresponding Welcome MAC. This deliberately
+/// returns *only* the 32-byte transcript authenticator: the installed
+/// package-bound HMAC secret never leaves the unimpersonated SYSTEM process.
+/// Caller must first verify the signed, original-turn-scoped private control
+/// command, OS process generation and the protected NVP package pins.
+fn hmac_sha256_parts(key:&[u8;32],parts:&[&[u8]])->io::Result<[u8;32]>{
+    let mut inner_pad=[0x36u8;64];
+    let mut outer_pad=[0x5cu8;64];
+    for i in 0..32{
+        inner_pad[i]^=key[i];
+        outer_pad[i]^=key[i];
+    }
+    let mut data=Vec::new();
+    data.extend_from_slice(&inner_pad);
+    for part in parts {data.extend_from_slice(part);}
+    let inner=crate::ipc_scm_receipts::hash(&data)?;
+    data.clear();
+    data.extend_from_slice(&outer_pad);
+    data.extend_from_slice(&inner);
+    let result=crate::ipc_scm_receipts::hash(&data);
+    inner_pad.fill(0);
+    outer_pad.fill(0);
+    data.fill(0);
+    result
+}
+fn equal_mac(expected:&[u8;32],actual:&[u8;32])->bool{
+    let mut difference=0u8;
+    for i in 0..32{difference|=expected[i]^actual[i];}
+    difference==0
+}
+pub(crate) fn verify_nvp_handshake_and_sign_welcome(
+    approved_package:[u8;32],hello_wire:&[u8],
+    server_nonce:&[u8;32],client_proof:&[u8;32],
+    core_session:&str,welcome_without_mac:&[u8],
+)->io::Result<[u8;32]>{
+    require_system_service_context()?;
+    if hello_wire.is_empty()||hello_wire.len()>1024||
+       welcome_without_mac.is_empty()||welcome_without_mac.len()>512||
+       core_session.is_empty()||core_session.len()>128||
+       core_session.chars().any(char::is_control)||
+       server_nonce.iter().all(|b|*b==0)||
+       client_proof.iter().all(|b|*b==0) {
+        return Err(denied("invalid bounded NVP authentication transcript"));
+    }
+    let mut key=read_installed_nvp_key(approved_package)?;
+    let result=(||{
+        let expected=hmac_sha256_parts(&key,&[
+            b"lu.workspace.client.v0\0",hello_wire,server_nonce
+        ])?;
+        if !equal_mac(&expected,client_proof){
+            return Err(denied("installed NVP HMAC proof mismatch"))
+        }
+        hmac_sha256_parts(&key,&[
+            b"lu.workspace.server.v0\0",hello_wire,server_nonce,
+            core_session.as_bytes(),welcome_without_mac
+        ])
+    })();
+    clear_temporary_key(&mut key);
+    result
+}
+
 /// SYSTEM-broker-only, one-time credential creation for an already verified
 /// installed package digest. The privileged installer owns the exclusive
 /// provisioning lock and signature verification BEFORE calling this method.
@@ -353,5 +415,26 @@ mod tests{
         // LocalSystem; release must fail closed instead of requesting any
         // credential under this user or auto-creating a fake secret.
         assert!(read_installed_ide_key([0x42;32]).is_err());
+    }
+}
+
+#[cfg(test)]
+mod nvp_hmac_tests{
+    use super::*;
+    #[test]
+    fn native_hmac_matches_rfc4231_and_denies_forged_proof(){
+        let key=[0x0bu8;32];
+        let result=hmac_sha256_parts(&key,&[b"Hi There"]).unwrap();
+        // HMAC-SHA256, key=32 bytes 0x0b, message="Hi There".
+        assert_eq!(result,[
+            0x19,0x8a,0x60,0x7a,0xc4,0x50,0x04,0x9e,
+            0xc5,0x22,0x5d,0x4f,0x64,0x6e,0x83,0xed,
+            0xfd,0x8a,0x7b,0x94,0x66,0xa3,0xa2,0x1e,
+            0x63,0x2a,0xe0,0xba,0x6b,0x2c,0xbc,0x4e
+        ]);
+        let mut forged=result;
+        forged[31]^=1;
+        assert!(!equal_mac(&result,&forged));
+        assert!(equal_mac(&result,&result));
     }
 }
