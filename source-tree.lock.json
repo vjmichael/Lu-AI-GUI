@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "7f98fbe7ee00dd4a36c25be866acdfd45c0b7acd",
+  "sourceCommitBeforeLock": "3e2161e38dc49b83bdade873d9f9a9569eb45cb2",
   "trackedFileCount": 1302,
   "files": [
     {
@@ -1085,7 +1085,7 @@
     },
     {
       "path": "docs/LU_IPC_GPU_01B_NVP_SCOPED_INSTALLED_GATE_20261121.md",
-      "blob": "83bffee5a6d9731c35724278de6dfd6da52d1fc2"
+      "blob": "944ccc0395b33aa620b7158ce09f03515b44a2a6"
     },
     {
       "path": "docs/LU_IPC_R4_R3_R3_R4_ECOSYSTEM_AND_SCM_CONTROL_20261121.md",
@@ -3805,7 +3805,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/gpu_resource_leases.rs",
-      "blob": "860357ef539fb505d77fe096babe52acd8e66307"
+      "blob": "2ffd021fb210b0bab7648d4971398ce999378fb7"
     },
     {
       "path": "src-tauri/lu-core/src/host_resource_authority.rs",
@@ -3849,7 +3849,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/inference_supervisor.rs",
-      "blob": "8a17a7eb40016f91e271349f28a9aa07712c25e7"
+      "blob": "a966b8f4171d8b22898e2215234aac2c6bce0b2c"
     },
     {
       "path": "src-tauri/lu-core/src/inference_wire.rs",
@@ -4509,7 +4509,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/workspace_ipc_core_host.rs",
-      "blob": "6dc21c434ce13a738284d87fa02876131738a742"
+      "blob": "912f6fdae583e54ce61beba5f23e637235d71b7e"
     },
     {
       "path": "src-tauri/lu-core/src/workspace_ipc_scm.rs",
@@ -5121,7 +5121,7 @@
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/ipc_installer_enrollment.rs",
-      "blob": "6639e04c3e73bf860167cb67243901d5275ef90c"
+      "blob": "fa96021eb79c2090568d3a58850d5e6a3e6b2f88"
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/ipc_nvp_gpu_stop.rs",
