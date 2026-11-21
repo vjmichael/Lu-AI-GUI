@@ -64,12 +64,13 @@ test('P0 diagnostics keep per-chat bounded original-only samples',()=>{
   assert.match(host,/state\.chats\.history_window\(&chat_id,None,"older",1\)/);
   assert.match(host,/lu_perf01_recent,/);
   assert.match(ui,/invoke\('lu_perf01_recent'/);
-  assert.match(ui,/aria-label="Latest host-observed performance receipt"/);
+  assert.match(ui,/setPerfLatestByChat\(prev=>\(\{\.\.\.prev,\[activeId\]:samples\[0\]\}\)\)/);
+  assert.doesNotMatch(ui,/aria-label="Latest host-observed performance receipt"/);
 });
 test('P0D no-model UI is presentation-only; host remains authority',()=>{
   assert.match(ui,/isHostCurrentTimeQuestion\(prompt\)\|\|isHostCpuChatLookup\(prompt\)/);
   assert.match(ui,/!modelFreeClockAllowed/);
-  assert.match(ui,/readOnlyWorkspace: useWorkspaceTools/);
+  assert.match(ui,/readOnlyWorkspace:\s*useWorkspaceTools/);
   assert.match(router,/Route::ModelRequired\("NON_TEXT_OR_REVIEWED_MODE"\)/);
   assert.match(router,/MAX_SOURCE_SCAN_BYTES:usize=2\*1024\*1024/);
   assert.match(router,/MAX_SOURCE_ENTRIES:usize=640/);

@@ -1,0 +1,92 @@
+name: IDE DEV03 project profile discovery native
+on:
+  push:
+    branches: [ide/dev03-project-run-profile-discovery-20261108]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ide-dev03-profile-exact-head
+  cancel-in-progress: true
+
+jobs:
+  dev03-source:
+    name: DEV03 native manifest discovery and frontend / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2022, ubuntu-24.04]
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Bind checks to exact event SHA and forbid worker/runner changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          C7=07f0a889bd14c3d587e26678307a5c8d32f9fe6e
+          git merge-base --is-ancestor "$C7" HEAD
+          git diff --exit-code "$C7" HEAD -- \
+            ide/supervisor ide/sandbox ide/app/src-tauri/src/build_backend.rs \
+            ide/app/src-tauri/src/debug_backend.rs ide/host/src/execution_intents.rs \
+            ide/host/src/browser.rs ide/host/src/draft_vault.rs
+          echo DEV03_UNCHANGED_PROTECTED_EXECUTION=PASS
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+          components: rustfmt
+      - name: Linux desktop build dependencies
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev libayatana-appindicator3-dev \
+            librsvg2-dev libgtk-3-dev patchelf libssl-dev
+      - name: Frontend fixed-profile tests and full check
+        working-directory: ide/app
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci --ignore-scripts --no-audit --no-fund
+          node --test tests/project_run_profiles.test.mjs
+          npm run check
+          echo DEV03_FRONTEND_SOURCE_PASS
+      - name: Native Rust host fixture, complete tests, formatting
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fmt --manifest-path ide/host/Cargo.toml --all -- --check
+          cargo test --manifest-path ide/host/Cargo.toml --test project_run_profiles
+          cargo test --manifest-path ide/host/Cargo.toml --all-targets
+          echo DEV03_NATIVE_HOST_PASS
+      - name: Locked native Tauri compile with no new execution feature
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo check --manifest-path ide/app/src-tauri/Cargo.toml --all-targets --locked
+          echo DEV03_TAURI_NATIVE_PASS
+          echo DEV03_INSTALLED_USER_PROJECT_RUN_TEST=OPEN
+      - name: Record exact-source CI metadata
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p .dev03-receipts
+          printf 'sha=%s\nrunner=%s\nrun=%s\ninstalled=OPEN\n' \
+            "$GITHUB_SHA" "$RUNNER_OS" "$GITHUB_RUN_ID" \
+            > .dev03-receipts/native-source-receipt.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ide-dev03-profile-${{ matrix.os }}
+          path: .dev03-receipts/native-source-receipt.txt
+          if-no-files-found: error
+          retention-days: 14

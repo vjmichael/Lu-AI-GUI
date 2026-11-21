@@ -71,9 +71,11 @@ test('P4 Resource Guardian presents policy reason without leaking model prompts 
   assert.match(desktop,/interactive_admission_reason:Mutex<Option/);
   assert.match(desktop,/interactive_admission_reason:reason\.map/);
   assert.match(desktop,/waiting_foreground_generations:priority\.waiting_foreground/);
-  assert.match(frontend,/backgroundGuardian\.newBackgroundAdmissionDeferred/);
-  assert.match(frontend,/backgroundGuardian\.activeModelGenerationClass/);
-  assert.match(frontend,/Host reason:/);
-  assert.match(frontend,/Existing workers retain cancellation and restart custody/);
+  // Keep native policy and custody; hide engineering-only pressure fields.
+  assert.match(desktop,/new_background_admission_deferred:reason\.map/);
+  assert.match(desktop,/active_model_generation_class:priority\.active_class\.map/);
+  assert.doesNotMatch(frontend,/backgroundGuardian\.(newBackgroundAdmissionDeferred|activeModelGenerationClass)|Host reason:/);
+  assert.match(frontend,/onClick=\{\(\)=>void cancelBackgroundTask\(task.taskId,task.scopeChatId\)\}/);
+  assert.match(frontend,/Recovery never automatically replays interrupted work/);
   assert.doesNotMatch(frontend,/invoke\('lu_background_authorize_from_priority'/);
 });

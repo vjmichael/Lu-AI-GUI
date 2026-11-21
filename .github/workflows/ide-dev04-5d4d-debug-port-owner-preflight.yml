@@ -1,0 +1,87 @@
+name: IDE DEV04.5D4D Windows OS debug port and LLDB parent preflight
+on:
+  pull_request:
+    paths:
+      - 'ide/supervisor/src/windows_kernel_pc.rs'
+      - 'ide/supervisor/src/lsp_transport.rs'
+      - 'ide/supervisor/src/dap_transport.rs'
+      - 'ide/supervisor/src/windows_lsp_worker.rs'
+      - 'ide/supervisor/examples/wo6_native_dap_acceptance.rs'
+      - '.github/workflows/ide-dev04-5d4d-debug-port-owner-preflight.yml'
+      - 'ide/docs/IDE_DEV045D4D_WINDOWS_EVENT_OWNER_AND_NATIVE_GATES_20261109.md'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: dev045d4d-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  windows-native-kernel-debug-port-parent:
+    runs-on: windows-2025
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+          components: rustfmt
+      - name: Verify exact PR SHA
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          echo 'DEV045D4D_EXACT_HEAD=PASS'
+      - name: Native Windows kernel Job/port/parser unit test
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --manifest-path ide/supervisor/Cargo.toml --features 'dap-transport,protected-recovery-service,dev045d4c-ci-oracle' --lib windows_kernel_pc
+          cargo check --manifest-path ide/supervisor/Cargo.toml --features 'dap-transport,protected-recovery-service,dev045d4c-ci-oracle' --example wo6_native_dap_acceptance
+          cargo fmt --manifest-path ide/supervisor/Cargo.toml -- --check
+          echo 'DEV045D4D_WINDOWS_NATIVE_COMPILER=PASS_NOT_OS_EVENT_OWNER'
+      - name: Require independent OS debug-port and no forged event-owner admission
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          k=Path('ide/supervisor/src/windows_kernel_pc.rs').read_text()
+          w=Path('ide/supervisor/src/windows_lsp_worker.rs').read_text()
+          t=Path('ide/supervisor/examples/wo6_native_dap_acceptance.rs').read_text()
+          for item in ('CheckRemoteDebuggerPresent', 'GetProcessId(debugger_process)',
+                       'Process32FirstW', 'Process32NextW',
+                       'kernel_parent_pid(module.pid)? != owner_pid',
+                       'actual_debug_event_owner_attested: false'):
+              assert item in k, item
+          assert 'verify_windows_native_debug_port' in w
+          assert 'debuggee_parent_is_native_lldb' in w
+          assert '!evidence.kernel_debug_port_present' in t
+          assert '!evidence.debuggee_parent_is_native_lldb' in t
+          for forbidden in ('DebugActiveProcess(', 'ContinueDebugEvent(',
+                            'SuspendThread(', 'WriteProcessMemory('):
+              assert forbidden not in k, forbidden
+          assert 'lldb_debug_event_owner_attested: false' in w
+          print('DEV045D4D_DEBUG_PORT_AND_LLDB_PARENT_NOT_EVENT_OWNER=PASS')
+          PY
+          echo 'DEV045D4D_AUTHENTIC_LLDB_DEBUG_EVENT_OWNER=OPEN_NEEDS_PINNED_OWNER_HOOK'
+  linux-cgroup-build-not-affected:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+      - name: No Windows Job feature leakage
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          cargo check --manifest-path ide/supervisor/Cargo.toml --features 'dap-transport,linux-worker'
+          echo 'DEV045D4D_LINUX_CGROUP_REGRESSION=COMPILE_ONLY'

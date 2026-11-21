@@ -1,0 +1,224 @@
+// FIN-04R-1 source-boundary security contracts. Run with Node native
+// test runner; not a substitute for actual LLVM/Windows Job/AppContainer,
+// native human approval, kernel-restart or installed-app acceptance.
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+const root=new URL('../../',new URL('../',import.meta.url));
+const read=p=>readFileSync(new URL(p,root),'utf8');
+const worker=read('ide/supervisor/src/windows_lsp_worker.rs');
+const source=read('ide/supervisor/src/windows_stopped_line_oracle.rs');
+const originalJob=read('ide/supervisor/src/windows_worker.rs');
+const scm=read('ide/supervisor/src/windows_service_client.rs');
+const scmSecurity=read('ide/supervisor/src/windows_service_security.rs');
+
+const gate=read('ide/supervisor/src/dap_transport.rs');
+const transport=read('ide/supervisor/src/lsp_transport.rs');
+const controls=read('ide/supervisor/src/debug_control_dispatch.rs');
+const reviews=read('ide/supervisor/src/debug_command_review.rs');
+const receipt=read('ide/supervisor/src/debug_action_receipts.rs');
+const desktop=read('ide/app/src-tauri/src/debug_backend.rs');
+const tauri=read('ide/app/src-tauri/src/lib.rs');
+const browser=read('ide/app/web/main.jsx');
+const authority=read('ide/app/web/project_debug_authority.js');
+
+const hostDap=read('ide/host/src/dap_session.rs');
+const hostCargo=read('ide/host/Cargo.toml');
+const supervisorCargo=read('ide/supervisor/Cargo.toml');
+const workflow=read('.github/workflows/ide-fin04r1-exact-native.yml');
+test('FIN04 fixed release-built acceptance remains source-locked and fail closed',()=>{
+ assert.match(hostCargo,/fin04r1-fixed-probe = \[\]/);
+ assert.match(supervisorCargo,/lu-ide-workspace\/fin04r1-fixed-probe/);
+ assert.match(hostDap,/fn fin04r1_fixed_probe_denies_foreign_paths_and_keeps_regular_entry/);
+ assert.match(hostDap,/self\.launch_verified_project_entry\(program, false\)/);
+ assert.match(worker,/pub const FIN04R1_FIXED_PROBE_SOURCE: &str/);
+ const fixed=worker.slice(worker.indexOf('pub fn launch_fin04r1_fixed_probe('),
+    worker.indexOf('pub fn launch_fin04r1_fixed_probe(')+2400);
+ assert.match(fixed,/verify_input\(&self\.source_input\)/);
+ assert.match(fixed,/self\.source_input\.seal\.file_count != 3/);
+ assert.match(fixed,/FIN04R1_FIXED_PROBE_SOURCE\.as_bytes\(\)/);
+ assert.match(fixed,/WrongProjectOrSource/);
+ assert.match(gate,/pub\(crate\) fn launch_fin04r1_fixed_probe/);
+ assert.match(nativeScenario,/dap\.launch_fin04r1_fixed_probe\(\)/);
+ assert.match(nativeScenario,/if protected_release_pdb && !cfg!\(feature = "fin04r1-fixed-probe"\)/);
+ assert.match(workflow,/--features fin04r1-fixed-probe --example wo6_native_dap_acceptance/);
+ assert.match(workflow,/--features fin04-release-owner-evidence --bin windows_recovery_service --bin windows_null_service_bootstrap/);
+ assert.match(nativeScript,/--features fin04r1-fixed-probe --example wo6_native_dap_acceptance/);
+ assert.match(worker,/pub fn observe_release_owned_stop\(/);
+ assert.match(nativeScenario,/!observed\.module\.job_member_verified/);
+});
+test('old host Command symbolizer is strictly dev-only',()=>{
+ assert.match(source,/#\[cfg\(all\(debug_assertions, feature = "dev045d4c-ci-oracle"\)\)\]\s*fn run_measured_reader/);
+ assert.match(source,/fn independently_verify_pdb_line_with_reader/);
+ assert.match(source,/let json = protected_read\(/);
+ assert.match(source,/fn independently_verify_pdb_line_for_ci/);
+});
+test('release helper is independently AppContainer+SCM Job-contained, never generic OS spawn',()=>{
+ assert.match(worker,/fn read_protected_pe_pdb\(/);
+ assert.match(worker,/spawn_contained_stdio\([\s\S]*?false,\s*\)\?/);
+ assert.match(worker,/if owner_channel\.is_some\(\)/);
+ assert.match(worker,/native_lsp_bundle_digest\(&bundle,\s*"dap_lldb_project"\)/);
+ assert.match(worker,/verify_suspended_appcontainer_token/);
+ assert.match(worker,/let jobs = \[job\.handle\.0\]/);
+ assert.match(worker,/if !self\.lease\.alive\(\)/);
+ assert.match(worker,/output\.len\(\)\s*>=\s*MAX_OUTPUT/);
+ assert.match(worker,/GetExitCodeProcess\(child\.0/);
+ assert.match(worker,/check_file\(pdb,\s*pdb_sha256\)\?/);
+ assert.match(gate,/fn read_pe_pdb_inside_owned_job/);
+ assert.match(transport,/fn read_protected_pe_pdb/);
+});
+test('mapped source is exact original kernel stop and original source/PDB/Job seals',()=>{
+ assert.match(worker,/pub fn observe_release_owned_stop\(/);
+ assert.match(worker,/independently_verify_pdb_line_with_reader/);
+ assert.match(worker,/read_pe_pdb_inside_owned_job/);
+ assert.match(worker,/end\s*!=\s*event/);
+ assert.match(worker,/!self\.gateway\.poll\(\)\?\.is_empty\(\)/);
+ assert.match(worker,/target\.verify\(\)\?/);
+ assert.match(source,/equal_mapped_line\(/);
+ assert.match(source,/compiled_source_identity\(/);
+ assert.match(desktop,/release_owner_source_line_verified/);
+ const ownerState=desktop.slice(desktop.indexOf('release_owner_kernel_verified: {'),
+   desktop.indexOf('release_owner_source_line_verified: {'));
+ assert.match(ownerState,/v\.os_event_owner_verified/);
+ assert.doesNotMatch(ownerState,/!v\.source_line_independently_verified/,
+   'independent PDB success must not suppress first-party live owner truth');
+ assert.match(desktop,/release_owner_verified_pdb_sha256/);
+ assert.match(authority,/releaseOwnerVerifiedPdbSha256!==witness\.symbolsSha/);
+});
+test('one-use native release review is immediately revoked without any DAP dispatch',()=>{
+ assert.match(worker,/fn review_one_release_action_without_dispatch/);
+ assert.match(worker,/review_from_protected_release_owner/);
+ assert.match(worker,/NativeConsentMarker::for_protected_release_modal/);
+ assert.match(worker,/action\.revoke\(crate::now_ms\(\)\?\)/);
+ assert.match(worker,/verify_native_debug_action_after_restart/);
+ assert.match(receipt,/fn for_protected_release_modal/);
+ assert.match(reviews,/fn review_from_protected_release_owner/);
+ assert.match(desktop,/release_one_use_human_review_revoked_no_dispatch/);
+ assert.match(tauri,/ide_debug_review_release_action/);
+ assert.match(browser,/invoke\('ide_debug_review_release_action'/);
+});
+test('post-command step requires newer OS/PDB stop; breakpoint ACK alone never verifies installation',()=>{
+ assert.match(controls,/fn verify_independent_step_result/);
+ assert.match(controls,/fn verify_independent_breakpoint_hit/);
+ assert.match(controls,/new_kernel_owned_pe_pdb_hit_is_distinct_from_dap_breakpoint_ack/);
+ assert.match(controls,/after\.owner_sequence[\s\S]*?!=[\s\S]*?dispatched[\s\S]*?\.from[\s\S]*?\.owner_sequence[\s\S]*?\.checked_add\(1\)/);
+ assert.match(controls,/after\.owner_receipt_sha256 == dispatched\.from\.owner_receipt_sha256/);
+ assert.match(controls,/if cfg!\(all\(windows, feature = "fin04-release-owner-evidence"\)\)/);
+ assert.match(controls,/return Err\(ControlDenial::Unreviewed\)/);
+});
+test('unknown interrupted results remain non-replay and distinct from physical human acceptance',()=>{
+ assert.match(desktop,/record_action_os_recovery/);
+ assert.match(desktop,/actionOutcome":"unknown_never_replay"/);
+ assert.match(desktop,/post_command_result_independently_verified:\s*false/);
+ assert.match(desktop,/global_marker_cleared:\s*false/);
+ assert.match(desktop,/installed_app_accepted:\s*false/);
+});
+
+test('original SCM + AppContainer + kernel Job chain has no host or renderer fallback',()=>{
+ assert.match(originalJob,/JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE/);
+ assert.match(originalJob,/JOB_OBJECT_LIMIT_ACTIVE_PROCESS/);
+ assert.match(originalJob,/JOB_OBJECT_LIMIT_JOB_MEMORY/);
+ assert.match(originalJob,/ActiveProcessLimit\s*=\s*plan\.process_limit/);
+ assert.match(worker,/PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES/);
+ assert.match(worker,/PROC_THREAD_ATTRIBUTE_JOB_LIST_VALUE/);
+ assert.match(worker,/PROC_THREAD_ATTRIBUTE_HANDLE_LIST_VALUE/);
+ assert.match(worker,/verify_suspended_appcontainer_token/);
+ assert.match(worker,/let mut child_handles = vec!\[child_stdin\.0, child_stdout\.0, stderr\.0\]/);
+ assert.match(worker,/spawn_contained_stdio\([\s\S]*?&self\._profile,\s*&self\.job,\s*&tool/);
+ assert.match(scm,/security::authenticate_service_server/);
+ assert.match(worker,/let mut lease = BrokerLease::begin/); // admitted by native worker
+ assert.match(scm,/pub fn grant_null\(/);
+ assert.match(scm,/pub fn release_empty\(/);
+ assert.match(scmSecurity,/GetNamedPipeClientProcessId/);
+ assert.match(scmSecurity,/ImpersonateNamedPipeClient/);
+ assert.match(scmSecurity,/QueryFullProcessImageNameW/);
+});
+
+const nativeScenario=read('ide/supervisor/examples/wo6_native_dap_acceptance.rs');
+const physical=read('ide/app/fixtures/Test-FIN04R1-PhysicalProtectedPdbReview.ps1');
+const nativeScript=read('ide/llvm18_owner/Test-FIN04R1-ProtectedPdbWindows.ps1');
+const eventOwner=read('ide/supervisor/src/windows_event_owner.rs');
+const supervisorSource=read('ide/supervisor/src/lib.rs');
+
+test('a protected PDB helper is independently a member of the original kernel Job before running',()=>{
+ const reader=worker.slice(worker.indexOf('fn read_protected_pe_pdb('),worker.indexOf('fn read_protected_pe_pdb(')+10000);
+ assert.match(reader,/let child_pid = unsafe \{ GetProcessId\(child\.0\) \}/);
+ assert.match(reader,/job_has_member\(self\.job\.handle\.0, child_pid\)\?/);
+ assert.match(reader,/if unsafe \{ ResumeThread\(thread\.0\) \}/);
+ assert.ok(reader.indexOf('job_has_member(self.job.handle.0, child_pid)') < reader.indexOf('ResumeThread(thread.0)'));
+});
+test('protected PDB helper error or changed source/job must quarantine the entire original Job',()=>{
+ const reader=gate.slice(gate.indexOf('pub(crate) fn read_pe_pdb_inside_owned_job('),gate.indexOf('/// Read-only OS evidence from the *owned* native Job.'));
+ assert.equal(reader.split('if !self.release_pdb_context_valid(rip)').length-1,2);
+ assert.match(reader,/Err\(_\) => return self\.quarantine\(\)/);
+ assert.match(reader,/self\.supervisor\.inspect\(\)\.is_ok_and/);
+ assert.match(reader,/job\.plan_sha256 == self\.plan_sha256/);
+ assert.match(reader,/job\.phase == JobPhase::Running/);
+ assert.match(reader,/!job\.requires_reconciliation/);
+ assert.match(gate,/native_quarantine_after_error\(&self\.job_id\)/);
+ assert.match(gate,/terminate_tree_and_verify\(\)/);
+});
+test('release PDB cancellation is original OS Job reaping and durable restart, not DAP control',()=>{
+ assert.match(nativeScenario,/--project-debug-protected-pdb-cancel/);
+ assert.match(nativeScenario,/true,\s*true,\s*true,\s*false,\s*false,\s*false,\s*None,\s*true/);
+ assert.match(nativeScenario,/DEV045C_WINDOWS_PROJECT_LLDB_CANCEL_JOB_TREE_AND_RECEIPTS=PASS/);
+ assert.match(nativeScenario,/native_debug_action_cleanup_jobs_after_restart/);
+ assert.match(nativeScript,/real_AppContainer_Job_protected_PDB_cancel_reap_restart_failed/);
+ assert.match(nativeScript,/--project-debug-protected-pdb-cancel/);
+ assert.match(nativeScript,/abnormalWorkerDeathAfterProtectedPdbAccepted=\$false/);
+});
+test('FIN04 module refusal exposes bounded native error without approving a missing witness',()=>{
+ const original=nativeScenario.slice(
+   nativeScenario.indexOf('if verify_job_module {'),
+   nativeScenario.indexOf('if sample_stopped_thread {'));
+ assert.match(original,/dap\.verify_project_loaded_module\(/);
+ assert.match(original,/FIN04R1_NATIVE_MODULE_WITNESS_REFUSAL=\{\}/);
+ assert.match(original,/error\.code\(\)/);
+ assert.match(original,/DENIED: live Windows AppContainer\/SCM Job module or durable build\/debug receipts not verified/);
+ assert.match(original,/!observed\.module\.job_member_verified/);
+ assert.match(original,/!observed\.module\.os_loaded_pe_image_verified/);
+ assert.match(original,/observed\.build_terminal_receipt_sha256 != receipt\.terminal_receipt_hash/);
+ assert.doesNotMatch(original,/unwrap_or(?:_else)?\([^)]*true/);
+});
+
+test('physical Windows acceptance cannot infer installed approval from source or mutate journal at restart',()=>{
+ assert.match(physical,/requires_physical_interactive_windows_no_CI/);
+ assert.match(physical,/installed_pinned_LLVM_chrono_header_missing/);
+ assert.match(physical,/patchedProgressEventHeaderSha256/);
+ assert.match(physical,/originalActionHash=\(Get-FileHash/);
+ assert.match(physical,/restart_mutated_original_one_use_action_receipts/);
+ assert.match(physical,/nativeKernelAndPdbAcceptanceIndependentlyVerified=\$false/);
+ assert.match(physical,/productionDebuggerControlsAccepted=\$false/);
+ assert.equal(physical.split('$restarted=$false').length-1,1);
+ assert.equal(physical.split('EVIDENCE: $evidence').length-1,1);
+});
+test('Task 3 release OS continuation is the original live stop and acknowledged only once',()=>{
+ assert.match(eventOwner,/continuation_wait_claimed: Option<u64>/);
+ assert.match(eventOwner,/event\.kind == RECEIVED && event\.seq == sequence/);
+ assert.match(eventOwner,/self\.continuation_wait_claimed = Some\(sequence\)/);
+ assert.match(eventOwner,/self\.ledger\.claim_terminal_continue_wait\(sequence\)\?/);
+ assert.match(eventOwner,/terminal_continue_wait_is_claimed_once_even_on_failure/);
+ assert.match(eventOwner,/failed_os_continue_never_counts_as_successful_revocation/);
+ assert.match(gate,/wait_owner_continued_for_ci\(seq\)\?/);
+ assert.match(gate,/self\.close\(\)/);
+ assert.match(worker,/close_with_protected_release_owner_continue/);
+});
+test('Task 4 restarted owner receipt is bound to original JobPlan and Running hash',()=>{
+ assert.match(eventOwner,/pub\(crate\) fn verify_persisted_owner_receipt\(/);
+ assert.match(eventOwner,/historical_receipt_newlines_and_sampled_rip_are_exact/);
+ assert.match(supervisorSource,/verify_persisted_owner_receipt\(/);
+ assert.match(supervisorSource,/entry\.entry_hash == original_running/);
+ assert.match(supervisorSource,/entry\.body\.phase == JobPhase::Running/);
+ assert.match(supervisorSource,/entry\.body\.job_id == job_id/);
+ assert.match(supervisorSource,/entry\.body\.plan_sha256 == original_plan/);
+});
+test('Task 4 interrupted action cannot hide behind a terminal label without original OS tree receipt',()=>{
+ const audit=supervisorSource.slice(supervisorSource.indexOf('pub fn native_debug_action_cleanup_jobs_after_restart('),supervisorSource.indexOf('/// Path must be supplied by trusted application profile management.'));
+ assert.match(audit,/let terminal = self\.receipt_history\(&action\.job_id\)\?/);
+ assert.match(audit,/os_tree_termination_verified/);
+ assert.match(audit,/os_orphan_cleanup_verified/);
+ assert.match(audit,/native_cancel_service_release_verified/);
+ assert.match(audit,/reaped_process_tree_bounded_outputs/);
+ assert.match(audit,/native\.requires_reconciliation \|\| !trusted/);
+ assert.doesNotMatch(audit,/execution_authorized:\s*true/);
+});

@@ -1,0 +1,93 @@
+name: IDE C7 task source evidence exact-head native
+on:
+  push:
+    branches: [ide/c7-task-source-evidence-20261108]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ide-c7-task-source-evidence
+  cancel-in-progress: true
+
+jobs:
+  c7-native:
+    name: C7 native and frontend / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2022, ubuntu-24.04]
+    timeout-minutes: 95
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Assert exact SHA and no execution-layer authority changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          B11=d49de2bda55f566b5ef8bc5f020be1d0cfa80863
+          git merge-base --is-ancestor "$B11" HEAD
+          git diff --exit-code "$B11" HEAD -- \
+            ide/supervisor ide/app/src-tauri/src/lsp_session.rs \
+            ide/app/src-tauri/src/build_backend.rs \
+            ide/app/src-tauri/src/debug_backend.rs \
+            ide/host/src/browser.rs ide/host/src/draft_vault.rs
+          echo C7_EXISTING_NATIVE_AUTHORITY_UNCHANGED=PASS
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+          components: rustfmt
+      - name: Linux native Tauri/GTK compilation dependencies
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev libayatana-appindicator3-dev \
+            librsvg2-dev libgtk-3-dev patchelf libssl-dev
+      - name: Frontend C7 tests and inherited full B-series
+        working-directory: ide/app
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci --ignore-scripts --no-audit --no-fund
+          node --test tests/task_source_evidence.test.mjs
+          npm run check
+          echo C7_FRONTEND_PASS
+      - name: Rust host native source-link tests and full host suite
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fmt --manifest-path ide/host/Cargo.toml --all -- --check
+          cargo test --manifest-path ide/host/Cargo.toml --test task_source_link
+          cargo test --manifest-path ide/host/Cargo.toml --all-targets
+          echo C7_HOST_NATIVE_PASS
+      - name: Locked Tauri native typed command and bundle compilation
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo check --manifest-path ide/app/src-tauri/Cargo.toml --all-targets --locked
+          echo C7_TAURI_NATIVE_PASS
+          echo C7_INSTALLED_EDITOR_LINK_AND_RESTART_ACCEPTANCE=OPEN
+      - name: Record exact-head OS receipt
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p .c7-receipts
+          printf 'commit=%s\nos=%s\nrun=%s\ninstalled=OPEN\n' \
+            "$GITHUB_SHA" "$RUNNER_OS" "$GITHUB_RUN_ID" \
+            > .c7-receipts/native-source.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ide-c7-source-${{ matrix.os }}
+          path: .c7-receipts/native-source.txt
+          if-no-files-found: error
+          retention-days: 14

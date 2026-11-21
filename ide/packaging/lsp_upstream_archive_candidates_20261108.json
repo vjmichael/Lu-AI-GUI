@@ -1,0 +1,70 @@
+{
+  "schema": "lu.ide.e2.lsp-upstream-archive-candidates.v1",
+  "releaseApproved": false,
+  "purpose": "Technical read-only candidate hash verification on disposable native CI only; this is not legal approval or distributor permission",
+  "releases": [
+    {
+      "id": "clangd",
+      "version": "23.1.0",
+      "repo": "clangd/clangd",
+      "targets": {
+        "windows-x86_64": {
+          "name": "clangd-windows-23.1.0.zip",
+          "url": "https://github.com/clangd/clangd/releases/download/23.1.0/clangd-windows-23.1.0.zip",
+          "sha256": "23412a240756a162e7b98a282f36aa2a23a88db5ce16a0cbc4fef7253768c810",
+          "kind": "zip",
+          "binary": "clangd.exe"
+        },
+        "linux-x86_64": {
+          "name": "clangd-linux-23.1.0.zip",
+          "url": "https://github.com/clangd/clangd/releases/download/23.1.0/clangd-linux-23.1.0.zip",
+          "sha256": "e53b1a96196095faedb7642cf64964f7fb9ad4a0c1f00dd2c172a3d9dcbafdfd",
+          "kind": "zip",
+          "binary": "clangd"
+        }
+      }
+    },
+    {
+      "id": "rust-analyzer",
+      "version": "2026-11-02",
+      "repo": "rust-lang/rust-analyzer",
+      "targets": {
+        "windows-x86_64": {
+          "name": "rust-analyzer-x86_64-pc-windows-msvc.zip",
+          "url": "https://github.com/rust-lang/rust-analyzer/releases/download/2026-11-02/rust-analyzer-x86_64-pc-windows-msvc.zip",
+          "sha256": "5450a3735c601f047dc9ca46a01add55c4ac7ef450ae5e710d249a26d65f5632",
+          "kind": "zip",
+          "binary": "rust-analyzer.exe"
+        },
+        "linux-x86_64": {
+          "name": "rust-analyzer-x86_64-unknown-linux-gnu.gz",
+          "url": "https://github.com/rust-lang/rust-analyzer/releases/download/2026-11-02/rust-analyzer-x86_64-unknown-linux-gnu.gz",
+          "sha256": "5249da68c3f36bb77ea7d401824f5e8bd8d0a47a162daf5f72208eb7c1bf1500",
+          "kind": "gzip",
+          "binary": "rust-analyzer"
+        }
+      }
+    },
+    {
+      "id": "ruff",
+      "version": "0.17.4",
+      "repo": "astral-sh/ruff",
+      "targets": {
+        "windows-x86_64": {
+          "name": "ruff-x86_64-pc-windows-msvc.zip",
+          "url": "https://github.com/astral-sh/ruff/releases/download/0.17.4/ruff-x86_64-pc-windows-msvc.zip",
+          "sha256": "d37f57c7a0cfb8ed5a39adc96f7a0a63767b3c5abe4629c4c84e33c06da46885",
+          "kind": "zip",
+          "binary": "ruff.exe"
+        },
+        "linux-x86_64": {
+          "name": "ruff-x86_64-unknown-linux-gnu.tar.gz",
+          "url": "https://github.com/astral-sh/ruff/releases/download/0.17.4/ruff-x86_64-unknown-linux-gnu.tar.gz",
+          "sha256": "3ab2b34aeacdbc1ea5c529cdbda3e05792633d587228123fd09f3b5a0facb27a",
+          "kind": "tar.gz",
+          "binary": "ruff"
+        }
+      }
+    }
+  ]
+}

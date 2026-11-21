@@ -1,0 +1,7 @@
+{
+  "schema": "lu.ide.p04.transition.v1",
+  "sourceSha": null,
+  "releaseApproved": false,
+  "observations": [],
+  "description": "No signed cross-version upgrade, failed-upgrade rollback or native persisted state accepted. Checked-in records remain empty and cannot promote a release."
+}

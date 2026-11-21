@@ -1,0 +1,15 @@
+{
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "resources": {
+      "resources/": ""
+    },
+    "windows": {
+      "nsis": {
+        "installMode": "perMachine",
+        "installerHooks": "./windows/wo7-release-hooks.nsh"
+      }
+    }
+  }
+}

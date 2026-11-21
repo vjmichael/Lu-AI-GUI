@@ -24,7 +24,10 @@ test('planning cannot become implicit native tool or application authority',()=>
   assert.match(host,/if origin==GenerationOrigin::Human&&!plan_only/);
   assert.match(host,/if !plan_only/);
   assert.match(admission,/NOT_AUTHORIZED_FOR_EXECUTION/);
-  assert.doesNotMatch(admission,/Command::new|\.spawn\(|run_journaled_observed\(/);
+  // Scoped thread spawning belongs only to the concurrency test.
+  const production=admission.split('#[cfg(test)]')[0];
+  assert.doesNotMatch(production,/Command::new|\.spawn\(|run_journaled_observed\(/);
+  assert.match(production,/stage_initial_draft\(profile,chats,chat,turn,&steps\)/);
   assert.match(web,/Goal and task planning remain host capabilities/);
 });
 test('model planner always uses host verified current ANSF goal and fails closed on contradictions',()=>{

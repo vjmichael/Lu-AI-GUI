@@ -1,0 +1,57 @@
+{
+  "schemaVersion": 1,
+  "authority": "upstream_archive_digests_only_not_native_installer_runtime_pins",
+  "upstreamVersions": {
+    "cmake": "4.4.5",
+    "ninja": "1.13.0",
+    "llvm": "23.1.5",
+    "node": "22.16.0",
+    "python": "3.13.5",
+    "pytest": "8.4.1"
+  },
+  "platforms": {
+    "linux-x64": {
+      "cmake": {
+        "file": "cmake-4.4.5-linux-x86_64.tar.gz",
+        "url": "https://github.com/Kitware/CMake/releases/download/v4.4.5/cmake-4.4.5-linux-x86_64.tar.gz",
+        "sha256": "ed85135c5a5135b45e50423cb406dea04ca3338da0b8ef3c9ede963559680be0",
+        "size": 64865573
+      },
+      "ninja": {
+        "file": "ninja-linux.zip",
+        "url": "https://github.com/ninja-build/ninja/releases/download/v1.13.0/ninja-linux.zip",
+        "sha256": "46aa8ad0a431e9b6e39f6ca0abc47bf8b13be094e3ac7d0f6d39e94bbdc746f9",
+        "size": 134141
+      },
+      "llvm": {
+        "file": "LLVM-23.1.5-Linux-X64.tar.zst",
+        "url": "https://github.com/llvm/llvm-project/releases/download/llvmorg-23.1.5/LLVM-23.1.5-Linux-X64.tar.zst",
+        "sha256": "c3107384835f788768f614db610e87fba7077f125ca950eb02a78bab0a308065",
+        "size": 1198896522
+      }
+    },
+    "windows-x64": {
+      "cmake": {
+        "file": "cmake-4.4.5-windows-x86_64.zip",
+        "url": "https://github.com/Kitware/CMake/releases/download/v4.4.5/cmake-4.4.5-windows-x86_64.zip",
+        "sha256": "326c826486d46a23cf9d5a1c9ee3a567d427bdd02c4a34071937a2a675cff004",
+        "size": 54412232
+      },
+      "ninja": {
+        "file": "ninja-win.zip",
+        "url": "https://github.com/ninja-build/ninja/releases/download/v1.13.0/ninja-win.zip",
+        "sha256": "beb3c1bfcd01d352cb46586a4677b0a49a93b7bb668cfa5d0695283e1d8efb61",
+        "size": 289425
+      },
+      "llvm": {
+        "file": "clang+llvm-23.1.5-x86_64-pc-windows-msvc.tar.zst",
+        "url": "https://github.com/llvm/llvm-project/releases/download/llvmorg-23.1.5/clang%2Bllvm-23.1.5-x86_64-pc-windows-msvc.tar.zst",
+        "sha256": "b2be33385ddc86e83511417a060de927ae8b09d1f3017cc3cdce5c73cd5029d7",
+        "size": 276368249
+      }
+    }
+  },
+  "releaseBundleApproved": false,
+  "installedNativeWorkerAccepted": false,
+  "notes": "These are GitHub release archive digests, not post-extraction runtime tree hashes, toolchain transitive dependency attestation, or license approval. Production opt-in requires a separately reviewed tree hash compiled into the host and accepted OS execution."
+}

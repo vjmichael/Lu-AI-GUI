@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "adapterId": "lldb-dap",
+  "product": "LLVM LLDB Debug Adapter Protocol",
+  "upstream": "https://lldb.llvm.org/",
+  "licenseSpdx": "Apache-2.0 WITH LLVM-exception",
+  "releaseApproved": false,
+  "review": {
+    "artifactProvenance": "pending",
+    "transitiveLicenses": "pending",
+    "security": "pending",
+    "signatures": "pending",
+    "installedNativeAcceptance": "pending"
+  },
+  "fixedDebuggee": {
+    "source": "ide/supervisor/fixtures/debug/wo6_selftest.c",
+    "purpose": "native protected stop-on-entry, thread and stack acceptance only",
+    "userSelectedTarget": false
+  },
+  "platforms": {
+    "windows-x86_64": {
+      "executable": "bin/lldb-dap.exe",
+      "debuggee": "debuggee/wo6-selftest.exe",
+      "bundleSha256": null,
+      "shaAlgorithm": "lu-ide-native-bundle-tree",
+      "licenseNotice": null,
+      "authenticodeSignerThumbprint": null,
+      "dependenciesReviewed": false,
+      "installedAppAccepted": false
+    },
+    "linux-x86_64": {
+      "executable": "bin/lldb-dap",
+      "debuggee": "debuggee/wo6-selftest",
+      "bundleSha256": null,
+      "shaAlgorithm": "lu-ide-native-bundle-tree",
+      "licenseNotice": null,
+      "rootOwnedImmutablePackage": false,
+      "dependenciesReviewed": false,
+      "installedAppAccepted": false
+    }
+  }
+}

@@ -1,0 +1,91 @@
+name: IDE DEV-02.6A original native LSP imports and real CI version probes
+# Research only: fixed --version probes in ephemeral GitHub Actions runners.
+# No Lu project opened, no prod installer, no protected-worker acceptance.
+on:
+  push:
+    branches: ['ide/dev02-native-closure-smoke-20261108']
+    paths:
+      - 'ide/packaging/audit_native_lsp_dependency_smoke.py'
+      - 'ide/packaging/test_audit_native_lsp_dependency_smoke.py'
+      - '.github/workflows/ide-dev02-native-closure-smoke.yml'
+  pull_request:
+    paths:
+      - 'ide/packaging/audit_native_lsp_dependency_smoke.py'
+      - 'ide/packaging/test_audit_native_lsp_dependency_smoke.py'
+      - '.github/workflows/ide-dev02-native-closure-smoke.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  original-native-provider-static-dependency-and-version:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-2022
+            platform: windows-x86_64
+          - os: ubuntu-24.04
+            platform: linux-x86_64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Verify exact source, policy denial and dependency-audit source fixtures
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          python3 ide/packaging/verify_language_servers.py
+          if python3 ide/packaging/verify_language_servers.py --release; then
+            echo 'DENIED: native candidate mistakenly authorized for production'
+            exit 2
+          fi
+          python3 -m unittest discover -s ide/packaging -p 'test_audit_native_lsp_dependency_smoke.py' -v
+          if [[ "${{ matrix.os }}" == "ubuntu-24.04" ]]; then
+            command -v readelf
+          fi
+      - name: Audit imports and run actual fixed upstream native --version commands
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 ide/packaging/audit_native_lsp_dependency_smoke.py \
+            --platform "${{ matrix.platform }}" \
+            --manifest ide/packaging/lsp_upstream_archive_candidates_20261108.json \
+            --archives "$RUNNER_TEMP/lu-ide-dev026-locked-original-archives" \
+            --output "$RUNNER_TEMP/lu-ide-dev026-native-version-smoke" \
+            --fetch-locked
+          python3 - <<'PY'
+          from pathlib import Path
+          import json,os
+          report=json.loads((Path(os.environ["RUNNER_TEMP"]) /
+              "lu-ide-dev026-native-version-smoke/candidate-dependency-smoke.json").read_text())
+          assert report["originalPinnedAssetsVerified"], report["providers"]
+          assert report["allVersionProbesPassed"], report["providers"]
+          assert len(report["providers"])==3
+          assert all(row["versionProbePassed"] for row in report["providers"])
+          assert all(row["originalArchiveVerified"] for row in report["providers"])
+          assert all(report[key] is False for key in (
+             "releaseApproved", "redistributionApproved", "protectedLuWorkerTested",
+             "genuineInstalledNsisOrDeb", "fullDependencyClosureApproved",
+             "fullLLVMResourcesReviewed"
+          ))
+          print("DEV02_REAL_PINNED_NATIVE_ARCHIVE_STATIC_IMPORT_AUDIT=PASS")
+          print("DEV02_REAL_THREE_NATIVE_VERSION_PROBES=PASS")
+          print("DEV02_FULL_CLOSURE_RELEASE_PROTECTED_OS_ACCEPTANCE=OPEN")
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: dev02-6-original-native-dependency-and-version-receipt-${{ matrix.os }}
+          path: ${{ runner.temp }}/lu-ide-dev026-native-version-smoke/candidate-dependency-smoke.json
+          if-no-files-found: warn
+          retention-days: 7

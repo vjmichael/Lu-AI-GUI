@@ -1,0 +1,95 @@
+name: IDE DEV04.5C installed project debugger candidate and native UI gates
+on:
+  pull_request:
+    paths:
+      - 'ide/packaging/verify_dev045c_debug_bundle.py'
+      - 'ide/packaging/test_verify_dev045c_debug_bundle.py'
+      - 'ide/packaging/debug-adapters.manifest.json'
+      - 'ide/app/fixtures/Test-Wo8NativeDesktopUI.ps1'
+      - 'ide/app/tests/project_debug_authority.test.mjs'
+      - 'ide/app/src-tauri/**'
+      - 'ide/supervisor/examples/**'
+      - '.github/workflows/ide-wo8-signed-protected-e2e.yml'
+      - '.github/workflows/ide-dev04-5c-installed-project-debug.yml'
+      - 'ide/docs/IDE_DEV045C_INSTALLED_PROJECT_DEBUG_20261108.md'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: dev045c-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  candidate-native-package-safety:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2022]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Verify reviewed exact source before candidate audit
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+      - name: Execute hostile installed LLDB candidate integrity and notice tests
+        run: python -m unittest discover -s ide/packaging -p 'test_verify_dev045c_debug_bundle.py' -v
+      - name: Enforce default debugger manifest is not a release approval
+        shell: bash
+        run: |
+          set -euo pipefail
+          python ide/packaging/verify_debug_adapters.py
+          if python ide/packaging/verify_debug_adapters.py --release; then
+            echo 'DENIED: original unapproved debug adapter manifest enabled redistribution'
+            exit 1
+          fi
+          echo 'DEV045C_DEFAULT_DEBUGGER_RELEASE=DENIED'
+      - name: Bound conclusion to source and synthetic hostile candidate fixtures
+        shell: bash
+        run: |
+          echo 'DEV045C_CANDIDATE_INTEGRITY_TESTS=SOURCE_ONLY'
+          echo 'DEV045C_REAL_INSTALLED_PROJECT_LLDB=NOT_ACCEPTED'
+          echo 'DEV045C_REVIEWED_SIGNED_INSTALL_AND_NATIVE_CANCEL=OPEN'
+  windows-installed-ui-contract:
+    runs-on: windows-2022
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Require exact reviewed native UI fixture and manual signed candidate workflow
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          if ((git rev-parse HEAD).Trim() -ine '${{ github.event.pull_request.head.sha || github.sha }}') {
+            throw 'DENIED: exact-source mismatch'
+          }
+          $path='ide/app/fixtures/Test-Wo8NativeDesktopUI.ps1'
+          $tokens=$null; $errors=$null
+          [void][System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path $path).Path,[ref]$tokens,[ref]$errors)
+          if (@($errors).Count -gt 0) { throw 'DENIED: native signed UIA test syntax invalid' }
+          $fixture=Get-Content -Raw -LiteralPath $path
+          $workflow=Get-Content -Raw -LiteralPath '.github/workflows/ide-wo8-signed-protected-e2e.yml'
+          foreach ($word in @('Dev045CInstalledProjectDebugger','Dev045CInstalledProjectRestartDenied',
+                             'Approve one protected project debugger','Debug this exact project build',
+                             'Kernel tree cleanup: reported by protected supervisor')) {
+            if (!$fixture.Contains($word)) { throw 'DENIED: project-only real OS UIA condition missing' }
+            if ($word.StartsWith('Dev045C') -and !$workflow.Contains($word)) {
+              throw 'DENIED: signed installed workflow does not invoke project debugger gate'
+            }
+          }
+          if (!$workflow.Contains('verify_dev045c_debug_bundle.py') -or
+              !$workflow.Contains('dev045c-project-debug-bundle.lock.json') -or
+              !$workflow.Contains('environment: lu-ide-native-e2e')) {
+            throw 'DENIED: manual signed installed debugger lacked independent bundle and environment review'
+          }
+          Write-Host 'DEV045C_SIGNED_NATIVE_UIA_SOURCE_CONTRACT=PASS_NOT_INSTALLED_ACCEPTANCE'

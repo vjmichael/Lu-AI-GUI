@@ -1,0 +1,459 @@
+{
+  "schema": "lu.ide.merge02.reviewed-integrated-native-boundaries.v1",
+  "baseSha": "06beb2d8725f1175a1c4eb930e829afd582a6e96",
+  "sourceScope": [
+    "ide/host",
+    "ide/supervisor",
+    "ide/app/src-tauri",
+    "ide/packaging"
+  ],
+  "originalHistoricalB4AndB5GuardsRetained": true,
+  "sourceReviewApprovedForExactListOnly": true,
+  "nativeWindowsAccepted": false,
+  "nativeLinuxAccepted": false,
+  "installedGuiAccepted": false,
+  "releaseApproved": false,
+  "mergeApproved": false,
+  "files": [
+    {
+      "path": "ide/app/src-tauri/Cargo.toml",
+      "sha": "daf6f325f22827fa843c0b5afb333321211b97a0",
+      "scope": "03B optimizes sha2 in debug for existing pinned runtime readback; unchanged grant duration and dependency graph"
+    },
+    {
+      "path": "ide/app/src-tauri/build.rs",
+      "sha": "ceaf9de911cddf87e6a93887fdbbcce68c723da0",
+      "scope": "FIN02 fixed Rustdoc identity and 64 MiB only for Cargo; root-owner and mode checks retained; runtime acceptance pending"
+    },
+    {
+      "path": "ide/app/src-tauri/src/build_backend.rs",
+      "sha": "7e11c76a091eff3400b4ca7c50253d033a282542",
+      "scope": "Formatter disposition; build admission, cancellation and terminal receipts retained; source-only, OS acceptance pending"
+    },
+    {
+      "path": "ide/app/src-tauri/src/debug_backend.rs",
+      "sha": "6e8fb681a6c61edb1a241abb4f68020d0d68ed47",
+      "scope": "Formatter disposition; debugger admission, cancellation and terminal receipts retained; source-only, OS acceptance pending"
+    },
+    {
+      "path": "ide/app/src-tauri/src/fin04w2_c4_desktop.rs",
+      "sha": "f18a9980c2a7ac7c260d9df7f7957cce316b8bd4",
+      "scope": "Formatter disposition; protected debugger desktop interface retained; source-only, OS acceptance pending"
+    },
+    {
+      "path": "ide/app/src-tauri/src/global_native_custody.rs",
+      "sha": "2b81b0c7464571d9a4637974409fc1e49ac9184f",
+      "scope": "Formatter disposition; profile-wide fence and kernel verification retained; source-only, OS acceptance pending"
+    },
+    {
+      "path": "ide/app/src-tauri/src/lib.rs",
+      "sha": "683e67bbd6172595b2361d50738bdbce54d7e4ac",
+      "scope": "04K owner-parented Git dialogs; R16C exact stage/commit SHA-256 title witnesses; one-use confirmation and authority unchanged"
+    },
+    {
+      "path": "ide/app/src-tauri/src/lsp_backend.rs",
+      "sha": "689e5f6b665e5cc4e30919fadf72138561830d22",
+      "scope": "Formatter disposition; original LSP admission and journal recovery retained; source-only, OS acceptance pending"
+    },
+    {
+      "path": "ide/app/src-tauri/src/terminal_broker.rs",
+      "sha": "9ba854c880c4194cd7a2c9fe1de7d3d86b6fc0c1",
+      "scope": "Formatter disposition; terminal broker authority and commands retained; source-only, OS acceptance pending"
+    },
+    {
+      "path": "ide/app/src-tauri/src/test_case_evidence.rs",
+      "sha": "56f66fe982da2b226b984c5bc94ec95b84022659",
+      "scope": "Formatter disposition; test evidence source bindings retained; source-only, OS acceptance pending"
+    },
+    {
+      "path": "ide/app/src-tauri/tauri.dev02.technical-only.conf.json",
+      "sha": "31010228b7fac0cd8d0dbf08df074c8aafb94124",
+      "scope": "R3 isolated test-only bundle resources and visible restriction; unchanged disabled runtime features"
+    },
+    {
+      "path": "ide/host/Cargo.toml",
+      "sha": "e4d8bc1431100817ef99e9960f4de2db34f71bef",
+      "scope": "Explicit debug CI oracle features only; no default expansion; source-only, OS acceptance pending; R2-R9 separately feature-gated synthetic source trap, native OS acceptance pending"
+    },
+    {
+      "path": "ide/host/src/dap_session.rs",
+      "sha": "f5eea7c1e8d6a4e6c87535ab18f12e36b2f5599d",
+      "scope": "03D WO6 fixed Windows native suffix only; absolute path, traversal, control, no-debug-args guards preserved; regression tests; OS acceptance pending; R2-R9 separately feature-gated synthetic source trap, native OS acceptance pending"
+    },
+    {
+      "path": "ide/host/src/git_refs_health.rs",
+      "scope": "G06A07 read-only Git recovery-state classification and operator visibility; no execution or mutation grant, source-only",
+      "sha": "4cc02a1563be61f1a320621ba6dbb94ad79c9dc7"
+    },
+    {
+      "path": "ide/host/src/git_reviewed_stash_save.rs",
+      "sha": "f1d54aaee76acca98c53fa405d959eceb9ee1b0c",
+      "scope": "FIN03 recovery source reviewed, native OS admission pending"
+    },
+    {
+      "path": "ide/host/src/github_remote_publication_intent.rs",
+      "sha": "936065d08944d79d39eab58903f2ca40301d0ff7",
+      "scope": "03G test-only consent age regression; production consent authority unchanged; source-only"
+    },
+    {
+      "path": "ide/host/src/reviewed_git.rs",
+      "sha": "b0ae749153893e0fca1026e1a5949563429420ac",
+      "scope": "04K independently reopens exact index and commit parent/tree; existing resource and confirmation bounds retained; native acceptance pending"
+    },
+    {
+      "path": "ide/host/tests/fin03_stash_save.rs",
+      "sha": "90df81f8f5df31c7db1bbdaf52643f8e67efe323",
+      "scope": "source or historical preservation test, not native acceptance"
+    },
+    {
+      "path": "ide/packaging/audit_p05_reviewed_workflow_successor.py",
+      "sha": "529ff4dbac31ab10501d70084a725422de13cf5e",
+      "scope": "R12 exact P03 additive source projection or its regression; historical pins and denial retained; OS acceptance pending"
+    },
+    {
+      "path": "ide/packaging/b2_b4_installer_handoff.py",
+      "sha": "568a7513560e4282b10fda79f7268c235ab36329",
+      "scope": "04B read-only exact-head unsigned installer artifact handoff; host CI transport only; no release or installed grant"
+    },
+    {
+      "path": "ide/packaging/collect_verification_licenses.py",
+      "sha": "e1eb5701e7448c59cc5a1c659573d6beb6807b49",
+      "scope": "R1 exact original upstream SHA256 and pinned Git blob collector; no approval"
+    },
+    {
+      "path": "ide/packaging/ide-05b-r3-outside-cohort.json",
+      "sha": "d603439db9d17a433a0fc694dda409e63db154d3",
+      "scope": "R3 historical workflow inventory unchanged; 3 reviewed successor blobs recorded separately without dispatch or retirement grant"
+    },
+    {
+      "path": "ide/packaging/p05-merge02-pending-native-boundaries.json",
+      "sha": "510293d0df6b18150739cee0fbdcd58dc24cb392",
+      "scope": "source or historical preservation test, not native acceptance"
+    },
+    {
+      "path": "ide/packaging/p05-semantic-reconciliation.json",
+      "sha": "05191345a4033c75954d902c00e4f869921bfe2c",
+      "scope": "source or historical preservation test, not native acceptance"
+    },
+    {
+      "path": "ide/packaging/p06-observer-cohort.json",
+      "sha": "a11faff282ad98d435adfb13f55ec74f8d2544cc",
+      "scope": "R1 exact automatic workflow and required job identity catalog"
+    },
+    {
+      "path": "ide/packaging/p06_live_native_jobs.py",
+      "sha": "2e708ac3d31902f4165c6acecd3f9cf1db82ab59",
+      "scope": "R1-R3 read-only exact-attempt observation, explicit test-only two-job lane; no execution or release authority"
+    },
+    {
+      "path": "ide/packaging/prepare_fin02_runtime_pins.py",
+      "sha": "e1d5b42043d9fe387bab5027de096385f51a4d84",
+      "scope": "FIN02 matching fixed tool identity and exact Cargo size exception; regular root-owned tools only; OS acceptance pending"
+    },
+    {
+      "path": "ide/packaging/python_semantic_native_benchmark.py",
+      "sha": "c11c0b883eb26d976489146a8df73c7e8402a8fe",
+      "scope": "source or historical preservation test, not native acceptance"
+    },
+    {
+      "path": "ide/packaging/test_b2_b4_installer_handoff.py",
+      "sha": "d6332db3e7d822911e05da28dd481272d155374b",
+      "scope": "04B hostile transport, exact-source, scheduling, receipt and independent installed workflow contract tests; source-only"
+    },
+    {
+      "path": "ide/packaging/test_collect_verification_licenses.py",
+      "sha": "e309d2ea35da9a3f4920d0bf66825c6472291c57",
+      "scope": "R1 adversarial provenance collector regression"
+    },
+    {
+      "path": "ide/packaging/test_ide056_successor_lock.py",
+      "sha": "cbe5db6725f69cf8e0e3a146918fbc281b42cce4",
+      "scope": "03D tests exact historical lock in disposable checkout and explicitly denies later lock under original approval"
+    },
+    {
+      "path": "ide/packaging/test_ide_05b_r3_workflow_dispositions.py",
+      "sha": "58c74ab671178f4a781c91ab098fae6ed8182787",
+      "scope": "R3 default-deny inventory test now checks original and 3 successor blobs without authority promotion"
+    },
+    {
+      "path": "ide/packaging/test_p05_merge02_pending_native_boundaries.py",
+      "sha": "e004af8f1010c9e9d30809027946ffd1ccdbbe5e",
+      "scope": "source or historical preservation test, not native acceptance"
+    },
+    {
+      "path": "ide/packaging/test_p05_native_picker_repair.py",
+      "sha": "2f50cae81bf0ccf1b3d2d6b383124334ca5838b7",
+      "scope": "04K native staging/commit and split-editor regressions plus 04L actual PowerShell memory/message helper tests; no OS acceptance claim"
+    },
+    {
+      "path": "ide/packaging/test_p05_reviewed_workflow_successor.py",
+      "sha": "b34ddbbbb8179c5577e372543e8dd2500b00b73c",
+      "scope": "R12 exact P03 additive source projection or its regression; historical pins and denial retained; OS acceptance pending"
+    },
+    {
+      "path": "ide/packaging/test_p05_semantic_reconciliation.py",
+      "sha": "fb2097b591b15982bb8efcf58291cdb740f6143a",
+      "scope": "03B hostile marker appended to preserve count guard and exercise semantic failure"
+    },
+    {
+      "path": "ide/packaging/test_p05_upstream_bundle_integration.py",
+      "sha": "f9602c9f3c59948644612bac5b0126204e66402a",
+      "scope": "R1 exact prior license bundle contract regression"
+    },
+    {
+      "path": "ide/packaging/test_p06_checkout_lock.py",
+      "sha": "7058bb489bde7b92efbc07e8af3e92a149b958a1",
+      "scope": "source or historical preservation test, not native acceptance"
+    },
+    {
+      "path": "ide/packaging/test_p06_license_provenance.py",
+      "sha": "9f69db7b849705c38af3a24df6fd00b16dbd8276",
+      "scope": "R1 exact pinned provenance receipt integrity tests"
+    },
+    {
+      "path": "ide/packaging/test_p06_live_native_jobs.py",
+      "sha": "d91acdd39dcad647a59f9461a616fae26f41f158",
+      "scope": "R1-R2 hostile exact attempt and exclusion regression"
+    },
+    {
+      "path": "ide/packaging/test_p06_technical_observation.py",
+      "sha": "f6718d7fd6c91a1bd901296652be95896a7395df",
+      "scope": "R3 manual technical observation exact attempt, SHA and negative regression"
+    },
+    {
+      "path": "ide/packaging/test_prepare_fin02_runtime_pins.py",
+      "sha": "960245e22ecf255b88e2779a9ba5768d17bc6924",
+      "scope": "Regression for Cargo-only byte bound, Rustdoc digest, symlink, mode and uid denial"
+    },
+    {
+      "path": "ide/packaging/test_python_semantic_native_benchmark.py",
+      "sha": "28809796c39f8302bed7a4f1703b72a8ed77f5ed",
+      "scope": "source or historical preservation test, not native acceptance"
+    },
+    {
+      "path": "ide/packaging/test_upstream_notice_receipt.py",
+      "sha": "b82ba6bc1d24d89dc98072776aaff4703d2ad786",
+      "scope": "R1 exact upstream bytes and hostile normalization regressions"
+    },
+    {
+      "path": "ide/packaging/test_verify_dev045d2_line_oracle.py",
+      "sha": "81e0d32450a87c93326168365a2cfc1c6b589231",
+      "scope": "03E allow bounded 45-second real nm completion; native tool, ELF and hostile assertions unchanged; no acceptance promotion"
+    },
+    {
+      "path": "ide/packaging/test_verify_language_servers.py",
+      "sha": "bc2b9660918a74a4912d5652bcbd09798f6937d4",
+      "scope": "native redistribution manifest still blocked pending full closure"
+    },
+    {
+      "path": "ide/packaging/test_verify_p04_license_bundle.py",
+      "sha": "a05b21b5aa02ed67b0e614a0902178bdbf660aa1",
+      "scope": "R1 independently verified receipt and forged digest regressions"
+    },
+    {
+      "path": "ide/packaging/test_verify_p05_pr_inventory.py",
+      "sha": "cc69eb497a8c3fd3056b884181b6ed58372adcd3",
+      "scope": "03D proves original 38 workflow blobs in original re-pinned checkout; current strict historical denial retained"
+    },
+    {
+      "path": "ide/packaging/test_verify_technical_lsp_install.py",
+      "sha": "2fcb753a04ae0523bfe11d7629be21471474e9db",
+      "scope": "R3 hostile installed resource byte and independent archive reconstruction tests"
+    },
+    {
+      "path": "ide/packaging/upstream-licenses/README.md",
+      "sha": "c2a543bb3fd75014f9d3b98ab58962266c3d27d1",
+      "scope": "R1 provenance documentation only: exact canonical bytes and current pinned upstream version"
+    },
+    {
+      "path": "ide/packaging/upstream_notice_receipt.py",
+      "sha": "b5aaec85c854522bc1dd5bcfe190c63c9000269a",
+      "scope": "R1 exact canonical upstream Git blob/SHA256 verification; no authority expansion"
+    },
+    {
+      "path": "ide/packaging/verify_language_servers.py",
+      "sha": "62fc38065834ddd0ceb0cc49764711c828833716",
+      "scope": "native redistribution manifest still blocked pending full closure"
+    },
+    {
+      "path": "ide/packaging/verify_p04_license_bundle.py",
+      "sha": "58c4b084c87d3d55ec14389318b1348fd3fa3bd4",
+      "scope": "R1 independent digest, flags and receipt integrity audit; no legal approval"
+    },
+    {
+      "path": "ide/packaging/verify_p05_merge02_pending_native_boundaries.py",
+      "sha": "c7c7a3daa21d4c6550d7630c96b044cb2d5cde88",
+      "scope": "source or historical preservation test, not native acceptance"
+    },
+    {
+      "path": "ide/packaging/verify_p06_checkout_lock.py",
+      "sha": "9645f844d78e64c27ff482aed0f9404ceb4805f8",
+      "scope": "source or historical preservation test, not native acceptance"
+    },
+    {
+      "path": "ide/packaging/verify_technical_lsp_install.py",
+      "sha": "0e8071c51d3918a3884d111dcb44f3e8d5334f5d",
+      "scope": "R3 read-only staged and installed resource verification from pinned archives; no provider execution"
+    },
+    {
+      "path": "ide/supervisor/Cargo.toml",
+      "sha": "847fd18ec516df6e03451a57ea71ef1ab10ec7c9",
+      "scope": "03B optimizes sha2 in debug; same dependency graph and one-use custody checks; R2-R9 separately feature-gated synthetic source trap, native OS acceptance pending"
+    },
+    {
+      "path": "ide/supervisor/WORKER_ACCEPTANCE.md",
+      "sha": "e55be4b20345d72de3759148339d1ae7605fc106",
+      "scope": "Documentation-only parity with fixed digest-bound Rustdoc and GNU toolchain; no authorization"
+    },
+    {
+      "path": "ide/supervisor/examples/dev03_linux_runtime_acceptance.rs",
+      "sha": "1ae254bb5e1915c3db295b09cf59d81870525a81",
+      "scope": "Fixed feature-gated multilang fixture: normal, cancellation, interrupted recovery and journal replay; hosted evidence pending"
+    },
+    {
+      "path": "ide/supervisor/examples/ide05_native_uv_acceptance.rs",
+      "sha": "280620ca57b1ad5c921cb1b1af9f986f653ca610",
+      "scope": "R11 formatted fixed wheel fixture live-cancel witness; no change to runtime grant; acceptance pending"
+    },
+    {
+      "path": "ide/supervisor/examples/ide08_native_vcpkg_acceptance.rs",
+      "sha": "eca321d18d23fcfa6d412a73a18eb831da435a9c",
+      "scope": "R11 formatted fixed cache-only fixture verifies miss/cancel/recovery and immutable source; OS acceptance pending"
+    },
+    {
+      "path": "ide/supervisor/examples/support/cancel_history.rs",
+      "sha": "fba5177882a3ff039b042b94fbf76e882299f5e5",
+      "scope": "03D WO6/D5 strict exact three-phase acceptance validator, negative wrong session/project/sequence checks; native tree evidence remains mandatory"
+    },
+    {
+      "path": "ide/supervisor/examples/wo6_linux_interrupted_recovery.rs",
+      "sha": "08a615bb342377786af23e6f98dfd2d48f6da9e8",
+      "scope": "Fixed disposable Cargo fixture requires actual Running, populated cgroup, host interruption, cleanup and replay denial"
+    },
+    {
+      "path": "ide/supervisor/examples/wo6_linux_native_build_acceptance.rs",
+      "sha": "d55910ee5106980f779e568cb214d77a1924de37",
+      "scope": "03D acceptance-only strict three-phase cancellation receipt chain; real OS tree evidence still required; no runtime authority change"
+    },
+    {
+      "path": "ide/supervisor/examples/wo6_linux_rustdoc_admission.rs",
+      "sha": "0a0f42afe6a639058858de1beb38071845e1eb69",
+      "scope": "Feature-gated read-only production toolchain digest witness; no project launch"
+    },
+    {
+      "path": "ide/supervisor/examples/wo6_native_dap_acceptance.rs",
+      "sha": "8ca969be55c33fa1febde183826e067e1ee5da96",
+      "scope": "03E D6C bounded authenticated owner continuation chain, unchanged one-use and OS/PDB gates; source-only, native Windows pending; R2-R7 bounded native refusal-code diagnostic only, authorization and AppContainer/SCM/Job gates unchanged; genuine Windows retest pending; R2-R9 separately feature-gated synthetic source trap, native OS acceptance pending"
+    },
+    {
+      "path": "ide/supervisor/fixtures/debug/Probe-WindowsWo6FileDenial.ps1",
+      "sha": "246f2ce3ad5ebc13b5152b85a637793f72ab5c9c",
+      "scope": "CI-only diagnostic, no capability expansion"
+    },
+    {
+      "path": "ide/supervisor/fixtures/debug/dap_launch_contract.py",
+      "sha": "c0fee68885eee5a04ab2098332e250b0152314fd",
+      "scope": "Diagnostic-only fixed target allowlist, no caller args or terminal, bounded frame parser"
+    },
+    {
+      "path": "ide/supervisor/fixtures/debug/probe_lldb_dap_launch.py",
+      "sha": "4bf4e62bf2b306309a76e1927f386ec53d9ddf05",
+      "scope": "Fixed launch target and bounded reject-on-invalid-frame diagnostic; no native stop attestation or execution authority"
+    },
+    {
+      "path": "ide/supervisor/fixtures/debug/probe_windows_dap_initialize.py",
+      "sha": "bfbecf11d42c830ed51fd011a9129fd595ab02a4",
+      "scope": "CI-only diagnostic, no capability expansion"
+    },
+    {
+      "path": "ide/supervisor/fixtures/debug/test_dap_launch_contract.py",
+      "sha": "0713ca357d7b50217682ec4a6a30abd600ff1348",
+      "scope": "Diagnostic regressions for exact targets, fragmented/malformed frames, bounded JSON and rejection"
+    },
+    {
+      "path": "ide/supervisor/fixtures/debug/test_dap_native_source_contract.py",
+      "sha": "971035a8011369ba581c0f95832dc0ddc7af8883",
+      "scope": "Source-only fixed DAP launch, sealed workspace, custody ordering and redacted failure regression"
+    },
+    {
+      "path": "ide/supervisor/fixtures/debug/test_probe_windows_dap_initialize.py",
+      "sha": "ac79d5e5f45478f4a49d96f5d8e0062067bb78f8",
+      "scope": "CI-only diagnostic, no capability expansion"
+    },
+    {
+      "path": "ide/supervisor/src/dap_transport.rs",
+      "sha": "56ddd79fd5500724252525d2d96d2df53a9488dd",
+      "scope": "03E D6C bounded authenticated owner continuation chain, unchanged one-use and OS/PDB gates; source-only, native Windows pending; R2-R9 separately feature-gated synthetic source trap, native OS acceptance pending"
+    },
+    {
+      "path": "ide/supervisor/src/debug_action_receipts.rs",
+      "sha": "014328af56463fe65bf2e9ffb86fac292e4ff533",
+      "scope": "03E D6C bounded authenticated owner continuation chain, unchanged one-use and OS/PDB gates; source-only, native Windows pending"
+    },
+    {
+      "path": "ide/supervisor/src/debug_control_dispatch.rs",
+      "sha": "253d0d70febb1333c0161028e75abccf2b4c5604",
+      "scope": "03E D6C bounded authenticated owner continuation chain, unchanged one-use and OS/PDB gates; source-only, native Windows pending"
+    },
+    {
+      "path": "ide/supervisor/src/lib.rs",
+      "sha": "6e94d1338658a61c46ba0925c2373c021dbcac1f",
+      "scope": "Strict historical persisted owner receipt parsing; no authority expansion; source-only, OS acceptance pending"
+    },
+    {
+      "path": "ide/supervisor/src/linux_lsp_worker.rs",
+      "sha": "3db4460d38c79e3e39034ca149468f1c45a68652",
+      "scope": "03B debugger-only one-CPU affinity before LLDB spawn; independent delegated cgroup and pids.max retained"
+    },
+    {
+      "path": "ide/supervisor/src/linux_worker.rs",
+      "sha": "fab099d126704be520974f0820bc55ac204e563e",
+      "scope": "R11 formatted fixed Cargo size/hash and Rustdoc pin; bounded Node thread pools, offline vcpkg output paths; OS acceptance pending"
+    },
+    {
+      "path": "ide/supervisor/src/lsp_transport.rs",
+      "sha": "3690783eead1374d29fee8303ab3a165f493eac8",
+      "scope": "03E D6C bounded authenticated owner continuation chain, unchanged one-use and OS/PDB gates; source-only, native Windows pending"
+    },
+    {
+      "path": "ide/supervisor/src/native_kernel_pc.rs",
+      "sha": "2739e6f18f56e21418bd2d9205280bf60dd283f8",
+      "scope": "Bounded Linux task/tracer/register/cgroup/ELF verification and independent symbolization; source-only, OS acceptance pending"
+    },
+    {
+      "path": "ide/supervisor/src/snapshot.rs",
+      "sha": "cbb1a66869a7bcf9b1f19cb00cdde40232a1026b",
+      "scope": "Feature-and-Linux-gated vcpkg.json snapshot binding and tamper/online-recipe denial; native acceptance pending"
+    },
+    {
+      "path": "ide/supervisor/src/windows_cap_tree.rs",
+      "sha": "9092e4699e66abc5ad9c74394636eaa1a4b789ac",
+      "scope": "03B rustfmt import ordering and condition layout only; relative capability checks unchanged"
+    },
+    {
+      "path": "ide/supervisor/src/windows_event_owner.rs",
+      "sha": "60110c3c608f8cc0c490e869ce0f07892473b0b6",
+      "scope": "03E D6C bounded authenticated owner continuation chain, unchanged one-use and OS/PDB gates; source-only, native Windows pending"
+    },
+    {
+      "path": "ide/supervisor/src/windows_fin04w2_service.rs",
+      "sha": "70fcfdfcd02420385860b483215969a4797e2305",
+      "scope": "03B consumes target SCM verified sampled RIP for independent owner and PDB source-line checks; no DAP trust expansion"
+    },
+    {
+      "path": "ide/supervisor/src/windows_fin04w2_target_ipc.rs",
+      "sha": "f3d6be13c44348707353ec8539b4925b284b91d6",
+      "scope": "03B strictly parses authenticated target SCM stop receipt; denies invalid PC/thread/overflow; adds negative tests"
+    },
+    {
+      "path": "ide/supervisor/src/windows_kernel_pc.rs",
+      "sha": "cce3b75eeb29642b0c1fbccfef7d8888179fab4b",
+      "scope": "03B rustfmt multiline OpenProcess only; query and synchronize rights unchanged"
+    },
+    {
+      "path": "ide/supervisor/src/windows_lsp_worker.rs",
+      "sha": "e110d7593bdb3002f51078517f0fb3bd3d70e0af",
+      "scope": "03E D6C bounded authenticated owner continuation chain, unchanged one-use and OS/PDB gates; source-only, native Windows pending; R2-R9 separately feature-gated synthetic source trap, native OS acceptance pending"
+    }
+  ]
+}

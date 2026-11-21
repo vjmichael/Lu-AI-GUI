@@ -1,0 +1,53 @@
+name: IDE WO5 real delegated Linux clangd session
+# Opt-in genuine Linux kernel acceptance. An enrolled, separately provisioned
+# runner must have exact lu-ide-delegated/lu-ide-host cgroup v2 admission,
+# enabled CPU/memory/PID controllers, and installed root-owned clangd bundle.
+# This workflow never creates a fake delegation or falls back to uncontained
+# clangd, shell-based LSP, Docker or elevated project execution.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  delegated-clangd:
+    runs-on: [self-hosted, Linux, lu-ide-delegated]
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+          components: rustfmt
+      - name: Verify pre-provisioned root-owned native clangd and delegation
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f /usr/bin/bwrap
+          test -x /opt/lu-ide-e2-test/bin/clangd
+          test -r /sys/fs/cgroup/cgroup.controllers
+          test -r /proc/self/cgroup
+          if ! grep -E '^0::/.*/lu-ide-delegated(\.service)?/lu-ide-host$' /proc/self/cgroup; then
+            echo 'DENIED: runner is not in approved delegated host leaf'
+            exit 1
+          fi
+          test -f /opt/lu-ide-e2-test/bin/clangd
+          test "$(stat -c %u /opt/lu-ide-e2-test)" = 0
+          test "$(stat -c %u /opt/lu-ide-e2-test/bin/clangd)" = 0
+      - name: Compile and unit-test protected native LSP adapter
+        run: |
+          cargo test --manifest-path ide/supervisor/Cargo.toml --features 'lsp-transport,linux-worker' --lib
+          cargo build --manifest-path ide/supervisor/Cargo.toml --features 'lsp-transport,linux-worker' --example e2_native_lsp_acceptance
+      - name: Real LSP initialize, hover, definition, completion and terminal release
+        env:
+          LU_IDE_E2_PINNED_LSP_BUNDLE: /opt/lu-ide-e2-test
+        run: ide/supervisor/target/debug/examples/e2_native_lsp_acceptance
+      - name: Real LSP descendant kill, cancellation and journal restart
+        env:
+          LU_IDE_E2_PINNED_LSP_BUNDLE: /opt/lu-ide-e2-test
+        run: ide/supervisor/target/debug/examples/e2_native_lsp_acceptance --cancel
+      - name: Acceptance label
+        run: |
+          echo 'Linux native cgroup+Bubblewrap clangd acceptance fixture only.'
+          echo 'No installed desktop, release license, distribution-signing or arbitrary project execution acceptance.'

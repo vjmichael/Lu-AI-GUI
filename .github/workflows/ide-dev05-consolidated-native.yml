@@ -1,0 +1,331 @@
+# IDE Group 5 reconciled source gate (2026-11-10): one grouped branch-specific acceptance attempt.
+# G05C/G05E: RECORD full-member audit and private-output-absence gate, exact SHA only.
+# IDE TG1 FINAL GROUP (2026-11-10): same-head Windows/Linux source/native security verification as installed group. Workflow dispatch comments do not change worker permissions.
+name: IDE-05 consolidated native group (NOT release)
+on:
+  push:
+    branches: [ide/dev05-1-package-discovery-20261109, ide/group05-package-review-20261110]
+    paths:
+      - 'ide/supervisor/**'
+      - 'ide/packaging/verify_ide05_upstream_uv.py'
+      - 'ide/packaging/test_ide05_upstream_intake.py'
+      - 'ide/docs/IDE_DEV056_UPSTREAM_APPROVAL_ACCEPTANCE_20261109.md'
+      - 'ide/host/**'
+      - 'ide/sandbox/src/bin/linux_delegated_ci_ide05_host.rs'
+      - 'ide/app/**'
+      - '.github/workflows/ide-dev05-consolidated-native.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ide05-group-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  native-source:
+    name: Exact-head real Rust/Tauri/Node compile and tests / ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2022, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Require exact current source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          git merge-base --is-ancestor 6379bc112cf871ae00c960f1b3ca01816552c30d HEAD
+          echo "IDE055_EXACT_SHA=$GITHUB_SHA"
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+          components: rustfmt, clippy
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.16.0'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13.5'
+      - name: IDE-05.6 upstream wheel intake negative tests; no network or release grant
+        shell: bash
+        run: |
+          set -euo pipefail
+          python ide/packaging/test_ide05_upstream_intake.py
+          echo IDE056_UPSTREAM_WHEEL_INTAKE_NEGATIVE_CASES=PASS
+      - name: Linux Tauri development libs
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev libayatana-appindicator3-dev \
+            librsvg2-dev libgtk-3-dev patchelf libssl-dev
+      - name: Native Node host-to-WebView boundaries and frontend bundle
+        id: node_checks
+        continue-on-error: true
+        working-directory: ide/app
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci --ignore-scripts --no-audit --no-fund
+          # Build frontend first, even when a source assertion fails; Tauri's
+          # generate_context macro needs a real ../dist directory.
+          npm run build
+          node --test tests/dev05_package_manager_inspection.test.mjs \
+            tests/dev052_package_operation_preview.test.mjs \
+            tests/dev053_protected_package_admission.test.mjs \
+            tests/dev054_package_output_recovery.test.mjs
+          npm run check
+          echo IDE055_NODE_AND_UI_NATIVE_RUNNER_PASS
+      - name: Native registered-project and manifest tests
+        id: host_tests
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --manifest-path ide/host/Cargo.toml --all-targets
+          echo IDE055_NATIVE_HOST_PASS
+      - name: Native package supervisor compiler, malicious fixtures and journal replay
+        id: supervisor_tests
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "$RUNNER_OS" = Windows ]; then
+            features=package-uv-worker,protected-recovery-service
+          else
+            features=package-uv-worker,linux-worker
+          fi
+          cargo test --manifest-path ide/supervisor/Cargo.toml \
+            --features "$features" --all-targets
+          cargo check --manifest-path ide/supervisor/Cargo.toml \
+            --features "$features" --all-targets
+          if [ "$RUNNER_OS" = Windows ]; then
+            # First-party disposable ACL probe. Real CreateAppContainerProfile,
+            # CREATE_SUSPENDED+JOB_LIST, native source read and write/rename/
+            # delete denial, plus private output success. This is not human
+            # approval or installed package-worker enablement.
+            cargo run --manifest-path ide/supervisor/Cargo.toml \
+              --example ide056_windows_acl_positive \
+              --features ide056-ci-acl-positive
+          fi
+          echo IDE055_NATIVE_SUPERVISOR_AND_HOSTILE_PACKAGE_FIXTURES_PASS
+      - name: Actual platform Tauri package feature compile; not physical installation
+        id: tauri_compile
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo check --locked --manifest-path ide/app/src-tauri/Cargo.toml \
+            --features native-package-uv --all-targets
+          echo IDE055_NATIVE_PACKAGE_TAURI_COMPILED
+          echo IDE055_HUMAN_DIALOG_AND_PHYSICAL_INSTALLED=OPEN
+      - name: Rust formatting and immutable committed lockfiles
+        id: format_checks
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fmt --manifest-path ide/supervisor/Cargo.toml -- --check
+          cargo fmt --manifest-path ide/host/Cargo.toml -- --check
+          cargo fmt --manifest-path ide/app/src-tauri/Cargo.toml -- --check
+          git diff --exit-code -- ide/app/src-tauri/Cargo.lock ide/app/package-lock.json
+          echo IDE055_FORMAT_LOCK_PASS
+      - name: Consolidated result must reflect every original compiler or test failure
+        shell: bash
+        if: always()
+        env:
+          NODE_OUTCOME: ${{ steps.node_checks.outcome }}
+          HOST_OUTCOME: ${{ steps.host_tests.outcome }}
+          SUPERVISOR_OUTCOME: ${{ steps.supervisor_tests.outcome }}
+          TAURI_OUTCOME: ${{ steps.tauri_compile.outcome }}
+          FORMAT_OUTCOME: ${{ steps.format_checks.outcome }}
+        run: |
+          printf 'NODE=%s HOST=%s SUPERVISOR=%s TAURI=%s FORMAT=%s\n' \
+            "$NODE_OUTCOME" "$HOST_OUTCOME" "$SUPERVISOR_OUTCOME" \
+            "$TAURI_OUTCOME" "$FORMAT_OUTCOME"
+          for status in "$NODE_OUTCOME" "$HOST_OUTCOME" "$SUPERVISOR_OUTCOME" "$TAURI_OUTCOME" "$FORMAT_OUTCOME"; do
+            if [ "$status" != success ]; then
+              echo "IDE055_GROUP_GATE_DENIED: failing or skipped mandatory step=$status"
+              exit 1
+            fi
+          done
+          echo IDE055_GROUP_COMPILER_MATRIX=PASSED
+      - name: Store real source-platform receipt; never imply installed release
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p .ide055-receipts
+          printf 'sha=%s\nos=%s\nrun=%s\nnative_compilation=see_job_steps\nhuman_consent=OPEN\nwheel_origin=OPEN\nphysical_install=OPEN\nsigned_release=OPEN\n' \
+            "$GITHUB_SHA" "$RUNNER_OS" "$GITHUB_RUN_ID" > .ide055-receipts/native.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ide055-native-${{ matrix.os }}-${{ github.sha }}
+          path: .ide055-receipts/
+          if-no-files-found: error
+          include-hidden-files: true
+          retention-days: 30
+
+  real-linux-uv-offline-negative:
+    # This is a REAL protected process and original OS receipts, but an
+    # intentional OFFLINE CACHE MISS, not successful package installation.
+    name: Real Linux cgroup/Bwrap uv offline denial (NOT installed)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    needs: [native-source]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13.5'
+      - name: Prepare CI-only REAL uv candidate outside protected process
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          python -m pip install --no-deps --target "$RUNNER_TEMP/ide055-uv" uv==0.9.9
+          # pip --target may create command wrappers beside wheel-shipped
+          # binaries. Select exactly one ELF named uv; never rely on path
+          # traversal order or assume a hardcoded wheel install layout.
+          uv_binary=""
+          while IFS= read -r candidate; do
+            if [ "$(head -c 4 "$candidate" | od -An -tx1 | tr -d '[:space:]')" = 7f454c46 ]; then
+              test -z "$uv_binary" || { echo IDE056_AMBIGUOUS_NATIVE_UV_ELF; exit 2; }
+              uv_binary="$candidate"
+            fi
+          done < <(find "$RUNNER_TEMP/ide055-uv" -type f -name uv)
+          test -n "$uv_binary" && test -x "$uv_binary"
+          uv_license="$(find "$RUNNER_TEMP/ide055-uv" -type f -iname 'LICENSE-MIT' -print -quit)"
+          test -n "$uv_binary" && test -f "$uv_binary"
+          test -n "$uv_license" && test -f "$uv_license"
+          test -f /usr/share/doc/python3.12/copyright
+          sudo install -d -o root -g root -m 755 /opt/lu-ide/runtimes
+          staged="$(sudo /usr/bin/python3 \
+            ide/supervisor/fixtures/package/prepare_ide05_ci_uv.py \
+            --runtime-root /opt/lu-ide/runtimes/uv_sync_offline \
+            --uv-exe "$uv_binary" --python-exe /usr/bin/python3 \
+            --uv-license "$uv_license" \
+            --python-license /usr/share/doc/python3.12/copyright)"
+          pin="$(printf '%s\n' "$staged" | sed -n 's/^LU_IDE05_LINUX_UV_SHA256=//p')"
+          wheel_sha="$(printf '%s\n' "$staged" | sed -n 's/^LU_IDE05_CI_WHEEL_SHA256=//p')"
+          test "${#wheel_sha}" = 64
+          test "${#pin}" = 64
+          test "$(stat -c %u /opt/lu-ide/runtimes/uv_sync_offline)" = 0
+          test "$(stat -c %a /opt/lu-ide/runtimes/uv_sync_offline)" = 755
+          test ! -L /opt/lu-ide/runtimes/uv_sync_offline
+          echo "IDE055_RUNTIME_ROOT_OWNER_MODE=PASS"
+          echo "LU_IDE05_LINUX_UV_SHA256=$pin" >> "$GITHUB_ENV"
+          echo "LU_IDE05_CI_WHEEL_SHA256=$wheel_sha" >> "$GITHUB_ENV"
+          echo "IDE055_CI_SYNTHETIC_WHEEL_HASH=$wheel_sha"
+          echo "IDE055_CI_SELF_MEASURED_NOT_RELEASE_PIN=$pin"
+      - name: IDE-05.6 compare real pinned upstream PyPI uv wheel, installed binary and original license
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/ide056-wheel" .ide055-native-evidence
+          python -m pip download --no-deps --only-binary=:all: --dest "$RUNNER_TEMP/ide056-wheel" uv==0.9.9
+          shopt -s nullglob
+          wheels=("$RUNNER_TEMP"/ide056-wheel/uv-0.9.9-*.whl)
+          test "${#wheels[@]}" -eq 1
+          # pip --target may create command wrappers beside wheel-shipped
+          # binaries. Select exactly one ELF named uv; never rely on path
+          # traversal order or assume a hardcoded wheel install layout.
+          uv_binary=""
+          while IFS= read -r candidate; do
+            if [ "$(head -c 4 "$candidate" | od -An -tx1 | tr -d '[:space:]')" = 7f454c46 ]; then
+              test -z "$uv_binary" || { echo IDE056_AMBIGUOUS_NATIVE_UV_ELF; exit 2; }
+              uv_binary="$candidate"
+            fi
+          done < <(find "$RUNNER_TEMP/ide055-uv" -type f -name uv)
+          test -n "$uv_binary" && test -x "$uv_binary"
+          uv_license="$(find "$RUNNER_TEMP/ide055-uv" -type f -iname 'LICENSE-MIT' -print -quit)"
+          test -f "$uv_binary" && test -f "$uv_license"
+          python ide/packaging/verify_ide05_upstream_uv.py \
+            --wheel "${wheels[0]}" --installed-uv "$uv_binary" \
+            --installed-license "$uv_license" \
+            --receipt .ide055-native-evidence/uv-pypi-observation.json
+          echo IDE056_UPSTREAM_UV_OBSERVATION=REGISTRY_DIGEST_VERIFIED_NOT_SIGNED
+      - name: Require real Linux namespace and delegated cgroup (never disable AppArmor)
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            bubblewrap rustc cargo apparmor-profiles apparmor-utils
+          profile=/usr/share/apparmor/extra-profiles/bwrap-userns-restrict
+          test -r "$profile"
+          sudo install -o root -g root -m 0644 "$profile" /etc/apparmor.d/bwrap-userns-restrict
+          sudo apparmor_parser -r /etc/apparmor.d/bwrap-userns-restrict
+          test "$(sysctl -n kernel.apparmor_restrict_unprivileged_userns)" = 1
+          /usr/bin/bwrap --unshare-all --ro-bind /usr /usr \
+            --ro-bind-try /bin /bin --ro-bind-try /lib /lib \
+            --ro-bind-try /lib64 /lib64 --proc /proc --dev /dev \
+            -- /usr/bin/true
+          test -x /usr/bin/systemd-run
+          test -f /sys/fs/cgroup/cgroup.controllers
+      - name: Compile actual trusted delegated host and fixed real uv process
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${#LU_IDE05_LINUX_UV_SHA256}" = 64
+          cargo build --manifest-path ide/sandbox/Cargo.toml \
+            --bin linux_cgroup_prepare --bin linux_delegated_ci_ide05_host
+          cargo build --manifest-path ide/supervisor/Cargo.toml \
+            --features 'linux-worker,package-uv-worker,ide055-ci-wheelhouse' \
+            --example ide05_native_uv_acceptance
+      - name: Exact cgroup/bwrap uv offline MISS, OS terminal failure receipt and durable restart
+        shell: bash
+        run: |
+          set -euo pipefail
+          host="$(realpath ide/sandbox/target/debug/linux_delegated_ci_ide05_host)"
+          for mode in --offline-miss --cancel --positive --hostile-recovery; do
+            rc=0
+            sudo /usr/bin/systemd-run --wait --collect --pipe \
+              --unit=lu-ide-delegated \
+              --property=Type=exec \
+              --property=User=runner \
+              --property=Group=runner \
+              --property='Delegate=cpu memory pids' \
+              --property=DelegateSubgroup=lu-ide-host \
+              "$host" "$mode" || rc=$?
+            if [ "$rc" -ne 0 ]; then
+              echo "IDE055_REAL_PROTECTED_UV_$mode=FAILED"
+              sudo systemctl show lu-ide-delegated.service --no-pager \
+                --property=Result,ExecMainStatus,Delegate,DelegateSubgroup || true
+              sudo journalctl -u lu-ide-delegated.service \
+                --no-pager -n 40 --output=cat || true
+              exit "$rc"
+            fi
+            echo "IDE055_REAL_PROTECTED_UV_$mode=PASS"
+          done
+          echo IDE055_POSITIVE_NATIVE_PACKAGE_INSTALL=CI_ONLY_SYNTHETIC_WHEEL_VERIFIED
+          echo IDE055_HOSTILE_RESTART_NATIVE=CHECK_LOGS_FOR_OS_RECONCILIATION
+          echo IDE055_REAL_HUMAN_APPROVAL=OPEN
+      - name: Store native negative evidence
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p .ide055-native-evidence
+          printf 'sha=%s\nrun=%s\nreal_uv_process=see_logs\nfixture=ci_only_negative_and_positive_wheelhouse\nhuman_approval=OPEN\nupstream_wheel_provenance=OPEN\ninstalled_app=OPEN\n' \
+            "$GITHUB_SHA" "$GITHUB_RUN_ID" > .ide055-native-evidence/status.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ide055-real-uv-negative-${{ github.sha }}
+          path: .ide055-native-evidence/
+          if-no-files-found: error
+          include-hidden-files: true
+          retention-days: 30

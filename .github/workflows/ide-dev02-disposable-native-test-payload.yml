@@ -1,0 +1,95 @@
+name: IDE DEV-02.5 disposable native LSP test payload install
+# Never upload candidate binaries. This is temporary hash-checked payload,
+# not a signed NSIS/deb package or protected Lu worker acceptance.
+on:
+  push:
+    branches: ['ide/dev02-testonly-lsp-payload-20261108']
+    paths:
+      - 'ide/packaging/stage_native_lsp_disposable_test_install.py'
+      - 'ide/packaging/test_stage_native_lsp_disposable_test_install.py'
+      - '.github/workflows/ide-dev02-disposable-native-test-payload.yml'
+  pull_request:
+    paths:
+      - 'ide/packaging/stage_native_lsp_disposable_test_install.py'
+      - 'ide/packaging/test_stage_native_lsp_disposable_test_install.py'
+      - '.github/workflows/ide-dev02-disposable-native-test-payload.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  pinned-candidate-temporary-install:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-2022
+            platform: windows-x86_64
+          - os: ubuntu-24.04
+            platform: linux-x86_64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Exact-source negative review gate and hostile payload tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          python3 ide/packaging/verify_language_servers.py
+          if python3 ide/packaging/verify_language_servers.py --release; then
+            echo 'DENIED: candidate executable erroneously approved for released Lu'
+            exit 2
+          fi
+          python3 -m unittest discover -s ide/packaging -p 'test_stage_native_lsp_disposable_test_install.py' -v
+      - name: Fetch and verify all four original pinned upstream notice files
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 ide/packaging/collect_original_lsp_notices.py \
+            --manifest ide/packaging/lsp_original_upstream_notices_20261108.json \
+            --output "$RUNNER_TEMP/lu-ide-dev02-5-original-notices" --fetch-pinned
+      - name: Acquire three real SHA-locked upstream native archives and hash-install candidate payload
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 ide/packaging/stage_native_lsp_disposable_test_install.py \
+            --platform "${{ matrix.platform }}" \
+            --manifest ide/packaging/lsp_upstream_archive_candidates_20261108.json \
+            --notices-manifest ide/packaging/lsp_original_upstream_notices_20261108.json \
+            --notices-root "$RUNNER_TEMP/lu-ide-dev02-5-original-notices" \
+            --archives "$RUNNER_TEMP/lu-ide-dev02-5-locked-archives" \
+            --output "$RUNNER_TEMP/lu-ide-dev02-5-test-install" \
+            --fetch-locked
+          python3 - <<'PY'
+          import json,os
+          from pathlib import Path
+          receipt = json.loads((Path(os.environ["RUNNER_TEMP"]) /
+              "lu-ide-dev02-5-test-install/verification-receipt.json").read_text())
+          assert receipt["hashReadbackPassed"]
+          assert receipt["archiveDigestsVerified"] == 3
+          assert receipt["originalNoticesVerified"] == 4
+          assert receipt["payloadFilesVerified"] == 7
+          assert all(receipt[k] is False for k in (
+              "releaseApproved", "executedInsideLu",
+              "nativeWorkerContainmentAccepted", "dependencyClosureVerified",
+              "genuineNsisOrDebInstalled"
+          ))
+          print("DEV02_REAL_ORIGINAL_ARCHIVES_TEST_PAYLOAD_HASH_INSTALL=PASS")
+          print("DEV02_INSTALLED_PROTECTED_LU_LSP=OPEN")
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: dev02-5-test-only-verification-json-${{ matrix.os }}
+          path: ${{ runner.temp }}/lu-ide-dev02-5-test-install/verification-receipt.json
+          if-no-files-found: warn
+          retention-days: 7

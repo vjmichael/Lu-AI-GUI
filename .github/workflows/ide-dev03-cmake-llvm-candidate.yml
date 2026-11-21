@@ -1,0 +1,73 @@
+name: IDE DEV03 CMake LLVM pinned-source candidate
+on:
+  push:
+    branches: [ide/dev03-multilang-offline-runtime-bundles-20261108]
+    paths:
+      - .github/workflows/ide-dev03-cmake-llvm-candidate.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ide-dev03-cmake-candidate
+  cancel-in-progress: true
+
+jobs:
+  stage-cmake-llvm:
+    name: CMake4.4.5 Ninja1.13 LLVM23.1.5 / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        os: [windows-2022, ubuntu-24.04]
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13.5'
+      - name: Immutable source manifest and exact SHA checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          python -c "import json; x=json.load(open('ide/runtime-pins/upstream_sources.json')); assert x['releaseBundleApproved'] is False and x['schemaVersion']==1; print('UPSTREAM_ASSETS_REQUIRE_SHA256=true')"
+      - name: Install build-machine-only compressed archive decoder
+        shell: bash
+        run: |
+          python -m pip --isolated install --disable-pip-version-check --no-input zstandard==0.25.0
+      - name: Download exact upstream archives, verify digests, stage and smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          python ide/tools/provision_cmake_candidate.py \
+            --stage .dev03-cmake-stage \
+            --cache .dev03-upstream-verified \
+            --output .dev03-cmake-candidate.zip
+          python -c "import json,zipfile; z=zipfile.ZipFile('.dev03-cmake-candidate.zip'); m=json.loads(z.read('runtime-manifest.json')); assert m['runtimeExecutionEnabled'] is False and m['approval']=='candidate_not_approved'; print('CANDIDATE_SHA='+m['runtimeTreeSha256'])"
+          echo DEV03_CMAKE_COMPILER_CANDIDATE_NOT_NATIVE_OS_ACCEPTED=PASS
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: ide-dev03-cmake4.4-ninja1.13-llvm23-candidate-${{ matrix.os }}
+          path: .dev03-cmake-candidate.zip
+          if-no-files-found: error
+          retention-days: 14
+      - name: Bounded failure/receipt metadata
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p .dev03-cmake-receipts
+          printf 'sha=%s\nos=%s\nrun=%s\narchive_verification=required\nworker_e2e=OPEN\n' \
+            "$GITHUB_SHA" "$RUNNER_OS" "$GITHUB_RUN_ID" \
+            > .dev03-cmake-receipts/cmake-candidate.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ide-dev03-cmake-receipt-${{ matrix.os }}
+          path: .dev03-cmake-receipts/cmake-candidate.txt
+          if-no-files-found: error
+          retention-days: 14

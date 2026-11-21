@@ -1,0 +1,7 @@
+{
+  "schema": "lu.ide.wo7.bundle.v1",
+  "description": "Inventory placeholder. Neither binary bytes nor transitive dependencies are approved. Do not stage for release.",
+  "approved": false,
+  "sourceSha": null,
+  "files": []
+}

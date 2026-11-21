@@ -1,0 +1,169 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+
+const source = path => readFileSync(new URL(path, import.meta.url), 'utf8');
+
+test('IDE-MERGE-02 restored source actions reach one Tauri host and explicit Explorer controls', () => {
+  const desktop=source('../src-tauri/src/lib.rs');
+  const ui=source('../web/main.jsx');
+  const host=source('../../host/src/lib.rs');
+  for(const command of [
+    'ide_create_source_entry','ide_move_source_file','ide_trash_source_file',
+    'ide_list_trashed_sources','ide_restore_source_file',
+  ]) {
+    assert.match(desktop,new RegExp('async fn '+command+'\\('));
+    assert.match(desktop,new RegExp('\\s'+command+','));
+    assert.match(ui,new RegExp("'"+command+"'"));
+  }
+  assert.match(host,/pub mod source_create;/);
+  assert.match(host,/pub mod source_file_transactions;/);
+  assert.match(ui,/sourceActionTicket/);
+  assert.match(ui,/workspaceTransitionRef\.current/);
+  assert.match(ui,/SOURCE_ACTION_CONTEXT_CHANGED/);
+  assert.match(ui,/SOURCE_ACTION_RECEIPT_MISMATCH/);
+  assert.match(ui,/Close this file tab first/);
+  assert.match(ui,/sourceActionMode==='restore'/);
+});
+test('IDE-MERGE-02 does not replace existing editor, private drafts or Quick Open', () => {
+  const desktop=source('../src-tauri/src/lib.rs');
+  const ui=source('../web/main.jsx');
+  for(const command of ['ide_save_source_file','ide_draft_checkpoint','ide_draft_latest',
+    'ide_draft_load','ide_draft_discard','ide_quick_open_source_paths',
+    'ide_list_source_directory_page']) {
+    assert.match(desktop,new RegExp('async fn '+command+'\\('));
+  }
+  assert.match(ui,/async function searchQuickOpen\(/);
+  assert.match(ui,/async function closeTab\(/);
+  assert.match(ui,/sourceQuickOpenResults/);
+  assert.match(ui,/draftRecoveryByTab/);
+});
+test('IDE-MERGE-03 restored SCM Job WFP source is opt-in, native-only and no LLDB grant', () => {
+  const supervisor=source('../../supervisor/src/lib.rs');
+  const cargo=source('../../supervisor/Cargo.toml');
+  const desktop=source('../src-tauri/src/lib.rs');
+  const desktopCargo=source('../src-tauri/Cargo.toml');
+  const nativeMenu=source('../src-tauri/src/fin04w2_c4_desktop.rs');
+  for(const name of ['fin04w2-protocol','fin04w2-scm','fin04w2-contained-probe','fin04w2-c2'])
+    assert.match(cargo,new RegExp(name+' = '));
+  assert.match(supervisor,/mod windows_fin04w2_kernel;/);
+  assert.match(supervisor,/pub mod windows_fin04w2_service;/);
+  assert.match(supervisor,/consume_grant_after_c2_service_admission/);
+  assert.match(desktopCargo,/fin04w2-c4-desktop = \["native-build"/);
+  assert.match(desktop,/compile_error!\("FIN-04W2-C4 native menu is Windows debug-only/);
+  assert.match(desktop,/fin04w2_c4_desktop::install\(app\)/);
+  assert.doesNotMatch(nativeMenu,/#\[tauri::command\]/);
+  assert.match(nativeMenu,/FIN04C4_AUTOMATED_APPROVAL_FORBIDDEN/);
+  assert.match(nativeMenu,/run_fixed_after_visible_native_consent/);
+});
+
+test('IDE-MERGE-03 never accepts two Jobs from one SCM service as independent custody', () => {
+  const launcher=source('../../supervisor/src/windows_fin04w2_split_launcher.rs');
+  const targetSeal=source('../../supervisor/src/windows_fin04w2_target_seal.rs');
+  const principal=source('../../supervisor/src/windows_fin04w2_kernel.rs');
+  const security=source('../../supervisor/src/windows_service_security.rs');
+  const pair=source('../../supervisor/src/windows_fin04w2_scm_pair.rs');
+  const split=source('../../supervisor/src/windows_fin04w2_split.rs');
+  assert.doesNotMatch(launcher,/pub\(crate\) fn prepare_pair\(/);
+  assert.match(launcher,/inspect_current_target_service_principal\(\)/);
+  assert.match(launcher,/verify_target_job_kernel_acl\(kernel_job\)/);
+  assert.match(launcher,/verify_debugger_job_kernel_acl\(kernel_job\)/);
+  assert.match(principal,/LuIdeDebugTargetBroker/);
+  assert.match(principal,/create_bounded_empty_target_job\(/);
+  assert.match(security,/new_target_service_owned\(/);
+  assert.match(security,/verify_target_job_kernel_acl\(/);
+  assert.match(targetSeal,/LuIdeDebugTargetBroker/);
+  // Cross-SCM PDB resolution needs ONLY the fixed debugger service's
+  // read/traverse file ACE, never target Job custody or filesystem writes.
+  assert.match(targetSeal,/sid_of_named_service\(\s*"LuIdeDebuggerBroker"/);
+  assert.match(targetSeal,/which\s*>=\s*2\s*\{\s*READ_EXECUTE\s*\}\s*else\s*\{\s*ALL\s*\}/);
+  assert.match(targetSeal,/seen\s*!=\s*\[\s*true\s*,\s*true\s*,\s*true\s*\]/);
+  assert.doesNotMatch(launcher,/create_bounded_empty_debugger_job\(/);
+  assert.match(pair,/OpenSCManagerW/);
+  assert.match(pair,/QueryServiceStatusEx/);
+  assert.match(pair,/restricted_service_token/);
+  assert.match(pair,/self\.debugger\.pid\s*==\s*self\.target\.pid/);
+  assert.match(split,/attest_external_debugger_worker/);
+  assert.match(split,/attest_service_held_appcontainer_target/);
+  assert.doesNotMatch(split,/attest_split_pair\(/);
+});
+test('IDE-MERGE-03 split source never grants LLDB or attach from the WebView', () => {
+  const web=source('../web/main.jsx');
+  const desktop=source('../src-tauri/src/lib.rs');
+  const supervisor=source('../../supervisor/src/lib.rs');
+  const cargo=source('../../supervisor/Cargo.toml');
+  assert.doesNotMatch(web,/invoke\('ide_fin04w2_split/);
+  assert.doesNotMatch(desktop,/async fn ide_fin04w2_split/);
+  assert.match(supervisor,/feature\s*=\s*"fin04w2-split-native"/);
+  assert.match(cargo,/fin04w2-split-native = \["fin04w2-c2", "protected-recovery-service"\]/);
+});
+
+test('IDE-MERGE-02C same-head acceptance compiles offline vcpkg and retains original frontend, DAP, recovery and OS negative gates', () => {
+  const workflow=source('../../../.github/workflows/ide-group6f-integrated-native.yml');
+  const compiler=source('../../supervisor/src/linux_worker.rs');
+  const front=source('../web/debugger_integration.js');
+  for(const marker of [
+    'INTEGRATION_SOURCE_SHA:',
+    'npm test',
+    '--features package-vcpkg-worker --lib',
+    'IDE_MERGE02C_FIN05_VCPKG_LINUX_FEATURE=COMPILES_NOT_OS_EXECUTED',
+    'IDE_MERGE02C_ALL_FRONTEND_CONTRACTS=TEST_PASS_NOT_INSTALLED_ACCEPTANCE',
+    'workspace_layout dap_session dap_source_lines debug_target_review source_span',
+    'protected_recovery_preflight_survives_restart_and_blocks_new_work',
+    'crash_recovery_never_retries_and_requires_os_cleanup_receipt',
+    'windows_fin04w2_wfp::tests',
+    'windows_fin04w2_kernel::tests',
+    'windows_event_owner::tests',
+    'windows_worker::tests',
+    'debug_action_receipts::tests',
+    'Test-DEV01ModernInstalledDeb.sh',
+    'Test-DEV01ModernInstalledNsis.ps1',
+    'IDE_MERGE03_SPLIT_NATIVE_SCM_AND_WFP_ACCEPTANCE=NOT_TESTED',
+  ]) assert.ok(workflow.includes(marker),marker);
+  assert.match(workflow,/npm ci --ignore-scripts/);
+  assert.doesNotMatch(workflow,/continue-on-error:\s*true/);
+  assert.match(front,/response\.navigationAutomatic!==false/);
+  assert.match(front,/response\.debuggerExecutionAuthorized!==false/);
+  assert.match(compiler,/RuntimeProfile::VcpkgInstallOffline/);
+});
+
+
+function assertSharedCompilerBoundaries(rawWorkflow) {
+  // Git on Windows may materialize CRLF, while Linux uses LF. Normalize
+  // only line endings; preserve step names, boundaries and all assertions.
+  const workflow=rawWorkflow.replace(/\r\n/g,'\n');
+  const shared='CARGO_TARGET_DIR: ${{ runner.temp }}/ide-native-check-target';
+  const steps=[
+    'Native original Git and remote recovery fixture groups',
+    'IDE-MERGE-02C original editor, DAP and durable recovery native tests',
+    'Native host OS-vault type and desktop compile',
+  ];
+  assert.equal(workflow.split(shared).length-1,steps.length);
+  for(const name of steps) {
+    const sections=workflow.split('      - name: '+name+'\n');
+    assert.equal(sections.length,2,'expected exactly one step: '+name);
+    const step=sections[1].split('\n      - ')[0];
+    assert.ok(step.includes(shared),name);
+    assert.match(step,/CARGO_INCREMENTAL: 0/);
+    assert.match(step,/cargo (?:check|test) --locked/);
+    assert.doesNotMatch(step,/cargo (?:build|install) |tauri.*build|upload-artifact|download-artifact/);
+  }
+  const installed=workflow.slice(workflow.indexOf('  dev01-modern-real-installed-linux:'));
+  assert.ok(installed.startsWith('  dev01-modern-real-installed-linux:'));
+  assert.doesNotMatch(installed,/CARGO_TARGET_DIR|actions\/cache/);
+  assert.doesNotMatch(workflow,/actions\/cache|restore-keys|continue-on-error:\s*true/);
+}
+
+test('IDE-MERGE-04 shares compiler intermediates only within original non-installed native jobs', () => {
+  const workflow=source('../../../.github/workflows/ide-group6f-integrated-native.yml');
+  assertSharedCompilerBoundaries(workflow);
+});
+
+test('IDE-MERGE-04 compiler boundary guard accepts CRLF but rejects changed steps and installed reuse', () => {
+  const lf=source('../../../.github/workflows/ide-group6f-integrated-native.yml').replace(/\r\n/g,'\n');
+  assertSharedCompilerBoundaries(lf);
+  assertSharedCompilerBoundaries(lf.replace(/\n/g,'\r\n'));
+  assert.throws(()=>assertSharedCompilerBoundaries(lf.replace('Native original Git and remote recovery fixture groups','Changed step')));
+  assert.throws(()=>assertSharedCompilerBoundaries(lf.replace('  dev01-modern-real-installed-linux:',
+    '  dev01-modern-real-installed-linux:\n    env:\n      CARGO_TARGET_DIR: unreviewed-installed-target')));
+});

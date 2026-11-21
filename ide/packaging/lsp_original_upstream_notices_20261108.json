@@ -1,0 +1,38 @@
+{
+  "schema": "lu.ide.e2.original-upstream-lsp-notices.v1",
+  "releaseApproved": false,
+  "notices": [
+    {
+      "provider": "clangd",
+      "repo": "llvm/llvm-project",
+      "ref": "llvmorg-23.1.0",
+      "path": "llvm/LICENSE.TXT",
+      "gitBlobSha1": "fa6ac540007032cbd0ec772a1c72e6cb5527a4fe",
+      "destination": "clangd/NOTICES/LLVM-LICENSE.TXT"
+    },
+    {
+      "provider": "rust-analyzer",
+      "repo": "rust-lang/rust-analyzer",
+      "ref": "2026-11-02",
+      "path": "LICENSE-MIT",
+      "gitBlobSha1": "31aa79387f27e730e33d871925e152e35e428031",
+      "destination": "rust-analyzer/NOTICES/LICENSE-MIT"
+    },
+    {
+      "provider": "rust-analyzer",
+      "repo": "rust-lang/rust-analyzer",
+      "ref": "2026-11-02",
+      "path": "LICENSE-APACHE",
+      "gitBlobSha1": "1b5ec8b78e237b5c3b3d812a7c0a6589d0f7161d",
+      "destination": "rust-analyzer/NOTICES/LICENSE-APACHE"
+    },
+    {
+      "provider": "ruff",
+      "repo": "astral-sh/ruff",
+      "ref": "0.17.4",
+      "path": "LICENSE",
+      "gitBlobSha1": "655a0c76fc5539b2f8e63b673741a5fd0e0c5799",
+      "destination": "ruff/NOTICES/LICENSE"
+    }
+  ]
+}

@@ -1,0 +1,361 @@
+{
+  "schema": "lu.ide.p05.ci-retention-decision.v1",
+  "auditedSnapshotSha": "bc4fd78685c342675e4a80556970e934125a0e20",
+  "auditedWorkflowCount": 38,
+  "existingWorkflowDecision": "retain_all_original_until_exact_head_acceptance",
+  "currentReviewSourceHead": "5511bde55c39ccb2144832a2d897bcec7bbe2cef",
+  "sourceOnlyReviewComplete": true,
+  "prClosuresAuthorized": 0,
+  "workflowFilesRemoved": 0,
+  "workflowTriggerReductionAuthorized": false,
+  "upstreamGates": {
+    "P02": "native installed acceptance open",
+    "P03": "kernel/clangd/LLDB exact-head acceptance open",
+    "P04": "installed NSIS/DEB Git/ZIP signing/rollback acceptance open"
+  },
+  "rows": [
+    {
+      "path": ".github/workflows/ide-alpha-windows.yml",
+      "gitBlobSha": "7680fdafd56458a9cff1ec6b6ea1478e5c662c7c",
+      "phaseOwner": "P02",
+      "disposition": "retain_existing_workflow",
+      "reason": "source/continuity/native baseline still part of open release candidate",
+      "installedOrNativeReplacementAccepted": false,
+      "closureEligible": false
+    },
+    {
+      "path": ".github/workflows/ide-appcontainer-windows.yml",
+      "gitBlobSha": "0031405812af8347a32123fefdd2050e4b20c8d8",
+      "phaseOwner": "P03",
+      "disposition": "retain_existing_workflow",
+      "reason": "kernel containment, supervised language server, debugger, cancellation or service recovery native evidence remains required",
+      "installedOrNativeReplacementAccepted": false,
+      "closureEligible": false
+    },
+    {
+      "path": ".github/workflows/ide-continuity.yml",
+      "gitBlobSha": "286b52f3fa1004d9fdf28306f6002a775772e9f1",
+      "phaseOwner": "P02",
+      "disposition": "retain_existing_workflow",
+      "reason": "source/continuity/native baseline still part of open release candidate",
+      "installedOrNativeReplacementAccepted": false,
+      "closureEligible": false
+    },
+    {
+      "path": ".github/workflows/ide-d7-windows-worker.yml",
+      "gitBlobSha": "518635e58bbac5b249bfeadba7e60c90b9d0010c",
+      "phaseOwner": "P03",
+      "disposition": "retain_existing_workflow",
+      "reason": "kernel containment, supervised language server, debugger, cancellation or service recovery native evidence remains required",
+      "installedOrNativeReplacementAccepted": false,
+      "closureEligible": false
+    },
+    {
+      "path": ".github/workflows/ide-d7b-native-acceptance.yml",
+      "gitBlobSha": "f70955319c621cbd08cd2a7a6f7eac77caffc3a1",
+      "phaseOwner": "P03",
+      "disposition": "retain_existing_workflow",
+      "reason": "kernel containment, supervised language server, debugger, cancellation or service recovery native evidence remains required",
+      "installedOrNativeReplacementAccepted": false,
+      "closureEligible": false
+    },
+    {
+      "path": ".github/workflows/ide-d7c-windows-capability.yml",
+      "gitBlobSha": "a4277dffbcd0026ada381f38813205a4c9354c4c",
+      "phaseOwner": "P03",
+      "disposition": "retain_existing_workflow",
+      "reason": "kernel containment, supervised language server, debugger, cancellation or service recovery native evidence remains required",
+      "installedOrNativeReplacementAccepted": false,
+      "closureEligible": false
+    },
+    {
+      "path": ".github/workflows/ide-d7d-protected-service.yml",
+      "gitBlobSha": "ce56f987cb056c01ef7be58318d70c9e136aafad",
+      "phaseOwner": "P03",
+      "disposition": "retain_existing_workflow",
+      "reason": "kernel containment, supervised language server, debugger, cancellation or service recovery native evidence remains required",
+      "installedOrNativeReplacementAccepted": false,
+      "closureEligible": false
+    },
+    {
+      "path": ".github/workflows/ide-e1-lsp-foundation.yml",
+      "gitBlobSha": "10e8cb970bda58aa9213125443590a4e9d433c1b",
+      "phaseOwner": "P03",
+      "disposition": "retain_existing_workflow",
+      "reason": "kernel containment, supervised language server, debugger, cancellation or service recovery native evidence remains required",
+      "installedOrNativeReplacementAccepted": false,
+      "closureEligible": false
+    },
+    {
+      "path": ".github/workflows/ide-e2-native-lsp.yml",
+      "gitBlobSha": "8ca27a7f666460e021b45c2e5469d532d0a82071",
+      "phaseOwner": "P03",
+      "disposition": "retain_existing_workflow",
+      "reason": "kernel containment, supervised language server, debugger, cancellation or service recovery native evidence remains required",
+      "installedOrNativeReplacementAccepted": false,
+      "closureEligible": false
+    },
+    {
+      "path": ".github/workflows/ide-e2-supervised-lsp.yml",
+      "gitBlobSha": "c2be7149dc3424d7c296aae2f98a6fd37b99c77b",
+      "phaseOwner": "P03",
+      "disposition": "retain_existing_workflow",
+      "reason": "kernel containment, supervised language server, debugger, cancellation or service recovery native evidence remains required",
+      "installedOrNativeReplacementAccepted": false,
+      "closureEligible": false
+    },
+    {
+      "path": ".github/workflows/ide-e2-unsigned-installed-smoke.yml",
+      "gitBlobSha": "6d8761823e67575cb979b15570f8fb44d571d4d5",
+      "phaseOwner": "P03",
+      "disposition": "retain_existing_workflow",
+      "reason": "kernel containment, supervised language server, debugger, cancellation or service recovery native evidence remains required",
+      "installedOrNativeReplacementAccepted": false,
+      "closureEligible": false
+    },
+    {
+      "path": ".github/workflows/ide-p02-native-checks.yml",
+      "gitBlobSha": "b8f80361b98df9f93ee7439ab44242f3d9587f70",
+      "phaseOwner": "P02",
+      "disposition": "retain_existing_workflow",
+      "reason": "source/continuity/native baseline still part of open release candidate",
+      "installedOrNativeReplacementAccepted": false,
+      "closureEligible": false
+    },
+    {
+      "path": ".github/workflows/ide-p03-native-security-checks.yml",
+      "gitBlobSha": "aa567ec48ce084f5c698f77cdd07de381fa72221",
+      "phaseOwner": "P03",
+      "disposition": "retain_existing_workflow",
+      "reason": "kernel containment, supervised language server, debugger, cancellation or service recovery native evidence remains required",
+      "installedOrNativeReplacementAccepted": false,
+      "closureEligible": false
+    },
+    {
+      "path": ".github/workflows/ide-p04-linux-upgrade.yml",
+      "gitBlobSha": "5819cdc1508e2ded93b14a3eda0a6046b18259e0",
+      "phaseOwner": "P04",
+      "disposition": "retain_existing_workflow",
+      "reason": "installed, signing, upgrade, dependency-license or workflow acceptance is not yet independently replaced",
+      "installedOrNativeReplacementAccepted": false,
+      "closureEligible": false
+    },
+    {
+      "path": ".github/workflows/ide-p04-signed-reinstall.yml",
+      "gitBlobSha": "9a23b270e06245f0140d18732ed5fc79eb32bf37",
+      "phaseOwner": "P04",
+      "disposition": "retain_existing_workflow",
+      "reason": "installed, signing, upgrade, dependency-license or workflow acceptance is not yet independently replaced",
+      "installedOrNativeReplacementAccepted": false,
+      "closureEligible": false
+    },
+    {
+      "path": ".github/workflows/ide-p04-source-acceptance.yml",
+      "gitBlobSha": "4c4659bc09ee1529b4ef5583311b51f9bcccba0d",
+      "phaseOwner": "P04",
+      "disposition": "retain_existing_workflow",
+      "reason": "installed, signing, upgrade, dependency-license or workflow acceptance is not yet independently replaced",
+      "installedOrNativeReplacementAccepted": false,
+      "closureEligible": false
+    },
+    {
+      "path": ".github/workflows/ide-p04-upgrade-native.yml",
+      "gitBlobSha": "ff101bac8fab4873f5eba247d0494f6bf37181f0",
+      "phaseOwner": "P04",
+      "disposition": "retain_existing_workflow",
+      "reason": "installed, signing, upgrade, dependency-license or workflow acceptance is not yet independently replaced",
+      "installedOrNativeReplacementAccepted": false,
+      "closureEligible": false
+    },
+    {
+      "path": ".github/workflows/ide-sandbox-linux.yml",
+      "gitBlobSha": "ea60133db84b0c909773c7f15030c950f43891dc",
+      "phaseOwner": "P03",
+      "disposition": "retain_existing_workflow",
+      "reason": "kernel containment, supervised language server, debugger, cancellation or service recovery native evidence remains required",
+      "installedOrNativeReplacementAccepted": false,
+      "closureEligible": false
+    },
+    {
+      "path": ".github/workflows/ide-sandbox-windows.yml",
+      "gitBlobSha": "4344a3563b9151e874443c5000639114342e66b5",
+      "phaseOwner": "P03",
+      "disposition": "retain_existing_workflow",
+      "reason": "kernel containment, supervised language server, debugger, cancellation or service recovery native evidence remains required",
+      "installedOrNativeReplacementAccepted": false,
+      "closureEligible": false
+    },
+    {
+      "path": ".github/workflows/ide-standalone.yml",
+      "gitBlobSha": "cb3142c60154bcc22aee12b36b9080e415a1aba5",
+      "phaseOwner": "P02",
+      "disposition": "retain_existing_workflow",
+      "reason": "source/continuity/native baseline still part of open release candidate",
+      "installedOrNativeReplacementAccepted": false,
+      "closureEligible": false
+    },
+    {
+      "path": ".github/workflows/ide-supervisor-core.yml",
+      "gitBlobSha": "e0d26f80713cdf498c3bfdf82645498dddf34e16",
+      "phaseOwner": "P03",
+      "disposition": "retain_existing_workflow",
+      "reason": "kernel containment, supervised language server, debugger, cancellation or service recovery native evidence remains required",
+      "installedOrNativeReplacementAccepted": false,
+      "closureEligible": false
+    },
+    {
+      "path": ".github/workflows/ide-supervisor-os-rights.yml",
+      "gitBlobSha": "54eeabf51d698cb3342e624cb8157a23a1bcdcc5",
+      "phaseOwner": "P03",
+      "disposition": "retain_existing_workflow",
+      "reason": "kernel containment, supervised language server, debugger, cancellation or service recovery native evidence remains required",
+      "installedOrNativeReplacementAccepted": false,
+      "closureEligible": false
+    },
+    {
+      "path": ".github/workflows/ide-wo4-linux-native-delegation.yml",
+      "gitBlobSha": "a2fe91d09757347f206ba39e5618c4d3803c42c6",
+      "phaseOwner": "P03",
+      "disposition": "retain_existing_workflow",
+      "reason": "kernel containment, supervised language server, debugger, cancellation or service recovery native evidence remains required",
+      "installedOrNativeReplacementAccepted": false,
+      "closureEligible": false
+    },
+    {
+      "path": ".github/workflows/ide-wo4-linux-source.yml",
+      "gitBlobSha": "2fb1a5571f36a8905c0264d28d82f5e33ee0e2fc",
+      "phaseOwner": "P03",
+      "disposition": "retain_existing_workflow",
+      "reason": "kernel containment, supervised language server, debugger, cancellation or service recovery native evidence remains required",
+      "installedOrNativeReplacementAccepted": false,
+      "closureEligible": false
+    },
+    {
+      "path": ".github/workflows/ide-wo5-native-linux-clangd.yml",
+      "gitBlobSha": "12fd318caa638fa4e0c773256145d483588b9a83",
+      "phaseOwner": "P03",
+      "disposition": "retain_existing_workflow",
+      "reason": "kernel containment, supervised language server, debugger, cancellation or service recovery native evidence remains required",
+      "installedOrNativeReplacementAccepted": false,
+      "closureEligible": false
+    },
+    {
+      "path": ".github/workflows/ide-wo6-build-test-dap.yml",
+      "gitBlobSha": "fe7bddaee39a93d4a063e8067cc2fcf03e317cb3",
+      "phaseOwner": "P03",
+      "disposition": "retain_existing_workflow",
+      "reason": "kernel containment, supervised language server, debugger, cancellation or service recovery native evidence remains required",
+      "installedOrNativeReplacementAccepted": false,
+      "closureEligible": false
+    },
+    {
+      "path": ".github/workflows/ide-wo6-native-desktop.yml",
+      "gitBlobSha": "7d480b2627f3fa7c42756b301e653f6ca4cd8cb7",
+      "phaseOwner": "P03",
+      "disposition": "retain_existing_workflow",
+      "reason": "kernel containment, supervised language server, debugger, cancellation or service recovery native evidence remains required",
+      "installedOrNativeReplacementAccepted": false,
+      "closureEligible": false
+    },
+    {
+      "path": ".github/workflows/ide-wo6-native-os-acceptance.yml",
+      "gitBlobSha": "d7627899b3a6cafc7b383f00abbb2b9e7107fe2d",
+      "phaseOwner": "P03",
+      "disposition": "retain_existing_workflow",
+      "reason": "kernel containment, supervised language server, debugger, cancellation or service recovery native evidence remains required",
+      "installedOrNativeReplacementAccepted": false,
+      "closureEligible": false
+    },
+    {
+      "path": ".github/workflows/ide-wo7-installed-acceptance.yml",
+      "gitBlobSha": "b1046bc7277ccb31924e3ed3b78d7afb22595d1e",
+      "phaseOwner": "P04",
+      "disposition": "retain_existing_workflow",
+      "reason": "installed, signing, upgrade, dependency-license or workflow acceptance is not yet independently replaced",
+      "installedOrNativeReplacementAccepted": false,
+      "closureEligible": false
+    },
+    {
+      "path": ".github/workflows/ide-wo7-signed-release-preflight.yml",
+      "gitBlobSha": "6413844fdaa579840441d538d21bb62cf605fc93",
+      "phaseOwner": "P04",
+      "disposition": "retain_existing_workflow",
+      "reason": "installed, signing, upgrade, dependency-license or workflow acceptance is not yet independently replaced",
+      "installedOrNativeReplacementAccepted": false,
+      "closureEligible": false
+    },
+    {
+      "path": ".github/workflows/ide-wo8-installed-linux.yml",
+      "gitBlobSha": "cbb33c566a492ed176d7af8ef381019c5753605e",
+      "phaseOwner": "P04",
+      "disposition": "retain_existing_workflow",
+      "reason": "installed, signing, upgrade, dependency-license or workflow acceptance is not yet independently replaced",
+      "installedOrNativeReplacementAccepted": false,
+      "closureEligible": false
+    },
+    {
+      "path": ".github/workflows/ide-wo8-installed-windows.yml",
+      "gitBlobSha": "8fadc3f1829e62123b9da6a5e6bbd49a3f3ec36f",
+      "phaseOwner": "P04",
+      "disposition": "retain_existing_workflow",
+      "reason": "installed, signing, upgrade, dependency-license or workflow acceptance is not yet independently replaced",
+      "installedOrNativeReplacementAccepted": false,
+      "closureEligible": false
+    },
+    {
+      "path": ".github/workflows/ide-wo8-protected-recovery.yml",
+      "gitBlobSha": "52261be31b317839ea55a3e6e2fb145193ce2331",
+      "phaseOwner": "P04",
+      "disposition": "retain_existing_workflow",
+      "reason": "installed, signing, upgrade, dependency-license or workflow acceptance is not yet independently replaced",
+      "installedOrNativeReplacementAccepted": false,
+      "closureEligible": false
+    },
+    {
+      "path": ".github/workflows/ide-wo8-signed-protected-e2e.yml",
+      "gitBlobSha": "08e2ab350b9e0c9e88958a40a3eeca59a3a66df5",
+      "phaseOwner": "P04",
+      "disposition": "retain_existing_workflow",
+      "reason": "installed, signing, upgrade, dependency-license or workflow acceptance is not yet independently replaced",
+      "installedOrNativeReplacementAccepted": false,
+      "closureEligible": false
+    },
+    {
+      "path": ".github/workflows/ide-wo8-source-safety.yml",
+      "gitBlobSha": "d5ccdf5a4a9832d6a659586cae4c627ab20bc14c",
+      "phaseOwner": "P04",
+      "disposition": "retain_existing_workflow",
+      "reason": "installed, signing, upgrade, dependency-license or workflow acceptance is not yet independently replaced",
+      "installedOrNativeReplacementAccepted": false,
+      "closureEligible": false
+    },
+    {
+      "path": ".github/workflows/ide-wo9-advanced-workflows.yml",
+      "gitBlobSha": "5949c11d2a288520f7fb97f3bd758fbdf862f7cd",
+      "phaseOwner": "P04",
+      "disposition": "retain_existing_workflow",
+      "reason": "installed, signing, upgrade, dependency-license or workflow acceptance is not yet independently replaced",
+      "installedOrNativeReplacementAccepted": false,
+      "closureEligible": false
+    },
+    {
+      "path": ".github/workflows/ide-wo9-installed-native.yml",
+      "gitBlobSha": "60c1bf3d20fb08dcdcfd183a8ffec76599fa6c52",
+      "phaseOwner": "P04",
+      "disposition": "retain_existing_workflow",
+      "reason": "installed, signing, upgrade, dependency-license or workflow acceptance is not yet independently replaced",
+      "installedOrNativeReplacementAccepted": false,
+      "closureEligible": false
+    },
+    {
+      "path": ".github/workflows/ide-wo9-signed-protected-acceptance.yml",
+      "gitBlobSha": "8931e49493e2559cf5368f93b72029418902001c",
+      "phaseOwner": "P04",
+      "disposition": "retain_existing_workflow",
+      "reason": "installed, signing, upgrade, dependency-license or workflow acceptance is not yet independently replaced",
+      "installedOrNativeReplacementAccepted": false,
+      "closureEligible": false
+    }
+  ],
+  "releaseApproved": false
+}

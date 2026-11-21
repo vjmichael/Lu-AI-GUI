@@ -1,0 +1,114 @@
+name: IDE P04 reviewed signed Debian two-version OS and GTK transition
+on:
+  workflow_dispatch:
+    inputs:
+      old_source_sha:
+        description: Reviewed old Linux candidate exact source SHA
+        required: true
+        type: string
+      new_source_sha:
+        description: Reviewed newer Linux candidate exact source SHA
+        required: true
+        type: string
+      old_candidate_run_id:
+        description: Run supplying reviewed signed old Debian package and detached signature
+        required: true
+        type: string
+      new_candidate_run_id:
+        description: Run supplying reviewed signed new Debian package and detached signature
+        required: true
+        type: string
+      old_package_sha256:
+        description: Reviewed old Debian package bytes SHA-256
+        required: true
+        type: string
+      new_package_sha256:
+        description: Reviewed new Debian package bytes SHA-256
+        required: true
+        type: string
+permissions:
+  contents: read
+  actions: read
+jobs:
+  linux-signed-native-transition:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 100
+    environment: lu-ide-release-witness
+    strategy:
+      fail-fast: false
+      matrix:
+        scenario: [upgrade, injected_recovery]
+    steps:
+      - name: Check exact old/new source and package identity
+        env:
+          OLD_SHA: ${{ inputs.old_source_sha }}
+          NEW_SHA: ${{ inputs.new_source_sha }}
+          OLD_RUN: ${{ inputs.old_candidate_run_id }}
+          NEW_RUN: ${{ inputs.new_candidate_run_id }}
+          OLD_HASH: ${{ inputs.old_package_sha256 }}
+          NEW_HASH: ${{ inputs.new_package_sha256 }}
+          REVIEWED_FINGERPRINT: ${{ vars.LU_IDE_APPROVED_LINUX_SIGNING_FINGERPRINT }}
+        run: |
+          [[ "$OLD_SHA" =~ ^[0-9a-fA-F]{40}$ && "$NEW_SHA" =~ ^[0-9a-fA-F]{40}$ ]] || exit 2
+          [[ "$OLD_SHA" != "$NEW_SHA" ]] || exit 2
+          [[ "$OLD_RUN" =~ ^[0-9]{1,20}$ && "$NEW_RUN" =~ ^[0-9]{1,20}$ ]] || exit 2
+          [[ "$OLD_HASH" =~ ^[0-9a-fA-F]{64}$ && "$NEW_HASH" =~ ^[0-9a-fA-F]{64}$ ]] || exit 2
+          [[ "$REVIEWED_FINGERPRINT" =~ ^[0-9a-fA-F]{40}$ ]] || exit 2
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.new_source_sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: lu-ide-p04-signed-deb
+          path: candidate-old
+          run-id: ${{ inputs.old_candidate_run_id }}
+          github-token: ${{ github.token }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: lu-ide-p04-signed-deb
+          path: candidate-new
+          run-id: ${{ inputs.new_candidate_run_id }}
+          github-token: ${{ github.token }}
+      - name: Install only native GTK accessibility and signature-test prerequisites
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends gnupg dbus-x11 xvfb xauth xdotool openbox python3-pyatspi at-spi2-core libgtk-3-0
+      - name: Verify source, protected review key and signed exact packages
+        env:
+          EXPECTED_SHA: ${{ inputs.new_source_sha }}
+          PUBLIC_KEY_BASE64: ${{ secrets.LU_IDE_APPROVED_LINUX_SIGNER_PUBLIC_KEY_B64 }}
+        run: |
+          set -euo pipefail
+          [[ "$(git rev-parse HEAD)" == "$EXPECTED_SHA" ]] || { echo 'DENIED: new reviewed head drift'; exit 2; }
+          [[ -n "$PUBLIC_KEY_BASE64" ]] || { echo 'DENIED: reviewed signing key unavailable'; exit 2; }
+          printf '%s' "$PUBLIC_KEY_BASE64" | base64 -d > "$RUNNER_TEMP/reviewed-linux-signer.asc"
+          chmod 600 "$RUNNER_TEMP/reviewed-linux-signer.asc"
+          bash -n ide/app/fixtures/Test-P04SignedDebTransition.sh
+          test -f candidate-old/lu-ide.deb
+          test -f candidate-old/lu-ide.deb.asc
+          test -f candidate-new/lu-ide.deb
+          test -f candidate-new/lu-ide.deb.asc
+      - name: Real GPG-signed native Debian transition and persisted GTK project
+        env:
+          OLD_HASH: ${{ inputs.old_package_sha256 }}
+          NEW_HASH: ${{ inputs.new_package_sha256 }}
+          REVIEWED_FINGERPRINT: ${{ vars.LU_IDE_APPROVED_LINUX_SIGNING_FINGERPRINT }}
+          SCENARIO: ${{ matrix.scenario }}
+        run: |
+          set -euo pipefail
+          mkdir -m 700 "$RUNNER_TEMP/p04-verified-old" "$RUNNER_TEMP/p04-verified-new"
+          cp candidate-old/lu-ide.deb candidate-old/lu-ide.deb.asc "$RUNNER_TEMP/p04-verified-old/"
+          cp candidate-new/lu-ide.deb candidate-new/lu-ide.deb.asc "$RUNNER_TEMP/p04-verified-new/"
+          dbus-run-session -- xvfb-run -a -s '-screen 0 1280x800x24' bash -c 'openbox >/dev/null 2>&1 & exec bash ide/app/fixtures/Test-P04SignedDebTransition.sh "$@"' _ \
+            "$RUNNER_TEMP/p04-verified-old/lu-ide.deb" \
+            "$RUNNER_TEMP/p04-verified-old/lu-ide.deb.asc" \
+            "$RUNNER_TEMP/p04-verified-new/lu-ide.deb" \
+            "$RUNNER_TEMP/p04-verified-new/lu-ide.deb.asc" \
+            "$RUNNER_TEMP/reviewed-linux-signer.asc" \
+            "$OLD_HASH" "$NEW_HASH" "$REVIEWED_FINGERPRINT" "$SCENARIO"
+      - name: Do not claim signed Linux release from transitional CI
+        run: |
+          echo 'P04_LINUX_TWO_VERSION_NATIVE_TRANSITION=REQUIRES_OBSERVED_SIGNED_OS_LOG'
+          echo 'P04_INJECTED_RECOVERY_NOT_FAILED_INSTALLER_ROLLBACK'
+          echo 'P04_APPROVED_PRODUCTION_RELEASE=NO'

@@ -1,0 +1,68 @@
+name: IDE DEV-02.1 verified project Problems navigator
+on:
+  push:
+    branches: ['ide/dev02-project-problems-20261108']
+    paths:
+      - 'ide/app/web/**'
+      - 'ide/app/tests/dev02_project_problems*.test.mjs'
+      - 'ide/host/src/lsp*'
+      - '.github/workflows/ide-dev02-project-problems-native-ci.yml'
+  pull_request:
+    paths:
+      - 'ide/app/web/**'
+      - 'ide/app/tests/dev02_project_problems*.test.mjs'
+      - 'ide/host/src/lsp*'
+      - '.github/workflows/ide-dev02-project-problems-native-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  exact-head-source:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2022, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 65
+    env:
+      CARGO_INCREMENTAL: 0
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+      - name: Prove exact task head and locked frontend dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          test "$(git rev-parse HEAD:ide/app/package-lock.json)" = "dfe4412bfacfc22ad1149f5213f4a26aa49b4067"
+      - name: Native OS frontend build and complete stale-source regression
+        shell: bash
+        working-directory: ide/app
+        run: |
+          set -euo pipefail
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm run check
+      - name: Cross-platform LSP protocol source host acceptance
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --manifest-path ide/host/Cargo.toml --all-targets
+      - name: Source-only evidence statement
+        shell: bash
+        run: |
+          echo "DEV02_PROJECT_PROBLEMS_NATIVE_SOURCE=PASS"
+          echo "DEV02_NATIVE_LSP_WORKER_LINUX_WINDOWS=NOT_ACCEPTED"
+          echo "DEV02_INSTALLED_OS_LANGUAGE_SERVER=NOT_ACCEPTED"
+          echo "DEV02_CROSS_FILE_DISK_NAVIGATION=NOT_IMPLEMENTED"
+          echo "DEV02_RELEASE_AND_LEGAL=NOT_ACCEPTED"

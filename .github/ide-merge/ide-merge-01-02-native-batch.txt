@@ -1,0 +1,32 @@
+IDE-MERGE-01/02 project-search private-trash source-convergence batch
+Reconciled original run #43635766693: 4/4 exact-head native jobs PASS
+Original source head: f3d1e0f2033d78477d24750b84f1ea7bd7f3ed33
+No original native failures. New source-only cross-feature regression:
+P05 saved-text project search must reuse modern Quick Open private
+.lu-ide-* and casefolded generated-folder denial, including .lu-ide-trash.
+Retain original 4-job matrix, preserve installed/physical release gates.
+This marker selects ONE final source SHA for grouped Windows/Linux CI.
+
+IDE-LINUX-09-R5-R1 — single consolidated native acceptance admission.
+Published candidate: 2f3866df6911a075dd0cf89d3862934a01337fac
+Run existing exact-head native Git/desktop and DEV-01 installed graphical/recovery jobs.
+No release, main merge, protected execution approval, or technical LSP acceptance implied.
+
+IDE-MERGE-05B-R4-R2 / IDE-LINUX-09-R5-R2: reconcile exact WO6 rustdoc ownership source pin.
+Prior batch 44671104036: four success, two blocked by the same source provenance check.
+Repeat existing six-job matrix at the new locked head; no new scope or release authority.
+
+IDE-MERGE-05B-R4-R4: grouped residual installed editor + technical resource acceptance.
+Prior batch 44673277215 completed 6/6 on dd46fce3c1203d10e2989d3e63ca00cf9af019cf.
+Repeat six original jobs and the separately bounded technical-only matrix at this locked successor; no protected execution or release grants.
+
+IDE-MERGE-05B-R4-R5: two observed installed acceptance failures; exact accessibility notification and NSIS bundle identity repair.
+Prior exact SHA 6/8; repeat both existing matrices for unchanged-head acceptance, no new approval or release authority.
+
+IDE-MERGE-05B-R4-R6-R1: prior candidate f610f2227c27 exact-head 7/8 PASS (both technical installed LSP jobs PASS). Linux installed navigation remains the sole failure; verify exact selected saved tab via existing relative-path UI, await restore completion and retain independent source byte, split-save and restart assertions. Repeat both original grouped matrices; no protected provider execution, release or main merge authorization.
+
+IDE-MERGE-05B-R4-R6-R2: previous exact ea86a98a835c 7/8 PASS, Linux two-pane Save now passes then main.rs tab selection fails before draft/reference recovery. Wait for clean saved tab and directly select exact native existing tab; confirm selected state and unchanged source bytes. Retain original clipboard, undo, hard-kill restart, opt-in recovery and explicit Save assertions. Repeat existing two matrices together; no authority or release change.
+
+IDE-MERGE-05B-R4-R6-R3: previous dc599308a7cd 7/8 accepted scoped; Linux split/focused Save passes then native tab-action dispatch denied. Use exact native Jump to open file focus and Home for main.rs; wait independently for exact selected saved tabs and unchanged source digests. Preserve consent, clipboard, Undo, hard kill, restart and explicit Save. Repeat existing full grouped matrices. No production or authority changes.
+
+IDE-MERGE-05C-R5: final ledger convergence and restored original Linux quota/DAP regression batch. Prior accepted source 9e95b6108fcd: eight of eight scoped jobs PASS. Requalify native/technical/installed jobs plus original native protected Linux and debugger source workflows on the new exact SHA. No release or production authority change.

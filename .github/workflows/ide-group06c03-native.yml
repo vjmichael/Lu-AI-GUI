@@ -1,0 +1,97 @@
+# IDE G06C03 protected local FF: source and actual native Git custody, NOT human consent.
+name: IDE Group 6C03 protected fast-forward (source not release)
+on:
+  push:
+    branches: [ide/group06c03-protected-merge-20261110]
+    paths:
+      - '.github/workflows/ide-group06c03-native.yml'
+      - 'ide/host/src/git_protected_merge.rs'
+      - 'ide/host/src/lib.rs'
+      - 'ide/app/src-tauri/src/lib.rs'
+      - 'ide/app/web/main.jsx'
+      - 'ide/app/tests/g06c03_protected_fast_forward.test.mjs'
+      - 'ide/docs/IDE_GROUP06C03_PROTECTED_MERGE_RECOVERY_20261110.md'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ide-g06c03-native-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  native-fast-forward:
+    name: G06C03 source and genuine process abort / ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2022]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 80
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Exact-head and stacked 6C02 / 6B lineage
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          git merge-base --is-ancestor f2cd984cf89b25c8a8ba70109e979a89fd13451f HEAD
+          git merge-base --is-ancestor ea584951d7b5acea85e7f1ad9502ba4a461a8f87 HEAD
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+          components: rustfmt
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.16.0'
+      - name: Linux native desktop/WebKit dependencies
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev libayatana-appindicator3-dev \
+            librsvg2-dev libgtk-3-dev patchelf libssl-dev
+      - name: Real local Git fast-forward, cancellation and process-abort restart tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --manifest-path ide/host/Cargo.toml --lib git_protected_merge -- --nocapture
+          cargo test --manifest-path ide/host/Cargo.toml --lib git_merge_plan
+          cargo test --manifest-path ide/host/Cargo.toml --lib git_branch_operations
+          rustfmt --edition 2021 --check ide/host/src/git_protected_merge.rs
+          echo G06C03_AUTHORIZATION=NOT_SIMULATED_AS_HUMAN
+      - name: Strict WebView source scopes, one-use OS boundary and JS bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd ide/app
+          npm ci --ignore-scripts --no-audit --no-fund
+          node --test tests/g06c03_protected_fast_forward.test.mjs tests/g06c02_reviewed_merge_plan.test.mjs tests/g06c_local_branch_operations.test.mjs
+          npm run build
+          echo G06C03_UI=COMPILED_NOT_PHYSICAL_APPROVAL
+      - name: Rust native Tauri command/OS dialog compilation
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "$RUNNER_OS" = Windows ] && [ ! -f ide/app/src-tauri/icons/icon.ico ]; then
+            python ide/app/fixtures/make_g04d_ci_icon.py
+          fi
+          cargo check --locked --manifest-path ide/app/src-tauri/Cargo.toml --all-targets
+          echo G06C03_TAURI=COMPILED_SOURCE_NOT_INSTALLED_OS_CONSENT
+      - name: Explicit deferred installed and divergence gates
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p ide-g06c03-receipts
+          printf 'source_sha=%s\nos=%s\nfast_forward_host=REQUIRES_ONE_USE_OS_DIALOG\ndivergent_merge=DENIED\nreal_child_abort=TESTED_IF_NATIVE_JOB_PASSED\nphysical_operator=DEFERRED\ninstalled_nsis_deb=DEFERRED\n' \
+            "$GITHUB_SHA" "$RUNNER_OS" > ide-g06c03-receipts/source.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ide-g06c03-${{ matrix.os }}-${{ github.sha }}
+          path: ide-g06c03-receipts/
+          retention-days: 7

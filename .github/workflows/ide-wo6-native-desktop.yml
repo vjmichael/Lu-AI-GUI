@@ -1,0 +1,76 @@
+name: IDE WO6 opt-in native desktop compiler and installed shell
+on:
+  pull_request:
+    paths:
+      - 'ide/app/**'
+      - 'ide/host/**'
+      - 'ide/supervisor/**'
+      - '.github/workflows/ide-wo6-native-desktop.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  windows-native-build-dispatch:
+    runs-on: windows-2025
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Build real frontend and first-party icon
+        shell: bash
+        run: |
+          cd ide/app
+          npm install --ignore-scripts --no-audit --no-fund
+          npm run check
+      - name: Compile default desktop (must remain nonexecuting)
+        run: cargo check --manifest-path ide/app/src-tauri/Cargo.toml --all-targets
+      - name: Compile and test protected Windows build/test dispatch and pinned LLDB-DAP self-test
+        run: cargo test --manifest-path ide/app/src-tauri/Cargo.toml --features native-build,native-debug --lib
+      - name: Verify no release pins are hard-coded or supplied by CI
+        shell: pwsh
+        run: |
+          $src=Get-Content ide/app/src-tauri/src/build_backend.rs -Raw
+          if ($src -notmatch 'option_env!\("LU_IDE_WO6_WINDOWS_CARGO_BUNDLE_SHA256"\)' -or
+              $src -notmatch 'execute_windows_worker_after_staging_approval' -or
+              $src -notmatch 'reconcile_windows_interrupted_via_service') {
+            throw 'DENIED: strict native Windows admission absent'
+          }
+          if ($env:LU_IDE_WO6_WINDOWS_CARGO_BUNDLE_SHA256) {
+            throw 'DENIED: source compiler job is not a licensed release pinning job'
+          }
+  linux-native-build-dispatch:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install Linux Tauri native compile prerequisites
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf libssl-dev libgtk-3-dev
+      - name: Build real standalone frontend
+        shell: bash
+        run: |
+          cd ide/app
+          npm install --ignore-scripts --no-audit --no-fund
+          npm run build
+      - name: Compile disabled-by-default desktop
+        run: cargo check --manifest-path ide/app/src-tauri/Cargo.toml --lib
+      - name: Compile genuine Linux cgroup/Cargo and LLDB-DAP worker in Tauri
+        run: cargo check --manifest-path ide/app/src-tauri/Cargo.toml --features native-build,native-debug --lib
+      - name: Scope gate
+        run: |
+          echo 'PASS only native host SOURCE compilation. Not delegated cgroup, OS cancellation, installed desktop or debugger acceptance.'

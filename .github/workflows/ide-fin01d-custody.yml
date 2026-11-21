@@ -1,0 +1,60 @@
+# FIN-01D source/receipt regression; not an installed/physical OS grant.
+name: IDE FIN-01D release-custody exact-head Rust
+on:
+  push:
+    branches:
+      - ide/fin01d-custody-closeout-20261112
+    paths:
+      - .github/workflows/ide-fin01d-custody.yml
+      - ide/supervisor/src/lib.rs
+      - ide/supervisor/src/windows_worker.rs
+      - ide/supervisor/src/windows_cap_tree.rs
+      - ide/supervisor/src/debug_binary_witness.rs
+      - ide/supervisor/src/debug_symbol_verification.rs
+      - ide/supervisor/examples/d7_windows_acceptance.rs
+      - ide/supervisor/src/dap_transport.rs
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ide-fin01d-custody-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  windows-rust:
+    runs-on: windows-2022
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+      - name: Exact source and complete FIN-01D/FIN-04 supervisor regression
+        shell: pwsh
+        run: |
+          if ((git rev-parse HEAD).Trim() -ne '${{ github.sha }}') { throw 'FIN01D_HEAD_MISMATCH' }
+          cargo test --manifest-path ide/supervisor/Cargo.toml --features fin04-release-owner-evidence --lib
+          if ($LASTEXITCODE -ne 0) { throw 'FIN01D_WINDOWS_RUST_FAILED' }
+          cargo check --manifest-path ide/supervisor/Cargo.toml --release --features fin04-release-owner-evidence --example wo6_native_dap_acceptance
+          if ($LASTEXITCODE -ne 0) { throw 'FIN01D_WINDOWS_PROTECTED_WORKER_COMPILER_FAILED' }
+          Write-Host 'FIN01D_WINDOWS_FULL_RUST_AND_RELEASE_COMPILE=PASS_NOT_KERNEL'
+  linux-rust:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+      - name: Exact source and complete Linux supervisor regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = '${{ github.sha }}'
+          cargo test --manifest-path ide/supervisor/Cargo.toml --features dap-transport --lib
+          echo 'FIN01D_LINUX_FULL_RUST=PASS_NOT_NATIVE_CGROUP'

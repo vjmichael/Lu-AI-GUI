@@ -1,0 +1,28 @@
+{
+  "schema": "lu.ide.wo7.signed-nsis.v1",
+  "description": "No release artifacts, signer identity or native installed acceptance approved yet.",
+  "releaseApproved": false,
+  "sourceSha": null,
+  "licensesReviewed": false,
+  "acceptance": {
+    "nativeWindows": "pending",
+    "installedSigned": "pending",
+    "serviceLifecycle": "pending",
+    "uninstall": "pending"
+  },
+  "installer": {
+    "path": null,
+    "sha256": null,
+    "signerThumbprint": null
+  },
+  "service": {
+    "path": null,
+    "sha256": null,
+    "signerThumbprint": null
+  },
+  "desktop": {
+    "path": null,
+    "sha256": null,
+    "signerThumbprint": null
+  }
+}

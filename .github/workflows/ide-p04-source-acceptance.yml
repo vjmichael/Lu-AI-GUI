@@ -1,0 +1,75 @@
+name: IDE P04 default-deny release and native migration source checks
+on:
+  pull_request:
+    paths:
+      - 'ide/packaging/**'
+      - 'ide/app/fixtures/Test-P04SignedReinstall.ps1'
+      - 'ide/app/fixtures/Test-P04SignedVersionTransition.ps1'
+      - 'ide/app/fixtures/Test-P04SignedDebTransition.sh'
+      - 'ide/app/fixtures/wo8_linux_editor_atspi.py'
+      - 'ide/app/fixtures/Test-Wo8NativeDesktopUI.ps1'
+      - '.github/workflows/ide-p04-*'
+      - '.github/workflows/ide-wo7-installed-acceptance.yml'
+      - 'ide/docs/IDE_P04_INSTALLED_RELEASE_CLOSEOUT_20261107.md'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  source-and-hostile-evidence:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2022]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Require exact PR source SHA
+        shell: bash
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+      - name: Validate P04 hostile native state and rollback evidence
+        run: python -m unittest discover -s ide/packaging -p 'test_verify_p04_transition_evidence.py' -v
+      - name: Verify license collector includes authentic notices and default-deny modes
+        run: python -m unittest discover -s ide/packaging -p 'test_collect_verification_licenses.py' -v
+      - name: Audit package notice hashes and deny forged legal approvals
+        run: python -m unittest discover -s ide/packaging -p 'test_verify_p04_license_bundle.py' -v
+      - name: Exercise real filesystem upgrades, abrupt process death and disk rollback
+        run: python -m unittest discover -s ide/packaging -p 'test_p04_transactional_upgrade.py' -v
+      - name: Verify signed WO7 source and candidate refusal tests
+        run: python -m unittest discover -s ide/packaging -p 'test_verify_wo7_*.py' -v
+      - name: Verify installed WO8 evidence default-deny
+        run: python -m unittest discover -s ide/packaging -p 'test_verify_wo8_installed_evidence.py' -v
+      - name: Verify installed WO9 release evidence default-deny
+        run: python -m unittest discover -s ide/packaging -p 'test_verify_wo9_release.py' -v
+      - name: Parse genuine Windows signed installer and UI witness code
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          foreach ($path in @('ide/app/fixtures/Test-P04SignedReinstall.ps1',
+              'ide/app/fixtures/Test-P04SignedVersionTransition.ps1',
+              'ide/app/fixtures/Test-Wo8NativeDesktopUI.ps1',
+              'ide/app/fixtures/Test-Wo7SignedInstalledNsis.ps1')) {
+            $tokens=$null; $errors=$null
+            [void][System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $path).Path,[ref]$tokens,[ref]$errors)
+            if ($errors.Count) { throw "DENIED: P04 native PowerShell syntax: $($errors[0])" }
+          }
+      - name: Verify signed Linux Debian test-only shell syntax
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n ide/app/fixtures/Test-P04SignedDebTransition.sh
+          bash -n ide/app/fixtures/Test-P04UnsignedDebBrokenUpgrade.sh
+          python3 -m py_compile ide/app/fixtures/wo8_linux_editor_atspi.py
+      - name: Scope
+        run: echo "P04_SOURCE_ONLY_NO_SIGNING_KEYS_SIGNED_INSTALL_OR_BROKEN_UPGRADE_ROLLBACK_ACCEPTED"

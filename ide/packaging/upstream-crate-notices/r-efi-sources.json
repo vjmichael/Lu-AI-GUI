@@ -1,0 +1,25 @@
+{
+  "schema": "lu.ide.p06.r-efi-original-notices.v1",
+  "releaseApproved": false,
+  "licenseOptionSelected": null,
+  "sources": [
+    {
+      "name": "r-efi",
+      "version": "5.3.0",
+      "revision": "v5.3.0",
+      "originalNotice": "AUTHORS",
+      "url": "https://raw.githubusercontent.com/r-efi/r-efi/v5.3.0/AUTHORS",
+      "gitBlobSha": "7397b2bd6a8580d51fe7b23783f8f1a05fa70291",
+      "declaredLicense": "MIT OR Apache-2.0 OR LGPL-2.1-or-later"
+    },
+    {
+      "name": "r-efi",
+      "version": "6.0.0",
+      "revision": "v6.0.0",
+      "originalNotice": "AUTHORS",
+      "url": "https://raw.githubusercontent.com/r-efi/r-efi/v6.0.0/AUTHORS",
+      "gitBlobSha": "79c8b7c4a1dabcfbc718b7fe6d43b1892f9850cd",
+      "declaredLicense": "MIT OR Apache-2.0 OR LGPL-2.1-or-later"
+    }
+  ]
+}

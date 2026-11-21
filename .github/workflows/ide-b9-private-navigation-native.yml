@@ -1,0 +1,95 @@
+name: IDE B9 private restart-safe navigation Windows Linux
+on:
+  push:
+    branches: ['ide/b9-durable-workspace-navigation-20261108']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  native-b9-private-navigation:
+    name: B9 real native registry and desktop source / ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2022, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 95
+    env:
+      CARGO_INCREMENTAL: 0
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify exact checkout and unchanged prior native authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.sha }}"
+          B8_PARENT=bf1f7fc238281dd125b25cb6f3a04509d6b490b6
+          git merge-base --is-ancestor "$B8_PARENT" HEAD
+          git diff --exit-code "$B8_PARENT" HEAD -- \
+            ide/supervisor ide/packaging ide/host/src/browser.rs \
+            ide/host/src/draft_vault.rs ide/app/src-tauri/src/lsp_backend.rs \
+            ide/app/src-tauri/src/build_backend.rs ide/app/src-tauri/src/debug_backend.rs
+          python3 ide/packaging/verify_tauri_minor.py --repo-root .
+          echo "B9_NATIVE_AUTHORITY_NO_EXPANSION=PASS"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+          components: rustfmt
+      - name: Linux Tauri WebKit native compilation prerequisites
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev \
+            patchelf libssl-dev libgtk-3-dev
+      - name: Exact B9 Node navigation tests and complete frontend
+        working-directory: ide/app
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci --ignore-scripts --no-audit --no-fund
+          node --test tests/workspace_layout.test.mjs
+          npm run check
+          echo "B9_NATIVE_FRONTEND_AND_ALL_PRIOR_B_TESTS=PASS"
+      - name: Real Rust registry restart and privacy tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --manifest-path ide/host/Cargo.toml --test workspace_layout
+          cargo test --manifest-path ide/host/Cargo.toml --all-targets
+          echo "B9_REAL_NATIVE_PRIVATE_LAYOUT_RESTART_AND_SYMLINK_TESTS=PASS"
+      - name: Compile exact locked standalone Tauri native commands
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo check --manifest-path ide/app/src-tauri/Cargo.toml --all-targets --locked
+          echo "B9_WIN_LINUX_TAURI_COMMAND_AND_HOST_COMPILATION=PASS"
+          echo "B9_INSTALLED_GUI_RESTART_AND_PRIVATE_DRAFT_ACCEPTANCE=OPEN"
+      - name: Preserve source-bound OS test receipt
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/ide-b9"
+          printf 'checkoutSha=%s\nos=%s\nrunId=%s\ninstalledAcceptance=OPEN\n' \
+            "$(git rev-parse HEAD)" "${{ runner.os }}" "${{ github.run_id }}" \
+            > "$RUNNER_TEMP/ide-b9/source-receipt.txt"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ide-b9-real-native-source-${{ matrix.os }}-${{ github.sha }}
+          path: ${{ runner.temp }}/ide-b9/source-receipt.txt
+          if-no-files-found: warn
+          retention-days: 14

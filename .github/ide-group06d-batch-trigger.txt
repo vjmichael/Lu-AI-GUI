@@ -1,0 +1,6 @@
+IDE Group 6D single consolidated exact-head verification marker
+Draft PR #221
+Source-before-marker: cef3ab86abd2830700367ba4eef4b846cd611416
+Windows/Linux native Rust+Tauri+frontend, installed NSIS+Debian
+6D01/6D02/6D03/6D04 source and guarded real abort tests
+No per-file CI fanout; physical-human approval deferred #218

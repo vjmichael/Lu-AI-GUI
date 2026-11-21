@@ -186,6 +186,17 @@ test('PLAN-05 installed Windows acceptance requires true OS dialog controls and 
   assert.match(ui,/Confirm review only/);
   assert.match(ui,/Cancel/);
   assert.match(ui,/UIAutomationClient/);
+  const typing=ui.slice(ui.indexOf('function Set-Reviewed-Text('),ui.indexOf('function Wait-No-Dialog('));
+  assert.match(typing,/\$owner\.Current\.ProcessId -ne \[int64\]\$script:process\.Id/);
+  assert.match(typing,/\$point=\$el\.GetClickablePoint\(\)/);
+  assert.match(typing,/\$point\.X -lt \$bounds\.Left -or \$point\.X -ge \$bounds\.Right/);
+  assert.match(typing,/\$point\.Y -lt \$bounds\.Top -or \$point\.Y -ge \$bounds\.Bottom/);
+  assert.match(typing,/\$value\.Length -gt 128/);
+  assert.match(typing,/\$el\.Current\.HasKeyboardFocus/);
+  assert.match(typing,/SendKeys\]::SendWait\('\^a'\)/);
+  assert.match(typing,/SendKeys\]::SendWait\(\$value\)/);
+  assert.match(typing,/ValuePattern\]\$p\)\.Current\.Value -cne \$value/);
+  assert.doesNotMatch(typing,/\.SetValue\(/);
   assert.match(ui,/PASS_BYTE_IDENTICAL_REGISTER_HEAD/);
   assert.match(ui,/after-restart-independent-readback/);
   assert.match(readback,/PRAGMA query_only=ON/);

@@ -1,0 +1,142 @@
+name: IDE DEV-02.6B real protected Windows Linux three-provider LSP
+# Manual genuine self-hosted kernel-containment acceptance, NEVER hosted CI.
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  true-protected-linux-protocol:
+    runs-on: [self-hosted, Linux, lu-ide-delegated]
+    timeout-minutes: 90
+    env:
+      LU_IDE_E2_REVIEWED_BASE: /opt/lu-ide-reviewed-language-assets
+      CLANGD_PIN: ${{ secrets.LU_IDE_E2_CLANGD_BUNDLE_SHA256 }}
+      RUST_ANALYZER_PIN: ${{ secrets.LU_IDE_E2_RUST_ANALYZER_BUNDLE_SHA256 }}
+      RUFF_PIN: ${{ secrets.LU_IDE_E2_RUFF_BUNDLE_SHA256 }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+      - name: Refuse missing kernel delegation, root ownership or independent pins
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.sha }}"
+          test -f /usr/bin/bwrap
+          test ! -L /usr/bin/bwrap
+          test "$(stat -c %u /usr/bin/bwrap)" = 0
+          test -r /sys/fs/cgroup/cgroup.controllers
+          grep -E '^0::/.*/lu-ide-delegated(\.service)?/lu-ide-host$' /proc/self/cgroup
+          for pin in "$CLANGD_PIN" "$RUST_ANALYZER_PIN" "$RUFF_PIN"; do
+            [[ "$pin" =~ ^[0-9a-fA-F]{64}$ ]]
+          done
+          for provider in clangd rust-analyzer ruff; do
+            root="$LU_IDE_E2_REVIEWED_BASE/$provider"
+            test -d "$root"
+            test ! -L "$root"
+            test "$(stat -c %u "$root")" = 0
+          done
+          python3 ide/packaging/verify_language_servers.py
+          if python3 ide/packaging/verify_language_servers.py --release; then
+            echo 'DENIED: legal release manifest must remain false'
+            exit 2
+          fi
+      - name: Compile actual native protected LSP supervisor and multilang acceptance fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --manifest-path ide/supervisor/Cargo.toml --features 'lsp-transport,linux-worker' --lib
+          cargo build --manifest-path ide/supervisor/Cargo.toml --features 'lsp-transport,linux-worker' --example e2_native_multilang_protected_acceptance
+      - name: Actual Bwrap cgroup-v2 LSP initialize diagnostics semantics and crash-safe process-tree cancellation
+        shell: bash
+        run: |
+          set -euo pipefail
+          bin=ide/supervisor/target/debug/examples/e2_native_multilang_protected_acceptance
+          for provider in clangd rust-analyzer ruff; do
+            case "$provider" in
+              clangd) pin="$CLANGD_PIN";;
+              rust-analyzer) pin="$RUST_ANALYZER_PIN";;
+              ruff) pin="$RUFF_PIN";;
+            esac
+            export LU_IDE_E2_PINNED_LSP_BUNDLE="$LU_IDE_E2_REVIEWED_BASE/$provider"
+            export LU_IDE_E2_EXPECTED_BUNDLE_SHA256="$pin"
+            "$bin" "$provider"
+            "$bin" "$provider" --cancel
+          done
+          echo 'DEV026B_LINUX_GENUINE_KERNEL_CONTAINED_THREE_PROVIDER_PROTOCOL_AND_REAP=PASS'
+
+  true-protected-windows-protocol:
+    runs-on: [self-hosted, Windows, lu-ide-protected]
+    timeout-minutes: 100
+    env:
+      LU_IDE_E2_REVIEWED_BASE: C:\LuIdeReviewedAssets\language-servers
+      LU_IDE_E2_TRUSTED_SERVICE: C:\LuIdeReviewedAssets\windows_recovery_service.exe
+      LU_IDE_E2_TRUSTED_SERVICE_SHA256: ${{ secrets.LU_IDE_E2_D7D_SERVICE_SHA256 }}
+      CLANGD_PIN: ${{ secrets.LU_IDE_E2_CLANGD_BUNDLE_SHA256 }}
+      RUST_ANALYZER_PIN: ${{ secrets.LU_IDE_E2_RUST_ANALYZER_BUNDLE_SHA256 }}
+      RUFF_PIN: ${{ secrets.LU_IDE_E2_RUFF_BUNDLE_SHA256 }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+      - name: Require actual signed independently pinned LocalService and reviewed native provider roots
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          if ((git rev-parse HEAD).Trim() -ne '${{ github.sha }}') {throw 'DENIED: checkout SHA mismatch'}
+          foreach($value in @($env:LU_IDE_E2_TRUSTED_SERVICE_SHA256,$env:CLANGD_PIN,$env:RUST_ANALYZER_PIN,$env:RUFF_PIN)) {
+            if ($value -notmatch '^[0-9a-fA-F]{64}$') {throw 'DENIED: reviewed technical pin missing'}
+          }
+          $service=$env:LU_IDE_E2_TRUSTED_SERVICE
+          if (!(Test-Path -LiteralPath $service -PathType Leaf)) {throw 'DENIED: broker absent'}
+          if ((Get-Item -LiteralPath $service).Attributes.HasFlag([IO.FileAttributes]::ReparsePoint)) {throw 'DENIED: broker linked'}
+          if ((Get-FileHash -LiteralPath $service -Algorithm SHA256).Hash -ine $env:LU_IDE_E2_TRUSTED_SERVICE_SHA256) {throw 'DENIED: broker hash drift'}
+          if ((Get-AuthenticodeSignature -LiteralPath $service).Status -ne 'Valid') {throw 'DENIED: broker not independently signed'}
+          $svc=Get-CimInstance Win32_Service -Filter "Name='LuIdeRecoveryBroker'"
+          if (!$svc -or $svc.State -ne 'Running') {throw 'DENIED: restricted service unavailable'}
+          foreach($provider in @('clangd','rust-analyzer','ruff')) {
+            $root=Join-Path $env:LU_IDE_E2_REVIEWED_BASE $provider
+            if (!(Test-Path -LiteralPath $root -PathType Container)) {throw 'DENIED: candidate root absent'}
+            if ((Get-Item -LiteralPath $root).Attributes.HasFlag([IO.FileAttributes]::ReparsePoint)) {throw 'DENIED: candidate root linked'}
+          }
+          python ide/packaging/verify_language_servers.py
+          if ($LASTEXITCODE -ne 0) {throw 'DENIED: manifest invalid'}
+          python ide/packaging/verify_language_servers.py --release
+          if ($LASTEXITCODE -eq 0) {throw 'DENIED: no release approval authorized'}
+      - name: Compile real AppContainer SCM Job protected LSP fixture
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          cargo test --manifest-path ide/supervisor/Cargo.toml --features 'lsp-transport,protected-recovery-service' --lib
+          if ($LASTEXITCODE -ne 0) {throw 'DENIED: protected source test failure'}
+          cargo build --manifest-path ide/supervisor/Cargo.toml --features 'lsp-transport,protected-recovery-service' --example e2_native_multilang_protected_acceptance
+          if ($LASTEXITCODE -ne 0) {throw 'DENIED: protected fixture build failure'}
+      - name: Actual SCM AppContainer Job LSP protocol, cancellation and durable restart receipts
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $binary='ide/supervisor/target/debug/examples/e2_native_multilang_protected_acceptance.exe'
+          foreach($provider in @('clangd','rust-analyzer','ruff')) {
+            $env:LU_IDE_E2_PINNED_LSP_BUNDLE=Join-Path $env:LU_IDE_E2_REVIEWED_BASE $provider
+            switch($provider) {
+              'clangd' {$env:LU_IDE_E2_EXPECTED_BUNDLE_SHA256=$env:CLANGD_PIN}
+              'rust-analyzer' {$env:LU_IDE_E2_EXPECTED_BUNDLE_SHA256=$env:RUST_ANALYZER_PIN}
+              'ruff' {$env:LU_IDE_E2_EXPECTED_BUNDLE_SHA256=$env:RUFF_PIN}
+            }
+            & $binary $provider
+            if ($LASTEXITCODE -ne 0) {throw "DENIED: protected $provider LSP failed"}
+            & $binary $provider --cancel
+            if ($LASTEXITCODE -ne 0) {throw "DENIED: protected $provider cancellation failed"}
+          }
+          Write-Host 'DEV026B_WINDOWS_GENUINE_KERNEL_CONTAINED_THREE_PROVIDER_PROTOCOL_AND_REAP=PASS'

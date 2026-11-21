@@ -1,0 +1,59 @@
+name: IDE WO4 Linux delegated cgroup source security
+on:
+  pull_request:
+    paths:
+      - 'ide/supervisor/**'
+      - 'ide/sandbox/**'
+      - '.github/workflows/ide-wo4-linux-source.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux-source-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+          components: rustfmt
+      - name: Check delegated Linux worker and LSP compilation
+        run: cargo check --manifest-path ide/supervisor/Cargo.toml --features 'linux-worker,lsp-transport' --all-targets
+      - name: Verify Linux cgroup policy regression tests
+        run: cargo test --manifest-path ide/supervisor/Cargo.toml --features 'linux-worker,lsp-transport' --lib
+      - name: Check independent native cgroup probe compilation
+        run: cargo check --manifest-path ide/sandbox/Cargo.toml --all-targets
+      - name: Test independent sandbox fixture source
+        run: cargo test --manifest-path ide/sandbox/Cargo.toml --all-targets
+      - name: Compile fixed trusted systemd preparation and native kernel witness
+        run: |
+          cargo build --manifest-path ide/sandbox/Cargo.toml --bin linux_cgroup_prepare --bin linux_cgroup_native_witness
+      - name: Verify runner without delegation fails closed, not via simulated approval
+        run: |
+          if test ! -w /sys/fs/cgroup; then
+            set +e
+            ide/sandbox/target/debug/linux_cgroup_native_witness > "$RUNNER_TEMP/wo4-cgroup-witness.log" 2>&1
+            status=$?
+            set -e
+            test "$status" -eq 2 || { echo "DENIED: missing delegation unexpectedly admitted fixed worker"; exit 1; }
+            grep -q '^DENIED: native WO4 cgroup witness:' "$RUNNER_TEMP/wo4-cgroup-witness.log" ||
+              { echo "DENIED: missing fail-closed kernel witness"; exit 1; }
+            echo 'PASS: missing cgroup delegation explicitly denies native execution; THIS IS NOT native delegation acceptance'
+          else
+            echo 'NOT VERIFIED: runner may have delegation; independent native OS acceptance still required'
+          fi
+      - name: Check exact Rust formatting
+        run: |
+          cargo fmt --manifest-path ide/supervisor/Cargo.toml -- --check
+          cargo fmt --manifest-path ide/sandbox/Cargo.toml -- --check
+      - name: Provenance label
+        run: |
+          echo "SOURCE ONLY: no delegated cgroup-v2 runtime was supplied by this job"
+          echo "Native pre-exec placement, controller enforcement and subtree kill remain gated"

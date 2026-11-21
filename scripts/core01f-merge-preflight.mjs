@@ -77,16 +77,21 @@ export function verifyCandidateSourceLock(manifest,entries,codeParent){
  if(actual.length!==manifest.files.length)return bad('SOURCE_TREE_FILE_COUNT_CHANGED');
  let prior='';
  for(let i=0;i<actual.length;i++){
-   const node=actual[i],expected=manifest.files[i];
+   const node=actual[i];
    if(!node||node.type!=='blob'||!HEX.test(node.blob||'')||
       typeof node.path!=='string'||!node.path||
       node.path.startsWith('/')||node.path.includes('..')||
       node.path.includes('\\')||node.path.includes('\n')||
       (prior!==''&&prior>=node.path))
      return bad('UNSAFE_OR_UNSORTED_TREE');
+   prior=node.path;
+ }
+ // Validate the entire tree shape before reporting a mismatched blob. An
+ // unsorted or unsafe later row must not be masked by an earlier mismatch.
+ for(let i=0;i<actual.length;i++){
+   const node=actual[i],expected=manifest.files[i];
    if(!expected||expected.path!==node.path||expected.blob!==node.blob)
      return bad('SOURCE_LOCK_BLOB_MISMATCH');
-   prior=node.path;
  }
  return {valid:true,reason:null,trackedFileCount:actual.length};
 }

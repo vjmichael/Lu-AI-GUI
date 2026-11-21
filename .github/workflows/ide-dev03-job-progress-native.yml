@@ -1,0 +1,48 @@
+name: IDE DEV03 bounded native job progress
+on:
+  push:
+    branches: [ide/dev03-streamed-job-progress-20261108]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ide-dev03-job-progress-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  source-and-native:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2022, ubuntu-24.04]
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.16.0'
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+      - name: Native dependencies on Linux
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libgtk-3-dev patchelf libssl-dev
+      - name: Exact-source project progress regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          node --test ide/app/tests/job_progress.test.mjs
+          echo DEV03_NATIVE_PHASE_PROGRESS_SOURCE_PASS
+      - name: Existing native host and Tauri contract checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --manifest-path ide/host/Cargo.toml --all-targets
+          cargo check --manifest-path ide/app/src-tauri/Cargo.toml --features native-build --all-targets --locked
+          echo DEV03_REAL_STDOUT_STDERR_STREAMING=OPEN
+          echo DEV03_INSTALLED_APP_GUI_ACCEPTANCE=OPEN

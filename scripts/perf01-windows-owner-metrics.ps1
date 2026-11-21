@@ -22,8 +22,8 @@ $lock=Join-Path $repo 'source-tree.lock.json'
 & node (Join-Path $repo 'scripts/verify-source-tree.mjs') | Out-Null
 if($LASTEXITCODE -ne 0){throw 'PERF01_SOURCE_INVENTORY_MISMATCH'}
 $binary=(Get-Item -LiteralPath $InstalledLuExe -ErrorAction Stop)
-if($binary.PSIsContainer -or ($binary.Attributes -band [IO.FileAttributes]::ReparsePoint)
-   -or $binary.Extension -ne '.exe'){throw 'PERF01_INSTALLED_EXECUTABLE_UNSAFE'}
+if($binary.PSIsContainer -or ($binary.Attributes -band [IO.FileAttributes]::ReparsePoint) -or
+   $binary.Extension -ne '.exe'){throw 'PERF01_INSTALLED_EXECUTABLE_UNSAFE'}
 $lu=Get-Process -Id $LuPid -ErrorAction Stop
 $engine=Get-Process -Id $EnginePid -ErrorAction Stop
 $observedLuPath=$null

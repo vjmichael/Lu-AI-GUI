@@ -1,0 +1,993 @@
+{
+  "schema": "lu.ide.workflow-dispositions.v1",
+  "referenceHead": "e066faf9cf866163c65bc43d7a7efa3093cde810",
+  "reviewedAgainst": "c79c72c5d0fe29369cb4070adf1c2d8e8c1da3c2",
+  "automaticWorkflowCount": 63,
+  "scope": "Source triage and gate plan only. Related observed lanes are not behavioral equivalence. No additional CI, deletion, retirement, signing, protected execution or authority approval.",
+  "rows": [
+    {
+      "workflow": ".github/workflows/ide-alpha-windows.yml",
+      "gitBlob": "7680fdafd56458a9cff1ec6b6ea1478e5c662c7c",
+      "workflowName": "Lu IDE Windows Alpha R3.5 — Proposal Inbox",
+      "triggerKinds": [
+        "push",
+        "workflow_dispatch"
+      ],
+      "jobKeys": [
+        "unsigned-standalone-exe"
+      ],
+      "disposition": "historical_baseline",
+      "contractToRetain": "Old unsigned standalone binary without current install, test or signing scope; do not distribute",
+      "relatedObservedCohortPaths": [
+        ".github/workflows/ide-e2-unsigned-installed-smoke.yml"
+      ],
+      "parentRunObserved": false,
+      "parityEstablished": false,
+      "retireAuthorized": false,
+      "dispatchAuthorized": false
+    },
+    {
+      "workflow": ".github/workflows/ide-b11-reviewed-merge-native.yml",
+      "gitBlob": "e8cfbeb6c8235b53389bd7cb5e3f7b828029c49f",
+      "workflowName": "IDE B11 reviewed merge native source regression",
+      "triggerKinds": [
+        "push",
+        "workflow_dispatch"
+      ],
+      "jobKeys": [
+        "b11-exact-head"
+      ],
+      "disposition": "source_contract_reconcile",
+      "contractToRetain": "Reviewed conflict merge, original no authority delta; run current source and negative parity",
+      "relatedObservedCohortPaths": [
+        ".github/workflows/ide-group6f-integrated-native.yml",
+        ".github/workflows/ide-b4-split-editor-native.yml"
+      ],
+      "parentRunObserved": false,
+      "parityEstablished": false,
+      "retireAuthorized": false,
+      "dispatchAuthorized": false
+    },
+    {
+      "workflow": ".github/workflows/ide-b6-async-editor-native.yml",
+      "gitBlob": "66dbeabcaef6294c360259e3b6e4b1a5d66d86d2",
+      "workflowName": "IDE B6 real native async editor admission regression",
+      "triggerKinds": [
+        "push",
+        "workflow_dispatch"
+      ],
+      "jobKeys": [
+        "native-b6-editor",
+        "installed-ubuntu26-gtk-b6"
+      ],
+      "disposition": "installed_contract_reconcile",
+      "contractToRetain": "Async editor admission, real Ubuntu26 GTK, Windows B5 source fixture; explicit stale async result and installed latency/limits",
+      "relatedObservedCohortPaths": [
+        ".github/workflows/ide-linux-26-installed-diagnostic.yml",
+        ".github/workflows/ide-b5-large-project-native.yml"
+      ],
+      "parentRunObserved": false,
+      "parityEstablished": false,
+      "retireAuthorized": false,
+      "dispatchAuthorized": false
+    },
+    {
+      "workflow": ".github/workflows/ide-b9-private-navigation-native.yml",
+      "gitBlob": "2c0d7f546e89b0c2c3058dde11c53f33e85bd814",
+      "workflowName": "IDE B9 private restart-safe navigation Windows Linux",
+      "triggerKinds": [
+        "push",
+        "workflow_dispatch"
+      ],
+      "jobKeys": [
+        "native-b9-private-navigation"
+      ],
+      "disposition": "source_contract_reconcile",
+      "contractToRetain": "Private restart-safe navigation, actual registry restart and privacy tests",
+      "relatedObservedCohortPaths": [
+        ".github/workflows/ide-b2-durable-drafts-native.yml",
+        ".github/workflows/ide-group6f-integrated-native.yml"
+      ],
+      "parentRunObserved": false,
+      "parityEstablished": false,
+      "retireAuthorized": false,
+      "dispatchAuthorized": false
+    },
+    {
+      "workflow": ".github/workflows/ide-c7-task-source-evidence-native.yml",
+      "gitBlob": "db5c06b6b6c2d7e1ddf2824c0ed7f1aab5731768",
+      "workflowName": "IDE C7 task source evidence exact-head native",
+      "triggerKinds": [
+        "push",
+        "workflow_dispatch"
+      ],
+      "jobKeys": [
+        "c7-native"
+      ],
+      "disposition": "source_contract_reconcile",
+      "contractToRetain": "Original task source links and no execution-layer authority change",
+      "relatedObservedCohortPaths": [
+        ".github/workflows/ide-dev03-5-job-lifecycle-native.yml"
+      ],
+      "parentRunObserved": false,
+      "parityEstablished": false,
+      "retireAuthorized": false,
+      "dispatchAuthorized": false
+    },
+    {
+      "workflow": ".github/workflows/ide-dev02-linux-installed-protected-lsp.yml",
+      "gitBlob": "6b3f81f9f008eadbbdffa56a7427f2ff2fcb205a",
+      "workflowName": "IDE DEV-02 protected installed Linux language services",
+      "triggerKinds": [
+        "workflow_dispatch"
+      ],
+      "jobKeys": [
+        "genuine-installed-linux-protected-lsp"
+      ],
+      "disposition": "separate_authorized_manual",
+      "contractToRetain": "Real reviewed root-owned providers, delegated cgroup and GTK consent; requires enrolled runner and reviewed assets; exact current reviewed P06 successor lock only",
+      "relatedObservedCohortPaths": [
+        ".github/workflows/ide-e2-native-lsp.yml"
+      ],
+      "parentRunObserved": false,
+      "parityEstablished": false,
+      "retireAuthorized": false,
+      "dispatchAuthorized": false
+    },
+    {
+      "workflow": ".github/workflows/ide-dev02-protected-multilang-real-protocol.yml",
+      "gitBlob": "737e8676be47c444d4d78ab7033778d0a1a33a7a",
+      "workflowName": "IDE DEV-02.6B real protected Windows Linux three-provider LSP",
+      "triggerKinds": [
+        "workflow_dispatch"
+      ],
+      "jobKeys": [
+        "true-protected-linux-protocol",
+        "true-protected-windows-protocol"
+      ],
+      "disposition": "separate_authorized_manual",
+      "contractToRetain": "All three protected providers, real SCM/cgroup jobs, crash cancellation; no substitute for enrollment or OS custody",
+      "relatedObservedCohortPaths": [
+        ".github/workflows/ide-e2-native-lsp.yml",
+        ".github/workflows/ide-dev02-full-native-resource-candidate.yml"
+      ],
+      "parentRunObserved": false,
+      "parityEstablished": false,
+      "retireAuthorized": false,
+      "dispatchAuthorized": false
+    },
+    {
+      "workflow": ".github/workflows/ide-dev02-windows-installed-protected-lsp.yml",
+      "gitBlob": "ee6e8af6c97a2e10c0c25ccde47eff878a64d065",
+      "workflowName": "IDE DEV-02 protected installed Windows language services",
+      "triggerKinds": [
+        "workflow_dispatch"
+      ],
+      "jobKeys": [
+        "genuine-installed-windows-protected-lsp"
+      ],
+      "disposition": "separate_authorized_manual",
+      "contractToRetain": "Actual independently signed SCM and installed native UI consent; no unsigned substitute",
+      "relatedObservedCohortPaths": [
+        ".github/workflows/ide-e2-native-lsp.yml"
+      ],
+      "parentRunObserved": false,
+      "parityEstablished": false,
+      "retireAuthorized": false,
+      "dispatchAuthorized": false
+    },
+    {
+      "workflow": ".github/workflows/ide-dev03-4-discovery-native.yml",
+      "gitBlob": "c325aef77acafea401f96dd28c3f201608bbfd4e",
+      "workflowName": "IDE DEV03.4 bounded test discovery",
+      "triggerKinds": [
+        "push",
+        "workflow_dispatch"
+      ],
+      "jobKeys": [
+        "fixed-test-discovery"
+      ],
+      "disposition": "source_contract_reconcile",
+      "contractToRetain": "Bounded fixed test discovery and registered-project hostile fixtures",
+      "relatedObservedCohortPaths": [
+        ".github/workflows/ide-dev03-5-job-lifecycle-native.yml"
+      ],
+      "parentRunObserved": false,
+      "parityEstablished": false,
+      "retireAuthorized": false,
+      "dispatchAuthorized": false
+    },
+    {
+      "workflow": ".github/workflows/ide-dev03-cmake-llvm-candidate.yml",
+      "gitBlob": "e774e009d8cb5e8435e6b73e5dfec44e0240f1aa",
+      "workflowName": "IDE DEV03 CMake LLVM pinned-source candidate",
+      "triggerKinds": [
+        "push",
+        "workflow_dispatch"
+      ],
+      "jobKeys": [
+        "stage-cmake-llvm"
+      ],
+      "disposition": "runtime_artifact_reconcile",
+      "contractToRetain": "Pinned CMake/LLVM original archives and staging smoke, no substitute with LLVM source compile",
+      "relatedObservedCohortPaths": [
+        ".github/workflows/ide-dev04-5d5-owner-event-native.yml"
+      ],
+      "parentRunObserved": false,
+      "parityEstablished": false,
+      "retireAuthorized": false,
+      "dispatchAuthorized": false
+    },
+    {
+      "workflow": ".github/workflows/ide-dev03-job-progress-native.yml",
+      "gitBlob": "1c0a065554dff08e16e445c41574bbeea7be153d",
+      "workflowName": "IDE DEV03 bounded native job progress",
+      "triggerKinds": [
+        "push",
+        "workflow_dispatch"
+      ],
+      "jobKeys": [
+        "source-and-native"
+      ],
+      "disposition": "source_contract_reconcile",
+      "contractToRetain": "Project job progress stream, host/Tauri source contract",
+      "relatedObservedCohortPaths": [
+        ".github/workflows/ide-dev03-5-job-lifecycle-native.yml"
+      ],
+      "parentRunObserved": false,
+      "parityEstablished": false,
+      "retireAuthorized": false,
+      "dispatchAuthorized": false
+    },
+    {
+      "workflow": ".github/workflows/ide-dev03-multilang-adapter-review-native.yml",
+      "gitBlob": "5b357a24a2dd9b49808af5bd3a0a67cfba89dfaa",
+      "workflowName": "IDE DEV03.2B reviewed multi-language adapter native",
+      "triggerKinds": [
+        "push",
+        "workflow_dispatch"
+      ],
+      "jobKeys": [
+        "adapter-review"
+      ],
+      "disposition": "source_contract_reconcile",
+      "contractToRetain": "Fixed adapter review with hostile manifest and no worker grant",
+      "relatedObservedCohortPaths": [
+        ".github/workflows/ide-dev03-5-job-lifecycle-native.yml",
+        ".github/workflows/ide-wo6-build-test-dap.yml"
+      ],
+      "parentRunObserved": false,
+      "parityEstablished": false,
+      "retireAuthorized": false,
+      "dispatchAuthorized": false
+    },
+    {
+      "workflow": ".github/workflows/ide-dev03-multilang-runtime-native.yml",
+      "gitBlob": "93d77b917743e83aff9cc24865403429fedd0fc1",
+      "workflowName": "IDE DEV03 multi-language pinned runtime native candidate",
+      "triggerKinds": [
+        "push",
+        "workflow_dispatch"
+      ],
+      "jobKeys": [
+        "exact-head-runtime",
+        "python-runtime-candidate"
+      ],
+      "disposition": "runtime_artifact_reconcile",
+      "contractToRetain": "Relocated pinned Node/Python execution and archive tamper regression, not provider source compile",
+      "relatedObservedCohortPaths": [
+        ".github/workflows/ide-dev03-5-job-lifecycle-native.yml"
+      ],
+      "parentRunObserved": false,
+      "parityEstablished": false,
+      "retireAuthorized": false,
+      "dispatchAuthorized": false
+    },
+    {
+      "workflow": ".github/workflows/ide-dev03-project-profiles-native.yml",
+      "gitBlob": "5ec1e64e6a657365c5143b3d55fe3e3856796957",
+      "workflowName": "IDE DEV03 project profile discovery native",
+      "triggerKinds": [
+        "push",
+        "workflow_dispatch"
+      ],
+      "jobKeys": [
+        "dev03-source"
+      ],
+      "disposition": "source_contract_reconcile",
+      "contractToRetain": "Fixed project profiles and no worker route expansion",
+      "relatedObservedCohortPaths": [
+        ".github/workflows/ide-dev03-5-job-lifecycle-native.yml"
+      ],
+      "parentRunObserved": false,
+      "parityEstablished": false,
+      "retireAuthorized": false,
+      "dispatchAuthorized": false
+    },
+    {
+      "workflow": ".github/workflows/ide-dev03-reviewed-rust-build-native.yml",
+      "gitBlob": "bbcef6898c11f79323076cbde9d4b6c029f4ae89",
+      "workflowName": "IDE DEV03.2 reviewed Rust Cargo Build native",
+      "triggerKinds": [
+        "push",
+        "workflow_dispatch"
+      ],
+      "jobKeys": [
+        "rust-build-native"
+      ],
+      "disposition": "source_contract_reconcile",
+      "contractToRetain": "Reviewed Cargo build authority and protected runtime comparisons",
+      "relatedObservedCohortPaths": [
+        ".github/workflows/ide-wo6-build-test-dap.yml",
+        ".github/workflows/ide-wo6-native-os-acceptance.yml"
+      ],
+      "parentRunObserved": false,
+      "parityEstablished": false,
+      "retireAuthorized": false,
+      "dispatchAuthorized": false
+    },
+    {
+      "workflow": ".github/workflows/ide-dev03b-protected-output-native.yml",
+      "gitBlob": "6f38ceec357a1ace6ff1f9bc7bd8ba842e09f0eb",
+      "workflowName": "IDE DEV03B protected job output streaming",
+      "triggerKinds": [
+        "push",
+        "workflow_dispatch"
+      ],
+      "jobKeys": [
+        "native-compile-and-regressions"
+      ],
+      "disposition": "source_contract_reconcile",
+      "contractToRetain": "Bounded protected progress and output-stream shape/custody",
+      "relatedObservedCohortPaths": [
+        ".github/workflows/ide-dev03-5-job-lifecycle-native.yml",
+        ".github/workflows/ide-wo6-build-test-dap.yml"
+      ],
+      "parentRunObserved": false,
+      "parityEstablished": false,
+      "retireAuthorized": false,
+      "dispatchAuthorized": false
+    },
+    {
+      "workflow": ".github/workflows/ide-dev04-5b-one-shot-rustfmt.yml",
+      "gitBlob": "8fb6f7aff0b021eec6bee9adc89d50393a28dd34",
+      "workflowName": "IDE DEV04.5B one-shot native rustfmt",
+      "triggerKinds": [
+        "push"
+      ],
+      "jobKeys": [
+        "format-exact-branch"
+      ],
+      "disposition": "historical_one_shot",
+      "contractToRetain": "Prior formatting-only task; never rerun historical branch mutation, retain evidence; current rustfmt required",
+      "relatedObservedCohortPaths": [
+        ".github/workflows/ide-dev04-4-native-project-dap.yml"
+      ],
+      "parentRunObserved": false,
+      "parityEstablished": false,
+      "retireAuthorized": false,
+      "dispatchAuthorized": false
+    },
+    {
+      "workflow": ".github/workflows/ide-dev04-5c-one-shot-rustfmt.yml",
+      "gitBlob": "b61b24b6901c1ca79734f4ddbab031b5f93c496b",
+      "workflowName": "IDE DEV04.5C one-shot native rustfmt",
+      "triggerKinds": [
+        "push"
+      ],
+      "jobKeys": [
+        "formatting-only"
+      ],
+      "disposition": "historical_one_shot",
+      "contractToRetain": "Prior reviewed formatting-only route; preserve original evidence, current source compiler checks separate",
+      "relatedObservedCohortPaths": [
+        ".github/workflows/ide-dev04-5c-installed-project-debug.yml"
+      ],
+      "parentRunObserved": false,
+      "parityEstablished": false,
+      "retireAuthorized": false,
+      "dispatchAuthorized": false
+    },
+    {
+      "workflow": ".github/workflows/ide-dev05-consolidated-native.yml",
+      "gitBlob": "69a3223f89a63e5333a20435847fb7b81c1be285",
+      "workflowName": "IDE-05 consolidated native group (NOT release)",
+      "triggerKinds": [
+        "push",
+        "workflow_dispatch"
+      ],
+      "jobKeys": [
+        "native-source",
+        "real-linux-uv-offline-negative"
+      ],
+      "disposition": "runtime_artifact_reconcile",
+      "contractToRetain": "Package/terminal and real uv offline cgroup MISS/terminal restart; source compile cannot replace uv protected proof",
+      "relatedObservedCohortPaths": [
+        ".github/workflows/ide-wo6-native-os-acceptance.yml"
+      ],
+      "parentRunObserved": false,
+      "parityEstablished": false,
+      "retireAuthorized": false,
+      "dispatchAuthorized": false
+    },
+    {
+      "workflow": ".github/workflows/ide-dev056-installed-native.yml",
+      "gitBlob": "c46a98bd7a5b597f37c4cf851087b99d3c09f7b7",
+      "workflowName": "IDE-05.6 installed default-denial Windows NSIS and Linux Debian group (NOT release)",
+      "triggerKinds": [
+        "push",
+        "workflow_dispatch"
+      ],
+      "jobKeys": [
+        "linux-installed-deb",
+        "installed-unsigned-native-ui"
+      ],
+      "disposition": "installed_contract_reconcile",
+      "contractToRetain": "Unsigned installed actual package/terminal default-denial checks across Linux/Windows; verify exact UI negative cases",
+      "relatedObservedCohortPaths": [
+        ".github/workflows/ide-wo8-installed-windows.yml",
+        ".github/workflows/ide-wo8-installed-linux.yml"
+      ],
+      "parentRunObserved": false,
+      "parityEstablished": false,
+      "retireAuthorized": false,
+      "dispatchAuthorized": false
+    },
+    {
+      "workflow": ".github/workflows/ide-fin01d-custody.yml",
+      "gitBlob": "d606404b217d680acfb816e397dcf7a519b2a943",
+      "workflowName": "IDE FIN-01D release-custody exact-head Rust",
+      "triggerKinds": [
+        "push",
+        "workflow_dispatch"
+      ],
+      "jobKeys": [
+        "windows-rust",
+        "linux-rust"
+      ],
+      "disposition": "source_contract_reconcile",
+      "contractToRetain": "Original FIN01D/FIN04 protected custody Rust suites",
+      "relatedObservedCohortPaths": [
+        ".github/workflows/ide-d7d-protected-service.yml",
+        ".github/workflows/ide-p03-native-security-checks.yml"
+      ],
+      "parentRunObserved": false,
+      "parityEstablished": false,
+      "retireAuthorized": false,
+      "dispatchAuthorized": false
+    },
+    {
+      "workflow": ".github/workflows/ide-fin04r1-exact-native.yml",
+      "gitBlob": "6f4bf3ff41acd9eea869d701a0799125aa4e3d65",
+      "successorGitBlob": "aaca9c87aa8de0ba2dde807c9b43d547fb3ffc37",
+      "workflowName": "IDE FIN-04R1 exact-head Windows protected PDB and native kernel",
+      "triggerKinds": [
+        "push",
+        "workflow_dispatch"
+      ],
+      "jobKeys": [
+        "windows-compile",
+        "windows-kernel"
+      ],
+      "disposition": "protected_contract_reconcile",
+      "contractToRetain": "Original exact PDB owner-event and physical-only script; actual kernel checks and review not just source",
+      "relatedObservedCohortPaths": [
+        ".github/workflows/ide-dev04-5d5-owner-event-native.yml",
+        ".github/workflows/ide-dev04-5d4b-win-event-pdb.yml"
+      ],
+      "parentRunObserved": false,
+      "parityEstablished": false,
+      "retireAuthorized": false,
+      "dispatchAuthorized": false
+    },
+    {
+      "workflow": ".github/workflows/ide-group02-installed-consolidated.yml",
+      "gitBlob": "2c23d77f7b42c1c3bf9771665c133364f9e91586",
+      "workflowName": "IDE Group 2 consolidated native installed editor and data preservation (NOT release)",
+      "triggerKinds": [
+        "push",
+        "workflow_dispatch"
+      ],
+      "jobKeys": [
+        "linux-installed-deb",
+        "installed-unsigned-native-ui"
+      ],
+      "disposition": "installed_contract_reconcile",
+      "contractToRetain": "Original native GTK/UIA editor and saved project suite, preserve physical distinctions",
+      "relatedObservedCohortPaths": [
+        ".github/workflows/ide-wo8-installed-windows.yml",
+        ".github/workflows/ide-wo8-installed-linux.yml",
+        ".github/workflows/ide-group6f-integrated-native.yml"
+      ],
+      "parentRunObserved": false,
+      "parityEstablished": false,
+      "retireAuthorized": false,
+      "dispatchAuthorized": false
+    },
+    {
+      "workflow": ".github/workflows/ide-group03-security-native.yml",
+      "gitBlob": "109cfa5e1379f5df96db4b5e13dfe557c229af0b",
+      "workflowName": "IDE Group 3 Windows AppContainer SCM and Linux authorization negatives (NOT release)",
+      "triggerKinds": [
+        "push",
+        "workflow_dispatch"
+      ],
+      "jobKeys": [
+        "windows-native-appcontainer",
+        "windows-native-scm",
+        "linux-security-negative",
+        "linux-real-delegated-hostile"
+      ],
+      "disposition": "protected_contract_reconcile",
+      "contractToRetain": "Actual AppContainer/SCM loss and cgroup hostile native kernel contracts",
+      "relatedObservedCohortPaths": [
+        ".github/workflows/ide-d7d-protected-service.yml",
+        ".github/workflows/ide-appcontainer-windows.yml",
+        ".github/workflows/ide-p03-native-security-checks.yml"
+      ],
+      "parentRunObserved": false,
+      "parityEstablished": false,
+      "retireAuthorized": false,
+      "dispatchAuthorized": false
+    },
+    {
+      "workflow": ".github/workflows/ide-group04-native.yml",
+      "gitBlob": "881b7b4f4e35eb9874b261270c27a5d993184dbc",
+      "workflowName": "IDE Group 4 exact-head native Build Test and LLDB (NOT installed)",
+      "triggerKinds": [
+        "push",
+        "workflow_dispatch"
+      ],
+      "jobKeys": [
+        "native-windows-fixed-debugger",
+        "native-linux-delegated-fixed-debugger",
+        "native-linux-protected-cargo",
+        "windows-pinned-llvm18-native"
+      ],
+      "disposition": "protected_contract_reconcile",
+      "contractToRetain": "Four native debugger/build/LLVM owner lanes, compare original full steps and owner receipts; added rustdoc to original root-owned tool checks",
+      "relatedObservedCohortPaths": [
+        ".github/workflows/ide-wo6-native-os-acceptance.yml",
+        ".github/workflows/ide-dev04-5d5-owner-event-native.yml"
+      ],
+      "parentRunObserved": false,
+      "parityEstablished": false,
+      "retireAuthorized": false,
+      "dispatchAuthorized": false
+    },
+    {
+      "workflow": ".github/workflows/ide-group04d-source.yml",
+      "gitBlob": "08c1e1eeb4a7b71e31707d4377764412d9a1556a",
+      "successorGitBlob": "c735825a928a1b9b86708f630b5c4893bc87bfd4",
+      "workflowName": "IDE G04D guarded variable inspection source and native compiler (not release)",
+      "triggerKinds": [
+        "push",
+        "workflow_dispatch"
+      ],
+      "jobKeys": [
+        "linux-native-source",
+        "windows-native-source"
+      ],
+      "disposition": "source_contract_reconcile",
+      "contractToRetain": "Independent guarded variables/consent/native compiler and exact former branch-only preflight",
+      "relatedObservedCohortPaths": [
+        ".github/workflows/ide-dev04-5d4c-real-lldb-line.yml",
+        ".github/workflows/ide-dev04-5d5-owner-event-native.yml"
+      ],
+      "parentRunObserved": false,
+      "parityEstablished": false,
+      "retireAuthorized": false,
+      "dispatchAuthorized": false
+    },
+    {
+      "workflow": ".github/workflows/ide-group06a-native.yml",
+      "gitBlob": "19ba1e3280880a9bc48005c7572a94b8f8d3f1aa",
+      "successorGitBlob": "80edc4e117fe9c5dded1924ad87d186a4892e3c0",
+      "workflowName": "IDE Group 6A native branch and worktree inventory (not release)",
+      "triggerKinds": [
+        "push",
+        "workflow_dispatch"
+      ],
+      "jobKeys": [
+        "native-inventory"
+      ],
+      "disposition": "source_contract_reconcile",
+      "contractToRetain": "Real branch/worktree inventory and physical operator script (no dispatch)",
+      "relatedObservedCohortPaths": [
+        ".github/workflows/ide-group6f-integrated-native.yml"
+      ],
+      "parentRunObserved": false,
+      "parityEstablished": false,
+      "retireAuthorized": false,
+      "dispatchAuthorized": false
+    },
+    {
+      "workflow": ".github/workflows/ide-group06b-native.yml",
+      "gitBlob": "39198be799aaec13278eecac891bd62adf50f546",
+      "workflowName": "IDE Group 6B reviewed batch source (not release)",
+      "triggerKinds": [
+        "push",
+        "workflow_dispatch"
+      ],
+      "jobKeys": [
+        "verified-preview",
+        "installed-debian-smoke",
+        "installed-windows-smoke"
+      ],
+      "disposition": "installed_contract_reconcile",
+      "contractToRetain": "Independent staged Git integrity, hostile preview plus installed source/UI scope",
+      "relatedObservedCohortPaths": [
+        ".github/workflows/ide-group6f-integrated-native.yml",
+        ".github/workflows/ide-group06d01-native.yml"
+      ],
+      "parentRunObserved": false,
+      "parityEstablished": false,
+      "retireAuthorized": false,
+      "dispatchAuthorized": false
+    },
+    {
+      "workflow": ".github/workflows/ide-group06c-native.yml",
+      "gitBlob": "f7e3c9c03277bb20f8513b484ee43e9622227e5a",
+      "workflowName": "IDE Group 6C local branch operations (source only)",
+      "triggerKinds": [
+        "push",
+        "workflow_dispatch"
+      ],
+      "jobKeys": [
+        "exact-native-review"
+      ],
+      "disposition": "source_contract_reconcile",
+      "contractToRetain": "Local branch operations, exact libgit2 graph and native typed enum",
+      "relatedObservedCohortPaths": [
+        ".github/workflows/ide-group6f-integrated-native.yml"
+      ],
+      "parentRunObserved": false,
+      "parityEstablished": false,
+      "retireAuthorized": false,
+      "dispatchAuthorized": false
+    },
+    {
+      "workflow": ".github/workflows/ide-group06c02-native.yml",
+      "gitBlob": "7bb288e1466a1139297664f51a2923b05c0c7c51",
+      "workflowName": "IDE G06C02 reviewed local merge plan (source only)",
+      "triggerKinds": [
+        "push",
+        "workflow_dispatch"
+      ],
+      "jobKeys": [
+        "native-review"
+      ],
+      "disposition": "source_contract_reconcile",
+      "contractToRetain": "Reviewed merge plan, overlap locks and evidence; no automatic mutation",
+      "relatedObservedCohortPaths": [
+        ".github/workflows/ide-group6f-integrated-native.yml"
+      ],
+      "parentRunObserved": false,
+      "parityEstablished": false,
+      "retireAuthorized": false,
+      "dispatchAuthorized": false
+    },
+    {
+      "workflow": ".github/workflows/ide-group06c03-native.yml",
+      "gitBlob": "1186609d3154f8ed284c70d5b184da4ab75a835f",
+      "workflowName": "IDE Group 6C03 protected fast-forward (source not release)",
+      "triggerKinds": [
+        "push",
+        "workflow_dispatch"
+      ],
+      "jobKeys": [
+        "native-fast-forward"
+      ],
+      "disposition": "source_contract_reconcile",
+      "contractToRetain": "Real protected fast-forward/cancellation and journal restart",
+      "relatedObservedCohortPaths": [
+        ".github/workflows/ide-group6f-integrated-native.yml"
+      ],
+      "parentRunObserved": false,
+      "parityEstablished": false,
+      "retireAuthorized": false,
+      "dispatchAuthorized": false
+    },
+    {
+      "workflow": ".github/workflows/ide-group06c03b-native.yml",
+      "gitBlob": "feb2620a47b4178cf5f4e25ac8d0006795dce6e9",
+      "workflowName": "IDE Group 6C03B isolated divergent verification",
+      "triggerKinds": [
+        "pull_request",
+        "push",
+        "workflow_dispatch"
+      ],
+      "jobKeys": [
+        "native",
+        "installed-g06c03b-debian-smoke",
+        "installed-g06c03b-windows-smoke"
+      ],
+      "disposition": "installed_contract_reconcile",
+      "contractToRetain": "Divergent isolated two-parent verification plus installed package review; #220 source preserved, installed scope separate",
+      "relatedObservedCohortPaths": [
+        ".github/workflows/ide-group6f-integrated-native.yml",
+        ".github/workflows/ide-group06d01-native.yml"
+      ],
+      "parentRunObserved": false,
+      "parityEstablished": false,
+      "retireAuthorized": false,
+      "dispatchAuthorized": false
+    },
+    {
+      "workflow": ".github/workflows/ide-group06c04-native.yml",
+      "gitBlob": "6ad101f823066d7979ddaa435c4070ea8da16ff9",
+      "workflowName": "IDE 6C03B protected divergent and 6C04 regression source plus installers",
+      "triggerKinds": [
+        "pull_request",
+        "push",
+        "workflow_dispatch"
+      ],
+      "jobKeys": [
+        "exact-native",
+        "installed-g06c04-debian-smoke",
+        "installed-g06c04-windows-smoke"
+      ],
+      "disposition": "installed_contract_reconcile",
+      "contractToRetain": "Exact rebase/cherry-pick/replay and installed smoke; compare original graph/receipt",
+      "relatedObservedCohortPaths": [
+        ".github/workflows/ide-group6f-integrated-native.yml",
+        ".github/workflows/ide-group06d01-native.yml"
+      ],
+      "parentRunObserved": false,
+      "parityEstablished": false,
+      "retireAuthorized": false,
+      "dispatchAuthorized": false
+    },
+    {
+      "workflow": ".github/workflows/ide-p04-linux-upgrade.yml",
+      "gitBlob": "5819cdc1508e2ded93b14a3eda0a6046b18259e0",
+      "workflowName": "IDE P04 reviewed signed Debian two-version OS and GTK transition",
+      "triggerKinds": [
+        "workflow_dispatch"
+      ],
+      "jobKeys": [
+        "linux-signed-native-transition"
+      ],
+      "disposition": "separate_authorized_manual",
+      "contractToRetain": "Two independent signed Debian versions, GPG key and native migration/GTK; no unsigned substitution",
+      "relatedObservedCohortPaths": [
+        ".github/workflows/ide-wo8-installed-linux.yml"
+      ],
+      "parentRunObserved": false,
+      "parityEstablished": false,
+      "retireAuthorized": false,
+      "dispatchAuthorized": false
+    },
+    {
+      "workflow": ".github/workflows/ide-p04-signed-reinstall.yml",
+      "gitBlob": "9a23b270e06245f0140d18732ed5fc79eb32bf37",
+      "workflowName": "IDE P04 signed NSIS reinstall and persistent user project acceptance",
+      "triggerKinds": [
+        "workflow_dispatch"
+      ],
+      "jobKeys": [
+        "native-signed-reinstall"
+      ],
+      "disposition": "separate_authorized_manual",
+      "contractToRetain": "Actual signed NSIS reinstall and persisted catalog; owner authorization and signed channel",
+      "relatedObservedCohortPaths": [
+        ".github/workflows/ide-wo8-installed-windows.yml"
+      ],
+      "parentRunObserved": false,
+      "parityEstablished": false,
+      "retireAuthorized": false,
+      "dispatchAuthorized": false
+    },
+    {
+      "workflow": ".github/workflows/ide-p04-upgrade-native.yml",
+      "gitBlob": "ff101bac8fab4873f5eba247d0494f6bf37181f0",
+      "workflowName": "IDE P04 independent signed two-version Windows transition and injected recovery",
+      "triggerKinds": [
+        "workflow_dispatch"
+      ],
+      "jobKeys": [
+        "real-signed-two-version-os"
+      ],
+      "disposition": "separate_authorized_manual",
+      "contractToRetain": "Two-version signed Windows transition and injected rollback, candidate identities",
+      "relatedObservedCohortPaths": [
+        ".github/workflows/ide-wo8-installed-windows.yml"
+      ],
+      "parentRunObserved": false,
+      "parityEstablished": false,
+      "retireAuthorized": false,
+      "dispatchAuthorized": false
+    },
+    {
+      "workflow": ".github/workflows/ide-sandbox-linux.yml",
+      "gitBlob": "ea60133db84b0c909773c7f15030c950f43891dc",
+      "workflowName": "IDE Linux sandbox admission",
+      "triggerKinds": [
+        "push",
+        "workflow_dispatch"
+      ],
+      "jobKeys": [
+        "linux-isolation-probe"
+      ],
+      "disposition": "historical_baseline",
+      "contractToRetain": "Original isolation probe; retain old scope separately, compare kernel/admission checks",
+      "relatedObservedCohortPaths": [
+        ".github/workflows/ide-supervisor-os-rights.yml",
+        ".github/workflows/ide-wo4-linux-source.yml",
+        ".github/workflows/ide-p03-native-security-checks.yml"
+      ],
+      "parentRunObserved": false,
+      "parityEstablished": false,
+      "retireAuthorized": false,
+      "dispatchAuthorized": false
+    },
+    {
+      "workflow": ".github/workflows/ide-standalone.yml",
+      "gitBlob": "cb3142c60154bcc22aee12b36b9080e415a1aba5",
+      "workflowName": "Standalone Lu IDE acceptance",
+      "triggerKinds": [
+        "pull_request",
+        "push",
+        "workflow_dispatch"
+      ],
+      "jobKeys": [
+        "host-linux",
+        "frontend",
+        "desktop-windows"
+      ],
+      "disposition": "historical_baseline",
+      "contractToRetain": "Historical standalone compiler matrix, preserve no-Lu dependency; current lock and tests supersede build route, still compare original tests",
+      "relatedObservedCohortPaths": [
+        ".github/workflows/ide-p02-native-checks.yml"
+      ],
+      "parentRunObserved": false,
+      "parityEstablished": false,
+      "retireAuthorized": false,
+      "dispatchAuthorized": false
+    },
+    {
+      "workflow": ".github/workflows/ide-wo4-linux-native-delegation.yml",
+      "gitBlob": "a2fe91d09757347f206ba39e5618c4d3803c42c6",
+      "workflowName": "IDE WO4 native Linux delegated kernel witness",
+      "triggerKinds": [
+        "workflow_dispatch"
+      ],
+      "jobKeys": [
+        "live-delegation"
+      ],
+      "disposition": "separate_authorized_manual",
+      "contractToRetain": "Root delegated cgroup v2 pre-exec attach and descendant kill; no simulated kernel evidence",
+      "relatedObservedCohortPaths": [
+        ".github/workflows/ide-p03-native-security-checks.yml"
+      ],
+      "parentRunObserved": false,
+      "parityEstablished": false,
+      "retireAuthorized": false,
+      "dispatchAuthorized": false
+    },
+    {
+      "workflow": ".github/workflows/ide-wo5-native-linux-clangd.yml",
+      "gitBlob": "12fd318caa638fa4e0c773256145d483588b9a83",
+      "workflowName": "IDE WO5 real delegated Linux clangd session",
+      "triggerKinds": [
+        "workflow_dispatch"
+      ],
+      "jobKeys": [
+        "delegated-clangd"
+      ],
+      "disposition": "separate_authorized_manual",
+      "contractToRetain": "Root-owned clangd protected semantic protocol, cancellation, restart; exact enrolled environment",
+      "relatedObservedCohortPaths": [
+        ".github/workflows/ide-e2-native-lsp.yml"
+      ],
+      "parentRunObserved": false,
+      "parityEstablished": false,
+      "retireAuthorized": false,
+      "dispatchAuthorized": false
+    },
+    {
+      "workflow": ".github/workflows/ide-wo7-installed-acceptance.yml",
+      "gitBlob": "b1046bc7277ccb31924e3ed3b78d7afb22595d1e",
+      "workflowName": "IDE WO7 actual signed NSIS installed SCM smoke (not protected debugger acceptance)",
+      "triggerKinds": [
+        "workflow_dispatch"
+      ],
+      "jobKeys": [
+        "signed-windows-installed-scm"
+      ],
+      "disposition": "separate_authorized_manual",
+      "contractToRetain": "Signed NSIS SCM installation, no protected-debugger or release promotion",
+      "relatedObservedCohortPaths": [
+        ".github/workflows/ide-wo7-signed-release-preflight.yml"
+      ],
+      "parentRunObserved": false,
+      "parityEstablished": false,
+      "retireAuthorized": false,
+      "dispatchAuthorized": false
+    },
+    {
+      "workflow": ".github/workflows/ide-wo8-protected-recovery.yml",
+      "gitBlob": "52261be31b317839ea55a3e6e2fb145193ce2331",
+      "workflowName": "IDE WO8 signed installed protected cancellation and crash recovery (manual)",
+      "triggerKinds": [
+        "workflow_dispatch"
+      ],
+      "jobKeys": [
+        "native-recovery-witness"
+      ],
+      "disposition": "separate_authorized_manual",
+      "contractToRetain": "Signed installed cancellation/desktop or SCM crash/source swap, exact candidate and native approval",
+      "relatedObservedCohortPaths": [
+        ".github/workflows/ide-d7d-protected-service.yml"
+      ],
+      "parentRunObserved": false,
+      "parityEstablished": false,
+      "retireAuthorized": false,
+      "dispatchAuthorized": false
+    },
+    {
+      "workflow": ".github/workflows/ide-wo8-signed-protected-e2e.yml",
+      "gitBlob": "3cbaf9efc3836bfbe3a978cdd5511daac04f2380",
+      "workflowName": "IDE WO8 signed installed protected build and LLDB acceptance (manual)",
+      "triggerKinds": [
+        "workflow_dispatch"
+      ],
+      "jobKeys": [
+        "signed-protected-native-e2e"
+      ],
+      "disposition": "separate_authorized_manual",
+      "contractToRetain": "Signed real installed protected Cargo/LLDB and owner consent",
+      "relatedObservedCohortPaths": [
+        ".github/workflows/ide-wo6-native-os-acceptance.yml"
+      ],
+      "parentRunObserved": false,
+      "parityEstablished": false,
+      "retireAuthorized": false,
+      "dispatchAuthorized": false
+    },
+    {
+      "workflow": ".github/workflows/ide-wo9-signed-protected-acceptance.yml",
+      "gitBlob": "8931e49493e2559cf5368f93b72029418902001c",
+      "workflowName": "IDE WO9 independently signed installed protected workflows (manual)",
+      "triggerKinds": [
+        "workflow_dispatch"
+      ],
+      "jobKeys": [
+        "genuine-windows-protected-dag",
+        "genuine-linux-protected-dag"
+      ],
+      "disposition": "separate_authorized_manual",
+      "contractToRetain": "Independently signed and verified installed protected workflow DAG, two OSes",
+      "relatedObservedCohortPaths": [
+        ".github/workflows/ide-wo9-installed-native.yml"
+      ],
+      "parentRunObserved": false,
+      "parityEstablished": false,
+      "retireAuthorized": false,
+      "dispatchAuthorized": false
+    },
+    {
+      "workflow": ".github/workflows/ide-dev02-technical-installed-lsp.yml",
+      "gitBlob": "e4dbd01bf09cf77ca6b69274df85f4c4b26fd50c",
+      "workflowName": "IDE DEV-02.5 genuine technical-only installed native LSP resources",
+      "triggerKinds": [
+        "push",
+        "pull_request",
+        "workflow_dispatch"
+      ],
+      "jobKeys": [
+        "technical-installed"
+      ],
+      "disposition": "new_required_existing_pr_manual_or_dedicated_batch_technical_install",
+      "contractToRetain": "Historical #137 actual NSIS/Debian with original pinned resources, independent byte readback, real OS registration and uninstall. Worker-disabled desktop; separately gated protected execution. Narrow PR #236/manual and exact integration-branch dedicated batch marker admission; no ordinary push, protected execution or release approval.",
+      "relatedObservedCohortPaths": [
+        ".github/workflows/ide-dev02-disposable-native-test-payload.yml",
+        ".github/workflows/ide-dev02-full-native-resource-candidate.yml"
+      ],
+      "parentRunObserved": false,
+      "parityEstablished": false,
+      "retireAuthorized": false,
+      "dispatchAuthorized": false
+    }
+  ]
+}

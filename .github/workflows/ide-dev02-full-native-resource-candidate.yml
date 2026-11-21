@@ -1,0 +1,131 @@
+name: IDE DEV-02.6B complete original LSP native resources candidate CI
+# Full original archive files are staged only in RUNNER_TEMP and deleted with
+# runners. Only JSON receipts are uploaded; NO binaries are distributed.
+on:
+  push:
+    branches: ['ide/dev02-complete-native-bundle-protected-protocol-20261108']
+    paths:
+      - 'ide/packaging/stage_complete_native_lsp_candidate.py'
+      - 'ide/packaging/test_stage_complete_native_lsp_candidate.py'
+      - '.github/workflows/ide-dev02-full-native-resource-candidate.yml'
+  pull_request:
+    paths:
+      - 'ide/packaging/stage_complete_native_lsp_candidate.py'
+      - 'ide/packaging/test_stage_complete_native_lsp_candidate.py'
+      - '.github/workflows/ide-dev02-full-native-resource-candidate.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  whole-original-upstream-release-candidate:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-2022
+            platform: windows-x86_64
+          - os: ubuntu-24.04
+            platform: linux-x86_64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Exact-source security tests and mandatory negative release gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          python3 -m unittest discover -s ide/packaging -p 'test_stage_complete_native_lsp_candidate.py' -v
+          python3 ide/packaging/verify_language_servers.py
+          if python3 ide/packaging/verify_language_servers.py --release; then
+            echo 'DENIED: candidate was converted to an unreviewed release'
+            exit 2
+          fi
+      - name: Fetch and attest four original upstream license texts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 ide/packaging/collect_original_lsp_notices.py \
+            --manifest ide/packaging/lsp_original_upstream_notices_20261108.json \
+            --output "$RUNNER_TEMP/dev026b-original-notices" --fetch-pinned
+      - name: Retain complete original native provider archives and clangd LLVM resources in candidate-only tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 ide/packaging/stage_complete_native_lsp_candidate.py \
+            --platform "${{ matrix.platform }}" \
+            --manifest ide/packaging/lsp_upstream_archive_candidates_20261108.json \
+            --notices-manifest ide/packaging/lsp_original_upstream_notices_20261108.json \
+            --notices-root "$RUNNER_TEMP/dev026b-original-notices" \
+            --archives "$RUNNER_TEMP/dev026b-original-archives" \
+            --output "$RUNNER_TEMP/dev026b-original-full-resources" \
+            --fetch-locked
+          python3 - <<'PY'
+          from pathlib import Path
+          import json,os,hashlib
+          root=Path(os.environ["RUNNER_TEMP"])/"dev026b-original-full-resources"
+          receipt=json.loads((root/"candidate-full-resource-receipt.json").read_text())
+          assert set(receipt["providers"])=={"clangd","rust-analyzer","ruff"}
+          assert receipt["originalNoticesVerified"]==4
+          assert receipt["allArchiveFileBytesRetained"] is True
+          assert all(receipt[k] is False for k in (
+            "releaseApproved","redistributionApproved","legalReviewComplete",
+            "protectedLuProtocolAccepted","realInstalledNsisDebAccepted",
+            "dynamicDependencyClosureApproved"))
+          for name,row in receipt["providers"].items():
+            assert row["stagedOriginalEntries"]==row["originalArchiveEntries"]
+            for relative,meta in row["files"].items():
+              path=root/name/relative
+              assert path.is_file() and not path.is_symlink()
+              assert path.stat().st_size==meta["bytes"]
+              assert hashlib.sha256(path.read_bytes()).hexdigest()==meta["sha256"]
+          print("DEV02_FULL_ORIGINAL_RELEASE_RESOURCE_STAGING_BYTE_READBACK=PASS")
+          print("DEV02_LLVM_DEPENDENCY_DYNAMIC_CLOSURE_AND_PROTECTED_EXECUTION=OPEN")
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: dev026b-original-resources-candidate-receipt-${{ matrix.os }}
+          path: ${{ runner.temp }}/dev026b-original-full-resources/candidate-full-resource-receipt.json
+          if-no-files-found: warn
+          retention-days: 7
+
+  compile-real-protected-os-api-not-execution:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-2022
+            features: lsp-transport,protected-recovery-service
+          - os: ubuntu-24.04
+            features: lsp-transport,linux-worker
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+          components: rustfmt
+      - name: Build actual native Windows/Linux protected fixture API; do not execute uncontained
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          cargo check --manifest-path ide/supervisor/Cargo.toml \
+            --features "${{ matrix.features }}" \
+            --example e2_native_multilang_protected_acceptance
+          echo DEV026B_NATIVE_SUPERVISOR_EXAMPLE_COMPILES=PASS
+          echo DEV026B_REAL_PROTECTED_RUNNER_EXECUTION=NOT_PERFORMED
