@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFileSync, statSync } from 'node:fs';
+import { snapshotDraft } from '../web/submission_lifecycle.mjs';
 const ui = readFileSync(new URL('../web/main.jsx', import.meta.url), 'utf8');
 const windows = readFileSync(new URL('../web/native_windows.jsx', import.meta.url), 'utf8');
 const researchHost = readFileSync(new URL('../src-tauri/src/research_desktop.rs', import.meta.url), 'utf8');
@@ -13,6 +14,17 @@ const attachmentCore = readFileSync(new URL('../../src-tauri/lu-core/src/ansf_im
 const attachmentStore = readFileSync(new URL('../src-tauri/src/attachment_store.rs', import.meta.url), 'utf8');
 const linkedIntake = readFileSync(new URL('../src-tauri/src/linked_attachment_intake.rs', import.meta.url), 'utf8');
 const lifecycle = readFileSync(new URL('../web/submission_lifecycle.mjs', import.meta.url), 'utf8');
+// CP-10: independently exercise the *stronger* CP-01 snapshot invariant.
+// Reading a former shallow-array source spelling was an obsolete contract:
+// an in-place edit after Send could alias the old queued draft.
+const draftIsolationSource={
+  prompt:'Review',images:[{imageRef:'img-original'}],
+  files:[{name:'notes.txt',size:3,text:'old'}]
+};
+const draftIsolationSnapshot=snapshotDraft(draftIsolationSource);
+draftIsolationSource.images[0].imageRef='img-replaced';
+draftIsolationSource.files[0].text='edited';
+
 const send = ui.slice(ui.indexOf('async function send(e)'),ui.indexOf('async function openSavedAttachment'));
 const imageAdmission = ui.slice(ui.indexOf('async function admitSavedImageAttempt'),ui.indexOf('async function acknowledgeImageAttempt'));
 const tests = [
@@ -201,7 +213,10 @@ const tests = [
     ui.includes("setTextFiles(draft.files || [])") &&
     send.includes('const snapshot=snapshotDraft(readComposerDraft(origin));') &&
     send.includes('attachmentSubmissionText(snapshot)') &&
-    lifecycle.includes('files:[...draft.files]') &&
+    draftIsolationSnapshot.images[0].imageRef==='img-original' &&
+    draftIsolationSnapshot.files[0].text==='old' &&
+    draftIsolationSnapshot.images!==draftIsolationSource.images &&
+    draftIsolationSnapshot.files!==draftIsolationSource.files &&
     send.includes('prompt:submitted,imageRefs:[]')],
   ['image previews are scoped with blob CSP only for image sources', ui.includes("invoke('lu_read_image_attachment'") && !ui.includes('new FileReader(') && readFileSync(new URL('../src-tauri/tauri.conf.json', import.meta.url),'utf8').includes("img-src 'self' data: blob:")],
   ['archive review uses supervised native decoding and scoped preview cancellation',
