@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "8e15f786de7bd7955addbc0aa6bbdd605e0f330b",
-  "trackedFileCount": 1291,
+  "sourceCommitBeforeLock": "3866e4c1bbd37fbabb8b87049f53868d116407ee",
+  "trackedFileCount": 1292,
   "files": [
     {
       "path": ".gitattributes",
@@ -5069,7 +5069,7 @@
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/bin/lu-ipc-scm-supervisor.rs",
-      "blob": "37e3dfc8530ad190e92c1d5154d0d8e57482a023"
+      "blob": "a340ca0dea9dd699a765fb0b6db543785fddb6a2"
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/bin/lu-linux-cgroup-guard.rs",
@@ -5108,6 +5108,10 @@
       "blob": "485446ce2c1ed4930ffdb3c218533b733b5190c9"
     },
     {
+      "path": "src-tauri/lu-win-worker-job/src/ipc_scm_receipts.rs",
+      "blob": "fa62fbfef47ded3f954d52f96d5bc628836263ba"
+    },
+    {
       "path": "src-tauri/lu-win-worker-job/src/ipc_scm_supervisor.rs",
       "blob": "6c0aac50c377169fe2f5e76e145331c592671694"
     },
@@ -5117,7 +5121,7 @@
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/lib.rs",
-      "blob": "8bada6f7ef1e34abb6de2e9b1e30dfc38d13392f"
+      "blob": "9715409d6edb18b14c9829e846c299dd1e5fd4e1"
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/metadata_guard.rs",
