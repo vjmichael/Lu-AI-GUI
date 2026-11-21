@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "14f4c8b0f2f6c47cf265efb5e007dd8ce9e9edfc",
+  "sourceCommitBeforeLock": "be2e8b8557ece0a5985f4fba7a3e78dc5275eb8d",
   "trackedFileCount": 1270,
   "files": [
     {
@@ -2849,7 +2849,7 @@
     },
     {
       "path": "scripts/build-current-windows-nsis.ps1",
-      "blob": "dfc336d80145cf3459b453aecdecc0a6c8e9469e"
+      "blob": "a0fb4b5a69e5419a94fe353c24993a6ac78b365b"
     },
     {
       "path": "scripts/c3-windows-installed-native-completion.ps1",
@@ -3057,7 +3057,7 @@
     },
     {
       "path": "scripts/lu-c6-hosted-physical-contract.test.mjs",
-      "blob": "d77727f03186a445cf55c37fe0cff91142c2e77d"
+      "blob": "312a6e23e5dce8c3589a2d711b5e8af3f542da97"
     },
     {
       "path": "scripts/lu-c62-browser-bundle-source.test.mjs",
