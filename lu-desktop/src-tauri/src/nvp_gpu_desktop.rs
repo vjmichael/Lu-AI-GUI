@@ -144,6 +144,8 @@ pub(crate) async fn serve_installed_nvp_for_creator_turn(
         .map_err(|_|"Installed Core SCM supervisor is not independently verified")?;
     inputs.scm.private_scm_health().await
         .map_err(|_|"Installed Core SCM private proof failed")?;
+    inputs.scm.private_nvp_stop_issuer_ready(original).await
+        .map_err(|_|"NVP independent stop-issuer is not installed and protected")?;
     let cancelled=Arc::new(AtomicBool::new(false));
     {
         let mut slot=owner.nvp_grant.lock()
