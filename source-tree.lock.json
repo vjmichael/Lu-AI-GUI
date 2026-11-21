@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "11b222a8793b43a077884c5648277c2bd4e526bb",
-  "trackedFileCount": 1296,
+  "sourceCommitBeforeLock": "948d0a29b84505a68e041c74ae590725b901d31c",
+  "trackedFileCount": 1299,
   "files": [
     {
       "path": ".gitattributes",
@@ -1078,6 +1078,10 @@
     {
       "path": "docs/LU_IPC_01D_R1_NATIVE_TRANSPORT_20261120.md",
       "blob": "7841277ef7708cad3e06c7aaa30a03f45598ba1b"
+    },
+    {
+      "path": "docs/LU_IPC_GPU_01A_NVP_HANDOFF_20261121.md",
+      "blob": "adefba5754054951009fd10b6fd9aea5523eafe0"
     },
     {
       "path": "docs/LU_IPC_R4_R3_R3_R4_ECOSYSTEM_AND_SCM_CONTROL_20261121.md",
@@ -3493,7 +3497,7 @@
     },
     {
       "path": "src-tauri/lu-core/proto/lu/workspace/v0/workspace.proto",
-      "blob": "4e01d921197fb1c58c99958479b1cede36e13c9a"
+      "blob": "c468669910fbc373cb9c19a9a2cf13c5ce0d8b51"
     },
     {
       "path": "src-tauri/lu-core/src/agent_continuation_intent.rs",
@@ -3796,6 +3800,10 @@
       "blob": "3ed35bb1b76c5bd619eace47cc94e6cd9705e12d"
     },
     {
+      "path": "src-tauri/lu-core/src/gpu_resource_leases.rs",
+      "blob": "99b4118cf219847656e49809d44583813d1c19b1"
+    },
+    {
       "path": "src-tauri/lu-core/src/host_resource_authority.rs",
       "blob": "e256b35991757d0ba34b7be981a8dc21a09c2567"
     },
@@ -3837,7 +3845,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/inference_supervisor.rs",
-      "blob": "86cd05e4af41e53d4bb17eb80bade81a4e9e7d4e"
+      "blob": "8a17a7eb40016f91e271349f28a9aa07712c25e7"
     },
     {
       "path": "src-tauri/lu-core/src/inference_wire.rs",
@@ -3849,7 +3857,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/lib.rs",
-      "blob": "7b910ca66efc45a123dd733ddae4d0046b7fc3a4"
+      "blob": "9ea5de8ff0f8771da6784457b51c41e09afa9ddb"
     },
     {
       "path": "src-tauri/lu-core/src/linux_device_hints.rs",
@@ -4493,7 +4501,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/workspace_ipc.rs",
-      "blob": "06c47e8e83ad835711dca3ed0dc9851bcf8aae05"
+      "blob": "aeca28692374281e02469f1503144bea70fd510e"
     },
     {
       "path": "src-tauri/lu-core/src/workspace_ipc_core_host.rs",
@@ -5018,6 +5026,10 @@
     {
       "path": "src-tauri/lu-core/tests/web_research_roadmap_acceptance.rs",
       "blob": "2991d9c0c5f5d8f76c841e5ee649726c321aed18"
+    },
+    {
+      "path": "src-tauri/lu-core/tests/workspace_ipc_gpu_lease.rs",
+      "blob": "ec79c352a54916b8aef475ea48d794b4ac954cfd"
     },
     {
       "path": "src-tauri/lu-core/tests/workspace_ipc_transport_r1.rs",
