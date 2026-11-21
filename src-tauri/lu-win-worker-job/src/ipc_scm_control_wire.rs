@@ -308,6 +308,8 @@ pub struct NvpAuthRequest{
     pub scope:NvpBrokerScope,
     pub package_sha256:[u8;32],
     pub enrollment_sha256:[u8;32],
+    pub image_sha256:[u8;32],
+    pub signer_sha256:[u8;32],
     pub hello_wire:Vec<u8>,
     pub client_proof:[u8;32],
     pub welcome_without_mac:Vec<u8>,
@@ -320,6 +322,8 @@ impl NvpAuthRequest{
         if scm_challenge.iter().all(|b|*b==0)||
            self.package_sha256.iter().all(|b|*b==0)||
            self.enrollment_sha256.iter().all(|b|*b==0)||
+           self.image_sha256.iter().all(|b|*b==0)||
+           self.signer_sha256.iter().all(|b|*b==0)||
            self.client_proof.iter().all(|b|*b==0)||
            self.hello_wire.is_empty()||self.hello_wire.len()>1024||
            self.welcome_without_mac.is_empty()||
@@ -337,6 +341,8 @@ impl NvpAuthRequest{
         body.extend_from_slice(&scope);
         body.extend_from_slice(&self.package_sha256);
         body.extend_from_slice(&self.enrollment_sha256);
+        body.extend_from_slice(&self.image_sha256);
+        body.extend_from_slice(&self.signer_sha256);
         body.extend_from_slice(&self.client_proof);
         for data in [&self.hello_wire,&self.welcome_without_mac]{
             let size=u16::try_from(data.len()).map_err(|_|Refusal::InvalidFrame)?;
@@ -385,12 +391,15 @@ impl NvpAuthRequest{
         };
         let package_sha256=read_hash(&mut at)?;
         let enrollment_sha256=read_hash(&mut at)?;
+        let image_sha256=read_hash(&mut at)?;
+        let signer_sha256=read_hash(&mut at)?;
         let client_proof=read_hash(&mut at)?;
         let hello_wire=take(bytes,&mut at,1,1024)?.to_vec();
         let welcome_without_mac=take(bytes,&mut at,1,512)?.to_vec();
         let core_session=read_scope(bytes,&mut at)?.to_owned();
         if at!=bytes.len(){return Err(Refusal::InvalidFrame)}
         let request=Self{action,scope,package_sha256,enrollment_sha256,
+            image_sha256,signer_sha256,
             hello_wire,client_proof,welcome_without_mac,core_session};
         if request.canonical(scm_challenge)?.as_slice()!=bytes{
             return Err(Refusal::InvalidFrame)
@@ -482,6 +491,7 @@ mod tests {
                 challenge:[0x42;32],
             },
             package_sha256:[0x33;32],enrollment_sha256:[0x44;32],
+            image_sha256:[0x56;32],signer_sha256:[0x57;32],
             hello_wire:b"canonical hello".to_vec(),client_proof:[0x55;32],
             welcome_without_mac:b"unsigned welcome".to_vec(),
             core_session:"session".into(),
