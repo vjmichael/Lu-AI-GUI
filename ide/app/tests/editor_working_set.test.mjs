@@ -117,3 +117,14 @@ test('B5 jump selection excludes placeholder and preserves native Home/End endpo
  assert.ok(!switchWin.includes('{DOWN}') && !switchLinux.includes('key("Down")'));
  assert.ok(switchWin.includes('B5-VisibleEditor $marker') && switchLinux.includes('assert_current_editor(marker)'));
 });
+
+test('malformed incoming B5 tab identities are rejected instead of silently admitted',()=>{
+ for(const bad of [null,false,undefined,0,'','  ',{}]){
+   const result=admitOpenTabs([],A,[bad]);
+   assert.equal(result.allowed,false,String(bad));
+   assert.equal(result.reason,'INVALID_EDITOR_ADMISSION');
+ }
+ const mixed=admitOpenTabs([],A,[tab(0).key,null]);
+ assert.equal(mixed.allowed,false);
+ assert.equal(mixed.reason,'INVALID_EDITOR_ADMISSION');
+});

@@ -11,7 +11,8 @@ export const INITIAL_VISIBLE_TREE_ENTRIES = 120;
 export const TREE_ENTRY_PAGE = 120;
 
 export function admitOpenTabs(tabs, projectId, incomingKeys) {
-  if (!projectId || !Array.isArray(tabs) || !Array.isArray(incomingKeys)) {
+  if (!projectId || !Array.isArray(tabs) || !Array.isArray(incomingKeys) ||
+      incomingKeys.some(key => typeof key !== 'string' || !key.trim())) {
     return {allowed:false,remaining:0,reason:'INVALID_EDITOR_ADMISSION'};
   }
   const present = new Set(tabs.filter(tab => tab?.projectId === projectId)
