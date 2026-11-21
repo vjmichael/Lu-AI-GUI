@@ -564,6 +564,76 @@ impl HostGpuObserver for InstalledHostGpuObserver {
         }
     }
 }
+/// Native non-SYSTEM desktop stop verifier. The original WAL-backed Core
+/// lease is mapped to a bounded CNG-signed private Core->SCM request; only
+/// the unimpersonated SYSTEM service reads the protected NVP Job-empty
+/// receipt and the separate installed NVP P-256 PUBLIC signer pin. The SCM
+/// validates the ORIGINAL lease fields, external signature and fixed method.
+/// The Core client also validates the SCM endpoint's retained OS process
+/// generation before and after the response. No key, ACL relaxation, binary
+/// receipt, untrusted NVP all-clear or caller-chosen file path is accepted.
+#[cfg(windows)]
+#[derive(Clone)]
+pub struct InstalledScmNvpWorkerStopVerifier{
+    service:lu_win_worker_job::ipc_pipe_peer::WindowsPipePeer,
+}
+#[cfg(windows)]
+impl InstalledScmNvpWorkerStopVerifier{
+    pub fn new(
+        service:lu_win_worker_job::ipc_pipe_peer::WindowsPipePeer,
+    )->Result<Self,LeaseRefusal>{
+        if service.pid==0||service.creation_filetime==0||
+           service.user_sid!="S-1-5-18"||service.session_id!=0{
+            return Err(LeaseRefusal::NoIndependentWorkerStop)
+        }
+        Ok(Self{service})
+    }
+}
+#[cfg(windows)]
+impl NvpWorkerStopVerifier for InstalledScmNvpWorkerStopVerifier{
+    fn witnessed_empty(&self,request:&GpuLeaseRequest)
+        ->Result<bool,LeaseRefusal>{
+        // Called ONLY after the original task's signed NVP release reaches
+        // the durable blocking worker. Never do SCM I/O inside the lease
+        // journal, original-turn authority, or registry write lock.
+        request.checked()?;
+        let original=&request.original;
+        let query=lu_win_worker_job::ipc_scm_control_wire::NvpStopQuery{
+            service_pid:self.service.pid,
+            service_birth:self.service.creation_filetime,
+            lease_ref:request.lease_ref.clone(),
+            device_ref:request.device_ref.clone(),
+            module_id:original.module_id.clone(),
+            workspace_ref:original.workspace_ref.clone(),
+            conversation_ref:original.conversation_ref.clone(),
+            user_turn_ref:original.user_turn_ref.clone(),
+            task_ref:original.task_ref.clone(),
+            core_epoch_ref:original.core_epoch_ref.clone(),
+            nvp_session_ref:original.session_ref.clone(),
+        };
+        let service=self.service.clone();
+        // Dedicated native worker thread: release_and_restore is
+        // synchronous, while the authenticated SCM pipe uses Tokio.
+        // A failed spawn, panic, timeout, stale SCM, missing receipt or
+        // invalid signature all leave the GPU lease UNRESTORED.
+        std::thread::Builder::new()
+            .name("lu-nvp-scm-stop-check".into())
+            .spawn(move||->Result<(),LeaseRefusal>{
+                let rt=tokio::runtime::Builder::new_current_thread()
+                    .enable_all().build()
+                    .map_err(|_|LeaseRefusal::NoIndependentWorkerStop)?;
+                rt.block_on(
+                    lu_win_worker_job::ipc_scm_control::issue_nvp_stop_query(
+                        &query,&service
+                    )
+                ).map_err(|_|LeaseRefusal::NoIndependentWorkerStop)
+            })
+            .map_err(|_|LeaseRefusal::NoIndependentWorkerStop)?
+            .join().map_err(|_|LeaseRefusal::NoIndependentWorkerStop)??;
+        Ok(true)
+    }
+}
+
 /// Independent installed NVP supervisor receipt checker. NVP's message
 /// only supplies the original lease_ref; the verifier reads protected local
 /// SCM-origin evidence, checks the fixed installer public pin and binds every
