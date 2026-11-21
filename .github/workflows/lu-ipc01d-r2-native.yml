@@ -70,6 +70,13 @@ jobs:
           cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib ipc_exclusive_owner_tests -- --nocapture
           cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib ipc_supervisor_exact_reconciliation_tests -- --nocapture
           echo LU_IPC_R4_R3_R3_EXACT_SUPERVISOR_RECONCILIATION_PASS
+      - name: LU-IPC-GPU-01A model eviction lease and recovery regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib gpu_resource_leases -- --nocapture
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test workspace_ipc_gpu_lease -- --nocapture
+          echo LU_IPC_GPU_01A_SOURCE_LEASE_AND_WIRE_PASS
       - name: Windows strict installer record parser regression
         if: matrix.os == 'windows-2025'
         shell: bash

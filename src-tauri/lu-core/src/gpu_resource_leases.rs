@@ -119,6 +119,18 @@ pub trait OriginalTurnAuthority{
     /// Must check Core's current immutable user turn, task and scoped NVP
     /// package/session as a verified OS peer, independently of Protobuf.
     fn admit(&self,request:&GpuLeaseRequest)->Result<(),LeaseRefusal>;
+    /// Release is cleanup of a PREVIOUSLY approved effect, not a new GPU
+    /// effect. The installed broker may permit cleanup after user revocation
+    /// only against the exact original durable grant and stopped worker.
+    fn admit_cleanup(&self,request:&GpuLeaseRequest)->Result<(),LeaseRefusal>{
+        self.admit(request)
+    }
+}
+/// Separately protected Core journal/supervisor reconstruction of the
+/// ORIGINAL lease authority after crash; not a current NVP IPC claim.
+pub trait OriginalRecoveryAuthority{
+    fn admit_original_recovery(&self,stored:&GpuLeaseRequest)
+        ->Result<(),LeaseRefusal>;
 }
 pub trait NvpWorkerStopVerifier{
     /// Must independently establish original NVP worker-group EMPTY under
@@ -205,6 +217,17 @@ impl CoreGpuLeaseManager{
                  updated_at=CURRENT_TIMESTAMP WHERE lease_ref=?1 AND phase!='RESTORED'",
                 [lease_ref]);
         }
+    }
+    fn require_model_restored(
+        model:&impl HostModelControl,selected:Option<&str>,session:Option<&str>,
+    )->Result<(),LeaseRefusal>{
+        let observed=model.snapshot()?;
+        if observed.active_generation ||
+           observed.selected_model_ref.as_deref()!=selected ||
+           observed.original_session_ref.as_deref()!=session {
+            return Err(LeaseRefusal::ModelFailed)
+        }
+        Ok(())
     }
     fn prove_capacity(
         probe:&impl HostGpuObserver,device:&str,required:u64,
@@ -364,7 +387,7 @@ impl CoreGpuLeaseManager{
         model:&impl HostModelControl,
     )->Result<ReleaseOutcome,LeaseRefusal>{
         request.checked()?;
-        authority.admit(request)?;
+        authority.admit_cleanup(request)?;
         let _lock=self.transition.lock().map_err(|_|LeaseRefusal::Database)?;
         let old=self.stored(&request.lease_ref)?;
         if old.request!=*request{return Err(LeaseRefusal::WrongOwner)}
@@ -383,11 +406,81 @@ impl CoreGpuLeaseManager{
                 (old.model_ref.as_deref(),old.model_session.as_deref()){
                 model.restore_selected(model_ref,session,&request.lease_ref)?;
             }
+            Self::require_model_restored(model,old.model_ref.as_deref(),
+                old.model_session.as_deref())?;
             model.resume_new_inference()?;
-            self.mark(&request.lease_ref,LeasePhase::Restoring,LeasePhase::Restored)?;
+            if let Err(e)=self.mark(&request.lease_ref,LeasePhase::Restoring,
+                LeasePhase::Restored){
+                let _=model.hold_new_inference();
+                return Err(e)
+            }
             Ok(())
         })();
         if let Err(e)=completed{self.quarantine(&request.lease_ref);return Err(e)}
+        Ok(ReleaseOutcome::Restored)
+    }
+    /// Explicit post-crash recovery. The quarantined row is immutable
+    /// original authority; never trust a new NVP lease request to reconstruct
+    /// it. Requires independent stopped ORIGINAL worker group, fresh device
+    /// measurement, original Core signer/epoch admission, and a model pause.
+    /// This is NOT called automatically on startup.
+    pub fn reconcile_quarantined_original(
+        &self,lease_ref:&str,
+        authority:&impl OriginalRecoveryAuthority,
+        workers:&impl NvpWorkerStopVerifier,
+        probe:&impl HostGpuObserver,
+        model:&impl HostModelControl,
+    )->Result<ReleaseOutcome,LeaseRefusal>{
+        if !safe_ref(lease_ref){return Err(LeaseRefusal::InvalidScope)}
+        let _lock=self.transition.lock().map_err(|_|LeaseRefusal::Database)?;
+        let original=self.stored(lease_ref)?;
+        if original.phase==LeasePhase::Restored{
+            return Ok(ReleaseOutcome::AlreadyRestored)
+        }
+        if original.phase!=LeasePhase::Quarantined{
+            return Err(LeaseRefusal::Quarantined)
+        }
+        authority.admit_original_recovery(&original.request)?;
+        // Assert this BEFORE probing or restoring: current model generations
+        // must not slip in after a cold-start/quarantine reconciliation.
+        model.hold_new_inference()?;
+        if !workers.witnessed_empty(&original.request)?{
+            return Err(LeaseRefusal::NoIndependentWorkerStop)
+        }
+        Self::prove_capacity(probe,&original.request.device_ref,
+            original.request.required_free_vram_bytes)?;
+        let status=model.snapshot()?;
+        if status.active_generation ||
+           (status.selected_model_ref.is_some() &&
+            (status.selected_model_ref!=original.model_ref ||
+             status.original_session_ref!=original.model_session)){
+            return Err(LeaseRefusal::ModelBusy)
+        }
+        self.mark(lease_ref,LeasePhase::Quarantined,LeasePhase::Restoring)?;
+        let complete=(||->Result<(),LeaseRefusal>{
+            match (original.model_ref.as_deref(),original.model_session.as_deref()){
+                (Some(model_ref),Some(session)) if status.selected_model_ref.is_none()=>{
+                    model.restore_selected(model_ref,session,lease_ref)?;
+                }
+                (Some(_),Some(_))=>(), // prior interrupted restore; exact pinned match
+                (None,None) if status.selected_model_ref.is_none()=>(),
+                _=>return Err(LeaseRefusal::ModelFailed),
+            }
+            Self::require_model_restored(model,original.model_ref.as_deref(),
+                original.model_session.as_deref())?;
+            // A Core process can crash after model load but before durable
+            // RESTORED; the next reconcile will recheck same exact model.
+            model.resume_new_inference()?;
+            if let Err(e)=self.mark(lease_ref,LeasePhase::Restoring,LeasePhase::Restored){
+                let _=model.hold_new_inference();
+                return Err(e)
+            }
+            Ok(())
+        })();
+        if let Err(err)=complete{
+            self.quarantine(lease_ref);
+            return Err(err)
+        }
         Ok(ReleaseOutcome::Restored)
     }
     /// Host startup prerequisite. This must be wired before admitting the
@@ -551,6 +644,21 @@ mod tests{
         assert_eq!(recovered.release_and_restore(&request,&a,&Stop(true),&p,&m),
             Err(LeaseRefusal::Quarantined));
         assert!(!m.loaded.load(Ordering::SeqCst));
+        assert!(recovered.reassert_recovery_fence(&m).unwrap());
+        struct Recovery;
+        impl OriginalRecoveryAuthority for Recovery{
+            fn admit_original_recovery(&self,r:&GpuLeaseRequest)->Result<(),LeaseRefusal>{
+                if r.original.user_turn_ref=="turn-1"{Ok(())}
+                else{Err(LeaseRefusal::NotAuthorized)}
+            }
+        }
+        assert_eq!(recovered.reconcile_quarantined_original(
+            "lease-1",&Recovery,&Stop(false),&p,&m),
+            Err(LeaseRefusal::NoIndependentWorkerStop));
+        assert_eq!(recovered.reconcile_quarantined_original(
+            "lease-1",&Recovery,&Stop(true),&p,&m),Ok(ReleaseOutcome::Restored));
+        assert!(m.loaded.load(Ordering::SeqCst));
+        assert!(!m.paused.load(Ordering::SeqCst));
         let _=std::fs::remove_file(path);
     }
     #[test]
