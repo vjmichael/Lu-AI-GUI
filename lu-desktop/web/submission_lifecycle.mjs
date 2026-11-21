@@ -6,7 +6,10 @@ export function submissionNonce(cryptoSource=globalThis.crypto){
   return 's-'+Array.from(bytes,b=>b.toString(16).padStart(2,'0')).join('');
 }
 export function snapshotDraft(draft){
-  return {prompt:draft.prompt,images:[...draft.images],files:[...draft.files]};
+  // Capture each item independently: a late native receipt must never
+  // erase a draft whose source item was edited in place after Send.
+  return {prompt:draft.prompt,images:draft.images.map(im=>({...im})),
+    files:draft.files.map(file=>({...file}))};
 }
 export function sameSubmittedDraft(current,original){
   return current.prompt===original.prompt&&

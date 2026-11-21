@@ -75,3 +75,30 @@ test('linked-document identity distinguishes same-name drafts',()=>{
   assert.equal(sameSubmittedDraft(a,b),false);
   assert.equal(clearSubmittedDraft(b,a),b);
 });
+
+test('late receipt preserves an in-place edited original file draft',()=>{
+  const draft={prompt:'Inspect',images:[],files:[{name:'notes.txt',size:3,text:'old'}]};
+  const original=snapshotDraft(draft);
+  draft.files[0].text='new';
+  assert.equal(original.files[0].text,'old');
+  assert.equal(sameSubmittedDraft(draft,original),false);
+  assert.equal(clearSubmittedDraft(draft,original),draft);
+});
+test('late receipt preserves an in-place changed image or linked-file identity',()=>{
+  const draft={prompt:'Inspect',images:[{imageRef:'img-a'}],
+    files:[{attachmentId:'doc-a',name:'same.pdf'}]};
+  const original=snapshotDraft(draft);
+  draft.images[0].imageRef='img-b';
+  draft.files[0].attachmentId='doc-b';
+  assert.equal(original.images[0].imageRef,'img-a');
+  assert.equal(original.files[0].attachmentId,'doc-a');
+  assert.equal(sameSubmittedDraft(draft,original),false);
+  assert.equal(clearSubmittedDraft(draft,original),draft);
+});
+test('unchanged attachment snapshot still clears following durable native admission',()=>{
+  const draft={prompt:'Inspect',images:[{imageRef:'img-a'}],
+    files:[{name:'notes',size:3,text:'old'}]};
+  const original=snapshotDraft(draft);
+  assert.equal(sameSubmittedDraft(draft,original),true);
+  assert.deepEqual(clearSubmittedDraft(draft,original),{prompt:'',images:[],files:[]});
+});
