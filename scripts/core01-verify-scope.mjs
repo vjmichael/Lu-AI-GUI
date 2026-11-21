@@ -56,6 +56,44 @@ export function reviewedR14AcceptanceFixture(path, blob, mode) {
   return mode === '100644' && R14_ACCEPTANCE_PINS.has(path)
     && R14_ACCEPTANCE_PINS.get(path) === blob;
 }
+
+/**
+ * R4 PRECORE reviewed IDE-only source additions and separately changed two
+ * R14 technical diagnostics. These are exact immutable Git blob pins, not a
+ * Core runtime import, blanket IDE scope exemption, worker authorization or
+ * signed/installed acceptance. The Core-only gate is unchanged.
+ */
+const R4_PRECORE_SOURCE_PINS = new Map([
+  ['ide/app/src-tauri/src/native_core_health_menu.rs', '9ae00e5723d343ca4091dd1b99a3b726316e5f68'],
+  ['ide/app/tests/native_core_health_menu.test.mjs', '58d25f3a83782bcf42d6cb29107a58cad6c8334f'],
+  ['ide/docs/IDE_CORE_IPC_01B_NATIVE_CUSTODY.md', '52bf0190dddab4078743151aa3e523066c1110dd'],
+  ['ide/docs/IDE_CORE_IPC_01B_R3_ISSUER_HANDOFF.md', '15dbdecd0569085d405166b17d15576c4983066f'],
+  ['ide/docs/IDE_CORE_IPC_01B_R4_UPSTREAM_CORE_AUDIT.md', '08e7a355b5939c15439c0fab12ed20bb3bcd37fd'],
+  ['ide/docs/IDE_CORE_IPC_01B_R5_CURRENT_CORE_CONTRACT.md', 'e8c0c45e5d119e6689fee0a01e825b8d0d3d3f75'],
+  ['ide/docs/IDE_PRECORE_CLOSEOUT_R3_SIGNED_WINDOWS_ADMISSION.md', '92e8c11abfa250793cf282d1cdc9c939a3080b84'],
+  ['ide/host/src/core_ipc_host.rs', '8a03da3466c5946a8ae7da51a349c7c36f065bbf'],
+  ['ide/host/src/core_ipc_issuer.rs', '405669503461333f1e75f1d227f79f02f962e15f'],
+  ['ide/host/src/core_ipc_lifecycle.rs', '6bb199509254c239322777dd9c9e9dd54df54acb'],
+  ['ide/host/src/core_ipc_native_transport.rs', 'c3ac18fc3c34e4643c3ff8f9be8ada06d67e4674'],
+  ['ide/host/src/core_ipc_readonly.rs', 'c6e84eb1bfdefa81c5020c9331f46422c17f36d0'],
+  ['ide/host/src/core_ipc_windows_contract.rs', '717f51c554324501a1d8cacf9f2507501d317844'],
+  ['ide/host/src/installed_core_health.rs', '1ba66ce4f44c8bba7e8192ac9397eb8f10d3262c'],
+  ['ide/packaging/Test-IdePrecoreR3WindowsCandidate.ps1', '8a4d85b81c809ca8ee89b500a0cd9cbba83c2d28'],
+  ['ide/packaging/ide-05b-r3-outside-cohort.json', 'd603439db9d17a433a0fc694dda409e63db154d3'],
+  ['ide/packaging/ide-precore-r2-ipc-lock-successor.json', 'fa2c49d5d9149522ec6fc2e95fae98582d4aa729'],
+  ['ide/packaging/ide-precore-r3-admission-register.json', '402228fe180287f0c74eb0e6bf4df2bad27a9904'],
+  ['ide/packaging/test_ide_05b_r3_workflow_dispositions.py', '09d9fde5d2f857aae80032684b8a641f24ff34fc'],
+  ['ide/packaging/test_ide_precore_lock_successor.py', '7ee94931f57a990dbaf51ff57e5a2b0f6c1a4d23'],
+  ['ide/packaging/test_verify_ide_precore_r3.py', 'b2ae55023494314d4a8f76f24ca817094dd28c73'],
+  ['ide/packaging/verify_ide_precore_lock_successor.py', '0a19ef664666e6e11643d45092e9d3ff5bcffdde'],
+  ['ide/packaging/verify_ide_precore_r3.py', 'b9e551f5f8c7b1262527d46f8cb1393de4d3187f'],
+  ['ide/proto/lu/ide/v1/native_broker.proto', '9906f7e727af1b8daa80c6898c645fe579eaf89a'],
+  ['ide/proto/lu/workspace/v0/readonly.proto', 'fd0d88a26fcb712c5456518ee88550d54a922205'],
+]);
+export function reviewedR4PrecoreSource(path, blob, mode) {
+  return mode === '100644' && R4_PRECORE_SOURCE_PINS.get(path) === blob;
+}
+
 export function reviewedIdePath(path, parentPaths) {
   return parentPaths.has(path) && (/^ide\//.test(path) || /^\.github\/workflows\/ide-[^/]+\.yml$/.test(path))
     && !/(?:^|\/)(?:[^/]*koboldcpp[^/]*|p7l[-_][^/]*|[^/]*p7l1[^/]*)/i.test(path);
@@ -106,7 +144,8 @@ export function integratedIdePaths(parentFiles, actual) {
     idePaths.add('ide/llvm18_owner/' + p);
   for (const item of actual) {
     if (reviewedAcceptanceFixture(item.path, item.blob) ||
-        reviewedR14AcceptanceFixture(item.path, item.blob, item.mode))
+        reviewedR14AcceptanceFixture(item.path, item.blob, item.mode) ||
+        reviewedR4PrecoreSource(item.path, item.blob, item.mode))
       idePaths.add(item.path);
   }
   // A deleted originally reviewed IDE path is not authorized by merging.

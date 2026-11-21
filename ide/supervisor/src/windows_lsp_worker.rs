@@ -1929,7 +1929,10 @@ impl WindowsDapSession {
         if main.as_slice() != FIN04R1_FIXED_PROBE_SOURCE.as_bytes() {
             return Err(SupervisorError::WrongProjectOrSource);
         }
-        let target = self.project_debuggee.as_deref().ok_or(SupervisorError::InvalidPlan)?;
+        let target = self
+            .project_debuggee
+            .as_deref()
+            .ok_or(SupervisorError::InvalidPlan)?;
         self.gateway.launch_fin04r1_fixed_probe(target)
     }
     pub fn phase(&self) -> lu_ide_workspace::dap_session::DapPhase {

@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { forbiddenPath, suspectSource, verifyInventory, reviewedIdePath, reviewedAcceptanceFixture, reviewedR14AcceptanceFixture, integratedIdePaths, scopeChanges } from './core01-verify-scope.mjs';
+import { forbiddenPath, suspectSource, verifyInventory, reviewedIdePath, reviewedAcceptanceFixture, reviewedR14AcceptanceFixture, reviewedR4PrecoreSource, integratedIdePaths, scopeChanges } from './core01-verify-scope.mjs';
 test('IDE source paths and build workflows cannot enter CORE-01', () => {
   for (const p of ['ide/worker.rs','src-tauri/lu-ide/src/lib.rs','lu-desktop/src-tauri/src/ide_worker.rs','.github/workflows/ide-native.yml','docs/LU_IDE_GATE.md']) assert.equal(forbiddenPath(p), true, p);
   assert.equal(forbiddenPath('src-tauri/lu-core/src/independent_outcome.rs'), false);
@@ -137,3 +137,26 @@ test('R14 refuses unknown paths, deleted reviewed parents and cross-layer source
   assert.deepEqual(suspectSource('lu-desktop/src-tauri/src/lib.rs','use lu_ide::worker;'),['IDE source import']);
   assert.deepEqual(suspectSource('ide/host/src/lib.rs','mod koboldcpp;'),['excluded backend reference']);
 });
+
+
+test('R4 PRECORE pins are exact, source-only, and cannot widen the Core-only gate', () => {
+  const accepted = [
+    ['ide/host/src/core_ipc_issuer.rs', '405669503461333f1e75f1d227f79f02f962e15f'],
+    ['ide/packaging/ide-05b-r3-outside-cohort.json', 'd603439db9d17a433a0fc694dda409e63db154d3'],
+    ['ide/packaging/ide-precore-r3-admission-register.json', '402228fe180287f0c74eb0e6bf4df2bad27a9904'],
+    ['ide/packaging/test_ide_05b_r3_workflow_dispositions.py', '09d9fde5d2f857aae80032684b8a641f24ff34fc'],
+  ];
+  assert.equal(accepted.length,4);
+  for(const [path,blob] of accepted) {
+    assert.equal(reviewedR4PrecoreSource(path,blob,'100644'),true,path);
+    assert.equal(reviewedR4PrecoreSource(path,'f'.repeat(40),'100644'),false,path);
+    assert.equal(reviewedR4PrecoreSource(path,blob,'120000'),false,path);
+    assert.equal(reviewedR4PrecoreSource(path,blob,'100755'),false,path);
+    assert.equal(forbiddenPath(path),true,path);
+    assert.deepEqual(scopeChanges(new Map(),[{path,blob,mode:'100644'}]).outOfScope,[path]);
+    assert.deepEqual(scopeChanges(new Map(),[{path,blob,mode:'100644'}],
+      integratedIdePaths([],[{path,blob,mode:'100644'}])).outOfScope,[]);
+  }
+  assert.equal(reviewedR4PrecoreSource('ide/host/src/unknown.rs','a'.repeat(40),'100644'),false);
+});
+

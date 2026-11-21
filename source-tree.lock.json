@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "e5d48ea1044f53151bd6b0bb37fb935e554a2db2",
-  "trackedFileCount": 1982,
+  "sourceCommitBeforeLock": "6af74bce614e84ecfa0170a6e82d71a3793a52ce",
+  "trackedFileCount": 2005,
   "files": [
     {
       "path": ".gitattributes",
@@ -1693,7 +1693,7 @@
     },
     {
       "path": "ide/CHANGELOG.md",
-      "blob": "bbd48edf7d64c008e37a869f2b0b44985dbf03a7"
+      "blob": "aa617ffc90f8e584360946653aa5863637926e7f"
     },
     {
       "path": "ide/CONTINUITY_PROTOCOL.md",
@@ -1705,7 +1705,7 @@
     },
     {
       "path": "ide/PROJECT_STATE.md",
-      "blob": "fe14f6337bcbd07cf31455479b06447fe442462e"
+      "blob": "101291e79352acfd6ee22880d4b8fab82312b2f7"
     },
     {
       "path": "ide/README.md",
@@ -1925,11 +1925,11 @@
     },
     {
       "path": "ide/app/src-tauri/Cargo.lock",
-      "blob": "ec7461e0a64a8fa121cffda7ecb74333c6f6686c"
+      "blob": "798fcaf171b61668e41e690e1df0a8e3bba7b4b7"
     },
     {
       "path": "ide/app/src-tauri/Cargo.toml",
-      "blob": "daf6f325f22827fa843c0b5afb333321211b97a0"
+      "blob": "b5f9819e73aefa352604cb4d7f391691dd737d78"
     },
     {
       "path": "ide/app/src-tauri/LICENSE",
@@ -1969,7 +1969,7 @@
     },
     {
       "path": "ide/app/src-tauri/src/lib.rs",
-      "blob": "683e67bbd6172595b2361d50738bdbce54d7e4ac"
+      "blob": "0288d6ff31c45f28b436fa29b36846e0cce4973c"
     },
     {
       "path": "ide/app/src-tauri/src/lsp_backend.rs",
@@ -1978,6 +1978,10 @@
     {
       "path": "ide/app/src-tauri/src/main.rs",
       "blob": "abc5f54f418416a0ec6d7d6aec00ed890059e7fa"
+    },
+    {
+      "path": "ide/app/src-tauri/src/native_core_health_menu.rs",
+      "blob": "9ae00e5723d343ca4091dd1b99a3b726316e5f68"
     },
     {
       "path": "ide/app/src-tauri/src/terminal_broker.rs",
@@ -2360,6 +2364,10 @@
       "blob": "4a86076d5908f2c38c76440727767d002496719c"
     },
     {
+      "path": "ide/app/tests/native_core_health_menu.test.mjs",
+      "blob": "58d25f3a83782bcf42d6cb29107a58cad6c8334f"
+    },
+    {
       "path": "ide/app/tests/project_debug_authority.test.mjs",
       "blob": "84740d12e809760f3f5eb5446c2705959d78f4eb"
     },
@@ -2613,15 +2621,15 @@
     },
     {
       "path": "ide/ci/merge02-reviewed-native-boundaries.json",
-      "blob": "947ed4fba7259fb6ceebe2377c53da5bd30d88ca"
+      "blob": "7a8cd4a7198a5621723ac8cdcbb0d2768129482a"
     },
     {
       "path": "ide/ci/test_verify_reviewed_native_boundaries.py",
-      "blob": "30eb011e406bbd7f385c3ea8fef0f6a535dc3cbe"
+      "blob": "1f33d7d96629ac75a76bd43d5e249e6235763aaf"
     },
     {
       "path": "ide/ci/verify_reviewed_native_boundaries.py",
-      "blob": "88474817ca95ff985ca4392bed9af92e5f485da2"
+      "blob": "7fb2e2cb9f4014d554eb68bc1e4a984cbc620504"
     },
     {
       "path": "ide/docs/ADR_0001_STANDALONE_APP_AND_LU_BRIDGE.md",
@@ -2738,6 +2746,22 @@
     {
       "path": "ide/docs/IDE_C7_TASK_SOURCE_EVIDENCE_20261108.md",
       "blob": "6f9e38f9c1919d39552d21022bdb90a1e1c27d51"
+    },
+    {
+      "path": "ide/docs/IDE_CORE_IPC_01B_NATIVE_CUSTODY.md",
+      "blob": "52bf0190dddab4078743151aa3e523066c1110dd"
+    },
+    {
+      "path": "ide/docs/IDE_CORE_IPC_01B_R3_ISSUER_HANDOFF.md",
+      "blob": "15dbdecd0569085d405166b17d15576c4983066f"
+    },
+    {
+      "path": "ide/docs/IDE_CORE_IPC_01B_R4_UPSTREAM_CORE_AUDIT.md",
+      "blob": "08e7a355b5939c15439c0fab12ed20bb3bcd37fd"
+    },
+    {
+      "path": "ide/docs/IDE_CORE_IPC_01B_R5_CURRENT_CORE_CONTRACT.md",
+      "blob": "e8c0c45e5d119e6689fee0a01e825b8d0d3d3f75"
     },
     {
       "path": "ide/docs/IDE_DEV02_3_OFFLINE_REVIEW_AND_PYTHON_SEMANTIC_20261108.md",
@@ -3168,6 +3192,10 @@
       "blob": "eeac643edb9030041a9b55508c8a0525ff7e3bf7"
     },
     {
+      "path": "ide/docs/IDE_PRECORE_CLOSEOUT_R3_SIGNED_WINDOWS_ADMISSION.md",
+      "blob": "92e8c11abfa250793cf282d1cdc9c939a3080b84"
+    },
+    {
       "path": "ide/docs/IDE_RELEASE_CLOSEOUT_P01_P07_20261107.md",
       "blob": "24dfed28bb77b46f1231f85d7b07dc5968c25a80"
     },
@@ -3245,11 +3273,11 @@
     },
     {
       "path": "ide/host/Cargo.lock",
-      "blob": "90e52a812a834786d828fefb86d244732a882dd7"
+      "blob": "6d6a5130bc4d18fd7c595bfc0b154f33caecf17c"
     },
     {
       "path": "ide/host/Cargo.toml",
-      "blob": "e4d8bc1431100817ef99e9960f4de2db34f71bef"
+      "blob": "4edc6a3fd34f7ce239b78b18978678ea54bc771d"
     },
     {
       "path": "ide/host/LICENSE",
@@ -3261,7 +3289,7 @@
     },
     {
       "path": "ide/host/build.rs",
-      "blob": "5f3276560c0b2c78e471b802858f4d18e9437bce"
+      "blob": "fa01440abe082674867edb4ba81a86224ff09af6"
     },
     {
       "path": "ide/host/examples/fin03_live_vault_probe.rs",
@@ -3296,8 +3324,32 @@
       "blob": "1082ed86aa5e7c24da40f509a816de552a90e57d"
     },
     {
+      "path": "ide/host/src/core_ipc_host.rs",
+      "blob": "8a03da3466c5946a8ae7da51a349c7c36f065bbf"
+    },
+    {
+      "path": "ide/host/src/core_ipc_issuer.rs",
+      "blob": "405669503461333f1e75f1d227f79f02f962e15f"
+    },
+    {
+      "path": "ide/host/src/core_ipc_lifecycle.rs",
+      "blob": "6bb199509254c239322777dd9c9e9dd54df54acb"
+    },
+    {
+      "path": "ide/host/src/core_ipc_native_transport.rs",
+      "blob": "c3ac18fc3c34e4643c3ff8f9be8ada06d67e4674"
+    },
+    {
+      "path": "ide/host/src/core_ipc_readonly.rs",
+      "blob": "c6e84eb1bfdefa81c5020c9331f46422c17f36d0"
+    },
+    {
+      "path": "ide/host/src/core_ipc_windows_contract.rs",
+      "blob": "717f51c554324501a1d8cacf9f2507501d317844"
+    },
+    {
       "path": "ide/host/src/dap_session.rs",
-      "blob": "f5eea7c1e8d6a4e6c87535ab18f12e36b2f5599d"
+      "blob": "4a2231b2d833453056369c6c41a507d1a54f76ea"
     },
     {
       "path": "ide/host/src/dap_source_lines.rs",
@@ -3460,6 +3512,10 @@
       "blob": "8460e0d90140981dc2a35e5cf7617c487fdae1ab"
     },
     {
+      "path": "ide/host/src/installed_core_health.rs",
+      "blob": "1ba66ce4f44c8bba7e8192ac9397eb8f10d3262c"
+    },
+    {
       "path": "ide/host/src/inventory.rs",
       "blob": "30a18ed839ae7a19351c8a17f44c83c766d98e76"
     },
@@ -3469,7 +3525,7 @@
     },
     {
       "path": "ide/host/src/lib.rs",
-      "blob": "bfcfcb8cc8ae0375cedd99d8b320198e2409997a"
+      "blob": "06d6cb4fac38886b71e118bce721d09f58637581"
     },
     {
       "path": "ide/host/src/lsp.rs",
@@ -3712,6 +3768,10 @@
       "blob": "b8de6c06add284c3fbcb5eb17514144df69d8dfa"
     },
     {
+      "path": "ide/packaging/Test-IdePrecoreR3WindowsCandidate.ps1",
+      "blob": "8a4d85b81c809ca8ee89b500a0cd9cbba83c2d28"
+    },
+    {
       "path": "ide/packaging/audit_native_lsp_dependency_smoke.py",
       "blob": "4f95db53d6d87b761d52a014986903e7aac0810e"
     },
@@ -3746,6 +3806,14 @@
     {
       "path": "ide/packaging/ide-merge02c-native-cargo-lock-receipts.json",
       "blob": "05c3c97cb1d5b73f01a0fd2562816e23a363407e"
+    },
+    {
+      "path": "ide/packaging/ide-precore-r2-ipc-lock-successor.json",
+      "blob": "fa2c49d5d9149522ec6fc2e95fae98582d4aa729"
+    },
+    {
+      "path": "ide/packaging/ide-precore-r3-admission-register.json",
+      "blob": "402228fe180287f0c74eb0e6bf4df2bad27a9904"
     },
     {
       "path": "ide/packaging/ide05-reviewed-lock-successor.json",
@@ -3925,11 +3993,15 @@
     },
     {
       "path": "ide/packaging/test_ide_05b_r3_workflow_dispositions.py",
-      "blob": "58c74ab671178f4a781c91ab098fae6ed8182787"
+      "blob": "09d9fde5d2f857aae80032684b8a641f24ff34fc"
     },
     {
       "path": "ide/packaging/test_ide_merge02c_native_locks.py",
-      "blob": "2a491717de77283b520e0addc561d9069e34daa0"
+      "blob": "acab1209cc0db5ccc646b2e6b07964bb606e88d3"
+    },
+    {
+      "path": "ide/packaging/test_ide_precore_lock_successor.py",
+      "blob": "7ee94931f57a990dbaf51ff57e5a2b0f6c1a4d23"
     },
     {
       "path": "ide/packaging/test_p04_transactional_upgrade.py",
@@ -3945,7 +4017,7 @@
     },
     {
       "path": "ide/packaging/test_p05_native_picker_repair.py",
-      "blob": "2f50cae81bf0ccf1b3d2d6b383124334ca5838b7"
+      "blob": "c2361fd6dfd14c64048ac69820305c816bd78518"
     },
     {
       "path": "ide/packaging/test_p05_reviewed_workflow_successor.py",
@@ -3969,7 +4041,7 @@
     },
     {
       "path": "ide/packaging/test_p06_candidate_lock.py",
-      "blob": "373ed6c0eb6ee965fab6d32c97a7e7452597a1c2"
+      "blob": "5c59689f9bec149ff19b94db7b77b3bfdaf084da"
     },
     {
       "path": "ide/packaging/test_p06_checkout_lock.py",
@@ -4066,6 +4138,10 @@
     {
       "path": "ide/packaging/test_verify_dev045d2_line_oracle.py",
       "blob": "81e0d32450a87c93326168365a2cfc1c6b589231"
+    },
+    {
+      "path": "ide/packaging/test_verify_ide_precore_r3.py",
+      "blob": "b2ae55023494314d4a8f76f24ca817094dd28c73"
     },
     {
       "path": "ide/packaging/test_verify_language_servers.py",
@@ -4256,6 +4332,14 @@
       "blob": "3851bb210fbd0aa23834aef4de130e02d2bd47da"
     },
     {
+      "path": "ide/packaging/verify_ide_precore_lock_successor.py",
+      "blob": "0a19ef664666e6e11643d45092e9d3ff5bcffdde"
+    },
+    {
+      "path": "ide/packaging/verify_ide_precore_r3.py",
+      "blob": "b9e551f5f8c7b1262527d46f8cb1393de4d3187f"
+    },
+    {
       "path": "ide/packaging/verify_language_servers.py",
       "blob": "62fc38065834ddd0ceb0cc49764711c828833716"
     },
@@ -4348,8 +4432,16 @@
       "blob": "54771c7c46f4468fa78dd22a0e7a8a11f274efcc"
     },
     {
+      "path": "ide/proto/lu/ide/v1/native_broker.proto",
+      "blob": "9906f7e727af1b8daa80c6898c645fe579eaf89a"
+    },
+    {
       "path": "ide/proto/lu/ide/v1/workspace.proto",
       "blob": "98d6ed7a6682f521f1cca7420821fd7867bab266"
+    },
+    {
+      "path": "ide/proto/lu/workspace/v0/readonly.proto",
+      "blob": "fd0d88a26fcb712c5456518ee88550d54a922205"
     },
     {
       "path": "ide/runtime-pins/upstream_sources.json",
@@ -4653,7 +4745,7 @@
     },
     {
       "path": "ide/supervisor/src/dap_transport.rs",
-      "blob": "56ddd79fd5500724252525d2d96d2df53a9488dd"
+      "blob": "862b2c29a86aa471613eb6ae5e700df4a58761f9"
     },
     {
       "path": "ide/supervisor/src/debug_action_receipts.rs",
@@ -4797,7 +4889,7 @@
     },
     {
       "path": "ide/supervisor/src/windows_lsp_worker.rs",
-      "blob": "e110d7593bdb3002f51078517f0fb3bd3d70e0af"
+      "blob": "2e911d32dfba9f0818cff5f0270fcb830d56793e"
     },
     {
       "path": "ide/supervisor/src/windows_null_device.rs",
@@ -5977,11 +6069,11 @@
     },
     {
       "path": "scripts/core01-verify-scope.mjs",
-      "blob": "b7b65f27d553200fa4212b228fd13e21f4ea9d84"
+      "blob": "1f76ef5e5f6946e4c6cf8dcb876b17363a78ca24"
     },
     {
       "path": "scripts/core01-verify-scope.test.mjs",
-      "blob": "f247f7f8bc4c2d475170318098619b3ec11f1afb"
+      "blob": "cabaab8f01dc4da87daffbbb4fc2b28dbefd12a5"
     },
     {
       "path": "scripts/core01f-acceptance-reconcile.mjs",

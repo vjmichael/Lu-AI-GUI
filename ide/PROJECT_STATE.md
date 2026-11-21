@@ -1,5 +1,11 @@
 # Lu IDE — Current project state (authoritative handoff)
 
+## IDE-PRECORE-CLOSEOUT-R4 — consolidated exact-source native CI admission (2026-11-21)
+
+The existing draft PR #236 remains the sole IDE integration path. Its reviewed R2/R3 source successor is `6af74bce614e84ecfa0170a6e82d71a3793a52ce`; GitHub reported no original Windows/Linux workflow runs at that SHA. R4 reviewed the original parent CI failures and prepared one coherent non-forced successor: formatting-only fixes in the two supervisor DAP/source lines, exact-pinned B4/B5 current native source register (109 files with separately reviewed R2/R3 additions and unchanged negative checks), full reviewed source-tree lock, and integrated-only immutable CORE-01A source admissions for exactly 25 reviewed IDE source additions. No original Core-only admission, provider rights, or runtime execution capability is relaxed.
+
+This source-only commit intentionally updates `ide/**` once, which requests the existing original GitHub pull-request workflows on one exact successor SHA. Inspect the actual Windows/Linux results before claiming native qualification; the preceding 25 failed historical workflow records are not overwritten. Signed WO7 NSIS installer, license notices, publisher pin, physical protected SCM/Job receipts and recovery remain missing and release admission is HOLD. Core Health issue #245 remains Core-owned, not an IDE source shortcut. No main merge or production approval is inferred.
+
 ## IDE-PRECORE-CLOSEOUT-R3 — signed Windows RC preflight (2026-11-21; unpublished)
 
 Reviewed the exact draft PR #236 head `f1f0ed4bc1e740d2a9f85615b988b779a46651db` and recovered immutable R2 patch evidence. New default-deny source/package/custody verifier and Windows read-only signed-binary/SCM probe are source-ready; 24/24 hostile Python tests passed, exact WO7/WO8/WO9 source manifests were reconciled with release approval OFF. No signed binaries, publisher/tool identities, independent physical Job/SCM terminal receipts or Windows-machine acceptance; no GitHub source push or CI dispatch. Core #245 remains external. See `docs/IDE_PRECORE_CLOSEOUT_R3_SIGNED_WINDOWS_ADMISSION.md`.

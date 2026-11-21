@@ -16,8 +16,13 @@
   "mergeApproved": false,
   "files": [
     {
+      "path": "ide/app/src-tauri/Cargo.lock",
+      "sha": "798fcaf171b61668e41e690e1df0a8e3bba7b4b7",
+      "scope": "IDE-PRECORE R2/R3 reviewed exact native source and protected authorization integration; source identity only, independent OS acceptance pending"
+    },
+    {
       "path": "ide/app/src-tauri/Cargo.toml",
-      "sha": "daf6f325f22827fa843c0b5afb333321211b97a0",
+      "sha": "b5f9819e73aefa352604cb4d7f391691dd737d78",
       "scope": "03B optimizes sha2 in debug for existing pinned runtime readback; unchanged grant duration and dependency graph"
     },
     {
@@ -47,13 +52,18 @@
     },
     {
       "path": "ide/app/src-tauri/src/lib.rs",
-      "sha": "683e67bbd6172595b2361d50738bdbce54d7e4ac",
+      "sha": "0288d6ff31c45f28b436fa29b36846e0cce4973c",
       "scope": "04K owner-parented Git dialogs; R16C exact stage/commit SHA-256 title witnesses; one-use confirmation and authority unchanged"
     },
     {
       "path": "ide/app/src-tauri/src/lsp_backend.rs",
       "sha": "689e5f6b665e5cc4e30919fadf72138561830d22",
       "scope": "Formatter disposition; original LSP admission and journal recovery retained; source-only, OS acceptance pending"
+    },
+    {
+      "path": "ide/app/src-tauri/src/native_core_health_menu.rs",
+      "sha": "9ae00e5723d343ca4091dd1b99a3b726316e5f68",
+      "scope": "IDE-PRECORE R2/R3 reviewed exact native source and protected authorization integration; source identity only, independent OS acceptance pending"
     },
     {
       "path": "ide/app/src-tauri/src/terminal_broker.rs",
@@ -71,19 +81,59 @@
       "scope": "R3 isolated test-only bundle resources and visible restriction; unchanged disabled runtime features"
     },
     {
+      "path": "ide/host/Cargo.lock",
+      "sha": "6d6a5130bc4d18fd7c595bfc0b154f33caecf17c",
+      "scope": "IDE-PRECORE R2/R3 reviewed exact native source and protected authorization integration; source identity only, independent OS acceptance pending"
+    },
+    {
       "path": "ide/host/Cargo.toml",
-      "sha": "e4d8bc1431100817ef99e9960f4de2db34f71bef",
+      "sha": "4edc6a3fd34f7ce239b78b18978678ea54bc771d",
       "scope": "Explicit debug CI oracle features only; no default expansion; source-only, OS acceptance pending; R2-R9 separately feature-gated synthetic source trap, native OS acceptance pending"
     },
     {
+      "path": "ide/host/build.rs",
+      "sha": "fa01440abe082674867edb4ba81a86224ff09af6",
+      "scope": "IDE-PRECORE R2/R3 reviewed exact native source and protected authorization integration; source identity only, independent OS acceptance pending"
+    },
+    {
+      "path": "ide/host/src/core_ipc_host.rs",
+      "sha": "8a03da3466c5946a8ae7da51a349c7c36f065bbf",
+      "scope": "IDE-PRECORE R2/R3 reviewed exact native source and protected authorization integration; source identity only, independent OS acceptance pending"
+    },
+    {
+      "path": "ide/host/src/core_ipc_issuer.rs",
+      "sha": "405669503461333f1e75f1d227f79f02f962e15f",
+      "scope": "IDE-PRECORE R2/R3 reviewed exact native source and protected authorization integration; source identity only, independent OS acceptance pending"
+    },
+    {
+      "path": "ide/host/src/core_ipc_lifecycle.rs",
+      "sha": "6bb199509254c239322777dd9c9e9dd54df54acb",
+      "scope": "IDE-PRECORE R2/R3 reviewed exact native source and protected authorization integration; source identity only, independent OS acceptance pending"
+    },
+    {
+      "path": "ide/host/src/core_ipc_native_transport.rs",
+      "sha": "c3ac18fc3c34e4643c3ff8f9be8ada06d67e4674",
+      "scope": "IDE-PRECORE R2/R3 reviewed exact native source and protected authorization integration; source identity only, independent OS acceptance pending"
+    },
+    {
+      "path": "ide/host/src/core_ipc_readonly.rs",
+      "sha": "c6e84eb1bfdefa81c5020c9331f46422c17f36d0",
+      "scope": "IDE-PRECORE R2/R3 reviewed exact native source and protected authorization integration; source identity only, independent OS acceptance pending"
+    },
+    {
+      "path": "ide/host/src/core_ipc_windows_contract.rs",
+      "sha": "717f51c554324501a1d8cacf9f2507501d317844",
+      "scope": "IDE-PRECORE R2/R3 reviewed exact native source and protected authorization integration; source identity only, independent OS acceptance pending"
+    },
+    {
       "path": "ide/host/src/dap_session.rs",
-      "sha": "f5eea7c1e8d6a4e6c87535ab18f12e36b2f5599d",
-      "scope": "03D WO6 fixed Windows native suffix only; absolute path, traversal, control, no-debug-args guards preserved; regression tests; OS acceptance pending; R2-R9 separately feature-gated synthetic source trap, native OS acceptance pending"
+      "sha": "4a2231b2d833453056369c6c41a507d1a54f76ea",
+      "scope": "Reviewed DAP test-only path restrictions and fixed probe; source boundary only, no arbitrary launch, debugger authority or installed acceptance."
     },
     {
       "path": "ide/host/src/git_refs_health.rs",
-      "scope": "G06A07 read-only Git recovery-state classification and operator visibility; no execution or mutation grant, source-only",
-      "sha": "4cc02a1563be61f1a320621ba6dbb94ad79c9dc7"
+      "sha": "4cc02a1563be61f1a320621ba6dbb94ad79c9dc7",
+      "scope": "G06A07 read-only Git recovery-state classification and operator visibility; no execution or mutation grant, source-only"
     },
     {
       "path": "ide/host/src/git_reviewed_stash_save.rs",
@@ -96,6 +146,16 @@
       "scope": "03G test-only consent age regression; production consent authority unchanged; source-only"
     },
     {
+      "path": "ide/host/src/installed_core_health.rs",
+      "sha": "1ba66ce4f44c8bba7e8192ac9397eb8f10d3262c",
+      "scope": "IDE-PRECORE R2/R3 reviewed exact native source and protected authorization integration; source identity only, independent OS acceptance pending"
+    },
+    {
+      "path": "ide/host/src/lib.rs",
+      "sha": "06d6cb4fac38886b71e118bce721d09f58637581",
+      "scope": "IDE-PRECORE R2/R3 reviewed exact native source and protected authorization integration; source identity only, independent OS acceptance pending"
+    },
+    {
       "path": "ide/host/src/reviewed_git.rs",
       "sha": "b0ae749153893e0fca1026e1a5949563429420ac",
       "scope": "04K independently reopens exact index and commit parent/tree; existing resource and confirmation bounds retained; native acceptance pending"
@@ -104,6 +164,11 @@
       "path": "ide/host/tests/fin03_stash_save.rs",
       "sha": "90df81f8f5df31c7db1bbdaf52643f8e67efe323",
       "scope": "source or historical preservation test, not native acceptance"
+    },
+    {
+      "path": "ide/packaging/Test-IdePrecoreR3WindowsCandidate.ps1",
+      "sha": "8a4d85b81c809ca8ee89b500a0cd9cbba83c2d28",
+      "scope": "IDE-PRECORE R2/R3 reviewed exact native source and protected authorization integration; source identity only, independent OS acceptance pending"
     },
     {
       "path": "ide/packaging/audit_p05_reviewed_workflow_successor.py",
@@ -124,6 +189,16 @@
       "path": "ide/packaging/ide-05b-r3-outside-cohort.json",
       "sha": "d603439db9d17a433a0fc694dda409e63db154d3",
       "scope": "R3 historical workflow inventory unchanged; 3 reviewed successor blobs recorded separately without dispatch or retirement grant"
+    },
+    {
+      "path": "ide/packaging/ide-precore-r2-ipc-lock-successor.json",
+      "sha": "fa2c49d5d9149522ec6fc2e95fae98582d4aa729",
+      "scope": "IDE-PRECORE R2/R3 reviewed exact native source and protected authorization integration; source identity only, independent OS acceptance pending"
+    },
+    {
+      "path": "ide/packaging/ide-precore-r3-admission-register.json",
+      "sha": "402228fe180287f0c74eb0e6bf4df2bad27a9904",
+      "scope": "IDE-PRECORE R2/R3 reviewed exact native source and protected authorization integration; source identity only, independent OS acceptance pending"
     },
     {
       "path": "ide/packaging/p05-merge02-pending-native-boundaries.json",
@@ -172,8 +247,18 @@
     },
     {
       "path": "ide/packaging/test_ide_05b_r3_workflow_dispositions.py",
-      "sha": "58c74ab671178f4a781c91ab098fae6ed8182787",
+      "sha": "09d9fde5d2f857aae80032684b8a641f24ff34fc",
       "scope": "R3 default-deny inventory test now checks original and 3 successor blobs without authority promotion"
+    },
+    {
+      "path": "ide/packaging/test_ide_merge02c_native_locks.py",
+      "sha": "acab1209cc0db5ccc646b2e6b07964bb606e88d3",
+      "scope": "IDE-PRECORE R2/R3 reviewed exact native source and protected authorization integration; source identity only, independent OS acceptance pending"
+    },
+    {
+      "path": "ide/packaging/test_ide_precore_lock_successor.py",
+      "sha": "7ee94931f57a990dbaf51ff57e5a2b0f6c1a4d23",
+      "scope": "IDE-PRECORE R2/R3 reviewed exact native source and protected authorization integration; source identity only, independent OS acceptance pending"
     },
     {
       "path": "ide/packaging/test_p05_merge02_pending_native_boundaries.py",
@@ -182,7 +267,7 @@
     },
     {
       "path": "ide/packaging/test_p05_native_picker_repair.py",
-      "sha": "2f50cae81bf0ccf1b3d2d6b383124334ca5838b7",
+      "sha": "c2361fd6dfd14c64048ac69820305c816bd78518",
       "scope": "04K native staging/commit and split-editor regressions plus 04L actual PowerShell memory/message helper tests; no OS acceptance claim"
     },
     {
@@ -199,6 +284,11 @@
       "path": "ide/packaging/test_p05_upstream_bundle_integration.py",
       "sha": "f9602c9f3c59948644612bac5b0126204e66402a",
       "scope": "R1 exact prior license bundle contract regression"
+    },
+    {
+      "path": "ide/packaging/test_p06_candidate_lock.py",
+      "sha": "5c59689f9bec149ff19b94db7b77b3bfdaf084da",
+      "scope": "IDE-PRECORE R2/R3 reviewed exact native source and protected authorization integration; source identity only, independent OS acceptance pending"
     },
     {
       "path": "ide/packaging/test_p06_checkout_lock.py",
@@ -241,6 +331,11 @@
       "scope": "03E allow bounded 45-second real nm completion; native tool, ELF and hostile assertions unchanged; no acceptance promotion"
     },
     {
+      "path": "ide/packaging/test_verify_ide_precore_r3.py",
+      "sha": "b2ae55023494314d4a8f76f24ca817094dd28c73",
+      "scope": "IDE-PRECORE R2/R3 reviewed exact native source and protected authorization integration; source identity only, independent OS acceptance pending"
+    },
+    {
       "path": "ide/packaging/test_verify_language_servers.py",
       "sha": "bc2b9660918a74a4912d5652bcbd09798f6937d4",
       "scope": "native redistribution manifest still blocked pending full closure"
@@ -269,6 +364,16 @@
       "path": "ide/packaging/upstream_notice_receipt.py",
       "sha": "b5aaec85c854522bc1dd5bcfe190c63c9000269a",
       "scope": "R1 exact canonical upstream Git blob/SHA256 verification; no authority expansion"
+    },
+    {
+      "path": "ide/packaging/verify_ide_precore_lock_successor.py",
+      "sha": "0a19ef664666e6e11643d45092e9d3ff5bcffdde",
+      "scope": "IDE-PRECORE R2/R3 reviewed exact native source and protected authorization integration; source identity only, independent OS acceptance pending"
+    },
+    {
+      "path": "ide/packaging/verify_ide_precore_r3.py",
+      "sha": "b9e551f5f8c7b1262527d46f8cb1393de4d3187f",
+      "scope": "IDE-PRECORE R2/R3 reviewed exact native source and protected authorization integration; source identity only, independent OS acceptance pending"
     },
     {
       "path": "ide/packaging/verify_language_servers.py",
@@ -343,7 +448,7 @@
     {
       "path": "ide/supervisor/examples/wo6_native_dap_acceptance.rs",
       "sha": "8ca969be55c33fa1febde183826e067e1ee5da96",
-      "scope": "03E D6C bounded authenticated owner continuation chain, unchanged one-use and OS/PDB gates; source-only, native Windows pending; R2-R7 bounded native refusal-code diagnostic only, authorization and AppContainer/SCM/Job gates unchanged; genuine Windows retest pending; R2-R9 separately feature-gated synthetic source trap, native OS acceptance pending"
+      "scope": "Reviewed fixed WO6 native DAP CI-only witness and strict source/Job evidence; no new execution grant or installed approval."
     },
     {
       "path": "ide/supervisor/fixtures/debug/Probe-WindowsWo6FileDenial.ps1",
@@ -382,8 +487,8 @@
     },
     {
       "path": "ide/supervisor/src/dap_transport.rs",
-      "sha": "56ddd79fd5500724252525d2d96d2df53a9488dd",
-      "scope": "03E D6C bounded authenticated owner continuation chain, unchanged one-use and OS/PDB gates; source-only, native Windows pending; R2-R9 separately feature-gated synthetic source trap, native OS acceptance pending"
+      "sha": "862b2c29a86aa471613eb6ae5e700df4a58761f9",
+      "scope": "Reviewed bounded DAP transport and fixed CI-only source trap; formatting-only R4 repair, no authorization or OS release approval."
     },
     {
       "path": "ide/supervisor/src/debug_action_receipts.rs",
@@ -452,8 +557,8 @@
     },
     {
       "path": "ide/supervisor/src/windows_lsp_worker.rs",
-      "sha": "e110d7593bdb3002f51078517f0fb3bd3d70e0af",
-      "scope": "03E D6C bounded authenticated owner continuation chain, unchanged one-use and OS/PDB gates; source-only, native Windows pending; R2-R9 separately feature-gated synthetic source trap, native OS acceptance pending"
+      "sha": "2e911d32dfba9f0818cff5f0270fcb830d56793e",
+      "scope": "Reviewed protected LSP/Job source and fixed CI-only probe; formatting-only R4 repair, no authority or installed acceptance."
     }
   ]
 }

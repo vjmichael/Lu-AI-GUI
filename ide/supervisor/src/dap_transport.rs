@@ -359,7 +359,9 @@ impl DapGateway {
         &mut self,
         target: &str,
     ) -> Result<(), SupervisorError> {
-        let frame = self.session.launch_fin04r1_fixed_probe(target)
+        let frame = self
+            .session
+            .launch_fin04r1_fixed_probe(target)
             .map_err(protocol_denied)?;
         self.send(&frame)
     }

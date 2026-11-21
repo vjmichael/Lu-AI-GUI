@@ -1,5 +1,9 @@
 # Lu IDE — Development changelog
 
+## 2026-11-21 — IDE-PRECORE-CLOSEOUT-R4 grouped native source repair (pre-qualification)
+
+Reconciled original failed CI evidence into one reviewed integration follow-on: two formatting-only supervisor repairs, exact-pin scoped 109-file B4/B5 native boundary review, integrated-only 25-pin CORE-01A IDE source exception and regenerated 2005-file tracked source inventory. Host DAP format and native picker R2 source changes were already in the parent. No new feature, release approval, signed installed evidence or physical worker custody is claimed; original Windows/Linux workflow acceptance must be observed on the new exact commit.
+
 ## 2026-11-21 — IDE-PRECORE-CLOSEOUT-R3 (unpublished source-only candidate)
 
 Added fail-closed reviewed R2/WO7/WO8/WO9 source, package, signing-input and worker-custody reconciliation with 24 hostile tests and a read-only Windows native signed-candidate/SCM identity probe. Current signed installer, publisher, native Job/SCM receipts and physical Windows acceptance remain unavailable; no release, publication or CI authorization. See `docs/IDE_PRECORE_CLOSEOUT_R3_SIGNED_WINDOWS_ADMISSION.md`.
