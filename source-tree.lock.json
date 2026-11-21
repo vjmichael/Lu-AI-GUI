@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "ce58c93a1c291b91eca9cfbc890f3b273a65c369",
+  "sourceCommitBeforeLock": "5e2ddb1ecdc59e0449f933d9fbab515ef3aea797",
   "trackedFileCount": 1982,
   "files": [
     {
@@ -2145,7 +2145,7 @@
     },
     {
       "path": "ide/app/tests/editor_working_set.test.mjs",
-      "blob": "6baa659dd3b82bf4a0535f4dc5bbeb78b7c158c5"
+      "blob": "a5593a7f46f27a68693ff164b15114fba8e00882"
     },
     {
       "path": "ide/app/tests/execution_intent.test.mjs",
@@ -2473,7 +2473,7 @@
     },
     {
       "path": "ide/app/web/editor_working_set.js",
-      "blob": "04ffdef569defbd9b9c51d0fe0ecd08796ccef54"
+      "blob": "c97df35971b10a7f8344fc2477e19fb11b19b170"
     },
     {
       "path": "ide/app/web/fin06_guided_workflow.js",
