@@ -97,6 +97,7 @@ pub mod continuity;
 pub mod operational_asset_ledger;
 pub mod operational_memory;
 pub mod contracts;
+pub mod workspace_ipc;
 pub mod conversation_authority;
 pub mod core_extension;
 pub mod cpu_instructions;
