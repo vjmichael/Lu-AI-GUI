@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "ebbfc4aec3e4796533d7fa8f8512aded31eb6df0",
+  "sourceCommitBeforeLock": "0335f303680be4fea742651423fa7f5aaacd27df",
   "trackedFileCount": 1270,
   "files": [
     {
@@ -981,7 +981,7 @@
     },
     {
       "path": "docs/LU_DEVELOPMENT_LEDGER.md",
-      "blob": "4ae09df596ef9d30888b9f0745ccb6e68e2bc43f"
+      "blob": "0b1ff07f89a27eeff9d67a820c475667f32cee71"
     },
     {
       "path": "docs/LU_E1_NATIVE_EVIDENCE_20261107.md",
@@ -3077,7 +3077,7 @@
     },
     {
       "path": "scripts/lu-ci-group-policy.test.mjs",
-      "blob": "e3219edfc6f16989afd6592c9cb6dd6900a7aba1"
+      "blob": "60311b7f56f8969eb3b91fc86d07f1792a0d56b8"
     },
     {
       "path": "scripts/lu-ci-superseded-queue.mjs",

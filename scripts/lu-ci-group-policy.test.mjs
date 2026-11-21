@@ -188,7 +188,7 @@ test("CI-POLICY-01-R1: all nine retired triggers keep native jobs and reject rei
     assert.deepEqual(check.problems,[],file);
     assert.deepEqual(check.events,reusable?["workflow_dispatch","workflow_call"]:["workflow_dispatch"],file);
     for(const job of jobs)assert.match(src,new RegExp("^  "+job+":","m"),file+" "+job);
-    const unsafe=src.replace(/^on:\n  workflow_dispatch:/,"on:\n  push:\n  workflow_dispatch:");
+    const unsafe=src.replace(/^on:\n  workflow_dispatch:/m,"on:\n  push:\n  workflow_dispatch:");
     assert.ok(inspectOne(file,unsafe).problems.includes("HEAVY_WORKFLOW_AUTOMATIC_FANOUT"),file);
   }
   const src=fs.readFileSync(".github/workflows/lu-cp12br7r1-windows-collaboration.yml","utf8");
