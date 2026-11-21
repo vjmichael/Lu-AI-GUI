@@ -708,6 +708,26 @@ impl<B:crate::inference_host::InferenceBackend+Send+'static>
 mod tests{
     use super::*;
     use std::sync::atomic::{AtomicBool,AtomicU64,Ordering};
+    #[cfg(windows)]
+    #[test]
+    fn non_system_nvp_job_zero_verifier_refuses_fake_scm_process(){
+        use lu_win_worker_job::ipc_pipe_peer::WindowsPipePeer;
+        let false_scm=WindowsPipePeer{
+            pid:100,creation_filetime:999,session_id:2,
+            user_sid:"S-1-5-21-100".into(),
+            image_path:r"C:\Program Files\Lu\LuCore.exe".into(),
+        };
+        assert!(InstalledScmNvpWorkerStopVerifier::new(false_scm).is_err());
+        let zero=WindowsPipePeer{
+            pid:0,creation_filetime:0,session_id:0,
+            user_sid:"S-1-5-18".into(),image_path:String::new(),
+        };
+        assert!(InstalledScmNvpWorkerStopVerifier::new(zero).is_err());
+        // A candidate claiming SYSTEM but lacking a genuine OS-signed
+        // running service is NOT an installed acceptance test: only the
+        // VerifiedScmSupervisor can return the requisite live witness.
+    }
+
     struct Auth;
     impl OriginalTurnAuthority for Auth{
         fn admit(&self,r:&GpuLeaseRequest)->Result<(),LeaseRefusal>{
