@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "209f5db3570109a913aacae59d88156a4c8cd3f0",
+  "sourceCommitBeforeLock": "c794f5387b239ae339643383fd427ac8c0a95b34",
   "trackedFileCount": 1305,
   "files": [
     {
@@ -221,7 +221,7 @@
     },
     {
       "path": ".github/workflows/lu-ipc01d-r2-native.yml",
-      "blob": "a16aa1698172145930d59f56a19dcb516172786a"
+      "blob": "0ecabf82784999f5eeb72af4ae609072d4b52bb2"
     },
     {
       "path": ".github/workflows/lu-kiaf-execution.yml",
@@ -989,7 +989,7 @@
     },
     {
       "path": "docs/LU_DEVELOPMENT_LEDGER.md",
-      "blob": "e50385797777ca887e7c49f064e9d782042024ba"
+      "blob": "52694dd3a9e01fd9c67fa51ce5d72c730311fd21"
     },
     {
       "path": "docs/LU_E1_NATIVE_EVIDENCE_20261107.md",
@@ -3817,7 +3817,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/gpu_resource_leases.rs",
-      "blob": "ac9842bce31da682437517562202817be1e10cf5"
+      "blob": "23eac9832529dfdf93cb3cbe73fe8ca2057cb7ae"
     },
     {
       "path": "src-tauri/lu-core/src/host_resource_authority.rs",
@@ -4521,7 +4521,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/workspace_ipc_core_host.rs",
-      "blob": "8e06ef364a3cf2fcb06290bb31f3546c266fe0eb"
+      "blob": "867dfe1be70ca1d224089c1b2b503c517b4e244f"
     },
     {
       "path": "src-tauri/lu-core/src/workspace_ipc_scm.rs",
@@ -5137,7 +5137,7 @@
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/ipc_nvp_gpu_stop.rs",
-      "blob": "e22f072b1afde58babe5977ecebe7ee2b001c508"
+      "blob": "062f667f24f9e0b58a486973d2b74050bdd61a9c"
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/ipc_pipe_peer.rs",
@@ -5145,11 +5145,11 @@
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/ipc_scm_control.rs",
-      "blob": "50b1e91611921f386904193dc6b7fa1e861b4121"
+      "blob": "3e0697b48f764aba2b465aea65c0ff7a8790eb6e"
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/ipc_scm_control_wire.rs",
-      "blob": "55a10f0c89b75db5ea766feecbe327da6936a77b"
+      "blob": "c7e5fafa174352b67dca5c0e03cd34e92d92a840"
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/ipc_scm_launcher.rs",
