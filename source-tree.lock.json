@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "31b8943c3ec21e96c804bdac48233916e50cafac",
-  "trackedFileCount": 1277,
+  "sourceCommitBeforeLock": "1711fc9cd28942ed651ce0f198a0041273b4d191",
+  "trackedFileCount": 1279,
   "files": [
     {
       "path": ".gitattributes",
@@ -218,6 +218,10 @@
     {
       "path": ".github/workflows/lu-e1-p15-conversation-recovery.yml",
       "blob": "1eeae0189fac88b5b38251c8e1db3f33d7bf4bf4"
+    },
+    {
+      "path": ".github/workflows/lu-ipc01d-r2-native.yml",
+      "blob": "7537ffae22c95859bb50b5cbbc7d4419ed1f2dfc"
     },
     {
       "path": ".github/workflows/lu-kiaf-execution.yml",
@@ -1069,7 +1073,7 @@
     },
     {
       "path": "docs/LU_IPC_01D_R1_NATIVE_TRANSPORT_20261120.md",
-      "blob": "831d75c872f313e89bb56655d5787b2dbd40f15e"
+      "blob": "bf897ce279afe74428549289976d2ec8388cea08"
     },
     {
       "path": "docs/LU_KIAF_ACTIVE_EXECUTION_LEDGER_20261108.md",
@@ -3381,7 +3385,7 @@
     },
     {
       "path": "src-tauri/lu-core/Cargo.lock",
-      "blob": "586642e0127a449fc8f89a2c270ddaa827bbc48e"
+      "blob": "b2a44b29150271b22758b68df33426649177bb04"
     },
     {
       "path": "src-tauri/lu-core/Cargo.toml",
@@ -4473,7 +4477,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/workspace_ipc_transport.rs",
-      "blob": "c60bd9d930fd9cf8cd6da7a0275b857117d25391"
+      "blob": "9eb1144d0db8003a6aadb12e0c61ff5aa98feeee"
     },
     {
       "path": "src-tauri/lu-core/src/workspace_quarantine.rs",
@@ -4989,7 +4993,7 @@
     },
     {
       "path": "src-tauri/lu-core/tests/workspace_ipc_transport_r1.rs",
-      "blob": "a03e3629ea12872c584218e70ca564f05d062ceb"
+      "blob": "c503047ebeddcac0ee742867309384811c8cfe1d"
     },
     {
       "path": "src-tauri/lu-core/tests/workspace_ipc_v0.rs",
@@ -5025,11 +5029,11 @@
     },
     {
       "path": "src-tauri/lu-win-worker-job/Cargo.lock",
-      "blob": "58a8670b4e23d3d918df608d1a73f285bf6da8da"
+      "blob": "d184568889937fac4a4059fd0403c380308b7fdb"
     },
     {
       "path": "src-tauri/lu-win-worker-job/Cargo.toml",
-      "blob": "64c1005a00985f7650cbe523a559850fdf2cac0a"
+      "blob": "f91da4a075c299e4f06c2f4c4f84c1094092b106"
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/bin/lu-e1-p08-linux-cgroup-crash-parent.rs",
@@ -5060,8 +5064,12 @@
       "blob": "cc0eea939efe62f0c23c38fbd56ecca2e0930e82"
     },
     {
+      "path": "src-tauri/lu-win-worker-job/src/ipc_pipe_peer.rs",
+      "blob": "87be5a2c850b6b419791a2dda15570546a1231b1"
+    },
+    {
       "path": "src-tauri/lu-win-worker-job/src/lib.rs",
-      "blob": "d1c9111da594fa3981f2eb26650575f6906c9fb6"
+      "blob": "108b188a88d8e302435fef9977df420902076326"
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/metadata_guard.rs",
