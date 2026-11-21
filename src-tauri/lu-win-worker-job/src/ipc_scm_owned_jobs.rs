@@ -314,7 +314,7 @@ mod tests{
             "user-turn-1","task-1","workspace-1",
         ).unwrap()
     }
-    fn child()->(Job,Child){
+    fn suspended_fixture_child()->(Job,Child){
         let shell=std::env::var_os("ComSpec").unwrap_or(
             std::ffi::OsString::from(r"C:\Windows\System32\cmd.exe"));
         let job=Job::new().unwrap();
@@ -342,7 +342,7 @@ mod tests{
     }
     #[test]
     fn actual_assigned_job_proof_is_exact_call_lane_and_one_use(){
-        let (job,child)=child();
+        let (job,child)=suspended_fixture_child();
         // CI's ordinary user is NOT an AppContainer; this tests real Job
         // accounting only. Production requires independent token proof.
         let binding=binding();
@@ -367,7 +367,7 @@ mod tests{
     fn service_local_registry_refuses_foreign_replay_and_lane_confusion(){
         let keeper=ScmJobKeeper{registry:Mutex::new(ServiceRegistry::default())};
         let approved=binding();
-        let (job,child)=child();
+        let (job,child)=suspended_fixture_child();
         keeper.admit_inner(
             job,child,SupervisedJobLane::DlcClient,approved.clone(),false
         ).unwrap();
@@ -377,7 +377,7 @@ mod tests{
             &foreign,SupervisedJobLane::DlcClient).is_err());
         assert!(keeper.stop_exact_inner(
             &approved,SupervisedJobLane::CoreExecutor).is_err());
-        let (job2,child2)=child();
+        let (job2,child2)=suspended_fixture_child();
         assert!(keeper.admit_inner(
             job2,child2,SupervisedJobLane::DlcClient,approved.clone(),false
         ).is_err());
@@ -387,11 +387,11 @@ mod tests{
         assert_eq!(stopped.lane(),SupervisedJobLane::DlcClient);
         assert!(keeper.stop_exact_inner(
             &approved,SupervisedJobLane::DlcClient).is_err());
-        let (job3,child3)=child();
+        let (job3,child3)=suspended_fixture_child();
         assert!(keeper.admit_inner(
             job3,child3,SupervisedJobLane::DlcClient,approved.clone(),false
         ).is_err());
-        let (job4,child4)=child();
+        let (job4,child4)=suspended_fixture_child();
         assert!(keeper.admit_inner(
             job4,child4,SupervisedJobLane::CoreExecutor,foreign,false
         ).is_err());

@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "8d7c11621eea40322619a7bd6d959fad84122d71",
+  "sourceCommitBeforeLock": "8e15f786de7bd7955addbc0aa6bbdd605e0f330b",
   "trackedFileCount": 1291,
   "files": [
     {
@@ -5105,7 +5105,7 @@
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/ipc_scm_owned_jobs.rs",
-      "blob": "23eb4ebb4dae6792ca82e15b7ca5e643004057a9"
+      "blob": "485446ce2c1ed4930ffdb3c218533b733b5190c9"
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/ipc_scm_supervisor.rs",
