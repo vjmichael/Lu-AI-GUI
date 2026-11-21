@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "406b6c4da144e62144f0a2fe847c73d363f02b9e",
+  "sourceCommitBeforeLock": "ea6e35e6a10a0754e166eb4c34a794eb0c9b5551",
   "trackedFileCount": 1285,
   "files": [
     {
@@ -221,7 +221,7 @@
     },
     {
       "path": ".github/workflows/lu-ipc01d-r2-native.yml",
-      "blob": "c32407fd9397d04862c432fe2a696a24b4f76c16"
+      "blob": "61615c9d9b4179dabf6c4d0649cf8d13ae9383a4"
     },
     {
       "path": ".github/workflows/lu-kiaf-execution.yml",
@@ -1073,7 +1073,7 @@
     },
     {
       "path": "docs/LU_IPC_01D_R1_NATIVE_TRANSPORT_20261120.md",
-      "blob": "e3fe45ae897846283181afb546a96c9cb40a5db7"
+      "blob": "d098f721e91eb15149828fc3d8ac22672e2f5122"
     },
     {
       "path": "docs/LU_KIAF_ACTIVE_EXECUTION_LEDGER_20261108.md",
@@ -3833,7 +3833,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/journal.rs",
-      "blob": "9dcf636c07c6fada8884a83cd18fb56818b40f60"
+      "blob": "0013aae71f0e187ec4e77ff82e108e4b8830e955"
     },
     {
       "path": "src-tauri/lu-core/src/lib.rs",
@@ -4485,11 +4485,11 @@
     },
     {
       "path": "src-tauri/lu-core/src/workspace_ipc_core_host.rs",
-      "blob": "3214635a20825e0d7fc8e0a78c81180358b0d217"
+      "blob": "87b466d5636d28f30fc5393013dc9cedddbdf41a"
     },
     {
       "path": "src-tauri/lu-core/src/workspace_ipc_transport.rs",
-      "blob": "bf955b5f3cee22967a14d03d164cd50ecda1a80f"
+      "blob": "63ef912e55f2563e446fba78252126bca04614be"
     },
     {
       "path": "src-tauri/lu-core/src/workspace_quarantine.rs",

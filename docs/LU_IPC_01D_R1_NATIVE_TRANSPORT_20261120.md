@@ -215,3 +215,64 @@ Release remains HOLD for a physically installed, signed DLC/Core system, privile
 - **Authoritative reboot recovery remains blocked** until a separately installed OS supervisor retains or independently verifies the original native worker custody. An exclusive SQLite lock only proves that no previous SQLite writer currently holds that DB, not that all OS descendants have exited. Do not clear startup EXECUTING/UNCERTAIN or replay a call on that basis.
 
 - Restart reconciliation now exposes a bounded (maximum 1,024) **read-only exact-call worklist** from the exclusive journal: call ID, tool ID, canonical fingerprint and unresolved state only. It omits raw model/input/output bytes, credentials and receipt material. Malformed or oversized recovery sets fail closed; this is not an OS kernel-empty witness, not an approval and cannot itself clear `NeedsCustody`. This prepares the eventual installed supervisor service to join trustworthy original worker custody with the exact persisted interrupted calls.
+
+
+## LU-IPC-01D-R4-R3-R3 — Exact-call original Job custody / physical Windows acceptance gap
+
+**Source candidate, not installed release acceptance.** Lu Core now persists an exact signed-session
+worker binding BEFORE entering durable execution: call ID, input fingerprint, admitted module,
+session reference, Core epoch, host-observed original Job worker PID, and
+OS-observed worker creation FILETIME. Incoming DLC frames,
+saved plan state, and user-owned SQLite files cannot create the native kernel-empty proof.
+The native DLC-client Job must independently observe ActiveProcesses=0 and reap its child.
+Only then, after active IPC dispatches drain, can the gate mint an in-process immutable
+client-kernel-stop witness for the exact original calls it admitted. This client
+Job does NOT automatically contain every Core native tool executor.
+
+The exclusive journal joins *every* startup EXECUTING/UNCERTAIN entry against the original
+supervised call and the native observed witness in ONE SQLite transaction. Missing, duplicate,
+extra, foreign-session, wrong epoch, wrong worker PID, wrong worker creation time,
+wrong fingerprint or non-supervised entries fail the entire transaction. All
+reviewed EXECUTING effects become UNCERTAIN, with a separate forensic custody
+table; **no tool effect is marked APPLIED/FAILED or re-executed**.
+Critically, this is ONLY DLC *client* termination custody. The journal retains
+NeedsExecutorCustody and **continues to refuse all new execution admissions**
+until a separate protected service proves the actual Core tool executor trees
+also ended; a signed DLC client Job is not such a service.
+
+**Critical limitation:** this witness is only constructible while the host still owns
+the original DLC-client native Job handle. After unclean Core death, neither
+SQLite EXCLUSIVE ownership nor a stored custody row nor a PID liveness probe
+is valid evidence of remaining Core tool executor descendants having stopped.
+Such recovery stays fail-closed. A separately installed SCM/SYSTEM supervisor
+must retain and verify custody for the ORIGINAL DLC client and each Core
+effect-execution worker across a Core process crash, then supply exact-session,
+exact-call OS-attested receipts. The broker also needs approved enrollment,
+credential rotation/revocation and a real installed security boundary.
+No such privileged service or physical installed receipt is present here.
+
+### Existing native batch / physical acceptance requirements
+
+- Existing manually dispatchable/reusable grouped IPC workflow now explicitly executes the
+  cross-platform ipc_supervisor_exact_reconciliation_tests matrix, including all-or-nothing
+  exact-call, PID, process creation time, epoch, fingerprint and stale-receipt
+  negative tests. Windows also runs the
+  immutable signed-peer bind test and genuine Job/child kernel-empty test. Original source lock,
+  Protobuf transport, trusted host/turn, installer refusal and credential tests stay intact.
+- Native CI on hosted Windows does **not** satisfy physical installed Windows acceptance.
+  Obtain a signed, approved installed Lu Core executable/SCM service and a separately installed
+  IDE, independently pin executable/publisher/manifest and protected credential enrollment,
+  then verify the original named-pipe OS peer, owner/service identity, worker creation epoch
+  and actual signed session. Do not use a synthetic HMAC or signed PowerShell surrogate.
+- In a physical Windows test, terminate Core with an effect executing while the installed
+  **independent** supervisor retains original Job custody. Verify that it observes the full
+  assigned descendant tree reach kernel-empty, emits exact previous-epoch worker receipts
+  under SYSTEM control, and the next Core independently authenticates their provenance.
+  Refuse missing/tampered/wrong-call/older-epoch/duplicate/stale receipts, key rotation,
+  revocation, session replay and an interrupted power cycle. Check original effect remains
+  UNCERTAIN and new-user-turn authorization is independently required before new work.
+- Capture approved local operator and OS receipt references with exact installed binary,
+  publisher, service PID/creation identity, backend/source SHA and kernel custody evidence.
+  **No physical installed execution or SCM proof is claimed here.**
+- Known independent release blocker: CI policy #242;
+  follow-on Core interop requests: IDE health #245, NVP ObjectRef/effect policy #246.

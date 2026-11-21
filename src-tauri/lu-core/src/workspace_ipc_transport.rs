@@ -658,6 +658,12 @@ pub mod windows {
         /// Stable kernel-observed peer identity held by the signed native
         /// lease, never the PID claimed in an IPC Hello.
         pub fn peer_pid(&self)->u32 {self.lease.witness().pid}
+        /// Exact OS-observed process creation time held by this signed
+        /// native lease. A recycled PID cannot satisfy a prior session's
+        /// original worker-custody journal binding.
+        pub fn peer_creation_filetime(&self)->u64{
+            self.lease.witness().creation_filetime
+        }
         /// Production Core dispatch requires the installer-owned record and
         /// package-key revocation witness; debug signed surrogate leases
         /// deliberately never satisfy this predicate.

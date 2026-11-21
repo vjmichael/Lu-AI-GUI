@@ -14,12 +14,16 @@ use crate::{
     contracts::{ToolAuthorizer, ToolDescriptor, ToolInvocation, ProtoPayload},
     conversation_authority::{BoundCallOrigin, ConversationAuthority},
     journal::{EffectJournal,ExclusiveIpcEffectJournal},
+
     registry::{NativeToolRegistry, ToolResponse},
     workspace_ipc::{proto, MAX_TYPED_BYTES},
     workspace_ipc_transport::{TransportError, TransportSession},
 };
+#[cfg(windows)]
+use crate::journal::IpcKernelStopWitness;
 use sha2::{Digest, Sha256};
 use std::{
+    collections::BTreeMap,
     sync::{Arc, atomic::{AtomicBool, AtomicUsize, Ordering}, Mutex},
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
@@ -41,6 +45,10 @@ pub enum CoreDlcGateError {
     Denied,
     Unavailable,
     Transport,
+}
+#[cfg(windows)]
+fn installed_ipc_effect_allowed(effect:crate::contracts::ToolEffect)->bool{
+    matches!(effect,crate::contracts::ToolEffect::ReadWorkspace)
 }
 /// The trusted *host* must decode the exact registered Protobuf request and
 /// validate its semantics, argument scope, ownership and resource references.
@@ -89,19 +97,27 @@ impl WindowsDlcJobCustody {
         })})
     }
     pub fn pid(&self)->u32{self.pid}
+
+    /// Produce the native crate's unforgeable kernel-empty observation from
+    /// THIS original private Job handle, then reap the exact supervised child.
+    /// This proof is still process-local, not a post-crash SCM service receipt.
+    fn kernel_empty_after_reap(
+        &self,
+    )->Result<lu_win_worker_job::WindowsJobEmptyProof,CoreDlcGateError>{
+        let mut owned=self.worker.lock().map_err(|_|CoreDlcGateError::Unavailable)?;
+        let proof=owned.job.terminate_and_verify_empty()
+            .map_err(|_|CoreDlcGateError::Unavailable)?;
+        if !owned.reaped{
+            owned.child.wait().map_err(|_|CoreDlcGateError::Unavailable)?;
+            owned.reaped=true;
+        }
+        Ok(proof)
+    }
 }
 #[cfg(windows)]
 impl CoreDlcWorkerCustody for WindowsDlcJobCustody {
     fn terminate_and_reap(&self)->Result<(),CoreDlcGateError>{
-        let mut owned=self.worker.lock().map_err(|_|CoreDlcGateError::Unavailable)?;
-        if owned.reaped{return Ok(());}
-        // The original Job must report zero live descendants. A PID-only
-        // kill or successful TerminateJobObject is insufficient.
-        owned.job.terminate_and_verify_empty()
-            .map_err(|_|CoreDlcGateError::Unavailable)?;
-        owned.child.wait().map_err(|_|CoreDlcGateError::Unavailable)?;
-        owned.reaped=true;
-        Ok(())
+        self.kernel_empty_after_reap().map(|_|())
     }
 }
 #[cfg(windows)]
@@ -121,6 +137,9 @@ struct GateState{
     closed:AtomicBool,
     in_flight:AtomicUsize,
     bound_task:Mutex<Option<String>>,
+    // Exact durable call IDs and canonical fingerprints admitted on THIS
+    // original authenticated session. Never obtained from a receipt file.
+    calls:Mutex<BTreeMap<String,String>>,
     worker:Option<Arc<dyn CoreDlcWorkerCustody>>,
 }
 impl Drop for GateState {
@@ -136,6 +155,8 @@ impl Drop for GateState {
 pub struct CoreDlcHostGate {
     session:TransportSession,
     state:Arc<GateState>,
+    #[cfg(windows)]
+    native_worker:Option<Arc<WindowsDlcJobCustody>>,
 }
 struct CallSlot {
     state:Arc<GateState>,
@@ -153,8 +174,12 @@ impl CoreDlcHostGate {
             closed:AtomicBool::new(false),
             in_flight:AtomicUsize::new(0),
             bound_task:Mutex::new(None),
+            calls:Mutex::new(BTreeMap::new()),
             worker,
-        })}
+        }),
+        #[cfg(windows)]
+        native_worker:None,
+        }
     }
     /// Only a genuine installed signed Windows named-pipe session may create
     /// a PRODUCTION ingress. The debug signed-pwsh surrogate has no installer
@@ -166,10 +191,16 @@ impl CoreDlcHostGate {
     )->Result<Self,CoreDlcGateError>{
         if !installed.installed_enrollment_active() ||
             installed.check_alive().is_err() ||
-            installed.peer_pid()!=worker.pid(){
+            installed.peer_pid()!=worker.pid() ||
+            installed.peer_creation_filetime()==0 {
             return Err(CoreDlcGateError::Transport);
         }
-        Ok(Self::from_trusted_session(installed.session().clone(),Some(worker)))
+        let mut gate=Self::from_trusted_session(
+            installed.session().clone(),
+            Some(Arc::clone(&worker) as Arc<dyn CoreDlcWorkerCustody>),
+        );
+        gate.native_worker=Some(worker);
+        Ok(gate)
     }
     #[cfg(test)]
     fn test_only(session:TransportSession)->Self{
@@ -188,6 +219,54 @@ impl CoreDlcHostGate {
     }
     pub fn close(&self)->Result<(),CoreDlcGateError>{
         self.cancel_and_reap()
+    }
+
+    /// Observe and record the original signed DLC *client* Job as stopped
+    /// while its true private handle remains owned by this Core instance.
+    /// This records only DLC peer custody, not independent custody of the
+    /// Core-native tool executors or their separately spawned descendants.
+    /// Consequently the IPC restart barrier remains CLOSED even afterward.
+    /// A crashed Core cannot reconstruct this proof from a PID or SQLite row;
+    /// a protected installed SCM supervisor is still required.
+    #[cfg(windows)]
+    pub fn record_verified_dlc_client_stop(
+        &self,
+        installed:&crate::workspace_ipc_transport::windows::SignedWindowsSession,
+        journal:&ExclusiveIpcEffectJournal,
+    )->Result<(),CoreDlcGateError>{
+        if installed.session()!=&self.session{
+            return Err(CoreDlcGateError::SessionMismatch);
+        }
+        if !installed.installed_enrollment_active(){
+            return Err(CoreDlcGateError::Transport);
+        }
+        let worker=self.native_worker.as_ref()
+            .ok_or(CoreDlcGateError::Unavailable)?;
+        if worker.pid()!=installed.peer_pid(){
+            return Err(CoreDlcGateError::SessionMismatch);
+        }
+        self.state.closed.store(true,Ordering::Release);
+        let native_proof=worker.kernel_empty_after_reap()?;
+        if self.active_calls()!=0{
+            // A future may still be writing a final effect receipt. The
+            // gate remains CLOSED; retry only after all slots have drained.
+            return Err(CoreDlcGateError::Unavailable);
+        }
+        let pending=journal.pending_for_supervisor()
+            .map_err(|_|CoreDlcGateError::Unavailable)?;
+        let calls=self.state.calls.lock()
+            .map_err(|_|CoreDlcGateError::Unavailable)?;
+        let mut witnesses=Vec::with_capacity(pending.len());
+        for original in &pending{
+            if calls.get(&original.call_id)!=Some(&original.fingerprint){
+                return Err(CoreDlcGateError::Denied);
+            }
+            witnesses.push(IpcKernelStopWitness::from_windows_job(
+                original,&self.session,worker.pid(),
+                installed.peer_creation_filetime(),&native_proof));
+        }
+        journal.record_original_dlc_stop(&witnesses)
+            .map_err(|_|CoreDlcGateError::Unavailable)
     }
 
     /// SYSTEM-broker-only retirement of the exact installed session's
@@ -362,6 +441,17 @@ impl CoreDlcHostGate {
             host.origin,&invocation,&descriptor,host.policy
         ).map_err(|_|CoreDlcGateError::Denied)?;
         if self.is_closed(){return Err(CoreDlcGateError::SessionClosed);}
+        {
+            let digest=crate::journal::fingerprint(&invocation);
+            let mut calls=self.state.calls.lock()
+                .map_err(|_|CoreDlcGateError::Unavailable)?;
+            if let Some(existing)=calls.get(&invocation.call_id){
+                if existing!=&digest{return Err(CoreDlcGateError::Denied);}
+            }else{
+                calls.insert(invocation.call_id.clone(),digest);
+            }
+        }
+        if self.is_closed(){return Err(CoreDlcGateError::SessionClosed);}
         // Closing a session must CANCEL its in-flight dispatch future.
         // The durable ExecutingEffectGuard then classifies a started effect
         // UNCERTAIN, preventing unsafe replay after reconnect/restart.
@@ -395,15 +485,42 @@ impl CoreDlcHostGate {
     )->Result<ToolResponse,CoreDlcGateError>{
         // Acquire the SQLite OS lock and check startup-recovery disposition
         // before any authenticated DLC effect is allowed through.
-        let journal=journal.ready_journal()
+        let live=journal.ready_journal()
             .map_err(|_|CoreDlcGateError::Unavailable)?;
         self.require_session(installed.session())?;
         if !installed.installed_enrollment_active(){
             return Err(CoreDlcGateError::Transport);
         }
+        let worker=self.native_worker.as_ref()
+            .ok_or(CoreDlcGateError::Unavailable)?;
+        if installed.peer_pid()!=worker.pid() ||
+            installed.peer_creation_filetime()==0 {
+            return Err(CoreDlcGateError::SessionMismatch);
+        }
         let frame=installed.read_verified_frame(pipe).await
             .map_err(|_|CoreDlcGateError::Transport)?;
-        self.dispatch_verified_frame(&frame,host,authority,registry,journal).await
+        // The verified native process is persisted as the owner BEFORE
+        // dispatch can transition PREPARED->EXECUTING. Auth is checked again
+        // by dispatch, including the current original-user-turn grant.
+        let (call,descriptor)=self.authenticated_invocation(&frame,host,registry)?;
+        // This installed-session ingress does not yet independently own
+        // native *executor* custody. Until the protected host executor is
+        // integrated, admit only the reviewed read-only capability class.
+        // Never down-classify NVP EXECUTE+WRITE or other effects to READ.
+        if !installed_ipc_effect_allowed(descriptor.effect){
+            return Err(CoreDlcGateError::Denied);
+        }
+        // Install synchronous revocation custody BEFORE persisting the
+        // PREPARED effect intent; an already-revoked task stays denied.
+        self.bind_host_task(authority,&host.origin.task_id)?;
+        authority.authorize_worker_call(
+            host.origin,&call,&descriptor,host.policy
+        ).map_err(|_|CoreDlcGateError::Denied)?;
+        if self.is_closed(){return Err(CoreDlcGateError::SessionClosed);}
+        journal.bind_authenticated_call(
+            &call,&self.session,worker.pid(),installed.peer_creation_filetime())
+            .map_err(|_|CoreDlcGateError::Unavailable)?;
+        self.dispatch_verified_frame(&frame,host,authority,registry,live).await
     }
 }
 
@@ -783,5 +900,38 @@ mod tests {
         assert!(gate.is_closed());
         assert!(matches!(gate.acquire(),Err(CoreDlcGateError::SessionClosed)));
         assert!(worker.0.load(Ordering::SeqCst)>=1);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn genuine_original_windows_job_requires_kernel_empty_and_reaps_child(){
+        use std::{process::{Command,Stdio},os::windows::process::CommandExt};
+        let shell=std::env::var_os("ComSpec").unwrap_or(
+            std::ffi::OsString::from(r"C:\Windows\System32\cmd.exe"));
+        let child=Command::new(shell)
+            .args(["/D","/C","ping -n 20 127.0.0.1 >NUL"])
+            .creation_flags(0x0800_0000|0x0000_0004)
+            .stdin(Stdio::null()).stdout(Stdio::null())
+            .stderr(Stdio::null()).spawn().unwrap();
+        let job=lu_win_worker_job::Job::new().unwrap();
+        let worker=WindowsDlcJobCustody::take_suspended(job,child).unwrap();
+        assert_ne!(worker.pid(),0);
+        let proof=worker.kernel_empty_after_reap().unwrap();
+        assert_eq!(proof.method(),"WINDOWS_JOB_ACTIVE_ZERO_V1");
+        // The original private Job stays owned and can independently
+        // observe empty again without guessing from a stale PID.
+        assert_eq!(worker.kernel_empty_after_reap().unwrap().method(),
+            "WINDOWS_JOB_ACTIVE_ZERO_V1");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn installed_ipc_cannot_downgrade_write_execute_network_or_elevated_effects(){
+        assert!(installed_ipc_effect_allowed(ToolEffect::ReadWorkspace));
+        for effect in [ToolEffect::WriteWorkspace,ToolEffect::ExecuteCode,
+            ToolEffect::NetworkRead,ToolEffect::NetworkWrite,
+            ToolEffect::DeviceControl,ToolEffect::Elevated]{
+            assert!(!installed_ipc_effect_allowed(effect));
+        }
     }
 }

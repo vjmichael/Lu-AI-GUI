@@ -68,7 +68,8 @@ jobs:
           cargo check --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib
           cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib workspace_ipc_core_host -- --nocapture
           cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib ipc_exclusive_owner_tests -- --nocapture
-          echo LU_IPC_R4_R3_R2_CORE_JOURNAL_ACCEPTANCE_PASS
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib ipc_supervisor_exact_reconciliation_tests -- --nocapture
+          echo LU_IPC_R4_R3_R3_EXACT_SUPERVISOR_RECONCILIATION_PASS
       - name: Windows strict installer record parser regression
         if: matrix.os == 'windows-2025'
         shell: bash
