@@ -129,6 +129,33 @@ impl VerifiedScmSupervisor{
             .map_err(|_|ScmSupervisorError::ServiceUnavailable)?;
         self.require_live()
     }
+    /// SCM-only non-secret readiness preflight: confirms an independently
+    /// installer-provisioned NVP GPU stop-issuer public key is present before
+    /// authorizing any GGUF unload for diffusion. A key's existence is NOT
+    /// evidence that the LTX Job has stopped; the original signed Job-empty
+    /// receipt is verified separately during the release request.
+    pub async fn private_nvp_stop_issuer_ready(
+        &self,
+        original:&lu_win_worker_job::ipc_scm_control_wire::OriginalCall,
+    )->Result<(),ScmSupervisorError>{
+        use lu_win_worker_job::ipc_scm_control_wire::{ScmControl,ScmCommand};
+        if original.module_id!="nvp.film"{
+            return Err(ScmSupervisorError::UnapprovedPins)
+        }
+        self.require_live()?;
+        let witness=self.native.original_process_witness();
+        let command=ScmControl{
+            command:ScmCommand::VerifyNvpStopIssuerPinned,
+            service_pid:witness.pid,
+            service_birth:witness.creation_filetime,
+            original:Some(original.clone()),
+        };
+        lu_win_worker_job::ipc_scm_control::issue_core_command(
+            &command,&witness
+        ).await.map_err(|_|ScmSupervisorError::ReceiptUnavailable)?;
+        self.require_live()
+    }
+
     /// Exact-command scope is always supplied from a host-owned, durable
     /// original-turn grant, never from a DLC Frame or model-origin text.
     pub(crate) async fn private_original_command(
