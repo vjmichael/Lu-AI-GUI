@@ -10,7 +10,18 @@ test('P03 routes from current user and already authorized read catalog only',()=
   assert.match(core,/effect=="read_workspace"/);
   assert.match(core,/user_declines_tools/);
   assert.match(workspace,/recommended_read_tools\(&prompt,&available\)/);
-  assert.match(workspace,/let mut turn=if let Some\(exe\)/);
+  // The reviewed reader planner now routes planned, exact and Git requests
+  // separately. An obsolete single-expression constructor is not a boundary.
+  const plannedAt=workspace.indexOf('let mut turn=if planned{');
+  const exactAt=workspace.indexOf('}else if let Some(operation)=exact{',plannedAt);
+  const gitAt=workspace.indexOf('}else if let Some(exe)=git_executable.as_ref(){',exactAt);
+  const readerAt=workspace.indexOf('WorkspaceReadTurnSession::new_with_reader_observer(',gitAt);
+  assert.ok(plannedAt>=0 && exactAt>plannedAt && gitAt>exactAt && readerAt>gitAt,
+    'planned, exact, reviewed Git and Reader paths must remain ordered');
+  assert.match(workspace,/WorkspaceReadTurnSession::new_planned_with_approved_directory\(/);
+  assert.match(workspace,/WorkspaceReadTurnSession::new_exact_with_approved_directory\(/);
+  assert.match(workspace,/WorkspaceReadTurnSession::new_git\(/);
+  assert.match(workspace,/available\.iter\(\)\.any\(\|t\|t\.effect!="read_workspace"\)/);
   assert.match(workspace,/run_journaled_observed/);
   assert.doesNotMatch(core,/std::process::Command/);
 });
