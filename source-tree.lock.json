@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "948d0a29b84505a68e041c74ae590725b901d31c",
+  "sourceCommitBeforeLock": "b376618b8002ba63076677ab14d9a16ddd82d61e",
   "trackedFileCount": 1299,
   "files": [
     {
@@ -221,7 +221,7 @@
     },
     {
       "path": ".github/workflows/lu-ipc01d-r2-native.yml",
-      "blob": "e1380cde3b65fce409c63f4ab1d1683f2c9e6c9b"
+      "blob": "9f2e9265b05d478b18653df860862d8df5ea7a01"
     },
     {
       "path": ".github/workflows/lu-kiaf-execution.yml",
@@ -1081,7 +1081,7 @@
     },
     {
       "path": "docs/LU_IPC_GPU_01A_NVP_HANDOFF_20261121.md",
-      "blob": "adefba5754054951009fd10b6fd9aea5523eafe0"
+      "blob": "32356308d09e1766416586b81792776d793e34b7"
     },
     {
       "path": "docs/LU_IPC_R4_R3_R3_R4_ECOSYSTEM_AND_SCM_CONTROL_20261121.md",
@@ -3801,7 +3801,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/gpu_resource_leases.rs",
-      "blob": "99b4118cf219847656e49809d44583813d1c19b1"
+      "blob": "4d852576df1dda53cd89ef04c9d20acd0db6ad61"
     },
     {
       "path": "src-tauri/lu-core/src/host_resource_authority.rs",
