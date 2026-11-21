@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "7955fb5faa561d274510e0daecb79fc998db4b0b",
+  "sourceCommitBeforeLock": "9f43d078aa5e979de0ff72ca4c19e8c5829572af",
   "trackedFileCount": 1285,
   "files": [
     {
@@ -221,7 +221,7 @@
     },
     {
       "path": ".github/workflows/lu-ipc01d-r2-native.yml",
-      "blob": "ded1cd01f98d2f05a277f2b44b023b062e825185"
+      "blob": "c32407fd9397d04862c432fe2a696a24b4f76c16"
     },
     {
       "path": ".github/workflows/lu-kiaf-execution.yml",
@@ -1073,7 +1073,7 @@
     },
     {
       "path": "docs/LU_IPC_01D_R1_NATIVE_TRANSPORT_20261120.md",
-      "blob": "e1596bb1277f9cebe2edb650f89c859b6d0d98c9"
+      "blob": "bad80c353d2b4d2d9d7ab6bfc087eacd781c56d0"
     },
     {
       "path": "docs/LU_KIAF_ACTIVE_EXECUTION_LEDGER_20261108.md",
@@ -5077,7 +5077,7 @@
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/ipc_credential_broker.rs",
-      "blob": "f780cd98e7e353570ce559add78aec064e9f6348"
+      "blob": "d91f3818f41d2ccfa32e80252867babfeb4127f1"
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/ipc_installer_enrollment.rs",
