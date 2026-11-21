@@ -718,6 +718,50 @@ pub mod windows {
         record_sha256:[u8;32],
         credential_sha256:[u8;32],
     }
+    /// A non-bearer, original-session SCM recheck used by the *blocking*
+    /// Core GPU worker immediately before it durably commits GRANTED.
+    /// It cannot sign a request itself without the separately installed
+    /// Core CNG key and the genuine signed private SCM peer.
+    #[derive(Clone)]
+    pub struct BrokeredNvpGrantRecheck{
+        request:NvpAuthRequest,
+        service:lu_win_worker_job::ipc_pipe_peer::WindowsPipePeer,
+        deadline:std::time::Instant,
+        expected_welcome_mac:[u8;32],
+    }
+    impl BrokeredNvpGrantRecheck{
+        pub fn check_before_grant(&self)->Result<(),TransportError>{
+            if std::time::Instant::now()>=self.deadline{
+                return Err(TransportError::PeerNotVerified)
+            }
+            let request=self.request.clone();
+            let service=self.service.clone();
+            let expected=self.expected_welcome_mac;
+            // Worker-only: a dedicated OS thread avoids nesting a Tokio
+            // runtime in the main desktop/pipe reactor or holding the
+            // original-turn SQLite authorization lock during native I/O.
+            let result=std::thread::spawn(move||{
+                let rt=tokio::runtime::Builder::new_current_thread()
+                    .enable_all().build()
+                    .map_err(|_|TransportError::PeerNotVerified)?;
+                let mut check=request;
+                check.action=NvpAuthAction::Check;
+                let actual=rt.block_on(async{
+                    lu_win_worker_job::ipc_scm_control::
+                        issue_nvp_auth_command(&check,&service).await
+                }).map_err(|_|TransportError::PeerNotVerified)?;
+                if !fixed_equal(&expected,&actual){
+                    return Err(TransportError::MacMismatch)
+                }
+                Ok(())
+            }).join().map_err(|_|TransportError::PeerNotVerified)?;
+            result?;
+            if std::time::Instant::now()>=self.deadline{
+                return Err(TransportError::PeerNotVerified)
+            }
+            Ok(())
+        }
+    }
     struct BrokeredNvpWitness{
         request:lu_win_worker_job::ipc_scm_control_wire::NvpAuthRequest,
         service:lu_win_worker_job::ipc_pipe_peer::WindowsPipePeer,
@@ -755,6 +799,12 @@ pub mod windows {
         }
         pub fn brokered_nvp_active(&self)->bool{
             self.brokered.is_some() && self.session.module_id=="nvp.film"
+        }
+        pub fn original_grant_recheck(&self)->Option<BrokeredNvpGrantRecheck>{
+            self.brokered.as_ref().map(|v|BrokeredNvpGrantRecheck{
+                request:v.request.clone(),service:v.service.clone(),
+                deadline:v.deadline,expected_welcome_mac:v.expected_welcome_mac,
+            })
         }
         /// Host-only package identity captured from the protected installer
         /// record, never the peer's claimed package digest. Used exclusively
