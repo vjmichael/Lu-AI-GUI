@@ -180,6 +180,63 @@ impl ScmControl{
         Ok(result)
     }
 }
+/// LU-IPC-GPU-01D-R2: immutable request binding for a future SCM-owned
+/// NVP authentication broker. This is a canonical *scope*, NOT a credential,
+/// signature, admission certificate, GPU grant, or evidence of worker stop.
+/// The trusted SCM service must independently obtain and hold the kernel
+/// process/image witnesses and verify its own credential before using it.
+#[derive(Debug,Clone,PartialEq,Eq)]
+pub struct NvpBrokerScope{
+    pub original:OriginalCall,
+    pub nvp_pid:u32,
+    pub nvp_birth_filetime:u64,
+    pub nvp_session_id:u32,
+    pub service_pid:u32,
+    pub service_birth_filetime:u64,
+    pub challenge:[u8;CHALLENGE_BYTES],
+}
+impl NvpBrokerScope{
+    const DOMAIN:&'static [u8]=b"LU_NVP_SCM_SESSION_SCOPE_V1\0";
+    /// A deterministic, tightly bounded scope for a native challenge/proof
+    /// exchange. Never deserialize this from NVP-controlled JSON as authority.
+    pub fn canonical(&self)->Result<Vec<u8>,Refusal>{
+        self.original.checked()?;
+        if self.original.module_id!="nvp.film" ||
+            self.nvp_pid==0 || self.nvp_birth_filetime==0 ||
+            self.nvp_session_id==0 || self.service_pid==0 ||
+            self.service_birth_filetime==0 ||
+            self.challenge.iter().all(|b|*b==0) {
+            return Err(Refusal::InvalidScope)
+        }
+        let mut out=Vec::with_capacity(512);
+        out.extend_from_slice(Self::DOMAIN);
+        out.extend_from_slice(&self.challenge);
+        for id in [self.nvp_pid,self.nvp_session_id,self.service_pid]{
+            out.extend_from_slice(&id.to_le_bytes());
+        }
+        for birth in [self.nvp_birth_filetime,self.service_birth_filetime]{
+            out.extend_from_slice(&birth.to_le_bytes());
+        }
+        for field in self.original.fields(){write_scope(&mut out,field)?;}
+        if out.len()>MAX_CONTROL_BODY{return Err(Refusal::InvalidFrame)}
+        Ok(out)
+    }
+    /// The trusted Core host must match the independently witnessed process
+    /// generations and original operation before requesting SCM verification.
+    /// This check grants no access without a separate authenticated broker.
+    pub fn matches_host(
+        &self,original:&OriginalCall,nvp_pid:u32,nvp_birth:u64,
+        nvp_session:u32,service_pid:u32,service_birth:u64
+    )->bool{
+        self.original==*original &&
+        self.nvp_pid==nvp_pid && self.nvp_birth_filetime==nvp_birth &&
+        self.nvp_session_id==nvp_session &&
+        self.service_pid==service_pid &&
+        self.service_birth_filetime==service_birth &&
+        self.canonical().is_ok()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -225,6 +282,33 @@ mod tests {
         let mut forbidden=raw.clone();forbidden[DOMAIN.len()+1]=0xff;
         assert_eq!(ScmControl::parse_exact(&forbidden,[1;32],42,123),
             Err(Refusal::UnsupportedCommand));
+    }
+    #[test]
+    fn nvp_broker_scope_is_original_operation_and_process_generation_bound(){
+        let scope=NvpBrokerScope{
+            original:call(),nvp_pid:123,nvp_birth_filetime:456,
+            nvp_session_id:7,service_pid:22,service_birth_filetime:33,
+            challenge:[0x59;CHALLENGE_BYTES],
+        };
+        let canonical=scope.canonical().unwrap();
+        assert!(canonical.starts_with(NvpBrokerScope::DOMAIN));
+        assert!(scope.matches_host(&call(),123,456,7,22,33));
+        assert!(!scope.matches_host(&call(),123,457,7,22,33));
+        assert!(!scope.matches_host(&call(),123,456,7,22,34));
+        assert!(!scope.matches_host(&call(),123,456,8,22,33));
+        let mut wrong=scope.clone();
+        wrong.original.user_turn_ref="another-turn".into();
+        assert_ne!(wrong.canonical().unwrap(),canonical);
+        assert!(!wrong.matches_host(&call(),123,456,7,22,33));
+        wrong=scope.clone();
+        wrong.original.module_id="lu.ide".into();
+        assert_eq!(wrong.canonical(),Err(Refusal::InvalidScope));
+        wrong=scope.clone();
+        wrong.challenge=[0;CHALLENGE_BYTES];
+        assert_eq!(wrong.canonical(),Err(Refusal::InvalidScope));
+        wrong=scope.clone();
+        wrong.nvp_birth_filetime=0;
+        assert_eq!(wrong.canonical(),Err(Refusal::InvalidScope));
     }
     #[test]
     fn truncated_noncanonical_and_replayed_packets_are_refused(){
