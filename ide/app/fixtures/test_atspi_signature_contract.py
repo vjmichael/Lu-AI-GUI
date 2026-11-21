@@ -406,7 +406,9 @@ class AtspiSignatureContract(unittest.TestCase):
         self.assertIn("GetWindow(hwnd, 4) != owner",script)
         self.assertIn("pid == expectedPid && ownerPid == expectedPid",script)
         self.assertIn("OwnedConsentHandles($expectedOwnerHwnd",script)
-        self.assertIn("$name -cne ('Lu IDE · '+$titleFragment)",script)
+        # New native SHA-256 witnesses must be exact AND OS-window owned.
+        self.assertIn("function Native-Wo9TitleWitness",script)
+        self.assertIn("if ($expectedMessage -cnotmatch '^[0-9a-f]{64}
         self.assertIn("'WO9 installed reviewed Git source' $commitOwnerHwnd",script)
         self.assertIn("if (!$exactHit) {$unavailableNativeAction++;continue}",script)
         self.assertLess(script.index("$commitOwnerHwnd=$proc.MainWindowHandle"),
@@ -414,6 +416,37 @@ class AtspiSignatureContract(unittest.TestCase):
         editor=(ROOT.parent / "web" / "code_editor.jsx").read_text(encoding="utf-8")
         self.assertIn("EditorView.contentAttributes.of(view =>",editor)
         self.assertNotIn("view.contentDOM.setAttribute('aria-label'",editor)
+
+if __name__ == "__main__":
+    unittest.main()
+)",script)
+        self.assertIn("return ('Lu IDE · One-file Git stage · SHA-256 '+$expectedMessage)",script)
+        self.assertIn("[Security.Cryptography.SHA256]::HashData(",script)
+        self.assertIn("return ('Lu IDE · Confirm local Git commit · Message SHA-256 '+$messageSha256)",script)
+        self.assertIn("$exactOwnedTitle=Native-Wo9TitleWitness $titleFragment $expectedMessage",script)
+        self.assertIn("$name -cne $exactOwnedTitle",script)
+        self.assertIn("'WO9 installed reviewed Git source' $commitOwnerHwnd",script)
+        self.assertIn("if (!$exactHit) {$unavailableNativeAction++;continue}",script)
+        self.assertLess(script.index("$commitOwnerHwnd=$proc.MainWindowHandle"),
+                        script.index("Click 'Confirm separate local commit (no push)'"))
+        editor=(ROOT.parent / "web" / "code_editor.jsx").read_text(encoding="utf-8")
+        self.assertIn("EditorView.contentAttributes.of(view =>",editor)
+        self.assertNotIn("view.contentDOM.setAttribute('aria-label'",editor)
+
+    def test_04i_exact_ci_icon_and_operator_preflight(self):
+        workflows=ROOT.parents[2] / ".github" / "workflows"
+        g06a=(workflows / "ide-group06a-native.yml").read_text(encoding="utf-8")
+        g04d=(workflows / "ide-group04d-source.yml").read_text(encoding="utf-8")
+        for name,source in (("G06A",g06a),("G04D",g04d)):
+            with self.subTest(workflow=name):
+                self.assertIn("verify_reviewed_ide_icons.py --repo-root .",source)
+                self.assertNotIn("make_g04d_ci_icon.py",source)
+        self.assertIn("Windows operator harness PowerShell syntax only",g06a)
+        self.assertIn("if: runner.os == 'Windows'",g06a)
+        self.assertIn("shell: pwsh",g06a)
+        self.assertIn("ParseFile(",g06a)
+        self.assertIn("G06A_WINDOWS_OPERATOR=PARSED_NOT_EXECUTED",g06a)
+        self.assertNotIn("powershell.exe -NoProfile -Command",g06a)
 
 if __name__ == "__main__":
     unittest.main()

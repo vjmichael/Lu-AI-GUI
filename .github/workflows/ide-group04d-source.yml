@@ -1,4 +1,4 @@
-# Exact Windows Tauri source gate uses CI-only diagnostic ICO; no installed release asset.
+# Exact Windows Tauri source gate verifies tracked first-party icon provenance.
 # Third source gate; exact formatter repaired in developer desktop.
 # Exact native-source rerun after independently reported supervisor formatting correction.
 # Recheck exact developer source after native Rustfmt and renderer safety updates.
@@ -206,11 +206,9 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'DENIED: one-use OS scope/control tests failed' }
           cargo check --manifest-path ide/supervisor/Cargo.toml --features $features --lib
           if ($LASTEXITCODE -ne 0) { throw 'DENIED: protected Windows scope bridge compiler failed' }
-          # Tauri build.rs requires icons/icon.ico on Windows. Generate a
-          # deterministic temporary diagnostic image ONLY in headless CI,
-          # after the clean exact-source check. Never package or promote it.
-          python ide/app/fixtures/make_g04d_ci_icon.py
-          if ($LASTEXITCODE -ne 0) { throw 'DENIED: temporary CI resource unavailable' }
+          # Require tracked first-party ICO/PNG provenance, not synthetic CI artwork.
+          python ide/app/fixtures/verify_reviewed_ide_icons.py --repo-root .
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: reviewed icon provenance unavailable' }
           cargo check --manifest-path ide/app/src-tauri/Cargo.toml --features dev046d-native-dialog
           if ($LASTEXITCODE -ne 0) { throw 'DENIED: dev native human modal desktop compiler failed' }
           echo 'IDE_G04D_WINDOWS_SOURCE=PASS_NOT_PHYSICAL_APPROVAL_OR_INSTALLED'

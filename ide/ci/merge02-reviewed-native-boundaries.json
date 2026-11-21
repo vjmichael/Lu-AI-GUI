@@ -122,7 +122,7 @@
     },
     {
       "path": "ide/packaging/ide-05b-r3-outside-cohort.json",
-      "sha": "6b043d4ac231a94a65675527ea89125ced0d8da0",
+      "sha": "4ee9f256964d084655f35cb359fd5991419148f7",
       "scope": "R3 historical workflow inventory unchanged; 3 reviewed successor blobs recorded separately without dispatch or retirement grant"
     },
     {
@@ -172,7 +172,7 @@
     },
     {
       "path": "ide/packaging/test_ide_05b_r3_workflow_dispositions.py",
-      "sha": "8a2e420916d86ffccfd4fcab0f6243cc57a6055b",
+      "sha": "58c74ab671178f4a781c91ab098fae6ed8182787",
       "scope": "R3 default-deny inventory test now checks original and 3 successor blobs without authority promotion"
     },
     {
