@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "2bd7a090fc6180defa7ce915bb22c43125cb88ce",
+  "sourceCommitBeforeLock": "0cdbbcb0058ba04a4c19c19e71ccf341959bd15c",
   "trackedFileCount": 1296,
   "files": [
     {
@@ -3845,7 +3845,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/journal.rs",
-      "blob": "200b9e76cc146b1c1f6a953c8a229de12d4b1bee"
+      "blob": "578a7ad9b60a9a66d63daa6988d34ffdaf8663d0"
     },
     {
       "path": "src-tauri/lu-core/src/lib.rs",
@@ -4501,7 +4501,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/workspace_ipc_scm.rs",
-      "blob": "d0e7e6de76217cf0a75c306ea20aa7560fd5930e"
+      "blob": "1cc8e219363a055711df91efe97e288bb27ce495"
     },
     {
       "path": "src-tauri/lu-core/src/workspace_ipc_transport.rs",
@@ -5057,7 +5057,7 @@
     },
     {
       "path": "src-tauri/lu-win-worker-job/Cargo.lock",
-      "blob": "b704158bd2a711bda5a987e04d8c8b5d470ce806"
+      "blob": "98670d88753742f1b205e1a0cd6abf2c5f529d99"
     },
     {
       "path": "src-tauri/lu-win-worker-job/Cargo.toml",
@@ -5117,7 +5117,7 @@
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/ipc_scm_launcher.rs",
-      "blob": "345c69b10a80518257869792761cdc6975d4ba0c"
+      "blob": "0eaa0f8b7e78096b849e11958b1e24e6467fc38e"
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/ipc_scm_owned_jobs.rs",
@@ -5137,7 +5137,7 @@
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/lib.rs",
-      "blob": "71baa3654e8fe662e37e8f4898ca0d7f429fc7c5"
+      "blob": "60f9cb4aad59f255e386732702e8f2a9f5765f8d"
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/metadata_guard.rs",
