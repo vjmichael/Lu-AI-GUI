@@ -182,7 +182,9 @@ pub fn spawn_fixed_suspended(core_peer_pid:u32)->io::Result<FixedAppContainerChi
         return Err(denied("SCM worker must belong to actual user Core identity"));
     }
     let pins=read_installed_scm_executor_pins()?;
-    let (image,signer)=open_signed_image(&pins.image_path)?;
+    let fixed_path=pins.image_path.to_str()
+        .ok_or_else(||denied("installed fixed worker path is not UTF-8"))?;
+    let (image,signer)=open_signed_image(fixed_path)?;
     if image_digest(&image)?!=pins.image_sha256||
        hash(&signer)?!=pins.signer_sha256{
         return Err(denied("SCM fixed worker binary or publisher differs from installer"));
