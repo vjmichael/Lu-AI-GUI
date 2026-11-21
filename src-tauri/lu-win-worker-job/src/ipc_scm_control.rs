@@ -550,7 +550,7 @@ mod tests{
         let mut other=request.clone();
         other.scope.challenge=[0x64;32];
         assert!(registry.apply(&other).is_ok());
-        let key=*registry.sessions.iter().find(|(_,(_,revoked))|!revoked)
+        let key=*registry.sessions.iter().find(|(_,value)|!value.1)
             .unwrap().0;
         registry.sessions.get_mut(&key).unwrap().0=Instant::now();
         other.action=NvpAuthAction::Check;
