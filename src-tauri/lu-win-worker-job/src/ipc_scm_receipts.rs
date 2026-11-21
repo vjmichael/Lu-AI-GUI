@@ -10,25 +10,23 @@
 use std::{
     ffi::c_void, fs::{self,File,OpenOptions},
     io::{self,Read,Write}, os::windows::ffi::OsStrExt,
-    path::{Path,PathBuf},ptr,
+    path::PathBuf,ptr,
 };
 use crate::{
     ipc_credential_broker::require_system_service_context,
+    ipc_installer_enrollment::protected_executor_receipts_root,
     ipc_scm_owned_jobs::{ServiceCallBinding,ServiceStoppedJob,SupervisedJobLane},
 };
 
 type Handle=*mut c_void;
 const KEY_NAME:&str="LuCoreIpcExecutorStopP256V1";
 const KSP:&str="Microsoft Software Key Storage Provider";
-const ROOT:&str=r"C:\ProgramData\Lu\IPC\scm-executor-receipts-v1";
 const DOMAIN:&[u8]=b"LU_SCM_EXECUTOR_STOP_RECEIPT_V1";
 const MAX_RECORD:usize=2048;
 const PUBLIC_BLOB_BYTES:usize=72;
 const SIGNATURE_BYTES:usize=64;
 const NCRYPT_MACHINE_KEY_FLAG:u32=0x20;
 const MOVEFILE_WRITE_THROUGH:u32=0x8;
-const INVALID_FILE_ATTRIBUTES:u32=u32::MAX;
-const FILE_ATTRIBUTE_REPARSE_POINT:u32=0x400;
 const ECC_P256_PUBLIC_MAGIC:u32=0x31534345; // BCRYPT_ECDSA_PUBLIC_P256_MAGIC
 
 #[link(name="ncrypt")]
@@ -58,7 +56,6 @@ unsafe extern "system" {
 #[link(name="kernel32")]
 unsafe extern "system" {
     fn MoveFileExW(existing:*const u16,new:*const u16,flags:u32)->i32;
-    fn GetFileAttributesW(path:*const u16)->u32;
 }
 fn wide(value:&std::ffi::OsStr)->Vec<u16>{
     value.encode_wide().chain(std::iter::once(0)).collect()
@@ -258,21 +255,10 @@ fn receipt_path(call_id:&str)->io::Result<PathBuf>{
     if call_id.len()!=64 ||!call_id.bytes().all(|b|b.is_ascii_hexdigit() && !b.is_ascii_uppercase()){
         return Err(refused("unsafe receipt call filename"));
     }
-    Ok(Path::new(ROOT).join(format!("{call_id}.executor.stop.v1")))
+    Ok(protected_executor_receipts_root()?.join(format!("{call_id}.executor.stop.v1")))
 }
 fn protected_root()->io::Result<()>{
-    // The signed installer must precreate the fixed SYSTEM-only hierarchy.
-    // Refuse missing directories, junctions and any reparse ancestor.
-    let path=Path::new(ROOT);
-    for current in path.ancestors(){
-        if current.as_os_str().is_empty(){break;}
-        let attrs=unsafe{GetFileAttributesW(wide(current.as_os_str()).as_ptr())};
-        if attrs==INVALID_FILE_ATTRIBUTES ||attrs & FILE_ATTRIBUTE_REPARSE_POINT!=0{
-            return Err(refused("unprotected or reparse SCM receipt directory"));
-        }
-    }
-    if !path.is_dir(){return Err(refused("SCM receipt root is not installed"));}
-    Ok(())
+    protected_executor_receipts_root().map(|_|())
 }
 /// Service-only, after OS-confirmed executor Job termination. A failure to
 /// flush or atomically rename is a FAILED receipt, never a successful stop.

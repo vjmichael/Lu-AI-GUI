@@ -176,11 +176,11 @@ fn os_program_data()->io::Result<PathBuf>{
     no_reparse(&path)?;
     Ok(path)
 }
-fn load_fixed_record(root:&Path)->io::Result<Vec<u8>>{
+fn load_fixed_named_record(root:&Path,filename:&str,allow_binary:bool)->io::Result<Vec<u8>>{
     let lu=root.join("Lu");
     let ipc=lu.join("IPC");
     let enrollments=ipc.join("enrollments");
-    let record=enrollments.join("lu.ide.json");
+    let record=enrollments.join(filename);
     for folder in [&lu,&ipc,&enrollments]{
         let owned=open_custodian(folder,true)?;
         if !owned.metadata()?.is_dir(){return Err(denied("record parent not a directory"));}
@@ -190,10 +190,34 @@ fn load_fixed_record(root:&Path)->io::Result<Vec<u8>>{
     if len==0||len>MAX_RECORD_BYTES{return Err(denied("record size exceeds limit"));}
     let mut bytes=Vec::with_capacity(len as usize);
     file.read_to_end(&mut bytes)?;
-    if bytes.len()!=len as usize||bytes.iter().any(|b|*b==0){
+    if bytes.len()!=len as usize||(!allow_binary && bytes.iter().any(|b|*b==0)){
         return Err(denied("changed or malformed enrollment record"));
     }
     Ok(bytes)
+}
+fn load_fixed_record(root:&Path)->io::Result<Vec<u8>>{
+    load_fixed_named_record(root,"lu.ide.json",false)
+}
+/// Verify all Lu-owned ancestors of the fixed executor receipt directory,
+/// including owner/DACL and reparse checks; never create it on demand.
+pub fn protected_executor_receipts_root()->io::Result<PathBuf>{
+    let root=os_program_data()?;
+    let lu=root.join("Lu");
+    let ipc=lu.join("IPC");
+    let receipts=ipc.join("scm-executor-receipts-v1");
+    for dir in [&lu,&ipc,&receipts] {
+        let opened=open_custodian(dir,true)?;
+        if !opened.metadata()?.is_dir(){
+            return Err(denied("SCM receipt ancestor is not a directory"));
+        }
+    }
+    Ok(receipts)
+}
+/// The installer-sealed ECDSA P-256 PUBLIC blob, not a private key.
+pub fn read_installed_scm_receipt_public_key()->io::Result<[u8;72]>{
+    let bytes=load_fixed_named_record(
+        &os_program_data()?,"scm-receipt-pub-v1.bin",true)?;
+    bytes.try_into().map_err(|_|denied("SCM public-key pin must be exactly 72 bytes"))
 }
 /// Read ONLY the deterministic, protected, installed Lu IDE enrollment.
 /// The OS credential key is deliberately NOT present in these record bytes.

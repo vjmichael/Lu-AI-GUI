@@ -15,6 +15,7 @@ pub enum ScmSupervisorError{
     UnapprovedPins,
     ServiceUnavailable,
     SignedImageMismatch,
+    ReceiptUnavailable,
 }
 
 pub struct ApprovedScmPins{
@@ -62,6 +63,21 @@ fn verify_pins(pins:&ApprovedScmPins,image:&File,signer_der:&[u8])
         return Err(ScmSupervisorError::SignedImageMismatch);
     }
     Ok(())
+}
+
+/// Verify an independently signed, write-through SCM executor-stop receipt
+/// against an installer-owned public key and exact original call binding.
+/// This function never upgrades UNCERTAIN, grants execution, or trusts a
+/// caller-supplied receipt filename or public key. A restarted Core must
+/// reconstruct original from its own authoritative immutable grant/journal.
+pub fn verify_installed_executor_stop(
+    original:&lu_win_worker_job::ipc_scm_owned_jobs::ServiceCallBinding,
+)->Result<lu_win_worker_job::ipc_scm_receipts::VerifiedExecutorStopReceipt,ScmSupervisorError>{
+    let approved=lu_win_worker_job::ipc_installer_enrollment::
+        read_installed_scm_receipt_public_key()
+        .map_err(|_|ScmSupervisorError::ReceiptUnavailable)?;
+    lu_win_worker_job::ipc_scm_receipts::verify_executor_stop(original,&approved)
+        .map_err(|_|ScmSupervisorError::ReceiptUnavailable)
 }
 
 /// Holds the genuine SCM query handle, original live process generation,

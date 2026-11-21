@@ -11,7 +11,12 @@ mod native {
     use lu_win_worker_job::{
         ipc_credential_broker::require_system_service_context,
         ipc_scm_owned_jobs::{ScmJobKeeper,SupervisedJobLane},
-        ipc_scm_receipts::persist_executor_stop,
+        ipc_scm_receipts::{
+            persist_executor_stop,installed_public_key_for_protected_installer,
+        },
+        ipc_installer_enrollment::{
+            read_installed_scm_receipt_public_key,protected_executor_receipts_root,
+        },
     };
 
     type Handle=*mut c_void;
@@ -117,6 +122,15 @@ mod native {
                 return;
             }
         };
+        // Installer-owned public-key pin must match the OS-held private key.
+        // A plain SYSTEM command shell cannot create/rotate one silently.
+        let approved=read_installed_scm_receipt_public_key();
+        let actual=installed_public_key_for_protected_installer();
+        if !matches!((approved,actual),(Ok(a),Ok(b)) if a==b)
+           ||protected_executor_receipts_root().is_err(){
+            let _=report(handle,SERVICE_STOPPED,4);
+            return;
+        }
         if report(handle,SERVICE_RUNNING,0).is_err(){return;}
         while !STOP.load(Ordering::Acquire){
             thread::sleep(Duration::from_millis(200));
