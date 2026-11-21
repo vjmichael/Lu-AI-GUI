@@ -224,3 +224,36 @@ async fn registry_clones_share_state_and_unregistration_blocks_new_dispatches() 
     observer.unregister_workspace("acme.research").unwrap();
     assert_eq!(reg.tools().unwrap().len(), 0);
 }
+
+#[test]
+fn film_registration_fence_refuses_unloaded_or_replaced_workspace() {
+    let reg = NativeToolRegistry::new();
+    let count = Arc::new(AtomicUsize::new(0));
+    let read = descriptor("nvp.film.read");
+    let mut execute = descriptor("nvp.film.execute");
+    execute.effect = ToolEffect::ExecuteCode;
+    reg.register(
+        manifest("nvp.film", ModuleKind::Workspace,
+                 vec![read.clone(),execute.clone()]),
+        vec![tool(read.clone(), &count),tool(execute.clone(), &count)]
+    ).unwrap();
+    assert_eq!(reg.with_registered_workspace_pair(
+        "nvp.film",&read,&execute,||"durable-commit"),Ok("durable-commit"));
+
+    let mut forged=execute.clone();
+    forged.output_type_url="type.googleapis.com/lu.tools.Forged".into();
+    assert!(matches!(reg.with_registered_workspace_pair(
+        "nvp.film",&read,&forged,||"never"),
+        Err(RegistryError::DescriptorMismatch(_))));
+    let mut wrong_effect=execute.clone();
+    wrong_effect.effect=ToolEffect::DeviceControl;
+    assert!(matches!(reg.with_registered_workspace_pair(
+        "nvp.film",&read,&wrong_effect,||"never"),
+        Err(RegistryError::DescriptorMismatch(_))));
+
+    // Removing the current NVP workspace does not preserve an old
+    // model/GPU approval simply because its strings and turn IDs survived.
+    reg.unregister_workspace("nvp.film").unwrap();
+    assert!(reg.with_registered_workspace_pair(
+        "nvp.film",&read,&execute,||"never").is_err());
+}
