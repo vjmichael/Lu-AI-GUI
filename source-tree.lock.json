@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "78b4b68ee247ee998f05bbff05af33d18b6dab06",
+  "sourceCommitBeforeLock": "74b36e208dd8ce8fdb02e0dc5fca93df20c954b8",
   "trackedFileCount": 1982,
   "files": [
     {
@@ -277,7 +277,7 @@
     },
     {
       "path": ".github/workflows/ide-fin04r1-exact-native.yml",
-      "blob": "fd3259aaa830851d5cbc1a6fd7fc6f4f6edb39f1"
+      "blob": "aaca9c87aa8de0ba2dde807c9b43d547fb3ffc37"
     },
     {
       "path": ".github/workflows/ide-group02-installed-consolidated.yml",
@@ -2197,7 +2197,7 @@
     },
     {
       "path": "ide/app/tests/fin04r1_protected_pdb.test.mjs",
-      "blob": "58ad09859c400cccb17ad472990e721658805a97"
+      "blob": "f159e6a99e8a5683e9469a4a8890341b6be49fa9"
     },
     {
       "path": "ide/app/tests/fin05_offline_vcpkg_worker.test.mjs",
@@ -2613,7 +2613,7 @@
     },
     {
       "path": "ide/ci/merge02-reviewed-native-boundaries.json",
-      "blob": "dbda89f36a723b03fff308dc62a4ab420cfa1382"
+      "blob": "86db6948a85dcd4b954042ff38ae5737464c329b"
     },
     {
       "path": "ide/ci/test_verify_reviewed_native_boundaries.py",
@@ -3249,7 +3249,7 @@
     },
     {
       "path": "ide/host/Cargo.toml",
-      "blob": "ee529f038409f31e2dd6ca01aa03d095fd58fb69"
+      "blob": "e4d8bc1431100817ef99e9960f4de2db34f71bef"
     },
     {
       "path": "ide/host/LICENSE",
@@ -3297,7 +3297,7 @@
     },
     {
       "path": "ide/host/src/dap_session.rs",
-      "blob": "bf8e447242da5bfa2fbdb78a498d2ae6e02be084"
+      "blob": "f5eea7c1e8d6a4e6c87535ab18f12e36b2f5599d"
     },
     {
       "path": "ide/host/src/dap_source_lines.rs",
@@ -3665,7 +3665,7 @@
     },
     {
       "path": "ide/llvm18_owner/Test-FIN04R1-ProtectedPdbWindows.ps1",
-      "blob": "4488164d2dd3ca163a8bcb6054aac5a418d018ae"
+      "blob": "540ee0cf5c299552aa71f5f4325426d58ae26d81"
     },
     {
       "path": "ide/llvm18_owner/Test-PinnedOwnerWindows.ps1",
@@ -3737,7 +3737,7 @@
     },
     {
       "path": "ide/packaging/ide-05b-r3-outside-cohort.json",
-      "blob": "4ee9f256964d084655f35cb359fd5991419148f7"
+      "blob": "d603439db9d17a433a0fc694dda409e63db154d3"
     },
     {
       "path": "ide/packaging/ide-merge02-reviewed-lock-successor.json",
@@ -4453,7 +4453,7 @@
     },
     {
       "path": "ide/supervisor/Cargo.toml",
-      "blob": "d62a906c32402b18046e29a9adb8b058521d0ef7"
+      "blob": "847fd18ec516df6e03451a57ea71ef1ab10ec7c9"
     },
     {
       "path": "ide/supervisor/D7C_WINDOWS_CAPABILITY_ACCEPTANCE.md",
@@ -4529,7 +4529,7 @@
     },
     {
       "path": "ide/supervisor/examples/wo6_native_dap_acceptance.rs",
-      "blob": "5bf12ec90d52c25656b54823c63d2af7a0574701"
+      "blob": "8ca969be55c33fa1febde183826e067e1ee5da96"
     },
     {
       "path": "ide/supervisor/fixtures/Install-ProtectedRecoveryService.ps1",
@@ -4653,7 +4653,7 @@
     },
     {
       "path": "ide/supervisor/src/dap_transport.rs",
-      "blob": "65de6652084c4a9a105d1ee95dd87da1be800ed1"
+      "blob": "56ddd79fd5500724252525d2d96d2df53a9488dd"
     },
     {
       "path": "ide/supervisor/src/debug_action_receipts.rs",
@@ -4797,7 +4797,7 @@
     },
     {
       "path": "ide/supervisor/src/windows_lsp_worker.rs",
-      "blob": "a04bd5b7a8fd913f3558c6de4ef0e343cfc6d7c6"
+      "blob": "e110d7593bdb3002f51078517f0fb3bd3d70e0af"
     },
     {
       "path": "ide/supervisor/src/windows_null_device.rs",
