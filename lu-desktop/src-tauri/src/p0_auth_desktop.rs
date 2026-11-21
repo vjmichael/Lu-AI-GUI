@@ -125,6 +125,25 @@ fn stop_scoped(owner:&DesktopState,chat:&str)->Vec<DomainResult>{
             "STOP_UNCERTAIN_RECONCILE"
         }else{"NOT_PRESENT"}));
     }
+    // A cancelled original NVP film grant must close BEFORE any possible
+    // GPU lease/worker continuation. A cancellation is NOT an independent
+    // NVP LTX kernel Job-empty receipt or permission to reload Lu's model.
+    #[cfg(windows)]
+    match owner.nvp_grant.lock(){
+        Ok(mut slot)=>{
+            if slot.as_ref().is_some_and(|g|g.chat_id==chat){
+                let grant=slot.take().expect("checked NVP slot");
+                grant.cancel.store(true,Ordering::Release);
+                let revoked=owner.nvp_authority.revoke_task(&grant.task_id);
+                records.push(result("nvp_gpu",if revoked.is_ok(){
+                    "CREATOR_AUTHORITY_REVOKED_NATIVE_STOP_UNCERTAIN"
+                }else{"CANCEL_REQUESTED_NATIVE_STOP_UNCERTAIN"}));
+            }else{
+                records.push(result("nvp_gpu","NOT_PRESENT"));
+            }
+        }
+        Err(_)=>records.push(result("nvp_gpu","STOP_UNCERTAIN_RECONCILE")),
+    }
     // Observe is a separate double-consent lane. Do not even call its
     // status/stop for a different conversation.
     match owner.observe.owned_status(chat){
