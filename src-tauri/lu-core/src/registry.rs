@@ -310,6 +310,46 @@ impl NativeToolRegistry {
             .collect())
     }
 
+    /// Hold a *short* original-workspace registration fence while Core
+    /// commits an already independently approved native effect. An unloaded,
+    /// replaced or draining film workspace must never retain model/GPU
+    /// admission via cached descriptor names. The closure MUST be bounded,
+    /// synchronous, nonblocking and must not register/unregister tools,
+    /// invoke a worker, call the network, or wait for the OS.
+    pub fn with_registered_workspace_pair<R>(
+        &self,module_id:&str,read:&ToolDescriptor,execute:&ToolDescriptor,
+        operation:impl FnOnce()->R,
+    )->Result<R,RegistryError>{
+        let guard=self.state.read().map_err(|_|RegistryError::Poisoned)?;
+        let module=guard.modules.get(module_id)
+            .ok_or_else(||RegistryError::UnknownModule(module_id.into()))?;
+        if module.kind!=ModuleKind::Workspace{
+            return Err(RegistryError::NotWorkspaceModule(module_id.into()))
+        }
+        if guard.draining.contains(module_id){
+            return Err(RegistryError::CallsInFlight{
+                module_id:module_id.into(),
+                active_calls:guard.active_calls.get(module_id).copied().unwrap_or(0),
+            })
+        }
+        if read.id==execute.id||
+           read.effect!=crate::contracts::ToolEffect::ReadWorkspace ||
+           execute.effect!=crate::contracts::ToolEffect::ExecuteCode{
+            return Err(RegistryError::DescriptorMismatch(module_id.into()))
+        }
+        for descriptor in [read,execute]{
+            let Some(registered)=guard.tools.get(&descriptor.id) else{
+                return Err(RegistryError::UnknownModule(module_id.into()))
+            };
+            if registered.owner!=module_id || registered.descriptor!=*descriptor{
+                return Err(RegistryError::DescriptorMismatch(descriptor.id.clone()))
+            }
+        }
+        // Keep registration held through only the caller's bounded native
+        // journal commit. This is NOT a new capability or executor authority.
+        Ok(operation())
+    }
+
     /// The executor must not infer authorization from registration or effect
     /// labels. The host supplies a PolicyEngine-backed authorizer per call.
     pub async fn dispatch(
