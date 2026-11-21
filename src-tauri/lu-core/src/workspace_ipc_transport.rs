@@ -1251,7 +1251,8 @@ mod internal_tests {
         assert_eq!(pin.expected_package_sha256,[0x33;32]);
         assert!(pin.handshake_key.iter().all(|key|*key==0),
             "desktop must never be given SYSTEM HMAC material");
-        assert_eq!(digest,Sha256::digest(&raw).into());
+        let expected_record:[u8;32]=Sha256::digest(&raw).into();
+        assert_eq!(digest,expected_record);
         assert!(!pin.valid_pin(),"keyless public pins cannot authorize a normal handshake");
         observed.pid=0;
         assert!(WindowsInstalledEnrollment::from_installer_owned_nvp_public(
