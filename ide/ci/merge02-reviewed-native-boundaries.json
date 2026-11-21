@@ -47,8 +47,8 @@
     },
     {
       "path": "ide/app/src-tauri/src/lib.rs",
-      "sha": "f72ddbcdb407085a6e1b8d92473857650fb75db2",
-      "scope": "04K stage dialog explicitly parented to installed main window; existing one-use confirmation retained"
+      "sha": "683e67bbd6172595b2361d50738bdbce54d7e4ac",
+      "scope": "04K owner-parented Git dialogs; R16C exact stage/commit SHA-256 title witnesses; one-use confirmation and authority unchanged"
     },
     {
       "path": "ide/app/src-tauri/src/lsp_backend.rs",
@@ -122,8 +122,8 @@
     },
     {
       "path": "ide/packaging/ide-05b-r3-outside-cohort.json",
-      "sha": "90e56a2c0769f68ac7a647f965c35e5efd294d71",
-      "scope": "R3 review-only exact workflow inventory, no dispatch or retirement authorization"
+      "sha": "6b043d4ac231a94a65675527ea89125ced0d8da0",
+      "scope": "R3 historical workflow inventory unchanged; 3 reviewed successor blobs recorded separately without dispatch or retirement grant"
     },
     {
       "path": "ide/packaging/p05-merge02-pending-native-boundaries.json",
@@ -172,8 +172,8 @@
     },
     {
       "path": "ide/packaging/test_ide_05b_r3_workflow_dispositions.py",
-      "sha": "d8dccd6cbaa34fb8666c8ed58cf3756b15f4f3b7",
-      "scope": "R3 exact workflow inventory and default-deny source tests"
+      "sha": "8a2e420916d86ffccfd4fcab0f6243cc57a6055b",
+      "scope": "R3 default-deny inventory test now checks original and 3 successor blobs without authority promotion"
     },
     {
       "path": "ide/packaging/test_p05_merge02_pending_native_boundaries.py",

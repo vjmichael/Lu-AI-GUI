@@ -459,6 +459,7 @@
     {
       "workflow": ".github/workflows/ide-fin04r1-exact-native.yml",
       "gitBlob": "6f4bf3ff41acd9eea869d701a0799125aa4e3d65",
+      "successorGitBlob": "fd3259aaa830851d5cbc1a6fd7fc6f4f6edb39f1",
       "workflowName": "IDE FIN-04R1 exact-head Windows protected PDB and native kernel",
       "triggerKinds": [
         "push",
@@ -557,6 +558,7 @@
     {
       "workflow": ".github/workflows/ide-group04d-source.yml",
       "gitBlob": "08c1e1eeb4a7b71e31707d4377764412d9a1556a",
+      "successorGitBlob": "3e714d46421e8cd23576b899bef6ae4d0c8d85f9",
       "workflowName": "IDE G04D guarded variable inspection source and native compiler (not release)",
       "triggerKinds": [
         "push",
@@ -580,6 +582,7 @@
     {
       "workflow": ".github/workflows/ide-group06a-native.yml",
       "gitBlob": "19ba1e3280880a9bc48005c7572a94b8f8d3f1aa",
+      "successorGitBlob": "970eaa04e02e6868d4f0e29a6d40d81ec5c5bc06",
       "workflowName": "IDE Group 6A native branch and worktree inventory (not release)",
       "triggerKinds": [
         "push",

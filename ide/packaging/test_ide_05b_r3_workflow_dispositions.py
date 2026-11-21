@@ -13,11 +13,26 @@ class DispositionTests(unittest.TestCase):
         automatic={g[1] for g in GATES}
         self.assertEqual(len(rows),45)
         self.assertEqual({r['workflow'] for r in rows},paths-automatic)
+        # Original gitBlob/triggerKinds remain historical evidence. Admit only
+        # these three independently reviewed, exact successor workflow blobs.
+        reviewed_successors = {
+            '.github/workflows/ide-fin04r1-exact-native.yml': ('6f4bf3ff41acd9eea869d701a0799125aa4e3d65', 'fd3259aaa830851d5cbc1a6fd7fc6f4f6edb39f1'),
+            '.github/workflows/ide-group04d-source.yml': ('08c1e1eeb4a7b71e31707d4377764412d9a1556a', '3e714d46421e8cd23576b899bef6ae4d0c8d85f9'),
+            '.github/workflows/ide-group06a-native.yml': ('19ba1e3280880a9bc48005c7572a94b8f8d3f1aa', '970eaa04e02e6868d4f0e29a6d40d81ec5c5bc06'),
+        }
+        self.assertEqual({r['workflow'] for r in rows if 'successorGitBlob' in r},
+                         set(reviewed_successors))
         for r in rows:
             self.assertFalse(r['dispatchAuthorized'] or r['retireAuthorized'] or r['parityEstablished'] or r['parentRunObserved'])
             self.assertTrue(set(r['relatedObservedCohortPaths'])<=automatic)
+            if r['workflow'] in reviewed_successors:
+                historical, successor = reviewed_successors[r['workflow']]
+                self.assertEqual(r['gitBlob'], historical)
+                self.assertEqual(r.get('successorGitBlob'), successor)
+            else:
+                self.assertNotIn('successorGitBlob', r)
             blob=subprocess.check_output(['git','hash-object','--',r['workflow']],cwd=ROOT,text=True).strip()
-            self.assertEqual(blob,r['gitBlob'])
+            self.assertEqual(blob,r.get('successorGitBlob',r['gitBlob']))
     def test_technical_lane_existing_pr_or_manual_and_nonexecuting(self):
         source=(ROOT/TECHNICAL_WORKFLOW).read_text()
         trigger=source.split('\non:\n',1)[1].split('\npermissions:',1)[0]
