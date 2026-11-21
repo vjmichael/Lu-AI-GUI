@@ -60,3 +60,16 @@ test("C6 installed package never claims physical offload or silently bundles an 
   assert.match(nsis,/RMDir \/r "\$INSTDIR\\lu-browser"/);
   assert.doesNotMatch(nsis,/RMDir \/r "\$APPDATA/);
 });
+
+test("C6 pinned server builds cannot download an unrelated llama.cpp web UI",()=>{
+  const build=read("scripts/build-current-windows-nsis.ps1");
+  const cpu=build.match(/& cmake -S \$vendor -B \$engineBuild[^\r\n]*/)?.[0]||"";
+  const vk=build.match(/\$sharedArgs=@\([\s\S]*?\)\s*& cmake @sharedArgs/)?.[0]||"";
+  assert.match(cpu,/-DLLAMA_BUILD_UI=OFF/);
+  assert.match(cpu,/-DLLAMA_USE_PREBUILT_UI=OFF/);
+  assert.match(vk,/'-DLLAMA_BUILD_UI=OFF'/);
+  assert.match(vk,/'-DLLAMA_USE_PREBUILT_UI=OFF'/);
+  assert.match(cpu,/-DLLAMA_BUILD_SERVER=ON/);
+  assert.match(vk,/'-DLLAMA_BUILD_SERVER=ON'/);
+  assert.match(build,/e0f142d5ddc1461ce721644d92af33db23545105/);
+});

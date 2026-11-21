@@ -55,7 +55,10 @@ try{
   Write-Host "Pinned llama.cpp build: installed MSVC $vsVersion at $vsPath; CMake generator $generator"
   $engineBuild=Join-Path $env:RUNNER_TEMP 'lu-current-llama-build'
   $vulkanBuild=Join-Path $env:RUNNER_TEMP 'lu-current-vulkan-build'
-  & cmake -S $vendor -B $engineBuild -G $generator -A x64 -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded -DCMAKE_POLICY_DEFAULT_CMP0091=NEW -DBUILD_SHARED_LIBS=OFF -DGGML_NATIVE=OFF -DGGML_VULKAN=OFF -DLLAMA_CURL=OFF -DLLAMA_OPENSSL=OFF -DLLAMA_BUILD_APP=OFF -DLLAMA_BUILD_UI=OFF -DLLAMA_BUILD_TESTS=OFF -DLLAMA_BUILD_EXAMPLES=OFF -DLLAMA_BUILD_SERVER=ON
+  # This pinned upstream defaults LLAMA_USE_PREBUILT_UI=ON even with
+  # LLAMA_BUILD_UI=OFF. Do not download/execute its unrelated UI asset rule.
+  # llama-server compiles its supported empty embedded-UI table instead.
+  & cmake -S $vendor -B $engineBuild -G $generator -A x64 -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded -DCMAKE_POLICY_DEFAULT_CMP0091=NEW -DBUILD_SHARED_LIBS=OFF -DGGML_NATIVE=OFF -DGGML_VULKAN=OFF -DLLAMA_CURL=OFF -DLLAMA_OPENSSL=OFF -DLLAMA_BUILD_APP=OFF -DLLAMA_BUILD_UI=OFF -DLLAMA_USE_PREBUILT_UI=OFF -DLLAMA_BUILD_TESTS=OFF -DLLAMA_BUILD_EXAMPLES=OFF -DLLAMA_BUILD_SERVER=ON
   if($LASTEXITCODE -ne 0){throw 'Pinned CPU llama.cpp CMake configure failed'}
   & cmake --build $engineBuild --config Release --target llama-server --parallel 4
   if($LASTEXITCODE -ne 0){throw 'Pinned CPU llama.cpp build failed'}
@@ -117,7 +120,7 @@ try{
     '-DCMAKE_POLICY_DEFAULT_CMP0091=NEW','-DBUILD_SHARED_LIBS=OFF',
     '-DGGML_NATIVE=OFF','-DGGML_VULKAN=ON','-DLLAMA_CURL=OFF',
     '-DLLAMA_OPENSSL=OFF','-DLLAMA_BUILD_APP=OFF',
-    '-DLLAMA_BUILD_UI=OFF','-DLLAMA_BUILD_TESTS=OFF',
+    '-DLLAMA_BUILD_UI=OFF','-DLLAMA_USE_PREBUILT_UI=OFF','-DLLAMA_BUILD_TESTS=OFF',
     '-DLLAMA_BUILD_EXAMPLES=OFF','-DLLAMA_BUILD_SERVER=ON')
   & cmake @sharedArgs
   if($LASTEXITCODE -ne 0){throw 'Pinned Vulkan llama.cpp CMake configure failed'}
