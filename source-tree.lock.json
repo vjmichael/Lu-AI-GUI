@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "6c7eb0569f5061d5d177b8fa0de0f26c015ed706",
-  "trackedFileCount": 1270,
+  "sourceCommitBeforeLock": "08b8d240e426e4ab60f462617b5dcd85673a1c3b",
+  "trackedFileCount": 1273,
   "files": [
     {
       "path": ".gitattributes",
@@ -130,6 +130,10 @@
     {
       "path": ".github/workflows/lu-cp06er3-native-web.yml",
       "blob": "6304b8c48ce71a729d48c8ee4f78647834758273"
+    },
+    {
+      "path": ".github/workflows/lu-cp10-r3-windows-nsis.yml",
+      "blob": "b5798d3fd850a360663c3587a454e09762722ca2"
     },
     {
       "path": ".github/workflows/lu-cp12br7r1-windows-collaboration.yml",
@@ -896,6 +900,10 @@
       "blob": "40dbc75d10323afbac76f743ead2c9a21c3df614"
     },
     {
+      "path": "docs/LU_CP10_R3_WINDOWS_NSIS_QUALIFICATION_20261120.md",
+      "blob": "9c92c6991565596744869d904cc943ee12bc5987"
+    },
+    {
       "path": "docs/LU_CP11A_LOCAL_CHECKS_20261120.md",
       "blob": "bfee5736f1109a8db225c093a195efba4ce0000b"
     },
@@ -981,7 +989,7 @@
     },
     {
       "path": "docs/LU_DEVELOPMENT_LEDGER.md",
-      "blob": "7c7b2e25e26159f3f62e2a11c86e9f5c57c08aa3"
+      "blob": "44993e14365256bd081bb429d89b4e34f34e10d7"
     },
     {
       "path": "docs/LU_E1_NATIVE_EVIDENCE_20261107.md",
@@ -2914,6 +2922,10 @@
     {
       "path": "scripts/cp06er3-native-web-gui.py",
       "blob": "2fa4cd31e41c339005681cb1cab825289485241d"
+    },
+    {
+      "path": "scripts/cp10-r3-source-install-contract.test.mjs",
+      "blob": "c3b460c524a1af3a6eb5fc14bf547b98fcea072d"
     },
     {
       "path": "scripts/cp11a-model-benchmark-gui.py",

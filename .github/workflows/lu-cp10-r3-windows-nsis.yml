@@ -1,0 +1,64 @@
+name: Lu CP-10-R3 exact-source Windows NSIS qualification
+
+# One source-locked handoff. The existing heavy C6 workflow remains manual-only;
+# this one-shot orchestrator invokes it only after the native Windows gate passes.
+on:
+  push:
+    branches: ['lu/cp10-r3-windows-nsis-20261120']
+    paths: ['.github/workflows/lu-cp10-r3-windows-nsis.yml']
+permissions:
+  contents: read
+concurrency:
+  group: lu-cp10-r3-${{ github.sha }}
+  cancel-in-progress: false
+jobs:
+  source-and-native-windows:
+    if: ${{ github.event_name == 'push' && github.event.head_commit.message == 'CP-10-R3 source-locked Windows NSIS qualification' }}
+    runs-on: windows-2025
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.16.0'
+      - name: Exact source lock, native consent and single-interface UI contracts
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          if ((git rev-parse HEAD).Trim() -cne $env:GITHUB_SHA) { throw 'Wrong source SHA' }
+          node scripts/verify-source-tree.mjs
+          if ($LASTEXITCODE -ne 0) { throw 'Source lock failed' }
+          node --test lu-desktop/tests/cp12b-local-diagnostic-exchange.test.mjs lu-desktop/tests/cp12br7-windows-stage-eval.test.mjs lu-desktop/tests/cp12br7r1-physical-acceptance-contract.test.mjs lu-desktop/tests/cp07-08-ux-r1-basic-copy.test.mjs lu-desktop/tests/cp07-08-ux-r2-no-modes.test.mjs lu-desktop/tests/preview-dual-backend.test.mjs scripts/lu-c6-hosted-physical-contract.test.mjs scripts/cp10-r3-source-install-contract.test.mjs
+          if ($LASTEXITCODE -ne 0) { throw 'Windows contract gate failed' }
+      - name: Frontend source build and native Windows protocol
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          Push-Location lu-desktop
+          try {
+            npm ci --ignore-scripts --no-audit --no-fund
+            if ($LASTEXITCODE -ne 0) { throw 'Locked frontend dependencies failed' }
+            npm run build
+            if ($LASTEXITCODE -ne 0) { throw 'Frontend build failed' }
+            npm run check
+            if ($LASTEXITCODE -ne 0) { throw 'Frontend contracts failed' }
+          } finally { Pop-Location }
+          cargo test --locked --manifest-path scripts/cp12br2-windows-transport-check/Cargo.toml --features windows_dx_eval -- --test-threads=1
+          if ($LASTEXITCODE -ne 0) { throw 'Native Windows named-pipe protocol failed' }
+          cargo test --locked --manifest-path scripts/cp12br2-windows-transport-check/Cargo.toml -- --test-threads=1
+          if ($LASTEXITCODE -ne 0) { throw 'Windows native default-off regression failed' }
+          node scripts/verify-source-tree.mjs
+          if ($LASTEXITCODE -ne 0) { throw 'Source changed during verification' }
+  real-source-built-nsis-and-hosted-install:
+    needs: source-and-native-windows
+    if: ${{ needs.source-and-native-windows.result == 'success' }}
+    permissions:
+      contents: read
+    uses: ./.github/workflows/lu-core-c6-hosted-dual-nsis.yml
