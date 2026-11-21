@@ -442,6 +442,9 @@ impl NvpStopQuery{
         ->Result<Vec<u8>,Refusal>{
         if self.service_pid==0||self.service_birth==0||
            self.module_id!="nvp.film"||
+           self.lease_ref.is_empty()||self.lease_ref.len()>MAX_SCOPE||
+           !self.lease_ref.bytes().all(|b|
+               b.is_ascii_alphanumeric()||b==b'-')||
            challenge.iter().all(|v|*v==0){
             return Err(Refusal::InvalidScope)
         }
