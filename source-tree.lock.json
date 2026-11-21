@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "7f174c4bf4f7dc0a2d58c120b450484281f1ddc4",
+  "sourceCommitBeforeLock": "fba5cb694c97235d4169afa78a18ac62157e261d",
   "trackedFileCount": 1282,
   "files": [
     {
@@ -221,7 +221,7 @@
     },
     {
       "path": ".github/workflows/lu-ipc01d-r2-native.yml",
-      "blob": "c1abe0d8cc7c64319cae2ef9e74b6c57380837b6"
+      "blob": "74890bd67fa754537a833ee06cc26dab51e6fb63"
     },
     {
       "path": ".github/workflows/lu-kiaf-execution.yml",
@@ -1073,7 +1073,7 @@
     },
     {
       "path": "docs/LU_IPC_01D_R1_NATIVE_TRANSPORT_20261120.md",
-      "blob": "d8205e944671eda730a1ef0837b8a8c62af74145"
+      "blob": "ea1f93420432644daa36c0b0d0b7a60ec0afffca"
     },
     {
       "path": "docs/LU_KIAF_ACTIVE_EXECUTION_LEDGER_20261108.md",
@@ -3153,7 +3153,7 @@
     },
     {
       "path": "scripts/lu-ipc-r3-stage-installed-ide.ps1",
-      "blob": "d5e77104d41a9cff4e2fd7fdb940e9f3af0b8242"
+      "blob": "0d9bfc38287bfe0a0cda0a5d43e749fde1e0a5ab"
     },
     {
       "path": "scripts/lu-ledger.mjs",
