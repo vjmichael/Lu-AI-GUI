@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "3866e4c1bbd37fbabb8b87049f53868d116407ee",
+  "sourceCommitBeforeLock": "fa9ebe79f993b359bdef87843ca167b7cf5a5f1b",
   "trackedFileCount": 1292,
   "files": [
     {
@@ -4497,7 +4497,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/workspace_ipc_scm.rs",
-      "blob": "2982a3be88855312c5e51e2d4dbd44d877897acb"
+      "blob": "f332fc384d3ed843eebaf79a32aca7d3a912284a"
     },
     {
       "path": "src-tauri/lu-core/src/workspace_ipc_transport.rs",
@@ -5069,7 +5069,7 @@
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/bin/lu-ipc-scm-supervisor.rs",
-      "blob": "a340ca0dea9dd699a765fb0b6db543785fddb6a2"
+      "blob": "72657f1fd3eb68f1e6ce55fa681dcb354359a1b4"
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/bin/lu-linux-cgroup-guard.rs",
@@ -5097,7 +5097,7 @@
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/ipc_installer_enrollment.rs",
-      "blob": "35f0163848a8fd2f965030b749121694ab97b1a6"
+      "blob": "0fc7e84043bf7fe246a8871bb5dc4036514818c6"
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/ipc_pipe_peer.rs",
@@ -5109,7 +5109,7 @@
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/ipc_scm_receipts.rs",
-      "blob": "fa62fbfef47ded3f954d52f96d5bc628836263ba"
+      "blob": "b404fa95715f5a8c3336353580ff8cb65bff82bb"
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/ipc_scm_supervisor.rs",
