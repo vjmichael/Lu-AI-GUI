@@ -9,7 +9,7 @@
 
 use super::*;
 use lu_core::{
-    contracts::{ToolAuthorizer,ToolDescriptor,ToolEffect},
+    contracts::{ToolAuthorizer,ToolEffect},
     conversation_authority::{
         AuthorizedCapability,BoundCallOrigin,TaskAuthority,TrustedUserTurnVerifier,
     },
@@ -160,7 +160,16 @@ pub(crate) async fn serve_installed_nvp_for_creator_turn(
     let task=original.task_ref.clone();
     let result=async {
         let prompt=format!(
-            "Authorize ONE NVP film GPU handoff for this original Lu conversation?\n\n\             Film workspace: {}\nRead capability: {}\nRender capability: {}\n\n\             Lu will unload its current GGUF only after verified Core authorization.\n\             NVP must independently prove GPU/Job quiescence before Lu reloads.\n\             The film request must remain the current original USER turn.\n\             Cancel or uncertain worker termination NEVER authorizes a reload.",
+            r#"Authorize ONE NVP film GPU handoff for this original Lu conversation?
+
+Film workspace: {}
+Read capability: {}
+Render capability: {}
+
+Lu unloads its current GGUF only after verified Core authorization.
+NVP must independently prove GPU/Job quiescence before Lu reloads.
+This film request must remain the current original USER turn.
+Cancellation or uncertain worker termination NEVER authorizes a reload."#,
             original.workspace_ref,inputs.plan.read_descriptor.id,
             inputs.plan.execute_descriptor.id
         );
