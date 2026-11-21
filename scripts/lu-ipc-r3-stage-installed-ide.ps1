@@ -125,8 +125,8 @@ $pkgHash=ApprovedHash $ApprovedPackageSha256 'approved manifest'
 if(-not (Test-Path -LiteralPath $exe -PathType Leaf)){
   Refuse 'Installed signed Lu IDE executable missing'
 }
-$programFiles=Canonical ((Get-ItemProperty -LiteralPath
-  'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion').ProgramFilesDir)
+$programFilesValue=(Get-ItemProperty -LiteralPath 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion').ProgramFilesDir
+$programFiles=Canonical $programFilesValue
 VerifySourceTree $exe $root $programFiles
 $signature=Get-AuthenticodeSignature -LiteralPath $exe
 if($null -eq $signature -or
