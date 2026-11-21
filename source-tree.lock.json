@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "0e303108671d8ac336b44dca6046548ecf6ba637",
+  "sourceCommitBeforeLock": "710b11f79386ac9bce52ed67d090f0bc66887b6f",
   "trackedFileCount": 1982,
   "files": [
     {
@@ -1805,7 +1805,7 @@
     },
     {
       "path": "ide/app/fixtures/Test-Wo8NativeDesktopUI.ps1",
-      "blob": "431139678f026cd360fb7c868572f239fcd3dabb"
+      "blob": "a567db5b1d27150f5ce17dffc62c390e2ce1226b"
     },
     {
       "path": "ide/app/fixtures/b2_linux_installed_draft_atspi.py",
@@ -1857,7 +1857,7 @@
     },
     {
       "path": "ide/app/fixtures/test_atspi_signature_contract.py",
-      "blob": "b3329fb587d840a535003f1c22159efef4e05dda"
+      "blob": "139bb91a77ecf2380a255996c78fe0943d72bec0"
     },
     {
       "path": "ide/app/fixtures/test_dev01_native_confirmation_scope.py",
