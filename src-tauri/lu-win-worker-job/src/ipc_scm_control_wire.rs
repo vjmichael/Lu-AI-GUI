@@ -11,7 +11,7 @@ use std::{convert::TryInto,fmt};
 const DOMAIN:&[u8]=b"LU_CORE_SCM_CONTROL_V1\0";
 pub const CHALLENGE_BYTES:usize=32;
 pub const SIGNATURE_BYTES:usize=64;
-pub const MAX_CONTROL_BODY:usize=1536;
+pub const MAX_CONTROL_BODY:usize=3072;
 pub const MAX_CONTROL_PACKET:usize=MAX_CONTROL_BODY+SIGNATURE_BYTES;
 const MIN_FIELDS:usize=9;
 const MAX_SCOPE:usize=128;
@@ -237,6 +237,168 @@ impl NvpBrokerScope{
     }
 }
 
+
+impl NvpBrokerScope{
+    pub fn parse_exact(bytes:&[u8],service_pid:u32,service_birth:u64)
+        ->Result<Self,Refusal>{
+        if !bytes.starts_with(Self::DOMAIN) || bytes.len()>MAX_CONTROL_BODY {
+            return Err(Refusal::InvalidFrame)
+        }
+        let mut at=Self::DOMAIN.len();
+        let challenge:[u8;CHALLENGE_BYTES]=bytes.get(at..at+CHALLENGE_BYTES)
+            .ok_or(Refusal::InvalidFrame)?.try_into()
+            .map_err(|_|Refusal::InvalidFrame)?;
+        at+=CHALLENGE_BYTES;
+        fn u32_at(bytes:&[u8],at:&mut usize)->Result<u32,Refusal>{
+            let value=u32::from_le_bytes(bytes.get(*at..*at+4)
+                .ok_or(Refusal::InvalidFrame)?.try_into()
+                .map_err(|_|Refusal::InvalidFrame)?);
+            *at+=4;
+            Ok(value)
+        }
+        fn u64_at(bytes:&[u8],at:&mut usize)->Result<u64,Refusal>{
+            let value=u64::from_le_bytes(bytes.get(*at..*at+8)
+                .ok_or(Refusal::InvalidFrame)?.try_into()
+                .map_err(|_|Refusal::InvalidFrame)?);
+            *at+=8;
+            Ok(value)
+        }
+        let nvp_pid=u32_at(bytes,&mut at)?;
+        let nvp_session_id=u32_at(bytes,&mut at)?;
+        let observed_service=u32_at(bytes,&mut at)?;
+        let nvp_birth_filetime=u64_at(bytes,&mut at)?;
+        let observed_birth=u64_at(bytes,&mut at)?;
+        if service_pid==0 || service_birth==0 ||
+           observed_service!=service_pid || observed_birth!=service_birth{
+            return Err(Refusal::StaleService)
+        }
+        let mut fields=Vec::with_capacity(MIN_FIELDS);
+        for _ in 0..MIN_FIELDS {fields.push(read_scope(bytes,&mut at)?.to_owned());}
+        if at!=bytes.len(){return Err(Refusal::InvalidFrame)}
+        let scope=Self{
+            original:OriginalCall{
+                call_id:fields[0].clone(),fingerprint_sha256:fields[1].clone(),
+                module_id:fields[2].clone(),session_ref:fields[3].clone(),
+                core_epoch_ref:fields[4].clone(),conversation_ref:fields[5].clone(),
+                user_turn_ref:fields[6].clone(),task_ref:fields[7].clone(),
+                workspace_ref:fields[8].clone(),
+            },nvp_pid,nvp_birth_filetime,nvp_session_id,
+            service_pid:observed_service,service_birth_filetime:observed_birth,
+            challenge,
+        };
+        if scope.canonical()?.as_slice()!=bytes{return Err(Refusal::InvalidFrame)}
+        Ok(scope)
+    }
+}
+#[derive(Debug,Clone,Copy,PartialEq,Eq)]
+#[repr(u8)]
+pub enum NvpAuthAction{Open=1,Check=2,Revoke=3}
+impl TryFrom<u8> for NvpAuthAction{
+    type Error=Refusal;
+    fn try_from(value:u8)->Result<Self,Refusal>{
+        match value{1=>Ok(Self::Open),2=>Ok(Self::Check),
+            3=>Ok(Self::Revoke),_=>Err(Refusal::UnsupportedCommand)}
+    }
+}
+/// A signed Core-to-SCM private request. The Hello and unsigned Welcome must
+/// match the *actual* canonical lu.workspace.v0 frames observed by Core.
+#[derive(Debug,Clone,PartialEq,Eq)]
+pub struct NvpAuthRequest{
+    pub action:NvpAuthAction,
+    pub scope:NvpBrokerScope,
+    pub package_sha256:[u8;32],
+    pub enrollment_sha256:[u8;32],
+    pub hello_wire:Vec<u8>,
+    pub client_proof:[u8;32],
+    pub welcome_without_mac:Vec<u8>,
+    pub core_session:String,
+}
+impl NvpAuthRequest{
+    pub const DOMAIN:&'static [u8]=b"LU_CORE_SCM_NVP_AUTH_V1\0";
+    pub fn canonical(&self,scm_challenge:[u8;CHALLENGE_BYTES])
+        ->Result<Vec<u8>,Refusal>{
+        if scm_challenge.iter().all(|b|*b==0)||
+           self.package_sha256.iter().all(|b|*b==0)||
+           self.enrollment_sha256.iter().all(|b|*b==0)||
+           self.client_proof.iter().all(|b|*b==0)||
+           self.hello_wire.is_empty()||self.hello_wire.len()>1024||
+           self.welcome_without_mac.is_empty()||
+           self.welcome_without_mac.len()>512 {
+            return Err(Refusal::InvalidFrame)
+        }
+        let scope=self.scope.canonical()?;
+        let mut body=Vec::with_capacity(1024);
+        body.extend_from_slice(Self::DOMAIN);
+        body.push(1); // exact private broker version
+        body.push(self.action as u8);
+        body.extend_from_slice(&scm_challenge);
+        let size=u16::try_from(scope.len()).map_err(|_|Refusal::InvalidFrame)?;
+        body.extend_from_slice(&size.to_le_bytes());
+        body.extend_from_slice(&scope);
+        body.extend_from_slice(&self.package_sha256);
+        body.extend_from_slice(&self.enrollment_sha256);
+        body.extend_from_slice(&self.client_proof);
+        for data in [&self.hello_wire,&self.welcome_without_mac]{
+            let size=u16::try_from(data.len()).map_err(|_|Refusal::InvalidFrame)?;
+            body.extend_from_slice(&size.to_le_bytes());
+            body.extend_from_slice(data);
+        }
+        write_scope(&mut body,&self.core_session)?;
+        if body.len()>MAX_CONTROL_BODY{return Err(Refusal::InvalidFrame)}
+        Ok(body)
+    }
+    pub fn parse_exact(
+        bytes:&[u8],scm_challenge:[u8;CHALLENGE_BYTES],
+        service_pid:u32,service_birth:u64,
+    )->Result<Self,Refusal>{
+        if bytes.len()>MAX_CONTROL_BODY ||
+           !bytes.starts_with(Self::DOMAIN){
+            return Err(Refusal::InvalidFrame)
+        }
+        let mut at=Self::DOMAIN.len();
+        if bytes.get(at)!=Some(&1){return Err(Refusal::InvalidFrame)}
+        at+=1;
+        let action=NvpAuthAction::try_from(
+            *bytes.get(at).ok_or(Refusal::InvalidFrame)?)?;
+        at+=1;
+        if bytes.get(at..at+CHALLENGE_BYTES)!=Some(scm_challenge.as_slice()){
+            return Err(Refusal::Replay)
+        }
+        at+=CHALLENGE_BYTES;
+        fn take<'a>(bytes:&'a[u8],at:&mut usize,min:usize,max:usize)
+            ->Result<&'a[u8],Refusal>{
+            let size=u16::from_le_bytes(bytes.get(*at..*at+2)
+                .ok_or(Refusal::InvalidFrame)?.try_into()
+                .map_err(|_|Refusal::InvalidFrame)?) as usize;
+            *at+=2;
+            if size<min||size>max{return Err(Refusal::InvalidFrame)}
+            let value=bytes.get(*at..*at+size).ok_or(Refusal::InvalidFrame)?;
+            *at+=size;
+            Ok(value)
+        }
+        let scope=NvpBrokerScope::parse_exact(
+            take(bytes,&mut at,1,MAX_CONTROL_BODY)?,service_pid,service_birth)?;
+        let read_hash=|at:&mut usize|->Result<[u8;32],Refusal>{
+            let val=bytes.get(*at..*at+32).ok_or(Refusal::InvalidFrame)?;
+            *at+=32;
+            val.try_into().map_err(|_|Refusal::InvalidFrame)
+        };
+        let package_sha256=read_hash(&mut at)?;
+        let enrollment_sha256=read_hash(&mut at)?;
+        let client_proof=read_hash(&mut at)?;
+        let hello_wire=take(bytes,&mut at,1,1024)?.to_vec();
+        let welcome_without_mac=take(bytes,&mut at,1,512)?.to_vec();
+        let core_session=read_scope(bytes,&mut at)?.to_owned();
+        if at!=bytes.len(){return Err(Refusal::InvalidFrame)}
+        let request=Self{action,scope,package_sha256,enrollment_sha256,
+            hello_wire,client_proof,welcome_without_mac,core_session};
+        if request.canonical(scm_challenge)?.as_slice()!=bytes{
+            return Err(Refusal::InvalidFrame)
+        }
+        Ok(request)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -309,6 +471,40 @@ mod tests {
         wrong=scope.clone();
         wrong.nvp_birth_filetime=0;
         assert_eq!(wrong.canonical(),Err(Refusal::InvalidScope));
+    }
+    #[test]
+    fn nvp_private_auth_is_canonical_scoped_and_replay_refusing(){
+        let request=NvpAuthRequest{
+            action:NvpAuthAction::Open,
+            scope:NvpBrokerScope{
+                original:call(),nvp_pid:123,nvp_birth_filetime:456,
+                nvp_session_id:7,service_pid:42,service_birth_filetime:123,
+                challenge:[0x42;32],
+            },
+            package_sha256:[0x33;32],enrollment_sha256:[0x44;32],
+            hello_wire:b"canonical hello".to_vec(),client_proof:[0x55;32],
+            welcome_without_mac:b"unsigned welcome".to_vec(),
+            core_session:"session".into(),
+        };
+        let challenge=[0x66;32];
+        let bytes=request.canonical(challenge).unwrap();
+        assert_eq!(NvpAuthRequest::parse_exact(&bytes,challenge,42,123).unwrap(),request);
+        assert_eq!(NvpAuthRequest::parse_exact(&bytes,[0x67;32],42,123),
+            Err(Refusal::Replay));
+        assert_eq!(NvpAuthRequest::parse_exact(&bytes,challenge,43,123),
+            Err(Refusal::StaleService));
+        let mut wrong=request.clone();
+        wrong.scope.original.user_turn_ref="other".into();
+        assert_ne!(wrong.canonical(challenge).unwrap(),bytes);
+        wrong=request.clone();wrong.scope.nvp_birth_filetime=0;
+        assert_eq!(wrong.canonical(challenge),Err(Refusal::InvalidScope));
+        wrong=request.clone();wrong.hello_wire=vec![1;1025];
+        assert_eq!(wrong.canonical(challenge),Err(Refusal::InvalidFrame));
+        for n in 0..bytes.len(){
+            assert!(NvpAuthRequest::parse_exact(&bytes[..n],challenge,42,123).is_err());
+        }
+        let mut appended=bytes;appended.push(0);
+        assert!(NvpAuthRequest::parse_exact(&appended,challenge,42,123).is_err());
     }
     #[test]
     fn truncated_noncanonical_and_replayed_packets_are_refused(){
