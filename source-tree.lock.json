@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "9a5814746ebe9afcb5f5ae69a4523339e9a5265d",
+  "sourceCommitBeforeLock": "bf8a9c26c7764494e85ac36365f0894df711af01",
   "trackedFileCount": 1304,
   "files": [
     {
@@ -221,7 +221,7 @@
     },
     {
       "path": ".github/workflows/lu-ipc01d-r2-native.yml",
-      "blob": "5ae71ae81611a54ddb253615734cda8b5527e4dd"
+      "blob": "acef7f03ae6bb57d9a29557a818eeaab0a06f020"
     },
     {
       "path": ".github/workflows/lu-kiaf-execution.yml",
@@ -989,7 +989,7 @@
     },
     {
       "path": "docs/LU_DEVELOPMENT_LEDGER.md",
-      "blob": "77afbb8e492bc093675117a91288ab6922dc070f"
+      "blob": "f1186f78174f4774752254b993505584e08c8108"
     },
     {
       "path": "docs/LU_E1_NATIVE_EVIDENCE_20261107.md",
@@ -4397,7 +4397,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/registry.rs",
-      "blob": "72d177558c238e1227bc8b4e0090a7daf75076a5"
+      "blob": "7ed09e665643542d40c4fbfb7f7990521466bffb"
     },
     {
       "path": "src-tauri/lu-core/src/reversible_edit.rs",
@@ -4517,7 +4517,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/workspace_ipc_core_host.rs",
-      "blob": "de20863f0cdd9a4e09be0038b252bf2d537e8f2d"
+      "blob": "f73847d1bee0a96795aad192af64d1c84effa18b"
     },
     {
       "path": "src-tauri/lu-core/src/workspace_ipc_scm.rs",
@@ -5005,7 +5005,7 @@
     },
     {
       "path": "src-tauri/lu-core/tests/registry_contracts.rs",
-      "blob": "b399bda7b302bd19f6dbed75427058409dd066c7"
+      "blob": "365b53de48d7d7e41dffdb6e482d3ed702045a11"
     },
     {
       "path": "src-tauri/lu-core/tests/saved_chat_prompt_limits.rs",
