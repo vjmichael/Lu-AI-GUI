@@ -191,6 +191,14 @@ impl VerifiedScmSupervisor{
         journal.record_verified_scm_executor_stop(&original,&proof)
             .map_err(|_|ScmSupervisorError::ReceiptUnavailable)
     }
+    /// Retained native SCM generation from the independently pinned signer
+    /// and actual service process; not reconstructible from a PID supplied
+    /// in an NVP frame or from a JSON/installer claim.
+    pub(crate) fn original_process_witness(&self)
+        ->Result<lu_win_worker_job::ipc_pipe_peer::WindowsPipePeer,ScmSupervisorError>{
+        self.require_live()?;
+        Ok(self.native.original_process_witness())
+    }
     /// Read-only SCM identity: not a native tool executor or kernel Job receipt.
     pub fn scm_service_pid(&self)->u32{self.native.process_id()}
     pub fn scm_service_birth(&self)->u64{self.native.process_creation_filetime()}
