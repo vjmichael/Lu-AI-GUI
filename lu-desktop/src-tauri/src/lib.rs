@@ -1579,7 +1579,6 @@ fn start_background_watchdog(app:AppHandle,state:Arc<DesktopState>){
     });
 }
 
-#[tauri::command]
 /// Read-only desktop status; never fabricates a NVP permission or releases
 /// a lease. This is usable even while the large Lu GGUF is fully unloaded.
 #[derive(Clone,Serialize)]
