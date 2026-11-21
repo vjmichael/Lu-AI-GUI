@@ -144,6 +144,7 @@ pub struct IpcScmOriginalGrant{
     pub service_pid:u32,
     pub service_birth:u64,
 }
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IpcPendingEffect {
     pub call_id: String,
     pub tool_id: String,
@@ -291,6 +292,15 @@ impl ExclusiveIpcEffectJournal {
                 i64::from(pid),native_birth]
         )?;
         if count!=1{return Err(JournalError::DuplicateIdConflict);}
+        // EXECUTING is durable BEFORE any SCM process can resume, even if
+        // the Core crashes or loses its signed service response.
+        let marked=tx.execute(
+            "UPDATE lu_effects SET state='EXECUTING',
+                updated_at=CURRENT_TIMESTAMP
+             WHERE call_id=?1 AND state='PREPARED'",
+            [binding.call_id()]
+        )?;
+        if marked!=1{return Err(JournalError::InvalidTransition);}
         tx.commit()?;
         Ok(IpcScmOriginalGrant{binding,service_pid:pid,service_birth:birth})
     }
@@ -349,6 +359,32 @@ impl ExclusiveIpcEffectJournal {
         };
         if digest!=original.binding.fingerprint_sha256() ||
             !matches!(status.as_str(),"EXECUTING"|"UNCERTAIN"){
+            return Err(JournalError::IpcCustodyMismatch);
+        }
+        let pinned:Option<(String,String,String,String,String,String,String,
+                           String,String,i64,i64)>=tx.query_row(
+            "SELECT call_id,fingerprint,module_id,session_ref,core_epoch_ref,
+                    conversation_ref,user_turn_ref,task_ref,workspace_ref,
+                    service_pid,service_birth
+             FROM lu_ipc_scm_original_grants WHERE call_id=?1",
+            [original.binding.call_id()],
+            |row|Ok((row.get(0)?,row.get(1)?,row.get(2)?,row.get(3)?,
+                row.get(4)?,row.get(5)?,row.get(6)?,row.get(7)?,
+                row.get(8)?,row.get(9)?,row.get(10)?))
+        ).optional()?;
+        if pinned!=Some((
+            original.binding.call_id().to_owned(),
+            original.binding.fingerprint_sha256().to_owned(),
+            original.binding.module_id().to_owned(),
+            original.binding.session_ref().to_owned(),
+            original.binding.core_epoch_ref().to_owned(),
+            original.binding.conversation_ref().to_owned(),
+            original.binding.user_turn_ref().to_owned(),
+            original.binding.task_ref().to_owned(),
+            original.binding.workspace_ref().to_owned(),
+            i64::from(original.service_pid),
+            i64::try_from(original.service_birth)
+                .map_err(|_|JournalError::IpcCustodyMismatch)?)){
             return Err(JournalError::IpcCustodyMismatch);
         }
         let count=tx.execute(

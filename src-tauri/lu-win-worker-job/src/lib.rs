@@ -29,6 +29,11 @@ pub mod ipc_scm_supervisor;
 pub mod ipc_scm_owned_jobs;
 #[cfg(windows)]
 pub mod ipc_scm_receipts;
+pub mod ipc_scm_control_wire;
+#[cfg(windows)]
+pub mod ipc_scm_control;
+#[cfg(windows)]
+pub mod ipc_scm_launcher;
 
 #[cfg(windows)]
 mod windows_owned {

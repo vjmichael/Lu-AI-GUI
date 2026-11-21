@@ -47,8 +47,12 @@ struct StartupInfoW{
 #[repr(C)]
 struct StartupInfoExW{base:StartupInfoW,attributes:Handle}
 #[repr(C)]
-#[derive(Default)]
 struct ProcessInformation{process:Handle,thread:Handle,pid:u32,tid:u32}
+impl Default for ProcessInformation{
+    fn default()->Self{
+        Self{process:ptr::null_mut(),thread:ptr::null_mut(),pid:0,tid:0}
+    }
+}
 #[repr(C)]
 struct SecurityCapabilities{sid:Handle,capabilities:Handle,count:u32,reserved:u32}
 #[link(name="kernel32")]

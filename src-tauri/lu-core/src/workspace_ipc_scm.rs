@@ -206,10 +206,14 @@ mod tests{
             receipt_p256_public_blob:[0;72]};
         assert!(matches!(VerifiedScmSupervisor::observe(&zero),
             Err(ScmSupervisorError::UnapprovedPins)));
+        let mut public=[0u8;72];
+        public[0..4].copy_from_slice(&0x31534345u32.to_le_bytes());
+        public[4..8].copy_from_slice(&32u32.to_le_bytes());
+        public[8]=1;
         let missing=ApprovedScmPins{absolute_image_path:
             r"C:\Windows\System32\not-the-lu-scm-supervisor.exe".into(),
             image_sha256:[0x45;32],signer_der_sha256:[0x12;32],
-            receipt_p256_public_blob:[0;72]};
+            receipt_p256_public_blob:public};
         assert!(matches!(VerifiedScmSupervisor::observe(&missing),
             Err(ScmSupervisorError::ServiceUnavailable)));
     }
