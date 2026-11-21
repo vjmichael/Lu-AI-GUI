@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "7d3d2fb7aa7b158f59db1514da0e0a6abb14b97c",
+  "sourceCommitBeforeLock": "fce0452356b8c2ec5a5a56bb9a64c242224b149b",
   "trackedFileCount": 1304,
   "files": [
     {
@@ -989,7 +989,7 @@
     },
     {
       "path": "docs/LU_DEVELOPMENT_LEDGER.md",
-      "blob": "af93d31a73aaac9fb7132b53ed739a839f52d44c"
+      "blob": "77afbb8e492bc093675117a91288ab6922dc070f"
     },
     {
       "path": "docs/LU_E1_NATIVE_EVIDENCE_20261107.md",
@@ -1089,7 +1089,7 @@
     },
     {
       "path": "docs/LU_IPC_GPU_01C_DURABLE_DESKTOP_NVP_20261121.md",
-      "blob": "960546fb22b50c7629debc293ee3356b8eb9236c"
+      "blob": "9f6f83c2ed31bb86ad5b80aaed10964d43f4f5d2"
     },
     {
       "path": "docs/LU_IPC_R4_R3_R3_R4_ECOSYSTEM_AND_SCM_CONTROL_20261121.md",
@@ -4517,7 +4517,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/workspace_ipc_core_host.rs",
-      "blob": "8e024a4016b45d23e7d36327d6bdd788f428ee80"
+      "blob": "991ecb2c664fd5f520a2580354e7c64d5fee807a"
     },
     {
       "path": "src-tauri/lu-core/src/workspace_ipc_scm.rs",
@@ -4525,7 +4525,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/workspace_ipc_transport.rs",
-      "blob": "d5eb987db638c9d4eccf55a9ca6942d6aad16fb6"
+      "blob": "265a36de70304d1ed7a27d9a4ec4581b1b1b63ec"
     },
     {
       "path": "src-tauri/lu-core/src/workspace_quarantine.rs",
