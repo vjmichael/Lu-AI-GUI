@@ -88,9 +88,16 @@ export function lateSourceOpenDecision(tabs, projectId, relativePath, opened, li
   }
   if (!Array.isArray(tabs))
     return {action:'discard_stale', reason:'INVALID_EDITOR_ADMISSION'};
-  // An existing editor may be dirty. Never reset its identity or Undo history.
-  if (tabs.some(tab=>tab?.key === key))
-    return {action:'select_existing', reason:null};
+  // A key alone cannot authorize selection: a malformed or collided key
+  // could name a different project's source or another relative file.
+  // Preserve the real existing editor's draft/Undo only on exact identity.
+  const keyedTabs=tabs.filter(tab=>tab?.key === key);
+  if (keyedTabs.length) {
+    if (keyedTabs.length !== 1 || keyedTabs[0].projectId !== projectId ||
+        keyedTabs[0].relativePath !== relativePath)
+      return {action:'discard_stale',reason:'SOURCE_PREVIEW_CONTEXT_CHANGED'};
+    return {action:'select_existing',reason:null};
+  }
   const admission=admitOpenTabs(tabs,projectId,[key]);
   return admission.allowed
     ? {action:'open_new', reason:null}

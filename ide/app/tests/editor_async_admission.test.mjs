@@ -79,3 +79,21 @@ test('UI native reads use one synchronous ticket and post-await admission',()=>{
   assert.match(source,/finishExplorerIo\(ticket\)/);
   assert.doesNotMatch(source,/if \(tabs\.some\(tab => tab\.key === key\)\)/);
 });
+
+test('B6 same-key selection rejects foreign-project, wrong-path and duplicate-tab aliases',()=>{
+  const original=tab(7);
+  const key=original.key;
+  const path=original.relativePath;
+  const opened=preview(7);
+  const foreign={...tab(7,projectB),key};
+  const wrongPath={...original,relativePath:'src/different.rs'};
+  for(const tabs of [[foreign],[wrongPath],[original,foreign]]) {
+    assert.deepEqual(lateSourceOpenDecision(tabs,projectA,path,opened,projectA,key),
+      {action:'discard_stale',reason:'SOURCE_PREVIEW_CONTEXT_CHANGED'});
+  }
+  const dirty={...original,dirty:true,draft:'unsaved local change',bufferRevision:15};
+  assert.deepEqual(lateSourceOpenDecision([dirty],projectA,path,opened,projectA,key),
+    {action:'select_existing',reason:null});
+  assert.equal(dirty.draft,'unsaved local change');
+  assert.equal(dirty.bufferRevision,15);
+});
