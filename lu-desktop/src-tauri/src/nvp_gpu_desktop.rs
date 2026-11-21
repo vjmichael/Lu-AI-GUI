@@ -159,8 +159,17 @@ pub(crate) async fn serve_installed_nvp_for_creator_turn(
     }
     let task=original.task_ref.clone();
     let result=async {
+        // Display the REAL persisted user request, not a model-proposed film
+        // title, with a bounded excerpt for native consent ergonomics.
+        let excerpt=original_text.chars().filter(|c|
+            !c.is_control()||*c=='\n'
+        ).take(480).collect::<String>();
+        let truncated=original_text.chars().count()>480;
         let prompt=format!(
             r#"Authorize ONE NVP film GPU handoff for this original Lu conversation?
+
+Original user request:
+{}{}
 
 Film workspace: {}
 Read capability: {}
@@ -170,6 +179,7 @@ Lu unloads its current GGUF only after verified Core authorization.
 NVP must independently prove GPU/Job quiescence before Lu reloads.
 This film request must remain the current original USER turn.
 Cancellation or uncertain worker termination NEVER authorizes a reload."#,
+            excerpt,if truncated{" … [excerpt truncated]"}else{""},
             original.workspace_ref,inputs.plan.read_descriptor.id,
             inputs.plan.execute_descriptor.id
         );
