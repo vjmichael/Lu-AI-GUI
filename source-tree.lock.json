@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "fa9ebe79f993b359bdef87843ca167b7cf5a5f1b",
-  "trackedFileCount": 1292,
+  "sourceCommitBeforeLock": "2bd7a090fc6180defa7ce915bb22c43125cb88ce",
+  "trackedFileCount": 1296,
   "files": [
     {
       "path": ".gitattributes",
@@ -1078,6 +1078,10 @@
     {
       "path": "docs/LU_IPC_01D_R1_NATIVE_TRANSPORT_20261120.md",
       "blob": "7841277ef7708cad3e06c7aaa30a03f45598ba1b"
+    },
+    {
+      "path": "docs/LU_IPC_R4_R3_R3_R4_ECOSYSTEM_AND_SCM_CONTROL_20261121.md",
+      "blob": "5d5a14d071d855302959b6a1a5226cf84f80ed80"
     },
     {
       "path": "docs/LU_KIAF_ACTIVE_EXECUTION_LEDGER_20261108.md",
@@ -3841,7 +3845,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/journal.rs",
-      "blob": "de5fc6de8d306c1e1eda14f25e7f5ada9167876c"
+      "blob": "200b9e76cc146b1c1f6a953c8a229de12d4b1bee"
     },
     {
       "path": "src-tauri/lu-core/src/lib.rs",
@@ -4497,7 +4501,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/workspace_ipc_scm.rs",
-      "blob": "f332fc384d3ed843eebaf79a32aca7d3a912284a"
+      "blob": "d0e7e6de76217cf0a75c306ea20aa7560fd5930e"
     },
     {
       "path": "src-tauri/lu-core/src/workspace_ipc_transport.rs",
@@ -5057,7 +5061,7 @@
     },
     {
       "path": "src-tauri/lu-win-worker-job/Cargo.toml",
-      "blob": "93d045b0d77e189835eef335dba91f37fa3340b5"
+      "blob": "20407e4dee8ad7bb17edf4dd43d0c4f986b09932"
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/bin/lu-e1-p08-linux-cgroup-crash-parent.rs",
@@ -5069,7 +5073,7 @@
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/bin/lu-ipc-scm-supervisor.rs",
-      "blob": "72657f1fd3eb68f1e6ce55fa681dcb354359a1b4"
+      "blob": "96e1b11519ef76481c64a9a178a540e73cb50d6d"
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/bin/lu-linux-cgroup-guard.rs",
@@ -5097,23 +5101,35 @@
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/ipc_installer_enrollment.rs",
-      "blob": "0fc7e84043bf7fe246a8871bb5dc4036514818c6"
+      "blob": "df3fa529d5a05445b450117b20d5dcc8ac63a144"
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/ipc_pipe_peer.rs",
-      "blob": "138f0f7a242e7732e08e3162c0b9fd3f6ce8e868"
+      "blob": "eb3eb5c0f1304d18979446602bbbe8f0bbd9d626"
+    },
+    {
+      "path": "src-tauri/lu-win-worker-job/src/ipc_scm_control.rs",
+      "blob": "686553695f4842381321abc5fa23bff3572511af"
+    },
+    {
+      "path": "src-tauri/lu-win-worker-job/src/ipc_scm_control_wire.rs",
+      "blob": "7d3e701d5fa153852a375bd8cdfc81cde3a8dfec"
+    },
+    {
+      "path": "src-tauri/lu-win-worker-job/src/ipc_scm_launcher.rs",
+      "blob": "345c69b10a80518257869792761cdc6975d4ba0c"
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/ipc_scm_owned_jobs.rs",
-      "blob": "485446ce2c1ed4930ffdb3c218533b733b5190c9"
+      "blob": "168db33b2986f10d880e84667d509b578ae161c3"
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/ipc_scm_receipts.rs",
-      "blob": "b404fa95715f5a8c3336353580ff8cb65bff82bb"
+      "blob": "e522eb058b139383eda22c3ddc30c6c47f0acc8a"
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/ipc_scm_supervisor.rs",
-      "blob": "6c0aac50c377169fe2f5e76e145331c592671694"
+      "blob": "48280b6a4d102bee9aed1b67c668bd802dbef6d8"
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/ipc_signed_package.rs",
@@ -5121,7 +5137,7 @@
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/lib.rs",
-      "blob": "9715409d6edb18b14c9829e846c299dd1e5fd4e1"
+      "blob": "71baa3654e8fe662e37e8f4898ca0d7f429fc7c5"
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/metadata_guard.rs",
