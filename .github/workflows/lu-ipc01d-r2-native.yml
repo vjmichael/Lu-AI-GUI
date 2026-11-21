@@ -114,6 +114,10 @@ jobs:
           trap cleanup EXIT
           echo LU_IPC_GPU_01C_NONRUNNABLE_SOURCE_SENTINELS_ONLY
           cargo check --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib
+          # Compile original-human-turn and native NVP cancellation tests
+          # without invoking a fake installed SCM service or real LTX.
+          cargo check --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --tests
+          echo LU_IPC_GPU_01D_DESKTOP_CREATOR_SOURCE_TYPECHECK_PASS
           echo LU_IPC_GPU_01C_DESKTOP_RUST_TYPECHECK_SOURCE_ONLY_PASS
       - name: Windows strict installer record and native NVP pipe peer identity regressions
         if: matrix.os == 'windows-2025'
