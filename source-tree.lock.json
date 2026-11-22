@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "76b947ef43e94108cc5765cc8223ad04a694ff0a",
+  "sourceCommitBeforeLock": "685de98a5496fc9db922585c3bbf86a39415de9e",
   "trackedFileCount": 1272,
   "files": [
     {
@@ -1601,7 +1601,7 @@
     },
     {
       "path": "lu-desktop/scripts/promote-reviewed-browser-candidate.mjs",
-      "blob": "e2d1a050243cb6ccf0e8e2983608a1f846189e4d"
+      "blob": "da73ab3fdbc0ef6ff7c0d015ec5f20a21f739f53"
     },
     {
       "path": "lu-desktop/scripts/stage-browser-runtime.mjs",
@@ -3077,7 +3077,7 @@
     },
     {
       "path": "scripts/lu-c62b-reviewed-browser-contract.test.mjs",
-      "blob": "fdfd156c305e5e351447322dae34c398722dcbb3"
+      "blob": "2985a05342da88625b089f39c3fad1548d408242"
     },
     {
       "path": "scripts/lu-ci-group-policy.mjs",
