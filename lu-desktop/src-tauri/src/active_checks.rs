@@ -134,7 +134,7 @@ impl CheckController {
 // A bounded set of exclusively created disposable workspaces, never the actual chat
 // database. Do not reuse or delete a pre-existing directory. Only explicitly
 // named files created by this run are removed (no recursive deletion).
-struct Scratch { path:PathBuf, dir:cap_std::fs::Dir, cleaned:bool }
+struct Scratch { path:PathBuf, dir:Option<cap_std::fs::Dir>, cleaned:bool }
 impl Scratch {
     fn new(root:&Path)->Result<Self,()> {
         let mut builder=std::fs::DirBuilder::new();
@@ -144,7 +144,7 @@ impl Scratch {
             match builder.create(&path) {
                 Ok(())=>{
                     let dir=cap_std::fs::Dir::open_ambient_dir(&path,cap_std::ambient_authority()).map_err(|_|())?;
-                    return Ok(Self{path,dir,cleaned:false})
+                    return Ok(Self{path,dir:Some(dir),cleaned:false})
                 },
                 Err(e) if e.kind()==std::io::ErrorKind::AlreadyExists=>continue,
                 Err(_)=>return Err(()),
@@ -153,9 +153,18 @@ impl Scratch {
         Err(())
     }
     fn cleanup(&mut self)->Result<(),()> {
-        for name in ["history.sqlite","history.sqlite-wal","history.sqlite-shm","history.sqlite-journal"] {
-            match self.dir.remove_file(name){Ok(())=>(),Err(e) if e.kind()==std::io::ErrorKind::NotFound=>(),Err(_)=>return Err(())}
+        if self.cleaned { return Ok(()) }
+        // Remove only the original four fixed synthetic files while the
+        // capability handle is owned. Never traverse or remove an old slot.
+        if let Some(dir)=self.dir.as_ref() {
+            for name in ["history.sqlite","history.sqlite-wal","history.sqlite-shm","history.sqlite-journal"] {
+                match dir.remove_file(name){Ok(())=>(),Err(e) if e.kind()==std::io::ErrorKind::NotFound=>(),Err(_)=>return Err(())}
+            }
         }
+        // Windows cannot remove a directory while its own directory handle
+        // is still held open. Release that handle before removing the now
+        // empty, originally exclusive-created slot; never recurse or force.
+        drop(self.dir.take());
         std::fs::remove_dir(&self.path).map_err(|_|())?;
         self.cleaned=true;Ok(())
     }
@@ -278,6 +287,32 @@ fn search_scale_check(path:&Path,stop:&(impl Fn()->Option<CheckReason>+?Sized))-
 mod tests {
     use super::*;
     fn root()->PathBuf {let p=std::env::temp_dir().join(crate::next_id("lu-check-test-"));std::fs::create_dir(&p).unwrap();p}
+    #[cfg(windows)]
+    #[test] fn cp11a_windows_exclusive_scratch_cleanup_releases_owned_directory_handle() {
+        let root=root();
+        let mut scratch=Scratch::new(&root).unwrap();
+        assert_eq!(scratch.path,root.join(SCRATCH));
+        assert!(scratch.dir.is_some());
+        std::fs::write(scratch.path.join("history.sqlite"),b"fixed synthetic").unwrap();
+        scratch.cleanup().unwrap();
+        assert!(scratch.cleaned);
+        assert!(scratch.dir.is_none());
+        assert!(!root.join(SCRATCH).exists());
+        std::fs::remove_dir(&root).unwrap();
+    }
+    #[cfg(windows)]
+    #[test] fn cp11a_windows_cleanup_preserves_preexisting_scratch_slot() {
+        let root=root();
+        let old=root.join(SCRATCH);
+        std::fs::create_dir(&old).unwrap();
+        std::fs::write(old.join("history.sqlite"),b"pre-existing unrelated bytes").unwrap();
+        let mut scratch=Scratch::new(&root).unwrap();
+        assert_eq!(scratch.path,root.join(SCRATCH_SLOTS[1]));
+        scratch.cleanup().unwrap();
+        assert_eq!(std::fs::read(old.join("history.sqlite")).unwrap(),b"pre-existing unrelated bytes");
+        assert!(!root.join(SCRATCH_SLOTS[1]).exists());
+        std::fs::remove_dir_all(root).unwrap();
+    }
     #[test] fn cp11a_real_checks_and_durable_report() {
         let root=root(); let path=root.join("trace.sqlite");
         let archive=DiagnosticArchive::open(&path).unwrap();let c=CheckController::new(&root);
