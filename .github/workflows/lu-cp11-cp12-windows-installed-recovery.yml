@@ -1,0 +1,136 @@
+name: Lu CP-11/12 exact-C6.2B Windows installed recovery acceptance
+on:
+  push:
+    branches:
+      - lu/cp11-cp12-installed-recovery-20261121
+    paths:
+      - source-tree.lock.json
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: lu-cp11-cp12-installed-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  source-and-windows-native:
+    runs-on: windows-2025
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Source-lock, original CP-11/12 contracts and acceptance harness parser
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          if((git rev-parse HEAD).Trim() -cne $env:GITHUB_SHA){throw 'CP-11/12 original checkout SHA mismatch'}
+          node scripts/verify-source-tree.mjs
+          if($LASTEXITCODE -ne 0){throw 'CP-11/12 source-tree SHA/blobs rejected'}
+          node --test lu-desktop/tests/cp11a-local-checks.test.mjs lu-desktop/tests/cp11b-reminders.test.mjs lu-desktop/tests/cp11br1-scheduled-ai.test.mjs lu-desktop/tests/cp12ar1-delivery.test.mjs lu-desktop/tests/cp12ar2-route-schedule-diagnostics.test.mjs lu-desktop/tests/cp12ar2r1-diagnostic-reliability.test.mjs lu-desktop/tests/cp12b-local-diagnostic-exchange.test.mjs lu-desktop/tests/cp11-cp12-windows-installed-recovery-contract.test.mjs
+          if($LASTEXITCODE -ne 0){throw 'Existing CP-11/12 or installed recovery source contract failed'}
+          $tokens=$null;$errors=$null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path 'scripts/cp11-cp12-windows-installed-recovery.ps1').Path,
+            [ref]$tokens,[ref]$errors)|Out-Null
+          if($errors.Count -gt 0){throw ('Original Windows recovery PowerShell parse failed: '+$errors)}
+          python -m py_compile scripts/cp11-cp12-windows-readonly-journal.py
+          if($LASTEXITCODE -ne 0){throw 'Read-only diagnostic journal witness syntax failed'}
+      - name: Genuine native Windows CP-12 diagnostic IPC positive and default-off gates
+        shell: pwsh
+        timeout-minutes: 45
+        run: |
+          $ErrorActionPreference='Stop'
+          cargo test --locked --manifest-path scripts/cp12br2-windows-transport-check/Cargo.toml --features windows_dx_eval -- --test-threads=1
+          if($LASTEXITCODE -ne 0){throw 'Actual native Windows named-pipe diagnostic custody regression failed'}
+          cargo test --locked --manifest-path scripts/cp12br2-windows-transport-check/Cargo.toml -- --test-threads=1
+          if($LASTEXITCODE -ne 0){throw 'Default-off Windows diagnostic restriction failed'}
+      - name: State qualified native boundary
+        shell: pwsh
+        run: |
+          "CP11_12_SOURCE_SHA=$env:GITHUB_SHA" >> $env:GITHUB_STEP_SUMMARY
+          'Source contracts and real Windows kernel diagnostic transport only; installed GUI recovery is a separate mandatory job.' >> $env:GITHUB_STEP_SUMMARY
+  exact-original-installed-windows-recovery:
+    needs: source-and-windows-native
+    runs-on: windows-2025
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Exact recovery source and pinned original installer identity
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          if((git rev-parse HEAD).Trim() -cne $env:GITHUB_SHA){throw 'Windows recovery source SHA mismatch'}
+          node scripts/verify-source-tree.mjs
+          if($LASTEXITCODE -ne 0){throw 'Windows recovery source lock rejected'}
+      - name: Retrieve original C6.2B successfully installed Windows NSIS release candidate
+        uses: actions/download-artifact@v4
+        with:
+          name: Lu-C62B-Reviewed-Browser-NSIS-2ded370fb7da34498e24376b3e7c0abe4771f96d
+          run-id: 44979001346
+          github-token: ${{ github.token }}
+          path: out/cp11-cp12-c62b-pinned
+      - name: Genuine installed one-shot check, interruption/restart, reminder and local diagnostic recovery
+        shell: pwsh
+        timeout-minutes: 20
+        run: |
+          $ErrorActionPreference='Stop'
+          $root=(Resolve-Path 'out/cp11-cp12-c62b-pinned').Path
+          $checks=Get-Content -LiteralPath (Join-Path $root 'installer-checksums.json') -Raw|ConvertFrom-Json
+          $provenance=Get-Content -LiteralPath (Join-Path $root 'BUILD_PROVENANCE.json') -Raw|ConvertFrom-Json
+          $expectedSource='2ded370fb7da34498e24376b3e7c0abe4771f96d'
+          $expectedBrowser='f2948f9ef9d2b5bbac8a60e146bd4a18a0714a615883faaa0139b8d5828e5cf3'
+          if($checks.sourceSha -cne $expectedSource -or $checks.browserManifestSha256 -cne $expectedBrowser -or
+             $provenance.browserManifestSha256 -cne $expectedBrowser -or
+             $provenance.browserRuntime -cne 'REVIEWED_AND_STAGED'){
+            throw 'Original C6.2B Windows NSIS provenance not pinned to the accepted source'
+          }
+          if($checks.installerName -notmatch '^Lu-Current-Preview-NSIS-[0-9a-f]{12}\.exe$'){
+            throw 'Unexpected original NSIS installer name'
+          }
+          $installer=Join-Path $root $checks.installerName
+          if(-not(Test-Path -LiteralPath $installer -PathType Leaf) -or
+             (Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash -ine $checks.installerSha256){
+            throw 'Original C6.2B native NSIS artifact checksum mismatch'
+          }
+          & scripts/cp11-cp12-windows-installed-recovery.ps1 -InstallerPath $installer -InstallerSha256 $checks.installerSha256 -AppSha256 $checks.appSha256 -EvidenceDir (Join-Path $env:RUNNER_TEMP 'lu-cp11-cp12-windows-recovery-evidence') -DisposableWindowsConfirmed
+          if($LASTEXITCODE -ne 0){throw 'Real installed CP-11/12 GUI/restart or SQLite readback failed'}
+          $r=Get-Content (Join-Path $env:RUNNER_TEMP 'lu-cp11-cp12-windows-recovery-evidence/cp11-cp12-windows-installed-recovery.json') -Raw|ConvertFrom-Json
+          if($r.result -cne 'PASS_SCOPED_HOSTED_WINDOWS_CP11A_CP11B_CP12A' -or
+             $r.phases.cold_check_recovery_exact_prefix_no_replay -cne 'PASS' -or
+             $r.phases.missed_reminder_single_fire_on_cold_restart -cne 'PASS' -or
+             $r.phases.second_restart_durable_exactly_once_notice -cne 'PASS' -or
+             $r.phases.plain_diagnostic_status_after_cold_recovery -cne 'PASS_READONLY_LOCAL'){
+            throw 'Required original installed recovery receipt incomplete'
+          }
+          "CP11_12_ORIGINAL_C62B_BINARY_SOURCE=$expectedSource" >> $env:GITHUB_STEP_SUMMARY
+          "CP11_12_RECOVERY_TEST_SOURCE=$env:GITHUB_SHA" >> $env:GITHUB_STEP_SUMMARY
+          'Installed model-free CP-11A/11B and local CP-12A recovery passed only. Two-model Windows DX, scheduled AI/GGUF, owner physical R9700 and release admission remain separate.' >> $env:GITHUB_STEP_SUMMARY
+      - name: Preserve original installed native recovery evidence and negative cases
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Lu-CP11-CP12-Installed-Recovery-${{ github.sha }}
+          path: ${{ runner.temp }}/lu-cp11-cp12-windows-recovery-evidence/
+          if-no-files-found: warn
+          retention-days: 14
+          compression-level: 6
