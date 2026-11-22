@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { inspectOne, inspectDirectory, isCanonicalMainLedgerWorkflow } from "./lu-ci-group-policy.mjs";
+import { inspectOne, inspectDirectory, isCanonicalMainLedgerWorkflow, isScopedLockedReleaseWorkflow } from "./lu-ci-group-policy.mjs";
 import fs from "node:fs";
 
 const manual = "name: One\non:\n  workflow_dispatch:\npermissions:\n  contents: read\njobs:\n  test:\n    runs-on: ubuntu-latest\n";
@@ -35,6 +35,24 @@ test("canonical main ledger refresh is admitted ONLY at the exact reviewed main 
     "HEAVY_WORKFLOW_AUTOMATIC_FANOUT"));
 });
 
+test("only the exact two CP-10 source-lock branches may automatically qualify Windows",()=>{
+  for(const name of ["lu-core-c6-hosted-dual-nsis.yml","lu-core-c62b-reviewed-browser-nsis.yml"]){
+    const src=fs.readFileSync(".github/workflows/"+name,"utf8");
+    assert.deepEqual(inspectOne(name,src).problems,[]);
+    assert.equal(isScopedLockedReleaseWorkflow(name,src,["push","workflow_dispatch","workflow_call"]),true);
+    const mutations=[
+      src.replace("      - source-tree.lock.json","      - **"),
+      src.replace("cancel-in-progress: false","cancel-in-progress: true"),
+      src.replace("ref: ${{ github.sha }}","ref: main"),
+      src.replace("      - lu/cp10-","      - main/"),
+      src.replace("node scripts/verify-source-tree.mjs","echo skip verification")
+    ];
+    if(name.includes("c62b"))mutations.push(src.replace("run-id: 43976953361","run-id: 1"));
+    for(const mutated of mutations)assert.ok(inspectOne(name,mutated).problems.includes("HEAVY_WORKFLOW_AUTOMATIC_FANOUT"));
+  }
+  const browser=fs.readFileSync(".github/workflows/lu-core-c62b-reviewed-browser-nsis.yml","utf8");
+  assert.ok(inspectOne("lu-unreviewed-browser.yml",browser).problems.includes("HEAVY_WORKFLOW_AUTOMATIC_FANOUT"));
+});
 test("broken events, duplicate dispatch or missing jobs fail policy", () => {
   assert.throws(() => inspectOne("lu-any.yml", "name: Broken\njobs:\n"));
   assert.ok(inspectOne("lu-any.yml", manual.replace("  workflow_dispatch:\n", "  workflow_dispatch:\n  workflow_dispatch:\n")).problems.includes("DUPLICATE_DISPATCH"));

@@ -1,12 +1,17 @@
 name: Lu C6.2B exact-SHA reviewed browser native Windows NSIS and integrity acceptance
 on:
+  push:
+    branches:
+      - lu/cp10-c62b-reviewed-browser-20261121
+    paths:
+      - source-tree.lock.json
   workflow_dispatch:
   workflow_call:
 permissions:
   contents: read
   actions: read
 concurrency:
-  group: lu-c62b-reviewed-browser-${{ github.sha }}
+  group: lu-c62b-reviewed-browser-${{ github.ref }}
   cancel-in-progress: false
 jobs:
   original-source-and-review:

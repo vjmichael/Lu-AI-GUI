@@ -32,10 +32,13 @@ test('C6.2B admits only the separately audited exact Windows 482-file Chromium c
  assert.match(promoter,/Candidate contained undeclared executable\/data/);
  assert.match(promoter,/Candidate contains an unauthorized symlink/);
 });
-test('C6.2B is one exact-source Windows installer, not automatic production promotion',()=>{
+test('C6.2B runs only on one locked browser qualification branch, never automatic production promotion',()=>{
  const events=wf.split('\non:\n')[1].split('\npermissions:')[0];
  assert.match(events,/workflow_dispatch:/);assert.match(events,/workflow_call:/);
- assert.doesNotMatch(events,/push:|pull_request:|pull_request_target:/);
+ assert.ok(events.includes('push:\n    branches:\n      - lu/cp10-c62b-reviewed-browser-20261121\n    paths:\n      - source-tree.lock.json'));
+ assert.doesNotMatch(events,/pull_request:|pull_request_target:|schedule:/);
+ assert.ok(wf.includes('group: lu-c62b-reviewed-browser-${{ github.ref }}'));
+ assert.ok(wf.includes('cancel-in-progress: false'));
  assert.match(wf,/github\.sha/);
  assert.match(wf,/node scripts\/verify-source-tree\.mjs/);
  assert.match(wf,/run-id: 43976953361/);

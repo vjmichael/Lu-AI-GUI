@@ -71,16 +71,44 @@ export function isGuardedPlan07D(filename, source, keys) {
   return true;
 }
 
+/** Only the two exact CP-10 release-qualification branches may trigger heavy CI on a finalized source lock. */
+export function isScopedLockedReleaseWorkflow(filename, source, keys) {
+  const scopes={
+    'lu-core-c6-hosted-dual-nsis.yml':{branch:'lu/cp10-consolidated-ux-20261120',group:'lu-c6-dual-nsis',browser:false},
+    'lu-core-c62b-reviewed-browser-nsis.yml':{branch:'lu/cp10-c62b-reviewed-browser-20261121',group:'lu-c62b-reviewed-browser',browser:true}
+  };
+  const scope=scopes[filename];
+  if(!scope||keys.join(',')!=='push,workflow_dispatch,workflow_call')return false;
+  const evt=source.split('\non:\n')[1]?.split('\npermissions:\n')[0]||'';
+  const expected='  push:\n    branches:\n      - '+scope.branch+'\n    paths:\n      - source-tree.lock.json\n  workflow_dispatch:\n  workflow_call:\n';
+  if(!evt.includes(expected))return false;
+  const other=evt.replace(expected,'').replace(/^\s*#.*$/gm,'').trim();
+  if(other)return false;
+  const dollar=String.fromCharCode(36);
+  if(!source.includes('group: '+scope.group+'-'+dollar+'{{ github.ref }}')||
+     !source.includes('cancel-in-progress: false')||
+     !source.includes('ref: '+dollar+'{{ github.sha }}')||
+     !source.includes('node scripts/verify-source-tree.mjs')||
+     !source.includes('permissions:\n  contents: read')||
+     source.includes('continue-on-error: true'))return false;
+  if(scope.browser)return ["LU_REQUIRE_BROWSER: '1'",'run-id: 43976953361',
+    '859ae6365aabaad2ada9362bb556243ede414f3de65fa3667ea0c3e5da38af0b',
+    'promote-reviewed-browser-candidate.mjs','PASS_INSTALLED_UNIFIED_TABS',
+    'scripts/m3-windows-nsis-cycle.ps1'].every(part=>source.includes(part));
+  return ["LU_REQUIRE_BROWSER: '0'",'PASS_INSTALLED_UNIFIED_TABS',
+    'scripts/m3-windows-nsis-cycle.ps1'].every(part=>source.includes(part));
+}
 export function inspectOne(filename, source) {
   const keys = eventKeys(source);
   const problems = [];
   const narrowlyAdmitted = isGuardedPlan07D(filename, source, keys);
   const canonicalMainLedger = isCanonicalMainLedgerWorkflow(filename, source, keys);
+  const scopedRelease = isScopedLockedReleaseWorkflow(filename, source, keys);
   if (!keys.includes("workflow_dispatch") && !narrowlyAdmitted) problems.push("NO_GROUP_DISPATCH");
   if (keys.filter((x) => x === "workflow_dispatch").length !== (narrowlyAdmitted ? 0 : 1)) problems.push("DUPLICATE_DISPATCH");
   if (!AUTOMATIC.has(filename) && keys.some((x) => [
     "push", "pull_request", "pull_request_target", "merge_group", "repository_dispatch"
-  ].includes(x)) && !narrowlyAdmitted && !canonicalMainLedger) problems.push("HEAVY_WORKFLOW_AUTOMATIC_FANOUT");
+  ].includes(x)) && !narrowlyAdmitted && !canonicalMainLedger && !scopedRelease) problems.push("HEAVY_WORKFLOW_AUTOMATIC_FANOUT");
   if (AUTOMATIC.has(filename) && !keys.includes("pull_request"))
     problems.push("BASELINE_PR_CHECK_MISSING");
   if (!/\njobs:\s*\n/.test(source)) problems.push("NO_JOBS");
