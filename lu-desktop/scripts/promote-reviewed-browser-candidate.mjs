@@ -84,7 +84,7 @@ if(manifest.schema!==1||manifest.runtime!=='lu-browser'||manifest.status!=='cand
 const workerEntry=manifest.files.find(f=>f?.path==='lu_browser_worker.mjs');
 if(!workerEntry||workerEntry.sha256!==review.workerSha256||
    workerEntry.bytes!==canonicalWorker.length)
-  throw Error('Reviewed worker differs from current Core's original bytes');
+  throw Error("Reviewed worker differs from current Core's original bytes");
 const required=new Set(['chrome.exe','node.exe','lu_browser_worker.mjs',
   'node_modules/playwright/index.mjs','node_modules/playwright-core/index.mjs']);
 const entries=new Set(),actual=new Set();
