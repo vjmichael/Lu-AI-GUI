@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "bb1e1c0af12b05f093f4b385019534466f193ef2",
-  "trackedFileCount": 1270,
+  "sourceCommitBeforeLock": "76b947ef43e94108cc5765cc8223ad04a694ff0a",
+  "trackedFileCount": 1272,
   "files": [
     {
       "path": ".gitattributes",
@@ -89,7 +89,7 @@
     },
     {
       "path": ".github/workflows/lu-core-c62b-reviewed-browser-nsis.yml",
-      "blob": "80bc2233e4cf51fb8863461a90fc2dee0f37b507"
+      "blob": "01986e24cae827484aec38052e38eb786ce0f871"
     },
     {
       "path": ".github/workflows/lu-core-c62t-browser-review-transport.yml",
@@ -757,7 +757,7 @@
     },
     {
       "path": "docs/LU_CORE_C6_PHYSICAL_WINDOWS_ACCEPTANCE_20261116.md",
-      "blob": "ba6e8d82914a0bc11330760d76ccba537a870dcd"
+      "blob": "518a03c43aafcca9e8c7865217264c8c45dafd9f"
     },
     {
       "path": "docs/LU_CORE_CONSOLIDATION_INVENTORY_20261113.md",
@@ -1428,7 +1428,15 @@
       "blob": "971afade9b71ee3b725eca2a4fde1ad153e48afc"
     },
     {
+      "path": "docs/acceptance/LU_C62B_INDEPENDENT_REVIEW_20261122.md",
+      "blob": "bca9714661971898367ed23ef25e2d87ad3656fa"
+    },
+    {
       "path": "docs/acceptance/LU_C62_WINDOWS_BROWSER_REVIEW.json",
+      "blob": "70c8cd2352ab4813298d830b13d70b0fba8b17b1"
+    },
+    {
+      "path": "docs/acceptance/LU_C62_WINDOWS_BROWSER_REVIEW_LEGACY_D9AF093E.json",
       "blob": "3e57e652264dbf4d939dc9f7bf912775304fae5e"
     },
     {
@@ -1593,7 +1601,7 @@
     },
     {
       "path": "lu-desktop/scripts/promote-reviewed-browser-candidate.mjs",
-      "blob": "80c5870f88f7f6c3368b3d6fda47e1666ba5a28a"
+      "blob": "e2d1a050243cb6ccf0e8e2983608a1f846189e4d"
     },
     {
       "path": "lu-desktop/scripts/stage-browser-runtime.mjs",
@@ -3069,15 +3077,15 @@
     },
     {
       "path": "scripts/lu-c62b-reviewed-browser-contract.test.mjs",
-      "blob": "26e5433cde7be2f72e396737077437ca86ca121e"
+      "blob": "fdfd156c305e5e351447322dae34c398722dcbb3"
     },
     {
       "path": "scripts/lu-ci-group-policy.mjs",
-      "blob": "20db356ab19e61417348f47b498b52d430478e24"
+      "blob": "94bfe0aed9f3c14d7b3069ea56272fb638f9ace3"
     },
     {
       "path": "scripts/lu-ci-group-policy.test.mjs",
-      "blob": "40c5d87fddbfd193f7d885ad2b6e323b196756e3"
+      "blob": "4ac7f09cc723fed1dc7416489e03c9fed25ed4fd"
     },
     {
       "path": "scripts/lu-ci-superseded-queue.mjs",
