@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "3cc76c3f04cac5768a2ebe67069738fc4a9496e1",
+  "sourceCommitBeforeLock": "dd1170117e48966f1c47f457655c5a5501a6538a",
   "trackedFileCount": 1270,
   "files": [
     {
@@ -757,7 +757,7 @@
     },
     {
       "path": "docs/LU_CORE_C6_PHYSICAL_WINDOWS_ACCEPTANCE_20261116.md",
-      "blob": "a8aba7fa8c57ba14a37da6b2d3a58a29f2d3119e"
+      "blob": "67ad970cebf075ea3554987c0b2c06205b024d4e"
     },
     {
       "path": "docs/LU_CORE_CONSOLIDATION_INVENTORY_20261113.md",
@@ -2197,7 +2197,7 @@
     },
     {
       "path": "lu-desktop/tests/c64-unified-tabs.test.mjs",
-      "blob": "7108bd877265bc012cae38b7969e1ddbdbdad9f9"
+      "blob": "be27cdb3f744031d1df5d4c462d3bc9920b804b5"
     },
     {
       "path": "lu-desktop/tests/core01d-normal-chat-boundary.test.mjs",
@@ -3233,7 +3233,7 @@
     },
     {
       "path": "scripts/p0-windows-installed-gui-smoke.ps1",
-      "blob": "7df54cb168576bacf825885c963699add77457ed"
+      "blob": "c53890055ac27cfa01d2dc3881f8a3ff374844c1"
     },
     {
       "path": "scripts/p02-native-windows-evidence.ps1",
