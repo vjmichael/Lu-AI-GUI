@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "fc6f6a1f986d24a49983e0e71a364c9e138b7b60",
+  "sourceCommitBeforeLock": "4db7024c645db6e146bc516b011fa08cf92eb5b1",
   "trackedFileCount": 1277,
   "files": [
     {
@@ -89,7 +89,7 @@
     },
     {
       "path": ".github/workflows/lu-core-c62b-reviewed-browser-nsis.yml",
-      "blob": "01986e24cae827484aec38052e38eb786ce0f871"
+      "blob": "9ce36d5f6f00c96a8cc34c781233b26bb94e0e2c"
     },
     {
       "path": ".github/workflows/lu-core-c62t-browser-review-transport.yml",
@@ -133,7 +133,7 @@
     },
     {
       "path": ".github/workflows/lu-cp11-cp12-windows-installed-recovery.yml",
-      "blob": "068cf20712740ea9a1403d9d1362ed832b71bdc4"
+      "blob": "45dc9ca9e317bc87123a944b7103f1a4b8feb539"
     },
     {
       "path": ".github/workflows/lu-cp12br7r1-windows-collaboration.yml",
@@ -933,7 +933,7 @@
     },
     {
       "path": "docs/LU_CP11_CP12_WINDOWS_INSTALLED_RECOVERY_20261121.md",
-      "blob": "a089de81ec74296e964d3a7f4d0b95b8c3a8018e"
+      "blob": "8b891cf76ea5c472f57fb2c6add5fd3ef13ca6e5"
     },
     {
       "path": "docs/LU_CP12B_R2_WINDOWS_TRANSPORT_20261120.md",
@@ -1661,7 +1661,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/active_checks.rs",
-      "blob": "77cafba64f2c8507f9791364688d3cde9fd00a56"
+      "blob": "fac2fc32e6c125eb976696b7599e7fe26fdefbb0"
     },
     {
       "path": "lu-desktop/src-tauri/src/agent_memory_handoff.rs",
@@ -2277,7 +2277,7 @@
     },
     {
       "path": "lu-desktop/tests/cp11-cp12-windows-installed-recovery-contract.test.mjs",
-      "blob": "8abf40caec671edbd243754379c646d88d21fa43"
+      "blob": "bdcd25933289df2b52ffc9fa1c9fa6a60b6029ea"
     },
     {
       "path": "lu-desktop/tests/cp11a-local-checks.test.mjs",
