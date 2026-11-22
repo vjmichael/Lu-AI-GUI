@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "e6e0a6f2b10613620be78693270c15ca4864e1b1",
+  "sourceCommitBeforeLock": "fc6f6a1f986d24a49983e0e71a364c9e138b7b60",
   "trackedFileCount": 1277,
   "files": [
     {
@@ -933,7 +933,7 @@
     },
     {
       "path": "docs/LU_CP11_CP12_WINDOWS_INSTALLED_RECOVERY_20261121.md",
-      "blob": "3c77c65b04d265e7b4caa3fe6e3cfc5c4fb01eee"
+      "blob": "a089de81ec74296e964d3a7f4d0b95b8c3a8018e"
     },
     {
       "path": "docs/LU_CP12B_R2_WINDOWS_TRANSPORT_20261120.md",
@@ -2277,7 +2277,7 @@
     },
     {
       "path": "lu-desktop/tests/cp11-cp12-windows-installed-recovery-contract.test.mjs",
-      "blob": "d6ef75cd4a5830f0b67d5d6e8551a9dc70faf0ac"
+      "blob": "8abf40caec671edbd243754379c646d88d21fa43"
     },
     {
       "path": "lu-desktop/tests/cp11a-local-checks.test.mjs",
@@ -2937,7 +2937,7 @@
     },
     {
       "path": "scripts/cp11-cp12-windows-installed-recovery.ps1",
-      "blob": "6cbc4dfb47bf73016016abc3a36533ffb5b70ce5"
+      "blob": "eb7bd42cb2942a34b7b9322f8f4860373a2ede3e"
     },
     {
       "path": "scripts/cp11-cp12-windows-readonly-journal.py",
