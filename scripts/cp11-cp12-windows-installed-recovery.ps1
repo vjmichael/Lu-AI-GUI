@@ -131,7 +131,17 @@ function Click-Control([System.Windows.Automation.AutomationElement]$el,[System.
   [LuCpRecoveryWin32]::mouse_event(2,0,0,0,[UIntPtr]::Zero)
   [LuCpRecoveryWin32]::mouse_event(4,0,0,0,[UIntPtr]::Zero)
 }
-function Press([string]$label){Click-Control (Wait-Control $label $true) $script:window}
+function Press([string]$label){
+  $deadline=[DateTime]::UtcNow.AddSeconds(25)
+  do{
+    $el=Wait-Control $label $true
+    try{
+      if($el.Current.IsEnabled){Click-Control $el $script:window;return}
+    }catch{}
+    Start-Sleep -Milliseconds 150
+  }while([DateTime]::UtcNow -lt $deadline)
+  throw ('Installed WebView button stayed disabled: '+$label)
+}
 function Set-Field([string]$label,[string]$value){
   $el=Wait-Control $label
   $pat=$null
@@ -255,10 +265,13 @@ try{
   $noReplay=Read-Journal 'check'
   Assert ($noReplay.state -eq 'interrupted' -and $noReplay.prefixHash -ceq $recovered.prefixHash) 'Unapproved check replay after cold startup'
   Record 'cold_check_recovery_exact_prefix_no_replay' 'PASS'
+  Assert (@(Get-Process -Name llama-server -ErrorAction SilentlyContinue).Count -eq 0) 'Cold recovery started an unauthorized model worker'
   Privacy
-  $null=Wait-Control 'Last check was interrupted.'
+  $null=Wait-Control 'Last check was interrupted. Unfinished checks were not verified. You can approve a fresh check; earlier sample files are preserved.'
   Press 'Review recent response issues…'
   $null=Wait-Control 'Local troubleshooting report ready.'
+  $diagnostic=Read-Journal 'traces'
+  Assert ($diagnostic.present -eq $true -and $diagnostic.count -ge 0) 'Original diagnostic archive unavailable after cold recovery'
   Record 'plain_diagnostic_status_after_cold_recovery' 'PASS_READONLY_LOCAL'
   Press 'Chat'
   Press 'New Chat'
@@ -305,6 +318,7 @@ try{
     $due.ownerHash -ceq $pending.ownerHash -and $due.nextDue -eq $pending.nextDue -and
     $due.firedCount -eq 1 -and $due.unreadCount -eq 1 -and $due.lastDue -eq $pending.nextDue) 'Cold recovery missed reminder or duplicated occurrence'
   $null=Wait-Control 'Reminders due (1)' $true
+  Assert (@(Get-Process -Name llama-server -ErrorAction SilentlyContinue).Count -eq 0) 'Inert reminder started a model worker'
   Record 'missed_reminder_single_fire_on_cold_restart' 'PASS'
   Stop-Lu $false
   Start-Lu
