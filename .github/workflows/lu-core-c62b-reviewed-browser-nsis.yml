@@ -7,6 +7,12 @@ on:
       - source-tree.lock.json
   workflow_dispatch:
   workflow_call:
+    inputs:
+      release_v1:
+        description: "Build actual Lu 1.0.0 identity while retaining original reviewed browser and NSIS checks"
+        required: false
+        type: boolean
+        default: false
 permissions:
   contents: read
   actions: read
@@ -209,6 +215,8 @@ jobs:
     if: ${{ needs.original-source-and-review.outputs.worker_approved == 'true' }}
     runs-on: windows-2025
     timeout-minutes: 210
+    env:
+      LU_V1_RELEASE: ${{ inputs.release_v1 && '1' || '0' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -305,6 +313,9 @@ jobs:
           $p=Get-Content (Join-Path $out 'BUILD_PROVENANCE.json') -Raw|ConvertFrom-Json
           $actual=(Get-FileHash -LiteralPath (Join-Path $out $f.installerName) -Algorithm SHA256).Hash.ToLowerInvariant()
           if($actual -cne $f.installerSha256 -or $f.sourceSha -cne $env:SOURCE_SHA -or
+             ($env:LU_V1_RELEASE -eq '1' -and ($f.productVersion -cne '1.0.0' -or
+              $f.appIdentity -cne 'org.lu.desktop' -or $p.productVersion -cne '1.0.0' -or
+              $p.appIdentity -cne 'org.lu.desktop')) -or
              $f.browserManifestSha256 -cne $env:LU_BROWSER_MANIFEST_SHA256 -or
              $p.browserManifestSha256 -cne $env:LU_BROWSER_MANIFEST_SHA256 -or
              $p.browserRuntime -cne 'REVIEWED_AND_STAGED'){
@@ -329,10 +340,17 @@ jobs:
           $original=[IO.File]::ReadAllText($configPath)
           try{
             $conf=ConvertFrom-Json -InputObject $original -AsHashtable
-            $conf.productName='Lu Current Development Preview'
-            $conf.identifier='org.lu.current.devpreview'
-            $conf.version='0.2.0-rc.1'
-            $conf.app.windows[0].title='Lu Current Development Preview (Unsigned)'
+            if($env:LU_V1_RELEASE -eq '1'){
+              $conf.productName='Lu'
+              $conf.identifier='org.lu.desktop'
+              $conf.version='1.0.0'
+              $conf.app.windows[0].title='Lu'
+            }else{
+              $conf.productName='Lu Current Development Preview'
+              $conf.identifier='org.lu.current.devpreview'
+              $conf.version='0.2.0-rc.1'
+              $conf.app.windows[0].title='Lu Current Development Preview (Unsigned)'
+            }
             $conf.bundle.active=$false
             $conf.bundle.resources=@{
               'resources/lu-inference/llama-server.exe'='lu-inference/llama-server.exe'
@@ -390,8 +408,8 @@ jobs:
             ExpectedVulkanSha256=$f.vulkanEngineSha256
             ExpectedResearchSha256=$f.researchClientSha256
             ExpectedBrowserManifestSha256=$f.browserManifestSha256
-            ProfileIdentifier='org.lu.current.devpreview'
-            UninstallerName='UninstallLuCurrentPreview.exe'
+            ProfileIdentifier=$(if($env:LU_V1_RELEASE -eq '1'){'org.lu.desktop'}else{'org.lu.current.devpreview'})
+            UninstallerName=$(if($env:LU_V1_RELEASE -eq '1'){'UninstallLu.exe'}else{'UninstallLuCurrentPreview.exe'})
             DisposableWindowsConfirmed=$true
             ExerciseInstalledGui=$true
             EvidenceDir=$evidence
