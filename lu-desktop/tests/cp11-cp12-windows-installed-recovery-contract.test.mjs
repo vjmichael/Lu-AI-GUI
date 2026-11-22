@@ -6,7 +6,17 @@ const wf=read('.github/workflows/lu-cp11-cp12-windows-installed-recovery.yml');
 const runner=read('scripts/cp11-cp12-windows-installed-recovery.ps1');
 const journal=read('scripts/cp11-cp12-windows-readonly-journal.py');
 test('CP-11/12 is one isolated locked Windows cohort, not a duplicate C6.2B installer build',()=>{
-  const events=wf.split('\non:\n')[1].split('\npermissions:')[0];
+  // Git preserves source blobs, but Windows checkout may present CRLF to Node.
+  // Normalize ONLY the inspected workflow text; never modify checked-out bytes.
+  const eventsFrom=(source)=>{
+    const sections=source.replace(/\r\n/g,'\n').split('\non:\n');
+    assert.equal(sections.length,2,'Original workflow event declaration required');
+    const eventParts=sections[1].split('\npermissions:');
+    assert.equal(eventParts.length,2,'Original workflow permissions boundary required');
+    return eventParts[0];
+  };
+  const events=eventsFrom(wf);
+  assert.equal(eventsFrom(wf.replace(/\r\n/g,'\n').replace(/\n/g,'\r\n')),events,'CRLF checkout must preserve exact trigger admission');
   assert.match(events,/push:\n    branches:\n      - lu\/cp11-cp12-installed-recovery-20261121\n    paths:\n      - source-tree\.lock\.json/);
   assert.doesNotMatch(events,/pull_request:|pull_request_target:|schedule:/);
   assert.match(wf,/cancel-in-progress: false/);
