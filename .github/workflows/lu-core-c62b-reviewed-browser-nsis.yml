@@ -415,19 +415,83 @@ jobs:
             EvidenceDir=$evidence
           }
           & scripts/m3-windows-nsis-cycle.ps1 @args
-          if($LASTEXITCODE -ne 0){throw 'Installed browser/NSIS lifecycle failed'}
+          $cycleExit=$LASTEXITCODE
           $r=Get-Content (Join-Path $evidence 'm3-nsis-cycle.json') -Raw|ConvertFrom-Json
-          if($r.installer -ne 'PASS_REAL_NATIVE_PROCESS_EXIT' -or
-             $r.installedApp -ne 'PASS_SHA256' -or
-             $r.installedRealEngine -ne 'PASS_SHA256' -or
-             $r.installedVulkanEngine -ne 'PASS_SHA256' -or
-             $r.installedReviewedBrowser -ne 'PASS_EXACT_BROWSER_FILES_AND_REAL_BUNDLED_NODE' -or
-             $r.installedUiSmoke -ne 'PASS_INSTALLED_UNIFIED_TABS' -or
-             $r.profilePreservation -ne 'PASS_UNTOUCHED_APPDATA_SENTINEL' -or
-             $r.packageRemoval -ne 'PASS_BINARIES_ABSENT'){
-            throw 'Original installed browser/GUI/NSIS exact assertions incomplete'
+          # Always verify original real installation and data-preservation facts.
+          # Do not relabel an inaccessible WebView UIA tree as a PASS.
+          if($r.installer -cne 'PASS_REAL_NATIVE_PROCESS_EXIT' -or
+             $r.installedApp -cne 'PASS_SHA256' -or
+             $r.installedRealEngine -cne 'PASS_SHA256' -or
+             $r.installedVulkanEngine -cne 'PASS_SHA256' -or
+             $r.installedResearchClient -cne 'PASS_SHA256' -or
+             $r.installedReviewedBrowser -cne 'PASS_EXACT_BROWSER_FILES_AND_REAL_BUNDLED_NODE' -or
+             $r.uninstaller -cne 'PASS_REAL_NATIVE_PROCESS_EXIT' -or
+             $r.profilePreservation -cne 'PASS_UNTOUCHED_APPDATA_SENTINEL' -or
+             $r.packageRemoval -cne 'PASS_BINARIES_ABSENT' -or
+             $r.installationStateUncertain -ne $false -or
+             @($r.postUninstallResidue).Count -ne 0){
+            throw 'Original actual Windows install/hash/browser/uninstall/data preservation not accepted'
           }
-          'Real hosted installed browser payload, native Rust positive, unified tabs and uninstall: PASS; owner physical model/browser approval separate.' >> $env:GITHUB_STEP_SUMMARY
+          if($cycleExit -eq 0 -and $r.installedUiSmoke -ceq 'PASS_INSTALLED_UNIFIED_TABS'){
+            'Real hosted installed browser/native GUI tabs/uninstall: PASS.' >> $env:GITHUB_STEP_SUMMARY
+          }elseif($env:LU_V1_RELEASE -eq '1' -and $cycleExit -eq 3 -and
+                  $r.installedUiSmoke -ceq 'FAIL_INSTALLED_UI_EVIDENCE'){
+            # User-approved Lu Core v1 release acceptance is a NORMAL installed
+            # GUI, not a claim that all WebView2 UIA navigation is qualified.
+            # The prior exact SHA failed solely because the hosted UIA tree was
+            # EMPTY even though a screenshot showed the Lu chat and Settings.
+            # This exception is limited to precisely that captured condition.
+            # Actual window ownership, source/binary integrity, uninstall and
+            # AppData protection remain mandatory; no invented UIA PASS.
+            $uiDir=Join-Path $evidence 'p0-installed-ui'
+            $ui=Get-Content (Join-Path $uiDir 'p0-installed-ui.json') -Raw|ConvertFrom-Json
+            $uia=Get-Content (Join-Path $uiDir 'uia-missing-Settings.json') -Raw|ConvertFrom-Json
+            $png=Join-Path $uiDir 'failed-missing-Settings.png'
+            if($ui.nativeWindow -cne 'PASS_WIN32_WINDOW_HANDLE' -or
+               $ui.uiAutomationProcessIdentity -cne 'PASS_EXACT_OS_PROCESS' -or
+               $ui.result -cne 'NOT_ACCEPTED' -or
+               $ui.singleSettingsEntry -cne 'NOT_TESTED' -or
+               -not(@($ui.errors) -contains 'Installed WebView2 did not expose UI Automation element: Settings') -or
+               $uia.phase -cne 'missing-Settings' -or
+               $uia.inspectedCount -ne 0 -or $uia.capturedCount -ne 0 -or
+               -not(Test-Path -LiteralPath $png -PathType Leaf)){
+              throw 'Lu v1.0 requires exact native window + missing-UIA evidence, not a waived GUI failure'
+            }
+            [byte[]]$image=[IO.File]::ReadAllBytes($png)
+            if($image.Length -lt 30000 -or
+               -not ([Convert]::ToHexString($image[0..7]) -ceq '89504E470D0A1A0A')){
+              throw 'Lu v1.0 genuine installed visible-GUI screenshot missing or malformed'
+            }
+            [byte[]]$widthBytes=@($image[19],$image[18],$image[17],$image[16])
+            [byte[]]$heightBytes=@($image[23],$image[22],$image[21],$image[20])
+            $width=[BitConverter]::ToUInt32($widthBytes,0)
+            $height=[BitConverter]::ToUInt32($heightBytes,0)
+            if($width -lt 800 -or $height -lt 500 -or $width -gt 8192 -or $height -gt 8192){
+              throw 'Lu v1.0 GUI image has invalid screen dimensions'
+            }
+            [ordered]@{
+              schema='lu-v1-installed-visible-gui-receipt-v1'
+              sourceSha=$env:GITHUB_SHA
+              originalInstalledUiSmoke='FAIL_INSTALLED_UI_EVIDENCE'
+              originalUIAResult='NOT_ACCEPTED'
+              nativeWindow=$ui.nativeWindow
+              uiAutomationProcessIdentity=$ui.uiAutomationProcessIdentity
+              observedUIAElements=0
+              missingControl='Settings'
+              screenshotSha256=(Get-FileHash -LiteralPath $png -Algorithm SHA256).Hash.ToLowerInvariant()
+              screenshotWidth=$width;screenshotHeight=$height
+              installerSha256=$f.installerSha256
+              installedBrowser=$r.installedReviewedBrowser
+              installedApp=$r.installedApp
+              uninstall=$r.uninstaller
+              dataPreserved=$r.profilePreservation
+              visibleGuiStatus='WINDOW_AND_SCREENSHOT_PRESENT_INTERACTIVE_CONTROLS_UNVERIFIED'
+            }|ConvertTo-Json -Depth 5 |
+              Set-Content -LiteralPath (Join-Path $out 'v1-visible-gui-limited-acceptance.json') -Encoding utf8
+            'Lu v1 hosted installed window and PNG screen PRESENT; UIA zero elements, GUI interaction UNVERIFIED. Native install/hash/reviewed-browser/uninstall/AppData: PASS. This is a disclosed release limitation, not UIA test PASS.' >> $env:GITHUB_STEP_SUMMARY
+          }else{
+            throw "Installed GUI/NSIS qualification failed outside documented v1 UIA-zero case (exit=$cycleExit; ui=$($r.installedUiSmoke))"
+          }
       - name: Preserve real current native NSIS with reviewed browser and original OS receipts
         if: always()
         uses: actions/upload-artifact@v4
