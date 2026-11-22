@@ -1,10 +1,7 @@
 name: Lu CP-11/12 exact-C6.2B Windows installed recovery acceptance
 on:
-  push:
-    branches:
-      - lu/cp11-cp12-installed-recovery-20261121
-    paths:
-      - source-tree.lock.json
+  # Frozen v1.0 closeout: do not start another automatic CP-11/12 repair cycle
+  # while the sole real release pipeline builds and signs the same locked SHA.
   workflow_dispatch:
 permissions:
   contents: read
