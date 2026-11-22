@@ -15,6 +15,8 @@ concurrency:
   cancel-in-progress: false
 jobs:
   original-source-and-review:
+    outputs:
+      worker_approved: ${{ steps.worker_review.outputs.worker_approved }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -40,8 +42,75 @@ jobs:
             lu-desktop/tests/p0-browser-real-ci-gate.test.mjs
           node --test lu-desktop/tests/c64-unified-tabs.test.mjs
           node --test tests/lu-browser-worker.test.mjs
+      - name: Fail closed when the independently approved browser worker is stale
+        id: worker_review
+        shell: bash
+        run: |
+          set -euo pipefail
+          reviewed=592288436da58400434595d0b4c200c983f3bdb2
+          actual="$(git rev-parse HEAD:src-tauri/lu-core/workers/lu_browser_worker.mjs)"
+          if [[ "$actual" == "$reviewed" ]]; then
+            echo "worker_approved=true" >> "$GITHUB_OUTPUT"
+            echo "C6.2B reviewed worker matches the compiled-current source." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "worker_approved=false" >> "$GITHUB_OUTPUT"
+            echo "REVIEW_STALE: current worker Git blob $actual differs from original reviewed blob $reviewed." >> "$GITHUB_STEP_SUMMARY"
+            echo "Only a new unapproved candidate may be built; no reviewed browser installer admitted." >> "$GITHUB_STEP_SUMMARY"
+          fi
+  current-windows-unapproved-browser-candidate:
+    needs: original-source-and-review
+    if: ${{ needs.original-source-and-review.outputs.worker_approved == 'false' }}
+    runs-on: windows-2025
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify genuine current Git source and immutable lock
+        shell: pwsh
+        run: |
+          if((git rev-parse HEAD).Trim() -cne '${{ github.sha }}'){throw 'Current candidate SHA mismatch'}
+          node scripts/verify-source-tree.mjs
+          if($LASTEXITCODE -ne 0){throw 'Browser candidate source lock rejected'}
+          $actual=(git hash-object src-tauri/lu-core/workers/lu_browser_worker.mjs).Trim()
+          $record=(git rev-parse HEAD:src-tauri/lu-core/workers/lu_browser_worker.mjs).Trim()
+          if($actual -cne $record){throw 'Browser worker checkout differs from canonical committed Git blob'}
+      - name: Provision real Playwright and headed Chromium for unapproved Windows candidate
+        shell: pwsh
+        run: |
+          npm install --prefix src-tauri/lu-core/workers --no-save --no-package-lock playwright@1.64.1
+          if($LASTEXITCODE -ne 0){throw 'Pinned Playwright candidate provisioning failed'}
+          node src-tauri/lu-core/workers/node_modules/playwright/cli.js install --no-shell chromium
+          if($LASTEXITCODE -ne 0){throw 'Headed Chromium candidate provisioning failed'}
+      - name: Generate and execute exact-current unapproved browser candidate
+        shell: pwsh
+        run: |
+          node lu-desktop/scripts/assemble-browser-ci-candidate.mjs
+          if($LASTEXITCODE -ne 0){throw 'Current browser candidate assembly rejected'}
+          node --test lu-desktop/tests/browser-ci-candidate.test.mjs
+          if($LASTEXITCODE -ne 0){throw 'Exact candidate file inventory, hashes or worker identity rejected'}
+          node --test lu-desktop/tests/browser-ci-executable.test.mjs
+          if($LASTEXITCODE -ne 0){throw 'Real headed Chromium original security witness failed'}
+      - name: Preserve genuine unapproved Windows bundle for independent review
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: Lu-C62B-REVIEW-REQUIRED-Windows-Browser-${{ github.sha }}
+          path: out/lu-browser-candidate/
+          retention-days: 14
+          compression-level: 0
+          if-no-files-found: warn
+      - name: Refuse automatic admission until a separate exact-byte review
+        shell: pwsh
+        run: |
+          throw 'REVIEW_REQUIRED: current browser is an UNAPPROVED candidate; no reviewed installed Chromium/Node/Playwright package or Core release acceptance.'
   native-windows-installed-reviewed-browser:
     needs: original-source-and-review
+    if: ${{ needs.original-source-and-review.outputs.worker_approved == 'true' }}
     runs-on: windows-2025
     timeout-minutes: 210
     steps:

@@ -51,6 +51,23 @@ test('C6.2B runs only on one locked browser qualification branch, never automati
  assert.match(wf,/scripts\/m3-windows-nsis-cycle\.ps1/);
  assert.doesNotMatch(wf,/continue-on-error: true/);
 });
+test('stale reviewed browser worker is not installed and is rebuilt only as unapproved evidence',()=>{
+ const fields=[
+  'worker_approved: ${{ steps.worker_review.outputs.worker_approved }}',
+  'reviewed=592288436da58400434595d0b4c200c983f3bdb2',
+  "needs.original-source-and-review.outputs.worker_approved == 'true'",
+  "needs.original-source-and-review.outputs.worker_approved == 'false'",
+  'git rev-parse HEAD:src-tauri/lu-core/workers/lu_browser_worker.mjs',
+  'assemble-browser-ci-candidate.mjs',
+  'browser-ci-candidate.test.mjs',
+  'browser-ci-executable.test.mjs',
+  'Lu-C62B-REVIEW-REQUIRED-Windows-Browser-',
+  'REVIEW_REQUIRED: current browser is an UNAPPROVED candidate'
+ ];
+ for(const field of fields)assert.ok(wf.includes(field),field);
+ assert.match(wf,/retention-days: 14/);
+ assert.doesNotMatch(wf,/continue-on-error: true/);
+});
 test('native Rust host verifies reviewed manifest and every byte without granting a browser turn',()=>{
  assert.match(native,/EMBEDDED_BROWSER_MANIFEST/);
  assert.match(native,/manifest\.status!="reviewed"/);
