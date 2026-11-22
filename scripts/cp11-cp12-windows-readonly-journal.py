@@ -14,6 +14,30 @@ from urllib.parse import quote
 def digest(value):
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
+def model_suite_flag(body):
+    """Decode Rust CheckBody's omitted-false boolean without widening admission.
+
+    >>> model_suite_flag({})
+    False
+    >>> model_suite_flag({"modelSuite": False})
+    False
+    >>> model_suite_flag({"modelSuite": True})
+    True
+    >>> model_suite_flag({"modelSuite": "false"})
+    Traceback (most recent call last):
+    ...
+    ValueError: invalid model suite flag
+    >>> model_suite_flag({"modelSuite": None})
+    Traceback (most recent call last):
+    ...
+    ValueError: invalid model suite flag
+    """
+    value = body.get("modelSuite", False)
+    if type(value) is not bool:
+        raise ValueError("invalid model suite flag")
+    return value
+
+
 def read(profile, mode, expected):
     filename = "lu-background-schedule.sqlite" if mode == "reminder" else "lu-dx-traces.sqlite"
     target = profile / filename
@@ -36,9 +60,7 @@ def read(profile, mode, expected):
             # on model_suite. A FALSE value is therefore omitted in genuine
             # persisted non-model reports; absent is NOT unknown/invalid.
             # An explicit malformed type still fails closed.
-            model_suite = body.get("modelSuite", False)
-            if type(model_suite) is not bool:
-                raise ValueError("invalid model suite flag")
+            model_suite = model_suite_flag(body)
             return {
                 "present": True, "runHash": digest(row[0]), "state": row[1],
                 "prefixHash": digest(json.dumps(results, sort_keys=True, separators=(",", ":"))),
