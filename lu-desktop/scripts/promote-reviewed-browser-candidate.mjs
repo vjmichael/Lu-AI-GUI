@@ -4,6 +4,7 @@
  * A candidate is NOT a reviewed bundle just because its hashes are internally consistent.
  */
 import {createHash} from 'node:crypto';
+import {execFileSync} from 'node:child_process';
 import {createReadStream} from 'node:fs';
 import {copyFileSync,existsSync,lstatSync,mkdirSync,readFileSync,readdirSync,realpathSync,rmSync,renameSync,writeFileSync} from 'node:fs';
 import {dirname,join,relative,resolve,sep} from 'node:path';
@@ -51,11 +52,24 @@ const review=JSON.parse(readFileSync(approvalPath,'utf8'));
 if(review.schema!=='lu-c62-windows-browser-review-v1'||review.disposition!=='approved'||
    review.platform!=='win32'||review.arch!=='x64'||review.playwrightVersion!=='1.64.1'||
    !/^[0-9a-f]{40}$/.test(review.sourceSha)||!Number.isSafeInteger(review.runId)||
-   review.runId<1||typeof review.artifactName!=='string'||!review.artifactName.startsWith('Lu-C62A-UNAPPROVED-Windows-Browser-')||
-   !hex.test(review.candidateManifestSha256)||!hex.test(review.reviewedManifestSha256))
+   review.runId!==44976683630||review.artifactId!==14735958441||review.sourceSha!=='2da58f445d2466756140a95a1782cb26a37e41f3'||
+   !hex.test(review.candidateManifestSha256)||!hex.test(review.reviewedManifestSha256)||
+   review.candidateManifestSha256!=='23966eb91d2b933f4f6d9bed85f060cf6fe8c7e274adbb74374e105932cef890'||
+   review.reviewedManifestSha256!=='f2948f9ef9d2b5bbac8a60e146bd4a18a0714a615883faaa0139b8d5828e5cf3'||
+   review.workerGitBlob!=='68f7aa46c4cd2d6fdb0e951d8da5f057e1cafdd9'||
+   review.workerSha256!=='c9ea3d8a6a6fe5d9864b095e1276c4284c296dcaedf8692b57cc958ecbf63dd9'||
+   review.independentReview?.runId!==44977571933||
+   review.independentReview?.artifactId!==14735949862||
+   review.independentReview?.fileCount!==482||
+   review.independentReview?.unexpectedFiles!==0||
+   review.candidateArtifactZipSha256!=='627e732f94b3c45f97099d254c6b747afc168712fb1f5e160bf861668d5ff67a')
   throw Error('C6.2 out-of-band review record incomplete or ambiguous');
-if(review.artifactName!=='Lu-C62A-UNAPPROVED-Windows-Browser-'+review.sourceSha)
-  throw Error('Reviewed artifact does not match source SHA');
+if(review.artifactName!=='Lu-C62B-REVIEW-REQUIRED-Windows-Browser-'+review.sourceSha)
+  throw Error('Reviewed artifact does not match independently checked source SHA');
+const canonicalWorker=execFileSync('git',['-C',repo,'show',
+  'HEAD:src-tauri/lu-core/workers/lu_browser_worker.mjs'],{maxBuffer:1024*1024});
+if(sha(canonicalWorker)!==review.workerSha256)
+  throw Error('Current worker differs from independently reviewed original bytes');
 assertDirectoryParts(input,input);
 ordinaryFile(join(input,'manifest.json'));
 const candidateBytes=readFileSync(join(input,'manifest.json'));
@@ -67,6 +81,10 @@ if(manifest.schema!==1||manifest.runtime!=='lu-browser'||manifest.status!=='cand
    manifest.playwrightVersion!==review.playwrightVersion||
    !Array.isArray(manifest.files)||manifest.files.length<100||manifest.files.length>10000)
   throw Error('No genuine complete headed browser candidate');
+const workerEntry=manifest.files.find(f=>f?.path==='lu_browser_worker.mjs');
+if(!workerEntry||workerEntry.sha256!==review.workerSha256||
+   workerEntry.bytes!==canonicalWorker.length)
+  throw Error('Reviewed worker differs from current Core's original bytes');
 const required=new Set(['chrome.exe','node.exe','lu_browser_worker.mjs',
   'node_modules/playwright/index.mjs','node_modules/playwright-core/index.mjs']);
 const entries=new Set(),actual=new Set();

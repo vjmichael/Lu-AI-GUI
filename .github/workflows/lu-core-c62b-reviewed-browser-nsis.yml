@@ -47,7 +47,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          reviewed=592288436da58400434595d0b4c200c983f3bdb2
+          reviewed=68f7aa46c4cd2d6fdb0e951d8da5f057e1cafdd9
           actual="$(git rev-parse HEAD:src-tauri/lu-core/workers/lu_browser_worker.mjs)"
           if [[ "$actual" == "$reviewed" ]]; then
             echo "worker_approved=true" >> "$GITHUB_OUTPUT"
@@ -237,11 +237,11 @@ jobs:
             [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $p).Path,[ref]$tokens,[ref]$errors)|Out-Null
             if($errors.Count -ne 0){throw "C6.2B native PowerShell parser failed: $p : $errors"}
           }
-      - name: Download exact independently reviewed original C6.2A Windows artifact
+      - name: Download exact independently reviewed current C6.2B Windows artifact
         uses: actions/download-artifact@v4
         with:
-          name: Lu-C62A-UNAPPROVED-Windows-Browser-d9af093ef259d7279b5d1abb226ce307593b50cb
-          run-id: 43976953361
+          name: Lu-C62B-REVIEW-REQUIRED-Windows-Browser-2da58f445d2466756140a95a1782cb26a37e41f3
+          run-id: 44976683630
           github-token: ${{ github.token }}
           path: out/lu-browser-candidate
       - name: Genuine downloaded Windows bundle is still original executable candidate
@@ -262,7 +262,7 @@ jobs:
           $ErrorActionPreference='Stop'
           node lu-desktop/scripts/promote-reviewed-browser-candidate.mjs
           if($LASTEXITCODE -ne 0){throw 'Independent candidate/review exact pin mismatch'}
-          $expected='859ae6365aabaad2ada9362bb556243ede414f3de65fa3667ea0c3e5da38af0b'
+          $expected='f2948f9ef9d2b5bbac8a60e146bd4a18a0714a615883faaa0139b8d5828e5cf3'
           $actual=(Get-FileHash -LiteralPath 'out/lu-browser-reviewed/manifest.json' -Algorithm SHA256).Hash.ToLowerInvariant()
           if($actual -cne $expected){throw 'Promotion cannot alter independently pinned reviewed manifest SHA'}
           $m=Get-Content 'out/lu-browser-reviewed/manifest.json' -Raw|ConvertFrom-Json
@@ -294,7 +294,7 @@ jobs:
         env:
           SOURCE_SHA: ${{ github.sha }}
           LU_BROWSER_PACKAGE_DIR: ${{ github.workspace }}/out/lu-browser-reviewed
-          LU_BROWSER_MANIFEST_SHA256: '859ae6365aabaad2ada9362bb556243ede414f3de65fa3667ea0c3e5da38af0b'
+          LU_BROWSER_MANIFEST_SHA256: 'f2948f9ef9d2b5bbac8a60e146bd4a18a0714a615883faaa0139b8d5828e5cf3'
           LU_REQUIRE_BROWSER: '1'
         run: |
           $ErrorActionPreference='Stop'
@@ -319,7 +319,7 @@ jobs:
         timeout-minutes: 60
         env:
           LU_C62_REVIEWED_RUNTIME_TEST: '1'
-          LU_BROWSER_MANIFEST_SHA256: '859ae6365aabaad2ada9362bb556243ede414f3de65fa3667ea0c3e5da38af0b'
+          LU_BROWSER_MANIFEST_SHA256: 'f2948f9ef9d2b5bbac8a60e146bd4a18a0714a615883faaa0139b8d5828e5cf3'
         run: |
           $ErrorActionPreference='Stop'
           # NSIS restores the checked-in alpha Tauri config after its release

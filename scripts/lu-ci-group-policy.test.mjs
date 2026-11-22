@@ -47,7 +47,7 @@ test("only the exact two CP-10 source-lock branches may automatically qualify Wi
       src.replace("      - lu/cp10-","      - main/"),
       src.replace("node scripts/verify-source-tree.mjs","echo skip verification")
     ];
-    if(name.includes("c62b"))mutations.push(src.replace("run-id: 43976953361","run-id: 1"));
+    if(name.includes("c62b"))mutations.push(src.replace("run-id: 44976683630","run-id: 1"));
     for(const mutated of mutations)assert.ok(inspectOne(name,mutated).problems.includes("HEAVY_WORKFLOW_AUTOMATIC_FANOUT"));
   }
   const browser=fs.readFileSync(".github/workflows/lu-core-c62b-reviewed-browser-nsis.yml","utf8");

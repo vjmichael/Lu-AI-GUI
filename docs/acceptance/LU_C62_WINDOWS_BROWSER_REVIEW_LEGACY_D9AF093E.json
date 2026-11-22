@@ -1,0 +1,29 @@
+{
+  "schema": "lu-c62-windows-browser-review-v1",
+  "disposition": "approved",
+  "reviewScope": "exact-byte-source-pinned-native-Windows-bundle-only-not-human-tool-or-release-acceptance",
+  "sourceSha": "d9af093ef259d7279b5d1abb226ce307593b50cb",
+  "runId": 43976953361,
+  "artifactId": 14281077871,
+  "artifactName": "Lu-C62A-UNAPPROVED-Windows-Browser-d9af093ef259d7279b5d1abb226ce307593b50cb",
+  "transportRunId": 43978375514,
+  "transportCommit": "3449ddf40a96e16af3a3b79ccc9a1c986bd8e62f",
+  "transportSha256": "3e4eaab973fea9dcb66c92a0088f4ea810e258c05998ee2771e6fd68b4a4e107",
+  "candidateManifestSha256": "5fcd81eabd4d54989e5878ee6f5bc89e076a108118c458dd8b4699182d88c373",
+  "reviewedManifestSha256": "859ae6365aabaad2ada9362bb556243ede414f3de65fa3667ea0c3e5da38af0b",
+  "platform": "win32",
+  "arch": "x64",
+  "playwrightVersion": "1.64.1",
+  "fileCount": 482,
+  "observations": {
+    "candidateWindowsNativeHostedCI": "PASS_REAL_HEADED_CHROMIUM_NODE_AND_WORKER",
+    "candidateIntegrityReconstructed": "PASS_482_OF_482_SHA256",
+    "unexpectedFiles": 0,
+    "archivedTransportCRC": "PASS",
+    "hostNativeSecurityAndHumanPermission": "NOT_EXERCISED_BY_THIS_REVIEW",
+    "modelPromptOrOriginScopeGrant": "NOT_GRANTED",
+    "ownerPhysicalR9700": "NOT_TESTED",
+    "publisherBinarySignatures": "NOT_INDEPENDENTLY_ESTABLISHED",
+    "releaseStatus": "DEVELOPMENT_PREVIEW_ONLY"
+  }
+}

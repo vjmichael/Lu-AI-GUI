@@ -91,8 +91,8 @@ export function isScopedLockedReleaseWorkflow(filename, source, keys) {
      !source.includes('node scripts/verify-source-tree.mjs')||
      !source.includes('permissions:\n  contents: read')||
      source.includes('continue-on-error: true'))return false;
-  if(scope.browser)return ["LU_REQUIRE_BROWSER: '1'",'run-id: 43976953361',
-    '859ae6365aabaad2ada9362bb556243ede414f3de65fa3667ea0c3e5da38af0b',
+  if(scope.browser)return ["LU_REQUIRE_BROWSER: '1'",'run-id: 44976683630',
+    'f2948f9ef9d2b5bbac8a60e146bd4a18a0714a615883faaa0139b8d5828e5cf3',
     'promote-reviewed-browser-candidate.mjs','PASS_INSTALLED_UNIFIED_TABS',
     'scripts/m3-windows-nsis-cycle.ps1'].every(part=>source.includes(part));
   return ["LU_REQUIRE_BROWSER: '0'",'PASS_INSTALLED_UNIFIED_TABS',

@@ -12,12 +12,18 @@ const build=read('scripts/build-current-windows-nsis.ps1');
 test('C6.2B admits only the separately audited exact Windows 482-file Chromium candidate',()=>{
  assert.equal(review.schema,'lu-c62-windows-browser-review-v1');
  assert.equal(review.disposition,'approved');
- assert.equal(review.sourceSha,'d9af093ef259d7279b5d1abb226ce307593b50cb');
- assert.equal(review.runId,43976953361);
- assert.equal(review.artifactId,14281077871);
+ assert.equal(review.sourceSha,'2da58f445d2466756140a95a1782cb26a37e41f3');
+ assert.equal(review.runId,44976683630);
+ assert.equal(review.artifactId,14735958441);
  assert.equal(review.fileCount,482);
- assert.equal(review.candidateManifestSha256,'5fcd81eabd4d54989e5878ee6f5bc89e076a108118c458dd8b4699182d88c373');
- assert.equal(review.reviewedManifestSha256,'859ae6365aabaad2ada9362bb556243ede414f3de65fa3667ea0c3e5da38af0b');
+ assert.equal(review.workerGitBlob,'68f7aa46c4cd2d6fdb0e951d8da5f057e1cafdd9');
+ assert.equal(review.workerSha256,'c9ea3d8a6a6fe5d9864b095e1276c4284c296dcaedf8692b57cc958ecbf63dd9');
+ assert.equal(review.independentReview.runId,44977571933);
+ assert.equal(review.independentReview.artifactId,14735949862);
+ assert.equal(review.independentReview.fileCount,482);
+ assert.equal(JSON.parse(read('docs/acceptance/LU_C62_WINDOWS_BROWSER_REVIEW_LEGACY_D9AF093E.json')).sourceSha,'d9af093ef259d7279b5d1abb226ce307593b50cb');
+ assert.equal(review.candidateManifestSha256,'23966eb91d2b933f4f6d9bed85f060cf6fe8c7e274adbb74374e105932cef890');
+ assert.equal(review.reviewedManifestSha256,'f2948f9ef9d2b5bbac8a60e146bd4a18a0714a615883faaa0139b8d5828e5cf3');
  assert.equal(review.platform,'win32');
  assert.equal(review.arch,'x64');
  assert.equal(review.playwrightVersion,'1.64.1');
@@ -25,6 +31,8 @@ test('C6.2B admits only the separately audited exact Windows 482-file Chromium c
  assert.equal(review.observations.modelPromptOrOriginScopeGrant,'NOT_GRANTED');
  assert.equal(review.observations.releaseStatus,'DEVELOPMENT_PREVIEW_ONLY');
  assert.match(promoter,/review\.disposition!=='approved'/);
+ assert.match(promoter,/review\.workerSha256/);
+ assert.match(promoter,/review\.independentReview/);
  assert.match(promoter,/review\.candidateManifestSha256/);
  assert.match(promoter,/review\.reviewedManifestSha256/);
  assert.match(promoter,/status='reviewed'/);
@@ -41,11 +49,11 @@ test('C6.2B runs only on one locked browser qualification branch, never automati
  assert.ok(wf.includes('cancel-in-progress: false'));
  assert.match(wf,/github\.sha/);
  assert.match(wf,/node scripts\/verify-source-tree\.mjs/);
- assert.match(wf,/run-id: 43976953361/);
- assert.match(wf,/Lu-C62A-UNAPPROVED-Windows-Browser-d9af093e/);
+ assert.match(wf,/run-id: 44976683630/);
+ assert.match(wf,/Lu-C62B-REVIEW-REQUIRED-Windows-Browser-2da58f44/);
  assert.match(wf,/browser-ci-executable\.test\.mjs/);
  assert.match(wf,/promote-reviewed-browser-candidate\.mjs/);
- assert.match(wf,/LU_BROWSER_MANIFEST_SHA256: '859ae6365aabaad2ada9362bb556243ede414f3de65fa3667ea0c3e5da38af0b'/);
+ assert.match(wf,/LU_BROWSER_MANIFEST_SHA256: 'f2948f9ef9d2b5bbac8a60e146bd4a18a0714a615883faaa0139b8d5828e5cf3'/);
  assert.match(wf,/LU_REQUIRE_BROWSER: '1'/);
  assert.match(wf,/scripts\/build-current-windows-nsis\.ps1/);
  assert.match(wf,/scripts\/m3-windows-nsis-cycle\.ps1/);
@@ -54,7 +62,7 @@ test('C6.2B runs only on one locked browser qualification branch, never automati
 test('stale reviewed browser worker is not installed and is rebuilt only as unapproved evidence',()=>{
  const fields=[
   'worker_approved: ${{ steps.worker_review.outputs.worker_approved }}',
-  'reviewed=592288436da58400434595d0b4c200c983f3bdb2',
+  'reviewed=68f7aa46c4cd2d6fdb0e951d8da5f057e1cafdd9',
   "needs.original-source-and-review.outputs.worker_approved == 'true'",
   "needs.original-source-and-review.outputs.worker_approved == 'false'",
   'git rev-parse HEAD:src-tauri/lu-core/workers/lu_browser_worker.mjs',
