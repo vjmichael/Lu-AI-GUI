@@ -135,6 +135,21 @@ test('read-only private journal oracle cannot seed statuses or view unrelated co
   assert.match(journal,/SELECT id,workspace_id,state,next_due,repeat_seconds,last_due,fired_count,unread_count/);
   assert.match(journal,/SELECT run_id,state,body FROM active_check WHERE slot=1/);
 });
+test('read-only installed oracle treats omitted false modelSuite exactly as native serde and rejects malformed values',()=>{
+  // The real Rust CheckBody omits only a false modelSuite; do not mutate
+  // SQLite, rewrite the report, skip any acceptance assertion or infer trust.
+  assert.match(nativeChecks,/pub model_suite:bool/);
+  assert.match(nativeChecks,/skip_serializing_if="std::ops::Not::not"/);
+  assert.match(journal,/def model_suite_flag\(body\):/);
+  assert.match(journal,/body\.get\("modelSuite", False\)/);
+  assert.match(journal,/if type\(value\) is not bool:/);
+  assert.match(journal,/raise ValueError\("invalid model suite flag"\)/);
+  assert.match(journal,/"expanded": body\.get\("expanded"\), "modelSuite": model_suite/);
+  assert.match(wf,/python -m doctest scripts\/cp11-cp12-windows-readonly-journal\.py/);
+  assert.match(runner,/\$finished\.expanded -eq \$true -and \$finished\.modelSuite -eq \$false -and \$finished\.count -eq 5/);
+  assert.match(runner,/3,4,16,16,64/);
+  assert.doesNotMatch(journal,/UPDATE active_check|INSERT INTO active_check|mode=rw|mode=rwc/);
+});
 test('positive assertion is limited to the model-free and read-only installed scope',()=>{
   assert.match(wf,/Rebuilt exact current C6\.2B-security-qualified NSIS checksum mismatch/);
   assert.match(wf,/Real installed CP-11\/12 GUI\/restart or SQLite readback failed/);
