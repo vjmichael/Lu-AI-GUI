@@ -302,8 +302,8 @@ try{
   $installerHash=(Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash.ToLowerInvariant()
   [ordered]@{
     schema='lu-current-preview-nsis-sha256-v1'
-    productVersion=if($releaseV1){'1.0.0'}else{'0.2.0-rc.1'}
-    appIdentity=if($releaseV1){'org.lu.desktop'}else{'org.lu.current.devpreview'}
+    productVersion=$(if($releaseV1){'1.0.0'}else{'0.2.0-rc.1'})
+    appIdentity=$(if($releaseV1){'org.lu.desktop'}else{'org.lu.current.devpreview'})
     sourceSha=$SourceSha;installerName=(Split-Path -Leaf $installer)
     installerSha256=$installerHash;installerBytes=[int64](Get-Item $installer).Length
     appSha256=$appHash;engineSha256=$engineHash;vulkanEngineSha256=$vkHash;researchClientSha256=$env:LU_RESEARCH_CURL_SHA256
