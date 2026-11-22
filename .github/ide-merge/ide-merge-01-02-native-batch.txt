@@ -36,3 +36,9 @@ Previous run 44961720181 at dc29237d: 4/6 passed, 2/6 blocked by original immuta
 Predecessor c455c60f6775780f425ddb9e7856ac7dfbce45a8 restored original WO7 workflow blob 6413844f exactly.
 Run existing native Git and Tauri plus DEV-01 installed graphical Windows/Linux six-job cohort at this NEW locked SHA.
 No signature, legal approval, protected SCM/Job runtime, production release, or main merge is authorized by source CI.
+
+IDE-PRECORE-CLOSEOUT-R4-GPG-01 — owner-local OpenPGP detached package signatures (NOT Authenticode).
+Original accepted predecessor: 54c039551944f656c51207284dad4ebd60495919, six original Windows/Linux jobs PASS 6/6.
+Admit separately fingerprint-pinned .exe/.deb GPG sign/verify source, hostile fixtures and owner-only instructions.
+Use one new exact-head six-job source/native acceptance batch. Do not import a private key to CI, alter 38 P05 original workflows, or set releaseApproved=true.
+Windows Authenticode, protected WO7/WO8 and physical Windows release witness remain HOLD; no main merge.

@@ -68,6 +68,8 @@ jobs:
           set -euo pipefail
           python -m unittest discover -s ide/packaging -p 'test_verify_wo7_release_evidence.py' -v
           python -m unittest discover -s ide/packaging -p 'test_verify_wo7_positive_bundle_audit.py' -v
+          python -m unittest discover -s ide/packaging -p 'test_gpg_package_provenance.py' -v
+          echo 'IDE_GPG_PACKAGE_PROVENANCE=SOURCE_AND_DISPOSABLE_TEST_KEY_ONLY_NOT_OWNER_SIGNING_OR_AUTHENTICODE'
           echo 'IDE_WO7_POSITIVE_AUDIT=SOURCE_NEGATIVE_TESTS_ONLY_NOT_LEGAL_OR_SIGNED'
       - name: Archive source-pinned exact-head native dependency locks
         uses: actions/upload-artifact@v4
