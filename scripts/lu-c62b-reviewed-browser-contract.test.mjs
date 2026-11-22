@@ -1,7 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
+import {spawnSync} from 'node:child_process';
+import {fileURLToPath} from 'node:url';
 const read=path=>readFileSync(new URL('../'+path,import.meta.url),'utf8');
+test('C6.2B reviewed-browser promoter parses before Windows installer work',()=>{
+ const script=fileURLToPath(new URL('../lu-desktop/scripts/promote-reviewed-browser-candidate.mjs',import.meta.url));
+ const checked=spawnSync(process.execPath,['--check',script],{encoding:'utf8'});
+ assert.equal(checked.status,0,checked.stderr||checked.error?.message);
+});
 const wf=read('.github/workflows/lu-core-c62b-reviewed-browser-nsis.yml');
 const review=JSON.parse(read('docs/acceptance/LU_C62_WINDOWS_BROWSER_REVIEW.json'));
 const promoter=read('lu-desktop/scripts/promote-reviewed-browser-candidate.mjs');
