@@ -68,6 +68,24 @@ test('stale reviewed browser worker is not installed and is rebuilt only as unap
  assert.match(wf,/retention-days: 14/);
  assert.doesNotMatch(wf,/continue-on-error: true/);
 });
+test('independent archived Windows candidate review rehashes every byte without self approval',()=>{
+ for(const literal of [
+  'independently-verify-archived-candidate-for-review:',
+  'run-id: 44976683630',
+  'candidateArtifactId',
+  'independentFileByteValidation',
+  'manifest.sha256',
+  'candidate-summary.json',
+  'lu_browser_worker.mjs',
+  'candidateStatus',
+  'approval',
+  'Lu-C62B-INDEPENDENT-REVIEW-EVIDENCE-',
+  '[browser-review-evidence-only]'
+ ])assert.ok(wf.includes(literal),literal);
+ assert.ok(wf.includes('REVIEW_REQUIRED: current browser is an UNAPPROVED candidate'));
+ assert.ok(wf.includes("if: ${{ needs.original-source-and-review.outputs.worker_approved == 'true' }}"));
+ assert.doesNotMatch(wf,/continue-on-error: true/);
+});
 test('native Rust host verifies reviewed manifest and every byte without granting a browser turn',()=>{
  assert.match(native,/EMBEDDED_BROWSER_MANIFEST/);
  assert.match(native,/manifest\.status!="reviewed"/);

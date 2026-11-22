@@ -59,7 +59,9 @@ jobs:
           fi
   current-windows-unapproved-browser-candidate:
     needs: original-source-and-review
-    if: ${{ needs.original-source-and-review.outputs.worker_approved == 'false' }}
+    # An explicit evidence-only commit rechecks the existing immutable candidate,
+    # never rebuilds or replaces the 563 MB original artifact.
+    if: ${{ needs.original-source-and-review.outputs.worker_approved == 'false' && !contains(github.event.head_commit.message, '[browser-review-evidence-only]') }}
     runs-on: windows-2025
     timeout-minutes: 60
     steps:
@@ -108,6 +110,100 @@ jobs:
         shell: pwsh
         run: |
           throw 'REVIEW_REQUIRED: current browser is an UNAPPROVED candidate; no reviewed installed Chromium/Node/Playwright package or Core release acceptance.'
+  independently-verify-archived-candidate-for-review:
+    needs: original-source-and-review
+    if: ${{ needs.original-source-and-review.outputs.worker_approved == 'false' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: Lu-C62B-REVIEW-REQUIRED-Windows-Browser-2da58f445d2466756140a95a1782cb26a37e41f3
+          run-id: 44976683630
+          github-token: ${{ github.token }}
+          path: out/lu-browser-candidate
+      - name: Independent full archived-byte/hash review and exact current-worker evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/verify-source-tree.mjs
+          python3 - <<'PY'
+          import hashlib,json,os,re,shutil,subprocess
+          from pathlib import Path
+          root=Path('out/lu-browser-candidate').resolve(strict=True)
+          dest=Path('out/lu-browser-independent-review').resolve()
+          dest.mkdir(parents=True,exist_ok=False)
+          expected_sha='23966eb91d2b933f4f6d9bed85f060cf6fe8c7e274adbb74374e105932cef890'
+          expected_worker_blob='68f7aa46c4cd2d6fdb0e951d8da5f057e1cafdd9'
+          manifest_bytes=(root/'manifest.json').read_bytes()
+          def sha_bytes(b): return hashlib.sha256(b).hexdigest()
+          def sha_file(p):
+              h=hashlib.sha256()
+              with p.open('rb') as f:
+                  for block in iter(lambda:f.read(1024*1024),b''): h.update(block)
+              return h.hexdigest()
+          assert sha_bytes(manifest_bytes)==expected_sha,'approved candidate manifest digest changed'
+          assert (root/'manifest.sha256').read_text().strip()==expected_sha,'sidecar manifest digest mismatch'
+          m=json.loads(manifest_bytes)
+          assert (m.get('schema'),m.get('runtime'),m.get('status'),m.get('platform'),m.get('arch'),m.get('playwrightVersion'))==(1,'lu-browser','candidate','win32','x64','1.64.1')
+          assert len(m['files'])==482,'unexpected reviewed candidate file count'
+          seen=set(); listed={x['path']:x for x in m['files']}
+          required={'chrome.exe','node.exe','lu_browser_worker.mjs','node_modules/playwright/index.mjs','node_modules/playwright-core/index.mjs'}
+          assert required<=set(listed),'missing required executable components'
+          for x in m['files']:
+              rel=x['path']
+              assert isinstance(rel,str) and len(rel)<512 and re.fullmatch(r'[A-Za-z0-9._ -]+(?:/[A-Za-z0-9._ -]+)*',rel),'invalid file path'
+              parts=rel.split('/')
+              assert all(part not in ('.','..') and part==part.strip() for part in parts),'unsafe path'
+              assert rel not in seen,'duplicate manifest path'
+              seen.add(rel)
+              p=root.joinpath(*parts)
+              assert p.is_file() and not p.is_symlink() and p.resolve().is_relative_to(root),'untrusted manifest file'
+              st=p.stat()
+              assert st.st_nlink==1 and st.st_size==x['bytes'],'wrong file identity or size'
+              assert sha_file(p)==x['sha256'],'hash mismatch: '+rel
+          actual=set()
+          for base,dirs,files in os.walk(root,followlinks=False):
+              for d in dirs: assert not (Path(base)/d).is_symlink(),'untrusted directory'
+              for item in files:
+                  p=Path(base)/item
+                  assert p.is_file() and not p.is_symlink() and p.stat().st_nlink==1,'unexpected file type'
+                  actual.add(p.relative_to(root).as_posix())
+          assert actual==seen|{'manifest.json','manifest.sha256','candidate-summary.json'},'extra/missing physical content'
+          summary=json.loads((root/'candidate-summary.json').read_bytes())
+          assert (summary.get('status'),summary.get('platform'),summary.get('arch'),summary.get('playwrightVersion'),summary.get('files'),summary.get('manifestSha256'))==('candidate','win32','x64','1.64.1',482,expected_sha)
+          git_blob=subprocess.check_output(['git','rev-parse','HEAD:src-tauri/lu-core/workers/lu_browser_worker.mjs'],text=True).strip()
+          assert git_blob==expected_worker_blob,'current worker source git blob changed'
+          current=subprocess.check_output(['git','show','HEAD:src-tauri/lu-core/workers/lu_browser_worker.mjs'])
+          original=(root/'lu_browser_worker.mjs').read_bytes()
+          assert original==current,'candidate browser worker differs from current source'
+          assert listed['lu_browser_worker.mjs']['sha256']==sha_bytes(original),'worker hash source mismatch'
+          receipt={'schema':'lu-c62b-independent-byte-review-v1','candidateStatus':'UNAPPROVED_REVIEW_EVIDENCE_ONLY',
+           'candidateSourceSha':'2da58f445d2466756140a95a1782cb26a37e41f3',
+           'sourceHeadSha':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),
+           'candidateRunId':44976683630,'candidateArtifactId':14735958441,
+           'candidateArtifactZipSha256':'627e732f94b3c45f97099d254c6b747afc168712fb1f5e160bf861668d5ff67a',
+           'manifestSha256':expected_sha,'workerGitBlob':git_blob,'workerSha256':sha_bytes(original),
+           'fileCount':len(seen),'expectedFileNames':sorted(required),
+           'independentFileByteValidation':'PASS_482_OF_482_SHA256',
+           'unexpectedFiles':0,'nativeWindowsInstaller':'NOT_BUILT','approval':'NOT_GRANTED'}
+          (dest/'review-receipt.json').write_text(json.dumps(receipt,indent=2,sort_keys=True)+'\n')
+          for name in ['manifest.json','candidate-summary.json','manifest.sha256','lu_browser_worker.mjs']:
+              shutil.copy2(root/name,dest/name)
+          print(json.dumps(receipt,sort_keys=True))
+          PY
+      - name: Preserve compact independent review packet, without admitting installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: Lu-C62B-INDEPENDENT-REVIEW-EVIDENCE-${{ github.sha }}
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 6
+          path: out/lu-browser-independent-review/
   native-windows-installed-reviewed-browser:
     needs: original-source-and-review
     if: ${{ needs.original-source-and-review.outputs.worker_approved == 'true' }}
