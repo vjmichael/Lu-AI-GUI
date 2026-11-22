@@ -276,16 +276,16 @@ function Wait-Check([string]$desired,[int]$seconds=75){
     $s=Read-Journal 'check'
     # Keep only synthetic check type/count and hashed run identity. Never
     # copy a personal prompt, file path or unscoped diagnostic trace.
-    $report.lastCheck=[ordered]@{
+    $report['lastCheck']=[ordered]@{
       present=($s.present -eq $true)
-      state=if($s.present){[string]$s.state}else{'ABSENT'}
-      reason=if($s.present){$s.reason}else{$null}
-      count=if($s.present){$s.count}else{0}
-      kinds=if($s.present){@($s.kinds)}else{@()}
-      verified=if($s.present){@($s.verified)}else{@()}
-      passed=if($s.present){@($s.passed)}else{@()}
-      runHash=if($s.present){$s.runHash}else{$null}
-      prefixHash=if($s.present){$s.prefixHash}else{$null}
+      state=$(if($s.present){[string]$s.state}else{'ABSENT'})
+      reason=$(if($s.present){$s.reason}else{$null})
+      count=$(if($s.present){$s.count}else{0})
+      kinds=$(if($s.present){@($s.kinds)}else{@()})
+      verified=$(if($s.present){@($s.verified)}else{@()})
+      passed=$(if($s.present){@($s.passed)}else{@()})
+      runHash=$(if($s.present){$s.runHash}else{$null})
+      prefixHash=$(if($s.present){$s.prefixHash}else{$null})
     }
     if($s.present -and $s.state -eq $desired){return $s}
     if($s.present -and $s.state -in @('attention','stopped','interrupted','complete')){
@@ -293,7 +293,7 @@ function Wait-Check([string]$desired,[int]$seconds=75){
     }
     Start-Sleep -Milliseconds 100
   }while([DateTime]::UtcNow -lt $deadline)
-  throw ('Read-only installed check did not reach state '+$desired+'; last state='+$report.lastCheck.state+'; receipt preserved')
+  throw ('Read-only installed check did not reach state '+$desired+'; last state='+$report['lastCheck'].state+'; receipt preserved')
 }
 try{
   if(-not [string]::IsNullOrEmpty($priorArgs)){throw 'Unexpected WebView2 argument override'}
