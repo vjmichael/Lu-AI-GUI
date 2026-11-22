@@ -440,6 +440,15 @@ jobs:
           bash ide/app/fixtures/Test-DEV01ModernInstalledDeb.sh \
             "${packages[0]}" "$INTEGRATION_SOURCE_SHA"
           echo 'DEV01_MODERN_LINUX_INSTALLED=OS_ACCEPTED_NOT_RELEASE_AUTHORIZED'
+      - name: Retain tested unsigned Debian artifact for owner GPG signing (not a release)
+        uses: actions/upload-artifact@v4
+        with:
+          name: ide-gpg-unsigned-debian-${{ github.sha }}
+          path: |
+            ide/app/src-tauri/target/release/bundle/deb/*.deb
+            ide/app/src-tauri/verification-package-receipt.json
+          if-no-files-found: error
+          retention-days: 30
 
   dev01-modern-real-installed-windows:
     name: DEV-01 actual NSIS WebView2 UIA 867-file four-feature regression (not release)
@@ -525,3 +534,12 @@ jobs:
           & ide/app/fixtures/Test-DEV01ModernInstalledNsis.ps1 -SetupPath $setups[0].FullName -SourceSha $env:INTEGRATION_SOURCE_SHA
           if (!$? -or $LASTEXITCODE -ne 0) { throw 'DEV01_WINDOWS_REAL_INSTALLED_OS_REGRESSION_DENIED' }
           Write-Host 'DEV01_MODERN_WINDOWS_INSTALLED=OS_ACCEPTED_NOT_RELEASE_AUTHORIZED'
+      - name: Retain tested unsigned NSIS artifact for owner GPG signing (not a release)
+        uses: actions/upload-artifact@v4
+        with:
+          name: ide-gpg-unsigned-windows-${{ github.sha }}
+          path: |
+            ide/app/src-tauri/target/release/bundle/nsis/*setup.exe
+            ide/app/src-tauri/verification-package-receipt.json
+          if-no-files-found: error
+          retention-days: 30

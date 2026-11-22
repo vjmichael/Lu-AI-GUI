@@ -41,6 +41,32 @@ independently checked. Never sign a package just because CI built it.
    gpg --armor --output owner-public.asc --export YOUR_40_HEX_FINGERPRINT
    ```
 
+## Owner-selected public signing identity and tested-build handoff
+
+The owner selected the first locally held GnuPG signing primary: `47F3D98F8BDC1CDF908BEBB5D04103399ECFFFB9`
+(GitHub account key ID `D04103399ECFFFB9`). The owner has demonstrated a
+successful *public-only* export to `$HOME\lu-ide-public.asc` and
+`gpg --show-keys --fingerprint` reporting that exact primary fingerprint.
+This is a public identity pin, **not** evidence of a signed release package.
+Do not trust public-key identity solely because it was bundled with an installer;
+verify it independently against the owner's GitHub-account key record.
+
+After a **successful full six-job source-locked Actions run**, the two installed
+regression jobs upload their *actually tested unsigned* package bytes:
+
+- `ide-gpg-unsigned-windows-<full-exact-head-sha>`: real Windows NSIS setup
+  `.exe` plus its source-bound package verification receipt;
+- `ide-gpg-unsigned-debian-<full-exact-head-sha>`: real Linux `.deb` plus its
+  source-bound package verification receipt.
+
+Both artifacts are retained for 30 days and are downloadable from the exact
+Actions run; their presence is not a release approval. Match source SHA, check
+the receipt and compute an independent SHA-256 over the extracted *package*
+before owner-local GPG signing. Never sign a stale/different file; never upload
+the GPG private key to GitHub Actions. The owner must sign and test the exact
+bits outside CI. These hosted UI regression builds are not physical Windows
+SCM/Job or protected Run/Test/Debug evidence and must not be advertised as
+release-accepted software.
 ## Sign a reviewed package (owner's machine only)
 
 After producing the final NSIS `.exe` package from accepted source, run in the

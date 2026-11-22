@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "54c039551944f656c51207284dad4ebd60495919",
+  "sourceCommitBeforeLock": "446fb9f6349b6c1e0fc3aba5d2b7ecbbd8c83210",
   "trackedFileCount": 2013,
   "files": [
     {
@@ -17,7 +17,7 @@
     },
     {
       "path": ".github/ide-merge/ide-merge-01-02-native-batch.txt",
-      "blob": "1731ae05385979e1f8388ad36258e8bf75ce790a"
+      "blob": "d17f8ee035fd7746892ebfc5299de6586ad9b9f2"
     },
     {
       "path": ".github/pull_request_template.md",
@@ -329,7 +329,7 @@
     },
     {
       "path": ".github/workflows/ide-group6f-integrated-native.yml",
-      "blob": "1b2b7bec2d305596f21fd7af2122edb559137438"
+      "blob": "5a3b271355dea4800edcaa24d20c3507bbd01c58"
     },
     {
       "path": ".github/workflows/ide-linux-26-installed-diagnostic.yml",
@@ -3037,7 +3037,7 @@
     },
     {
       "path": "ide/docs/IDE_GPG_PACKAGE_PROVENANCE.md",
-      "blob": "5b4a39504c8005591312ae9b964216ad9f51c70e"
+      "blob": "3300e554c64d6a4421d8234f726689618e7f7952"
     },
     {
       "path": "ide/docs/IDE_GROUP02_CONSOLIDATED_INSTALLED_ACCEPTANCE_20261110.md",

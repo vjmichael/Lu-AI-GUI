@@ -42,3 +42,7 @@ Original accepted predecessor: 54c039551944f656c51207284dad4ebd60495919, six ori
 Admit separately fingerprint-pinned .exe/.deb GPG sign/verify source, hostile fixtures and owner-only instructions.
 Use one new exact-head six-job source/native acceptance batch. Do not import a private key to CI, alter 38 P05 original workflows, or set releaseApproved=true.
 Windows Authenticode, protected WO7/WO8 and physical Windows release witness remain HOLD; no main merge.
+
+IDE-PRECORE-CLOSEOUT-R4-GPG-01 — preserve genuine exact-SHA unsigned NSIS and Debian installers after successfully executed installed-regression tests, for subsequent owner-local GPG signing.
+Owner-selected primary public fingerprint 47F3D98F8BDC1CDF908BEBB5D04103399ECFFFB9; no private key in CI.
+Original successful predecessor 446fb9f6349b6c1e0fc3aba5d2b7ecbbd8c83210; existing 6/6 CI passed. One grouped qualification of this workflow/documentation-only successor; keep original P05 38-workflow pins, review/production gates, and physical Windows installed/protected acceptance unchanged. No main merge.
