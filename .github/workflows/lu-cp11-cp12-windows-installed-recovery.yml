@@ -60,10 +60,21 @@ jobs:
         run: |
           "CP11_12_SOURCE_SHA=$env:GITHUB_SHA" >> $env:GITHUB_STEP_SUMMARY
           'Source contracts and real Windows kernel diagnostic transport only; installed GUI recovery is a separate mandatory job.' >> $env:GITHUB_STEP_SUMMARY
-  exact-original-installed-windows-recovery:
+  # The original C6.2B artifact is immutable and contains the pre-fix Lu.exe.
+  # Compile and independently qualify a NEW exact-current native NSIS first.
+  # Reuse the complete reviewed-browser workflow, including its source/worker
+  # review, 482/482 browser hashes, source-built CPU/Vulkan, genuine installed
+  # browser/GUI/NSIS lifecycle and native Rust exact manifest integrity.
+  qualify-current-reviewed-browser:
     needs: source-and-windows-native
+    permissions:
+      contents: read
+      actions: read
+    uses: ./.github/workflows/lu-core-c62b-reviewed-browser-nsis.yml
+  exact-current-installed-windows-recovery:
+    needs: qualify-current-reviewed-browser
     runs-on: windows-2025
-    timeout-minutes: 30
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
         with:
@@ -82,27 +93,25 @@ jobs:
           if((git rev-parse HEAD).Trim() -cne $env:GITHUB_SHA){throw 'Windows recovery source SHA mismatch'}
           node scripts/verify-source-tree.mjs
           if($LASTEXITCODE -ne 0){throw 'Windows recovery source lock rejected'}
-      - name: Retrieve original C6.2B successfully installed Windows NSIS release candidate
+      - name: Retrieve exact-current rebuilt NSIS independently qualified by original reviewed-browser workflow
         uses: actions/download-artifact@v4
         with:
-          name: Lu-C62B-Reviewed-Browser-NSIS-2ded370fb7da34498e24376b3e7c0abe4771f96d
-          run-id: 44979001346
-          github-token: ${{ github.token }}
-          path: out/cp11-cp12-c62b-pinned
+          name: Lu-C62B-Reviewed-Browser-NSIS-${{ github.sha }}
+          path: out/cp11-cp12-current-pinned
       - name: Genuine installed one-shot check, interruption/restart, reminder and local diagnostic recovery
         shell: pwsh
         timeout-minutes: 20
         run: |
           $ErrorActionPreference='Stop'
-          $root=(Resolve-Path 'out/cp11-cp12-c62b-pinned').Path
+          $root=(Resolve-Path 'out/cp11-cp12-current-pinned').Path
           $checks=Get-Content -LiteralPath (Join-Path $root 'installer-checksums.json') -Raw|ConvertFrom-Json
           $provenance=Get-Content -LiteralPath (Join-Path $root 'BUILD_PROVENANCE.json') -Raw|ConvertFrom-Json
-          $expectedSource='2ded370fb7da34498e24376b3e7c0abe4771f96d'
+          $expectedSource=$env:GITHUB_SHA
           $expectedBrowser='f2948f9ef9d2b5bbac8a60e146bd4a18a0714a615883faaa0139b8d5828e5cf3'
           if($checks.sourceSha -cne $expectedSource -or $checks.browserManifestSha256 -cne $expectedBrowser -or
              $provenance.browserManifestSha256 -cne $expectedBrowser -or
              $provenance.browserRuntime -cne 'REVIEWED_AND_STAGED'){
-            throw 'Original C6.2B Windows NSIS provenance not pinned to the accepted source'
+            throw 'Exact current rebuilt native NSIS provenance or independently reviewed browser digest mismatch'
           }
           if($checks.installerName -notmatch '^Lu-Current-Preview-NSIS-[0-9a-f]{12}\.exe$'){
             throw 'Unexpected original NSIS installer name'
@@ -110,7 +119,7 @@ jobs:
           $installer=Join-Path $root $checks.installerName
           if(-not(Test-Path -LiteralPath $installer -PathType Leaf) -or
              (Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash -ine $checks.installerSha256){
-            throw 'Original C6.2B native NSIS artifact checksum mismatch'
+            throw 'Rebuilt exact current C6.2B-security-qualified NSIS checksum mismatch'
           }
           & scripts/cp11-cp12-windows-installed-recovery.ps1 -InstallerPath $installer -InstallerSha256 $checks.installerSha256 -AppSha256 $checks.appSha256 -EvidenceDir (Join-Path $env:RUNNER_TEMP 'lu-cp11-cp12-windows-recovery-evidence') -DisposableWindowsConfirmed
           if($LASTEXITCODE -ne 0){throw 'Real installed CP-11/12 GUI/restart or SQLite readback failed'}
@@ -122,9 +131,9 @@ jobs:
              $r.phases.plain_diagnostic_status_after_cold_recovery -cne 'PASS_READONLY_LOCAL'){
             throw 'Required original installed recovery receipt incomplete'
           }
-          "CP11_12_ORIGINAL_C62B_BINARY_SOURCE=$expectedSource" >> $env:GITHUB_STEP_SUMMARY
+          "CP11_12_REBUILT_CURRENT_BINARY_SOURCE=$expectedSource" >> $env:GITHUB_STEP_SUMMARY
           "CP11_12_RECOVERY_TEST_SOURCE=$env:GITHUB_SHA" >> $env:GITHUB_STEP_SUMMARY
-          'Installed model-free CP-11A/11B and local CP-12A recovery passed only. Two-model Windows DX, scheduled AI/GGUF, owner physical R9700 and release admission remain separate.' >> $env:GITHUB_STEP_SUMMARY
+          'Exact-current compiled and independently reviewed browser package; scoped installed model-free CP-11A/11B and local CP-12A only. Two-model Windows DX, scheduled AI/GGUF, owner physical R9700 and release admission remain separate.' >> $env:GITHUB_STEP_SUMMARY
       - name: Preserve original installed native recovery evidence and negative cases
         if: always()
         uses: actions/upload-artifact@v4
