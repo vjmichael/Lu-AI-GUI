@@ -108,7 +108,11 @@ jobs:
           $provenance=Get-Content -LiteralPath (Join-Path $root 'BUILD_PROVENANCE.json') -Raw|ConvertFrom-Json
           $expectedSource=$env:GITHUB_SHA
           $expectedBrowser='f2948f9ef9d2b5bbac8a60e146bd4a18a0714a615883faaa0139b8d5828e5cf3'
-          if($checks.sourceSha -cne $expectedSource -or $checks.browserManifestSha256 -cne $expectedBrowser -or
+          if($checks.sourceSha -cne $expectedSource -or $provenance.sourceSha -cne $expectedSource -or
+             $checks.appSha256 -cne $provenance.appSha256 -or
+             $checks.engineSha256 -cne $provenance.engineSha256 -or
+             $checks.vulkanEngineSha256 -cne $provenance.vulkanEngineSha256 -or
+             $checks.browserManifestSha256 -cne $expectedBrowser -or
              $provenance.browserManifestSha256 -cne $expectedBrowser -or
              $provenance.browserRuntime -cne 'REVIEWED_AND_STAGED'){
             throw 'Exact current rebuilt native NSIS provenance or independently reviewed browser digest mismatch'
