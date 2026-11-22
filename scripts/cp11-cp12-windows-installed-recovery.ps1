@@ -67,6 +67,9 @@ public static class LuCpRecoveryWin32 {
   public delegate bool ChildCallback(IntPtr hwnd,IntPtr data);
   [DllImport("user32.dll")] public static extern bool EnumChildWindows(IntPtr owner,ChildCallback callback,IntPtr data);
   [DllImport("user32.dll")] public static extern bool IsChild(IntPtr parent,IntPtr candidate);
+  [DllImport("user32.dll")] public static extern bool IsWindow(IntPtr hwnd);
+  [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+  [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hwnd);
   [DllImport("user32.dll")] public static extern bool SetCursorPos(int x,int y);
   [DllImport("user32.dll")] public static extern void mouse_event(uint flags,uint dx,uint dy,uint data,UIntPtr extra);
 }
@@ -219,7 +222,27 @@ function Native-Review([string]$title,[string]$choice){
   if(-not(Test-NativeChoiceIdentity $chosen.Current $choice $script:process.Id $ownerHwnd)){
     throw 'Native approval control identity changed before input'
   }
+  # A UIA InvokePattern can return without activating a native TaskDialog
+  # command. Require the original owned modal to become foreground before
+  # acting, then prove it actually closed; merely observing no journal row
+  # is NOT evidence that Cancel was delivered.
+  try{$dlg.SetFocus()}catch{}
+  $null=[LuCpRecoveryWin32]::SetForegroundWindow($ownerHwnd)
+  $focusLimit=[DateTime]::UtcNow.AddSeconds(5)
+  while([LuCpRecoveryWin32]::GetForegroundWindow() -ne $ownerHwnd -and [DateTime]::UtcNow -lt $focusLimit){
+    Start-Sleep -Milliseconds 100
+  }
+  Assert ([LuCpRecoveryWin32]::GetForegroundWindow() -eq $ownerHwnd) 'Exact native approval modal was not foreground'
+  if(-not(Test-NativeChoiceIdentity $chosen.Current $choice $script:process.Id $ownerHwnd)){
+    throw 'Native approval control identity changed after foreground admission'
+  }
   Click-Control $chosen $dlg
+  $dismissLimit=[DateTime]::UtcNow.AddSeconds(8)
+  do{
+    if(-not [LuCpRecoveryWin32]::IsWindow($ownerHwnd)){return}
+    Start-Sleep -Milliseconds 100
+  }while([DateTime]::UtcNow -lt $dismissLimit)
+  throw ('Native approval click did not dismiss the original dialog: '+$choice)
 }
 function Start-Lu(){
   $script:process=Start-Process -FilePath $script:app -WorkingDirectory $target -PassThru
@@ -251,10 +274,26 @@ function Wait-Check([string]$desired,[int]$seconds=75){
   $deadline=[DateTime]::UtcNow.AddSeconds($seconds)
   do{
     $s=Read-Journal 'check'
+    # Keep only synthetic check type/count and hashed run identity. Never
+    # copy a personal prompt, file path or unscoped diagnostic trace.
+    $report.lastCheck=[ordered]@{
+      present=($s.present -eq $true)
+      state=if($s.present){[string]$s.state}else{'ABSENT'}
+      reason=if($s.present){$s.reason}else{$null}
+      count=if($s.present){$s.count}else{0}
+      kinds=if($s.present){@($s.kinds)}else{@()}
+      verified=if($s.present){@($s.verified)}else{@()}
+      passed=if($s.present){@($s.passed)}else{@()}
+      runHash=if($s.present){$s.runHash}else{$null}
+      prefixHash=if($s.present){$s.prefixHash}else{$null}
+    }
     if($s.present -and $s.state -eq $desired){return $s}
+    if($s.present -and $s.state -in @('attention','stopped','interrupted','complete')){
+      throw ("Real installed check reached unexpected terminal state "+$s.state+" (reason="+$s.reason+", verified="+$s.count+"); original receipt preserved")
+    }
     Start-Sleep -Milliseconds 100
   }while([DateTime]::UtcNow -lt $deadline)
-  throw ('Read-only installed check did not reach state '+$desired)
+  throw ('Read-only installed check did not reach state '+$desired+'; last state='+$report.lastCheck.state+'; receipt preserved')
 }
 try{
   if(-not [string]::IsNullOrEmpty($priorArgs)){throw 'Unexpected WebView2 argument override'}
