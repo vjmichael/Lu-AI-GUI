@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "dd1170117e48966f1c47f457655c5a5501a6538a",
+  "sourceCommitBeforeLock": "9f90c02559e61ce8ce87c7098b784481ffd60451",
   "trackedFileCount": 1270,
   "files": [
     {
@@ -2197,7 +2197,7 @@
     },
     {
       "path": "lu-desktop/tests/c64-unified-tabs.test.mjs",
-      "blob": "be27cdb3f744031d1df5d4c462d3bc9920b804b5"
+      "blob": "dad0154d7471da97a7f222440011813c3082651e"
     },
     {
       "path": "lu-desktop/tests/core01d-normal-chat-boundary.test.mjs",
@@ -3233,7 +3233,7 @@
     },
     {
       "path": "scripts/p0-windows-installed-gui-smoke.ps1",
-      "blob": "c53890055ac27cfa01d2dc3881f8a3ff374844c1"
+      "blob": "d23af18afa0d59987eb59d40ae87a07a1e3e0ad8"
     },
     {
       "path": "scripts/p02-native-windows-evidence.ps1",
