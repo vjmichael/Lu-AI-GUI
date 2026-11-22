@@ -32,13 +32,20 @@ def read(profile, mode, expected):
             results = body.get("results", [])
             if not isinstance(results, list) or len(results) > 6:
                 raise ValueError("invalid check results")
+            # Rust CheckBody has #[serde(default,skip_serializing_if="Not::not")]
+            # on model_suite. A FALSE value is therefore omitted in genuine
+            # persisted non-model reports; absent is NOT unknown/invalid.
+            # An explicit malformed type still fails closed.
+            model_suite = body.get("modelSuite", False)
+            if type(model_suite) is not bool:
+                raise ValueError("invalid model suite flag")
             return {
                 "present": True, "runHash": digest(row[0]), "state": row[1],
                 "prefixHash": digest(json.dumps(results, sort_keys=True, separators=(",", ":"))),
                 "kinds": [x.get("kind") for x in results],
                 "verified": [x.get("verifiedOperations") for x in results],
                 "passed": [x.get("passed") for x in results],
-                "expanded": body.get("expanded"), "modelSuite": body.get("modelSuite"),
+                "expanded": body.get("expanded"), "modelSuite": model_suite,
                 "reason": body.get("reason"), "count": len(results),
             }
         if mode == "reminder":
