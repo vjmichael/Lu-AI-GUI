@@ -358,6 +358,13 @@ jobs:
             if($LASTEXITCODE -ne 0){throw 'Actual Rust browser host rejected pinned review manifest or component'}
             cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib chat_store::tests::human_history_search_includes_current_and_other_books_without_recall_grants -- --exact --nocapture
             if($LASTEXITCODE -ne 0){throw 'Human history search acceptance failed'}
+            # CP-11A genuine Windows cleanup regression. Both tests compile
+            # against the same current desktop Rust source used by this NSIS.
+            # Never accept a source-only mock in place of installed recovery.
+            cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib active_checks::tests::cp11a_windows_exclusive_scratch_cleanup_releases_owned_directory_handle -- --exact --nocapture
+            if($LASTEXITCODE -ne 0){throw 'Real Windows owned scratch cleanup regression failed'}
+            cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib active_checks::tests::cp11a_windows_cleanup_preserves_preexisting_scratch_slot -- --exact --nocapture
+            if($LASTEXITCODE -ne 0){throw 'Original preexisting scratch slot protection failed'}
           }finally{
             [IO.File]::WriteAllText($configPath,$original)
           }
