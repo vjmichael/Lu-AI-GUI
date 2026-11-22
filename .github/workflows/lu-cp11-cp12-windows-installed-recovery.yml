@@ -46,6 +46,8 @@ jobs:
           if($errors.Count -gt 0){throw ('Original Windows recovery PowerShell parse failed: '+$errors)}
           python -m py_compile scripts/cp11-cp12-windows-readonly-journal.py
           if($LASTEXITCODE -ne 0){throw 'Read-only diagnostic journal witness syntax failed'}
+          python -m doctest scripts/cp11-cp12-windows-readonly-journal.py
+          if($LASTEXITCODE -ne 0){throw 'Read-only omitted-false flag and malformed type regression failed'}
       - name: Genuine native Windows CP-12 diagnostic IPC positive and default-off gates
         shell: pwsh
         timeout-minutes: 45
