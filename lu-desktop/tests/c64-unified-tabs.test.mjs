@@ -44,5 +44,14 @@ test('installed oracle demands real same HWND and all five tabs',()=>{
  assert.match(smoke,/PASS_ONE_INSTALLED_WINDOW/);
  assert.match(smoke,/MainWindowHandle/);
  assert.match(smoke,/UIAutomationClient/);
+ // A visible screenshot alone never passes: require WebView2's real UIA
+ // subtree through an OS-verified child HWND and an explicit accessibility mode.
+ assert.match(smoke,/Get-InstalledUIAElements/);
+ assert.match(smoke,/EnumChildWindows/);
+ assert.match(smoke,/IsChild/);
+ assert.match(smoke,/WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS/);
+ assert.match(smoke,/--force-renderer-accessibility/);
+ assert.match(smoke,/TryGetCurrentPattern/);
+ assert.match(smoke,/Installed WebView2 did not expose UI Automation element/);
  assert.match(smoke,/CopyFromScreen/);
 });

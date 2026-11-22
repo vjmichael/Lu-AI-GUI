@@ -39,16 +39,62 @@ $report=[ordered]@{
   errors=@()
 }
 $process=$null
+# Bind the accessibility witness to an actual descendant HWND of the
+# exact installed Lu main window. WebView2 may host its provider in a child
+# HWND that the top-level Tauri UIA provider does not forward on hosted Windows.
+# This is not a screenshot/coordinate pass and cannot invent a missing button.
+Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public static class LuP0UIAChildren {
+  public delegate bool ChildCallback(IntPtr handle, IntPtr unused);
+  [DllImport("user32.dll")] public static extern bool EnumChildWindows(IntPtr parent, ChildCallback callback, IntPtr data);
+  [DllImport("user32.dll")] public static extern bool IsChild(IntPtr parent, IntPtr candidate);
+}
+'@
+function Get-InstalledUIAElements([System.Windows.Automation.AutomationElement]$owner) {
+  $rootHandle=[IntPtr]$owner.Current.NativeWindowHandle
+  if($rootHandle -eq [IntPtr]::Zero){throw 'Installed UIA owner has no native HWND'}
+  $handles=[System.Collections.Generic.List[IntPtr]]::new()
+  $callback=[LuP0UIAChildren+ChildCallback]{
+    param([IntPtr]$handle,[IntPtr]$unused)
+    if($handles.Count -lt 128){$handles.Add($handle)}
+    return $true
+  }
+  $null=[LuP0UIAChildren]::EnumChildWindows($rootHandle,$callback,[IntPtr]::Zero)
+  $roots=[System.Collections.Generic.List[System.Windows.Automation.AutomationElement]]::new()
+  $roots.Add($owner)
+  foreach($handle in $handles){
+    if(-not([LuP0UIAChildren]::IsChild($rootHandle,$handle))){continue}
+    try{
+      $child=[System.Windows.Automation.AutomationElement]::FromHandle($handle)
+      if($null -ne $child){$roots.Add($child)}
+    }catch{}
+  }
+  $results=[System.Collections.Generic.List[System.Windows.Automation.AutomationElement]]::new()
+  $seen=[System.Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+  foreach($root in $roots){
+    try{
+      $items=$root.FindAll(
+        [System.Windows.Automation.TreeScope]::Descendants,
+        [System.Windows.Automation.Condition]::TrueCondition
+      )
+      foreach($item in $items){
+        $identity=($item.GetRuntimeId() -join '.')
+        if($identity -and $seen.Add($identity)){$results.Add($item)}
+        if($results.Count -ge 4096){return @($results.ToArray())}
+      }
+    }catch{} # Inaccessible WebView provider never establishes acceptance.
+  }
+  return @($results.ToArray())
+}
 # Genuine UIAutomation tree and pixel evidence when an installed WebView fails.
 # Never use this snapshot to manufacture an element or pass a gate.
 function Save-UIA-Failure([System.Windows.Automation.AutomationElement]$owner,[string]$phase){
   if($null -eq $owner){return}
   $safe=($phase -replace '[^a-zA-Z0-9._-]','-')
   try {
-    $items=$owner.FindAll(
-      [System.Windows.Automation.TreeScope]::Descendants,
-      [System.Windows.Automation.Condition]::TrueCondition
-    )
+    $items=@(Get-InstalledUIAElements $owner)
     $sample=New-Object 'System.Collections.Generic.List[object]'
     $max=[Math]::Min(500,$items.Count)
     for($i=0;$i -lt $max;$i++){
@@ -103,10 +149,7 @@ function Save-UIA-Failure([System.Windows.Automation.AutomationElement]$owner,[s
 function Wait-Element([System.Windows.Automation.AutomationElement]$window,[string]$label,[bool]$button=$false){
   $deadline=[DateTime]::UtcNow.AddSeconds(20)
   do{
-    $items=$window.FindAll(
-      [System.Windows.Automation.TreeScope]::Descendants,
-      [System.Windows.Automation.Condition]::TrueCondition
-    )
+    $items=@(Get-InstalledUIAElements $window)
     foreach($item in $items){
       try{
         if($item.Current.Name -ne $label){continue}
@@ -225,7 +268,19 @@ function Save-Visible-Desktop([string]$name){
 try{
   Add-Type -AssemblyName UIAutomationClient
   Add-Type -AssemblyName UIAutomationTypes
-  $process=Start-Process -FilePath $InstalledExe -WorkingDirectory (Split-Path -Parent $InstalledExe) -PassThru
+  # Force the real WebView2 renderer to publish accessibility to this one
+  # disposable test process. Do not mutate production Lu defaults or permit
+  # arbitrary browser flags/remote debugging on the acceptance host.
+  $priorArgs=[Environment]::GetEnvironmentVariable('WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS','Process')
+  if(-not [string]::IsNullOrEmpty($priorArgs)){
+    throw 'Unexpected existing WebView2 browser argument override in installed acceptance'
+  }
+  [Environment]::SetEnvironmentVariable('WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS','--force-renderer-accessibility','Process')
+  try{
+    $process=Start-Process -FilePath $InstalledExe -WorkingDirectory (Split-Path -Parent $InstalledExe) -PassThru
+  }finally{
+    [Environment]::SetEnvironmentVariable('WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS',$priorArgs,'Process')
+  }
   $deadline=[DateTime]::UtcNow.AddSeconds(45)
   do{
     $process.Refresh()
@@ -242,10 +297,7 @@ try{
   $report.uiAutomationProcessIdentity='PASS_EXACT_OS_PROCESS'
   try{$window.SetFocus()}catch{Write-Warning ('Installed main-window focus unavailable: '+$_.Exception.Message)}
   $settings=Wait-Element $window 'Settings' $true
-  $all=$window.FindAll(
-    [System.Windows.Automation.TreeScope]::Descendants,
-    [System.Windows.Automation.Condition]::TrueCondition
-  )
+  $all=@(Get-InstalledUIAElements $window)
   $settingsButtons=0
   foreach($control in $all){
     try{
