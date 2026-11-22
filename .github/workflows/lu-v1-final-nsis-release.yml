@@ -1,0 +1,192 @@
+name: Lu v1.0 fresh NSIS and owner-GPG permanent release
+on:
+  push:
+    branches: [lu/cp11-cp12-installed-recovery-20261121]
+    paths: [source-tree.lock.json]
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: lu-v1-final-nsis-release
+  cancel-in-progress: false
+jobs:
+  windows:
+    uses: ./.github/workflows/lu-core-c62b-reviewed-browser-nsis.yml
+    with:
+      release_v1: true
+    permissions:
+      contents: read
+      actions: read
+  sign-and-publish:
+    needs: windows
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify exact frozen source and refuse existing v1.0 tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          node scripts/verify-source-tree.mjs
+          test "$GITHUB_REF_NAME" = "lu/cp11-cp12-installed-recovery-20261121"
+          if git ls-remote --exit-code --tags origin refs/tags/v1.0.0 >/dev/null; then
+            echo "::error::Existing v1.0.0 tag cannot be overwritten"
+            exit 1
+          fi
+      - name: Download only SAME-RUN freshly compiled verified Windows NSIS
+        uses: actions/download-artifact@v4
+        with:
+          name: Lu-C62B-Reviewed-Browser-NSIS-${{ github.sha }}
+          path: candidate
+      - name: Verify exact-source installer, release identity and native Windows lifecycle
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir release-assets
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib,json,os,shutil
+          root=Path('candidate')
+          checks=json.loads((root/'installer-checksums.json').read_text())
+          prov=json.loads((root/'BUILD_PROVENANCE.json').read_text())
+          sha=os.environ['GITHUB_SHA']
+          def must(ok,why):
+              if not ok: raise SystemExit('NO_RELEASE: '+why)
+          def digest(path):
+              h=hashlib.sha256()
+              with path.open('rb') as f:
+                  for b in iter(lambda:f.read(1024*1024),b''): h.update(b)
+              return h.hexdigest()
+          must(checks.get('sourceSha')==sha and prov.get('sourceSha')==sha,'wrong source SHA')
+          must(checks.get('productVersion')=='1.0.0' and prov.get('productVersion')=='1.0.0','wrong version')
+          must(checks.get('appIdentity')=='org.lu.desktop' and prov.get('appIdentity')=='org.lu.desktop','wrong identity')
+          must(prov.get('releasePackaging')=='V1_0_UNSIGNED_WITH_INDEPENDENT_REVIEWED_BROWSER','not reviewed release')
+          must(checks.get('genuineInstallerProduced') is True,'no genuine installer')
+          browser='f2948f9ef9d2b5bbac8a60e146bd4a18a0714a615883faaa0139b8d5828e5cf3'
+          must(checks.get('browserManifestSha256')==browser and prov.get('browserManifestSha256')==browser,'browser digest mismatch')
+          must(prov.get('browserRuntime')=='REVIEWED_AND_STAGED','browser missing')
+          for key in ('appSha256','engineSha256','vulkanEngineSha256','researchClientSha256'):
+              must(checks.get(key)==prov.get(key) and len(str(checks.get(key)))==64,'bad '+key)
+          filename='Lu-v1.0.0-Windows-NSIS-'+sha[:12]+'.exe'
+          must(checks.get('installerName')==filename,'old or wrong installer name')
+          installer=root/filename
+          must(installer.is_file() and installer.stat().st_size>1_000_000,'missing Windows NSIS')
+          must(digest(installer)==checks.get('installerSha256'),'installer hash mismatch')
+          receipts=list(root.rglob('m3-nsis-cycle.json'))
+          must(len(receipts)==1,'missing/ambiguous original installed receipt')
+          record=json.loads(receipts[0].read_text())
+          required={
+            'installer':'PASS_REAL_NATIVE_PROCESS_EXIT',
+            'installedApp':'PASS_SHA256',
+            'installedRealEngine':'PASS_SHA256',
+            'installedVulkanEngine':'PASS_SHA256',
+            'installedReviewedBrowser':'PASS_EXACT_BROWSER_FILES_AND_REAL_BUNDLED_NODE',
+            'installedUiSmoke':'PASS_INSTALLED_UNIFIED_TABS',
+            'profilePreservation':'PASS_UNTOUCHED_APPDATA_SENTINEL',
+            'packageRemoval':'PASS_BINARIES_ABSENT'
+          }
+          for key,value in required.items():must(record.get(key)==value,'failed '+key)
+          for file in (installer,root/'installer-checksums.json',root/'BUILD_PROVENANCE.json'):
+              shutil.copy2(file,Path('release-assets')/file.name)
+          (Path('release-assets')/'LU-V1-SOURCE.txt').write_text(
+              'Source SHA: '+sha+'\nVersion: 1.0.0\n'
+              'Fresh NSIS/browser/native Windows lifecycle: PASS\n'
+              'Owner R9700 model compatibility previously accepted on alpha; '
+              'this exact package not retested on owner physical PC\n'
+              'Previous optional CP11/12 troubleshooting UIA control: incomplete\n'
+              'Windows Authenticode: absent; owner ECC-GPG detached signature accompanies release\n')
+          print('FRESH_CURRENT_V1_NSIS_AND_WINDOWS_GATE_PASS',filename)
+          PY
+      - name: Owner ECC-GPG detached sign and independent verify — fail closed
+        shell: bash
+        env:
+          OWNER_KEY: ${{ secrets.NVP_GPG_PRIVATE_KEY }}
+          OWNER_PASS: ${{ secrets.NVP_GPG_PASSPHRASE }}
+          OWNER_FPR: DB9C7C9FCC675D8EE33D3F885007C136EE8BDB86
+        run: |
+          set -euo pipefail
+          umask 077
+          test -n "$OWNER_KEY" && test -n "$OWNER_PASS" || {
+            echo "::error::Owner GPG private key/passphrase secrets are required"; exit 1;
+          }
+          export GNUPGHOME="$(mktemp -d)"
+          checkhome="$(mktemp -d)"
+          trap 'rm -rf "$GNUPGHOME" "$checkhome"' EXIT
+          chmod 700 "$GNUPGHOME" "$checkhome"
+          printf '%s\n' "$OWNER_KEY" | gpg --batch --quiet --import
+          gpg --batch --with-colons --fingerprint --list-secret-keys "$OWNER_FPR" |
+            awk -F: -v f="$OWNER_FPR" '$1=="fpr" && $10==f {ok=1} END{exit !ok}'
+          gpg --batch --armor --export "$OWNER_FPR" > release-assets/Lu-owner-ECC-GPG-public-key.asc
+          test -s release-assets/Lu-owner-ECC-GPG-public-key.asc
+          (cd release-assets && sha256sum Lu-v1.0.0-Windows-NSIS-*.exe installer-checksums.json BUILD_PROVENANCE.json LU-V1-SOURCE.txt > SHA256SUMS)
+          installer=(release-assets/Lu-v1.0.0-Windows-NSIS-*.exe)
+          test "${#installer[@]}" -eq 1
+          printf '%s' "$OWNER_PASS" |
+            gpg --batch --yes --pinentry-mode loopback --passphrase-fd 0 \
+            --local-user "$OWNER_FPR" --armor --detach-sign \
+            --output "${installer[0]}.asc" "${installer[0]}"
+          printf '%s' "$OWNER_PASS" |
+            gpg --batch --yes --pinentry-mode loopback --passphrase-fd 0 \
+            --local-user "$OWNER_FPR" --armor --detach-sign \
+            --output release-assets/SHA256SUMS.asc release-assets/SHA256SUMS
+          gpg --batch --homedir "$checkhome" --import release-assets/Lu-owner-ECC-GPG-public-key.asc
+          gpg --batch --homedir "$checkhome" --with-colons --fingerprint --list-keys |
+            awk -F: -v f="$OWNER_FPR" '$1=="fpr" && $10==f {ok=1} END{exit !ok}'
+          gpg --batch --homedir "$checkhome" --verify "${installer[0]}.asc" "${installer[0]}"
+          gpg --batch --homedir "$checkhome" --verify release-assets/SHA256SUMS.asc release-assets/SHA256SUMS
+          (cd release-assets && sha256sum -c SHA256SUMS)
+          echo "OWNER_GPG_SIGNATURE_VERIFIED=$OWNER_FPR" >> "$GITHUB_STEP_SUMMARY"
+      - name: Publish permanent GitHub Release assets — never unsigned
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if gh release view v1.0.0 --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::error::Existing v1.0.0 release cannot be overwritten"; exit 1
+          fi
+          cat > release-notes.md <<EOF
+          Lu Core v1.0.0 standalone Windows NSIS.
+          Exact source SHA: $GITHUB_SHA
+          Owner release approval: granted in canonical Lu development ledger.
+          Fresh Windows NSIS build, reviewed Chromium/Node/Playwright 482-file
+          manifest, native browser/GUI installation and uninstall: passed.
+          Owner GPG Ed25519 signature fingerprint:
+          DB9C7C9FCC675D8EE33D3F885007C136EE8BDB86.
+          Verify exe.asc and SHA256SUMS.asc with the independently trusted owner key.
+          This Windows executable is not Authenticode signed; SmartScreen may warn.
+          Local GGUF/MMProj weights are not bundled. R9700 support was physically
+          accepted on earlier alpha. Exact frozen v1 model session on owner's PC
+          not independently repeated. The optional CP11/12 troubleshooting UIA
+          diagnostic remained incomplete. DLC integrations are excluded.
+          EOF
+          gh release create v1.0.0 release-assets/* \
+            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --title "Lu Core v1.0.0 — owner GPG-signed Windows NSIS" \
+            --notes-file release-notes.md
+          echo "PERMANENT_RELEASE_PUBLISHED_SHA=$GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"
+      - name: Fast-forward main only after signed release is published
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin main
+          git merge-base --is-ancestor FETCH_HEAD "$GITHUB_SHA" || {
+            echo "::error::main advanced; refuse non-fast-forward release merge"; exit 1;
+          }
+          gh api -X PATCH "repos/$GITHUB_REPOSITORY/git/refs/heads/main" \
+            -f sha="$GITHUB_SHA" -F force=false >/dev/null
+          echo "MAIN_FAST_FORWARDED_TO=$GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"
