@@ -47,6 +47,30 @@ test('genuine hosted installed GUI requires original executable, native UIA cons
   assert.match(runner,/\$due\.firedCount -eq 1 -and \$due\.unreadCount -eq 1/);
   assert.match(runner,/if\(\$report\.result -ne 'PASS_SCOPED_HOSTED_WINDOWS_CP11A_CP11B_CP12A'\)\{exit 2\}/);
 });
+test('original native Windows TaskDialog pane is exact owner-controlled consent, not a generic pane',()=>{
+  const start=runner.indexOf('function Test-NativeChoiceIdentity(');
+  const end=runner.indexOf('function Start-Lu(',start);
+  assert.ok(start>=0&&end>start,'narrow TaskDialog identity helper is required');
+  const section=runner.slice(start,end).replace(/\r\n/g,'\n');
+  for(const s of [
+    "'Run checks'{'CommandButton_1000'}",
+    "'Schedule reminder'{'CommandButton_1000'}",
+    "'Cancel'{'CommandButton_1001'}",
+    "'Decline'{'CommandButton_1001'}",
+    "$current.ControlType -eq [System.Windows.Automation.ControlType]::Pane",
+    "$current.ClassName -ceq 'CCPushButton'",
+    '$current.AutomationId -ceq $expectedId',
+    '$current.Name -cne $choice',
+    '$current.ProcessId -ne $ownerPid',
+    '[LuCpRecoveryWin32]::IsChild($ownerHwnd',
+    '-not $current.IsEnabled',
+    '$current.IsOffscreen',
+    '$matches.Count -gt 1',
+    'Test-NativeChoiceIdentity $chosen.Current $choice'
+  ])assert.ok(section.includes(s),s);
+  assert.match(section,/if\(-not \$chosen\)\{throw \('Original native approval choice unavailable:/);
+  assert.doesNotMatch(section,/SendKeys|PostMessage|SendMessage|Window\.Confirm|ControlType\.Pane\)\{return \$true\}/);
+});
 test('read-only private journal oracle cannot seed statuses or view unrelated content',()=>{
   for(const p of ['mode=ro','PRAGMA query_only=ON','active_check','lu_user_reminders','dx_trace','CP11-WINDOWS-TEST-','prefixHash'])assert.ok(journal.includes(p),p);
   assert.doesNotMatch(journal,/\b(?:UPDATE|INSERT|DELETE|REPLACE|DROP|ALTER)\s+(?:active_check|lu_user_reminders|dx_trace)\b/i);
