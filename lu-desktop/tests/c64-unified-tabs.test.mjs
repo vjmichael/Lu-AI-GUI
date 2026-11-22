@@ -41,6 +41,13 @@ test('task controls keep the original scope and actual security checks',()=>{
 test('installed oracle demands real same HWND and all five tabs',()=>{
  assert.match(smoke,/PASS_INSTALLED_UNIFIED_TABS/);
  for(const name of ['Settings','Models','History','Tasks','Chat'])assert.ok(smoke.includes("Wait-Element $window '"+name+"' $true"),name);
+ // The model-library check must match what current React actually renders;
+ // real Windows still proves every named control through the UIA provider.
+ assert.ok(settings.includes('>My models</button>'));
+ assert.ok(settings.includes('aria-label="Search local models"'));
+ assert.ok(smoke.includes("Wait-Element $window 'My models' $true"));
+ assert.ok(smoke.includes("Wait-Element $window 'Search local models'"));
+ assert.doesNotMatch(smoke,/Wait-Element \$window 'Installed GGUF'/);
  assert.match(smoke,/PASS_ONE_INSTALLED_WINDOW/);
  assert.match(smoke,/MainWindowHandle/);
  assert.match(smoke,/UIAutomationClient/);

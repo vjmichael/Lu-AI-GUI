@@ -316,7 +316,10 @@ try{
   $report.settingsTab='PASS_SAME_NATIVE_WINDOW'
   $report.settingsScreenshot=Save-Visible-Desktop 'installed-settings.png'
   $report.activationMethods+=@(Invoke-UIA (Wait-Element $window 'Models' $true) $window)
-  $null=Wait-Element $window 'Installed GGUF' $true
+  # Require controls that exist in the genuine current Model Library.
+  # A source-only rename must not be treated as an installed accessibility PASS.
+  $null=Wait-Element $window 'My models' $true
+  $null=Wait-Element $window 'Search local models'
   $null=Wait-Element $window 'Discover · Hugging Face' $true
   $report.modelsTab='PASS_SAME_NATIVE_WINDOW'
   $report.modelLibraryScreenshot=Save-Visible-Desktop 'installed-model-library.png'
