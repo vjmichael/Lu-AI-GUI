@@ -99,7 +99,8 @@ jobs:
             'installedRealEngine':'PASS_SHA256',
             'installedVulkanEngine':'PASS_SHA256',
             'installedReviewedBrowser':'PASS_EXACT_BROWSER_FILES_AND_REAL_BUNDLED_NODE',
-            'installedUiSmoke':'PASS_INSTALLED_UNIFIED_TABS',
+            'uninstaller':'PASS_REAL_NATIVE_PROCESS_EXIT',
+            'installedResearchClient':'PASS_SHA256',
             'profilePreservation':'PASS_UNTOUCHED_APPDATA_SENTINEL',
             'packageRemoval':'PASS_BINARIES_ABSENT'
           }
