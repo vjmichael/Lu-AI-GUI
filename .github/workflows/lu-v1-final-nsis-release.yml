@@ -43,9 +43,12 @@ jobs:
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           node scripts/verify-source-tree.mjs
           test "$GITHUB_REF_NAME" = "lu/cp11-cp12-installed-recovery-20261121"
-          tag_count="$(gh api "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/v1.0.0" --jq 'length')"
-          if [[ "$tag_count" != "0" ]]; then
+          tag_error="$(mktemp)"
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/v1.0.0" --jq '.object.sha' >/dev/null 2>"$tag_error"; then
             echo "::error::Existing v1.0.0 tag cannot be overwritten"
+            exit 1
+          elif ! grep -Fq '(HTTP 404)' "$tag_error"; then
+            echo "::error::Unable to establish that v1.0.0 tag is unused"
             exit 1
           fi
       - name: Download only SAME-RUN freshly compiled verified Windows NSIS
