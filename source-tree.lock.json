@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "685de98a5496fc9db922585c3bbf86a39415de9e",
-  "trackedFileCount": 1272,
+  "sourceCommitBeforeLock": "63668d7ba1895a02b3bed143877352eedcf34cc1",
+  "trackedFileCount": 1277,
   "files": [
     {
       "path": ".gitattributes",
@@ -130,6 +130,10 @@
     {
       "path": ".github/workflows/lu-cp06er3-native-web.yml",
       "blob": "6304b8c48ce71a729d48c8ee4f78647834758273"
+    },
+    {
+      "path": ".github/workflows/lu-cp11-cp12-windows-installed-recovery.yml",
+      "blob": "068cf20712740ea9a1403d9d1362ed832b71bdc4"
     },
     {
       "path": ".github/workflows/lu-cp12br7r1-windows-collaboration.yml",
@@ -926,6 +930,10 @@
     {
       "path": "docs/LU_CP11B_SCHEDULED_REMINDERS_20261120.md",
       "blob": "a6cc6b5d9f8d5ed40c27ae1e561ca0b61c03034b"
+    },
+    {
+      "path": "docs/LU_CP11_CP12_WINDOWS_INSTALLED_RECOVERY_20261121.md",
+      "blob": "76ca1b674ce80f5fdeee4f4c34c8ec76594f1841"
     },
     {
       "path": "docs/LU_CP12B_R2_WINDOWS_TRANSPORT_20261120.md",
@@ -2268,6 +2276,10 @@
       "blob": "8dac52ee2d10d4839a1ec47c7deb33c6fac76fad"
     },
     {
+      "path": "lu-desktop/tests/cp11-cp12-windows-installed-recovery-contract.test.mjs",
+      "blob": "482203b67ced16125ee7dd1767430eb0412f90f9"
+    },
+    {
       "path": "lu-desktop/tests/cp11a-local-checks.test.mjs",
       "blob": "2cc267b1134252c61387c540e277736fd3eefdaa"
     },
@@ -2922,6 +2934,14 @@
     {
       "path": "scripts/cp06er3-native-web-gui.py",
       "blob": "2fa4cd31e41c339005681cb1cab825289485241d"
+    },
+    {
+      "path": "scripts/cp11-cp12-windows-installed-recovery.ps1",
+      "blob": "dcf27642bc584aafc19df05f692e970d3379ce21"
+    },
+    {
+      "path": "scripts/cp11-cp12-windows-readonly-journal.py",
+      "blob": "7d91f77a7312c25e15b101319dd5cff4a4afeb11"
     },
     {
       "path": "scripts/cp11a-model-benchmark-gui.py",
