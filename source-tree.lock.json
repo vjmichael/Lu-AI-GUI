@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "0a9b091d9b5670df6daba0eb4112b2e6b7f22c09",
-  "trackedFileCount": 1277,
+  "sourceCommitBeforeLock": "345227ef1e2c341b31f441597ce9bfc53f18f09b",
+  "trackedFileCount": 1279,
   "files": [
     {
       "path": ".gitattributes",
@@ -89,7 +89,7 @@
     },
     {
       "path": ".github/workflows/lu-core-c62b-reviewed-browser-nsis.yml",
-      "blob": "9ce36d5f6f00c96a8cc34c781233b26bb94e0e2c"
+      "blob": "27a1653fd4586374c901f96a73080dd29afaed67"
     },
     {
       "path": ".github/workflows/lu-core-c62t-browser-review-transport.yml",
@@ -133,7 +133,7 @@
     },
     {
       "path": ".github/workflows/lu-cp11-cp12-windows-installed-recovery.yml",
-      "blob": "55db0d45598eb16423e9cea99fab1a1986f1a92d"
+      "blob": "898353be0580f260c1aaabbf20bc2ef623064f4b"
     },
     {
       "path": ".github/workflows/lu-cp12br7r1-windows-collaboration.yml",
@@ -342,6 +342,10 @@
     {
       "path": ".github/workflows/lu-ux-chat02-revisions-replies.yml",
       "blob": "37673e0bf98749ffe0d6ea426c0a911792719076"
+    },
+    {
+      "path": ".github/workflows/lu-v1-final-nsis-release.yml",
+      "blob": "6496a2c82cca035741781e978f9239a2fe35bcf4"
     },
     {
       "path": ".github/workflows/lu-v1-observe-learn.yml",
@@ -989,7 +993,7 @@
     },
     {
       "path": "docs/LU_DEVELOPMENT_LEDGER.md",
-      "blob": "441f3107325e75d741f0d41d8b00d819726a478e"
+      "blob": "38921e2d9fdfd86e785f33b24a91c914e3020e2c"
     },
     {
       "path": "docs/LU_E1_NATIVE_EVIDENCE_20261107.md",
@@ -1557,7 +1561,7 @@
     },
     {
       "path": "lu-desktop/packaging/NSIS_CURRENT_DEV_PREVIEW.nsi",
-      "blob": "c041d632cb44564b36ec4bcc22118bc37209e6c8"
+      "blob": "3e7925009e0a29c4af0d8244ccf7c71ce0f2bf1e"
     },
     {
       "path": "lu-desktop/packaging/NSIS_DEV_EVAL_NOT_ALPHA.nsi",
@@ -1570,6 +1574,10 @@
     {
       "path": "lu-desktop/packaging/README_CURRENT_DEV_PREVIEW.txt",
       "blob": "17d3be1c4682720073a1698c974e6b96e31696ea"
+    },
+    {
+      "path": "lu-desktop/packaging/README_LU_V1.txt",
+      "blob": "b7a9985c3197af96faa0c419b950d56a8106ac79"
     },
     {
       "path": "lu-desktop/packaging/README_NOT_ALPHA.txt",
@@ -2869,7 +2877,7 @@
     },
     {
       "path": "scripts/build-current-windows-nsis.ps1",
-      "blob": "a0fb4b5a69e5419a94fe353c24993a6ac78b365b"
+      "blob": "91da77f9e9a68df1d5473530d430344a1ff249c2"
     },
     {
       "path": "scripts/c3-windows-installed-native-completion.ps1",
