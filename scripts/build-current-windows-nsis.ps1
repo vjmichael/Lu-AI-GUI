@@ -258,9 +258,9 @@ try{
     schema='lu-current-preview-NSIS-source-pinned-v1'
     scope='EXACT_SOURCE_BUILD_PHYSICAL_ACCEPTANCE_PENDING'
     sourceSha=$SourceSha;sourceRepo='vjmichael/Lu-AI-GUI'
-    variant='physical_win_cpu_eval';appIdentity=if($releaseV1){'org.lu.desktop'}else{'org.lu.current.devpreview'}
-    productVersion=if($releaseV1){'1.0.0'}else{'0.2.0-rc.1'}
-    releasePackaging=if($releaseV1){'V1_0_UNSIGNED_WITH_INDEPENDENT_REVIEWED_BROWSER'}else{'DEVELOPMENT_PREVIEW'}
+    variant='physical_win_cpu_eval';appIdentity=$(if($releaseV1){'org.lu.desktop'}else{'org.lu.current.devpreview'})
+    productVersion=$(if($releaseV1){'1.0.0'}else{'0.2.0-rc.1'})
+    releasePackaging=$(if($releaseV1){'V1_0_UNSIGNED_WITH_INDEPENDENT_REVIEWED_BROWSER'}else{'DEVELOPMENT_PREVIEW'})
     appSha256=$appHash;appBytes=[int64](Get-Item $app).Length
     engineSha256=$engineHash;engineBytes=$engineSize
     vulkanEngineSha256=$vkHash;vulkanEngineBytes=$vkBytes
