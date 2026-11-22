@@ -152,6 +152,29 @@ function Set-Field([string]$label,[string]$value){
   [System.Windows.Forms.SendKeys]::SendWait('^a')
   [System.Windows.Forms.SendKeys]::SendWait($value)
 }
+# The existing installed Windows GGUF witness documents the genuine TaskDialog
+# CCPushButton provider: its native commands can appear as Pane, not Button.
+# Accept that exception only for the original exact names and native command IDs.
+# Never broaden ordinary WebView selection or select an unowned generic Pane.
+function Test-NativeChoiceIdentity($current,[string]$choice,[int]$ownerPid,[IntPtr]$ownerHwnd){
+  if($current.Name -cne $choice -or [int]$current.ProcessId -ne $ownerPid -or
+     [int64]$current.NativeWindowHandle -eq 0 -or -not $current.IsEnabled -or
+     $current.IsOffscreen -or
+     -not [LuCpRecoveryWin32]::IsChild($ownerHwnd,[IntPtr][int64]$current.NativeWindowHandle)){
+    return $false
+  }
+  if($current.ControlType -eq [System.Windows.Automation.ControlType]::Button){return $true}
+  $expectedId=switch -CaseSensitive ($choice){
+    'Run checks'{'CommandButton_1000'}
+    'Schedule reminder'{'CommandButton_1000'}
+    'Cancel'{'CommandButton_1001'}
+    'Decline'{'CommandButton_1001'}
+    default{return $false}
+  }
+  return ($current.ControlType -eq [System.Windows.Automation.ControlType]::Pane -and
+    $current.ClassName -ceq 'CCPushButton' -and
+    $current.AutomationId -ceq $expectedId)
+}
 function Native-Review([string]$title,[string]$choice){
   $limit=[DateTime]::UtcNow.AddSeconds(20)
   $dlg=$null
@@ -160,9 +183,11 @@ function Native-Review([string]$title,[string]$choice){
       [System.Windows.Automation.TreeScope]::Children,[System.Windows.Automation.Condition]::TrueCondition)
     foreach($candidate in $top){
       try{
-        if($candidate.Current.Name -eq $title -and [int]$candidate.Current.ProcessId -eq [int]$script:process.Id -and
+        if($candidate.Current.Name -ceq $title -and [int]$candidate.Current.ProcessId -eq [int]$script:process.Id -and
           $candidate.Current.ControlType -eq [System.Windows.Automation.ControlType]::Window -and
-          $candidate.Current.NativeWindowHandle -ne 0 -and -not $candidate.Current.IsOffscreen){
+          $candidate.Current.NativeWindowHandle -ne 0 -and
+          [int64]$candidate.Current.NativeWindowHandle -ne [int64]$script:window.Current.NativeWindowHandle -and
+          -not $candidate.Current.IsOffscreen){
           $dlg=$candidate;break
         }
       }catch{}
@@ -171,12 +196,29 @@ function Native-Review([string]$title,[string]$choice){
     Start-Sleep -Milliseconds 150
   }while([DateTime]::UtcNow -lt $limit)
   if(-not $dlg){throw ('Native owner-bound approval dialog absent: '+$title)}
-  $buttons=$dlg.FindAll([System.Windows.Automation.TreeScope]::Descendants,[System.Windows.Automation.Condition]::TrueCondition)
+  $ownerHwnd=[IntPtr][int64]$dlg.Current.NativeWindowHandle
   $chosen=$null
-  foreach($el in $buttons){
-    try{if($el.Current.Name -eq $choice -and $el.Current.ControlType -eq [System.Windows.Automation.ControlType]::Button){$chosen=$el;break}}catch{}
-  }
+  $choiceLimit=[DateTime]::UtcNow.AddSeconds(10)
+  do{
+    # Enumerate the original native child HWND providers, as in the already
+    # qualified installed Windows UIA smoke. Exact names and OS ownership
+    # remain mandatory; a missing consent button still fails acceptance.
+    $matches=[System.Collections.Generic.List[System.Windows.Automation.AutomationElement]]::new()
+    foreach($el in @(Elements $dlg)){
+      try{
+        if(Test-NativeChoiceIdentity $el.Current $choice $script:process.Id $ownerHwnd){
+          $matches.Add($el)
+        }
+      }catch{}
+    }
+    if($matches.Count -gt 1){throw ('Ambiguous original native approval choice: '+$choice)}
+    if($matches.Count -eq 1){$chosen=$matches[0];break}
+    Start-Sleep -Milliseconds 150
+  }while([DateTime]::UtcNow -lt $choiceLimit)
   if(-not $chosen){throw ('Original native approval choice unavailable: '+$choice)}
+  if(-not(Test-NativeChoiceIdentity $chosen.Current $choice $script:process.Id $ownerHwnd)){
+    throw 'Native approval control identity changed before input'
+  }
   Click-Control $chosen $dlg
 }
 function Start-Lu(){
