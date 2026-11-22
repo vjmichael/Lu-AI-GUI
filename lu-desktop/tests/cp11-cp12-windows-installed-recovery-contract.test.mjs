@@ -1,0 +1,52 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+const read=p=>readFileSync(new URL('../../'+p,import.meta.url),'utf8');
+const wf=read('.github/workflows/lu-cp11-cp12-windows-installed-recovery.yml');
+const runner=read('scripts/cp11-cp12-windows-installed-recovery.ps1');
+const journal=read('scripts/cp11-cp12-windows-readonly-journal.py');
+test('CP-11/12 is one isolated locked Windows cohort, not a duplicate C6.2B installer build',()=>{
+  const events=wf.split('\non:\n')[1].split('\npermissions:')[0];
+  assert.match(events,/push:\n    branches:\n      - lu\/cp11-cp12-installed-recovery-20261121\n    paths:\n      - source-tree\.lock\.json/);
+  assert.doesNotMatch(events,/pull_request:|pull_request_target:|schedule:/);
+  assert.match(wf,/cancel-in-progress: false/);
+  assert.match(wf,/ref: \$\{\{ github\.sha \}\}/);
+  assert.match(wf,/node scripts\/verify-source-tree\.mjs/);
+  assert.match(wf,/run-id: 44979001346/);
+  assert.match(wf,/Lu-C62B-Reviewed-Browser-NSIS-2ded370fb7da34498e24376b3e7c0abe4771f96d/);
+  assert.match(wf,/2ded370fb7da34498e24376b3e7c0abe4771f96d/);
+  assert.match(wf,/f2948f9ef9d2b5bbac8a60e146bd4a18a0714a615883faaa0139b8d5828e5cf3/);
+  assert.doesNotMatch(wf,/build-current-windows-nsis|npm run tauri build|continue-on-error: true/);
+});
+test('genuine hosted installed GUI requires original executable, native UIA consent and exact cold restart',()=>{
+  for(const phrase of [
+    'DisposableWindowsConfirmed','InstallerSha256','AppSha256',
+    'Get-FileHash','Start-Process','MainWindowHandle',
+    'EnumChildWindows','IsChild','GetRuntimeId','Native-Review',
+    'Lu — Check Lu','Run checks','Cancel','Lu — Approve reminder',
+    'Schedule reminder','Decline','Stop-Lu $true','Wait-Check',
+    'cold_check_recovery_exact_prefix_no_replay','closed_application_did_not_fire_reminder',
+    'missed_reminder_single_fire_on_cold_restart','second_restart_durable_exactly_once_notice',
+    'plain_diagnostic_status_after_cold_recovery'
+  ])assert.ok(runner.includes(phrase),phrase);
+  assert.match(runner,/if\(Test-Path -LiteralPath \$profile\)\{throw 'Refuse existing user profile/);
+  assert.match(runner,/\$script:window=\[System.Windows.Automation.AutomationElement\]::FromHandle/);
+  assert.match(runner,/Current\.ProcessId/);
+  assert.match(runner,/\$before\.state -eq 'running'/);
+  assert.match(runner,/\$recovered\.prefixHash -ceq \$before\.prefixHash/);
+  assert.match(runner,/\$due\.firedCount -eq 1 -and \$due\.unreadCount -eq 1/);
+  assert.match(runner,/if\(\$report\.result -ne 'PASS_SCOPED_HOSTED_WINDOWS_CP11A_CP11B_CP12A'\)\{exit 2\}/);
+});
+test('read-only private journal oracle cannot seed statuses or view unrelated content',()=>{
+  for(const p of ['mode=ro','PRAGMA query_only=ON','active_check','lu_user_reminders','dx_trace','CP11-WINDOWS-TEST-','prefixHash'])assert.ok(journal.includes(p),p);
+  assert.doesNotMatch(journal,/\b(?:UPDATE|INSERT|DELETE|REPLACE|DROP|ALTER)\s+(?:active_check|lu_user_reminders|dx_trace)\b/i);
+  assert.doesNotMatch(journal,/exec\(|subprocess\.|shell=True|mode=rw|mode=rwc/);
+  assert.match(journal,/SELECT id,workspace_id,state,next_due,repeat_seconds,last_due,fired_count,unread_count/);
+  assert.match(journal,/SELECT run_id,state,body FROM active_check WHERE slot=1/);
+});
+test('positive assertion is limited to the model-free and read-only installed scope',()=>{
+  assert.match(wf,/Original C6\.2B native NSIS artifact checksum mismatch/);
+  assert.match(wf,/Real installed CP-11\/12 GUI\/restart or SQLite readback failed/);
+  assert.match(wf,/model-free CP-11A\/11B and local CP-12A recovery passed only/);
+  assert.match(wf,/Two-model Windows DX, scheduled AI\/GGUF, owner physical R9700 and release admission remain separate/);
+});
