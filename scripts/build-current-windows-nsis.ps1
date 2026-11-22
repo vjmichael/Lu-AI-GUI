@@ -202,10 +202,23 @@ try{
   $confPath=Join-Path $repo 'lu-desktop/src-tauri/tauri.conf.json'
   $originalConfig=[IO.File]::ReadAllText($confPath)
   $conf=ConvertFrom-Json -InputObject $originalConfig -AsHashtable
-  $conf.productName='Lu Current Development Preview'
-  $conf.identifier='org.lu.current.devpreview'
-  $conf.version='0.2.0-rc.1'
-  $conf.app.windows[0].title='Lu Current Development Preview (Unsigned)'
+  $releaseV1=($env:LU_V1_RELEASE -ceq '1')
+  if($releaseV1 -and $env:LU_REQUIRE_BROWSER -cne '1'){
+    throw 'Lu v1.0 requires the independently reviewed browser runtime'
+  }
+  if($releaseV1){
+    # Release metadata only; the native source and sandbox/approval boundaries
+    # remain the previously frozen Lu Core implementation.
+    $conf.productName='Lu'
+    $conf.identifier='org.lu.desktop'
+    $conf.version='1.0.0'
+    $conf.app.windows[0].title='Lu'
+  }else{
+    $conf.productName='Lu Current Development Preview'
+    $conf.identifier='org.lu.current.devpreview'
+    $conf.version='0.2.0-rc.1'
+    $conf.app.windows[0].title='Lu Current Development Preview (Unsigned)'
+  }
   $conf.bundle.active=$false
   $conf.bundle.resources=@{
     'resources/lu-inference/llama-server.exe'='lu-inference/llama-server.exe'
@@ -245,7 +258,9 @@ try{
     schema='lu-current-preview-NSIS-source-pinned-v1'
     scope='EXACT_SOURCE_BUILD_PHYSICAL_ACCEPTANCE_PENDING'
     sourceSha=$SourceSha;sourceRepo='vjmichael/Lu-AI-GUI'
-    variant='physical_win_cpu_eval';appIdentity='org.lu.current.devpreview'
+    variant='physical_win_cpu_eval';appIdentity=if($releaseV1){'org.lu.desktop'}else{'org.lu.current.devpreview'}
+    productVersion=if($releaseV1){'1.0.0'}else{'0.2.0-rc.1'}
+    releasePackaging=if($releaseV1){'V1_0_UNSIGNED_WITH_INDEPENDENT_REVIEWED_BROWSER'}else{'DEVELOPMENT_PREVIEW'}
     appSha256=$appHash;appBytes=[int64](Get-Item $app).Length
     engineSha256=$engineHash;engineBytes=$engineSize
     vulkanEngineSha256=$vkHash;vulkanEngineBytes=$vkBytes
@@ -261,9 +276,17 @@ try{
   }
   $provenance=Join-Path $out 'BUILD_PROVENANCE.json'
   $build|ConvertTo-Json -Depth 7|Set-Content -LiteralPath $provenance -Encoding utf8
-  $installer=Join-Path $out ("Lu-Current-Preview-NSIS-"+$SourceSha.Substring(0,12)+".exe")
+  $installer=if($releaseV1){
+    Join-Path $out ("Lu-v1.0.0-Windows-NSIS-"+$SourceSha.Substring(0,12)+".exe")
+  }else{
+    Join-Path $out ("Lu-Current-Preview-NSIS-"+$SourceSha.Substring(0,12)+".exe")
+  }
   $nsi=Join-Path $repo 'lu-desktop/packaging/NSIS_CURRENT_DEV_PREVIEW.nsi'
-  $readme=Join-Path $repo 'lu-desktop/packaging/README_CURRENT_DEV_PREVIEW.txt'
+  $readme=if($releaseV1){
+    Join-Path $repo 'lu-desktop/packaging/README_LU_V1.txt'
+  }else{
+    Join-Path $repo 'lu-desktop/packaging/README_CURRENT_DEV_PREVIEW.txt'
+  }
   $makensis=Get-Command makensis.exe -ErrorAction SilentlyContinue
   if($null -eq $makensis){
     $candidate=Join-Path ([Environment]::GetFolderPath('ProgramFilesX86')) 'NSIS\makensis.exe'
@@ -272,12 +295,15 @@ try{
   }else{$compiler=$makensis.Source}
   $definitions=@("-DLU_APP_EXE=$app","-DLU_ENGINE_EXE=$(Join-Path $stage 'llama-server.exe')","-DLU_VULKAN_ENGINE_EXE=$(Join-Path $stage 'llama-server-vulkan.exe')","-DLU_ENGINE_MANIFEST=$manifestFile","-DLU_TEST_README=$readme","-DLU_CODECS_DIR=$(Join-Path $repo 'lu-desktop/src-tauri/resources/lu-native-codecs')","-DLU_BUILD_PROVENANCE=$provenance","-DLU_INSTALLER_OUTPUT=$installer")
   if($browserBundle){$definitions+=("-DLU_BROWSER_DIR=$browserBundle")}
+  if($releaseV1){$definitions+=("-DLU_RELEASE_V1=1")}
   $definitions+=("-DLU_RESEARCH_DIR=$researchDir")
   & $compiler @definitions $nsi
   if($LASTEXITCODE -ne 0 -or -not(Test-Path $installer)){throw 'NSIS failed; no distributable artifact'}
   $installerHash=(Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash.ToLowerInvariant()
   [ordered]@{
     schema='lu-current-preview-nsis-sha256-v1'
+    productVersion=if($releaseV1){'1.0.0'}else{'0.2.0-rc.1'}
+    appIdentity=if($releaseV1){'org.lu.desktop'}else{'org.lu.current.devpreview'}
     sourceSha=$SourceSha;installerName=(Split-Path -Leaf $installer)
     installerSha256=$installerHash;installerBytes=[int64](Get-Item $installer).Length
     appSha256=$appHash;engineSha256=$engineHash;vulkanEngineSha256=$vkHash;researchClientSha256=$env:LU_RESEARCH_CURL_SHA256
