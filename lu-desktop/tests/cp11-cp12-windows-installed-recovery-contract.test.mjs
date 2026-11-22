@@ -71,6 +71,31 @@ test('original native Windows TaskDialog pane is exact owner-controlled consent,
   assert.match(section,/if\(-not \$chosen\)\{throw \('Original native approval choice unavailable:/);
   assert.doesNotMatch(section,/SendKeys|PostMessage|SendMessage|Window\.Confirm|ControlType\.Pane\)\{return \$true\}/);
 });
+test('native approval is not inferred from a clicked label and check failure keeps actual terminal evidence',()=>{
+  const modal=runner.slice(runner.indexOf('function Native-Review('),runner.indexOf('function Start-Lu('));
+  const check=runner.slice(runner.indexOf('function Wait-Check('),runner.indexOf('try{\n  if(-not [string]::IsNullOrEmpty($priorArgs))',runner.indexOf('function Wait-Check(')));
+  for(const exact of [
+    '[LuCpRecoveryWin32]::GetForegroundWindow()',
+    '[LuCpRecoveryWin32]::SetForegroundWindow($ownerHwnd)',
+    'Native approval control identity changed after foreground admission',
+    'Click-Control $chosen $dlg',
+    '[LuCpRecoveryWin32]::IsWindow($ownerHwnd)',
+    'Native approval click did not dismiss the original dialog: '
+  ])assert.ok(modal.includes(exact),exact);
+  assert.ok(modal.indexOf('Click-Control $chosen $dlg') < modal.indexOf('[LuCpRecoveryWin32]::IsWindow($ownerHwnd)'),
+    'modal dismissal must be checked after real input');
+  for(const exact of [
+    "Read-Journal 'check'",
+    "$report['lastCheck']=[ordered]@{",
+    'reason=$(if($s.present)',
+    'kinds=$(if($s.present)',
+    'verified=$(if($s.present)',
+    "('attention','stopped','interrupted','complete')",
+    'Real installed check reached unexpected terminal state',
+    'original receipt preserved'
+  ])assert.ok(check.includes(exact),exact);
+  assert.doesNotMatch(check,/UPDATE active_check|INSERT INTO active_check|rawPrompt|conversationText|modelOutput|Set-Clock/);
+});
 test('read-only private journal oracle cannot seed statuses or view unrelated content',()=>{
   for(const p of ['mode=ro','PRAGMA query_only=ON','active_check','lu_user_reminders','dx_trace','CP11-WINDOWS-TEST-','prefixHash'])assert.ok(journal.includes(p),p);
   assert.doesNotMatch(journal,/\b(?:UPDATE|INSERT|DELETE|REPLACE|DROP|ALTER)\s+(?:active_check|lu_user_reminders|dx_trace)\b/i);
