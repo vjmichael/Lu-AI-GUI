@@ -458,8 +458,9 @@ jobs:
               throw 'Lu v1.0 requires exact native window + missing-UIA evidence, not a waived GUI failure'
             }
             [byte[]]$image=[IO.File]::ReadAllBytes($png)
+            $prefix=[byte[]]$image[0..7]
             if($image.Length -lt 30000 -or
-               -not ([Convert]::ToHexString($image[0..7]) -ceq '89504E470D0A1A0A')){
+               [Convert]::ToHexString($prefix) -cne '89504E470D0A1A0A'){
               throw 'Lu v1.0 genuine installed visible-GUI screenshot missing or malformed'
             }
             [byte[]]$widthBytes=@($image[19],$image[18],$image[17],$image[16])
