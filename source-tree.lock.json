@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "9f90c02559e61ce8ce87c7098b784481ffd60451",
+  "sourceCommitBeforeLock": "5af5c10055d755355ef91f5bc65402808550c683",
   "trackedFileCount": 1270,
   "files": [
     {
@@ -89,7 +89,7 @@
     },
     {
       "path": ".github/workflows/lu-core-c62b-reviewed-browser-nsis.yml",
-      "blob": "5b0a27f4b165a00d4b6e6953b7e8b6187961fdea"
+      "blob": "1a8e3a92c3496de3905ad45685831a29652f8672"
     },
     {
       "path": ".github/workflows/lu-core-c62t-browser-review-transport.yml",
@@ -3069,15 +3069,15 @@
     },
     {
       "path": "scripts/lu-c62b-reviewed-browser-contract.test.mjs",
-      "blob": "321a09bd352c4010e7218f43af0da5a43362e6da"
+      "blob": "b4e621c8689f720c0c20f8816e1885889245b2e2"
     },
     {
       "path": "scripts/lu-ci-group-policy.mjs",
-      "blob": "006e95e26fe5e855cb262f9d628d09eac66d49a5"
+      "blob": "20db356ab19e61417348f47b498b52d430478e24"
     },
     {
       "path": "scripts/lu-ci-group-policy.test.mjs",
-      "blob": "3093f841f3b410b73a117104b813c2c516c0a039"
+      "blob": "40c5d87fddbfd193f7d885ad2b6e323b196756e3"
     },
     {
       "path": "scripts/lu-ci-superseded-queue.mjs",
