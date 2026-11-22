@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "63668d7ba1895a02b3bed143877352eedcf34cc1",
+  "sourceCommitBeforeLock": "7ae5acab1edca9c13ba15921f1e10e54e8cb9a5d",
   "trackedFileCount": 1277,
   "files": [
     {
@@ -2277,7 +2277,7 @@
     },
     {
       "path": "lu-desktop/tests/cp11-cp12-windows-installed-recovery-contract.test.mjs",
-      "blob": "482203b67ced16125ee7dd1767430eb0412f90f9"
+      "blob": "b9209808156b5c638042fb48def4c46df11960fe"
     },
     {
       "path": "lu-desktop/tests/cp11a-local-checks.test.mjs",
